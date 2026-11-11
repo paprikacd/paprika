@@ -132,12 +132,17 @@ breaching samples outside them, and `durationMs` is the merged time. A failed
 signal reports no `breaches`, so an absent object is not an empty result. A time
 series with no warning or critical status reports no `breaches`.
 
-Every metric widget reports `freshness`: the age of its primary series' latest
-valid returned sample relative to the range end. A widget with `staleAfterSeconds`
-is `fresh` or `stale` against that threshold, and reports the threshold as
-`thresholdSeconds`. A widget without one reports `no_threshold`, with its age
-but no judgement. `unknown` means no usable returned sample. Text describes only
-the judged freshness.
+Every metric widget reports `freshness`: the age of its latest valid returned
+sample relative to the range end. A stat uses its displayed primary series; a
+time series uses the newest sample of any of its series, as the UI's stale tail
+does. Only **stat** and **timeseries** widgets judge `staleAfterSeconds`, the same
+types the UI marks stale (`judgesStaleAfter`, pinned by `TestStaleJudgementSetMatchesTheUI`).
+Those widgets are `fresh` or `stale` against that threshold and report it as
+`thresholdSeconds`. Every other metric widget, including a bar, a heatmap, a
+table or a rich-metrics plugin, reports `no_threshold` with its age and omits
+`thresholdSeconds`; rich metrics use the option only as a track-end grace, not a
+stale mark. `unknown` means no usable returned sample. Text describes only judged
+freshness.
 
 Plugin visualization identity is attached to each widget even when its query is
 

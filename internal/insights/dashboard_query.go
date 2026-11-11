@@ -92,8 +92,9 @@ type DashboardStatThreshold struct {
 }
 
 // Freshness describes the latest valid returned sample relative to the query
-// range end, not the underlying provider's scrape or ingestion health. A metric
-// widget without staleAfterSeconds reports its age with the state no_threshold.
+// range end, not the underlying provider's scrape or ingestion health. Every metric
+// widget reports its age. Only the widgets judgesStaleAfter names are judged against
+// staleAfterSeconds; the others report the state no_threshold.
 type DashboardObservationFreshness struct {
 	ThresholdSeconds *int     `json:"thresholdSeconds,omitempty"`
 	State            string   `json:"state"`
@@ -224,22 +225,26 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 	}
 	if dashboardWidgetKind(widget) == "metrics" {
 		output.Freshness = &DashboardObservationFreshness{State: "unknown"}
-		if widget.Options.StaleAfterSeconds != nil {
+		if judgesStaleAfter(widget.Type) && widget.Options.StaleAfterSeconds != nil {
 			threshold := int(*widget.Options.StaleAfterSeconds)
 			output.Freshness.ThresholdSeconds = &threshold
 		}
 	}
+	dashboardWidgetBandOutput(&output, widget)
+	return output
+}
+
+// dashboardWidgetBandOutput prepares a widget's band and breach evaluation. A stat keeps any
+// band; the multi-series types need a status; a time series needs a warning or critical one.
+func dashboardWidgetBandOutput(output *DashboardQueryWidget, widget *dashboardReadWidget) {
 	switch {
-	case widget.Type == "stat" && len(widget.Options.Thresholds) > 0:
-		output.Threshold = &DashboardStatThreshold{State: "unknown"}
-		output.thresholds = widget.Options.Thresholds
-	case dashboardMultiSeriesBandWidget(widget) && dashboardHasStatusThreshold(widget.Options.Thresholds):
+	case widget.Type == "stat" && len(widget.Options.Thresholds) > 0,
+		dashboardMultiSeriesBandWidget(widget) && dashboardHasStatusThreshold(widget.Options.Thresholds):
 		output.Threshold = &DashboardStatThreshold{State: "unknown"}
 		output.thresholds = widget.Options.Thresholds
 	case widget.Type == "timeseries" && dashboardHasBreachThreshold(widget.Options.Thresholds):
 		output.thresholds = widget.Options.Thresholds
 	}
-	return output
 }
 
 func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, validators []func(string, string) *DashboardQueryError) {
@@ -551,7 +556,7 @@ func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal,
 	} else {
 		applyDashboardSeriesBand(widget, signal, raw)
 	}
-	applyDashboardFreshness(widget, signal, end)
+	applyDashboardFreshness(widget, signal, raw, end)
 	applyDashboardBreaches(widget, signal, raw)
 }
 
@@ -682,11 +687,21 @@ func dashboardHasBreachThreshold(thresholds []dashboardReadThreshold) bool {
 	return false
 }
 
-func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSignal, end float64) {
+// applyDashboardFreshness reports the age of the widget's observation at the range end. A
+// stat reads its displayed (primary) series; a time series reads the newest sample of any
+// series, as the UI's stale tail does. Only judgesStaleAfter widgets with a threshold are
+// judged stale.
+func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult, end float64) {
 	if widget.SignalID != signal.ID || widget.Freshness == nil {
 		return
 	}
-	last := dashboardPrimaryObservation(signal, false)
+	var last *Point
+	switch {
+	case widget.Type != "timeseries":
+		last = dashboardPrimaryObservation(signal, false)
+	case raw != nil && signal.Error == nil:
+		last = newestValidPoint(raw.Series)
+	}
 	if last == nil {
 		return
 	}

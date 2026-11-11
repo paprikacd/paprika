@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -578,7 +577,7 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 			index: i, id: planned.ID, title: planned.Title, widgetType: declared.Type, pluginID: declared.PluginID, unit: planned.Unit,
 			queryRef: declared.QueryRef != nil, expression: dryRunExpression(declared, saved),
 			options: dataOptionsOf(declared), failure: planned.Error, annotation: planned.AnnotationError,
-			signal: signals[planned.SignalID], freshness: dryRunWidgetFreshness(planned, declared, signals[planned.SignalID], end),
+			signal: signals[planned.SignalID], freshness: dryRunWidgetFreshness(planned, declared, signals[planned.SignalID]),
 		}
 		if widget.failure == nil && widget.signal != nil {
 			widget.failure = widget.signal.Error
@@ -592,25 +591,14 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 	return dryRunOutcome{findings: dataFindings(widgets), widgets: states}
 }
 
-// dryRunWidgetFreshness is the freshness a widget's data state and data.stale
-// read. A stat keeps the query path's judgement; a timeseries or rich-metrics
-// widget over metrics is judged here against its own staleAfterSeconds. The query
-// path now reports every metric widget's age, but the dry run still judges only
-// the types staleJudgedByDryRun names.
-func dryRunWidgetFreshness(planned *DashboardQueryWidget, declared *dashboardReadWidget, signal *DashboardSignal, end float64) *DashboardObservationFreshness {
-	if declared.Type == "stat" && planned.Freshness != nil {
-		return planned.Freshness
-	}
-	if signal == nil || signal.Error != nil || signal.Kind != "metrics" || declared.Options.StaleAfterSeconds == nil || !staleJudgedByDryRun(declared) {
+// dryRunWidgetFreshness is the freshness a widget's data state and data.stale read. It is
+// the query path's judgement, for the widgets that judge staleAfterSeconds (see
+// judgesStaleAfter). Other widgets have no stale judgement to report.
+func dryRunWidgetFreshness(planned *DashboardQueryWidget, declared *dashboardReadWidget, signal *DashboardSignal) *DashboardObservationFreshness {
+	if signal == nil || !judgesStaleAfter(declared.Type) {
 		return nil
 	}
-	return dryRunFreshness(signal, end, *declared.Options.StaleAfterSeconds)
-}
-
-// staleJudgedByDryRun reports whether a widget honours staleAfterSeconds beyond
-// the stat the query path judges: a timeseries, or the rich-metrics plugin.
-func staleJudgedByDryRun(declared *dashboardReadWidget) bool {
-	return declared.Type == "timeseries" || (declared.Type == "plugin" && declared.PluginID == "rich-metrics")
+	return planned.Freshness
 }
 
 // dryRunExpression is the query text a widget reads: its own, or its saved query's.
@@ -632,28 +620,6 @@ func dataOptionsOf(declared *dashboardReadWidget) dataOptions {
 		options.thresholds = append(options.thresholds, threshold.Value)
 	}
 	return options
-}
-
-// dryRunFreshness judges the newest valid sample across a widget's summarised
-// series against its staleAfterSeconds, as the query path judges a stat. It returns
-// nil when no series holds a valid sample, so there is nothing to judge.
-func dryRunFreshness(signal *DashboardSignal, end, threshold float64) *DashboardObservationFreshness {
-	newest := math.Inf(-1)
-	for i := range signal.Series {
-		if last := signal.Series[i].Last; last != nil {
-			newest = math.Max(newest, last.Timestamp)
-		}
-	}
-	if math.IsInf(newest, -1) {
-		return nil
-	}
-	age := math.Max(0, end-newest/1000)
-	thresholdSeconds := int(threshold)
-	freshness := &DashboardObservationFreshness{ThresholdSeconds: &thresholdSeconds, State: "fresh", LastTimestamp: &newest, AgeSeconds: &age}
-	if age > threshold {
-		freshness.State = "stale"
-	}
-	return freshness
 }
 
 // widgetDataState reports one widget's data for the dry-run report.

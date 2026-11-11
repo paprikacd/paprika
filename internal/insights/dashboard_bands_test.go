@@ -169,3 +169,35 @@ func TestDashboardQueryBreachesAndFreshnessForTimeSeries(t *testing.T) { //nolin
 		t.Fatalf("attention rollup: %+v", result.Attention)
 	}
 }
+
+// Only stat and timeseries judge staleAfterSeconds, the types the UI marks stale. A bar keeps
+// its age but makes no stale judgement, and a time series is judged on its newest sample.
+func TestDashboardQueryJudgesStalenessOnlyWhereTheUIDoes(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("query") {
+		case "bar":
+			_, _ = fmt.Fprint(w, matrixBody(map[string][][2]string{"a": {{"240", "1"}}}))
+		default:
+			// Series a last reports at 60 s, series b at 240 s; the newest sample is 240 s.
+			_, _ = fmt.Fprint(w, matrixBody(map[string][][2]string{"a": {{"0", "1"}, {"60", "2"}}, "b": {{"0", "1"}, {"240", "3"}}}))
+		}
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	bar := queryReadWidget("bar", "bar")
+	bar["type"], bar["options"] = "bar", map[string]any{"staleAfterSeconds": 60}
+	series := queryReadWidget("series", "series")
+	series["type"], series["options"] = "timeseries", map[string]any{"staleAfterSeconds": 3400}
+	putReadDashboard(t, s, bar, series)
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+
+	if got := result.Widgets[0].Freshness; got == nil || got.State != "no_threshold" || got.ThresholdSeconds != nil || got.AgeSeconds == nil || *got.AgeSeconds != 3360 {
+		t.Fatalf("a bar reports its age without a stale judgement: %+v", got)
+	}
+	if got := result.Widgets[1].Freshness; got == nil || got.State != "fresh" || got.AgeSeconds == nil || *got.AgeSeconds != 3360 || got.ThresholdSeconds == nil || *got.ThresholdSeconds != 3400 {
+		t.Fatalf("a time series is judged on its newest sample across series: %+v", got)
+	}
+	if result.Attention.Stale != 0 {
+		t.Fatalf("no widget is stale here: %+v", result.Attention)
+	}
+}

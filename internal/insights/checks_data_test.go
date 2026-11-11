@@ -484,7 +484,7 @@ func TestDryRunGatewayAndUnavailableStatusesAreTransient(t *testing.T) {
 	require.Equal(t, "provider_error", result.Signals[0].Error.Code, "query_dashboard keeps the code it reported before")
 }
 
-func TestDryRunStaleCoversStatTimeseriesAndRichMetricsOnly(t *testing.T) {
+func TestDryRunStaleCoversStatAndTimeseriesOnly(t *testing.T) {
 	provider, _ := newDataProvider(t, func(_ string, end float64) (int, string) {
 		return http.StatusOK, promMatrix(promSeries("up", pair(end-600, "1")))
 	})
@@ -494,13 +494,11 @@ func TestDryRunStaleCoversStatTimeseriesAndRichMetricsOnly(t *testing.T) {
 	rich := widgetAt("rich", "plugin", "rich", "req/s", 0, 4, 12, 4, `"pluginId":"rich-metrics","dataKind":"metrics",`+stale)
 	bar := widgetAt("bar", "bar", "bar", "req/s", 0, 8, 12, 4, stale)
 	report, _ := executeDryRunRequest(t, s, documentOf("demo", series, rich, bar), nil)
-	require.Equal(t, []string{
-		"data.stale /widgets/0/options/staleAfterSeconds",
-		"data.stale /widgets/1/options/staleAfterSeconds",
-	}, dataFindingsOf(report), "bar charts do not honour staleAfterSeconds, so they are not judged")
+	require.Equal(t, []string{"data.stale /widgets/0/options/staleAfterSeconds"}, dataFindingsOf(report),
+		"only timeseries is judged here; the UI marks stale on stat and timeseries alone, and rich metrics use staleAfterSeconds only as a track-end grace")
 	require.Equal(t, "DATA_STATE_STALE", stateOf(report, "/widgets/0"))
-	require.Equal(t, "DATA_STATE_STALE", stateOf(report, "/widgets/1"))
-	require.Equal(t, "DATA_STATE_OK", stateOf(report, "/widgets/2"))
+	require.Equal(t, "DATA_STATE_OK", stateOf(report, "/widgets/1"), "rich metrics make no stale claim")
+	require.Equal(t, "DATA_STATE_OK", stateOf(report, "/widgets/2"), "bar charts do not honour staleAfterSeconds")
 }
 
 // An alert or a comparison filter is often empty by design, so its empty result is
