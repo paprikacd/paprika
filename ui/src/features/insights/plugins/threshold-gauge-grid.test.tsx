@@ -90,6 +90,18 @@ describe("multi-series threshold gauges", () => {
     rerender(<ThresholdGauge widget={{ ...bankWidget, options: { ...bankWidget.options, textColor: "#18293a" } }} result={result} />);
     expect(container.querySelector<HTMLElement>("[data-gauge-value]")!.style.color).toBe("#18293a");
   });
+  it("labels status banks with a glyph chip and leaves hex bands unmarked", () => {
+    const thresholds = [{ value: 0, status: "critical" as const, label: "Critical" }, { value: 30, status: "ok" as const, label: "Healthy" }];
+    const bankWidget = { ...widget, config: { seriesMode: "all", display: "linear", orientation: "horizontal", showStatus: true }, options: { ...widget.options, thresholds } };
+    const { container, unmount } = render(<ThresholdGauge widget={bankWidget} result={result} />);
+    const status = container.querySelector<HTMLElement>("[data-gauge-status]")!;
+    expect(status.querySelector("[data-status]")).toHaveAttribute("data-status", "critical");
+    expect(status.querySelector('[aria-hidden="true"]')).toHaveTextContent("×");
+    unmount();
+    const hex = render(<ThresholdGauge widget={{ ...bankWidget, options: { ...widget.options, thresholds: [{ value: 0, color: "#d05b61", label: "Critical" }, { value: 30, color: "#59a56b", label: "Healthy" }] } }} result={result} />);
+    expect(hex.container.querySelector("[data-status]")).toBeNull();
+    expect(hex.container.querySelector("[data-status-stroke]")).toBeNull();
+  });
   it("keeps radial scale endpoints as readable, non-scaling text without duplicating the meter semantics", () => {
     const { container } = render(<ThresholdGauge widget={{ ...widget, config: { seriesMode: "all", display: "radial" } }} result={result} />);
     const first = container.querySelector('[data-gauge-series="sda1"]')!;

@@ -5,8 +5,9 @@ import { arc, pie } from "d3-shape"
 import { z } from "zod"
 import { EmptyState, MetricDetails, ObservationTooltip, formatMetric, seriesName, thresholdForValue } from "../chart-renderers"
 import { thresholdPaint } from "../status"
+import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip"
 import type { Point, Series } from "../chart-data"
-import type { QueryResult } from "../schema"
+import type { QueryResult, Threshold } from "../schema"
 import { validTimestamp } from "../widget-context"
 import { TooltipInstructions } from "../tooltip-instructions"
 import { useEmbeddedWidget } from "../widget-presentation"
@@ -107,6 +108,24 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
   </div>
 }
 
+/**
+ * Contiguous samples in the same band form one run. A warning or critical run is framed once, so a continuous
+ * period reads as one box rather than separate framed marks with broken stubs between them.
+ */
+function statusRuns(cells: readonly { point: Point; left: number; width: number }[], thresholds: readonly Threshold[]) {
+  const runs: { threshold: Threshold; start: number; end: number; last: number }[] = []
+  cells.forEach((cell, index) => {
+    const value = cell.point.value
+    const threshold = typeof value === "number" && Number.isFinite(value) ? thresholdForValue(value, thresholds) : undefined
+    const start = Math.max(0, cell.left - cell.width / 2), end = Math.min(100, cell.left + cell.width / 2)
+    const previous = runs.at(-1)
+    if (!threshold) return
+    if (previous && previous.threshold === threshold && previous.last === index - 1) { previous.end = end; previous.last = index }
+    else runs.push({ threshold, start, end, last: index })
+  })
+  return runs
+}
+
 export function StatusHistory({ widget,result,onContextChange,embedded }: WidgetRendererProps) {
   const timeZone = useDashboardTimeZone()
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: "medium", timeStyle: "medium" }), [timeZone])
@@ -121,6 +140,11 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   const [state, setState] = useState<{ entry: Series; point: Point; index: number; anchor: HTMLButtonElement; pinned: boolean; revision: QueryResult }>()
   const historyRef = useRef<HTMLDivElement>(null)
   const [keyboardKey, setKeyboardKey] = useState("0-0")
+  // The focused sample that shows a keyboard ring; the ring is its own element, above the run frame.
+  const [ringKey, setRingKey] = useState<string>()
+  // The measured track sizes each mark, so thin marks keep their fill and get no frame.
+  const track = useTrackSize(historyRef, "[data-history-track]", result)
+  const sizeOf = (percent: number) => track && { width: percent / 100 * track.width, height: track.height }
   const active = detailsEnabled && state?.revision === result ? state : undefined
   const clearHide = useCallback(() => clearTimeout(timer.current), [])
   const dismiss = useCallback(() => { clearHide(); interaction.current.panel = false; setState(undefined) }, [clearHide])
@@ -140,6 +164,19 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   if (!data.rows.length) return <EmptyState />
   const keys = data.rows.flatMap((row, rowIndex) => row.cells.map((_, cellIndex) => `${rowIndex}-${cellIndex}`))
   const tabKey = keys.includes(keyboardKey) ? keyboardKey : keys[0]
+  // A focus ring for the focused sample in this row: a tile-coloured gap, then a text-coloured ring, outside the fill.
+  const focusRing = (row: number, cells: readonly { left: number; width: number }[]) => {
+    if (!ringKey?.startsWith(`${row}-`)) return null
+    const cell = cells[Number(ringKey.slice(ringKey.indexOf("-") + 1))]
+    if (!cell) return null
+    const start = Math.max(0, cell.left - cell.width / 2), end = Math.min(100, cell.left + cell.width / 2)
+    return <span aria-hidden="true" data-history-focus-ring="" className={historyStyles.focusRing} style={{ left: `${start}%`, width: `${end - start}%` }} />
+  }
+  const runFrames = (cells: readonly { point: Point; left: number; width: number }[]) => statusRuns(cells, thresholds).flatMap(run => {
+    const size = sizeOf(run.end - run.start), level = statusStrokeLevel(run.threshold, size)
+    return level ? [<span key={`run-${run.start}`} aria-hidden="true" data-status-run={level} data-status-stroke={level} className={historyStyles.run}
+      style={{ left: `${run.start}%`, width: `${run.end - run.start}%`, ...statusStrokeStyle(run.threshold, size) }} />] : []
+  })
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, rowIndex: number, cellIndex: number) => {
     const row = data.rows[rowIndex], current = row.cells[cellIndex]
     let nextRow = rowIndex, nextCell = cellIndex
@@ -163,13 +200,14 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   const activeThreshold = active && typeof active.point.value === "number" ? thresholdForValue(active.point.value, thresholds) : undefined
   const hasMixed = data.rows.some(row => row.bridges.some(bridge => bridge.kind === "mixed"))
   const labelFor = (entry: Series, index: number) => (config.labelField && entry.labels?.[config.labelField]) || seriesName(entry,index)
+  const legendLabel = (threshold: Threshold, index: number) => threshold.label ?? (index === 0 ? thresholds[1] ? `Below ${formatMetric(thresholds[1].value,widget.unit,false,widget.options?.decimals)}` : "All values" : `≥ ${formatMetric(threshold.value,widget.unit,false,widget.options?.decimals)}`)
   const ticks = config.showTimeAxis && data.domain ? statusHistoryTicks(data.domain.start, data.domain.end, timeZone) : []
   return <div className={`${styles.wrapper} ${styles.historyWrapper}`}>{interactive && <span className={historyStyles.srOnly} id={`${id}-keys`}>Use arrow keys to move through history.</span>}<div className={styles.scroll} role="region" aria-label={`${widget.title} history`}><div ref={historyRef} className={`${styles.history} ${historyStyles.lanes}`}>{data.rows.map(({entry,cells,bridges},index) => {
     const name = labelFor(entry,index)
     const chars = Array.from(name), split = chars.length > 10 ? chars.length - 3 : chars.length
-    return <div key={index} className={styles.historyRow} data-history-series={name}><strong title={name} aria-label={name} className={historyStyles.seriesLabel}><span aria-hidden="true">{chars.slice(0,split).join("")}</span>{split < chars.length && <span aria-hidden="true">{chars.slice(split).join("")}</span>}</strong><div className={`${styles.historyCells} ${historyStyles.cells}`} data-segmented={config.segmented || undefined}>{bridges.map((bridge,i) => bridge.kind === "gap" ? null : <span key={`band-${i}`} data-history-band={bridge.kind} className={`${historyStyles.band} ${bridge.kind === "mixed" ? historyStyles.mixed : ""}`} aria-hidden={bridge.kind === "stable" ? true : undefined} role={bridge.kind === "mixed" ? "img" : undefined} aria-label={bridge.kind === "mixed" ? `Changes, missing samples or duplicate timestamps from ${dateFormat.format(bridge.from)} to ${dateFormat.format(bridge.to)}` : undefined} style={{left:`${bridge.left}%`,width:`${bridge.width}%`,...(bridge.kind === "stable" && typeof bridge.value === "number" ? {background:thresholdPaint(thresholdForValue(bridge.value,thresholds)) ?? widget.color ?? "var(--gamma-accent, #53876a)"} : {})}} />)}{cells.map(({point,left,width},i) => {
+    return <div key={index} className={styles.historyRow} data-history-series={name}><strong title={name} aria-label={name} className={historyStyles.seriesLabel}><span aria-hidden="true">{chars.slice(0,split).join("")}</span>{split < chars.length && <span aria-hidden="true">{chars.slice(split).join("")}</span>}</strong><div className={`${styles.historyCells} ${historyStyles.cells}`} data-history-track="" data-segmented={config.segmented || undefined}>{bridges.map((bridge,i) => bridge.kind === "gap" ? null : <span key={`band-${i}`} data-history-band={bridge.kind} className={`${historyStyles.band} ${bridge.kind === "mixed" ? historyStyles.mixed : ""}`} aria-hidden={bridge.kind === "stable" ? true : undefined} role={bridge.kind === "mixed" ? "img" : undefined} aria-label={bridge.kind === "mixed" ? `Changes, missing samples or duplicate timestamps from ${dateFormat.format(bridge.from)} to ${dateFormat.format(bridge.to)}` : undefined} style={{left:`${bridge.left}%`,width:`${bridge.width}%`,...(bridge.kind === "stable" && typeof bridge.value === "number" ? {background:thresholdPaint(thresholdForValue(bridge.value,thresholds)) ?? widget.color ?? "var(--gamma-accent, #53876a)"} : {})}} />)}{cells.map(({point,left,width},i) => {
       const finite = typeof point.value === "number" && Number.isFinite(point.value), threshold = finite ? thresholdForValue(point.value!,thresholds) : undefined
-      const title = `${name} · ${dateFormat.format(point.timestamp)} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : "No data"}${threshold?.label ? ` · ${threshold.label}` : ""}`
+      const title = `${name} · ${dateFormat.format(point.timestamp)} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : "No data"}${threshold && bandReading(threshold, "") ? ` · ${bandReading(threshold, "")}` : ""}`
       const color = finite ? thresholdPaint(threshold) ?? widget.color ?? "var(--gamma-accent, #53876a)" : undefined
       // Keep the portion of an endpoint mark that lies inside the time axis
       // as its actual hit area. A centered mark at 0% or 100% otherwise has
@@ -181,13 +219,13 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
       return <button key={i} type="button" tabIndex={`${index}-${i}` === tabKey ? 0 : -1} aria-label={title} aria-describedby={`${id}-keys${active?.anchor?.dataset.historyKey === `${index}-${i}` ? ` ${id}` : ""}`} aria-pressed={detailsEnabled ? active?.pinned && active.anchor.dataset.historyKey === `${index}-${i}` : undefined} data-history-key={`${index}-${i}`} data-history-edge={edge} data-history-timestamp={point.timestamp} data-history-value={point.value ?? "unknown"} className={`${historyStyles.mark} ${finite ? "" : historyStyles.unknown}`} style={position}
         onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hovered = true; show(entry,point,index,event.currentTarget) } }}
         onPointerLeave={() => { interaction.current.hovered = false; scheduleHide() }}
-        onFocus={event => { setKeyboardKey(`${index}-${i}`); interaction.current.focused = true; show(entry,point,index,event.currentTarget) }}
+        onFocus={event => { setKeyboardKey(`${index}-${i}`); setRingKey(event.currentTarget.matches(":focus-visible") ? `${index}-${i}` : undefined); interaction.current.focused = true; show(entry,point,index,event.currentTarget) }}
         onKeyDown={event => navigate(event,index,i)}
-        onBlur={() => { interaction.current.focused = false; scheduleHide() }}
+        onBlur={() => { setRingKey(undefined); interaction.current.focused = false; scheduleHide() }}
         onClick={event => { onContextChange?.({labels:entry.labels,value:finite ? point.value : null,series:name,timestamp:point.timestamp}); if (active?.pinned && active.anchor === event.currentTarget) dismiss(); else show(entry,point,index,event.currentTarget,true) }} />
-    })}</div></div>
-  })}</div></div>{ticks.length > 0 && <div className={historyStyles.timeAxis} role="group" aria-label={`Status history time scale in ${timeZone}`}><span title={timeZone}>{zoneLabel}</span><div className={historyStyles.tickRow}>{ticks.map((tick,index) => <time key={index} dateTime={new Date(tick.timestamp).toISOString()} title={new Date(tick.timestamp).toISOString()}>{tick.label}</time>)}</div></div>}<div className={`${styles.note} ${historyStyles.footer}`}>{widget.options?.showLegend !== false && <div className={historyStyles.legend} role="group" aria-label="Status history legend">{thresholds.map((threshold,index) => <span key={index}><i style={{background:thresholdPaint(threshold)}} />{threshold.label ?? (index === 0 ? thresholds[1] ? `Below ${formatMetric(thresholds[1].value,widget.unit,false,widget.options?.decimals)}` : "All values" : `≥ ${formatMetric(threshold.value,widget.unit,false,widget.options?.decimals)}`)}</span>)}{!thresholds.length && <span><i style={{background:widget.color ?? "var(--gamma-accent, #53876a)"}} />Observed</span>}<span><i className={historyStyles.unknown} />Unknown</span>{hasMixed && <span><i className={historyStyles.mixed} />Mixed / uncertain</span>}</div>}<span title="Empty intervals are unobserved" aria-label="Earlier to latest; empty intervals are unobserved">Earlier → latest</span>{series.length > maxSeries ? <span>Sampled view · {Math.min(maxSeries,series.length)} of {series.length} series</span> : data.sampled && <span>Sampled</span>}{hasMixed && widget.options?.showLegend === false && <span>Striped intervals: mixed / uncertain</span>}{data.duplicateTimes && <span>Multiple observations share a timestamp</span>}{result.truncated && <span>Partial source response</span>}</div>
-    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample">{activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails><div className={historyStyles.legend}><span>{active.pinned ? "Pinned · tap again to close" : "Click or tap to keep open"}</span><TooltipInstructions /></div></ObservationTooltip>}
+    })}{runFrames(cells)}{focusRing(index, cells)}</div></div>
+  })}</div></div>{ticks.length > 0 && <div className={historyStyles.timeAxis} role="group" aria-label={`Status history time scale in ${timeZone}`}><span title={timeZone}>{zoneLabel}</span><div className={historyStyles.tickRow}>{ticks.map((tick,index) => <time key={index} dateTime={new Date(tick.timestamp).toISOString()} title={new Date(tick.timestamp).toISOString()}>{tick.label}</time>)}</div></div>}<div className={`${styles.note} ${historyStyles.footer}`}>{widget.options?.showLegend !== false && <div className={historyStyles.legend} role="group" aria-label="Status history legend">{thresholds.map((threshold,index) => <span key={index}>{threshold.status ? <StatusChip status={threshold.status} color={threshold.color} label={legendLabel(threshold,index)} /> : <><i style={{background:thresholdPaint(threshold)}} />{legendLabel(threshold,index)}</>}</span>)}{!thresholds.length && <span><i style={{background:widget.color ?? "var(--gamma-accent, #53876a)"}} />Observed</span>}<span><i className={historyStyles.unknown} />Unknown</span>{hasMixed && <span><i className={historyStyles.mixed} />Mixed / uncertain</span>}</div>}<span title="Empty intervals are unobserved" aria-label="Earlier to latest; empty intervals are unobserved">Earlier → latest</span>{series.length > maxSeries ? <span>Sampled view · {Math.min(maxSeries,series.length)} of {series.length} series</span> : data.sampled && <span>Sampled</span>}{hasMixed && widget.options?.showLegend === false && <span>Striped intervals: mixed / uncertain</span>}{data.duplicateTimes && <span>Multiple observations share a timestamp</span>}{result.truncated && <span>Partial source response</span>}</div>
+    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample">{activeThreshold?.status ? <StatusChip status={activeThreshold.status} color={activeThreshold.color} label={activeThreshold.label} /> : activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails><div className={historyStyles.legend}><span>{active.pinned ? "Pinned · tap again to close" : "Click or tap to keep open"}</span><TooltipInstructions /></div></ObservationTooltip>}
   </div>
 }
 

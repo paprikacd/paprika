@@ -4,14 +4,33 @@ import { GammaButton } from "../gamma/button"
 import { GammaInput } from "../gamma/input"
 import { GammaSelect } from "../gamma/select"
 import { GammaSwitch } from "../gamma/switch"
+import { useInsightsTheme } from "../insights-theme"
+import { statusLevels, type StatusLevel, type StatusMark } from "../status"
+import { StatusMarkFields } from "../status-mark-fields"
 import editorStyles from "../editor.module.css"
 import styles from "./record-table-style-editor.module.css"
+
+/** Reads a mapping's stored status and hue, ignoring anything the schema would reject. */
+function markOf(mapping: Record<string, unknown>): StatusMark {
+  const status = statusLevels.find(level => level === mapping.status) as StatusLevel | undefined
+  const color = typeof mapping.color === "string" && /^#[\da-f]{6}$/i.test(mapping.color) ? mapping.color : undefined
+  return { status, color }
+}
+
+/** Writes a status and hue, keeping the exact value and omitting absent keys. */
+function withMark(mapping: Record<string, unknown>, mark: StatusMark): Record<string, unknown> {
+  const next: Record<string, unknown> = { value: mapping.value }
+  if (mark.status !== undefined) next.status = mark.status
+  if (mark.color !== undefined) next.color = mark.color
+  return next
+}
 
 /** Guided column rules edit the same JSON draft as the advanced editor. */
 export function RecordTableStyleEditor({ config, onChange }: {
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
 }) {
+  const { resolvedTheme } = useInsightsTheme()
   const raw = config.cellStyles ?? []
   const editable = Array.isArray(raw) && raw.length <= 16 && raw.every(entry => entry && typeof entry === "object" && !Array.isArray(entry))
   const entries: Record<string, unknown>[] = editable ? raw : []
@@ -74,18 +93,19 @@ export function RecordTableStyleEditor({ config, onChange }: {
           onChange={event => updateEntry(index, { unit: event.target.value || undefined })} />
       </label>}
       {entry.display === "status-badge" && <div className={editorStyles.stack}>
-        <p className={editorStyles.hint}>Match exact text from the result. Unmapped and missing values remain neutral and retain their original text.</p>
+        <p className={editorStyles.hint}>Match exact text from the result and pick a status; a hue override changes only the glyph colour. Unmapped and missing values remain neutral and retain their original text.</p>
         {(Array.isArray(entry.mappings) ? entry.mappings : []).map((raw, mappingIndex) => {
           const mapping = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
           const mappings = entry.mappings as unknown[]
           const change = (patch: Record<string, unknown>) => updateEntry(index, { mappings: mappings.map((current, i) => i === mappingIndex ? { ...mapping, ...patch } : current) })
-          return <fieldset className={styles.mapping} key={mappingIndex}><legend>Status {mappingIndex + 1}</legend>
-            <label className={editorStyles.field}>Exact value<GammaInput aria-label={`Column ${index + 1} status ${mappingIndex + 1} value`} value={typeof mapping.value === "string" ? mapping.value : ""} maxLength={128} onChange={event => change({ value: event.target.value })} /></label>
-            <label className={editorStyles.field}>Indicator color<GammaInput aria-label={`Column ${index + 1} status ${mappingIndex + 1} color`} value={typeof mapping.color === "string" ? mapping.color : ""} maxLength={7} placeholder="#20cba3" onChange={event => change({ color: event.target.value })} /></label>
-            <GammaButton size="sm" variant="quiet" aria-label={`Remove column ${index + 1} status ${mappingIndex + 1}`} onClick={() => updateEntry(index, { mappings: mappings.filter((_, i) => i !== mappingIndex) })}>Remove status</GammaButton>
+          return <fieldset className={styles.mapping} key={mappingIndex}><legend>Mapping {mappingIndex + 1}</legend>
+            <label className={editorStyles.field}>Exact value<GammaInput aria-label={`Column ${index + 1} mapping ${mappingIndex + 1} value`} value={typeof mapping.value === "string" ? mapping.value : ""} maxLength={128} onChange={event => change({ value: event.target.value })} /></label>
+            <StatusMarkFields name={`Column ${index + 1} mapping ${mappingIndex + 1}`} mark={markOf(mapping)} theme={resolvedTheme}
+              onChange={mark => updateEntry(index, { mappings: mappings.map((current, i) => i === mappingIndex ? withMark(mapping, mark) : current) })} />
+            <GammaButton size="sm" variant="quiet" aria-label={`Remove column ${index + 1} mapping ${mappingIndex + 1}`} onClick={() => updateEntry(index, { mappings: mappings.filter((_, i) => i !== mappingIndex) })}>Remove mapping</GammaButton>
           </fieldset>
         })}
-        <GammaButton size="sm" disabled={Array.isArray(entry.mappings) && entry.mappings.length >= 16} onClick={() => updateEntry(index, { mappings: [...(Array.isArray(entry.mappings) ? entry.mappings : []), { value: "", color: "#20cba3" }] })}>Add status</GammaButton>
+        <GammaButton size="sm" disabled={Array.isArray(entry.mappings) && entry.mappings.length >= 16} onClick={() => updateEntry(index, { mappings: [...(Array.isArray(entry.mappings) ? entry.mappings : []), { value: "", status: "ok" }] })}>Add mapping</GammaButton>
       </div>}
       {entry.display === "sparkline" && <>
         <label className={editorStyles.field}>History unit (optional)

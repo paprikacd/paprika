@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
+import { fillFloor, markFillEvidence } from "./fixtures/mark-fill.mjs"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const output = join(root,"artifacts/insights/status-grid")
@@ -20,7 +21,11 @@ try {
     page.on("request",request=>{if(!request.url().startsWith(base)&&!request.url().startsWith("data:"))external.push(request.url())})
     const dashboard = fixture.documents.get("example-artboard-service-pulse"), widget = dashboard.widgets.find(widget=>widget.id==="states")
     widget.title = "Current monitor status"; widget.pluginId = "status-grid"; widget.config = {maxSeries:256}
-    widget.options = { thresholds:[{value:0,color:"#e05e61",label:"Down"},{value:1,color:"#4abb74",label:"Healthy"}],showLegend:true,showTooltip:true }
+    // Wide: status bands, so the level is in names and frames. Narrow: the authored hex bands, kept as a regression case.
+    const statusBands = width === 1512
+    widget.options = { thresholds: statusBands
+      ? [{value:0,status:"critical",label:"Down"},{value:1,status:"ok",label:"Healthy"}]
+      : [{value:0,color:"#e05e61",label:"Down"},{value:1,color:"#4abb74",label:"Healthy"}], showLegend:true,showTooltip:true }
     await page.route("**/api/insights/query",async route=>{
       const request=route.request().postDataJSON()
       if(!request.query.startsWith("paprika_example_ab_service_pulse_states{"))return route.fallback()
@@ -43,6 +48,18 @@ try {
     await page.mouse.move(box.x+box.width/2,box.y+box.height/2)
     const tooltip=page.getByRole("tooltip"); await tooltip.waitFor()
     assert.match(await tooltip.innerText(),/Down/)
+    if (statusBands) {
+      const down = cells.nth(1), healthy = cells.nth(2), glyph = tooltip.locator('[data-status="critical"] [aria-hidden="true"]')
+      assert.match(await down.getAttribute("aria-label"), /monitor-001: 0 · Down · Critical/, "A labelled status band names its level in the cell")
+      assert.equal(await down.getAttribute("data-status-stroke"), "critical", "A critical cell of 12 px or more keeps its ink frame")
+      assert.equal(await healthy.getAttribute("data-status-stroke"), null, "An ok band has no frame")
+      assert.equal(await glyph.innerText(), "×", "The tooltip shows the critical glyph")
+      const offset = await glyph.evaluate(node => { const box = node.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(node); const text = range.getBoundingClientRect(); return Math.abs((text.left + text.right) / 2 - (box.left + box.right) / 2) + Math.abs((text.top + text.bottom) / 2 - (box.top + box.bottom) / 2) })
+      assert.ok(offset <= 1.5, `The glyph sits in the centre of its mark (${offset.toFixed(2)}px off)`)
+    } else {
+      assert.equal(await cells.nth(1).getAttribute("data-status-stroke"), null, "Hex-only bands get no frame")
+      assert.equal(await tooltip.locator("[data-status]").count(), 0, "Hex-only bands show no glyph chip")
+    }
     assert.equal(await tooltip.locator("[data-metric-value]").getAttribute("data-metric-value"),"0")
     const geometry=await tooltip.evaluate(node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight,parent:node.parentElement===document.body}})
     assert.ok(geometry.parent && geometry.left>=0 && geometry.top>=0 && geometry.right<=geometry.width+1 && geometry.bottom<=geometry.height+1,"Tooltip escapes the widget and fits in the viewport")
@@ -67,6 +84,15 @@ try {
     await host.scrollIntoViewIfNeeded()
     await page.keyboard.press("Escape")
     await page.getByRole("tooltip").waitFor({state:"hidden"})
+    if (statusBands) {
+      // A critical cell at 1512 px is 12 px or more, so it is framed; its frame must leave at least half its sampled area as fill.
+      await page.mouse.move(0,0)
+      const critical = await markFillEvidence(page, cells.nth(1))
+      assert.equal(critical.framed, true, "A critical 12 px cell keeps its frame")
+      assert.equal(critical.centreIsFill, true, `The framed critical cell's centre is its fill: ${JSON.stringify(critical)}`)
+      assert.ok(critical.total > 0 && critical.fill / critical.total >= fillFloor(critical), `Framed critical cell fill ${(critical.fill / critical.total).toFixed(2)} is below ${fillFloor(critical)}`)
+      console.log(`  monitor grid ${theme} ${width}px: critical cell ${critical.framed ? "framed" : "unframed"}, fill ${(critical.fill / critical.total).toFixed(2)}`)
+    }
     await page.screenshot({path:join(output,`${theme.toLowerCase()}-${width}.png`),fullPage:false,animations:"disabled"})
     await context.close(); console.log(`PASS ${theme} ${width}px monitor status grid`)
   }

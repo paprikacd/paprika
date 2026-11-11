@@ -2,7 +2,7 @@
 // These fixtures are not application templates or a production data source.
 const end = Date.parse("2026-10-28T12:00:00Z");
 const day = 86400000;
-const thresholds = [{ value: 0, color: "#cb5a5e", label: "Unavailable" }, { value: 1, color: "#50b878", label: "Available" }];
+const thresholds = [{ value: 0, status: "critical", label: "Unavailable" }, { value: 1, status: "ok", label: "Available" }];
 const variable = { name: "scope", label: "Environment", defaultValue: "production", options: ["production", "staging"] };
 export const uptimeExampleQueries = ["monitors", "history"].map(kind => ({
   schemaVersion: 1, id: `uptime-example-${kind}`, name: `Sample ${kind} observations`,
