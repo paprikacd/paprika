@@ -1,7 +1,11 @@
 import { act, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { MAX_DASHBOARD_URL_LENGTH, type DashboardNavigation } from "./drilldown"
-import { readDashboardView, serialiseDashboardView, useDashboardView, VIEW_HISTORY, type ViewAction } from "./dashboard-view"
+import { dashboardSchema } from "./schema"
+import {
+  readDashboardLink, readDashboardView, serialiseDashboardView, useDashboardView, VIEW_HISTORY,
+  viewDiffersFromDefaults, viewedDashboard, type ViewAction,
+} from "./dashboard-view"
 
 const ROUTE = "/dashboard/insights/"
 const range = { from: "2026-01-01T00:00:00.000Z", to: "2026-01-01T01:00:00.000Z" }
@@ -54,12 +58,25 @@ describe("readDashboardView", () => {
   it.each([
     ["not JSON", "%7Bnope"],
     ["an array", "%5B%5D"],
-    ["a number value", "%7B%22env%22%3A1%7D"],
-    ["a nested value", "%7B%22env%22%3A%7B%22x%22%3A%22y%22%7D%7D"],
-    ["an invalid name", "%7B%22bad-name%22%3A%22x%22%7D"],
   ])("rejects variables that are %s", (_label, encoded) => {
     setAddress(`?dashboard=ops&vars=${encoded}`)
     expect(() => readDashboardView()).toThrow("Dashboard URL variables must be valid named string values")
+  })
+
+  it.each([
+    ["a number value", "%7B%22env%22%3A1%7D", "env"],
+    ["a nested value", "%7B%22env%22%3A%7B%22x%22%3A%22y%22%7D%7D", "env"],
+    ["an invalid name", "%7B%22bad-name%22%3A%22x%22%7D", "bad-name"],
+    ["a reserved name", "%7B%22__proto__%22%3A%22x%22%7D", "__proto__"],
+  ])("reports variables that are %s as rejected instead of applying them", (_label, encoded, name) => {
+    setAddress(`?dashboard=ops&vars=${encoded}`)
+    expect(readDashboardLink()).toEqual({ navigation: { dashboardId: "ops", variables: {} }, rejected: [{ kind: "variable", name }] })
+    expect(readDashboardView()).toEqual({ dashboardId: "ops", variables: {} })
+  })
+
+  it("reports an unknown refresh and keeps the rest of the view", () => {
+    setAddress("?dashboard=ops&range=6h&refresh=45")
+    expect(readDashboardLink()).toEqual({ navigation: { dashboardId: "ops", range: "6h" }, rejected: [{ kind: "setting", name: "refresh", value: "45" }] })
   })
 
   it("rejects an address longer than the URL limit", () => {
@@ -139,8 +156,8 @@ describe("view round trips", () => {
 describe("VIEW_HISTORY", () => {
   it("records every action as push, replace or none", () => {
     expect(VIEW_HISTORY).toEqual({
-      load: "replace", keep: "none", prune: "replace", variables: "replace", selection: "replace", brush: "replace",
-      range: "replace", reset: "replace", recover: "replace", navigate: "push", popstate: "none",
+      load: "replace", keep: "none", prune: "replace", variables: "push", selection: "push", brush: "push",
+      range: "replace", refresh: "replace", reset: "replace", recover: "replace", navigate: "push", popstate: "none",
     } satisfies Record<ViewAction, string>)
   })
 })
@@ -155,8 +172,10 @@ describe("useDashboardView", () => {
     expect(pushState).toHaveBeenLastCalledWith(window.history.state, "", `${ROUTE}?dashboard=ops`)
 
     act(() => result.current.apply({ dashboardId: "ops", variables: { env: "prod" } }, "variables"))
-    expect(replaceState).toHaveBeenLastCalledWith(window.history.state, "", `${ROUTE}?dashboard=ops&vars=%7B%22env%22%3A%22prod%22%7D`)
-    expect(pushState).toHaveBeenCalledTimes(1)
+    expect(pushState).toHaveBeenLastCalledWith(window.history.state, "", `${ROUTE}?dashboard=ops&vars=%7B%22env%22%3A%22prod%22%7D`)
+    act(() => result.current.apply({ dashboardId: "ops", range: "6h" }, "range"))
+    expect(replaceState).toHaveBeenLastCalledWith(window.history.state, "", `${ROUTE}?dashboard=ops&range=6h`)
+    expect(pushState).toHaveBeenCalledTimes(2)
     expect(replaceState).toHaveBeenCalledTimes(1)
   })
 
@@ -184,6 +203,17 @@ describe("useDashboardView", () => {
     expect(result.current.current).toBeUndefined()
     act(() => result.current.apply({ dashboardId: "ops", customTimeRange: range }, "brush"))
     expect(result.current.current).toEqual({ dashboardId: "ops", customTimeRange: range })
+  })
+
+  it("adds no Back entry when a push would leave the address unchanged", () => {
+    const pushState = vi.spyOn(window.history, "pushState")
+    const { result } = renderHook(() => useDashboardView("ops", false))
+    act(() => result.current.apply({ dashboardId: "ops", variables: { env: "prod" } }, "selection"))
+    act(() => result.current.apply({ dashboardId: "ops", variables: { env: "prod" } }, "selection"))
+    expect(pushState).toHaveBeenCalledTimes(1)
+    act(() => result.current.apply({ dashboardId: "ops", variables: { env: "staging" } }, "selection"))
+    expect(pushState).toHaveBeenCalledTimes(2)
+    expect(result.current.current).toEqual({ dashboardId: "ops", variables: { env: "staging" } })
   })
 
   it("sets the view without writing the address for none-recorded actions", () => {
@@ -236,3 +266,36 @@ describe("useDashboardView", () => {
     expect(result.current.current).toEqual({ dashboardId: "ops", variables: { env: "prod" } })
   })
 })
+
+describe("viewedDashboard and viewDiffersFromDefaults", () => {
+  const saved = dashboardSchema.parse({
+    schemaVersion: 1, id: "ops", title: "Ops", timeRange: "1h", refreshInterval: 0, widgets: [],
+  })
+  const fixed = { from: "2026-01-01T00:00:00.000Z", to: "2026-01-01T01:00:00.000Z" }
+
+  it("shows the saved defaults when the view names nothing", () => {
+    expect(viewedDashboard(saved, undefined)).toBe(saved)
+    expect(viewedDashboard(saved, { dashboardId: "ops" })).toBe(saved)
+    expect(viewDiffersFromDefaults(saved, viewedDashboard(saved, { dashboardId: "ops" }))).toBe(false)
+  })
+
+  it("replaces the saved preset with the view's preset and clears a saved fixed window for it", () => {
+    const withFixed = { ...saved, customTimeRange: fixed }
+    const viewed = viewedDashboard(withFixed, { dashboardId: "ops", range: "6h" })
+    expect(viewed).toMatchObject({ timeRange: "6h", customTimeRange: undefined })
+    expect(withFixed.customTimeRange).toEqual(fixed)
+    expect(viewDiffersFromDefaults(withFixed, viewed)).toBe(true)
+  })
+
+  it("shows a fixed window and a view refresh without touching the document", () => {
+    const viewed = viewedDashboard(saved, { dashboardId: "ops", customTimeRange: fixed, refresh: 30 })
+    expect(viewed).toMatchObject({ timeRange: "1h", customTimeRange: fixed, refreshInterval: 30 })
+    expect(saved.refreshInterval).toBe(0)
+    expect(viewDiffersFromDefaults(saved, viewed)).toBe(true)
+  })
+
+  it("reports no difference when the view equals the saved defaults", () => {
+    expect(viewDiffersFromDefaults(saved, viewedDashboard(saved, { dashboardId: "ops", range: "1h", refresh: 0 }))).toBe(false)
+  })
+})
+

@@ -21,12 +21,21 @@ function localInput(date: Date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
 
+/** A window choice: a relative preset (customTimeRange undefined) or a fixed window. */
+export type TimeRangeChoice = Pick<Dashboard, "timeRange" | "customTimeRange">
+
+/**
+ * Chooses the window for whatever view it is given. It never edits a saved dashboard
+ * by itself: the owner decides what the choice changes. Returning false keeps the
+ * popover open because the choice was not applied.
+ */
 export function TimeRangeControl({
   dashboard,
   onChange,
 }: {
+  /** The dashboard as this view shows it, so the current window is the one displayed. */
   dashboard: Dashboard
-  onChange: (range: Pick<Dashboard, "timeRange" | "customTimeRange">) => void
+  onChange: (choice: TimeRangeChoice) => boolean | void
 }) {
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
@@ -58,13 +67,7 @@ export function TimeRangeControl({
           value={custom ? "custom" : dashboard.timeRange}
           onValueChange={(value) => {
             if (value === "custom") openRange()
-            else {
-              onChange({
-                timeRange: value as Dashboard["timeRange"],
-                customTimeRange: undefined,
-              })
-              setOpen(false)
-            }
+            else if (onChange({ timeRange: value as Dashboard["timeRange"], customTimeRange: undefined }) !== false) setOpen(false)
           }}
           options={[
             {value: "15m", label: "Last 15 minutes"},
@@ -117,11 +120,7 @@ export function TimeRangeControl({
                   from: new Date(from).toISOString(),
                   to: new Date(to).toISOString(),
                 })
-                onChange({
-                  timeRange: dashboard.timeRange,
-                  customTimeRange: range,
-                })
-                close()
+                if (onChange({ timeRange: dashboard.timeRange, customTimeRange: range }) !== false) close()
               } catch {
                 setError("Choose valid dates with the end after the start, within 31 days.")
               }

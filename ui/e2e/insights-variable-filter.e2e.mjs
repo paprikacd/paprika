@@ -222,6 +222,15 @@ try {
         return { before, after, exactProviderQuery: exactQuery(services[1]), valueContrast, fieldContrast, optionContrast, viewport: bounds, compactGeometry: { filter: filterBounds, time: timeBounds, card: cardBounds }, persistedDefaultUnchanged: true }
       })
     }
+    await check(`Back steps to the previous filter value at ${width}px`, async () => {
+      // Each dropdown change is a history step: Back from B returns to A, not to the previous page.
+      await selectGammaOption(page, serviceSelect(), services[2]); await expectService(services[2])
+      await selectGammaOption(page, serviceSelect(), services[3]); await expectService(services[3])
+      await page.goBack({ waitUntil: "networkidle" })
+      await expectService(services[2])
+      assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get("vars")), { service: services[2] })
+      return { backTo: services[2] }
+    })
     await check(`Filter values, precision and theme survive reload and navigation at ${width}px`, async () => {
       await selectGammaOption(page, serviceSelect(), services[4]); await expectService(services[4])
       await page.reload({ waitUntil: "networkidle" }); await expectService(services[4])
