@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // widgetJSON builds one widget object. The extra fragment is spliced into the
@@ -38,7 +39,7 @@ func findingsFor(t *testing.T, document Dashboard) []json.RawMessage {
 	return out
 }
 
-func TestSchemaFindingsPointNestedOptionsAtTheirPath(t *testing.T) {
+func TestSchemaFindingsPointWidgetOptionFailuresAtTheWidget(t *testing.T) {
 	thresholds := `"options":{"thresholds":[{"value":10,"color":"#111111"},{"value":20,"color":"red"}]}`
 	document := documentWithWidgets("demo", widgetJSON("requests", "", ""), widgetJSON("latency", "", thresholds))
 	findings := schemaFindings("demo", document)
@@ -46,23 +47,14 @@ func TestSchemaFindingsPointNestedOptionsAtTheirPath(t *testing.T) {
 		t.Fatalf("findings = %d, want 1", len(findings))
 	}
 	got := findings[0]
-	if got.GetPointer() != "/widgets/1/options/thresholds/1" {
-		t.Fatalf("pointer = %q", got.GetPointer())
-	}
-	if got.GetWidgetId() != "latency" || got.GetRuleId() != "schema.widget.options" {
-		t.Fatalf("widget or rule = %q %q", got.GetWidgetId(), got.GetRuleId())
+	if got.GetPointer() != "/widgets/1" || got.GetRuleId() != "schema.widget.shape" || got.GetWidgetId() != "latency" {
+		t.Fatalf("finding = pointer %q rule %q widget %q", got.GetPointer(), got.GetRuleId(), got.GetWidgetId())
 	}
 	if got.GetMessage() != "thresholds require increasing finite values, hex colors, and labels up to 80 characters" {
 		t.Fatalf("message = %q", got.GetMessage())
 	}
 	if validateDashboard("demo", document).Error() != got.GetMessage() {
 		t.Fatalf("first error must match the save error: %v", validateDashboard("demo", document))
-	}
-
-	statBar := `"options":{"showStatBar":true,"max":100}`
-	findings = schemaFindings("demo", documentWithWidgets("demo", widgetJSON("usage", "", statBar)))
-	if len(findings) != 1 || findings[0].GetPointer() != "/widgets/0/options/showStatBar" {
-		t.Fatalf("stat bar finding = %v", findings)
 	}
 }
 
@@ -79,6 +71,53 @@ func TestSchemaFindingsNameWidgetLayoutAndDuplicateIDs(t *testing.T) {
 	duplicate := findings[1]
 	if duplicate.GetPointer() != "/widgets/1/id" || duplicate.GetMessage() != "widget ids must be valid and unique" || duplicate.GetRuleId() != "schema.widget.id" {
 		t.Fatalf("duplicate finding = %+v", duplicate)
+	}
+}
+
+// A broken shape in one widget must not hide the content checks on the others.
+func TestSchemaFindingsReportEveryWidgetWhoseShapePasses(t *testing.T) {
+	document := documentWithWidgets("demo",
+		widgetJSON("a", "", `"options":{"decimals":99}`),
+		widgetJSON("b", `{"x":0,"y":0,"w":0,"h":4}`, ""),
+		widgetJSON("c", "", `"type":"bogus"`),
+		widgetJSON("d", "", `"options":{"thresholds":[{"value":1}]},"unknownField":true`),
+		widgetJSON("e", `{"x":0,"y":0,"w":13,"h":4}`, ""),
+	)
+	findings := schemaFindings("demo", document)
+	type want struct{ pointer, rule string }
+	// Shape failures come first, in widget order, so the first finding is the
+	// one the save reported before; content findings follow for the other widgets.
+	expected := []want{
+		{"/widgets/0", "schema.widget.shape"},
+		{"/widgets/3", "schema.widget.shape"},
+		{"/widgets/1/layout", "schema.widget.layout"},
+		{"/widgets/2/type", "schema.widget.type"},
+		{"/widgets/4/layout", "schema.widget.layout"},
+	}
+	if len(findings) != len(expected) {
+		t.Fatalf("findings = %d, want %d", len(findings), len(expected))
+	}
+	for i, w := range expected {
+		if findings[i].GetPointer() != w.pointer || findings[i].GetRuleId() != w.rule {
+			t.Fatalf("finding %d = pointer %q rule %q, want %q %q", i, findings[i].GetPointer(), findings[i].GetRuleId(), w.pointer, w.rule)
+		}
+	}
+	if validateDashboard("demo", document).Error() != findings[0].GetMessage() {
+		t.Fatalf("first finding must stay the save error")
+	}
+}
+
+func TestSchemaFindingsAreDeterministic(t *testing.T) {
+	document := documentWithWidgets("demo", widgetJSON("w", "", `"zeta":1,"alpha":2,"mid":3`))
+	first := schemaFindings("demo", document)
+	if len(first) != 1 || first[0].GetMessage() != `unknown dashboard field "alpha"` {
+		t.Fatalf("first = %v", first)
+	}
+	for i := 0; i < 50; i++ {
+		again := schemaFindings("demo", document)
+		if again[0].GetMessage() != first[0].GetMessage() || again[0].GetPointer() != first[0].GetPointer() {
+			t.Fatalf("finding changed between calls: %q", again[0].GetMessage())
+		}
 	}
 }
 
@@ -106,8 +145,8 @@ func TestSchemaFindingsKeepReportedKeysBounded(t *testing.T) {
 	if len([]rune(got.GetMessage())) > maxFindingMessageRunes {
 		t.Fatalf("message length = %d", len([]rune(got.GetMessage())))
 	}
-	if len(got.GetPointer()) > maxFindingPointerBytes || got.GetRuleId() != "schema.widget" {
-		t.Fatalf("pointer = %d bytes, rule = %q", len(got.GetPointer()), got.GetRuleId())
+	if got.GetPointer() != "/widgets/0" || got.GetRuleId() != "schema.widget.shape" {
+		t.Fatalf("pointer %q rule %q", got.GetPointer(), got.GetRuleId())
 	}
 }
 
@@ -130,24 +169,56 @@ func TestSchemaFindingsCapReportAtThirtyTwo(t *testing.T) {
 	}
 }
 
-func TestRuleForPointerNamesOnlyKnownFields(t *testing.T) {
-	for pointer, want := range map[string]string{
-		"":                      "schema.document",
-		"/widgets":              "schema.widgets",
-		"/widgets/3":            "schema.widget",
-		"/widgets/3/layout":     "schema.widget.layout",
-		"/widgets/3/options/x":  "schema.widget.options",
-		"/widgets/3/invented":   "schema.widget",
-		"/timeRange":            "schema.document.timeRange",
-		"/invented":             "schema.document",
-		"/widgets/3/quoted/\"x": "schema.widget",
-	} {
-		if got := ruleForPointer(pointer); got != want {
-			t.Errorf("ruleForPointer(%q) = %q, want %q", pointer, got, want)
+// adversarialDocument builds a document near the 256 KiB limit that is
+// expensive to check: long arrays inside options, thousands of unknown keys,
+// and widgets that each fail in a different place.
+func adversarialDocument(t *testing.T) Dashboard {
+	t.Helper()
+	var widgets []string
+	for i := 0; i < 40; i++ {
+		id := fmt.Sprintf("w%02d", i)
+		switch i % 4 {
+		case 0:
+			widgets = append(widgets, widgetJSON(id, "", `"options":{"referenceLines":[`+zeroArray(1100)+`]}`))
+		case 1:
+			widgets = append(widgets, widgetJSON(id, "", `"options":{`+unknownKeyObject(260)+`}`))
+		case 2:
+			widgets = append(widgets, widgetJSON(id, `{"x":0,"y":0,"w":0,"h":4}`, `"options":{"thresholds":[`+zeroArray(400)+`]}`))
+		default:
+			widgets = append(widgets, widgetJSON(id, "", `"options":{"decimals":99,"tags":[`+zeroArray(300)+`]},"extra":{`+unknownKeyObject(200)+`}`))
 		}
 	}
-	if got := escapePointerToken("a/b~c"); got != "a~1b~0c" {
-		t.Fatalf("escapePointerToken = %q", got)
+	document := documentWithWidgets("demo", widgets...)
+	if len(document) > maxDocumentBytes {
+		t.Fatalf("adversarial document is %d bytes, over the %d limit", len(document), maxDocumentBytes)
+	}
+	return document
+}
+
+func zeroArray(n int) string {
+	return strings.TrimSuffix(strings.Repeat("0,", n), ",")
+}
+
+func unknownKeyObject(n int) string {
+	parts := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		parts = append(parts, fmt.Sprintf(`"key%05d":0`, i))
+	}
+	return strings.Join(parts, ",")
+}
+
+// Validation of the largest allowed document must stay cheap: the cost is linear
+// in its size, so a hostile document cannot hold a request for long.
+func TestSchemaFindingsCostIsBoundedForLargeDocuments(t *testing.T) {
+	document := adversarialDocument(t)
+	start := time.Now()
+	findings := schemaFindings("demo", document)
+	elapsed := time.Since(start)
+	if len(findings) == 0 {
+		t.Fatal("adversarial document must fail validation")
+	}
+	if elapsed > time.Second {
+		t.Fatalf("validating a %d byte document took %s", len(document), elapsed)
 	}
 }
 
@@ -202,7 +273,7 @@ func TestDashboardSaveRejectionCarriesBoundedIssues(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || w.Code != 400 {
 		t.Fatalf("nested status %d body %s err %v", w.Code, w.Body, err)
 	}
-	if len(body.Issues) != 1 || body.Issues[0]["pointer"] != "/widgets/0/options/thresholds/1" || body.Total != 1 {
+	if len(body.Issues) != 1 || body.Issues[0]["pointer"] != "/widgets/0" || body.Total != 1 {
 		t.Fatalf("nested body = %+v", body)
 	}
 }

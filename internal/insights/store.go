@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -270,7 +272,9 @@ func requireObjectShape(data json.RawMessage, required, optional []string) (map[
 	for _, key := range optional {
 		allowed[key] = true
 	}
-	for key, value := range object {
+	// Sorted keys make the first reported field the same on every call.
+	for _, key := range slices.Sorted(maps.Keys(object)) {
+		value := object[key]
 		if !allowed[key] {
 			return nil, fmt.Errorf("unknown dashboard field %q", key)
 		}
