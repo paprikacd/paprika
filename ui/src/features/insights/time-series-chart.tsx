@@ -187,6 +187,8 @@ export function TimeSeriesChart({
     [descriptionId],
   );
   const ticks = responsiveChartTicks(width, height);
+  // Without an axis the height sets the count, as the chart always has, so the domain keeps its tick density.
+  const yCount = showAxis ? ticks.y : Math.max(2, Math.min(7, Math.floor((height - 16) / 48)));
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
@@ -196,8 +198,8 @@ export function TimeSeriesChart({
   const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
   const domain = useMemo(
-    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options, ticks.y),
-    [visibleSeries, prior, options, ticks.y],
+    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options, yCount),
+    [visibleSeries, prior, options, yCount],
   );
   const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, widget.color, options.seriesColors]);
   const data = useMemo(
@@ -277,9 +279,11 @@ export function TimeSeriesChart({
   // The axis labels follow the domain the chart draws: the resolved one, or the nice extent of the plotted values.
   const plottedValues = useMemo(() => [...data, ...previousData].flatMap(entry => entry.points.flatMap(point => typeof point.value === "number" ? [point.value] : [])), [data, previousData]);
   // The chart draws exactly this domain, so its ticks and labels cannot diverge (flat series included).
-  const axisDomain = useMemo<[number, number]>(() => domain ?? autoAxisDomain(plottedValues, ticks.y, options.display === "area"), [domain, plottedValues, ticks.y, options.display]);
-  const yAxis = useMemo(() => chartYAxisLayout(plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, ticks.y), [plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, ticks.y]);
+  const axisDomain = useMemo<[number, number]>(() => domain ?? autoAxisDomain(plottedValues, yCount, options.display === "area"), [domain, plottedValues, yCount, options.display]);
+  const yAxis = useMemo(() => chartYAxisLayout(plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, yCount), [plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, yCount]);
   const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
+  // The chart draws the domain the labels were computed for, and gridlines at exactly the labelled ticks.
+  const plotDomain = yScale.domain;
   // Plot insets: the TanStack margins and every overlay (cursor, bands, events, brush) map time through these bounds.
   const { left: plotLeft, right: plotRight, plotWidth } = horizontalPlotBounds(width, !showAxis ? 8 : options.plotInsetLeft ?? axisLeft, !showAxis ? 8 : options.plotInsetRight ?? 12);
   const xAt = (time: number) => timeDomain ? temporalPosition(time, timeDomain[0], timeDomain[1], plotLeft, plotLeft + plotWidth) : 0;
@@ -397,7 +401,7 @@ export function TimeSeriesChart({
                 },
           },
           y: {
-            scale: scaleLinear().domain(axisDomain),
+            scale: scaleLinear().domain(plotDomain),
             nice: false,
             grid:
               options.showGrid === false
@@ -413,7 +417,7 @@ export function TimeSeriesChart({
                     : undefined,
                   line: false,
                   ticks: {
-                    count: ticks.y,
+                    values: yScale.ticks,
                     line: false,
                     format: (value: number) => yScale.label(value, !separateUnit),
                   },
@@ -458,10 +462,9 @@ export function TimeSeriesChart({
       widget.unit,
       separateUnit,
       yScale,
-      axisDomain,
+      plotDomain,
       options,
       ticks.x,
-      ticks.y,
       height,
       timeSpan,
       timeDomain,
@@ -523,17 +526,17 @@ export function TimeSeriesChart({
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => {
-          const top = eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= plotDomain[0] && threshold.value <= plotDomain[1]).map((threshold, index) => {
+          const top = eventTop + (plotDomain[1] - threshold.value) / (plotDomain[1] - plotDomain[0]) * Math.max(0, height - eventTop - eventBottom);
           // The label sits above its line at the left end, where the newest data on the right is never covered.
           // It moves below the line when there is less than 16px above it inside the plot.
           return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
         })}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.referenceLines ?? []).filter(reference => reference.value >= domain[0] && reference.value <= domain[1]).map((reference, index) => {
-          const top = eventTop + (domain[1] - reference.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && (options.referenceLines ?? []).filter(reference => reference.value >= plotDomain[0] && reference.value <= plotDomain[1]).map((reference, index) => {
+          const top = eventTop + (plotDomain[1] - reference.value) / (plotDomain[1] - plotDomain[0]) * Math.max(0, height - eventTop - eventBottom);
           return <span key={`reference-${index}`} role="img" aria-label={`${reference.label ?? "Reference"}: ${formatMetric(reference.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-reference-value={reference.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: reference.color ?? "var(--gamma-warning)" }}><span aria-hidden="true">{reference.label ?? formatMetric(reference.value, widget.unit, false, options.decimals)}</span></span>;
         })}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && options.showZeroLine && domain[0] <= 0 && domain[1] >= 0 && <span aria-hidden="true" className={chartStyles.zeroLine} data-zero-line="" style={{ left: plotLeft, right: plotRight, top: eventTop + (domain[1] / (domain[1] - domain[0])) * Math.max(0, height - eventTop - eventBottom) }} />}
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && options.showZeroLine && plotDomain[0] <= 0 && plotDomain[1] >= 0 && <span aria-hidden="true" className={chartStyles.zeroLine} data-zero-line="" style={{ left: plotLeft, right: plotRight, top: eventTop + (plotDomain[1] / (plotDomain[1] - plotDomain[0])) * Math.max(0, height - eventTop - eventBottom) }} />}
         {eventEnd > eventStart && visibleEvents.map((event, index) => {
           const at = Date.parse(event.timestamp), finish = event.endTimestamp ? Date.parse(event.endTimestamp) : at;
           const position = xAt;

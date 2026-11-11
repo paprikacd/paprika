@@ -117,16 +117,17 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       ),
     [rows, options],
   );
-  // The chart draws exactly this y domain, so its ticks and labels share one source (no-data rows included).
-  const yDomain = useMemo<[number, number]>(
+  // The chart draws exactly the domain and ticks its labels were computed for, so each gridline shows its own value.
+  const baseDomain = useMemo<[number, number]>(
     () => domain ?? barDomain(values, barNiceCount(showAxis, ticks.y, height)),
     [domain, values, showAxis, ticks.y, height],
   );
   const yAxis = useMemo(
-    () => chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, yDomain, ticks.y),
-    [values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, yDomain, ticks.y],
+    () => chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, baseDomain, ticks.y),
+    [values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, baseDomain, ticks.y],
   );
   const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
+  const yDomain = yScale.domain;
   const definition = useMemo(
     () =>
       defineChart({
@@ -210,7 +211,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                     : undefined,
                   line: false,
                   ticks: {
-                    count: ticks.y,
+                    values: yScale.ticks,
                     line: false,
                     format: (value: number) =>
                       yScale.label(value, !separateUnit),
@@ -261,7 +262,6 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       separateUnit,
       yScale,
       options,
-      ticks.y,
       width,
       height,
       showAxis,

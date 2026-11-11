@@ -182,7 +182,7 @@ describe("zero, negatives, non-finite and extreme values", () => {
 describe("axis labels", () => {
   it("uses the tick step for precision", () => {
     const axis = axisScale([0, 1], "");
-    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.0", "0.2", "0.4", "0.6", "0.8", "1.0"]);
+    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.00", "0.25", "0.50", "0.75", "1.00"]);
   });
 
   it("does not add decimals to integer steps", () => {
@@ -193,7 +193,7 @@ describe("axis labels", () => {
   it("shares one scaled unit across the axis and labels every tick in it", () => {
     const axis = axisScale([0, 1000], "ms", { count: 4 });
     expect(axis.unit).toBe("s");
-    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.0", "0.2", "0.4", "0.6", "0.8", "1.0"]);
+    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.00", "0.25", "0.50", "0.75", "1.00"]);
   });
 
   it("scales rate axes with a count prefix", () => {
@@ -269,7 +269,7 @@ describe("percent", () => {
     [0.04, "0.04%"],
     [99.996, "99.996%"],
     [99.999, "99.999%"],
-    [99.99999, "99.9999%"],
+    [99.99999, "99.99999%"],
   ])("never reads 100 unless the value is 100: %s -> %s", (value, expected) => {
     expect(formatMetric(value, "%")).toBe(expected);
   });
@@ -344,7 +344,7 @@ describe("flat series", () => {
   });
 
   it("pads a constant five per cent either side", () => {
-    expect(autoAxisDomain([100, 100], 5, false)).toEqual([94, 106]);
+    expect(autoAxisDomain([100, 100], 5, false)).toEqual([95, 105]);
   });
 });
 
@@ -366,12 +366,19 @@ describe("rounding at scale boundaries", () => {
 
 describe("half-way rounding and negatives", () => {
   it.each([
-    [0.995, "0.995"],
-    [1.005, "1.01"],
-    [-1.005, "-1.01"],
-    [-0.995, "-0.995"],
-    [-999.5, "-1 s"],
-  ])("rounds %s to %s", (value, expected) => {
-    expect(formatMetric(value, value > 100 || value < -100 ? "ms" : "")).toBe(expected);
+    [0.995, "", "0.995"],
+    [1.005, "", "1.01"],
+    [-1.005, "", "-1.01"],
+    [-0.995, "", "-0.995"],
+    [-999.5, "ms", "-1 s"],
+  ])("rounds %s %s to %s", (value, unit, expected) => {
+    expect(formatMetric(value, unit)).toBe(expected);
+  });
+});
+
+describe("a guard that needs extra digits keeps the authored unit", () => {
+  it("reads 999.5 ms, not 0.9995 s, against a 999.9 ms objective", () => {
+    expect(formatReading(999.5, "ms", { keepSides: [999.9] })).toEqual({ value: "999.5", unit: "ms" });
+    expect(formatReading(999.5, "ms")).toEqual({ value: "1", unit: "s" });
   });
 });

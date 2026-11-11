@@ -19,7 +19,7 @@ export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
-import { formatReading } from "./units";
+import { formatReading, formatSharedScale, joinReading } from "./units";
 export {
   downsamplePoints,
   latestPoint,
@@ -170,12 +170,7 @@ function Stat({
         <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
           <span>{entry.name}</span>
           <strong>
-            {formatMetric(
-              entry.point!.value,
-              widget.unit,
-              false,
-              widget.options?.decimals,
-            )}
+            {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (widget.options?.thresholds ?? []).map(threshold => threshold.value) }))}
           </strong>
         </div>
       ))}
@@ -208,6 +203,24 @@ function MetricTable({
     setSelected(contextKey(context));
     onContextChange?.(context);
   };
+  // Each row's extremes, and one display scale per column, so a column compares in one unit ("1.03 s" beside "1.21 s").
+  const tableRows = series.slice(0, MAX_ROWS).map(entry => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of entry.points)
+      if (typeof point.value === "number" && Number.isFinite(point.value) && validTimestamp(point.timestamp)) {
+        min = Math.min(min, point.value);
+        max = Math.max(max, point.value);
+      }
+    return { entry, latest: latestPoint(entry), min, max };
+  });
+  const columnLabels = (values: number[]) =>
+    widget.options?.decimals === undefined
+      ? formatSharedScale(values, widget.unit)
+      : values.map(value => formatMetric(value, widget.unit, false, widget.options?.decimals));
+  const latestLabels = columnLabels(tableRows.map(row => row.latest?.value ?? NaN));
+  const minLabels = columnLabels(tableRows.map(row => row.min));
+  const maxLabels = columnLabels(tableRows.map(row => row.max));
   return (
     <div
       className={styles.tableWrap}
@@ -231,19 +244,7 @@ function MetricTable({
           </tr>
         </thead>
         <tbody>
-          {series.slice(0, MAX_ROWS).map((entry, index) => {
-            const latest = latestPoint(entry);
-            let min = Infinity;
-            let max = -Infinity;
-            for (const point of entry.points)
-              if (
-                typeof point.value === "number" &&
-                Number.isFinite(point.value) &&
-                validTimestamp(point.timestamp)
-              ) {
-                min = Math.min(min, point.value);
-                max = Math.max(max, point.value);
-              }
+          {tableRows.map(({ entry, latest, min, max }, index) => {
             const name = seriesName(entry, index);
             return (
               <tr
@@ -330,28 +331,13 @@ function MetricTable({
                   </ObservationDetails>
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    latest?.value ?? NaN,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {latestLabels[index]}
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    min,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {minLabels[index]}
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    max,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {maxLabels[index]}
                 </td>
               </tr>
             );
