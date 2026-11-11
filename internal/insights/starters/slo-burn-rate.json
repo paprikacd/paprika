@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "slo-burn-rate",
   "title": "SLO and burn rate",
-  "description": "99.9% availability error budget over 30 days, with fast burn over 1 and 6 hours. Assumes http_requests_total with service, namespace and code labels; 5xx codes are failures. Needs 30 days of counter retention. At scale, record per-service rate(http_requests_total[5m]) for all and 5xx requests, then use avg_over_time(errors[30d]) / avg_over_time(total[30d]). Reads raw counters as shipped. Change 0.001 for another objective.",
+  "description": "99.9% availability error budget over 30 days, with fast burn over 1 and 6 hours. Assumes http_requests_total (service, namespace, code labels); 5xx is failure. Needs 30 days of counter retention. Auto refresh is off: the 30-day budget query is expensive without recording rules. At scale, record per-service rate(http_requests_total[5m]) for all and 5xx requests, then use avg_over_time(errors[30d]) / avg_over_time(total[30d]), and set refresh to 60s. Change 0.001 for another objective.",
   "timeRange": "6h",
-  "refreshInterval": 60,
+  "refreshInterval": 0,
   "variables": [
     {
       "name": "service",
