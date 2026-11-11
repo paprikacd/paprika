@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { z } from "zod"
 import { formatMetric, EmptyState, ObservationTooltip } from "../chart-renderers"
+import { axisScale } from "../units"
 import type { RecordFrame } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
@@ -109,6 +110,9 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const barWidth=Math.min(28,plotWidth*spacing/(domainSpan||1)*.8/series.length)
   const extent=(right:boolean)=>{const values=series.filter(s=>s.right===right).flatMap(s=>s.points.flatMap(p=>p.value===null?[]:[p.value]));return {min:Math.min(0,...values),max:Math.max(1,...values)}}
   const left=extent(false),right=extent(true), scale=(value:number,isRight:boolean)=>{const range=isRight?right:left;return plotBottom-positionFraction(value,range.min,range.max)*plotHeight}
+  // Each side shares one label scale across its ticks, so precision and any unit stay consistent down the axis.
+  const leftLabels=axisScale([left.min,left.max],"",{compact:true,decimals:widget.options?.decimals,ticks:yTicks.map(fraction=>left.min*(1-fraction)+left.max*fraction)}),
+  rightLabels=axisScale([right.min,right.max],"",{compact:true,decimals:widget.options?.decimals,ticks:yTicks.map(fraction=>right.min*(1-fraction)+right.max*fraction)});
   const xText=(x:number,exact=false)=>data.category?data.categories[Math.round(x)]??"":data.xColumn.type==="timestamp"?(exact?new Date(x).toISOString():formatTimeTick(x,maxX-minX,timeZone)):exact?String(x):formatMetric(x,"",false,0)
   const ticks=(data.category?[minX,positions[Math.floor((positions.length-1)/2)],maxX]:[minX,minX*.5+maxX*.5,maxX]).filter((x,i,list)=>list.indexOf(x)===i)
   const select=(entry:PlotSeries,point:Datum)=>onContextChange?.({series:entry.name,value:point.value,labels:Object.fromEntries(frame.columns.flatMap((column,i)=>point.row[i]===null?[]:[[column.key,String(point.row[i])]])),...(data.xColumn.type==="timestamp"?{timestamp:point.x}:{})})
@@ -157,7 +161,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     onFocus={event=>{if(event.target!==event.currentTarget||current||!accessiblePoints.length)return;show(accessiblePoints[0].seriesIndex,accessiblePoints[0].point)}}
     onKeyDown={event=>{if(!tooltipEnabled||event.target!==event.currentTarget)return;if(event.key==="Escape"){setInspection(undefined);return}if(event.key==="Enter"&&current){event.preventDefault();show(current.seriesIndex,current.point,!current.pinned);return}if(!["ArrowLeft","ArrowRight"].includes(event.key)||!accessiblePoints.length)return;event.preventDefault();const index=current?accessiblePoints.findIndex(item=>item.seriesIndex===current.seriesIndex&&item.point===current.point):-1;const next=Math.max(0,Math.min(accessiblePoints.length-1,index+(event.key==="ArrowRight"?1:-1)));show(accessiblePoints[next].seriesIndex,accessiblePoints[next].point)}}>
     {identityTitle&&<title>{`${identityTitle} · ${series[0].name}`}</title>}<defs><clipPath id={unique}><rect data-record-plot-height={plotHeight} x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
-    {yTicks.map(fraction=><g key={fraction}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{formatMetric(left.min*(1-fraction)+left.max*fraction,"",true,widget.options?.decimals)}</text>{series.some(s=>s.right)&&<text x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{formatMetric(right.min*(1-fraction)+right.max*fraction,"",true,widget.options?.decimals)}</text>}</g>)}
+    {yTicks.map(fraction=><g key={fraction}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{leftLabels.label(left.min*(1-fraction)+left.max*fraction)}</text>{series.some(s=>s.right)&&<text x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{rightLabels.label(right.min*(1-fraction)+right.max*fraction)}</text>}</g>)}
     {ticks.map(x=><text key={x} x={xScale(x)} y={plotBottom+20} textAnchor="middle">{xText(x)}</text>)}
     <text x={plotLeft} y={12}>{series.filter(s=>!s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text><text x={plotRight} y={12} textAnchor="end">{series.filter(s=>s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text>
     <g clipPath={`url(#${unique})`}>{config.annotations?.map((annotation,i)=>{const at=data.position(annotation.x);return Number.isFinite(at)&&at>=minX&&at<=maxX?<g key={i}><title>{annotation.label}</title><line x1={xScale(at)} x2={xScale(at)} y1={plotTop-4} y2={plotBottom} stroke="var(--gamma-muted)" strokeDasharray="3 3"/><text x={xScale(at)+4} y={plotTop+10+i%3*12}>{annotation.label.slice(0,bounds.width<480?20:30)}</text></g>:null})}

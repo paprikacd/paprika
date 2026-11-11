@@ -76,7 +76,7 @@ Record the following before writing mark geometry:
 | Contract | Required decision |
 | --- | --- |
 | Metric meaning | Gauge, counter, rate, ratio, distribution, state, event, trace, or record; valid population and aggregation. |
-| Units | Base unit, displayed unit, actual conversion, denominator, precision, and threshold units. A suffix alone does not convert a value. |
+| Units | Base unit, displayed unit, actual conversion, denominator, precision, and threshold units. A suffix alone does not convert a value. Readings choose the display unit per value (`1 s` for 999.5 ms); set `decimals` to keep one authored unit and fixed precision. |
 | Time | Authoritative bounds/timezone, sample timestamps, gaps, query step, and any visible panel override. |
 | Encoding | Position/length/area/color meaning; domain; baseline; linear/log scale; stacking and interpolation policy. |
 | Summary | What the large value and delta mean; original semantic result; comparison window; zero-denominator and stale-tail behavior. |

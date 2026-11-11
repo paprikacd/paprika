@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { autoAxisDomain, axisScale, formatMetric, formatReading, niceDomain, symmetricDomain } from "./units";
+import { autoAxisDomain, axisScale, formatMetric, formatRange, formatReading, formatRecordValue, niceDomain, symmetricDomain } from "./units";
 
 describe("auto precision", () => {
   it.each([
     [100, "%", "100%"],
-    [99.97, "%", "100%"],
+    [99.97, "%", "99.97%"],
     [0.04, "%", "0.04%"],
     [17.58, "req/s", "17.6 req/s"],
     [24.93, "req/s", "24.9 req/s"],
@@ -71,7 +71,7 @@ describe("duration scaling", () => {
     [0.5, "ms", "500 us"],
     [0.5, "s", "500 ms"],
     [0.0005, "s", "500 us"],
-    [0.5, "us", "0.5 us"],
+    [0.5, "us", "500 ns"],
     [999.5, "us", "1 ms"],
     [0, "ms", "0 ms"],
   ])("formats %s %s as %s", (value, unit, expected) => {
@@ -165,7 +165,7 @@ describe("zero, negatives, non-finite and extreme values", () => {
   it("uses exponential notation for very small and very large magnitudes", () => {
     expect(formatMetric(0.00001, "")).toBe("0.00001");
     expect(formatMetric(0.0000001, "")).toBe("1e-7");
-    expect(formatMetric(1e-13, "s")).toBe("1e-7 us");
+    expect(formatMetric(1e-13, "s")).toBe("0.0001 ns");
     expect(formatMetric(2e21, "")).toBe("2e+21");
   });
 
@@ -199,7 +199,7 @@ describe("axis labels", () => {
   it("scales rate axes with a count prefix", () => {
     const axis = axisScale([0, 200000], "obs/s", { count: 4 });
     expect(axis.unit).toBe("obs/s");
-    expect(axis.ticks.map(tick => axis.label(tick))).toEqual(["0K obs/s", "50K obs/s", "100K obs/s", "150K obs/s", "200K obs/s"]);
+    expect(axis.ticks.map(tick => axis.label(tick))).toEqual(["0 obs/s", "50K obs/s", "100K obs/s", "150K obs/s", "200K obs/s"]);
   });
 
   it("labels custom evenly spaced ticks without collisions", () => {
@@ -243,5 +243,135 @@ describe("domains", () => {
     expect(autoAxisDomain([40, 50], 5, true)).toEqual([0, 50]);
     expect(autoAxisDomain([40, 50], 5, false)).toEqual([40, 50]);
     expect(autoAxisDomain([], 5, true)).toEqual([0, 1]);
+  });
+});
+
+describe("large integers are never rounded", () => {
+  it.each([
+    [500_000_000, "500,000,000"],
+    [1_000_000_000, "1,000,000,000"],
+    [2 ** 31, "2,147,483,648"],
+    [1e14, "100,000,000,000,000"],
+    [9.99e14, "999,000,000,000,000"],
+  ])("keeps %s whole", (value, expected) => {
+    expect(formatMetric(value, "")).toBe(expected);
+    expect(formatMetric(value, "requests")).toBe(`${expected} requests`);
+    expect(formatRecordValue(value, "")).toBe(expected);
+  });
+});
+
+describe("percent", () => {
+  it.each([
+    [99.97, "99.97%"],
+    [99.5, "99.5%"],
+    [100, "100%"],
+    [100.4, "100.4%"],
+    [0.04, "0.04%"],
+    [99.996, "99.996%"],
+    [99.999, "99.999%"],
+    [99.99999, "99.9999%"],
+  ])("never reads 100 unless the value is 100: %s -> %s", (value, expected) => {
+    expect(formatMetric(value, "%")).toBe(expected);
+  });
+});
+
+describe("threshold crossing", () => {
+  it("adds precision so 99.86 never reads 99.9 against a 99.9 threshold", () => {
+    expect(formatMetric(99.86, "ms")).toBe("99.9 ms");
+    expect(formatReading(99.86, "ms", { keepSides: [99.9] })).toEqual({ value: "99.86", unit: "ms" });
+    expect(formatReading(99.86, "%", { keepSides: [99.9] })).toEqual({ value: "99.86", unit: "%" });
+  });
+
+  it("keeps a value above a threshold on its side too", () => {
+    expect(formatReading(100.04, "ms", { keepSides: [100.04] }).value).toBe("100.04");
+    expect(formatReading(100.04, "ms", { keepSides: [100] }).value).toBe("100");
+  });
+});
+
+describe("authored unit text", () => {
+  it.each([
+    [1500, "kB/s", "1,500 kB/s"],
+    [1500, "kiB/s", "1,500 kiB/s"],
+    [1500, "ms/s", "1,500 ms/s"],
+    [1500, "m/s", "1,500 m/s"],
+    [1500, "MB/s", "1,500 MB/s"],
+  ])("does not add a count prefix to unknown %s", (value, unit, expected) => {
+    expect(formatMetric(value, unit)).toBe(expected);
+  });
+
+  it("keeps the authored text when nothing is scaled", () => {
+    expect(formatReading(5, "µs")).toEqual({ value: "5", unit: "µs" });
+    expect(formatReading(5, "μs")).toEqual({ value: "5", unit: "μs" });
+    expect(formatReading(100, "bytes")).toEqual({ value: "100", unit: "bytes" });
+    expect(formatReading(500, "Kb/s")).toEqual({ value: "500", unit: "Kb/s" });
+  });
+
+  it("recognises micro in both spellings and nanoseconds as a duration", () => {
+    expect(formatMetric(1500, "µs")).toBe("1.5 ms");
+    expect(formatMetric(1500, "μs")).toBe("1.5 ms");
+    expect(formatMetric(1500, "ns")).toBe("1.5 us");
+    expect(formatMetric(0.5, "ns")).toBe("0.5 ns");
+  });
+});
+
+describe("zero ticks and near-zero ticks", () => {
+  it("never reads a zero tick with a prefix, or a near-zero tick as -0", () => {
+    const counts = axisScale([0, 1_500_000_000_000_000], "", { compact: true, count: 3 });
+    expect(counts.ticks.map(tick => counts.label(tick, false))[0]).toBe("0");
+    const near = axisScale([-0.1, 0.3], "", { ticks: [-0.1, -1.3877787807814457e-17, 0.09999999999999999, 0.19999999999999998, 0.3] });
+    expect(near.ticks.map(tick => near.label(tick, false))).toEqual(["-0.1", "0.0", "0.1", "0.2", "0.3"]);
+  });
+});
+
+describe("byte axes", () => {
+  it("chooses the display unit first and generates nice ticks in it", () => {
+    const axis = axisScale([0, 2048], "B", { count: 4 });
+    expect(axis.unit).toBe("KiB");
+    const labels = axis.ticks.map(tick => axis.label(tick));
+    expect(labels).toEqual(["0.0 KiB", "0.5 KiB", "1.0 KiB", "1.5 KiB", "2.0 KiB"]);
+    expect(Math.max(...labels.map(label => label.length))).toBeLessThan(10);
+  });
+});
+
+describe("flat series", () => {
+  it.each([[0.04, "%"], [1.5, "x"], [-0.04, ""]])("labels a constant %s with distinct ticks", (value, unit) => {
+    const domain = autoAxisDomain([value, value], 5, false);
+    expect(domain[0]).toBeLessThan(value < 0 ? value : value);
+    expect(Math.min(...domain)).toBeLessThan(Math.max(...domain));
+    const axis = axisScale(domain, unit, { count: 5 });
+    const labels = axis.ticks.map(tick => axis.label(tick, false));
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("pads a constant five per cent either side", () => {
+    expect(autoAxisDomain([100, 100], 5, false)).toEqual([94, 106]);
+  });
+});
+
+describe("range labels", () => {
+  it("shares one scale and carries the unit on both bounds", () => {
+    expect(formatRange(0.1, 250, "ms")).toBe("0.1 ms–250 ms");
+    expect(formatRange(10, 100, "ms")).toBe("10 ms–100 ms");
+    expect(formatRange(1500, 2000, "ms")).toBe("1.5 s–2 s");
+    expect(formatRange(0.5, 1500, "ms")).toBe("0.0005 s–1.5 s");
+  });
+});
+
+describe("rounding at scale boundaries", () => {
+  it("rounds before choosing a scaled unit", () => {
+    expect(formatMetric(999.5, "us")).toBe("1 ms");
+    expect(formatMetric(1999.5, "B")).toBe("1.95 KiB");
+  });
+});
+
+describe("half-way rounding and negatives", () => {
+  it.each([
+    [0.995, "0.995"],
+    [1.005, "1.01"],
+    [-1.005, "-1.01"],
+    [-0.995, "-0.995"],
+    [-999.5, "-1 s"],
+  ])("rounds %s to %s", (value, expected) => {
+    expect(formatMetric(value, value > 100 || value < -100 ? "ms" : "")).toBe(expected);
   });
 });

@@ -12,7 +12,8 @@ import {
   registerWidgetPlugin,
   type WidgetRendererProps,
 } from "../widget-registry"
-import { EmptyState, formatMetric, ObservationTooltip } from "../chart-renderers"
+import { EmptyState, ObservationTooltip } from "../chart-renderers"
+import { formatRecordValue } from "../units"
 import { TooltipDetail, TooltipFact, TooltipHint } from "../tooltip-content"
 import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
@@ -98,12 +99,11 @@ function cell(
   const value = row[index]
   if (value === null) return "—"
   if (typeof value === "number")
-    return formatMetric(
+    return formatRecordValue(
       value,
       frame.columns[index].unit === "percent"
         ? "%"
         : (frame.columns[index].unit ?? ""),
-      false,
       decimals,
     )
   if (typeof value === "boolean") return value ? "Yes" : "No"
@@ -237,7 +237,7 @@ export function RecordTable({
   const history = activeStyle?.display === "sparkline" ? parseRecordHistory(activeCell?.value) : undefined
   const activeUnit = activeStyle?.unit ?? (activeColumn?.unit === "percent" ? "%" : activeColumn?.unit ?? "")
   const activeValue = history?.state === "valid" ? history.points[history.points.length - 1].value : activeCell?.value
-  const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? "No data" : typeof activeValue === "number" ? formatMetric(activeValue, activeUnit, false, widget.options?.decimals) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
+  const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? "No data" : typeof activeValue === "number" ? formatRecordValue(activeValue, activeUnit, widget.options?.decimals) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
   return (
     <div className={`${styles.wrapper}${config.density === "compact" ? ` ${styles.compactTable}` : ""}`} data-record-table="" data-table-density={config.density} data-cell-inspection={inspectCells || undefined}>
       {inspectCells && <p id={cellHelpId} className={styles.cellHistoryMeaning}>Use arrow keys to move between cells and Enter to pin details.</p>}
@@ -585,7 +585,7 @@ export function RecordTreemap({
         {leaves.map((leaf, index) => {
           const row = leaf.data.row!,
             name = text(row[label]),
-            formatted = formatMetric(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, false, widget.options?.decimals)
+            formatted = formatRecordValue(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, widget.options?.decimals)
           const colorValue = color >= 0 && typeof row[color] === "number" && Number.isFinite(row[color]) ? row[color] as number : null
           const colorLabel = color >= 0 ? frame.columns[color].label ?? frame.columns[color].key : undefined
           const colorDetail = color >= 0 ? `${colorLabel}: ${colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals)}` : undefined
@@ -671,7 +671,7 @@ export function RecordTreemap({
       </ObservationTooltip>}
       {color >= 0 && <div className={styles.treeColorLegend} role="group" aria-label="Treemap color scale">
         <span>{frame.columns[color].label ?? frame.columns[color].key}</span>
-        {colorValues.length > 0 ? <><span>{formatMetric(colorMin, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), false, widget.options?.decimals)}</span><span className={styles.treeColorGradient} aria-hidden="true" /><span>{formatMetric(colorMax, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), false, widget.options?.decimals)}</span></> : <span>No numeric color values</span>}
+        {colorValues.length > 0 ? <><span>{formatRecordValue(colorMin, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), widget.options?.decimals)}</span><span className={styles.treeColorGradient} aria-hidden="true" /><span>{formatRecordValue(colorMax, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), widget.options?.decimals)}</span></> : <span>No numeric color values</span>}
         {colorMissing && <span className={styles.treeMissingKey}><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`} aria-hidden="true" />No data</span>}
       </div>}
       <Note frame={frame}>

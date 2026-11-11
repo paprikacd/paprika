@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { lineY } from "@tanstack/charts/line";
+import { autoAxisDomain, axisScale } from "./units";
 import { Chart } from "@tanstack/charts/react";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { defineChart } from "@tanstack/charts/scene";
@@ -29,7 +30,6 @@ import {
   boundHistoryPoints,
   formatMetricDetails,
   latestPoint,
-  formatMetric,
   formatTimeTick,
   seriesName,
   type Point,
@@ -530,6 +530,11 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
   const { points, summary, height, showAxis, showGrid, unit, color, name } =
     context;
   const span = (summary.end ?? 0) - (summary.start ?? 0);
+  // One domain and one label scale for this chart's Y ticks, so the labels describe the ticks the chart draws.
+  const yTickCount = height <= 120 ? 2 : 3;
+  const yValues = useMemo(() => points.flatMap(point => typeof point.value === "number" && Number.isFinite(point.value) ? [point.value] : []), [points]);
+  const yDomain = useMemo(() => autoAxisDomain(yValues, yTickCount, false), [yValues, yTickCount]);
+  const yLabels = useMemo(() => axisScale(yDomain, unit, { compact: true, decimals: context.view.decimals, count: yTickCount }), [yDomain, unit, context.view.decimals, yTickCount]);
   const definition = useMemo(
     () =>
       defineChart({
@@ -577,8 +582,8 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
               : false,
           },
           y: {
-            scale: scaleLinear,
-            nice: true,
+            scale: scaleLinear().domain(yDomain),
+            nice: false,
             grid: showGrid
               ? {
                   stroke: "var(--gamma-border,#dfe4db)",
@@ -589,10 +594,9 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
               ? {
                   line: false,
                   ticks: {
-                    count: height <= 120 ? 2 : 3,
+                    count: yTickCount,
                     line: false,
-                    format: (value: number) =>
-                      formatMetric(value, unit, true, context.view.decimals),
+                    format: (value: number) => yLabels.label(value),
                   },
                   tickLabels: {
                     fontSize: 10,
@@ -621,14 +625,14 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
       points,
       summary.start,
       summary.end,
-      height,
       showAxis,
       showGrid,
-      unit,
+      yDomain,
+      yLabels,
+      yTickCount,
       color,
       width,
       span,
-      context.view.decimals,
     ],
   );
   const missing = summary.missingCount

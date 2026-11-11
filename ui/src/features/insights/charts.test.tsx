@@ -301,7 +301,7 @@ describe("bounded chart data", () => {
     expect(formatMetric(NaN)).toBe("—");
     expect(formatMetric(12.5, "ms")).toBe("12.5 ms");
     expect(formatMetric(0.0000123, "req/s")).toBe("0.0000123 req/s");
-    expect(formatMetric(99.95, "%")).toBe("100%");
+    expect(formatMetric(99.95, "%")).toBe("99.95%");
     expect(formatMetric(12.3, "ms", false, 3)).toBe("12.300 ms");
     expect(formatMetric(0.12, "", false, 0)).toBe("0");
   });

@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
-import { exactMetric, formatMetric } from "../chart-data"
+import { exactMetric } from "../chart-data"
+import { formatRecordValue } from "../units"
 import { thresholdForValue } from "../chart-renderers"
 import { contrastRatio, readableTextColor } from "../appearance"
 import type { RecordFrame, Threshold } from "../schema"
@@ -155,7 +156,7 @@ function RecordHistoryCell({ value, column, color, decimals, unit: authoredUnit,
   const latest = history.points[history.points.length - 1]
   return <span className={styles.cellHistory} data-cell-display="sparkline" data-history-state="valid" title={nativeTitle ? colorMeaning : undefined}>
     <span className={styles.cellHistoryPlot}><StatSparkline series={{ name, labels: {}, points: history.points }} name={name} unit={unit} color={color ?? "var(--gamma-chart-1)"} latestLabel="Latest valid sample in history" /></span>
-    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : formatMetric(latest.value, unit, false, decimals)}</span>
+    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : formatRecordValue(latest.value, unit, decimals)}</span>
     {colorMeaning && <span className={styles.cellHistoryMeaning} data-history-color-meaning>{colorMeaning}</span>}
   </span>
 }
@@ -215,6 +216,6 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
         {geometry.baseline > 0 && geometry.baseline < 1 && <span className={styles.cellBarZero} style={{ left: `${geometry.baseline * 100}%` }} />}
       </>}
     </span>}
-    <span className={styles.cellReading} aria-hidden="true">{finite && style.unit !== undefined ? formatMetric(value, unit, false, decimals) : formatted}{geometry?.outside && <span className={styles.cellOverflow}>{(value as number) < style.min! ? " ↙" : " ↗"}</span>}</span>
+    <span className={styles.cellReading} aria-hidden="true">{finite && style.unit !== undefined ? formatRecordValue(value, unit, decimals) : formatted}{geometry?.outside && <span className={styles.cellOverflow}>{(value as number) < style.min! ? " ↙" : " ↗"}</span>}</span>
   </span>
 }

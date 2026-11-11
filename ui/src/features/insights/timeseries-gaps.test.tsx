@@ -414,9 +414,9 @@ describe("threshold guide labels", () => {
   const samples = Array.from({ length: 9 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index + 1 }));
 
   it("sets each label at the left end of its line, dropping it below only when no room is left above", () => {
-    const configured = { ...guided, options: { thresholds: [{ value: 9, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
+    const configured = { ...guided, options: { thresholds: [{ value: 10, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
     render(<WidgetVisualization widget={configured} result={{ series: [{ name: "api", labels: {}, points: samples }] }} />);
-    const ceiling = screen.getByRole("img", { name: "Ceiling: 9 req" });
+    const ceiling = screen.getByRole("img", { name: "Ceiling: 10 req" });
     const target = screen.getByRole("img", { name: "Target: 4 req" });
     // The ceiling sits within 16px of the plot top, so its label moves below the line.
     expect(ceiling).toHaveAttribute("data-label-placement", "below");

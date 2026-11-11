@@ -262,7 +262,7 @@ try {
     await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     const traces = page.getByRole("region", { name: "Live traces traces" })
     await traces.getByText("POST /live/orders", { exact: true }).waitFor()
-    await traces.getByText("72.25 ms", { exact: true }).waitFor()
+    await traces.getByText("72.3 ms", { exact: true }).waitFor()
     await traces.getByText("unknown", { exact: true }).waitFor()
     assert.ok(providerRequests.some((request) => request.path === "/prometheus/api/v1/query_range" && request.query.query === "live_requests"))
     assert.ok(providerRequests.some((request) => request.path === "/tempo/api/search" && request.query.q === '{ resource.service.name = "live-checkout" }'))

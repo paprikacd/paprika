@@ -117,16 +117,16 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       ),
     [rows, options],
   );
-  // With no-data rows the y domain is fixed here rather than left to TanStack, so the placeholder can span its exact ends.
-  const yDomain = useMemo(
-    () =>
-      domain ??
-      (noDataRows.length
-        ? barDomain(values, barNiceCount(showAxis, ticks.y, height))
-        : undefined),
-    [domain, noDataRows.length, values, showAxis, ticks.y, height],
+  // The chart draws exactly this y domain, so its ticks and labels share one source (no-data rows included).
+  const yDomain = useMemo<[number, number]>(
+    () => domain ?? barDomain(values, barNiceCount(showAxis, ticks.y, height)),
+    [domain, values, showAxis, ticks.y, height],
   );
-  const { left: axisLeft, separateUnit, scale: yScale } = chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, yDomain ?? barDomain(values, ticks.y), ticks.y);
+  const yAxis = useMemo(
+    () => chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, yDomain, ticks.y),
+    [values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, yDomain, ticks.y],
+  );
+  const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
   const definition = useMemo(
     () =>
       defineChart({
@@ -194,8 +194,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                 },
           },
           y: {
-            scale: yDomain ? scaleLinear().domain(yDomain) : scaleLinear,
-            nice: !yDomain,
+            scale: scaleLinear().domain(yDomain),
+            nice: false,
             grid:
               options.showGrid === false
                 ? false

@@ -90,15 +90,20 @@ export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions
   let observedMin = Infinity, observedMax = -Infinity;
   for (const value of guides) { observedMin = Math.min(observedMin, value); observedMax = Math.max(observedMax, value); }
   for (const entry of series) for (const point of entry.points) if (validTimestamp(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)) { observedMin = Math.min(observedMin, point.value); observedMax = Math.max(observedMax, point.value); }
-  const padding = Math.max((observedMax - observedMin) * .05, observedMin === observedMax ? Math.max(1, Math.abs(observedMin) * .1) : 0);
-  let min = options.min ?? observedMin - padding, max = options.max ?? observedMax + padding;
+  // The unpadded extent rounds outwards to readable ticks first; the padding then sits outside those ticks.
+  const flatPadding = observedMin === observedMax ? Math.max(Math.abs(observedMin) * .05, observedMin === 0 ? .5 : 0) : 0;
+  const [roundedLow, roundedHigh] = niceDomain([observedMin - flatPadding, observedMax + flatPadding], count);
+  const padding = (roundedHigh - roundedLow) * .05;
+  // Data and guides that are all non-negative keep a zero floor rather than a padded negative axis.
+  let min = observedMin >= 0 ? Math.max(0, roundedLow - padding) : roundedLow - padding;
+  let max = roundedHigh + padding;
+  if (options.min !== undefined) min = options.min;
+  if (options.max !== undefined) max = options.max;
   if (min >= max) {
     if (options.min !== undefined && options.max === undefined) max = min + Math.max(1, Math.abs(min) * .1);
     else if (options.max !== undefined && options.min === undefined) min = max - Math.max(1, Math.abs(max) * .1);
   }
-  // Derived bounds round outwards to readable ticks; authored bounds stay exact.
-  const [niceMin, niceMax] = niceDomain([min, max], count);
-  return [options.min ?? niceMin, options.max ?? niceMax];
+  return [min, max];
 }
 
 /**
@@ -270,9 +275,11 @@ export function TimeSeriesChart({
   const calendarTickList = useMemo(() => options.timeAxis === "calendar" && timeDomain ? calendarTicks(timeDomain[0], timeDomain[1], ticks.x, timeZone) : undefined, [options.timeAxis, timeDomain, ticks.x, timeZone]);
   const calendarLabels = useMemo(() => new Map((calendarTickList ?? []).map(tick => [tick.value, calendarTickLabel(tick, timeZone)] as const)), [calendarTickList, timeZone]);
   // The axis labels follow the domain the chart draws: the resolved one, or the nice extent of the plotted values.
-  const plottedValues = [...data, ...previousData].flatMap(entry => entry.points.flatMap(point => typeof point.value === "number" ? [point.value] : []));
-  const axisDomain = domain ?? autoAxisDomain(plottedValues, ticks.y, options.display === "area");
-  const { left: axisLeft, separateUnit, scale: yScale } = chartYAxisLayout(plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, ticks.y);
+  const plottedValues = useMemo(() => [...data, ...previousData].flatMap(entry => entry.points.flatMap(point => typeof point.value === "number" ? [point.value] : [])), [data, previousData]);
+  // The chart draws exactly this domain, so its ticks and labels cannot diverge (flat series included).
+  const axisDomain = useMemo<[number, number]>(() => domain ?? autoAxisDomain(plottedValues, ticks.y, options.display === "area"), [domain, plottedValues, ticks.y, options.display]);
+  const yAxis = useMemo(() => chartYAxisLayout(plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, ticks.y), [plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, ticks.y]);
+  const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
   // Plot insets: the TanStack margins and every overlay (cursor, bands, events, brush) map time through these bounds.
   const { left: plotLeft, right: plotRight, plotWidth } = horizontalPlotBounds(width, !showAxis ? 8 : options.plotInsetLeft ?? axisLeft, !showAxis ? 8 : options.plotInsetRight ?? 12);
   const xAt = (time: number) => timeDomain ? temporalPosition(time, timeDomain[0], timeDomain[1], plotLeft, plotLeft + plotWidth) : 0;
@@ -390,8 +397,8 @@ export function TimeSeriesChart({
                 },
           },
           y: {
-            scale: domain ? scaleLinear().domain(domain) : scaleLinear,
-            nice: !domain,
+            scale: scaleLinear().domain(axisDomain),
+            nice: false,
             grid:
               options.showGrid === false
                 ? false
@@ -451,8 +458,8 @@ export function TimeSeriesChart({
       widget.unit,
       separateUnit,
       yScale,
+      axisDomain,
       options,
-      domain,
       ticks.x,
       ticks.y,
       height,

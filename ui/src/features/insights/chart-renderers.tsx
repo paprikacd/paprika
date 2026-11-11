@@ -116,7 +116,8 @@ function Stat({
   const magnitude = showBar ? Math.max(Math.abs(minimum), Math.abs(maximum), 1) : 1;
   const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
   // The reading may rescale its unit (ms to s, bytes to MiB), so the unit span shows the reading's unit, not the authored one.
-  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals });
+  // Thresholds stay on their side of the rounded reading: 99.86 never reads 99.9 against a 99.9 threshold.
+  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (widget.options?.thresholds ?? []).map(threshold => threshold.value) });
   const barColor = thresholdForValue(first.point.value, widget.options?.thresholds)?.color ?? widget.color ?? "var(--gamma-chart-1)";
   return (
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
@@ -134,6 +135,7 @@ function Stat({
           <span
             className={styles.statValue}
             data-metric-value={String(first.point.value)}
+            title={exactMetric(first.point.value, widget.unit)}
             style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
           >
             {statReading.value}

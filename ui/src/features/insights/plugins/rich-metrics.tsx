@@ -1,6 +1,6 @@
 "use client";
 
-import { axisScale } from "../units";
+import { axisScale, formatRange } from "../units";
 import type { Widget } from "../schema";
 import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
@@ -236,7 +236,7 @@ function coordinates(event: PointerEvent<SVGSVGElement>, width: number, height: 
 function cellLabel(lower: number, upper: number, unit: string) {
   if (!Number.isFinite(lower)) return `≤ ${formatMetric(upper, unit)}`;
   if (!Number.isFinite(upper)) return `> ${formatMetric(lower, unit)}`;
-  return `${formatMetric(lower, "")}–${formatMetric(upper, unit)}`;
+  return formatRange(lower, upper, unit);
 }
 
 /** A nonzero color domain should not be labeled as zero solely because the
