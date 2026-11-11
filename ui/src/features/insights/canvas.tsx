@@ -553,10 +553,12 @@ export function DashboardCanvas({
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 1100,
   });
-  // The projection hysteresis needs the mode already on screen, so a width hovering around the threshold keeps it.
-  const [shownMode, setShownMode] = useState<CanvasMode>("wide");
-  const mode = canvasMode(width, shownMode);
-  if (mode !== shownMode) setShownMode(mode);
+  // The hysteresis needs the mode already on screen. Until the first real measurement there is none, and a hidden canvas
+  // (Explore hides the workspace, so it measures 0) must not overwrite the mode it had.
+  const [shownMode, setShownMode] = useState<CanvasMode>();
+  const measured = mounted && width > 0;
+  const mode = measured || shownMode === undefined ? canvasMode(width, shownMode) : shownMode;
+  if (measured && mode !== shownMode) setShownMode(mode);
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide" && !focus;
   const definitions = useWidgetDefinitions();

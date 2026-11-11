@@ -655,6 +655,115 @@ await check("layout moves from the inspector work on the compact canvas, which i
   assert.notDeepEqual(after, before, "Applying a compact-canvas move saves the new saved-grid position")
   return { direction: enabled[0], enabled, before, after }
 })
+
+// Focus, Explore, the compact dark rail, resizing while a panel is open, and a sidebar the user showed over a panel.
+async function focusedOpenerName(target) {
+  return target.evaluate(() => document.activeElement?.dataset?.panelOpener ?? null)
+}
+await check("focus returns to the control that opened a panel after the sidebar yields", async () => {
+  const rows = []
+  for (const [width, name, opener] of [[1280, "Data sources", "providers"], [1512, "Examples", "examples"], [1280, "Examples", "examples"], [1280, "Dashboard as code", "source"]]) {
+    await resizeCanvasHost(panelPage, width)
+    await openPanel(panelPage, name)
+    const yielded = (await canvasState(panelPage)).sidebar === false
+    await closePanel(panelPage)
+    const focused = await focusedOpenerName(panelPage)
+    rows.push({ width, name, yielded, focused })
+    assert.equal(focused, opener, `${width}px ${name}: closing must return focus to the ${opener} control, not the body`)
+  }
+  return rows
+})
+
+await check("Explore and back keep an open panel, the wide grid and its drag handles", async () => {
+  await resizeCanvasHost(panelPage, 1512)
+  await editIn(panelPage)
+  await openPanel(panelPage, "Manage dashboards")
+  const before = await canvasState(panelPage)
+  await panelPage.locator("#insights-navigation").getByRole("button", { name: /^Explore/ }).click()
+  await settle(panelPage)
+  await panelPage.locator("#insights-navigation").getByRole("button", { name: /^Dashboards/ }).click()
+  await stableGeometry(panelPage)
+  const after = await canvasState(panelPage)
+  assert.equal(after.mode, "wide", `Returning from Explore must keep the wide grid, got ${after.canvas}px`)
+  assert.equal(after.handles, before.handles, "Returning from Explore must restore every drag handle")
+  assert.ok(after.panel > 0, "The panel that was open stays open")
+  await closePanel(panelPage)
+  return { before, after }
+})
+
+await check("the compact dark rail yields to a panel and returns when it closes, keeping the wide grid from 1246px", async () => {
+  const dark = await browser.newContext({ viewport: { width: 1280, height: 1050 }, reducedMotion: "reduce", timezoneId: "UTC" })
+  await dark.addInitScript(() => { localStorage.setItem("paprika-insights-theme", "dark"); localStorage.setItem("paprika-insights-compact-view", "true") })
+  const target = await dark.newPage()
+  observe(target)
+  try {
+    await target.goto(`${baseURL}/dashboard/insights/?example=1`, { waitUntil: "networkidle" })
+    await settle(target)
+    const rail = target.locator("#insights-navigation")
+    assert.equal(await target.evaluate(() => document.querySelector("[data-compact-shell]") !== null), true, "Compact dark view must be active")
+    const rows = []
+    for (const width of [1246, 1240]) {
+      await resizeCanvasHost(target, width)
+      await openPanel(target, "Data sources")
+      rows.push({ width, ...(await canvasState(target)) })
+      await closePanel(target)
+    }
+    assert.equal(rows[0].mode, "wide", "Compact dark keeps the wide grid from 1246px")
+    assert.equal(rows[1].mode, "compact", "Compact dark drops to compact at 1240px")
+    assert.equal(await rail.count() > 0, true, "The rail returns when the panel closes")
+    await resizeCanvasHost(target, 1280)
+    await openPanel(target, "Data sources")
+    assert.equal(await rail.count(), 0, "The compact rail yields while the panel needs its room")
+    assert.equal(await target.getByRole("button", { name: "Toggle sidebar", exact: true }).getAttribute("aria-expanded"), "false")
+    await closePanel(target)
+    assert.equal(await focusedOpenerName(target), "providers", "Focus returns to the rail's Data sources control")
+    // Build with AI turns editing on, which leaves compact dark. The sidebar is then planned again, before paint.
+    await target.getByRole("button", { name: "Dashboard actions", exact: true }).click()
+    await target.getByRole("menuitem", { name: /Build with AI/ }).click()
+    await stableGeometry(target)
+    const ai = await canvasState(target)
+    assert.equal(ai.mode, "wide", `Build with AI from compact dark keeps the wide grid, got ${ai.canvas}px`)
+    assert.ok(ai.handles > 0, "Editing from Build with AI offers drag handles")
+    await closePanel(target)
+    return rows.concat([{ width: 1280, ai }])
+  } finally {
+    await dark.close()
+  }
+})
+
+await check("resizing with a panel open re-plans the sidebar and the canvas stays wide", async () => {
+  await resizeCanvasHost(panelPage, 1512)
+  await editIn(panelPage)
+  await openPanel(panelPage, "Code")
+  const steps = []
+  for (const width of [1512, 1600, 1280, 1300]) {
+    await resizeCanvasHost(panelPage, width)
+    steps.push({ width, ...(await canvasState(panelPage)) })
+  }
+  assert.ok(steps.every((step) => step.mode === "wide" && step.handles > 0), `Resizing must keep the wide grid: ${JSON.stringify(steps)}`)
+  assert.equal(steps[1].sidebar, true, "At 1600px the room returns the sidebar beside the Code panel")
+  assert.equal(steps[2].sidebar, false, "At 1280px the sidebar yields again")
+  assert.equal(steps[2].panel, 342, "At 1280px the Code panel uses the standard width")
+  await closePanel(panelPage)
+  return steps
+})
+
+await check("a sidebar the user showed over a panel is not collapsed again by resizing", async () => {
+  await resizeCanvasHost(panelPage, 1280)
+  await openPanel(panelPage, "Manage dashboards")
+  const toggle = panelPage.getByRole("button", { name: "Toggle sidebar", exact: true })
+  assert.equal((await canvasState(panelPage)).sidebar, false, "At 1280px Manage yields the sidebar")
+  await toggle.click()
+  await stableGeometry(panelPage)
+  const shown = await canvasState(panelPage)
+  assert.equal(shown.sidebar, true, "The user's show overrides the yield")
+  await resizeCanvasHost(panelPage, 1300)
+  const resized = await canvasState(panelPage)
+  assert.equal(resized.sidebar, true, "Resizing does not collapse the sidebar the user showed")
+  assert.equal(await toggle.getAttribute("aria-expanded"), "true")
+  await closePanel(panelPage)
+  return { shown, resized }
+})
   assert.deepEqual(pageErrors, [], "Responsive browser sessions must not have unhandled errors")
   console.log(`\n${reports.length} responsive integration checks passed.`)
 } finally {
