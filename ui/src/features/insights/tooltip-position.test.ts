@@ -96,7 +96,7 @@ describe("shared observation tooltip positioning", () => {
         }
       }
     }
-  }, 20000); // Sweeps every target and option across viewports; it exceeds the default five seconds in a parallel run.
+  });
 
   it("reserves a scrollable region below or above a pointer when neither side fits", () => {
     const result = placeTooltip(pointer(150, 85), { width: 292, height: 560 }, { width: 320, height: 260 });
