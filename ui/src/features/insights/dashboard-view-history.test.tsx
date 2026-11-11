@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
@@ -79,6 +79,8 @@ function record(step: string) {
 function setURL(url: string) {
   rawReplace(null, "", url)
 }
+// Lets confirmations and deferred view writes finish before the trace is read.
+const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
 
 beforeEach(() => {
   entries = []
@@ -225,7 +227,7 @@ describe("dashboard view history characterisation", () => {
     expect(entries).toEqual(VIEW_RESET_FLOW)
   })
 
-  it("example mode writes the example flag on every view write and never writes it for the copied link", async () => {
+  it("example mode flags every view write, and the copied link carries the flag", async () => {
     writeExampleWorkspace(localStorage, [source, target], source.id)
     render(<InsightsApp client={client()} initialExample />)
     await screen.findByRole("heading", { name: "Source" })
@@ -240,6 +242,47 @@ describe("dashboard view history characterisation", () => {
     record("example copy link")
 
     expect(normalise(String(writeText.mock.calls.at(-1)?.[0]))).toBe(`${location.origin}/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22default%22%7D&example=1`)
+
+    fireEvent.change(screen.getByLabelText("Service"), { target: { value: "checkout" } })
+    fireEvent.click(screen.getByRole("button", { name: "Apply values" }))
+    record("example apply text variable")
+
+    fireEvent.click(screen.getByRole("combobox", { name: "env" }))
+    fireEvent.click(screen.getByRole("option", { name: "staging" }))
+    record("example choose dropdown variable")
+
+    fireEvent.click(screen.getByRole("button", { name: "Select staging" }))
+    record("example select a signal")
+
+    fireEvent.click(screen.getByRole("button", { name: "Brush window" }))
+    record("example brush a window")
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Time range" }))
+    fireEvent.click(screen.getByRole("option", { name: "Last 6 hours" }))
+    record("example toolbar preset")
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Remove variable 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }))
+    await settle()
+    record("example remove a declared variable")
+
+    // The Code panel replaces the whole document, so applyDocument prunes the values it removed.
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard as code" }))
+    fireEvent.click(screen.getByRole("button", { name: /^JSON$/ }))
+    const code = screen.getByLabelText("Dashboard source") as HTMLTextAreaElement
+    const next = JSON.parse(code.value) as Dashboard
+    delete next.variables
+    fireEvent.change(code, { target: { value: JSON.stringify(next) } })
+    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }))
+    await settle()
+    record("example document removes every variable")
+
+    fireEvent.click(screen.getByRole("button", { name: "New dashboard" }))
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Discard changes" }))
+    await settle()
+    record("example new dashboard")
+
     expect(entries).toEqual(EXAMPLE_FLOW)
   })
 })
@@ -275,6 +318,14 @@ const EXAMPLE_FLOW: Entry[] = [
   {"step": "open example", "ops": ["replace /dashboard/insights/?dashboard=source&example=1"], "url": "/dashboard/insights/?dashboard=source&example=1", "editing": false, "dirty": false},
   {"step": "example library open", "ops": ["push /dashboard/insights/?dashboard=target&example=1"], "url": "/dashboard/insights/?dashboard=target&example=1", "editing": false, "dirty": false},
   {"step": "example copy link", "ops": [], "url": "/dashboard/insights/?dashboard=target&example=1", "editing": false, "dirty": false},
+  {step: "example apply text variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example choose dropdown variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example select a signal", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: false, dirty: false},
+  {step: "example brush a window", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T01%3A00%3A00.000Z&example=1", editing: false, dirty: false},
+  {step: "example toolbar preset", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%2C%22service%22%3A%22checkout%22%7D&example=1", editing: true, dirty: true},
+  {step: "example remove a declared variable", ops: ["replace /dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&example=1"], url: "/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22staging%22%7D&example=1", editing: true, dirty: true},
+  {step: "example document removes every variable", ops: ["replace /dashboard/insights/?dashboard=target&example=1"], url: "/dashboard/insights/?dashboard=target&example=1", editing: true, dirty: true},
+  {step: "example new dashboard", ops: ["replace /dashboard/insights/?dashboard=dashboard-NEW&example=1"], url: "/dashboard/insights/?dashboard=dashboard-NEW&example=1", editing: true, dirty: true},
 ]
 const INVALID_LINK_MISSING_FLOW: Entry[] = [
   {step: "missing dashboard link", ops: [], url: "/dashboard/insights/?dashboard=missing", editing: false, dirty: false},
