@@ -25,4 +25,4 @@
 dist/chart/*.tgz
 
 # Chart-level test fixtures (promtool), run from the repo, not shipped.
-tests/
+/tests/
