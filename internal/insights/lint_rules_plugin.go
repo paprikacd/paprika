@@ -6,7 +6,7 @@ var pluginLintRules = []lintRule{
 	{
 		ID:       "plugin.unknown",
 		Severity: warningSeverity,
-		Summary:  "Name a registered plugin id for every plugin widget.",
+		Summary:  guidanceVariables,
 		Fix:      "Set pluginId to a registered plugin, such as stacked-timeseries, threshold-gauge or status-grid.",
 		check:    checkUnknownPlugin,
 	},

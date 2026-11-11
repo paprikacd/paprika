@@ -21,25 +21,21 @@ import "slices"
 // Each line is an imperative rule ending in a full stop. Lines contain no double
 // quotes or backslashes, so they can be emitted as plain JavaScript strings.
 //
-// Lines that a lint rule checks carry the rule's summary verbatim. The insights
-// package fails TestLintSummariesAreComposed when a summary is missing here, so
-// the lint registry and this guidance cannot drift apart.
+// Each lint rule maps to one of these lines, and the rule's summary is that
+// line verbatim. Several rules share a line where they teach the same thing. The
+// insights package fails TestLintSummariesAreComposed when a summary is missing
+// here, so the lint registry and this guidance cannot drift apart.
 var dashboardComposition = []string{
 	"Compact stat cards (layout h<=2) show a short title, the exact value and at most one sparkline. Do not add showStatBar, a long description or min and max to them by default.",
-	"Use showStatBar only when the bar length is the reading: a bounded quantity such as the percent of an error budget that remains, with explicit min and max and layout h>=3. Do not add a bar to a rate or a count.",
-	"Do not combine a bar and a sparkline on a compact stat (layout h<=2).",
-	"Do not add a percentage bar to a compact stat (layout h<=2); the bar needs layout h>=3.",
+	"Use showStatBar only when the bar length is the reading: a bounded quantity such as the percent of an error budget that remains, with explicit min and max and layout h>=3. Do not add a bar to a rate or a count, or because a metric is a percentage.",
 	"On a stat, thresholds colour the reading or its bar; a stat card does not draw threshold labels. Show labelled thresholds where labels appear: heatmap legends, labelled referenceLines on time series, threshold-gauge labels and status-badge table mappings.",
 	"When a metric has a supplied or named objective, encode the breach: give the stat options.thresholds in ascending order, each naming a status. Start with the lowest meaningful value and the status that applies there, since a reading below the first threshold takes that threshold's status; for latency use 0 ok, then 300 warning and 500 critical, so a healthy reading stays ok. Escalate with warning at the objective and critical at the breach. A hex color is only an optional hue override. Draw the objective as a labelled referenceLines entry on a time series.",
 	"Set options.staleAfterSeconds only when the metric's scrape or evaluation interval is known, and make it at least twice that interval so one late sample does not flap. It applies to stat and time-series widgets and measures returned samples, not source health.",
-	"Keep provenance out of descriptions: name the source or query in a tooltip or authoring metadata, not in the description.",
-	"Write a description only when it adds meaning the viewer needs.",
-	"Do not repeat a unit in an axis label; the widget unit already shows it.",
+	"Keep provenance out of titles and descriptions: source and query detail belongs in tooltips or authoring metadata. Write a description only when it adds meaning the viewer needs.",
+	"Show a unit once, as the widget unit, not in axis labels, tick labels or titles.",
 	"Do not force max to 100 on rate charts unless the full 0 to 100 range is essential.",
-	"Do not overlap widgets: no two widgets may share a grid cell.",
-	"Leave no empty band of grid rows between widgets; move the widgets below a gap up to close it.",
-	"Bind each variable reference to a variable that the dashboard declares.",
-	"Name a registered plugin id for every plugin widget.",
+	"Place widgets without overlaps and fill each row; a gap beside a widget stays empty.",
+	"Declare every variable a query placeholder or binding uses, and use plugin ids the schema notes name.",
 	"On a stat, set min and max only together with showStatBar, which requires both. A bar that is switched off may keep bounds it already has; do not remove them to tidy the document.",
 	"Avoid widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense.",
 }

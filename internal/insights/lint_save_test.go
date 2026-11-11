@@ -44,7 +44,7 @@ func TestSaveRejectsOverlapOnCreateAndUpdate(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error != `widget "b" overlaps widget "a"` || body.Total != 1 || body.Truncated || len(body.Issues) != 1 {
+	if body.Error != `"Widget b" (b) overlaps "Widget a" (a)` || body.Total != 1 || body.Truncated || len(body.Issues) != 1 {
 		t.Fatalf("rejected create body = %+v", body)
 	}
 	issue := body.Issues[0]
@@ -119,7 +119,8 @@ func TestSuccessfulSaveReturnsWarningsInChecks(t *testing.T) {
 	if err := json.Unmarshal(saved["checks"], &checks); err != nil {
 		t.Fatalf("checks = %s: %v", saved["checks"], err)
 	}
-	if checks.Total != 1 || checks.Truncated || len(checks.Issues) != 1 || checks.Issues[0]["ruleId"] != "stat.density" || checks.Issues[0]["severity"] != "SEVERITY_WARNING" {
+	// A compact stat with a bar and a sparkline fires both stat rules, in registry order.
+	if checks.Total != 2 || checks.Truncated || len(checks.Issues) != 2 || checks.Issues[0]["ruleId"] != "stat.density" || checks.Issues[1]["ruleId"] != "stat.compact-bar" || checks.Issues[0]["severity"] != "SEVERITY_WARNING" {
 		t.Fatalf("checks = %+v", checks)
 	}
 
@@ -190,7 +191,7 @@ func TestDryRunReportsLintFindings(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("dry run status = %d, body %s", w.Code, w.Body)
 	}
-	if !strings.Contains(w.Body.String(), `"ruleId":"layout.overlap"`) || !strings.Contains(w.Body.String(), `"message":"widget \"b\" overlaps widget \"a\""`) {
+	if !strings.Contains(w.Body.String(), `"ruleId":"layout.overlap"`) || !strings.Contains(w.Body.String(), `"message":"\"Widget b\" (b) overlaps \"Widget a\" (a)"`) {
 		t.Fatalf("dry run = %s", w.Body)
 	}
 	if got := store.List(); len(got) != 0 {

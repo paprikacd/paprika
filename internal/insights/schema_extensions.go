@@ -529,7 +529,10 @@ func validateWidgetReferenceLine(raw json.RawMessage) error {
 		Label string  `json:"label"`
 		Color string  `json:"color"`
 	}
-	if json.Unmarshal(raw, &line) != nil || !finite(line.Value) {
+	if json.Unmarshal(raw, &line) != nil {
+		return errors.New("reference lines require a finite value")
+	}
+	if !finite(line.Value) {
 		return fieldErr("value", "reference lines require a finite value")
 	}
 	if label, ok := fields["label"]; ok {
@@ -851,7 +854,7 @@ func validateTooltipBinding(rawBinding json.RawMessage, seen map[string]bool) er
 		Field    string `json:"field"`
 	}
 	if json.Unmarshal(rawBinding, &binding) != nil {
-		return fieldErr("variable", "tooltip bindings require unique valid variable names")
+		return errors.New("tooltip bindings require unique valid variable names")
 	}
 	if !validVariableName(binding.Variable) || seen[binding.Variable] {
 		return fieldErr("variable", "tooltip bindings require unique valid variable names")

@@ -69,14 +69,14 @@ func requireNoHits(t *testing.T, findings []*insightsv1.CheckFinding, ruleID str
 func TestLintRegistryIsWellFormed(t *testing.T) {
 	seen := map[string]bool{}
 	want := map[string]insightsv1.Severity{
-		"layout.overlap":             insightsv1.Severity_SEVERITY_ERROR,
-		"layout.hole":                insightsv1.Severity_SEVERITY_WARNING,
-		"variables.undeclared":       insightsv1.Severity_SEVERITY_WARNING,
-		"stat.density":               insightsv1.Severity_SEVERITY_WARNING,
-		"stat.unbounded-percent-bar": insightsv1.Severity_SEVERITY_WARNING,
-		"description.provenance":     insightsv1.Severity_SEVERITY_WARNING,
-		"axis.unit-in-label":         insightsv1.Severity_SEVERITY_WARNING,
-		"plugin.unknown":             insightsv1.Severity_SEVERITY_WARNING,
+		"layout.overlap":         insightsv1.Severity_SEVERITY_ERROR,
+		"layout.hole":            insightsv1.Severity_SEVERITY_WARNING,
+		"variables.undeclared":   insightsv1.Severity_SEVERITY_WARNING,
+		"stat.density":           insightsv1.Severity_SEVERITY_WARNING,
+		"stat.compact-bar":       insightsv1.Severity_SEVERITY_WARNING,
+		"description.provenance": insightsv1.Severity_SEVERITY_WARNING,
+		"axis.unit-in-label":     insightsv1.Severity_SEVERITY_WARNING,
+		"plugin.unknown":         insightsv1.Severity_SEVERITY_WARNING,
 	}
 	if len(lintRules) != len(want) {
 		t.Fatalf("registry has %d rules, want %d", len(lintRules), len(want))
@@ -152,7 +152,7 @@ func TestLintOverlapIsAnErrorAtTheLaterWidget(t *testing.T) {
 		widgetJSON("b", `{"x":4,"y":0,"w":6,"h":4}`, ""),
 	)
 	finding := requireOneHit(t, lintFor(t, document), "layout.overlap", "/widgets/1/layout")
-	if finding.GetSeverity() != insightsv1.Severity_SEVERITY_ERROR || finding.GetMessage() != `widget "b" overlaps widget "a"` || finding.GetWidgetId() != "b" {
+	if finding.GetSeverity() != insightsv1.Severity_SEVERITY_ERROR || finding.GetMessage() != `"Widget b" (b) overlaps "Widget a" (a)` || finding.GetWidgetId() != "b" {
 		t.Fatalf("overlap finding = %v", finding)
 	}
 }
@@ -215,6 +215,26 @@ func TestLintUndeclaredVariableInAnnotationAndTooltipReferences(t *testing.T) {
 	requireOneHit(t, lintFor(t, tooltip), "variables.undeclared", "/widgets/0/options/tooltipView/source/ref/bindings/0/variable")
 }
 
+// Raw {{name}} placeholders in a widget query are read at query time, so an
+// undeclared name is a finding; a declared one is not. A saved query widget's
+// own query text is not used, so its placeholders are not checked.
+func TestLintUndeclaredPlaceholderInRawQuery(t *testing.T) {
+	raw := documentWithWidgets("demo", widgetJSON("a", "", `"query":"sum(rate(requests{service={{service}}}[5m]))"`))
+	requireOneHit(t, lintFor(t, raw), "variables.undeclared", "/widgets/0/query")
+
+	declared := json.RawMessage(`{"schemaVersion":1,"id":"demo","title":"Checks","timeRange":"1h","refreshInterval":30,"variables":[{"name":"service"}],"widgets":[` + widgetJSON("a", "", `"query":"sum(rate(requests{service={{service}}}[5m]))"`) + `]}`)
+	requireNoHits(t, lintFor(t, declared), "variables.undeclared")
+
+	savedQuery := documentWithWidgets("demo", widgetJSON("a", "", `"query":"{{service}}","queryRef":{"id":"q","bindings":[{"parameter":"service","source":"constant","value":"x"}]}`))
+	requireNoHits(t, lintFor(t, savedQuery), "variables.undeclared")
+}
+
+// A selection binding writes a dashboard variable, so an undeclared name is a finding.
+func TestLintUndeclaredSelectionBinding(t *testing.T) {
+	selection := documentWithWidgets("demo", widgetJSON("a", "", `"selectionBindings":[{"variable":"service","source":"label","value":"service"}]`))
+	requireOneHit(t, lintFor(t, selection), "variables.undeclared", "/widgets/0/selectionBindings/0/variable")
+}
+
 func TestLintStatDensityNeedsCompactHeightBarAndSparkline(t *testing.T) {
 	both := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"options":{"showStatBar":true,"min":0,"max":100,"showSparkline":true}`))
 	requireOneHit(t, lintFor(t, both), "stat.density", "/widgets/0/options/showStatBar")
@@ -230,17 +250,18 @@ func TestLintStatDensityNeedsCompactHeightBarAndSparkline(t *testing.T) {
 	}
 }
 
-func TestLintPercentBarOnCompactStat(t *testing.T) {
-	compactPercent := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"unit":"%","options":{"showStatBar":true,"min":0,"max":100}`))
-	requireOneHit(t, lintFor(t, compactPercent), "stat.unbounded-percent-bar", "/widgets/0/options/showStatBar")
+func TestLintCompactStatBar(t *testing.T) {
+	compactBar := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"unit":"%","options":{"showStatBar":true,"min":0,"max":100}`))
+	requireOneHit(t, lintFor(t, compactBar), "stat.compact-bar", "/widgets/0/options/showStatBar")
 
-	// A bar on a stat at least three rows tall is the bounded-budget pattern the
-	// guidance allows, so it is not reported.
+	// A bar at layout h 3 or more is the bounded-budget pattern the guidance
+	// allows, so it is not reported, whatever its unit.
 	tall := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":3}`, `"unit":"%","options":{"showStatBar":true,"min":0,"max":100}`))
-	requireNoHits(t, lintFor(t, tall), "stat.unbounded-percent-bar")
+	requireNoHits(t, lintFor(t, tall), "stat.compact-bar")
 
-	notPercent := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"unit":"req/s","options":{"showStatBar":true,"min":0,"max":100}`))
-	requireNoHits(t, lintFor(t, notPercent), "stat.unbounded-percent-bar")
+	// The rule is not tied to the unit: any bar on a compact stat fires.
+	requestsBar := documentWithWidgets("demo", statWidget("a", `{"x":0,"y":0,"w":4,"h":2}`, `"unit":"req/s","options":{"showStatBar":true,"min":0,"max":100}`))
+	requireOneHit(t, lintFor(t, requestsBar), "stat.compact-bar", "/widgets/0/options/showStatBar")
 }
 
 func TestLintProvenanceInDescriptions(t *testing.T) {
@@ -249,12 +270,28 @@ func TestLintProvenanceInDescriptions(t *testing.T) {
 		"Plotted from PromQL over five minutes",
 		"Query: sum(rate(requests[5m]))",
 		"Source: the Prometheus scrape",
+		`sum(rate(http_requests_total{service="checkout"}[5m]))`,
+		"SELECT service, requests FROM gallery.requests WHERE cluster = 'omega'",
+		"{ span.http.status_code >= 500 } traces that errored",
+		"Errors per service, using {{service}} from the variables",
+		"Via the Tempo provider, sampled every minute",
+		"datasource: postgres",
 	} {
 		document := documentWithWidgets("demo", widgetJSON("a", "", fmt.Sprintf(`"description":%q`, description)))
 		requireOneHit(t, lintFor(t, document), "description.provenance", "/widgets/0/description")
 	}
-	clean := documentWithWidgets("demo", widgetJSON("a", "", `"description":"Requests served per second, excluding health checks."`))
-	requireNoHits(t, lintFor(t, clean), "description.provenance")
+	// Prose that names a technology is not provenance; only query text and
+	// data-source attribution are.
+	for _, description := range []string{
+		"Postgres connections in use across the pool",
+		"Prometheus scrape interval is fifteen seconds",
+		"Select a service from the list to filter traces",
+		"Traces from the checkout service, sorted by duration",
+		"Requests served per second, excluding health checks.",
+	} {
+		clean := documentWithWidgets("demo", widgetJSON("a", "", fmt.Sprintf(`"description":%q`, description)))
+		requireNoHits(t, lintFor(t, clean), "description.provenance")
+	}
 	titleOnly := documentWithWidgets("demo", widgetJSON("a", "", `"title":"Prometheus requests"`))
 	requireNoHits(t, lintFor(t, titleOnly), "description.provenance")
 }
@@ -264,7 +301,7 @@ func TestLintAxisLabelRepeatsTheUnit(t *testing.T) {
 		"bracketed unit":    {"ms", `"yAxisLabel":"Latency (ms)"`, "/widgets/0/options/yAxisLabel"},
 		"unit token":        {"req/s", `"xAxisLabel":"Requests [req/s]"`, "/widgets/0/options/xAxisLabel"},
 		"label is the unit": {"ms", `"yAxisLabel":"ms"`, "/widgets/0/options/yAxisLabel"},
-		"percent token":     {"", `"yAxisLabel":"Share (%)"`, "/widgets/0/options/yAxisLabel"},
+		"percent unit":      {"%", `"yAxisLabel":"Share (%)"`, "/widgets/0/options/yAxisLabel"},
 	}
 	for name, tc := range cases {
 		document := documentWithWidgets("demo", widgetJSON("a", "", fmt.Sprintf(`"unit":%q,"options":{%s}`, tc.unit, tc.options)))
@@ -272,6 +309,9 @@ func TestLintAxisLabelRepeatsTheUnit(t *testing.T) {
 			requireOneHit(t, lintFor(t, document), "axis.unit-in-label", tc.pointer)
 		})
 	}
+	// With no widget unit the axis label is the only place the unit appears, so it never fires.
+	noUnit := documentWithWidgets("demo", widgetJSON("a", "", `"unit":"","options":{"yAxisLabel":"Share (%)"}`))
+	requireNoHits(t, lintFor(t, noUnit), "axis.unit-in-label")
 	clean := documentWithWidgets("demo", widgetJSON("a", "", `"unit":"ms","options":{"yAxisLabel":"Latency","xAxisLabel":"Time (UTC)"}`))
 	requireNoHits(t, lintFor(t, clean), "axis.unit-in-label")
 }

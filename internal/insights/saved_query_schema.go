@@ -332,7 +332,10 @@ type queryBinding struct{ Parameter, Source, Variable, Label, Field string }
 
 func validateQueryBinding(rawBinding json.RawMessage, tooltip bool, seen map[string]bool) error {
 	var binding queryBinding
-	if json.Unmarshal(rawBinding, &binding) != nil || !validVariableName(binding.Parameter) || seen[binding.Parameter] {
+	if json.Unmarshal(rawBinding, &binding) != nil {
+		return errors.New("saved query bindings require unique valid parameter names")
+	}
+	if !validVariableName(binding.Parameter) || seen[binding.Parameter] {
 		return fieldErr("parameter", "saved query bindings require unique valid parameter names")
 	}
 	seen[binding.Parameter] = true

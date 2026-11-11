@@ -70,6 +70,73 @@ type dashboardHeader struct {
 // Each finding names its own JSON Pointer: the validator that failed reports
 // the member it concerns, and its parents add their segments. See pointedError.
 func schemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
+	findings := unanchoredSchemaFindings(id, document)
+	if len(findings) == 0 {
+		return findings
+	}
+	return anchorFindings(document, findings)
+}
+
+// anchorFindings moves a finding whose pointer names a member the document does
+// not have to the nearest ancestor it does have. A required member that is
+// missing, or an element that is null, is reported at the object that should
+// hold it, so every pointer resolves against the document it was checked from.
+func anchorFindings(document Dashboard, findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {
+	var tree any
+	if json.Unmarshal(document, &tree) != nil {
+		return findings
+	}
+	for _, finding := range findings {
+		finding.Pointer = nearestPresentPointer(tree, finding.GetPointer())
+	}
+	return findings
+}
+
+// nearestPresentPointer returns pointer if the tree holds the node it names,
+// and otherwise the longest ancestor of it that the tree holds.
+func nearestPresentPointer(tree any, pointer string) string {
+	for !pointerPresent(tree, pointer) {
+		cut := strings.LastIndex(pointer, "/")
+		if cut <= 0 {
+			return ""
+		}
+		pointer = pointer[:cut]
+	}
+	return pointer
+}
+
+// pointerPresent reports whether the tree holds the node at an RFC 6901 pointer.
+// The empty pointer names the root, which is always present.
+func pointerPresent(tree any, pointer string) bool {
+	node := tree
+	if pointer == "" {
+		return true
+	}
+	for _, segment := range strings.Split(pointer[1:], "/") {
+		segment = strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
+		switch current := node.(type) {
+		case map[string]any:
+			next, ok := current[segment]
+			if !ok {
+				return false
+			}
+			node = next
+		case []any:
+			index, err := strconv.Atoi(segment)
+			if err != nil || index < 0 || index >= len(current) {
+				return false
+			}
+			node = current[index]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// unanchoredSchemaFindings runs the schema checks and reports each finding at the
+// pointer its validator named. schemaFindings anchors those pointers.
+func unanchoredSchemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
 	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
 		return []*insightsv1.CheckFinding{findingAt("", errAt("", "dashboard id or size is invalid"), "")}
 	}
@@ -319,7 +386,9 @@ func boundPointer(pointer string) string {
 	if len(pointer) <= limit {
 		return pointer
 	}
-	return pointer[:strings.LastIndex(pointer[:limit], "/")]
+	// Search one byte past the limit: a slash at the limit starts the next
+	// segment, so the segments before it fit and the cut lands on it.
+	return pointer[:strings.LastIndex(pointer[:limit+1], "/")]
 }
 
 func truncateRunes(value string, limit int) string {

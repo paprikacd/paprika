@@ -9,18 +9,21 @@ import (
 // most 12 under the schema, so every covered row is below this index.
 const maxGridRows = 1013
 
+// guidanceLayout is the guidance line the layout rules map to.
+const guidanceLayout = "Place widgets without overlaps and fill each row; a gap beside a widget stays empty."
+
 var layoutLintRules = []lintRule{
 	{
 		ID:       "layout.overlap",
 		Severity: errorSeverity,
-		Summary:  "Do not overlap widgets: no two widgets may share a grid cell.",
+		Summary:  guidanceLayout,
 		Fix:      "Move or resize one of the two widgets so their grid rectangles do not intersect.",
 		check:    checkLayoutOverlap,
 	},
 	{
 		ID:       "layout.hole",
 		Severity: warningSeverity,
-		Summary:  "Leave no empty band of grid rows between widgets; move the widgets below a gap up to close it.",
+		Summary:  guidanceLayout,
 		Fix:      "Move the widgets below the gap up so that every grid row between the top and bottom widgets holds a widget.",
 		check:    checkLayoutHoles,
 	},
@@ -39,7 +42,7 @@ func checkLayoutOverlap(doc *lintDocument) []lintHit {
 				hits = append(hits, lintHit{
 					pointer:  widgetBase(later.index) + "/layout",
 					widgetID: later.id,
-					message:  fmt.Sprintf("widget %q overlaps widget %q", later.id, earlier.id),
+					message:  widgetLabel(later) + " overlaps " + widgetLabel(earlier),
 				})
 			}
 		}

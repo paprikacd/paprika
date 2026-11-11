@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 // pointerCase names the exact member a validator must report. Each message is
@@ -61,14 +63,14 @@ func TestSchemaFindingsNameTheExactMemberForEachValidator(t *testing.T) {
 		{"widget layout height", documentWithWidgets("demo", widgetJSON("a", `{"x":0,"y":0,"w":4,"h":1}`, "")), "/widgets/0/layout/h", "schema.widget.layout", "widget layout is outside the dashboard grid"},
 		{"widget color", documentWithWidgets("demo", widgetJSON("a", "", `"color":"red"`)), "/widgets/0/color", "schema.widget.color", "widget color must be a six-digit hex color"},
 		{"widget query reference", documentWithWidgets("demo", widgetJSON("a", "", `"queryRef":{"id":"!!"}`)), "/widgets/0/queryRef/id", "schema.widget.queryRef", "saved query references require a valid id"},
-		{"query binding variable", documentWithWidgets("demo", widgetJSON("a", "", `"queryRef":{"id":"q","bindings":[{"parameter":"p","source":"variable"}]}`)), "/widgets/0/queryRef/bindings/0/variable", "schema.widget.queryRef", "saved query variable bindings require a valid dashboard variable name"},
+		{"query binding variable", documentWithWidgets("demo", widgetJSON("a", "", `"queryRef":{"id":"q","bindings":[{"parameter":"p","source":"variable"}]}`)), "/widgets/0/queryRef/bindings/0", "schema.widget.queryRef", "saved query variable bindings require a valid dashboard variable name"},
 		{"plugin id", documentWithWidgets("demo", pluginWidget("a", `,"pluginId":"!!"`)), "/widgets/0/pluginId", "schema.widget.pluginId", "plugin widgets require a valid pluginId"},
 		{"plugin member on a timeseries", documentWithWidgets("demo", widgetJSON("a", "", `"pluginId":"thing"`)), "/widgets/0/pluginId", "schema.widget.pluginId", "pluginId, dataKind, and config are only valid for plugin widgets"},
 		{"plugin config reserved key", documentWithWidgets("demo", pluginWidget("a", `,"config":{"nested":{"constructor":true}}`)), "/widgets/0/config/nested/constructor", "schema.widget.config", "plugin configuration contains a reserved key"},
 		{"plugin config reserved key order", documentWithWidgets("demo", pluginWidget("a", `,"config":{"prototype":1,"constructor":2}`)), "/widgets/0/config/constructor", "schema.widget.config", "plugin configuration contains a reserved key"},
 		{"drilldown id", documentWithWidgets("demo", widgetJSON("a", "", `"drilldowns":[{"id":"x","title":"t","dashboardId":"d"},{"id":"x","title":"t","dashboardId":"d"}]`)), "/widgets/0/drilldowns/1/id", "schema.widget.drilldowns", "drilldowns require unique IDs, local dashboard IDs, titles up to 120 characters, and optional boolean carryTimeRange"},
 		{"drilldown binding source", documentWithWidgets("demo", widgetJSON("a", "", `"drilldowns":[{"id":"x","title":"t","dashboardId":"d","bindings":[{"variable":"v","source":"nope"}]}]`)), "/widgets/0/drilldowns/0/bindings/0/source", "schema.widget.drilldowns", "drilldown binding source must be label, value, series, or constant"},
-		{"selection binding", documentWithWidgets("demo", widgetJSON("a", "", `"selectionBindings":[{"variable":"v","source":"label"}]`)), "/widgets/0/selectionBindings/0/value", "schema.widget.selectionBindings", "label bindings require a label key of 1–128 characters"},
+		{"selection binding", documentWithWidgets("demo", widgetJSON("a", "", `"selectionBindings":[{"variable":"v","source":"label"}]`)), "/widgets/0/selectionBindings/0", "schema.widget.selectionBindings", "label bindings require a label key of 1–128 characters"},
 		{"annotation column", documentWithWidgets("demo", widgetJSON("a", "", `"annotationSource":{"queryRef":{"id":"q"},"timestampColumn":"ts","labelColumn":" lbl"}`)), "/widgets/0/annotationSource/labelColumn", "schema.widget.annotationSource", "event query column names must contain 1–128 characters"},
 		{"option axis label", documentWithWidgets("demo", widgetJSON("a", "", `"options":{"yAxisLabel":"`+strings.Repeat("y", 81)+`"}`)), "/widgets/0/options/yAxisLabel", "schema.widget.options", "axis labels must be strings of at most 80 characters"},
 		{"option tooltip view type", documentWithWidgets("demo", widgetJSON("a", "", `"options":{"tooltipView":{"type":"bogus"}}`)), "/widgets/0/options/tooltipView/type", "schema.widget.options", "unsupported tooltip widget type"},
@@ -87,6 +89,12 @@ func TestSchemaFindingsNameTheExactMemberForEachValidator(t *testing.T) {
 		{"option threshold label", documentWithWidgets("demo", widgetJSON("a", "", `"options":{"thresholds":[{"value":1,"status":"ok","label":"`+strings.Repeat("x", 81)+`"}]}`)), "/widgets/0/options/thresholds/0/label", "schema.widget.options", "threshold labels must be at most 80 characters"},
 		{"option series colour", documentWithWidgets("demo", widgetJSON("a", "", `"options":{"seriesColors":[{"label":"code","value":"2xx","color":"#111111"},{"label":"code","value":"4xx","color":"red"}]}`)), "/widgets/0/options/seriesColors/1/color", "schema.widget.options", "series colors require a valid metric label, nonempty value, and six-digit hex color"},
 		{"option series duplicate", documentWithWidgets("demo", widgetJSON("a", "", `"options":{"seriesColors":[{"label":"code","value":"2xx","color":"#111111"},{"label":"code","value":"2xx","color":"#222222"}]}`)), "/widgets/0/options/seriesColors/1", "schema.widget.options", "duplicate series color label and value"},
+		// A decode failure names the element, not a valid neighbour of the bad member.
+		{"drilldown carryTimeRange type", documentWithWidgets("demo", widgetJSON("a", "", `"drilldowns":[{"id":"x","title":"t","dashboardId":"d","carryTimeRange":"yes"}]`)), "/widgets/0/drilldowns/0", "schema.widget.drilldowns", "drilldowns require unique IDs, local dashboard IDs, titles up to 120 characters, and optional boolean carryTimeRange"},
+		{"variable label type", documentWithHeader(`"variables":[{"name":"svc","label":7}],`), "/variables/0", "schema.document.variables", "dashboard variables require unique identifier names up to 64 characters, labels up to 80, and string values up to 1024"},
+		{"binding source type", documentWithWidgets("demo", widgetJSON("a", "", `"queryRef":{"id":"q","bindings":[{"parameter":"p","source":7}]}`)), "/widgets/0/queryRef/bindings/0", "schema.widget.queryRef", "saved query bindings require unique valid parameter names"},
+		{"selection binding source type", documentWithWidgets("demo", widgetJSON("a", "", `"selectionBindings":[{"variable":"v","source":7}]`)), "/widgets/0/selectionBindings/0", "schema.widget.selectionBindings", "drilldown bindings require unique variable names and string values up to 1024 characters"},
+		{"reference line label type", documentWithWidgets("demo", widgetJSON("a", "", `"options":{"referenceLines":[{"value":1,"label":7}]}`)), "/widgets/0/options/referenceLines/0", "schema.widget.options", "reference lines require a finite value"},
 		{"unknown widget member", documentWithWidgets("demo", widgetJSON("a", "", `"zeta":1`)), "/widgets/0/zeta", "schema.widget.shape", `unknown dashboard field "zeta"`},
 		{"unknown layout member", documentWithWidgets("demo", widgetJSON("a", `{"x":0,"y":0,"w":4,"h":4,"z":1}`, "")), "/widgets/0/layout/z", "schema.widget.layout", `unknown dashboard field "z"`},
 		{"missing widget member", documentWithWidgets("demo", `{"id":"a","title":"A","type":"timeseries","providerId":"prometheus","query":"up","unit":"req/s"}`), "/widgets/0", "schema.widget.shape", `required dashboard field "layout" is missing`},
@@ -146,6 +154,15 @@ func TestBoundPointerNamesTheNearestAncestorThatFits(t *testing.T) {
 	}
 	if got := boundPointer("/widgets/0/layout/w"); got != "/widgets/0/layout/w" {
 		t.Fatalf("short pointer changed to %q", got)
+	}
+	// A slash exactly at the limit starts a segment that does not fit: the
+	// segments before it are the longest pointer that does.
+	atLimit := "/widgets/0/" + strings.Repeat("p", checkwire.MaxPointerBytes-len("/widgets/0/")) + "/child"
+	if len(atLimit) <= checkwire.MaxPointerBytes+1 || atLimit[checkwire.MaxPointerBytes] != '/' {
+		t.Fatalf("fixture must put a slash at byte %d: %q", checkwire.MaxPointerBytes, atLimit[checkwire.MaxPointerBytes])
+	}
+	if got := boundPointer(atLimit); got != atLimit[:checkwire.MaxPointerBytes] {
+		t.Fatalf("slash at the limit: bounded pointer = %d bytes, want %d", len(got), checkwire.MaxPointerBytes)
 	}
 }
 

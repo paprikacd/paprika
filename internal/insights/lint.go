@@ -2,6 +2,7 @@ package insights
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -55,10 +56,15 @@ type lintDocument struct {
 type lintWidget struct {
 	index       int
 	id          string
+	title       string
 	widgetType  string
 	pluginID    string
 	description string
 	unit        string
+	query       string
+	// hasQueryRef is true when a saved query supplies the widget's query. A raw
+	// query is then not used, so its placeholders are not variable references.
+	hasQueryRef bool
 	x, y, w, h  int
 	showBar     bool
 	showSpark   bool
@@ -83,15 +89,18 @@ type wireDocument struct {
 }
 
 type wireWidget struct {
-	ID               string            `json:"id"`
-	Type             string            `json:"type"`
-	PluginID         string            `json:"pluginId"`
-	Description      string            `json:"description"`
-	Unit             string            `json:"unit"`
-	Layout           wireLayout        `json:"layout"`
-	QueryRef         *wireQueryRef     `json:"queryRef"`
-	AnnotationSource *wireAnnotation   `json:"annotationSource"`
-	Options          *wireWidgetOption `json:"options"`
+	ID                string            `json:"id"`
+	Title             string            `json:"title"`
+	Type              string            `json:"type"`
+	PluginID          string            `json:"pluginId"`
+	Description       string            `json:"description"`
+	Unit              string            `json:"unit"`
+	Query             string            `json:"query"`
+	Layout            wireLayout        `json:"layout"`
+	QueryRef          *wireQueryRef     `json:"queryRef"`
+	AnnotationSource  *wireAnnotation   `json:"annotationSource"`
+	SelectionBindings []wireBinding     `json:"selectionBindings"`
+	Options           *wireWidgetOption `json:"options"`
 }
 
 type wireLayout struct {
@@ -144,8 +153,8 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 		widget := &wire.Widgets[i]
 		base := widgetBase(i)
 		lw := lintWidget{
-			index: i, id: widget.ID, widgetType: widget.Type, pluginID: widget.PluginID,
-			description: widget.Description, unit: widget.Unit,
+			index: i, id: widget.ID, title: widget.Title, widgetType: widget.Type, pluginID: widget.PluginID,
+			description: widget.Description, unit: widget.Unit, query: widget.Query, hasQueryRef: widget.QueryRef != nil,
 			x: widget.Layout.X, y: widget.Layout.Y, w: widget.Layout.W, h: widget.Layout.H,
 		}
 		if widget.Options != nil {
@@ -155,6 +164,9 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 			lw.yAxisLabel = widget.Options.YAxisLabel
 		}
 		lw.variables = append(lw.variables, variableRefs(base+"/queryRef", widget.QueryRef)...)
+		for k, binding := range widget.SelectionBindings {
+			lw.variables = append(lw.variables, lintVariableRef{pointer: base + "/selectionBindings/" + strconv.Itoa(k) + "/variable", variable: binding.Variable})
+		}
 		if widget.AnnotationSource != nil {
 			lw.variables = append(lw.variables, variableRefs(base+"/annotationSource/queryRef", widget.AnnotationSource.QueryRef)...)
 		}
@@ -215,6 +227,20 @@ func lintFinding(rule lintRule, hit lintHit) *insightsv1.CheckFinding {
 		Message:  truncateRunes(hit.message, maxFindingMessageRunes),
 		Fix:      rule.Fix,
 	}
+}
+
+// labelTitleRunes bounds the title quoted in a message, so two labels in one
+// message stay well within the message limit.
+const labelTitleRunes = 40
+
+// widgetLabel names a widget for a message by its title and id, so an author can
+// find it both on the canvas and in the document.
+func widgetLabel(widget *lintWidget) string {
+	title := []rune(widget.title)
+	if len(title) > labelTitleRunes {
+		title = append(title[:labelTitleRunes], '…')
+	}
+	return fmt.Sprintf("%q (%s)", string(title), widget.id)
 }
 
 // hasErrorFinding reports whether any finding is error severity, which rejects a save.

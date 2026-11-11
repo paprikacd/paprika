@@ -66,7 +66,11 @@ func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error
 		DefaultValue string `json:"defaultValue"`
 	}
 	const message = "dashboard variables require unique identifier names up to 64 characters, labels up to 80, and string values up to 1024"
-	if json.Unmarshal(item, &variable) != nil || !validVariableName(variable.Name) || seen[variable.Name] {
+	// A decode failure names no member: the element is the thing that is wrong.
+	if json.Unmarshal(item, &variable) != nil {
+		return errors.New(message)
+	}
+	if !validVariableName(variable.Name) || seen[variable.Name] {
 		return fieldErr("name", message)
 	}
 	if stringUnits(variable.Label) > 80 {
@@ -110,7 +114,10 @@ func validateDrilldown(item json.RawMessage, seen map[string]bool) error {
 		CarryTimeRange bool   `json:"carryTimeRange"`
 	}
 	const message = "drilldowns require unique IDs, local dashboard IDs, titles up to 120 characters, and optional boolean carryTimeRange"
-	if json.Unmarshal(item, &link) != nil || !validID.MatchString(link.ID) || seen[link.ID] {
+	if json.Unmarshal(item, &link) != nil {
+		return errors.New(message)
+	}
+	if !validID.MatchString(link.ID) || seen[link.ID] {
 		return fieldErr("id", message)
 	}
 	if !validID.MatchString(link.DashboardID) {
@@ -139,7 +146,10 @@ func validateDrilldownBinding(item json.RawMessage, seen map[string]bool) error 
 		Value    string `json:"value"`
 	}
 	const message = "drilldown bindings require unique variable names and string values up to 1024 characters"
-	if json.Unmarshal(item, &binding) != nil || !validVariableName(binding.Variable) || seen[binding.Variable] {
+	if json.Unmarshal(item, &binding) != nil {
+		return errors.New(message)
+	}
+	if !validVariableName(binding.Variable) || seen[binding.Variable] {
 		return fieldErr("variable", message)
 	}
 	if stringUnits(binding.Value) > 1024 {
