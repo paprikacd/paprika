@@ -680,6 +680,8 @@ export function DashboardCanvas({
       end={range.end}
       step={Math.max(1, Math.ceil((range.end - range.start) / 300))}
     >
+      {/* Above the measured canvas, so tile geometry stays relative to the anchor and the strip reserves its own height. */}
+      {!!dashboard.widgets.length && <AttentionStrip widgets={orderedWidgets} scopeRef={containerRef} autoRefresh={autoRefresh} inset={!!focus} />}
       <div
         ref={containerRef}
         className={`${styles.canvas} ${editing && !focus ? styles.editingCanvas : ""}`}
@@ -695,7 +697,6 @@ export function DashboardCanvas({
         }}
       >
         {draggable && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
-        {!!dashboard.widgets.length && <AttentionStrip widgets={orderedWidgets} scopeRef={containerRef} autoRefresh={autoRefresh} />}
         <ChartCursorProvider key={dashboard.id}>
         {mounted && (focus ? focus.render(tiles) : stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout

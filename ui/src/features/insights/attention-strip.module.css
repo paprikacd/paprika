@@ -18,22 +18,28 @@
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
+/* Focus mode drops the canvas page padding, so the strip carries its own gutter there. */
+.inset { padding-inline: 24px; }
 .freshness {
   margin: 0;
   color: var(--gamma-ink);
   white-space: nowrap;
 }
 .refresh { color: var(--gamma-muted); }
-.summary {
+.chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
   min-width: 0;
 }
-.clear { color: var(--gamma-muted); }
-.checked { color: var(--gamma-muted); margin-left: 4px; }
+.counts {
+  margin: 0;
+  color: var(--gamma-muted);
+  white-space: nowrap;
+}
 .lastKnown { color: var(--gamma-muted); }
+.clear { color: var(--gamma-muted); }
 .chip {
   position: relative;
   display: inline-flex;
@@ -79,10 +85,16 @@
   border: 0;
 }
 
-/* Narrow canvases: the freshness line on top, the chips below it, and room for two chip lines. */
+/*
+ * Narrow canvases: the freshness and the checked count share the first line, and the chips take a line of their own.
+ * The reserved height covers that second line, so chips appearing or clearing do not move the widgets below.
+ */
 @media (max-width: 600px) {
-  .strip { min-height: 72px; gap: 4px; }
-  .summary { flex-basis: 100%; }
+  .strip { min-height: 84px; gap: 4px 12px; }
+  .inset { padding-inline: 16px; }
+  .freshness { order: 1; }
+  .counts { order: 2; margin-left: auto; }
+  .chips { order: 3; flex-basis: 100%; }
 }
 
 /* A focused tile is outlined briefly after a chip reveals it. Set by attention-strip.tsx. */

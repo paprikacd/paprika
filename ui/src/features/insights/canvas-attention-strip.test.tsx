@@ -121,7 +121,7 @@ it("keeps a focused-out tile's last known state in the strip rather than droppin
   expect(screen.getByTestId("focus-preview")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /^2 critical:/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /^1 warning:/ })).toBeInTheDocument();
-  expect(screen.getByText("7 last known")).toBeInTheDocument();
+  expect(screen.getByText(/7 last known/)).toBeInTheDocument();
   expect(strip()).toBeTruthy();
 });
 

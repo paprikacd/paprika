@@ -107,12 +107,14 @@ function useClock(running: boolean): number {
  * as chips that step through their widgets, and how many widgets are checked. It reads the canvas's attention store,
  * so it must render inside the provider. Its height is reserved so that counts and ages never move the widgets.
  */
-export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
+export function AttentionStrip({ widgets, scopeRef, autoRefresh, inset = false }: {
   /** The dashboard's widgets in the order they are shown. */
   widgets: readonly { id: string }[];
   /** The canvas element whose tiles the chips scroll to. */
   scopeRef: RefObject<HTMLElement | null>;
   autoRefresh: AutoRefresh;
+  /** Pads the strip when the canvas has no page padding of its own, as in focus mode. */
+  inset?: boolean;
 }) {
   const entries = useWidgetAttentions();
   const store = useAttentionPublisher();
@@ -181,12 +183,12 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
   const flagged = ATTENTION_REASONS.filter((reason) => counts[reason] > 0);
   const titleOf = (widgetId: string) => entries.find((entry) => entry.widgetId === widgetId)?.title ?? widgetId;
   return (
-    <section aria-label="Dashboard attention" className={styles.strip} data-attention-strip="">
+    <section aria-label="Dashboard attention" className={`${styles.strip}${inset ? ` ${styles.inset}` : ""}`} data-attention-strip="">
       <p className={styles.freshness} data-freshness={completedAt === undefined ? "none" : "settled"}>
         {age === undefined ? "Waiting for first results" : `Updated ${age}`}
         <span className={styles.refresh}> · {refreshLabel(autoRefresh)}</span>
       </p>
-      <div className={styles.summary}>
+      <div className={styles.chips}>
         {!flagged.length && <span className={styles.clear}>No attention needed</span>}
         {flagged.map((reason) => {
           const label = `${counts[reason]} ${reason}`;
@@ -203,13 +205,15 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
             </button>
           );
         })}
-        <span className={styles.checked}>{checked}/{summary.widgets} checked</span>
+      </div>
+      <p className={styles.counts}>
+        {checked}/{summary.widgets} checked
         {summary.lastKnown > 0 && (
           <span className={styles.lastKnown} title="Widgets outside the focused view are counted at their last known state.">
-            {summary.lastKnown} last known
+            {" · "}{summary.lastKnown} last known
           </span>
         )}
-      </div>
+      </p>
       {/* A polite live region without the status role, so it does not join other status messages on the page. */}
       <p aria-live="polite" aria-atomic="true" className={styles.srOnly}>{announced}</p>
       {hint && <p role="status" className={styles.hint}>{hint}</p>}
