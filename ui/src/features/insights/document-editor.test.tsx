@@ -492,7 +492,8 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
     fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2 errors. Fix them before applying."));
-    expect(screen.getByRole("heading", { name: "2 errors" })).toHaveFocus();
+    // Focus moves in a passive effect after the refusal renders, so wait for it rather than racing it.
+    await waitFor(() => expect(screen.getByRole("heading", { name: "2 errors" })).toHaveFocus());
     expect(onApply).not.toHaveBeenCalled();
   });
 
