@@ -373,14 +373,15 @@ function finiteBound(value: number) {
 /**
  * Nice bounds and ticks for an axis, rounding the domain outwards once. The step (1, 2, 2.5 or 5 times a power of ten)
  * is chosen so the number of ticks is near `count`. A domain already nice for that count is returned unchanged, so
- * rounding again is a no-op. Bounds clamp to the float range instead of overflowing to infinity.
+ * rounding again is a no-op. Bounds clamp to the float range instead of overflowing to infinity. A positive `minStep`
+ * excludes every step below it, so the ticks stay at least that far apart.
  */
-export function niceAxis(domain: readonly [number, number], count = 5): { domain: [number, number]; ticks: number[] } {
+export function niceAxis(domain: readonly [number, number], count = 5, minStep = 0): { domain: [number, number]; ticks: number[] } {
   const [low, high] = domain;
   if (!Number.isFinite(low) || !Number.isFinite(high) || !(high > low))
     return { domain: [low, high], ticks: Number.isFinite(low) && low === high ? [low] : [] };
   const target = Math.max(2, Math.floor(count));
-  const candidates = stepCandidates(low, high, target, true);
+  const candidates = stepCandidates(low, high, target, true, minStep);
   if (!candidates.length) return { domain: [low, high], ticks: [] };
   // Already nice: a domain whose ends sit on a step near the requested count is kept exactly as it is.
   const span = high - low;
@@ -392,8 +393,11 @@ export function niceAxis(domain: readonly [number, number], count = 5): { domain
   return { domain: [unsignedZero(finiteBound(first * step)), unsignedZero(finiteBound(last * step))], ticks: ticksBetween(step, first, last) };
 }
 
-/** Candidate steps for a span: the outermost multiples of each step that contain it, with their tick counts. */
-function stepCandidates(low: number, high: number, target: number, outer: boolean) {
+/**
+ * Candidate steps for a span: the outermost multiples of each step that contain it, with their tick counts. Steps below
+ * `minStep` or not a whole multiple of it are excluded, and the search reaches up to the smallest power of ten that is at least `minStep`.
+ */
+function stepCandidates(low: number, high: number, target: number, outer: boolean, minStep = 0) {
   // Half the extent first, so an extent wider than the float range (±1e308) still has a finite step.
   const half = high / 2 - low / 2;
   if (!(half > 0) || !Number.isFinite(half)) return [];
@@ -401,10 +405,13 @@ function stepCandidates(low: number, high: number, target: number, outer: boolea
   const magnitude = Math.floor(Math.log10(perStep));
   if (!Number.isFinite(magnitude)) return [];
   const candidates: { step: number; first: number; last: number; ticks: number }[] = [];
-  for (let exponent = magnitude - 1; exponent <= magnitude + 1; exponent++)
+  const minimumExponent = minStep > 0 ? Math.ceil(Math.log10(minStep) - 1e-9) : -Infinity;
+  for (let exponent = magnitude - 1; exponent <= Math.max(magnitude + 1, minimumExponent); exponent++)
     for (const mantissa of NICE_MANTISSAS) {
       const step = mantissa * 10 ** exponent;
       if (!Number.isFinite(step) || step <= 0) continue;
+      // Every tick must print exactly at the authored precision, so a step is a whole multiple of minStep (2.5 is not a multiple of 1).
+      if (minStep > 0 && Math.abs(step / minStep - Math.round(step / minStep)) > 1e-9 * Math.max(1, step / minStep)) continue;
       const first = outer ? Math.floor(low / step + 1e-9) : Math.ceil(low / step - 1e-9);
       const last = outer ? Math.ceil(high / step - 1e-9) : Math.floor(high / step + 1e-9);
       const ticks = last - first + 1;
@@ -444,14 +451,15 @@ function ticksBetween(step: number, first: number, last: number) {
 
 /**
  * Ticks inside `domain`, and only inside it. The domain is not changed: a chart drawn on it shows each tick, and no
- * tick falls outside the plot. The step is near the requested count and need not land on both ends.
+ * tick falls outside the plot. The step is near the requested count and need not land on both ends. A positive
+ * `minStep` excludes every smaller step.
  */
-export function ticksWithin(domain: readonly [number, number], count = 5): number[] {
+export function ticksWithin(domain: readonly [number, number], count = 5, minStep = 0): number[] {
   const [low, high] = domain;
   if (!Number.isFinite(low) || !Number.isFinite(high) || !(high > low)) return Number.isFinite(low) && low === high ? [low] : [];
   const target = Math.max(2, Math.floor(count));
   const span = high - low;
-  const candidates = stepCandidates(low, high, target, false);
+  const candidates = stepCandidates(low, high, target, false, minStep);
   if (!candidates.length) return [];
   const sane = candidates.filter(candidate => candidate.ticks <= target + 1);
   const pool = sane.length ? sane : candidates;
@@ -496,8 +504,10 @@ export function axisScale(
   const finiteDomain = domain.every(Number.isFinite);
   const customTicks = options.ticks?.filter(Number.isFinite);
   if (decimals !== undefined && Number.isFinite(decimals)) {
+    // A tick step below the last printed decimal would print two labels alike ("1, 1, 0"), so the step is at least that.
+    const minStep = 10 ** -decimals;
     const axis = finiteDomain && !customTicks
-      ? fixedDomain ? { domain: [domain[0], domain[1]] as [number, number], ticks: ticksWithin(domain, count) } : niceAxis(domain, count)
+      ? fixedDomain ? { domain: [domain[0], domain[1]] as [number, number], ticks: ticksWithin(domain, count, minStep) } : niceAxis(domain, count, minStep)
       : { domain: [domain[0], domain[1]] as [number, number], ticks: customTicks ?? [] };
     return {
       unit,

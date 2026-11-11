@@ -104,8 +104,9 @@ Useful queries:
 
 ```promql
 # Controllers that have not completed a reconcile in five minutes.
+# Controllers record result="success", "error", or "fail" (releases only); only success counts.
 time() - max by (controller) (
-  paprika_controller_last_reconcile_timestamp_seconds{result=~"success|requeue_after"}
+  paprika_controller_last_reconcile_timestamp_seconds{result="success"}
 ) > 300
 
 # Applications with unreconciled spec changes.
@@ -119,6 +120,10 @@ max by (controller) (workqueue_longest_running_processor_seconds) > 60
 # Releases that have not reached a terminal phase.
 paprika_releases_stuck > 0
 ```
+
+A ready-made Insights dashboard charts these gauges with the same `max()`
+semantics as the alert rules: the `paprika-control-plane` starter in
+`internal/insights/starters/`.
 
 `workqueue_*` and `controller_runtime_reconcile_*` are supplied by
 controller-runtime; the Paprika-specific gauges above add the per-application

@@ -43,6 +43,95 @@ def pipeline_rate(signal_index, pipeline_index, cluster_index, sample_index):
     return signal_rates[signal_index] * shares[pipeline_index] * (1 if cluster_index == 0 else .74) * activity
 
 
+
+# Minutes of the seeded incident in the six-hour window. Minute 250 is the first
+# failing reconcile; minute 272 is the last sample of the recovery.
+CONTROL_PLANE_INCIDENT = range(250, 273)
+CONTROL_PLANE_CONTROLLERS = ("application", "release", "stage", "pipeline")
+CONTROL_PLANE_APPLICATIONS = (("checkout", "prod"), ("payments", "prod"), ("catalog", "prod"), ("worker", "prod"), ("notifications", "prod"), ("search", "prod"), ("api-gateway", "prod"), ("ledger", "prod"), ("reporting", "prod"), ("identity", "prod"), ("checkout", "staging"), ("payments", "staging"))
+
+
+def control_plane_families(timestamps):
+    """Synthetic Paprika control-plane gauges and counters: healthy, with one seeded incident.
+
+    The payments application stops reconciling for the incident window, so its
+    spec lag, the stale count and its exhausted release retries follow from it.
+    A release stays active past the 30-minute stuck threshold, and the fleet
+    index reports degraded health for a shorter stretch. The application and
+    release controllers record errors instead of successes during the window.
+    Every value is synthetic; no provider or cluster is read.
+    """
+    incident = CONTROL_PLANE_INCIDENT
+    retries = range(255, 269)
+    stuck = range(258, 269)
+    fleet = range(256, 263)
+    last_success_before = timestamps[incident[0] - 1]
+
+    def lagging(application, namespace, n):
+        return 2 if (application, namespace) == ("payments", "prod") and n in incident else 0
+
+    lag_series = [
+        ("paprika_application_reconcile_lag", {"application": application, "namespace": namespace},
+         [(stamp, lagging(application, namespace, n)) for n, stamp in enumerate(timestamps)])
+        for application, namespace in CONTROL_PLANE_APPLICATIONS
+    ]
+    stale, retries_exhausted, stuck_releases, fleet_degraded = [], [], [], []
+    applications_by_phase = {"Healthy": [], "Promoting": [], "Degraded": []}
+    releases_by_phase = {"Running": [], "Failed": [], "Succeeded": []}
+    for n, stamp in enumerate(timestamps):
+        stale.append((stamp, sum(1 for application, namespace in CONTROL_PLANE_APPLICATIONS if lagging(application, namespace, n) > 0)))
+        retries_exhausted.append((stamp, 1 if n in retries else 0))
+        stuck_releases.append((stamp, 1 if n in stuck else 0))
+        fleet_degraded.append((stamp, 1 if n in fleet else 0))
+        # A rollout is in progress for a quarter of the window; the payments
+        # application is degraded throughout the incident.
+        promoting = 1 if (n // 25) % 4 == 1 else 0
+        degraded = 1 if n in incident else 0
+        applications_by_phase["Promoting"].append((stamp, promoting))
+        applications_by_phase["Degraded"].append((stamp, degraded))
+        applications_by_phase["Healthy"].append((stamp, len(CONTROL_PLANE_APPLICATIONS) - promoting - degraded))
+        releases_by_phase["Running"].append((stamp, 2 if n in stuck else 1))
+        releases_by_phase["Failed"].append((stamp, 1 if n in incident else 0))
+        releases_by_phase["Succeeded"].append((stamp, 40 + n // 30))
+
+    success, error, success_ts, error_ts = [], [], [], []
+    rates = {"application": 46, "release": 9, "stage": 12, "pipeline": 5}
+    for i, controller in enumerate(CONTROL_PLANE_CONTROLLERS):
+        failing_controller = controller in ("application", "release")
+        success_total, error_total = 10_000.0 * (i + 1), 0.0
+        success_points, error_points, last_success_points, last_error_points = [], [], [], []
+        last_success = timestamps[0]
+        for n, stamp in enumerate(timestamps):
+            failing = failing_controller and n in incident
+            if failing:
+                error_total += (14 if controller == "release" else 2) * (1 + .1 * math.sin(n / 3))
+                last_error_points.append((stamp, stamp))
+            else:
+                success_total += rates[controller] * (1 + .2 * math.sin(n / 23 + i))
+                last_success = stamp
+            success_points.append((stamp, success_total))
+            error_points.append((stamp, error_total))
+            last_success_points.append((stamp, last_success))
+        success.append(("paprika_reconcile_total", {"controller": controller, "result": "success"}, success_points))
+        error.append(("paprika_reconcile_total", {"controller": controller, "result": "error"}, error_points))
+        success_ts.append(("paprika_controller_last_reconcile_timestamp_seconds", {"controller": controller, "result": "success"}, last_success_points))
+        if last_error_points:
+            # A last-error timestamp exists only once the controller has failed.
+            error_ts.append(("paprika_controller_last_reconcile_timestamp_seconds", {"controller": controller, "result": "error"}, last_error_points))
+
+    return [
+        ("paprika_application_reconcile_lag", "gauge", lag_series, ".8g"),
+        ("paprika_applications_stale", "gauge", [("paprika_applications_stale", {}, stale)], ".8g"),
+        ("paprika_applications_release_retries_exhausted", "gauge", [("paprika_applications_release_retries_exhausted", {}, retries_exhausted)], ".8g"),
+        ("paprika_releases_stuck", "gauge", [("paprika_releases_stuck", {}, stuck_releases)], ".8g"),
+        ("paprika_fleet_index_degraded", "gauge", [("paprika_fleet_index_degraded", {}, fleet_degraded)], ".8g"),
+        ("paprika_controller_last_reconcile_timestamp_seconds", "gauge", success_ts + error_ts, ".0f"),
+        ("paprika_applications_by_phase_ratio", "gauge", [("paprika_applications_by_phase_ratio", {"phase": phase}, points) for phase, points in applications_by_phase.items()], ".8g"),
+        ("paprika_releases_by_phase_ratio", "gauge", [("paprika_releases_by_phase_ratio", {"phase": phase}, points) for phase, points in releases_by_phase.items()], ".8g"),
+        ("paprika_reconcile", "counter", success + error, ".12g"),
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, required=True)
@@ -56,12 +145,12 @@ def main():
     timestamps = [end - (count - 1 - n) * 60 for n in range(count)]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:
-        def metric(name, kind, series):
+        def metric(name, kind, series, value_format=".8g"):
             f.write(f"# TYPE {name} {kind}\n")
             for sample_name, tags, points in series:
-                tag = labels(tags)
+                tag = labels(tags) if tags else ""
                 for timestamp, value in points:
-                    f.write(f"{sample_name}{tag} {value:.8g} {timestamp}\n")
+                    f.write(f"{sample_name}{tag} {value:{value_format}} {timestamp}\n")
 
         requests, latency, cpu, memory, disk, disk_total, status, probes, monitors, node_states = [], [], [], [], [], [], [], [], [], []
         for c, cluster in enumerate(clusters):
@@ -218,6 +307,8 @@ def main():
         metric("paprika_demo_market_short_percent", "gauge", short_values)
         metric("paprika_demo_market_change", "gauge", changes)
         metric("paprika_demo_market_coverage_percent", "gauge", coverage)
+        for name, kind, series, value_format in control_plane_families(timestamps):
+            metric(name, kind, series, value_format)
         f.write("# EOF\n")
 
 
