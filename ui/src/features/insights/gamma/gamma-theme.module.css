@@ -216,6 +216,12 @@
   background: var(--gamma-accent-soft);
   color: var(--gamma-ink);
 }
+/* Colour only: unstyled Insights focusables take the Insights ring colour, and no
+   control gains an outline it did not already have. Modules with their own focus
+   rules keep their outline style and offset. */
+:where(.scope) :focus-visible {
+  outline-color: var(--gamma-focus);
+}
 @media (prefers-reduced-motion: reduce) {
   .scope {
     --gamma-duration-fast: 0ms;

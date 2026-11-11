@@ -21,7 +21,7 @@
 .inference-rack-summary { margin:12px 0 0; display:flex; justify-content:space-between; gap:8px; color:var(--gamma-ink); font-size:11px; }
 .inference-device-select { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:16px 0 0; color:var(--gamma-ink); font-size:11px; }
 .inference-device-select select { flex:1; min-width:100px; border:1px solid var(--gamma-muted); color:var(--gamma-chart-1); background:var(--gamma-border); border-radius:4px; font:12px Barlow,sans-serif; padding:6px; }
-.inference-inspector { position:absolute; top:8px; right:8px; width:min(280px,calc(100% - 16px)); background:color-mix(in srgb, var(--gamma-surface) 96%, transparent); border:1px solid var(--gamma-muted); border-radius:5px; padding:10px 11px; box-shadow:var(--gamma-shadow-mid); z-index:6; animation:inference-detail-in var(--gamma-motion-duration,150ms) ease-out; }
+.inference-inspector { position:absolute; top:8px; right:8px; width:min(280px,calc(100% - 16px)); background:color-mix(in srgb, var(--gamma-surface) 96%, transparent); border:1px solid var(--gamma-muted); border-radius:5px; padding:10px 11px; box-shadow:var(--gamma-shadow-mid); z-index:6; animation:inference-detail-in var(--gamma-duration-base, 150ms) ease-out; }
 .inference-inspector header { display:flex; align-items:center; justify-content:space-between; gap:7px; margin-bottom:7px; }
 .inference-inspector header strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
 .inference-inspector header > div { display:flex; }

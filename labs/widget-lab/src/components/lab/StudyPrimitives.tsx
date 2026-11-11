@@ -48,7 +48,7 @@ export function MetricCard({ label, value, unit, detail, trend, trendDomain, tre
     previousValue.current = currentValue;
     if (!changed || reduced || !surface || !valueElement || typeof surface.animate !== 'function') return;
     const computed = getComputedStyle(surface);
-    const configuredDuration = Number.parseFloat(computed.getPropertyValue('--gamma-motion-update-duration'));
+    const configuredDuration = Number.parseFloat(computed.getPropertyValue('--gamma-duration-slow'));
     const duration = Number.isFinite(configuredDuration) ? configuredDuration : 360;
     if (duration <= 0) return;
     const emphasis = computed.getPropertyValue('--metric-color').trim();

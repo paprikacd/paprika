@@ -611,17 +611,57 @@
 .tileHeader > button {
   margin: -5px -7px 0 4px;
 }
-/* The edit affordance floats in the header's top-right corner and reserves
-   that strip, so entering edit mode never grows a header or pushes a reading
-   below its card. Stat readings keep their full height in every edit state. */
-.tile[data-widget-type] .tileHeader:has(> .editChip) { padding-right: 36px; }
+/* The edit chip floats in the header's top-right corner, outside the flow, so
+   entering edit mode adds no header height. --edit-chip sizes the chip and
+   --edit-chip-inset places it; the header reserves the same strip, so the
+   chip never covers Explore, the title or the series picker. The chip is
+   transparent and takes the tile's text colour, so its icon follows the tile
+   background, including custom backgrounds. */
+.tile {
+  --edit-chip: 32px;
+  --edit-chip-inset: 6px;
+}
+/* Edit mode keeps a stat title on one line, so the grip and reserved strip never add a title row. */
+.tile[data-widget-type="stat"] .tileHeader:has(> .dragHandle) .tileTitle h3 {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile[data-widget-type] .tileHeader:has(> .editChip) {
+  padding-right: calc(var(--edit-chip-inset) + var(--edit-chip) + 4px);
+}
+.tile .tileHeader:has(> .editChip) > button:not(.editChip) { margin-right: 0; }
 .tile .tileHeader > .editChip.editChip {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--edit-chip-inset);
+  right: var(--edit-chip-inset);
   z-index: 2;
+  box-sizing: border-box;
+  width: var(--edit-chip);
+  min-width: var(--edit-chip);
+  height: var(--edit-chip);
+  min-height: var(--edit-chip);
   margin: 0;
-  background: var(--gamma-surface);
+  padding: 0;
+  background: transparent;
+}
+.tile .tileHeader > .editChip.editChip:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+/* The ring is drawn inside the chip: the tile clips overflow, so an outside ring would be cut off. */
+.tile .tileHeader > .editChip.editChip:focus-visible { outline-offset: -2px; }
+/* Touch gets a 44px target from a transparent hit area; the visible chip keeps its size. */
+@media (pointer: coarse) {
+  .tile .tileHeader > .editChip.editChip::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
 }
 .dragHandle {
   color: var(--widget-text, var(--gamma-muted));
@@ -672,14 +712,6 @@
   .tile[data-widget-type="stat"] .tileTitle h3 { font-size: 11px; }
   .tile[data-widget-type="stat"] .visualization { padding-inline: 7px; }
   .tile[data-widget-sparkline="true"] .visualization { padding: 0; --stat-reading-inset: 7px; }
-  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 2px;
-  }
-  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) .dragHandle { grid-column: 1; grid-row: 1; }
-  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) .tileTitle { grid-column: 1 / -1; grid-row: 2; }
-  .tile[data-widget-type="stat"] .tileHeader:has(.dragHandle) > button:not([aria-label^="Edit "]) { grid-column: 2; grid-row: 1; justify-self: end; margin: 0; }
 }
 .canvas :global(.react-grid-item.react-grid-placeholder) {
   background: var(--gamma-surface-2);
@@ -1393,14 +1425,11 @@
 .tile[data-compact-stat="true"] .visualization {
   padding-block: 0;
 }
-/* The compact header is 27px tall, so its edit chip is 24px and sits inside that band. */
-.tile[data-compact-stat="true"] .tileHeader:has(> .editChip) { padding-right: 30px; }
-.tile[data-compact-stat="true"] .tileHeader > .editChip.editChip {
-  top: 2px;
-  right: 3px;
-  width: 24px;
-  height: 24px;
-  min-height: 24px;
+/* Stat headers can be 27px tall (one-row stats and side sparklines at any height), so every stat's
+   edit chip is the 24px compact size, inset 2px, and sits inside that band. */
+.tile[data-widget-type="stat"] {
+  --edit-chip: 24px;
+  --edit-chip-inset: 2px;
 }
 @container insight-tile (max-width: 150px) {
   .statIcon { display: none; }
@@ -1479,11 +1508,6 @@
   .root[data-compact-shell] .tile[data-compact-stat="true"] .tileHeader {
     min-height: 23px;
     padding-top: 4px;
-  }
-  .root[data-compact-shell] .tile[data-compact-stat="true"] .tileHeader > .editChip.editChip {
-    top: 0;
-    height: 23px;
-    min-height: 23px;
   }
   .compactDescription { font-size: 10px; color: var(--gamma-muted); margin-top: 3px; }
   .compactDescription summary { cursor: pointer; width: fit-content; }
