@@ -11,7 +11,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type SyntheticEvent,
 } from "react"
 import {
   Activity,
@@ -164,9 +163,6 @@ function preloadWidgetEditor() {
 function preloadExamples() {
   loadRepositoryGallery().catch(() => undefined)
   loadRepositoryWorkspace().catch(() => undefined)
-}
-function preloadEditorForTarget(event: SyntheticEvent) {
-  if ((event.target as HTMLElement).closest?.("[data-widget-edit]")) preloadWidgetEditor()
 }
 registerDefaultWidgetPlugins()
 
@@ -1235,6 +1231,7 @@ export default function InsightsApp({
           <p role="alert" className={styles.validationError}>
             {error}
           </p>
+          {exampleStarting && <p className={styles.hint} role="status">Opening the example workspace…</p>}
           <div className={styles.actions}>
             {workspaceFailed ? (
               <GammaButton size="sm" variant="primary" className={styles.primary} onClick={reloadPage}>
@@ -1471,7 +1468,7 @@ export default function InsightsApp({
             </Suspense>}
           </section>
         )}
-        <section hidden={exploring} aria-label="Dashboard workspace" onMouseOver={preloadEditorForTarget} onFocus={preloadEditorForTarget}>
+        <section hidden={exploring} aria-label="Dashboard workspace">
         <div className={styles.pageHeader} data-tooltip-obstacle>
           <div className={styles.heading}>
             {editing ? (
@@ -1708,7 +1705,7 @@ export default function InsightsApp({
                   widget: previewWidget,
                   render: preview => <section ref={builderPanel} tabIndex={-1}>
                 <LazyPanelBoundary label="Widget editor" unsaved={dirty || widgetDraftDirty} onClose={leaveWidget}>
-                <Suspense fallback={<WidgetEditorSkeleton preview={preview} />}>
+                <Suspense fallback={<WidgetEditorSkeleton preview={preview} onClose={leaveWidget} />}>
                     <WidgetEditor
                       key={currentWidget.id}
                       widget={currentWidget}
@@ -1852,7 +1849,7 @@ export default function InsightsApp({
               aria-label="Builder panel"
             >
               {panel === "examples" && (workspaceFailed ? (
-                <LazyFailure label="Dashboard examples" unsaved={dirty || widgetDraftDirty} onClose={close} />
+                <LazyFailure label="Dashboard examples" kind="load" unsaved={dirty || widgetDraftDirty} onClose={close} />
               ) : workspace ? (
                 <LazyPanelBoundary label="Dashboard examples" unsaved={dirty || widgetDraftDirty} onClose={close}>
                   <Suspense fallback={<p className={styles.loading} role="status">Loading examples…</p>}>

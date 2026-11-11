@@ -1492,8 +1492,10 @@
 }
 .editorSkeletonHeader p { margin: 0; color: var(--gamma-muted); font-size: 12px; }
 .editorSkeletonBody { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 31vw, 460px); flex: 1; min-height: 0; }
-.editorSkeletonMain { display: grid; grid-template-rows: max(350px, calc(var(--widget-preview-min-height, 260px) + 60px)) minmax(220px, .8fr); min-width: 0; }
-.editorSkeletonPreview { min-width: 0; padding: 16px; }
+.editorSkeletonMain { display: grid; grid-template-rows: minmax(280px, 1fr) minmax(220px, .8fr); min-width: 0; }
+.editorSkeletonPreview { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; padding: 20px 24px 24px; }
+.editorSkeletonPreviewHeading { display: flex; align-items: center; height: 1.45em; font-size: 12px; }
+.editorSkeletonPreviewCanvas { flex: 1; min-height: 0; min-width: 0; }
 .editorSkeletonQuery { min-width: 0; padding: 16px 24px; border-top: 1px solid var(--gamma-border); }
 .editorSkeletonSettings { display: grid; align-content: start; gap: 12px; padding: 16px; border-left: 1px solid var(--gamma-border); min-width: 0; }
 .skeletonBar { display: block; height: 10px; width: 160px; border-radius: 4px; background: var(--gamma-surface-2); }

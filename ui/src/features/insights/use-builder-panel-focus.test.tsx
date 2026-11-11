@@ -119,6 +119,7 @@ describe("builder panel focus waits for lazy content", () => {
     return (
       <>
         <button>Opener</button>
+        <label>Search dashboards <input /></label>
         {identity && (
           <section ref={panel} tabIndex={-1} aria-label="Lazy panel">
             {ready ? <h2>Real heading</h2> : <p>Loading panel…</p>}
@@ -136,6 +137,18 @@ describe("builder panel focus waits for lazy content", () => {
     expect(opener).toHaveFocus()
     rerender(<Lazy identity="examples" ready />)
     expect(screen.getByRole("heading", { name: "Real heading" })).toHaveFocus()
+  })
+
+  it("keeps keystrokes when the user moves to another control before the content mounts", () => {
+    const { rerender } = render(<Lazy identity={null} ready={false} />)
+    screen.getByRole("button", { name: "Opener" }).focus()
+    rerender(<Lazy identity="examples" ready={false} />)
+    const search = screen.getByRole("textbox", { name: "Search dashboards" })
+    search.focus()
+    fireEvent.change(search, { target: { value: "cpu" } })
+    rerender(<Lazy identity="examples" ready />)
+    expect(search).toHaveFocus()
+    expect(search).toHaveValue("cpu")
   })
 
   it("restores the opener when the lazy panel closes before its content mounts", () => {

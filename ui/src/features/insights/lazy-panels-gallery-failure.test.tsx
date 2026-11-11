@@ -4,10 +4,13 @@ import InsightsApp from "./insights-app"
 import { liveClient } from "./lazy-panels-shared"
 
 vi.mock("./canvas", async () => (await import("./lazy-panels-shared")).canvasMock())
-// Only the gallery component's chunk is unavailable; the catalog itself loads.
-vi.mock("./repository-gallery", () => {
-  throw new Error("Failed to load chunk repository-gallery")
-})
+// Only the gallery component's chunk is unavailable; the catalog itself loads. Reading the export rejects the lazy
+// import with the bundler's ChunkLoadError, which is what a blocked chunk produces.
+vi.mock("./repository-gallery", () => ({
+  get RepositoryGallery(): never {
+    throw Object.assign(new Error("Failed to load chunk repository-gallery"), { name: "ChunkLoadError" })
+  },
+}))
 
 describe("examples gallery chunk failure", () => {
   it("keeps the dashboard mounted behind a failed examples panel", async () => {

@@ -6,6 +6,15 @@ import { useEffect, useRef } from "react"
  * `ready` is false while the panel's lazy content is still a fallback. Focus waits for the content, so it lands on the
  * real heading (not the fallback's container) on the first open, as it does once the chunk is cached.
  */
+/**
+ * Deferred focus may move only while the user has not gone elsewhere: still on the body or the opener, or already
+ * inside the panel. Typing in another control keeps its keystrokes.
+ */
+function focusStillAvailable(panel: HTMLElement, opener: HTMLElement | null) {
+  const active = document.activeElement;
+  return !active || active === document.body || active === opener || panel.contains(active);
+}
+
 export function useBuilderPanelFocus(identity: string | null, restoreTarget?: () => HTMLElement | null, ready = true) {
   const panel = useRef<HTMLElement>(null)
   const previousIdentity = useRef<string | null>(null)
@@ -13,6 +22,7 @@ export function useBuilderPanelFocus(identity: string | null, restoreTarget?: ()
   const awaitingContent = useRef(false)
   useEffect(() => {
     const changed = identity !== previousIdentity.current
+    const deferred = !changed
     if (!changed && !(awaitingContent.current && ready)) return
     if (changed) {
       const wasOpen = previousIdentity.current !== null
@@ -50,6 +60,7 @@ export function useBuilderPanelFocus(identity: string | null, restoreTarget?: ()
       return
     }
     awaitingContent.current = false
+    if (deferred && !focusStillAvailable(element, opener.current)) return
     const target = element.querySelector<HTMLElement>("h2") ?? element
     target.tabIndex = -1
     element.scrollTop = 0

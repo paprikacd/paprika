@@ -75,3 +75,45 @@ describe("LazyPanelBoundary", () => {
     expect(document.querySelector("svg")).toBeInTheDocument()
   })
 })
+
+describe("LazyPanelBoundary error classification", () => {
+  it("treats a ChunkLoadError as a load failure that needs a reload", async () => {
+    const chunk = Object.assign(new Error("Chunk gone"), { name: "ChunkLoadError" })
+    const Blocked = lazy(() => Promise.reject(chunk))
+    render(
+      <LazyPanelBoundary label="Widget editor">
+        <Suspense fallback={null}>
+          <Blocked />
+        </Suspense>
+      </LazyPanelBoundary>,
+    )
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("Widget editor did not load")
+    expect(within(alert).getByRole("button", { name: "Reload the page" })).toBeEnabled()
+  })
+
+  it("contains an ordinary render error without suggesting a reload, logs it, and recovers on Render again", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    let broken = true
+    function Flaky() {
+      if (broken) throw new Error("boom")
+      return <p>Recovered chart</p>
+    }
+    render(
+      <LazyPanelBoundary label="Chart">
+        <Flaky />
+      </LazyPanelBoundary>,
+    )
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("Chart failed to render")
+    expect(alert).toHaveTextContent("The error is logged")
+    expect(within(alert).queryByRole("button", { name: "Reload the page" })).not.toBeInTheDocument()
+    expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: "boom" }))
+    broken = false
+    fireEvent.click(within(alert).getByRole("button", { name: "Render again" }))
+    expect(await screen.findByText("Recovered chart")).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    logged.mockRestore()
+  })
+})
+

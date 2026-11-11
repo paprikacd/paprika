@@ -42,6 +42,7 @@ describe("lazy example workspace", () => {
     // The click's state update is committed before the awaited workspace resolves.
     expect(explore).toBeDisabled()
     expect(retry).toBeDisabled()
+    expect(screen.getByRole("status")).toHaveTextContent("Opening the example workspace")
     expect(await screen.findByRole("button", { name: "Edit dashboard" }, { timeout: 5000 })).toBeInTheDocument()
     expect(localStorage.getItem(EXAMPLE_STORAGE_KEY)).not.toBeNull()
   }, 15000);
