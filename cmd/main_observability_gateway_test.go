@@ -46,7 +46,7 @@ func TestObservabilityGatewayAllowsDCRWithoutStaticClient(t *testing.T) {
 			store, err := cache.New(t.Context(), cache.Config{Backend: cache.BackendMemory})
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, store.Close()) })
-			srv, _, _, _, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: []byte("test-observe-startup-secret")}, nil, store)
+			srv, _, _, _, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: []byte("test-observe-startup-secret")}, nil, store, observabilitygateway.DefaultBudgetConfig())
 			require.NoError(t, err)
 			require.NotNil(t, srv)
 		})

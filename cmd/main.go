@@ -201,6 +201,16 @@ type cliConfig struct {
 	ShardTotal                    int           `mapstructure:"shard-total"`
 	ShardIDSource                 string        `mapstructure:"shard-id-source"`
 	APIMaxConns                   int           `mapstructure:"api-max-conns"`
+	ObsQueryConcurrency           int           `mapstructure:"observability-query-concurrency"`
+	ObsQueryProviderConcurrency   int           `mapstructure:"observability-query-provider-concurrency"`
+	ObsQueryQueue                 int           `mapstructure:"observability-query-queue"`
+	ObsQueryProviderQueue         int           `mapstructure:"observability-query-provider-queue"`
+	ObsQueryQueueWait             time.Duration `mapstructure:"observability-query-queue-wait"`
+	ObsHTTPWorkSlots              int           `mapstructure:"observability-http-work-slots"`
+	ObsHTTPCatalogSlots           int           `mapstructure:"observability-http-catalog-slots"`
+	ObsHTTPDashboardSlots         int           `mapstructure:"observability-http-dashboard-slots"`
+	ObsHTTPIntakeSlots            int           `mapstructure:"observability-http-intake-slots"`
+	ObsHTTPAdmissionWait          time.Duration `mapstructure:"observability-http-admission-wait"`
 	AuditLogEnabled               bool          `mapstructure:"audit-enabled"`
 
 	EnableLeaderElection bool `mapstructure:"leader-elect"`
@@ -741,6 +751,7 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 	fs.String("webhook-bind-address", ":8080",
 		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
 	registerRepoServerFlags(fs)
+	registerObservabilityCapacityFlags(fs)
 	fs.String("agent-cluster-id", "",
 		"Cluster ID for the in-cluster agent. Only used in 'agent' mode.")
 	registerSatelliteFlags(fs)
@@ -823,6 +834,34 @@ func registerRepoServerFlags(fs *pflag.FlagSet) {
 			"when empty, GetObservabilityUsage answers NOT_CONFIGURED.")
 	fs.Duration("obs-provider-probe-interval", 5*time.Minute,
 		"How often the observability gateway probes registered providers and writes reachability status onto their CRs (0 disables status writes)")
+}
+
+// registerObservabilityCapacityFlags sizes the observability gateway's query
+// path. The defaults are the built-in values, so an unset flag changes nothing.
+// A pool flag of 0 follows the budget. resolveObservabilityCapacity
+// (cmd/main_observability_gateway.go) checks the combination at startup, and
+// docs/guides/observability-gateway.md has the end-to-end table.
+func registerObservabilityCapacityFlags(fs *pflag.FlagSet) {
+	fs.Int("observability-query-concurrency", 4,
+		"Observability queries executing at once across all providers, per gateway process (must be >= 1).")
+	fs.Int("observability-query-provider-concurrency", 0,
+		"Observability queries executing at once per provider. 0 means min(2, observability-query-concurrency).")
+	fs.Int("observability-query-queue", 32,
+		"Observability queries waiting for an execution slot across all providers. 0 rejects at once when the budget is full.")
+	fs.Int("observability-query-provider-queue", 8,
+		"Observability queries waiting for one provider's slot. Must not exceed observability-query-queue.")
+	fs.Duration("observability-query-queue-wait", 5*time.Second,
+		"Longest an observability query waits for an execution slot before its deadline error. Must be below the 30s request timeout.")
+	fs.Int("observability-http-work-slots", 0,
+		"Gateway HTTP slots for MCP data-tool requests. 0 follows observability-query-concurrency. Must not exceed concurrency + queue.")
+	fs.Int("observability-http-catalog-slots", 0,
+		"Gateway HTTP slots for provider discovery and MCP handshakes. 0 follows observability-http-work-slots.")
+	fs.Int("observability-http-dashboard-slots", 0,
+		"Gateway HTTP slots for dashboard orchestration. 0 follows observability-query-provider-concurrency. Must not exceed observability-query-concurrency.")
+	fs.Int("observability-http-intake-slots", 0,
+		"Gateway slots for classifying request bodies before a pool. 0 means twice observability-http-work-slots. Must cover the largest pool.")
+	fs.Duration("observability-http-admission-wait", time.Second,
+		"Longest an HTTP request waits for a pool slot before the gateway answers 429 with Retry-After: 1. 0 rejects at once. Must not exceed observability-query-queue-wait.")
 }
 
 func buildAPIServerOptions(

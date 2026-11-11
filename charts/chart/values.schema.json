@@ -44,6 +44,22 @@
       "type": "object",
       "properties": {
         "persistSessions": {"type": "boolean"},
+        "capacity": {
+          "description": "Query-path capacity per gateway process. Zero on a pool follows the budget; the gateway validates the combination at startup.",
+          "type": "object",
+          "properties": {
+            "queryConcurrency": {"type": "integer", "minimum": 1},
+            "queryProviderConcurrency": {"type": "integer", "minimum": 0},
+            "queryQueue": {"type": "integer", "minimum": 0},
+            "queryProviderQueue": {"type": "integer", "minimum": 0},
+            "queryQueueWait": {"type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"},
+            "httpWorkSlots": {"type": "integer", "minimum": 0},
+            "httpCatalogSlots": {"type": "integer", "minimum": 0},
+            "httpDashboardSlots": {"type": "integer", "minimum": 0},
+            "httpIntakeSlots": {"type": "integer", "minimum": 0},
+            "httpAdmissionWait": {"type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"}
+          }
+        },
         "additionalCACertificates": {
           "description": "Additional public CA certificates, one PEM certificate per filename; never private keys or credentials.",
           "type": ["object", "null"],

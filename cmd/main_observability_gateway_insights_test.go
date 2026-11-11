@@ -15,6 +15,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/insights/guidance"
+	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 func TestObservabilityInsightsRegistrationRequiresExplicitConfiguration(t *testing.T) {
@@ -136,7 +137,7 @@ func TestObservabilityGatewayInitializeCarriesDashboardRulesWhenInsightsConfigur
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	cfg := &cliConfig{MCPPublicURL: usageTestIssuer, AuthEnabled: true}
 	require.NoError(t, validateObservabilityGatewayConfig(cfg))
-	srv, authenticator, usage, backend, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: secret}, nil, store)
+	srv, authenticator, usage, backend, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: secret}, nil, store, observabilitygateway.DefaultBudgetConfig())
 	require.NoError(t, err)
 	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
 	token := usageTestToken(t, secret, string(mcp.ScopeObserve), string(mcp.ScopeInsightsWrite))

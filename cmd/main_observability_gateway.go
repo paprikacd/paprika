@@ -64,7 +64,8 @@ const observabilityGatewayRoutePrefix = "/observe"
 // paprika-observability audience so console or fleet-MCP tokens can never be
 // replayed against this surface.
 func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
-	if err := validateObservabilityGatewayConfig(cfg); err != nil {
+	capacity, err := prepareObservabilityGateway(cfg, setupLog)
+	if err != nil {
 		return err
 	}
 	authCfg := buildAuthConfig(cfg.AuthEnabled, cfg.AuthBasicUsername, cfg.AuthBasicPassword, cfg.AuthBasicPasswordHash,
@@ -96,7 +97,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	}
 	k8sClient = namespaceScopedAPIClient(k8sClient, cfg.APINamespace)
 
-	srv, authenticator, usage, backend, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient)
+	srv, authenticator, usage, backend, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient, capacity.Budget)
 	if err != nil {
 		return err
 	}
@@ -139,7 +140,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	startGatewaySupportServers(gwCtx, ctx, cfg, setupLog)
 
 	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
-	return serveGatewayHTTP(gwCtx, cfg, mux)
+	return serveGatewayHTTP(gwCtx, cfg, mux, capacity.Pools)
 }
 
 func startObservabilityProviderDiscovery(ctx context.Context, cancel context.CancelFunc, restCfg *rest.Config, scheme *runtime.Scheme, namespace string) error {
@@ -160,6 +161,148 @@ func startObservabilityProviderDiscovery(ctx context.Context, cancel context.Can
 		}
 	}()
 	return nil
+}
+
+// prepareObservabilityGateway checks the gateway's startup configuration and
+// resolves its query-path capacity, logging the resolved values so an operator
+// can read them from the pod log.
+func prepareObservabilityGateway(cfg *cliConfig, setupLog logr.Logger) (observabilityCapacity, error) {
+	if err := validateObservabilityGatewayConfig(cfg); err != nil {
+		return observabilityCapacity{}, err
+	}
+	capacity, err := resolveObservabilityCapacity(cfg)
+	if err != nil {
+		return observabilityCapacity{}, err
+	}
+	setupLog.Info("Observability gateway capacity",
+		"queryConcurrency", capacity.Budget.Concurrency,
+		"queryProviderConcurrency", capacity.Budget.ProviderConcurrency,
+		"queryQueue", capacity.Budget.Queue,
+		"queryProviderQueue", capacity.Budget.ProviderQueue,
+		"queryQueueWait", capacity.Budget.QueueWait.String(),
+		"httpWorkSlots", capacity.Pools.Work,
+		"httpCatalogSlots", capacity.Pools.Catalog,
+		"httpDashboardSlots", capacity.Pools.Dashboards,
+		"httpIntakeSlots", capacity.Pools.Intake,
+		"httpAdmissionWait", capacity.Pools.AdmissionWait.String())
+	return capacity, nil
+}
+
+// observabilityCapacity is the execution budget and HTTP admission pools the
+// gateway starts with, resolved from the flags.
+type observabilityCapacity struct {
+	Budget observabilitygateway.BudgetConfig
+	Pools  observabilityHTTPPools
+}
+
+// resolveObservabilityCapacity derives the budget and pools from the flags and
+// rejects values that cannot work. A pool flag of 0 follows the budget, so the
+// two layers stay in step when an operator raises one of them. Each error names
+// the flag to change. The function is pure, so the gateway calls it on startup
+// and again where it builds the server.
+//
+//nolint:cyclop // One ordered list of flag checks; splitting it would scatter the messages.
+func resolveObservabilityCapacity(cfg *cliConfig) (observabilityCapacity, error) {
+	budget := observabilitygateway.BudgetConfig{
+		Concurrency:         cfg.ObsQueryConcurrency,
+		ProviderConcurrency: cfg.ObsQueryProviderConcurrency,
+		Queue:               cfg.ObsQueryQueue,
+		ProviderQueue:       cfg.ObsQueryProviderQueue,
+		QueueWait:           cfg.ObsQueryQueueWait,
+	}
+	if budget.Concurrency < 1 {
+		return observabilityCapacity{}, fmt.Errorf("--observability-query-concurrency must be >= 1, got %d", budget.Concurrency)
+	}
+	if budget.ProviderConcurrency == 0 {
+		budget.ProviderConcurrency = min(2, budget.Concurrency)
+	}
+	if budget.ProviderConcurrency < 1 || budget.ProviderConcurrency > budget.Concurrency {
+		return observabilityCapacity{}, fmt.Errorf("--observability-query-provider-concurrency must be between 1 and --observability-query-concurrency (%d), got %d; use 0 for min(2, concurrency)", budget.Concurrency, cfg.ObsQueryProviderConcurrency)
+	}
+	if budget.Queue < 0 {
+		return observabilityCapacity{}, fmt.Errorf("--observability-query-queue must be >= 0, got %d", budget.Queue)
+	}
+	if budget.ProviderQueue < 0 || budget.ProviderQueue > budget.Queue {
+		return observabilityCapacity{}, fmt.Errorf("--observability-query-provider-queue must be between 0 and --observability-query-queue (%d), got %d", budget.Queue, budget.ProviderQueue)
+	}
+	if budget.QueueWait <= 0 || budget.QueueWait >= observabilitygateway.RequestTimeout {
+		return observabilityCapacity{}, fmt.Errorf("--observability-query-queue-wait must be > 0 and below the %s request timeout, got %s", observabilitygateway.RequestTimeout, budget.QueueWait)
+	}
+
+	pools, err := resolveObservabilityHTTPPools(cfg, budget)
+	if err != nil {
+		return observabilityCapacity{}, err
+	}
+	return observabilityCapacity{Budget: budget, Pools: pools}, nil
+}
+
+// validateObservabilityHTTPFlags rejects negative pool sizes and an admission
+// wait that is negative or longer than the budget's queue wait.
+func validateObservabilityHTTPFlags(cfg *cliConfig, budget observabilitygateway.BudgetConfig) error {
+	explicit := []struct {
+		flag  string
+		value int
+	}{
+		{"observability-http-work-slots", cfg.ObsHTTPWorkSlots},
+		{"observability-http-catalog-slots", cfg.ObsHTTPCatalogSlots},
+		{"observability-http-dashboard-slots", cfg.ObsHTTPDashboardSlots},
+		{"observability-http-intake-slots", cfg.ObsHTTPIntakeSlots},
+	}
+	for _, e := range explicit {
+		if e.value < 0 {
+			return fmt.Errorf("--%s must be >= 0 (0 follows the execution budget), got %d", e.flag, e.value)
+		}
+	}
+	if cfg.ObsHTTPAdmissionWait < 0 {
+		return fmt.Errorf("--observability-http-admission-wait must be >= 0, got %s", cfg.ObsHTTPAdmissionWait)
+	}
+	if cfg.ObsHTTPAdmissionWait > budget.QueueWait {
+		return fmt.Errorf("--observability-http-admission-wait (%s) must not exceed --observability-query-queue-wait (%s): waiting at the edge longer than the budget would queue is wasted", cfg.ObsHTTPAdmissionWait, budget.QueueWait)
+	}
+	return nil
+}
+
+// resolveObservabilityHTTPPools sizes the HTTP admission pools from the budget.
+// The work pool is the budget's admission capacity, its concurrency plus its
+// queue, so every request the budget can hold can reach it. A pool larger than
+// that would only move the 429 from the budget to the edge. The dashboard
+// pool is capped by the budget's concurrency.
+func resolveObservabilityHTTPPools(cfg *cliConfig, budget observabilitygateway.BudgetConfig) (observabilityHTTPPools, error) {
+	if err := validateObservabilityHTTPFlags(cfg, budget); err != nil {
+		return observabilityHTTPPools{}, err
+	}
+	pools := observabilityHTTPPools{
+		Work:          cfg.ObsHTTPWorkSlots,
+		Catalog:       cfg.ObsHTTPCatalogSlots,
+		Dashboards:    cfg.ObsHTTPDashboardSlots,
+		Intake:        cfg.ObsHTTPIntakeSlots,
+		AdmissionWait: cfg.ObsHTTPAdmissionWait,
+	}
+	if pools.Work == 0 {
+		pools.Work = budget.Concurrency
+	}
+	if pools.Catalog == 0 {
+		pools.Catalog = pools.Work
+	}
+	if pools.Dashboards == 0 {
+		pools.Dashboards = budget.ProviderConcurrency
+	}
+	if pools.Intake == 0 {
+		pools.Intake = 2 * pools.Work
+	}
+
+	admission := budget.Concurrency + budget.Queue
+	if pools.Work > admission {
+		return observabilityHTTPPools{}, fmt.Errorf("--observability-http-work-slots (%d) exceeds the execution budget's admission capacity (%d = --observability-query-concurrency %d + --observability-query-queue %d)", pools.Work, admission, budget.Concurrency, budget.Queue)
+	}
+	if pools.Dashboards > budget.Concurrency {
+		return observabilityHTTPPools{}, fmt.Errorf("--observability-http-dashboard-slots (%d) must not exceed --observability-query-concurrency (%d)", pools.Dashboards, budget.Concurrency)
+	}
+	largest := max(pools.Work, pools.Catalog, pools.Dashboards)
+	if pools.Intake < largest {
+		return observabilityHTTPPools{}, fmt.Errorf("--observability-http-intake-slots (%d) must be at least the largest pool (%d), or body classification refuses requests the pools could admit", pools.Intake, largest)
+	}
+	return pools, nil
 }
 
 // validateObservabilityGatewayConfig fails fast, with the same loudness the
@@ -207,10 +350,10 @@ func startGatewaySupportServers(gwCtx, ctx context.Context, cfg *cliConfig, setu
 // serveGatewayHTTP runs the gateway's public listener until gwCtx ends:
 // prior-knowledge h2c on the UI address, optional mTLS via the shared
 // PAPRIKA_TLS_CERT/PAPRIKA_TLS_KEY serving config (repo-server precedent).
-func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handler) error {
+func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handler, pools observabilityHTTPPools) error {
 	httpSrv := httpx.WithH2C(&http.Server{
 		Addr:              cfg.UIAddr,
-		Handler:           limitObservabilityProtocolRequests(handler),
+		Handler:           limitObservabilityProtocolRequestsWith(handler, pools),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      45 * time.Second,
@@ -223,24 +366,34 @@ func serveGatewayHTTP(gwCtx context.Context, cfg *cliConfig, handler http.Handle
 	return runHTTPServer(gwCtx, httpSrv, "observability gateway", log.FromContext(gwCtx), nil, true, cfg.APIMaxConns)
 }
 
+// limitObservabilityProtocolRequests applies the built-in pool sizes with no
+// admission wait. Production uses limitObservabilityProtocolRequestsWith and
+// the configured pools.
+func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
+	return limitObservabilityProtocolRequestsWith(next, defaultObservabilityHTTPPools())
+}
+
 // Keep the request slot through serialization and the final response write.
 // The backend's I/O budget alone releases too early to bound large responses
 // retained by slow clients. Metadata and health remain available under load.
-func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
-	active := make(chan struct{}, 4)
-	catalog := make(chan struct{}, 4)
+// Each pool waits at most pools.AdmissionWait before it answers 429, so a short
+// burst is absorbed here and a sustained one still fails fast.
+func limitObservabilityProtocolRequestsWith(next http.Handler, pools observabilityHTTPPools) http.Handler {
+	active := make(chan struct{}, pools.Work)
+	catalog := make(chan struct{}, pools.Catalog)
 	// Dashboard orchestration waits on nested data-tool requests. Giving it a
 	// separate small pool leaves data slots available and bounds aggregate work.
-	dashboards := make(chan struct{}, 2)
+	dashboards := make(chan struct{}, pools.Dashboards)
 	// Bound body classification too: a slow MCP upload must not allocate an
 	// unbounded number of readers before it reaches a work pool.
-	intake := make(chan struct{}, 8)
+	intake := make(chan struct{}, pools.Intake)
+	wait := pools.AdmissionWait
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isObservabilityProtocolRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !admitObservabilityRequest(w, intake) {
+		if !admitObservabilityRequest(r.Context(), w, intake, wait) {
 			return
 		}
 		defer func() { <-intake }()
@@ -254,7 +407,7 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 		case observabilityDashboardRequest:
 			slots = dashboards
 		}
-		if !admitObservabilityRequest(w, slots) {
+		if !admitObservabilityRequest(r.Context(), w, slots, wait) {
 			return
 		}
 		defer func() { <-slots }()
@@ -276,7 +429,7 @@ func limitObservabilityProtocolRequests(next http.Handler) http.Handler {
 // verify the same audience.
 //
 //nolint:cyclop // The gateway constructor assembles and validates its independent collaborators.
-func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
+func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache, budget observabilitygateway.BudgetConfig) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
 	if len(authCfg.TokenSecret) == 0 {
 		return nil, nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
 	}
@@ -292,7 +445,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	// Kubernetes/cloud visibility. Namespace access follows explicit RBAC;
 	// an empty rule set denies access rather than the project compatibility
 	// authorizer's empty-project allowance.
-	backend := observabilitygateway.NewAuthorizedBackend(k8sClient, auth.NewRBACAuthorizer(authCfg.RBACRules))
+	backend := observabilitygateway.NewAuthorizedBackendWithBudget(k8sClient, auth.NewRBACAuthorizer(authCfg.RBACRules), budget)
 	registry := mcp.NewRegistry()
 	usage := observabilitygateway.NewUsageTracker()
 	if err := observabilitygateway.RegisterTools(registry, backend, usage); err != nil {

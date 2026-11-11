@@ -790,6 +790,36 @@ observabilityGateway:
   ## status. 0 disables status writes.
   probeInterval: 5m
 
+  ## Query-path capacity per gateway process. The defaults are the built-in
+  ## values; each flag is validated at startup and the gateway refuses to start
+  ## on a combination that cannot work. Zero on a pool follows the budget, so
+  ## raising queryConcurrency raises the pools with it. The end-to-end table is
+  ## docs/guides/observability-gateway.md ("End-to-end capacity").
+  capacity:
+    ## Queries executing at once across all providers (>= 1).
+    queryConcurrency: 4
+    ## Queries executing at once per provider. 0 means min(2, queryConcurrency).
+    queryProviderConcurrency: 0
+    ## Queries waiting for a slot across all providers. 0 rejects at once.
+    queryQueue: 32
+    ## Queries waiting for one provider's slot. Must not exceed queryQueue.
+    queryProviderQueue: 8
+    ## Longest a query waits for a slot. Must be below the 30s query timeout.
+    queryQueueWait: 5s
+    ## HTTP slots for MCP data-tool requests. 0 follows queryConcurrency. Must
+    ## not exceed queryConcurrency + queryQueue.
+    httpWorkSlots: 0
+    ## HTTP slots for provider discovery and MCP handshakes. 0 follows httpWorkSlots.
+    httpCatalogSlots: 0
+    ## HTTP slots for dashboard orchestration. 0 follows queryProviderConcurrency.
+    ## Must not exceed queryConcurrency.
+    httpDashboardSlots: 0
+    ## Slots for body classification before a pool. 0 means twice httpWorkSlots.
+    httpIntakeSlots: 0
+    ## Longest an HTTP request waits for a pool slot before 429 with Retry-After: 1.
+    ## 0 rejects at once. Must not exceed queryQueueWait.
+    httpAdmissionWait: 1s
+
   # Avoid overlapping gateways unless every component's state has been
   # configured and verified for the intended replica count.
   strategy:

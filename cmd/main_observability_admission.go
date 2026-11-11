@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 )
 
 const maxObserveCatalogEnvelopeBytes = 4 << 10
@@ -130,14 +132,46 @@ func isObservabilityCatalogEnvelope(body []byte) bool {
 	}
 }
 
-func admitObservabilityRequest(w http.ResponseWriter, slots chan struct{}) bool {
+// observabilityHTTPPools are the gateway's HTTP admission pools. Each count is
+// a slot limit; AdmissionWait is how long a request may wait for a slot before
+// the gateway answers 429. Zero means fail at once.
+type observabilityHTTPPools struct {
+	Work          int
+	Catalog       int
+	Dashboards    int
+	Intake        int
+	AdmissionWait time.Duration
+}
+
+// defaultObservabilityHTTPPools are the built-in pool sizes, the same values
+// resolveObservabilityCapacity derives from the default execution budget. The
+// zero wait keeps the historical fail-fast behaviour for callers that do not
+// pass a configured set.
+func defaultObservabilityHTTPPools() observabilityHTTPPools {
+	return observabilityHTTPPools{Work: 4, Catalog: 4, Dashboards: 2, Intake: 8}
+}
+
+// admitObservabilityRequest takes a slot from a pool, waiting at most wait for
+// one to free. A request whose client has gone stops waiting. A rejected request
+// gets 429 with Retry-After: 1 and no-store, as before.
+func admitObservabilityRequest(ctx context.Context, w http.ResponseWriter, slots chan struct{}, wait time.Duration) bool {
 	select {
 	case slots <- struct{}{}:
 		return true
 	default:
-		w.Header().Set("Retry-After", "1")
-		w.Header().Set("Cache-Control", "no-store")
-		http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
-		return false
 	}
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case slots <- struct{}{}:
+			return true
+		case <-timer.C:
+		case <-ctx.Done():
+		}
+	}
+	w.Header().Set("Retry-After", "1")
+	w.Header().Set("Cache-Control", "no-store")
+	http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
+	return false
 }
