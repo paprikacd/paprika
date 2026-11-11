@@ -68,6 +68,19 @@ describe("record charts", () => {
     expect(x[0]).toBeLessThan(x[1]);expect(x[1]).toBeLessThan(x[2])
     expect(container.textContent).not.toMatch(/NaN|Infinity/)
   })
+  it("drops a suffix every legend entry shares and keeps each full name as its title", () => {
+    const result: QueryResult = {records:{columns:[{key:"sector",type:"string"},{key:"day",type:"string"},{key:"short",label:"short_interest",type:"number"}],rows:[["Technology","Mon",1],["Energy","Mon",2],["Materials","Mon",3]]}}
+    render(<RecordBar widget={{...widget,config:{x:"day",y:["short"],group:"sector"}}} result={result}/>)
+    const entry = screen.getByTitle("Energy · short_interest")
+    expect(entry).toHaveTextContent("Energy")
+    expect(entry.querySelector('[aria-hidden="true"]')).toHaveTextContent(/^Energy$/)
+    expect(screen.getByTitle("Materials · short_interest")).toHaveTextContent("Materials")
+  })
+  it("names a lone fallback record series after the widget title", () => {
+    const result: QueryResult = {records:{columns:[{key:"day",type:"string"},{key:"value",label:"Value",type:"number"}],rows:[["Mon",1.61]]}}
+    render(<RecordLine widget={{...widget,title:"Error budget burn rate",config:{x:"day",y:["value"]}}} result={result}/>)
+    expect(screen.getByTitle("Value")).toHaveTextContent("Error budget burn rate")
+  })
   it("uses separate numeric scales for the right axis and exposes annotations with exact timestamps", () => {
     const start="2026-10-27T01:00:00Z", end="2026-10-27T02:00:00Z"
     const result: QueryResult = {records:{columns:[{key:"at",type:"timestamp"},{key:"rate",label:"Rate",type:"number",unit:"req/s"},{key:"latency",label:"Latency",type:"number",unit:"ms"}],rows:[[end,1,1000],[start,0.5,500]]}}

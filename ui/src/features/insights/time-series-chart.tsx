@@ -61,7 +61,7 @@ import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
 import { resolveSeriesColor } from "./series-colors";
-import { compactSeriesLabels } from "./series-display";
+import { displaySeriesNames } from "./series-display";
 import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTimeWindow, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
 import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
 import { TimeWindowLens } from "./time-window-lens";
@@ -182,7 +182,7 @@ export function TimeSeriesChart({
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
-  const displayLabels = useMemo(() => compactSeriesLabels(visibleSeries.slice(0, MAX_SERIES)), [visibleSeries]);
+  const displayLabels = useMemo(() => displaySeriesNames(visibleSeries.slice(0, MAX_SERIES), widget.title), [visibleSeries, widget.title]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
   const domain = useMemo(
     () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options),

@@ -67,4 +67,13 @@ describe("compact series names in chart components", () => {
     expect(row).toHaveTextContent(first);
     expect(within(row).getByLabelText(new RegExp("latest valid sample"))).toHaveAttribute("data-legend-value", "2");
   });
+  it("names a lone generic series after the widget title and keeps the fallback as its full identity", () => {
+    const lone: QueryResult = { series: [{ name: "Value", labels: {}, points: [{ timestamp: 1000, value: 1.61 }, { timestamp: 2000, value: 1.61 }] }] };
+    render(<WidgetVisualization widget={{ ...widget, title: "Error budget burn rate", type: "timeseries", options: { showLegend: true }, config: undefined }} result={lone} />);
+    const legend = screen.getByRole("list", { name: "Latest values by series" });
+    // A listitem's accessible name is its title, so the full identity is "Value"; the visible label is the widget title.
+    const row = within(legend).getByRole("listitem", { name: "Value" });
+    expect(row.querySelector('span[aria-hidden="true"]:not([class])')).toHaveTextContent("Error budget burn rate");
+    expect(row).toHaveTextContent("Value");
+  });
 });

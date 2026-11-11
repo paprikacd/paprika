@@ -10,6 +10,13 @@ function isGeneratedName(series: Series) {
   return series.name === canonical;
 }
 
+// Fallback names the server or chart assigns when a series has no identity of its own.
+// Authored and provider-specific names never match, so they are always kept.
+const GENERIC_NAME = /^(Value|Series \d+)$/;
+export function isGenericSeriesName(name: string) {
+  return GENERIC_NAME.test(name);
+}
+
 const preferred = ["pod", "container", "service", "namespace", "node", "instance", "job"];
 const priority = (key: string) => {
   const index = preferred.indexOf(key);
@@ -59,4 +66,64 @@ export function compactSeriesLabels(series: readonly Series[]): string[] {
   // If compact labels collide, show the full original rather than inventing
   // an identity or merging independent observations in the visual legend.
   return labels.map((label, index) => generated.includes(index) && labels.some((other, otherIndex) => otherIndex !== index && other === label) ? originals[index] : label);
+}
+
+const isSeparator = (char: string) => !/[\p{L}\p{N}]/u.test(char);
+
+/**
+ * Removes one prefix and one suffix that every name shares, cut only at a
+ * separator so "cpu_usage"/"cpu_load" loses "cpu_" but "sale"/"rate" with a
+ * shared "s" does not lose letters. Gives up on a cut that leaves an empty or
+ * duplicate name, so the caller's names are returned unchanged.
+ */
+function stripSharedAffixes(names: readonly string[]): string[] {
+  if (names.length < 2) return [...names];
+  const shared = (values: readonly string[]) => values.reduce((acc, value) => {
+    let i = 0;
+    while (i < acc.length && i < value.length && acc[i] === value[i]) i++;
+    return acc.slice(0, i);
+  });
+  const reversed = (value: string) => [...value].reverse().join("");
+  const usable = (values: readonly string[]) => {
+    const trimmed = values.map(value => value.trim());
+    return trimmed.every(Boolean) && new Set(trimmed).size === trimmed.length;
+  };
+  let result = [...names];
+  // Suffix first: " · short_interest" is the shared tail in the Market Lens legend.
+  const tail = reversed(shared(result.map(reversed)));
+  const suffixStart = [...tail].findIndex(isSeparator);
+  if (suffixStart >= 0) {
+    const cut = tail.slice(suffixStart);
+    const next = result.map(name => name.slice(0, name.length - cut.length));
+    if (usable(next)) result = next.map(name => name.trim());
+  }
+  const head = shared(result);
+  let prefixEnd = -1;
+  [...head].forEach((char, index) => { if (isSeparator(char)) prefixEnd = index; });
+  if (prefixEnd >= 0) {
+    const cut = head.slice(0, prefixEnd + 1);
+    const next = result.map(name => name.slice(cut.length));
+    if (usable(next)) result = next.map(name => name.trim());
+  }
+  return result;
+}
+
+/**
+ * Names for a chart's legend. A lone series whose name is a fallback (or an
+ * untransformed selector) takes the widget's authored title; that is the
+ * author's own identity, not a label field guessed from the data. Several
+ * series keep compacted labels, or lose a prefix and suffix they all share.
+ * Full names stay on the series for tooltips, inspectors and aria-labels.
+ */
+export function displaySeriesNames(series: readonly Series[], widgetTitle = ""): string[] {
+  const originals = series.map(seriesName);
+  if (series.length === 1) {
+    const title = widgetTitle.trim();
+    const fallback = isGenericSeriesName(originals[0]) || isGeneratedName(series[0]);
+    return fallback && title ? [title] : originals;
+  }
+  const compacted = compactSeriesLabels(series);
+  // Compacted labels already name the fields that differ; trimming them again would drop a key.
+  if (compacted.some((label, index) => label !== originals[index]) || originals.some(isGenericSeriesName)) return compacted;
+  return stripSharedAffixes(originals);
 }
