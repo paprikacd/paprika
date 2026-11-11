@@ -56,16 +56,31 @@ test("only the canonical Observe package declares the paprika-observe skill name
   const walk = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (skipped.has(entry.name) || (entry.name.startsWith(".") && entry.name !== ".agents")) continue;
+        // Dot directories such as .kimi-code are walked too; only VCS, worktree and build output is skipped.
+        if (skipped.has(entry.name)) continue;
         await walk(join(directory, entry.name));
       } else if (entry.isFile() && entry.name === "SKILL.md") {
         const text = await readFile(join(directory, entry.name), "utf8");
-        if (/^name:\s*paprika-observe\s*$/m.test(text)) declaring.push(relative(fileURLToPath(root), join(directory, entry.name)));
+        // The name may be bare or quoted in the frontmatter.
+        if (/^name:\s*["']?paprika-observe["']?\s*$/m.test(text)) declaring.push(relative(fileURLToPath(root), join(directory, entry.name)));
       }
     }
   };
   await walk(fileURLToPath(root));
   assert.deepEqual(declaring.sort(), ["plugins/paprika-observe/skills/paprika-observe/SKILL.md"]);
+});
+
+test("the merged records and SQL guidance stays in the canonical Observe skill", async () => {
+  // Pins the typed-records and SQL binding text ported from the removed fleet copy.
+  const skill = await readFile(new URL("skills/paprika-observe/SKILL.md", plugin), "utf8");
+  assert.match(skill, /`query_records` returns bounded `columns` and `rows`/);
+  assert.match(skill, /Records\s+never accept a metric projection/);
+  assert.match(skill, /write `\$1` in the fixed SQL text/);
+  assert.match(skill, /unquoted\s+`\{\{service\}\}` placeholder/);
+  assert.match(skill, /\{"range":"start"\}/);
+  assert.match(skill, /verify-full TLS and an unprivileged\s+reader role/);
+  assert.match(skill, /the Uptime connector rejects more than 100 rows/);
+  assert.match(skill, /`Forbidden` means the backend refused the supplied credentials/);
 });
 
 test("observe skill examples match real gateway schemas and preserve secure handoff boundaries", async () => {

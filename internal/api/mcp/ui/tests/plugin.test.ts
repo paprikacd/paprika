@@ -25,7 +25,7 @@ test("portable manifest and compatibility overlays preserve identity, prompts, a
   for (const key of Object.keys(portable)) assert.ok(allowed.has(key), `nonportable manifest property: ${key}`);
   for (const manifest of [portable, codex, claude]) {
     assert.equal(manifest.name, "paprika");
-    assert.equal(manifest.version, "0.2.0");
+    assert.equal(manifest.version, "0.2.1");  // bumped so Claude Code reinstalls the fleet plugin without the duplicate skill
     assert.equal(manifest.description, portable.description);
     assert.equal(manifest.homepage, "https://paprika.benebsworth.com");
   }

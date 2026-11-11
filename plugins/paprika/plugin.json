@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "paprika",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Operate Kubernetes application delivery with Paprika: fleet status, app health, drift, releases, rollouts, gates, and pipeline control.",
   "author": { "name": "Paprika" },
   "homepage": "https://paprika.benebsworth.com",

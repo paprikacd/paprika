@@ -74,7 +74,7 @@ Discover the complete current registry; this table is not an exhaustive permanen
 - Embedded widgets are bounded and readonly, without nested tooltip, inspector or drilldown actions. Preserve scoped theme inheritance for portalled content.
 - Keep source identity and configuration in authoring/inspection or actionable failure UI. Ordinary widget chrome prioritizes title, data and meaningful actions.
 
-Compose with the existing `paprika-observe` skill for live discovery, provider-specific querying and authorized document operations. It lives at `plugins/paprika-observe/skills/paprika-observe/SKILL.md`, in the standalone Observe plugin. Discover real provider capabilities, metric metadata, labels and returned samples before designing queries. Observe read access and Insights write access are distinct. Do not infer dashboard visualization support from gateway query support.
+Compose with the existing `paprika-observe` skill for live discovery, provider-specific querying and authorized document operations. It lives at `plugins/paprika-observe/skills/paprika-observe/SKILL.md`, in the standalone Observe plugin. Discover real provider capabilities, metric metadata, labels and returned samples before designing queries. Observe read access (`paprika:observe`) and Insights authoring (`paprika:insights:write`) are distinct scopes. Do not infer dashboard visualization support from gateway query support.
 
 ## Check implementation hazards
 
@@ -119,7 +119,7 @@ Keep numerical fixtures, interaction checks and visual evidence distinct. Existi
 
 ## Primary sources
 
-All links below are pinned to the inspected commit; revisit the current equivalents before use.
+The permalinks below are pinned to the inspected commit `bb52aed`. The Observe skill link is relative to the current tree. Revisit the current equivalents before use.
 
 - [Design scope and visual contract](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/DESIGN.md) and [observable UX contract](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/docs/design/insights/UX-CONTRACT.md).
 - [Runtime schema](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/schema.ts) and [trusted widget registry](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/widget-registry.tsx).
