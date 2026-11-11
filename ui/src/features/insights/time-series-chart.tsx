@@ -69,7 +69,7 @@ import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { autoAxisDomain, niceDomain } from "./units";
 import { validTimestamp } from "./widget-context";
 import { thresholdPaint } from "./status";
-import { breachingPoints, breachSummary, timeSeriesBreaches, unionSpans, type BreachLevel, type SeriesBreachInterval } from "./breaches";
+import { breachBands, breachEmphasisPoints, breachSummary, clampBreaches, timeSeriesBreaches, type BreachLevel, type SeriesBreachInterval } from "./breaches";
 import { BreachSummary } from "./breach-summary";
 import breachStyles from "./breach.module.css";
 import { useWidgetPresentation } from "./widget-presentation";
@@ -148,7 +148,10 @@ function TimeBrushOverlay({ preview, top, bottom }: { preview: TimeBrushPreview 
   return <div className={chartStyles.brush} style={{ left, width: selected, top, bottom }} data-time-brush-selection aria-hidden="true"><span>{formatWindowDuration(Math.abs(preview.end - preview.start))}</span></div>;
 }
 
-/** Breach bands per level are capped, so a long, noisy series cannot add thousands of plot nodes. The footer counts the rest. */
+/**
+ * Breach bands per level are capped, so a long, noisy series cannot add thousands of plot nodes. Each level keeps its most
+ * recent bands, and the footer says how many are not shaded.
+ */
 const BREACH_BAND_LIMIT = 200;
 
 /**
@@ -363,14 +366,19 @@ export function TimeSeriesChart({
     () => embedded ? [] : timeSeriesBreaches(visibleSeries.slice(0, MAX_SERIES).map(entry => ({ points: entry.points, step: sampleCadence(entry.points) })), options.thresholds),
     [embedded, visibleSeries, options.thresholds],
   );
-  const breachLevels = useMemo(() => breachSummary(breaches), [breaches]);
-  const breachSpans = useMemo(() => (["critical", "warning"] as const).flatMap(level => unionSpans(breaches.filter(breach => breach.level === level)).map(span => ({ ...span, level }))), [breaches]);
-  const shadedSpans = useMemo(() => breachSpans.slice(0, BREACH_BAND_LIMIT), [breachSpans]);
-  // The breaching stretch of each plotted series, drawn heavier over its line. Downsampled like the line it sits on.
-  const breachEmphasis = useMemo(() => visibleSeries.slice(0, MAX_SERIES).map((entry, index) => {
-    const own = breaches.filter(breach => breach.series === index);
-    return own.length ? downsamplePoints(breachingPoints(entry.points, own)) : [];
-  }), [visibleSeries, breaches]);
+  // Intervals are clipped to the plotted window, so the footer never counts time the plot does not show.
+  const windowBreaches = useMemo(() => timeDomain ? clampBreaches(breaches, timeDomain) : breaches, [breaches, timeDomain]);
+  const breachLevels = useMemo(() => breachSummary(windowBreaches), [windowBreaches]);
+  // Bands: one per merged span with time in it, so instants (single samples) get no zero-width band. Spans closer than one
+  // pixel merge into one band. Each level keeps its most recent bands, and warning is drawn before critical so that critical
+  // paints over any overlap.
+  const bandPlan = useMemo(() => {
+    const msPerPixel = timeDomain && plotWidth > 0 ? (timeDomain[1] - timeDomain[0]) / plotWidth : 0;
+    return breachBands(windowBreaches, msPerPixel, BREACH_BAND_LIMIT);
+  }, [windowBreaches, timeDomain, plotWidth]);
+  // The stroke is derived from each series' plotted points, so it sits on the drawn line. Threshold crossings are
+  // interpolated, which makes entry and exit symmetric. Nothing here depends on the cursor.
+  const breachEmphasis = useMemo(() => embedded ? [] : data.map((entry, index) => breachEmphasisPoints(entry.plotPoints, options.thresholds).map(point => ({ ...point, seriesIndex: index }))), [embedded, data, options.thresholds]);
   const intervalCount = visibleBands.length + (staleTail ? 1 : 0);
   const gapsHidden = !embedded && !!truncated && dataStart !== undefined;
   const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
@@ -421,6 +429,8 @@ export function TimeSeriesChart({
             id: `breach-${index}`,
             x: "timestamp",
             y: "value",
+            // Grouped by series, like the line it sits on, so the marks keep a stable identity across updates.
+            z: "seriesIndex",
             stroke: data[index].color,
             strokeWidth: (options.lineWidth ?? 1.8) + 1.5,
             curve: CURVES[options.curve ?? "linear"],
@@ -548,6 +558,8 @@ export function TimeSeriesChart({
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
         {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
+        {/* Breach bands come before the no-sample hatches, so a hatch paints over any band it touches. */}
+        {!embedded && !emptyZoom && timeDomain && bandPlan.spans.length > 0 && <BreachBands spans={bandPlan.spans} timeDomain={timeDomain} left={plotLeft} width={plotWidth} top={eventTop} bottom={eventBottom} />}
         {visibleBands.map((band) => {
           const box = bandBox(band.from, band.to);
           // A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times.
@@ -561,7 +573,6 @@ export function TimeSeriesChart({
         {staleTail && tailBox && <span role="img" aria-label={`No samples after ${timestampFormat.format(new Date(staleTail.from))}`} className={`${hatchStyles.hatch} ${styles.noSampleBand}`} data-stale-tail data-from={staleTail.from} data-to={staleTail.to} style={{ ...tailBox, top: eventTop, bottom: eventBottom }}>
           {tailLabel && <span aria-hidden="true" className={styles.noSampleLabel}>{tailLabel}</span>}
         </span>}
-        {!embedded && !emptyZoom && timeDomain && shadedSpans.length > 0 && <BreachBands spans={shadedSpans} timeDomain={timeDomain} left={plotLeft} width={plotWidth} top={eventTop} bottom={eventBottom} />}
         {emptyZoom ? <div className={styles.state} role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <Chart
           definition={definition}
           height={height}
@@ -614,7 +625,7 @@ export function TimeSeriesChart({
         </ul>
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
-      {!embedded && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={breachSpans.length - shadedSpans.length} />}
+      {!embedded && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
           {data.map((entry, index) => {
