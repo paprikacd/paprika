@@ -682,14 +682,15 @@ func dashboardProviderError(err error) *DashboardQueryError {
 }
 
 // directProviderTransient reports whether a direct provider answered with a
-// capacity or budget status, which a retry can clear.
+// capacity, budget or gateway status, which a retry can clear. Prometheus answers
+// 503 when a query times out or is aborted, so that is a retryable condition too.
 func directProviderTransient(err error) bool {
 	var direct *providerHTTPError
 	if !errors.As(err, &direct) {
 		return false
 	}
 	switch direct.status {
-	case http.StatusTooManyRequests, http.StatusRequestTimeout, http.StatusGatewayTimeout:
+	case http.StatusTooManyRequests, http.StatusRequestTimeout, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return true
 	}
 	return false

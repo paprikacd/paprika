@@ -418,3 +418,35 @@ func TestDataRegistryIsWarningOnlyAndDocumented(t *testing.T) {
 		require.False(t, seen[rule.ID], "data rule ids never collide with lint ids")
 	}
 }
+
+// A direct Prometheus 502 or 503 is a gateway or an aborted or timed-out query,
+// which a retry can clear, so the dry run reports it unavailable, not as a
+// dashboard fault. A 500 stays a finding. query_dashboard keeps its own codes:
+// its output is unchanged, so a 503 is still provider_error there.
+func TestDryRunGatewayAndUnavailableStatusesAreTransient(t *testing.T) {
+	provider, _ := newDataProvider(t, func(query string, _ float64) (int, string) {
+		switch query {
+		case "gateway":
+			return http.StatusBadGateway, `{"status":"error"}`
+		case "unavailable":
+			return http.StatusServiceUnavailable, `{"status":"error","errorType":"timeout"}`
+		default:
+			return http.StatusInternalServerError, `{"status":"error"}`
+		}
+	})
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	document := documentOf("demo",
+		dataWidgetJSON("gateway", "timeseries", "gateway", "req/s", 0, ""),
+		dataWidgetJSON("unavailable", "timeseries", "unavailable", "req/s", 4, ""),
+		dataWidgetJSON("broken", "timeseries", "broken", "req/s", 8, ""),
+	)
+	report, _ := executeDryRunRequest(t, s, document, nil)
+	require.Equal(t, []string{"data.query-error /widgets/2/query"}, dataFindingsOf(report))
+	require.Equal(t, "DATA_STATE_UNAVAILABLE", stateOf(report, "/widgets/0"))
+	require.Equal(t, "DATA_STATE_UNAVAILABLE", stateOf(report, "/widgets/1"))
+	require.Equal(t, "DATA_STATE_ERROR", stateOf(report, "/widgets/2"))
+
+	putReadDashboard(t, s, queryReadWidget("busy", "unavailable"))
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	require.Equal(t, "provider_error", result.Signals[0].Error.Code, "query_dashboard keeps the code it reported before")
+}
