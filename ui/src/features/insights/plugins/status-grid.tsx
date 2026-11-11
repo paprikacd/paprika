@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, ty
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, exactMetric, seriesName, thresholdForValue } from "../chart-renderers";
 import { thresholdPaint } from "../status";
-import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle } from "../status-chip";
+import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip";
 import type { Point, Series } from "../chart-data";
 import type { QueryResult } from "../schema";
 import { validTimestamp } from "../widget-context";
@@ -48,6 +48,8 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     observer?.observe(element); observer?.observe(content);
     return () => { stopped = true; cancelAnimationFrame(frame); observer?.disconnect(); };
   }, [result, config.maxSeries]);
+  // Cells share one CSS size, so the first measured cell gives the frame gate the real size.
+  const cellSize = useTrackSize(grid, "[data-status-grid] > *", result);
   if (!selected.length) return <EmptyState />;
   const thresholds = widget.options?.thresholds?.length ? widget.options.thresholds : DEFAULT_HEATMAP_THRESHOLDS;
   const cells = selected.map((entry, index) => {
@@ -85,8 +87,8 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
           const label = `${cell.name}: ${cell.value === undefined ? "No data" : exactMetric(cell.value, widget.unit)} · ${status}`;
           const className = `${styles.cell} ${cell.value === undefined ? styles.unknown : ""}`;
           const color = thresholdPaint(cell.threshold) ?? widget.color ?? "var(--gamma-chart-2)";
-          const style = cell.value === undefined ? undefined : { "--status-color": color, ...statusStrokeStyle(cell.threshold) } as CSSProperties;
-          const stroke = cell.value === undefined ? undefined : statusStrokeLevel(cell.threshold);
+          const style = cell.value === undefined ? undefined : { "--status-color": color, ...statusStrokeStyle(cell.threshold, cellSize) } as CSSProperties;
+          const stroke = cell.value === undefined ? undefined : statusStrokeLevel(cell.threshold, cellSize);
           if (!interactive) return <span key={cell.index} className={className} style={style} data-status-stroke={stroke} role="img" aria-label={label} />;
           return <button key={cell.index} type="button" className={className} style={style} data-status-stroke={stroke} data-status-index={cell.index}
             data-status-value={cell.value ?? "unknown"} aria-label={label} aria-pressed={detailsEnabled ? active?.index === cell.index && active.pinned : undefined}

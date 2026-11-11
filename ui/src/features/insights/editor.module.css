@@ -405,10 +405,11 @@
   gap: 8px;
   align-items: end;
 }
+/* Value and delete share the first line; the status and colour controls take the full second line. */
 .threshold > label:first-child { flex: 0 0 auto; }
 .threshold > label:first-child input { width: 11ch; }
-.threshold > :nth-child(2) { flex: 1 1 15rem; min-width: 0; }
-.threshold > button { flex: 0 0 auto; }
+.threshold > button { flex: 0 0 auto; margin-left: auto; }
+.threshold > [data-status-mark-fields] { flex: 1 1 100%; min-width: 0; }
 .thresholdLabel {
   flex-basis: 100%;
   display: flex;

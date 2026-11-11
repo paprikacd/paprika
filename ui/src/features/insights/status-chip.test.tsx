@@ -73,26 +73,29 @@ describe("status frames", () => {
     expect(statusStrokeLevel(undefined)).toBeUndefined();
   });
 
-  it("needs 2 x frame + 3 px in both directions, so thin marks keep their whole fill", () => {
-    expect(statusStrokeLevel({ status: "critical" }, { width: 6, height: 18 })).toBeUndefined();
-    expect(statusStrokeLevel({ status: "critical" }, { width: 7, height: 18 })).toBe("critical");
-    expect(statusStrokeLevel({ status: "critical" }, { width: 18, height: 6 })).toBeUndefined();
-    expect(statusStrokeLevel({ status: "warning" }, { width: 4, height: 18 })).toBeUndefined();
-    expect(statusStrokeLevel({ status: "warning" }, { width: 5, height: 18 })).toBe("warning");
+  it("draws a frame only where at least 4 px and half the size remain as fill, in both directions", () => {
+    // Critical: size - 4 >= max(4, size / 2), so 8 px is the first size.
+    expect(statusStrokeLevel({ status: "critical" }, { width: 7, height: 18 })).toBeUndefined();
+    expect(statusStrokeLevel({ status: "critical" }, { width: 8, height: 18 })).toBe("critical");
+    expect(statusStrokeLevel({ status: "critical" }, { width: 18, height: 7 })).toBeUndefined();
+    // Warning: size - 2 >= max(4, size / 2), so 6 px is the first size.
+    expect(statusStrokeLevel({ status: "warning" }, { width: 5, height: 18 })).toBeUndefined();
+    expect(statusStrokeLevel({ status: "warning" }, { width: 6, height: 18 })).toBe("warning");
     expect(statusStrokeLevel({ status: "warning" }, undefined)).toBe("warning");
   });
 
-  it("draws an ink frame, so a hex-only band or an ok band gets no frame colour", () => {
+  it("draws the frame in the widget text colour, and a hex-only band or an ok band gets no frame", () => {
     expect(statusStrokeStyle({ color: "#123456" })).toEqual({});
     expect(statusStrokeStyle({ status: "ok" })).toEqual({});
     expect(statusStrokeStyle({ status: "critical" }, { width: 3, height: 18 })).toEqual({});
-    expect(statusStrokeStyle({ status: "critical" })).toEqual({ "--status-stroke-color": "var(--gamma-ink)" });
+    expect(statusStrokeStyle({ status: "critical" })).toEqual({ "--status-stroke-color": "var(--widget-text, var(--gamma-ink))" });
   });
 
-  it("uses a 1 px frame for warning and 2 px for critical, each followed by a tile-coloured keyline, and never hatching", () => {
+  it("uses a 1 px frame for warning and 2 px for critical, with no keyline, and never hatching", () => {
     const css = readFileSync(join(here, "status-chip.module.css"), "utf8");
-    expect(css).toMatch(/:global\(\[data-status-stroke="warning"\]\)[^}]*inset 0 0 0 1px[^}]*inset 0 0 0 2px var\(--status-keyline\)/);
-    expect(css).toMatch(/:global\(\[data-status-stroke="critical"\]\)[^}]*inset 0 0 0 2px[^}]*inset 0 0 0 3px var\(--status-keyline\)/);
+    expect(css).toMatch(/:global\(\[data-status-stroke="warning"\]\)[^}]*inset 0 0 0 1px var\(--status-stroke-color/);
+    expect(css).toMatch(/:global\(\[data-status-stroke="critical"\]\)[^}]*inset 0 0 0 2px var\(--status-stroke-color/);
+    expect(css).not.toMatch(/status-keyline/);
     expect(css).not.toMatch(/repeating-linear-gradient/);
   });
 });

@@ -35,12 +35,11 @@
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /*
- * Cell frames: an ink frame (1 px warning, 2 px critical), then a 1 px keyline in the tile colour, then the fill.
- * Owners add var(--status-inset) to their box-shadow. The keyline keeps the fill's own contrast with the tile.
+ * Cell frames: an inset frame, 1 px for warning and 2 px for critical, drawn over the fill in the widget text
+ * colour. Owners add var(--status-inset) to their box-shadow. The gate in status-chip.tsx decides who gets one.
  */
-:global([data-status-stroke]) { --status-keyline: var(--widget-background, var(--gamma-bg, #ffffff)); }
-:global([data-status-stroke="warning"]) { --status-inset: inset 0 0 0 1px var(--status-stroke-color, var(--gamma-ink)), inset 0 0 0 2px var(--status-keyline); }
-:global([data-status-stroke="critical"]) { --status-inset: inset 0 0 0 2px var(--status-stroke-color, var(--gamma-ink)), inset 0 0 0 3px var(--status-keyline); }
+:global([data-status-stroke="warning"]) { --status-inset: inset 0 0 0 1px var(--status-stroke-color, var(--gamma-ink)); }
+:global([data-status-stroke="critical"]) { --status-inset: inset 0 0 0 2px var(--status-stroke-color, var(--gamma-ink)); }
 
 /* Colour swatch that shows the colour actually drawn in the active theme. */
 .swatch { display: inline-block; flex: none; width: 18px; height: 18px; border: 1px solid var(--gamma-border); border-radius: 4px; }

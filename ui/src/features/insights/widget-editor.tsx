@@ -634,18 +634,6 @@ function StyleEditor({
                   }
                 />
               </label>
-              <StatusMarkFields
-                name={`Threshold ${index + 1}`}
-                mark={threshold}
-                theme={resolvedTheme}
-                onChange={(mark) =>
-                  update({
-                    thresholds: options.thresholds!.map((item, i) =>
-                      i === index ? withStatusMark(item, mark) : item,
-                    ),
-                  })
-                }
-              />
               <GammaButton
                 type="button"
                 variant="quiet"
@@ -662,6 +650,18 @@ function StyleEditor({
               >
                 <Trash2 size={14} />
               </GammaButton>
+              <StatusMarkFields
+                name={`Threshold ${index + 1}`}
+                mark={threshold}
+                theme={resolvedTheme}
+                onChange={(mark) =>
+                  update({
+                    thresholds: options.thresholds!.map((item, i) =>
+                      i === index ? withStatusMark(item, mark) : item,
+                    ),
+                  })
+                }
+              />
               <label className={styles.thresholdLabel}>
                 Label
                 <GammaInput

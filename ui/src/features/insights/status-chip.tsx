@@ -30,13 +30,14 @@ export function bandReading(band: { status?: StatusLevel; color?: string; label?
 
 export type StatusStrokeLevel = "warning" | "critical";
 
-/** Frame widths in px. The keyline (1 px, tile colour) sits between the frame and the fill. */
+/** Frame widths in px, drawn inside the cell edge over the fill. */
 const FRAME_PX: Record<StatusStrokeLevel, number> = { warning: 1, critical: 2 };
 
 /**
- * Status cells take a frame only when they are large enough to keep fill beneath it: at least 2 x frame + 3 px
- * in both directions. Thin marks stay unframed, so their fill is never reduced; their level is carried by the
- * legend chip and the accessible name. Hatching is reserved for missing data, and a hex-only band has no level.
+ * A frame is drawn only where enough fill remains: in both directions, the size less the frame on both sides
+ * must be at least 4 px and at least half the size. So a warning frame needs 6 px and a critical frame 8 px.
+ * Smaller marks stay unframed and keep their whole fill; their level is carried by the legend chip and the
+ * accessible name. Hatching is reserved for missing data, and a hex-only band has no level.
  */
 export function statusStrokeLevel(
   mark: StatusMark | undefined,
@@ -44,14 +45,17 @@ export function statusStrokeLevel(
 ): StatusStrokeLevel | undefined {
   const level = mark?.status === "warning" || mark?.status === "critical" ? mark.status : undefined;
   if (!level) return undefined;
-  const needed = 2 * FRAME_PX[level] + 3;
-  const fits = (px: number | undefined) => px === undefined || px >= needed;
+  const frame = FRAME_PX[level];
+  const fits = (px: number | undefined) => px === undefined || (px - 2 * frame >= Math.max(4, px / 2));
   return fits(size?.width) && fits(size?.height) ? level : undefined;
 }
 
-/** Spread with the stroke level. The frame is the ink colour, so it contrasts with the tile surface. */
+/**
+ * Spread with the stroke level. The frame takes the widget's text colour, so it stays visible on custom
+ * backgrounds, and falls back to the page ink.
+ */
 export function statusStrokeStyle(mark: StatusMark | undefined, size?: { width?: number; height?: number }): CSSProperties {
-  return statusStrokeLevel(mark, size) ? ({ "--status-stroke-color": "var(--gamma-ink)" } as CSSProperties) : {};
+  return statusStrokeLevel(mark, size) ? ({ "--status-stroke-color": "var(--widget-text, var(--gamma-ink))" } as CSSProperties) : {};
 }
 
 /**

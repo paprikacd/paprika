@@ -98,14 +98,14 @@ export function RecordTableStyleEditor({ config, onChange }: {
           const mapping = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
           const mappings = entry.mappings as unknown[]
           const change = (patch: Record<string, unknown>) => updateEntry(index, { mappings: mappings.map((current, i) => i === mappingIndex ? { ...mapping, ...patch } : current) })
-          return <fieldset className={styles.mapping} key={mappingIndex}><legend>Status {mappingIndex + 1}</legend>
-            <label className={editorStyles.field}>Exact value<GammaInput aria-label={`Column ${index + 1} status ${mappingIndex + 1} value`} value={typeof mapping.value === "string" ? mapping.value : ""} maxLength={128} onChange={event => change({ value: event.target.value })} /></label>
+          return <fieldset className={styles.mapping} key={mappingIndex}><legend>Mapping {mappingIndex + 1}</legend>
+            <label className={editorStyles.field}>Exact value<GammaInput aria-label={`Column ${index + 1} mapping ${mappingIndex + 1} value`} value={typeof mapping.value === "string" ? mapping.value : ""} maxLength={128} onChange={event => change({ value: event.target.value })} /></label>
             <StatusMarkFields name={`Column ${index + 1} mapping ${mappingIndex + 1}`} mark={markOf(mapping)} theme={resolvedTheme}
               onChange={mark => updateEntry(index, { mappings: mappings.map((current, i) => i === mappingIndex ? withMark(mapping, mark) : current) })} />
-            <GammaButton size="sm" variant="quiet" aria-label={`Remove column ${index + 1} status ${mappingIndex + 1}`} onClick={() => updateEntry(index, { mappings: mappings.filter((_, i) => i !== mappingIndex) })}>Remove status</GammaButton>
+            <GammaButton size="sm" variant="quiet" aria-label={`Remove column ${index + 1} mapping ${mappingIndex + 1}`} onClick={() => updateEntry(index, { mappings: mappings.filter((_, i) => i !== mappingIndex) })}>Remove mapping</GammaButton>
           </fieldset>
         })}
-        <GammaButton size="sm" disabled={Array.isArray(entry.mappings) && entry.mappings.length >= 16} onClick={() => updateEntry(index, { mappings: [...(Array.isArray(entry.mappings) ? entry.mappings : []), { value: "", status: "ok" }] })}>Add status</GammaButton>
+        <GammaButton size="sm" disabled={Array.isArray(entry.mappings) && entry.mappings.length >= 16} onClick={() => updateEntry(index, { mappings: [...(Array.isArray(entry.mappings) ? entry.mappings : []), { value: "", status: "ok" }] })}>Add mapping</GammaButton>
       </div>}
       {entry.display === "sparkline" && <>
         <label className={editorStyles.field}>History unit (optional)
