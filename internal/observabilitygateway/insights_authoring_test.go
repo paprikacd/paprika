@@ -16,6 +16,7 @@ import (
 	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/insights"
 	observe "github.com/benebsworth/paprika/internal/observabilitygateway"
@@ -236,4 +237,28 @@ func TestInsightsAuthoringListsAreCompactAndToolsDoNotExposeDeletion(t *testing.
 		require.False(t, strings.HasPrefix(tool.Name, "delete_"))
 		require.True(t, json.Valid(tool.InputSchema))
 	}
+}
+
+func TestInsightsAuthoringRejectedSaveNamesWidgetPointers(t *testing.T) {
+	h := newAuthoringHarness(t)
+	p := authoringPrincipal([]string{"editors"}, true)
+	document := authoringDocument(t, "dashboard", "Bad layout")
+	document["widgets"] = []any{map[string]any{
+		"id": "requests", "title": "Requests", "type": "timeseries", "providerId": "prometheus", "query": "up", "unit": "req/s",
+		"layout": map[string]any{"x": 0, "y": 0, "w": 0, "h": 4},
+	}}
+	_, err := h.call(t, p, "create_dashboard", map[string]any{"document": document})
+	var ce *connect.Error
+	require.ErrorAs(t, err, &ce)
+	require.Equal(t, connect.CodeInvalidArgument, ce.Code())
+	require.Equal(t, "widget layout is outside the dashboard grid", ce.Message())
+	require.Len(t, ce.Details(), 1)
+	message, valueErr := ce.Details()[0].Value()
+	require.NoError(t, valueErr)
+	report, ok := message.(*insightsv1.CheckReport)
+	require.True(t, ok)
+	require.Len(t, report.GetIssues(), 1)
+	require.Equal(t, "/widgets/0/layout", report.GetIssues()[0].GetPointer())
+	require.Equal(t, "requests", report.GetIssues()[0].GetWidgetId())
+	require.Equal(t, uint32(1), report.GetTotal())
 }

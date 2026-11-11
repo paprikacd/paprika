@@ -10,14 +10,19 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 var insightsDocumentID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$`)
@@ -144,7 +149,7 @@ func readInsightsResponseLimit(resp *http.Response, limit int64) (payload json.R
 		return nil, "", connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds its size limit"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", insightsStatusError(resp.StatusCode, body)
+		return nil, "", insightsStatusError(resp.StatusCode, body, resp.Header)
 	}
 	if !json.Valid(body) {
 		return nil, "", connect.NewError(connect.CodeInternal, errors.New("insights returned invalid JSON"))
@@ -183,11 +188,17 @@ var insightsHTTPFailures = map[int]insightsHTTPFailure{
 	http.StatusGatewayTimeout:        {connect.CodeUnavailable, "insights service is unavailable"},
 }
 
-func insightsStatusError(status int, body []byte) error {
+// insightsStatusError maps a failed Insights response to a Connect error. The
+// message is fixed text, or the service's own short validation message. A 400
+// also carries the bounded finding list as a CheckReport detail, and a capacity
+// response that names a Retry-After carries a RetryInfo detail. Upstream bodies
+// are never copied beyond those two fields.
+func insightsStatusError(status int, body []byte, header http.Header) *connect.Error {
 	failure, ok := insightsHTTPFailures[status]
 	if !ok {
 		failure = insightsHTTPFailure{connect.CodeInternal, "insights request failed"}
 	}
+	var report *insightsv1.CheckReport
 	if status == http.StatusBadRequest {
 		var response struct {
 			Error string `json:"error"`
@@ -195,8 +206,70 @@ func insightsStatusError(status int, body []byte) error {
 		if json.Unmarshal(body, &response) == nil && len(response.Error) <= 512 && response.Error != "" {
 			failure.message = response.Error
 		}
+		report = insightsCheckReport(body)
 	}
-	return connect.NewError(failure.code, errors.New(failure.message))
+	err := connect.NewError(failure.code, errors.New(failure.message))
+	if report != nil {
+		if detail, detailErr := connect.NewErrorDetail(report); detailErr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	if delay, ok := insightsRetryDelay(status, header); ok {
+		if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(delay)}); detailErr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	return err
+}
+
+// insightsValidationBody is the 400 body of a rejected save: Error keeps the
+// single historical message, and the rest is the CheckReport list shape.
+type insightsValidationBody struct {
+	Error     string            `json:"error"`
+	Issues    []json.RawMessage `json:"issues"`
+	Total     uint32            `json:"total"`
+	Truncated bool              `json:"truncated"`
+}
+
+// insightsCheckReport decodes the issue list of a 400 and bounds every finding,
+// so a changed or misbehaving service cannot widen what an agent receives.
+func insightsCheckReport(body []byte) *insightsv1.CheckReport {
+	var response insightsValidationBody
+	if json.Unmarshal(body, &response) != nil || len(response.Issues) == 0 {
+		return nil
+	}
+	report := &insightsv1.CheckReport{}
+	for _, raw := range response.Issues {
+		if len(report.GetIssues()) == checkwire.MaxIssues {
+			break
+		}
+		var finding insightsv1.CheckFinding
+		if checkwire.Unmarshal(raw, &finding) != nil {
+			continue
+		}
+		report.Issues = append(report.Issues, checkwire.Bound(&finding))
+	}
+	report.Total = max(response.Total, checkwire.Count(len(response.Issues)))
+	report.Truncated = response.Truncated || report.GetTotal() > checkwire.Count(len(report.GetIssues()))
+	return report
+}
+
+// maxInsightsRetryAfterSecs bounds the delay a Retry-After may ask an agent to wait.
+const maxInsightsRetryAfterSecs = 300
+
+// insightsRetryDelay reads a Retry-After in seconds from a throttling response.
+// Only 429 carries it: it maps to ResourceExhausted, the code agents receive
+// with their retry delay. Unavailable is reported without one, as every other
+// unavailable upstream is. A date-form or out-of-range value is ignored.
+func insightsRetryDelay(status int, header http.Header) (time.Duration, bool) {
+	if status != http.StatusTooManyRequests {
+		return 0, false
+	}
+	seconds, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After")))
+	if err != nil || seconds < 1 || seconds > maxInsightsRetryAfterSecs {
+		return 0, false
+	}
+	return time.Duration(seconds) * time.Second, true
 }
 
 func (c *InsightsAuthoringClient) get(ctx context.Context, collection, id string) (*insightsDocumentResult, error) {

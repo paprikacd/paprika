@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -217,28 +219,13 @@ func preconditions(previous Dashboard, exists bool, ifMatch, ifNoneMatch string)
 	return nil
 }
 
+// validateDashboard reports the first schema finding for a document, or nil.
+// Callers that need every finding use schemaFindings.
 func validateDashboard(id string, document Dashboard) error {
-	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
-		return errors.New("dashboard id or size is invalid")
+	if findings := schemaFindings(id, document); len(findings) > 0 {
+		return errors.New(findings[0].GetMessage())
 	}
-	root, err := requireObjectShape(document, []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}, []string{"description", "folder", "customTimeRange", "timeZone", "variables"})
-	if err != nil {
-		return err
-	}
-	if err := validateDashboardExtensions(root); err != nil {
-		return err
-	}
-	if err := validateDashboardWidgetShapes(root["widgets"]); err != nil {
-		return err
-	}
-	var d dashboardDocument
-	if json.Unmarshal(document, &d) != nil {
-		return errors.New("dashboard must be a valid JSON object")
-	}
-	if err := validateDashboardIdentity(&d, id); err != nil {
-		return err
-	}
-	return validateDashboardWidgets(d.Widgets)
+	return nil
 }
 
 // checkStoredDashboard validates a document the store loads from disk. Its timeZone is exempt, so a stale, unknown or
@@ -285,7 +272,9 @@ func requireObjectShape(data json.RawMessage, required, optional []string) (map[
 	for _, key := range optional {
 		allowed[key] = true
 	}
-	for key, value := range object {
+	// Sorted keys make the first reported field the same on every call.
+	for _, key := range slices.Sorted(maps.Keys(object)) {
+		value := object[key]
 		if !allowed[key] {
 			return nil, fmt.Errorf("unknown dashboard field %q", key)
 		}
@@ -430,30 +419,4 @@ func validStoreEntry(id string, entry os.DirEntry) bool {
 
 func dashboardStoreFull(count, bytes int) bool {
 	return count >= maxDashboards || bytes > maxStoreBytes
-}
-
-func validateDashboardWidgetShapes(raw json.RawMessage) error {
-	var rawWidgets []json.RawMessage
-	if json.Unmarshal(raw, &rawWidgets) != nil {
-		return errors.New("widgets must be an array")
-	}
-	for _, raw := range rawWidgets {
-		if err := validateDashboardWidgetShape(raw); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateDashboardWidgets(widgets []dashboardWidget) error {
-	if widgets == nil || len(widgets) > 48 {
-		return errors.New("dashboard requires an array of at most 48 widgets")
-	}
-	seen := make(map[string]bool)
-	for i := range widgets {
-		if err := validateDashboardWidget(&widgets[i], seen); err != nil {
-			return err
-		}
-	}
-	return nil
 }
