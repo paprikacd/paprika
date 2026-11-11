@@ -72,7 +72,6 @@ export function createRunSupervisor({ tool, recordDirectory, allowedRoots, log =
   const recordFile = join(recordDirectory, `${tool}-${process.pid}-${Date.now()}.json`)
   const record = { tool, supervisor: { pid: process.pid, start: processStart(process.pid) }, children: [], removePaths: [], commands: [] }
   const cleanups = []
-  const handles = []
   let shutdown = null
   let exitCode = 0
 
@@ -81,9 +80,42 @@ export function createRunSupervisor({ tool, recordDirectory, allowedRoots, log =
     writeFileSync(recordFile, JSON.stringify(record, null, 2), { mode: 0o600 })
   }
 
-  function adopt(label, pid) {
-    record.children.push({ label, pid, start: processStart(pid) })
+  // Records a process group leader. Accepts a ChildProcess (forgotten when it
+  // exits) or a bare PID. `start` overrides the live start time; tests use it to
+  // simulate a reused PID.
+  function adopt(label, target, { start } = {}) {
+    const pid = typeof target === "number" ? target : target.pid
+    const entry = { label, pid, start: start ?? processStart(pid) }
+    record.children.push(entry)
     save()
+    if (typeof target !== "number") {
+      target.once("exit", () => {
+        record.children = record.children.filter(child => child !== entry)
+        save()
+      })
+    }
+    return entry
+  }
+
+  // Signals a recorded group only while its leader still has the recorded start
+  // time. A PID reused by an unrelated process is never signalled.
+  async function stopRecorded(entry) {
+    if (!entry.start || processStart(entry.pid) !== entry.start) {
+      log(`Not signalling ${entry.label} (pid ${entry.pid}): the recorded process is no longer running.`)
+      return
+    }
+    await stopProcessGroup(entry.pid, { graceMilliseconds })
+  }
+
+  async function stopEverything(reason) {
+    log(`Stopping (${reason})…`)
+    await Promise.all(record.children.map(stopRecorded))
+    for (const fn of cleanups.reverse()) {
+      try { await fn() } catch (error) { log(`Cleanup failed: ${error.message}`) }
+    }
+    for (const command of record.commands) await runCommand(command.command, command.args, log)
+    for (const path of record.removePaths) removeAllowed(path, allowedRoots, log)
+    rmSync(recordFile, { force: true })
   }
 
   const supervisor = {
@@ -93,8 +125,7 @@ export function createRunSupervisor({ tool, recordDirectory, allowedRoots, log =
     spawnChild(label, command, args, options = {}) {
       const child = spawn(command, args, { detached: true, stdio: "ignore", ...options })
       if (!child.pid) throw new Error(`Could not start ${label}`)
-      adopt(label, child.pid)
-      handles.push(child)
+      adopt(label, child)
       return child
     },
     adopt,
@@ -109,20 +140,16 @@ export function createRunSupervisor({ tool, recordDirectory, allowedRoots, log =
     addCleanup(fn) {
       cleanups.push(fn)
     },
+    /** Stops everything this run started, once, without exiting the process. */
+    stop(reason = "requested") {
+      shutdown ??= stopEverything(reason)
+      return shutdown
+    },
     /** Starts shutdown once. Later calls return the same promise and exit with the first code. */
     requestShutdown(code, reason) {
       if (!shutdown) {
         exitCode = code
-        shutdown = (async () => {
-          log(`Stopping (${reason})…`)
-          await Promise.all(record.children.map(child => stopProcessGroup(child.pid, { graceMilliseconds })))
-          for (const fn of cleanups.reverse()) {
-            try { await fn() } catch (error) { log(`Cleanup failed: ${error.message}`) }
-          }
-          for (const command of record.commands) await runCommand(command.command, command.args, log)
-          for (const path of record.removePaths) removeAllowed(path, allowedRoots, log)
-          rmSync(recordFile, { force: true })
-        })().finally(() => process.exit(exitCode))
+        shutdown = stopEverything(reason).finally(() => process.exit(exitCode))
       }
       return shutdown
     },

@@ -17,7 +17,7 @@
     "test:e2e:polish": "node --experimental-strip-types e2e/insights-polish.e2e.mjs",
     "review:insights": "node --experimental-strip-types e2e/insights-polish.e2e.mjs --review",
     "insights:lab": "node e2e/insights-lab.mjs",
-    "test:lab": "node --test e2e/fixtures/query-fixture-server.test.mjs e2e/fixtures/lab-process.test.mjs",
+    "test:lab": "node --test e2e/fixtures/query-fixture-server.test.mjs e2e/fixtures/lab-process.test.mjs e2e/fixtures/reference-environment-signal.test.mjs",
     "test:e2e:insights:observability": "node e2e/insights-observability.e2e.mjs",
     "postinstall": "patch-package --error-on-fail"
   },

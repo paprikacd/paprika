@@ -4,10 +4,13 @@ import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { until } from "../insights-portable-fixture.mjs"
 import { stopProcessGroup } from "./lab-process.mjs"
+
+const guardedSignals = ["SIGINT", "SIGTERM", "SIGHUP"]
 
 /**
  * Starts an empty workspace. Call installQueryFixture on each fresh browser
@@ -20,7 +23,10 @@ import { stopProcessGroup } from "./lab-process.mjs"
  * - queryFixtureURL: loopback server that supplies Prometheus range data.
  * - labEntry: mint a one-time browser entry ticket (labEntryURL).
  * - tokenTTL: harness credential lifetime, for example "12h".
- * - onSpawn(pid): called with the harness process group ID after each start.
+ * - onSpawn(child): a supervisor manages the harness. The harness then starts in its
+ *   own process group, the supervisor stops it, and the caller must record it.
+ *   Without onSpawn the harness shares this process's group, so a group signal
+ *   (Ctrl-C) reaches it, and this module stops it on SIGINT, SIGTERM, SIGHUP or exit.
  * - onUnexpectedExit({ code, signal, diagnostics }): the harness stopped on its own.
  */
 export async function createReferenceDashboardEnvironment(repository, staticURL, options = {}) {
@@ -30,8 +36,10 @@ export async function createReferenceDashboardEnvironment(repository, staticURL,
   const readyFile = join(temporary, "ready.json")
   const dataDir = join(temporary, "data")
   const queryCalls = [], failures = []
+  const guards = new Map()
   let harness, connection, providers = [], providerIds, closed = false
   let diagnostics = ""
+  const managed = options.onSpawn !== undefined
 
   async function build() {
     const child = spawn("go", ["build", "-o", binary, "./hack/insights-observe-e2e"], {
@@ -74,13 +82,14 @@ export async function createReferenceDashboardEnvironment(repository, staticURL,
       ...(options.queryFixtureURL ? [`--query-fixture-url=${options.queryFixtureURL}`] : []),
       ...(options.labEntry ? ["--lab-entry"] : []),
       ...(options.tokenTTL ? [`--token-ttl=${options.tokenTTL}`] : []),
-    ], { cwd: repository, stdio: ["ignore", "ignore", "pipe"], detached: true })
+    ], { cwd: repository, stdio: ["ignore", "ignore", "pipe"], detached: managed })
     harness = child
+    if (!managed) installGuard()
     // Keep the tail of stderr for diagnosis only. It can contain credential-derived
     // errors, so it is never echoed here; callers decide what to show.
     child.stderr.on("data", data => { diagnostics = (diagnostics + data).slice(-8192) })
     child.on("error", error => { startError = error })
-    options.onSpawn?.(child.pid)
+    options.onSpawn?.(child)
     child.once("exit", (code, signal) => {
       // A stop clears `harness` first, so only an unexpected exit reaches here.
       if (harness !== child || closed) return
@@ -111,15 +120,49 @@ export async function createReferenceDashboardEnvironment(repository, staticURL,
     const running = harness
     harness = undefined
     connection = undefined
-    if (!running) return
-    // The harness and anything it started share the group created by detached spawn.
-    await stopProcessGroup(running.pid)
+    if (!running || running.exitCode !== null || running.signalCode !== null) return
+    if (managed) {
+      // Detached: the harness and anything it started share the group it leads.
+      await stopProcessGroup(running.pid)
+      return
+    }
+    running.kill("SIGTERM")
+    const exited = once(running, "exit")
+    const force = setTimeout(() => running.kill("SIGKILL"), 5000)
+    try { await exited } finally { clearTimeout(force) }
+  }
+
+  // Synchronous, because a signal or an exit can arrive when no promise can run.
+  // It kills the harness, removes an owned workspace and re-raises the signal.
+  function killHarnessNow() {
+    if (harness?.pid) { try { process.kill(harness.pid, "SIGKILL") } catch { /* Already gone. */ } }
+  }
+  function removeGuard() {
+    for (const [signal, listener] of guards) process.removeListener(signal, listener)
+    guards.clear()
+    process.removeListener("exit", exitListener)
+  }
+  function exitListener() { killHarnessNow() }
+  function installGuard() {
+    if (guards.size > 0) return
+    for (const signal of guardedSignals) {
+      const listener = () => {
+        killHarnessNow()
+        removeGuard()
+        if (ownsWorkspace) rmSync(temporary, { recursive: true, force: true })
+        process.kill(process.pid, signal)
+      }
+      guards.set(signal, listener)
+      process.on(signal, listener)
+    }
+    process.on("exit", exitListener)
   }
 
   async function close() {
     if (closed) return
     closed = true
     try { await stop() } finally {
+      removeGuard()
       if (ownsWorkspace) await rm(temporary, { recursive: true, force: true })
     }
   }

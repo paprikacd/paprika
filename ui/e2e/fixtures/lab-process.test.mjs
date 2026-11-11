@@ -2,12 +2,12 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, it } from "node:test"
-import { recoverOrphans, stopProcessGroup } from "./lab-process.mjs"
+import { createRunSupervisor, processStart, recoverOrphans, stopProcessGroup } from "./lab-process.mjs"
 
 const child = fileURLToPath(new URL("./lab-process-child.mjs", import.meta.url))
 const quiet = () => {}
@@ -115,6 +115,38 @@ describe("run supervisor", () => {
     } finally {
       rmSync(work, { recursive: true, force: true })
       rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it("does not signal a recorded process whose start time no longer matches (reused PID)", async () => {
+    const work = mkdtempSync(join(tmpdir(), "lab-process-test-"))
+    const unrelated = spawn("sleep", ["300"], { detached: true, stdio: "ignore" })
+    try {
+      await new Promise(done => setTimeout(done, 100))
+      const supervisor = createRunSupervisor({ tool: "reuse-test", recordDirectory: join(work, "runs"), allowedRoots: [work], log: quiet, graceMilliseconds: 200 })
+      // The record says this PID started at another time, as if it were reused by an unrelated process.
+      supervisor.adopt("reused", unrelated.pid, { start: "Thu Jan  1 00:00:00 1970" })
+      assert.notEqual(processStart(unrelated.pid), "Thu Jan  1 00:00:00 1970")
+      await supervisor.stop("test")
+      assert.equal(groupGone(unrelated.pid), false, "an unrelated process group must not be signalled on shutdown")
+    } finally {
+      await stopProcessGroup(unrelated.pid)
+      rmSync(work, { recursive: true, force: true })
+    }
+  })
+
+  it("forgets a child once it exits, so shutdown never signals a stale PID", async () => {
+    const work = mkdtempSync(join(tmpdir(), "lab-process-test-"))
+    const records = join(work, "runs")
+    try {
+      const supervisor = createRunSupervisor({ tool: "exit-test", recordDirectory: records, allowedRoots: [work], log: quiet })
+      const short = supervisor.spawnChild("short build", "true", [])
+      await once(short, "exit")
+      const remaining = JSON.parse(readFileSync(supervisor.recordFile, "utf8")).children
+      assert.deepEqual(remaining, [], "an exited child must be removed from the record")
+      await supervisor.stop("test")
+    } finally {
+      rmSync(work, { recursive: true, force: true })
     }
   })
 })

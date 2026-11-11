@@ -98,7 +98,7 @@ async function main() {
     queryFixtureURL: fixtures.url,
     labEntry: true,
     tokenTTL,
-    onSpawn: pid => supervisor.adopt("harness", pid),
+    onSpawn: child => supervisor.adopt("harness", child),
     onUnexpectedExit: ({ code, signal, diagnostics }) => {
       // A shutdown stops the harness on purpose; only an exit while running is a failure.
       if (supervisor.stopping) return
