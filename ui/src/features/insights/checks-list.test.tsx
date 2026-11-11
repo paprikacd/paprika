@@ -143,6 +143,17 @@ describe("ChecksList", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(32);
   });
 
+  it("nests the severity groups one level below the counts heading, and takes focus on the counts", () => {
+    const ref = { current: null as HTMLHeadingElement | null };
+    const report = new CheckReport({ issues: [finding()], total: 1, errorCount: 1 });
+    render(<ChecksList label="Checks" report={report} headingLevel={5} headingRef={ref} />);
+    const counts = screen.getByRole("heading", { level: 5, name: "1 error" });
+    expect(ref.current).toBe(counts);
+    counts.focus();
+    expect(counts).toHaveFocus();
+    expect(screen.getByRole("heading", { level: 6, name: /Errors/ })).toBeInTheDocument();
+  });
+
   it("reads an empty report as no findings", () => {
     render(<ChecksList label="Checks" report={new CheckReport({ total: 0 })} />);
     expect(checkCountsText(new CheckReport({ total: 0 }))).toBe("No findings");

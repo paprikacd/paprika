@@ -221,6 +221,9 @@ export function parseCheckReport(body: unknown): CheckReport {
   })
 }
 
+// A dry run is one bounded read; past this it is reported as a failed check.
+const VALIDATE_TIMEOUT_MS = 10_000
+
 /** The findings carried by a failed request, or undefined when the failure had none. */
 export function checksFromError(error: unknown): CheckReport | undefined {
   return error instanceof InsightsHTTPError ? error.checks : undefined
@@ -478,25 +481,39 @@ export function createInsightsClient(
     save: async (dashboard, etag) => documentETag(await sendSave(dashboard, etag, false)),
     saveChecked: async (dashboard, etag) => {
       const response = await sendSave(dashboard, etag, true)
-      const body = await readJSON<Record<string, unknown>>(response)
+      // The save is committed by a success status. A body that is not JSON only lacks its findings.
+      let body: unknown
+      try {
+        body = await response.json()
+      } catch {
+        body = undefined
+      }
+      const checks = body && typeof body === "object" ? (body as Record<string, unknown>).checks : undefined
       return {
         etag: documentETag(response),
-        // A success body from a server without checks carries none, which is not the same as no findings.
-        ...(body.checks !== undefined ? { checks: parseCheckReport(body.checks) } : {}),
+        // A server without checks sends none, which is not the same as no findings.
+        ...(checks !== undefined ? { checks: parseCheckReport(checks) } : {}),
       }
     },
     validate: async (document, signal) => {
+      // A dry run that does not answer is a failed check, so the caller can let the user proceed.
+      const deadline = new AbortController()
+      const timer = setTimeout(() => deadline.abort(), VALIDATE_TIMEOUT_MS)
+      const forward = () => deadline.abort()
+      signal?.addEventListener("abort", forward, { once: true })
       try {
         return parseCheckReport(await readJSON(await request("/dashboards/validate", {
           method: "POST",
           body: JSON.stringify({ document: dashboardAsSent(document) }),
-          signal,
+          signal: deadline.signal,
         })))
       } catch (error) {
-        // A rejected document answers 400 with its findings, which are the result, not a failure.
-        const checks = checksFromError(error)
-        if (checks) return checks
+        if (!signal?.aborted && deadline.signal.aborted)
+          throw new Error(`The check did not finish within ${VALIDATE_TIMEOUT_MS / 1000} seconds.`)
         throw error
+      } finally {
+        clearTimeout(timer)
+        signal?.removeEventListener("abort", forward)
       }
     },
     remove: async (id, etag) => {

@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PortableImportPanel } from "./portable-import-panel";
 import { parseCheckReport } from "./client";
+import { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
 import { SavedQueryLibraryProvider } from "./saved-query-context";
 import {
   serializeDashboardBundle,
@@ -706,7 +707,37 @@ describe("import review with dashboard checks", () => {
     expect(
       screen.getByText(/Saving this dashboard would be rejected while its checks list errors/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/Keep existing/)).not.toBeInTheDocument();
     expect(importButton()).toBeDisabled();
+  });
+
+  it("does not import while a check is still pending, even when the source is connected", async () => {
+    const { onImportBundle } = renderWithChecks(() => new Promise<CheckReport>(() => {}));
+    connect();
+    expect(await screen.findByText("Checking this dashboard…")).toBeInTheDocument();
+    expect(importButton()).toBeDisabled();
+    expect(onImportBundle).not.toHaveBeenCalled();
+  });
+
+  it("checks at most four dashboards at once, and does not send them again when the source mapping changes", async () => {
+    const many: DashboardBundle = {
+      dashboards: Array.from({ length: 6 }, (_, index) => ({ ...document, id: `doc-${index}`, title: `Doc ${index}` })),
+      savedQueries: [query],
+    };
+    const resolvers: (() => void)[] = [];
+    const validate = vi.fn(() => new Promise<CheckReport>((done) => {
+      resolvers.push(() => done(new CheckReport({ total: 0 })));
+    }));
+    renderWithChecks(validate, many);
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(4));
+    expect(validate).toHaveBeenCalledTimes(4);
+    await act(async () => { resolvers.shift()!(); });
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(5));
+    await act(async () => { resolvers.splice(0).forEach((resolve) => resolve()); });
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(6));
+    connect();
+    await act(async () => {});
+    expect(validate).toHaveBeenCalledTimes(6);
   });
 
   it("lets an import with only warnings proceed after they are shown", async () => {
@@ -738,7 +769,7 @@ describe("import review with dashboard checks", () => {
     };
     renderWithChecks(vi.fn().mockResolvedValue(parseCheckReport({})), overlapping);
     expect(
-      await screen.findByText(/One widget in this source overlaps or leaves a gap\. Saving stores them where the canvas draws them/),
+      await screen.findByText(/1 widget in this source is stored at a different position: the canvas closes an overlap or gap when it saves\./),
     ).toBeInTheDocument();
   });
 });

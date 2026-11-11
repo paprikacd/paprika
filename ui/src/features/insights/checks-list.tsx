@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { OctagonAlert, Info, TriangleAlert } from "lucide-react";
 import type { CheckFinding, CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
 import { Severity } from "@/gen/paprika/insights/v1/checks_pb";
@@ -13,6 +14,10 @@ export interface ChecksListProps {
   onFocusWidget?: (widgetId: string) => void;
   /** The accessible name of the list region. */
   label: string;
+  /** Level of the counts heading. The severity groups sit one level below it. Default 3, under a page's h2. */
+  headingLevel?: 2 | 3 | 4 | 5 | 6;
+  /** Receives the counts heading, which is focusable so a caller can move focus to the findings. */
+  headingRef?: Ref<HTMLHeadingElement>;
 }
 
 type Group = "error" | "warning" | "info";
@@ -50,17 +55,27 @@ export function checkCountsText(report: CheckReport): string {
   return parts.length ? parts.join(", ") : "No findings";
 }
 
-export function ChecksList({ report, dashboard, onFocusWidget, label }: ChecksListProps) {
+/** The error count alone, such as "2 errors", for copy about refusing a save. */
+export function errorCountText(report: CheckReport): string {
+  const errors = report.errorCount || report.issues.filter((finding) => finding.severity === Severity.ERROR).length;
+  return plural(errors, "error");
+}
+
+export function ChecksList({ report, dashboard, onFocusWidget, label, headingLevel = 3, headingRef }: ChecksListProps) {
   const shown = report.issues.length;
   const groups = GROUPS.map((entry) => ({
     ...entry,
     findings: report.issues.filter((finding) => groupOf(finding) === entry.group),
   })).filter((entry) => entry.findings.length > 0);
   const title = (widgetId: string) => dashboard?.widgets.find((widget) => widget.id === widgetId)?.title;
+  const CountsHeading = `h${headingLevel}` as "h2";
+  const GroupHeading = `h${Math.min(headingLevel + 1, 6)}` as "h3";
 
   return (
     <section className={styles.checks} aria-label={label}>
-      <p className={styles.counts}>{checkCountsText(report)}</p>
+      <CountsHeading ref={headingRef} tabIndex={-1} className={styles.counts}>
+        {checkCountsText(report)}
+      </CountsHeading>
       {report.truncated && (
         <p className={styles.notice}>
           Showing {shown} of {report.total} findings. Fix these and check again to see the rest.
@@ -68,9 +83,9 @@ export function ChecksList({ report, dashboard, onFocusWidget, label }: ChecksLi
       )}
       {groups.map((entry) => (
         <div className={styles.group} key={entry.group}>
-          <h4 className={styles.groupHeading}>
+          <GroupHeading className={styles.groupHeading}>
             {entry.heading} <span className={styles.groupCount}>({entry.findings.length})</span>
-          </h4>
+          </GroupHeading>
           <ol className={styles.list}>
             {entry.findings.map((finding, index) => {
               const name = title(finding.widgetId);

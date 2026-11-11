@@ -501,17 +501,35 @@ describe("dashboard checks over the wire", () => {
     expect(report.errorCount).toBe(2)
   })
 
-  it("returns the findings of a rejected dry run rather than throwing", async () => {
-    mockFetch(response(checkGolden.dryRun, 400))
-    const report = await createInsightsClient().validate!(dashboard)
-    expect(report.issues.map((issue) => issue.ruleId)).toEqual(["schema.widget.options", "schema.widget.layout"])
-  })
-
-  it("throws a rejected dry run without a findings body, as any other failure", async () => {
+  it("throws a failed dry run as any other failure, with no findings", async () => {
     mockFetch(response({ error: "validation service unavailable" }, 503))
     const failure = await createInsightsClient().validate!(dashboard).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(InsightsHTTPError)
     expect(checksFromError(failure)).toBeUndefined()
+  })
+
+  it("reports a dry run that does not answer in ten seconds as a failed check", async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal("fetch", vi.fn((_: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
+      })))
+      const pending = createInsightsClient().validate!(dashboard).catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect((await pending as Error).message).toBe("The check did not finish within 10 seconds.")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("leaves a caller's own cancellation as the abort, not a timeout", async () => {
+    const caller = new AbortController()
+    vi.stubGlobal("fetch", vi.fn((_: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
+    })))
+    const pending = createInsightsClient().validate!(dashboard, caller.signal).catch((error: unknown) => error)
+    caller.abort()
+    expect(((await pending) as Error).name).toBe("AbortError")
   })
 
   it("carries a rejected save's findings on the error for the caller to show", async () => {
@@ -540,6 +558,12 @@ describe("dashboard checks over the wire", () => {
     mockFetch(response({ id: "production", title: "Production" }))
     const result = await createInsightsClient().saveChecked!(dashboard)
     expect(result.checks).toBeUndefined()
+  })
+
+  it("treats a committed checked save with a body that is not JSON as saved, without findings", async () => {
+    mockFetch(new Response("ok", { status: 200, headers: { ETag: '"v2"' } }))
+    const result = await createInsightsClient().saveChecked!(dashboard, '"v1"')
+    expect(result).toEqual({ etag: '"v2"' })
   })
 
   it("still replays a checked save that the capacity gate refused", async () => {
