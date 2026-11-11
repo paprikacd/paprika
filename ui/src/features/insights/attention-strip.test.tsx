@@ -1,11 +1,12 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useEffect, useRef } from "react";
 import { AttentionStoreProvider, useAttentionPublisher, type WidgetAttentionPublication } from "./attention-store";
-import { AttentionStrip, announcementFor, formatAge, summarizeAttention } from "./attention-strip";
+import { AttentionStrip, announcementFor, formatAge, refreshLabel, summarizeAttention } from "./attention-strip";
 import type { AttentionFacts } from "./widget-attention";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -18,6 +19,8 @@ const ok: AttentionFacts = { failure: "none", signal: "ok", threshold: null, bre
 const critical: AttentionFacts = { ...ok, threshold: { state: "matched", status: "critical" } };
 const warning: AttentionFacts = { ...ok, threshold: { state: "matched", status: "warning" } };
 const failed: AttentionFacts = { failure: "provider", signal: "error", threshold: null, breaches: null, freshness: null };
+const pending: AttentionFacts = { failure: "none", signal: "pending", threshold: null, breaches: null, freshness: null };
+const empty: AttentionFacts = { failure: "none", signal: "empty", threshold: null, breaches: null, freshness: "unknown" };
 
 describe("strip counting follows the shared attention cases", () => {
   for (const testCase of fixture.cases) {
@@ -33,24 +36,33 @@ describe("strip counting follows the shared attention cases", () => {
     });
   }
 
-  it("counts a listed widget with no published facts as unchecked, and ignores entries the dashboard does not list", () => {
-    const summary = summarizeAttention(["a", "b"], [
+  it("counts a listed widget with no published facts as not loaded and unchecked, and ignores entries the dashboard does not list", () => {
+    const summary = summarizeAttention(["a", "b", "c"], [
       { widgetId: "a", title: "A", facts: ok, mounted: true },
       { widgetId: "gone", title: "Gone", facts: critical, mounted: true },
     ]);
-    expect(summary).toMatchObject({ widgets: 2, checked: 1, counts: { critical: 0, warning: 0, failed: 0, stale: 0 } });
+    expect(summary).toMatchObject({ widgets: 3, checked: 1, notLoaded: 2, counts: { critical: 0, warning: 0, failed: 0, stale: 0 } });
   });
 
-  it("lists each reason's widgets in dashboard order and reports the newest settle time", () => {
+  it("keeps not-loaded apart from failed and empty: a pending tile is not loaded, a failed or empty one is loaded", () => {
+    const summary = summarizeAttention(["p", "f", "e"], [
+      { widgetId: "p", title: "P", facts: pending, mounted: true },
+      { widgetId: "f", title: "F", facts: failed, mounted: true },
+      { widgetId: "e", title: "E", facts: empty, mounted: true },
+    ]);
+    expect(summary).toMatchObject({ notLoaded: 1, checked: 0, counts: { failed: 1 } });
+  });
+
+  it("lists each reason's widgets in dashboard order, and dates the loaded results from the oldest settle and the newest sample", () => {
     const summary = summarizeAttention(["x", "y", "z"], [
-      { widgetId: "z", title: "Z", facts: critical, completedAt: 100, mounted: true },
-      { widgetId: "x", title: "X", facts: critical, completedAt: 300, mounted: true },
+      { widgetId: "z", title: "Z", facts: critical, completedAt: 100, sampleAt: 900, mounted: true },
+      { widgetId: "x", title: "X", facts: critical, completedAt: 300, sampleAt: 700, mounted: true },
       { widgetId: "y", title: "Y", facts: failed, completedAt: 200, mounted: false },
     ]);
     expect(summary.listed.critical).toEqual(["x", "z"]);
     expect(summary.listed.failed).toEqual(["y"]);
-    expect(summary.completedAt).toBe(300);
-    expect(summary.lastKnown).toBe(1);
+    expect(summary.oldestCompletedAt).toBe(100);
+    expect(summary.newestSampleAt).toBe(900);
   });
 });
 
@@ -61,9 +73,18 @@ describe("plain-word helpers", () => {
     );
   });
 
-  it("announces only the problem counts, and says so when none", () => {
+  it("says the refresh interval the way the toolbar does", () => {
+    expect(refreshLabel({ mode: "every", seconds: 15 })).toBe("Refreshes every 15 s");
+    expect(refreshLabel({ mode: "every", seconds: 60 })).toBe("Refreshes every 1m");
+    expect(refreshLabel({ mode: "every", seconds: 30 })).toBe("Refreshes every 30 s");
+    expect(refreshLabel({ mode: "fixed" })).toBe("Paused for a fixed window");
+    expect(refreshLabel({ mode: "off" })).toBe("Auto refresh off");
+  });
+
+  it("announces only the problem counts, never a calm verdict while tiles are still unloaded", () => {
     expect(announcementFor({ critical: 2, warning: 0, failed: 1, stale: 0 })).toBe("2 critical, 1 failed.");
-    expect(announcementFor({ critical: 0, warning: 0, failed: 0, stale: 0 })).toBe("No attention needed.");
+    expect(announcementFor({ critical: 0, warning: 0, failed: 0, stale: 0 }, 3)).toBe("Nothing flagged so far.");
+    expect(announcementFor({ critical: 0, warning: 0, failed: 0, stale: 0 })).toBe("Nothing flagged.");
   });
 });
 
@@ -75,16 +96,15 @@ function Publisher({ onReady }: { onReady: (publish: (entry: WidgetAttentionPubl
   return null;
 }
 
-function renderStrip(ids: string[] = ["a", "b"]) {
+function renderStrip(ids: string[] = ["a", "b"], scope: { current: HTMLElement | null } = { current: null }) {
   const publish: { current?: (entry: WidgetAttentionPublication) => void } = {};
-  const scope = { current: null };
   const view = render(
     <AttentionStoreProvider>
       <Publisher onReady={(next) => { publish.current = next; }} />
       <AttentionStrip widgets={ids.map((id) => ({ id }))} scopeRef={scope} autoRefresh={{ mode: "off" }} />
     </AttentionStoreProvider>,
   );
-  const live = () => view.container.querySelector<HTMLElement>('[aria-live="polite"]')!;
+  const live = () => view.container.querySelector<HTMLElement>('[aria-live="polite"][aria-atomic="true"]')!;
   return { view, live, publish: (entry: WidgetAttentionPublication) => act(() => publish.current!(entry)) };
 }
 
@@ -117,7 +137,7 @@ describe("live region", () => {
     expect(live().textContent).toBe("1 critical.");
   });
 
-  it("speaks a new state once its counts have held for the delay", () => {
+  it("speaks a new state once its counts have held for the delay, including a dashboard's first results", () => {
     vi.useFakeTimers();
     const { live, publish } = renderStrip();
     publish({ widgetId: "a", title: "A", facts: warning });
@@ -129,27 +149,31 @@ describe("live region", () => {
   });
 });
 
-describe("strip anatomy", () => {
+describe("strip anatomy and copy", () => {
   it("keeps one region and one reserved element through state changes", () => {
     const { view, publish } = renderStrip();
     const strip = view.container.querySelector("[data-attention-strip]");
     expect(screen.getByRole("region", { name: "Dashboard attention" })).toBe(strip);
     publish({ widgetId: "a", title: "A", facts: critical });
-    publish({ widgetId: "b", title: "B", facts: ok });
+    publish({ widgets: undefined, widgetId: "b", title: "B", facts: ok } as WidgetAttentionPublication);
     expect(view.container.querySelector("[data-attention-strip]")).toBe(strip);
-    expect(within(strip as HTMLElement).getByRole("button", { name: /1 critical/ })).toBeInTheDocument();
+    expect(within(strip as HTMLElement).getByRole("button", { name: /^1 critical:/ })).toBeInTheDocument();
     // A matched critical band still has an ok signal, so the widget is checked (the shared rule).
-    expect(screen.getByText("2/2 checked")).toBeInTheDocument();
+    expect(screen.getByText(/2 of 2 checked/)).toBeInTheDocument();
   });
 
-  it("names the ready state in plain words, and waits for a first result before any age", () => {
-    const { publish } = renderStrip();
-    expect(screen.getByText("No attention needed")).toBeInTheDocument();
-    expect(screen.getByText("Waiting for first results")).toBeInTheDocument();
+  it("says nothing is flagged, never that nothing needs attention, and counts what is not loaded yet", () => {
+    const { publish } = renderStrip(["a", "b", "c"]);
+    expect(screen.getByText("Nothing flagged so far")).toBeInTheDocument();
+    expect(screen.getByText(/0 of 3 checked/)).toBeInTheDocument();
+    expect(screen.getByText(/3 not loaded yet/)).toBeInTheDocument();
+    expect(screen.getByText("Loading results")).toBeInTheDocument();
+    expect(screen.queryByText(/No attention needed/)).toBeNull();
     publish({ widgetId: "a", title: "A", facts: ok, completedAt: Date.now() });
     publish({ widgetId: "b", title: "B", facts: ok, completedAt: Date.now() });
+    publish({ widgetId: "c", title: "C", facts: ok, completedAt: Date.now() });
+    expect(screen.getByText("Nothing flagged")).toBeInTheDocument();
     expect(screen.getByText("Updated just now")).toBeInTheDocument();
-    expect(screen.getByText("2/2 checked")).toBeInTheDocument();
   });
 
   it("uses the status glyph and words, never colour alone, and never says health", () => {
@@ -159,5 +183,70 @@ describe("strip anatomy", () => {
     expect(view.container.querySelector('[data-reason="critical"] [data-status="critical"]')).toHaveTextContent("1 critical");
     expect(view.container.querySelector('[data-reason="failed"] [data-status="unknown"]')).toHaveTextContent("1 failed");
     expect(view.container.textContent?.toLowerCase()).not.toContain("health");
+  });
+
+  it("says the newest sample's time and zone once for the dashboard", () => {
+    const { publish } = renderStrip();
+    const sampleAt = Date.UTC(2026, 10, 12, 18, 51);
+    publish({ widgetId: "a", title: "A", facts: ok, completedAt: Date.now(), sampleAt });
+    publish({ widgetId: "b", title: "B", facts: ok, completedAt: Date.now(), sampleAt: sampleAt - 120_000 });
+    expect(screen.getByText(/Newest sample \d\d:51/)).toBeInTheDocument();
+  });
+});
+
+describe("chips", () => {
+  it("states what a chip will show, and cycles its label as it steps through its widgets", async () => {
+    vi.useRealTimers();
+    const scroll = vi.fn();
+    const scope = document.createElement("div");
+    scope.innerHTML = '<article data-widget-id="a"></article><article data-widget-id="b"></article>';
+    document.body.appendChild(scope);
+    scope.querySelector<HTMLElement>('[data-widget-id="a"]')!.scrollIntoView = scroll;
+    scope.querySelector<HTMLElement>('[data-widget-id="b"]')!.scrollIntoView = scroll;
+    const user = userEvent.setup();
+    const { publish, live } = renderStrip(["a", "b"], { current: scope });
+    publish({ widgetId: "a", title: "First tile", facts: critical });
+    publish({ widgetId: "b", title: "Second tile", facts: critical });
+    const chip = await screen.findByRole("button", { name: /^2 critical: show first critical widget/ });
+    await user.click(chip);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(chip).toHaveAccessibleName(/showing First tile, 1 of 2/);
+    expect(screen.getByText("Showing First tile, 1 of 2.")).toBeInTheDocument();
+    await user.click(chip);
+    expect(chip).toHaveAccessibleName(/showing Second tile, 2 of 2/);
+    expect(screen.getByText("Showing Second tile, 2 of 2.")).toBeInTheDocument();
+    expect(live().textContent).toBe("");
+    // The first tile keeps its outline until its own timer ends; the one just shown is outlined now.
+    expect(scope.querySelector('[data-widget-id="b"]')).toHaveAttribute("data-attention-target");
+    scope.remove();
+  });
+
+  it("moves focus to the strip when the focused chip disappears, rather than dropping it on the body", async () => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    const { publish, view } = renderStrip();
+    publish({ widgetId: "a", title: "A", facts: critical });
+    const chip = await screen.findByRole("button", { name: /^1 critical:/ });
+    await user.tab();
+    while (document.activeElement !== chip && document.activeElement !== document.body) await user.tab();
+    expect(document.activeElement).toBe(chip);
+    publish({ widgetId: "a", title: "A", facts: ok });
+    expect(screen.queryByRole("button", { name: /^1 critical:/ })).toBeNull();
+    expect(document.activeElement).toBe(view.container.querySelector("[data-attention-strip]"));
+  });
+
+  it("keeps its notice element rendered, and clears a notice for a tile that is not on screen after a timeout", async () => {
+    vi.useFakeTimers();
+    const { publish, view } = renderStrip(["a"], { current: null });
+    publish({ widgetId: "a", title: "Hidden tile", facts: critical });
+    act(() => vi.advanceTimersByTime(10));
+    const notice = view.container.querySelector<HTMLElement>("[data-notice]")!;
+    expect(notice).toBeTruthy();
+    const chip = screen.getByRole("button", { name: /^1 critical:/ });
+    act(() => { chip.click(); });
+    expect(notice.textContent).toBe("Hidden tile is not on screen.");
+    act(() => vi.advanceTimersByTime(4100));
+    expect(notice.textContent).toBe("");
+    expect(view.container.querySelector("[data-notice]")).toBeTruthy();
   });
 });

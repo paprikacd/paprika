@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAttentionStore, AttentionStoreProvider, useAttentionPublisher, useWidgetAttentions } from "./attention-store";
+import { createAttentionStore, AttentionStoreProvider, newestSampleAt, settledRequestEnd, useAttentionPublisher, useWidgetAttentions, type WidgetAttentionEntry } from "./attention-store";
+import { queryIdentity, type QueryFetcher } from "./query";
 import type { AttentionFacts } from "./widget-attention";
 
 afterEach(cleanup);
@@ -76,3 +77,30 @@ describe("attention store", () => {
     expect(result.current.entries).toEqual([]);
   });
 });
+
+describe("settled request end", () => {
+  it("reads the range end a settled query was made with, from the key query.ts retains", () => {
+    const fetcher = vi.fn(async () => ({ series: [] })) as unknown as QueryFetcher;
+    const { key } = queryIdentity({ providerId: "p", query: "q", kind: "metrics", start: 100, end: 3600, step: 60 }, fetcher);
+    expect(settledRequestEnd(key)).toBe(3600);
+  });
+
+  it("is unknown without a key, and for a key that is not a request", () => {
+    expect(settledRequestEnd(undefined)).toBeUndefined();
+    expect(settledRequestEnd("not json")).toBeUndefined();
+    expect(settledRequestEnd('{"end":5}')).toBeUndefined();
+  });
+});
+
+describe("newest displayed sample", () => {
+  it("is the latest sample time among the entries that show one", () => {
+    const entries: WidgetAttentionEntry[] = [
+      { widgetId: "a", title: "A", facts: { failure: "none", signal: "ok", threshold: null, breaches: null, freshness: null }, sampleAt: 1000, mounted: true },
+      { widgetId: "b", title: "B", facts: { failure: "none", signal: "ok", threshold: null, breaches: null, freshness: null }, mounted: true },
+      { widgetId: "c", title: "C", facts: { failure: "none", signal: "ok", threshold: null, breaches: null, freshness: null }, sampleAt: 3000, mounted: false },
+    ];
+    expect(newestSampleAt(entries)).toBe(3000);
+    expect(newestSampleAt([])).toBeUndefined();
+  });
+});
+

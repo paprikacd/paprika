@@ -704,3 +704,25 @@
 }
 /* Recorded context shares the controls' budget; opening it does not shrink the plot. */
 .chartFooter[data-timeseries-footer]:has(.priorLegend) [data-chart-events] > ul { position: static; width: 100%; }
+
+/*
+ * A stat whose sample is the dashboard's newest does not repeat the time on every card: the attention strip states it
+ * once, with its zone. The time stays in the accessible name, and it shows on hover or focus. A stale stat keeps its own
+ * "Stale · age" chip, which is a separate element, so its age stays visible.
+ */
+[data-shared-sample] .stat .statMeta {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+[data-shared-sample]:hover .stat .statMeta,
+[data-shared-sample]:focus-within .stat .statMeta {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}

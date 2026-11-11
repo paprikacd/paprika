@@ -64,8 +64,10 @@ it("counts each widget once under its reason, and leaves empty, pending and fail
   expect(screen.getByRole("button", { name: /^1 warning:/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /^1 failed:/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /^1 stale:/ })).toBeInTheDocument();
-  // Eight widgets: the failed, pending and empty ones are unchecked, and a matched critical band still counts as checked.
-  expect(screen.getByText("5/8 checked")).toBeInTheDocument();
+  // Eight widgets: the failed and empty ones are loaded but unchecked, the pending one is not loaded yet, and a matched
+  // critical band still counts as checked.
+  expect(screen.getByText(/5 of 8 checked/)).toBeInTheDocument();
+  expect(screen.getByText(/1 not loaded yet/)).toBeInTheDocument();
   expect(strip()?.querySelectorAll("button")).toHaveLength(4);
 });
 
@@ -109,34 +111,20 @@ it("removes a chip's outline once it has been shown briefly", async () => {
   expect(tile("warn")).not.toHaveAttribute("data-attention-target");
 });
 
-it("keeps a focused-out tile's last known state in the strip rather than dropping it", async () => {
-  const dashboard = dashboardOf();
-  const { view, strip } = mount(dashboard);
-  await screen.findByRole("button", { name: /^2 critical:/ });
-  view.rerender(
-    <DashboardCanvas dashboard={dashboard} providers={exampleProviders} fetcher={fetcher} end={3600} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()}
-      focus={{ widget: widgets[1], render: (preview) => <div data-testid="focus-preview">{preview}</div> }} />,
-  );
-  expect(view.container.querySelector('article[data-widget-id="err1"]')).toBeNull();
-  expect(screen.getByTestId("focus-preview")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /^2 critical:/ })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /^1 warning:/ })).toBeInTheDocument();
-  expect(screen.getByText(/7 last known/)).toBeInTheDocument();
-  expect(strip()).toBeTruthy();
-});
-
-it("says a chip's widget is not on screen while focus mode hides it", async () => {
-  Element.prototype.scrollIntoView = vi.fn();
+it("is not shown in focus mode, and its counts return when the tiles do", async () => {
   const dashboard = dashboardOf();
   const { view } = mount(dashboard);
   await screen.findByRole("button", { name: /^2 critical:/ });
   view.rerender(
     <DashboardCanvas dashboard={dashboard} providers={exampleProviders} fetcher={fetcher} end={3600} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()}
-      focus={{ widget: widgets[1], render: (preview) => <div>{preview}</div> }} />,
+      focus={{ widget: widgets[1], render: (preview) => <div data-testid="focus-preview">{preview}</div> }} />,
   );
-  await userEvent.setup().click(screen.getByRole("button", { name: /^2 critical:/ }));
-  expect(screen.getByText("err1 is not on screen. Leave focus mode to see it.")).toBeInTheDocument();
-  expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  expect(view.container.querySelector("[data-attention-strip]")).toBeNull();
+  expect(screen.getByTestId("focus-preview")).toBeInTheDocument();
+  view.rerender(
+    <DashboardCanvas dashboard={dashboard} providers={exampleProviders} fetcher={fetcher} end={3600} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()} />,
+  );
+  expect(await screen.findByRole("button", { name: /^2 critical:/ })).toBeInTheDocument();
 });
 
 it("ages the newest settled query and reflects the refresh state", async () => {
@@ -158,4 +146,49 @@ it("pauses the refresh label for a fixed window", async () => {
 it("is hidden when the dashboard has no widgets", () => {
   const { strip } = mount(dashboardOf({}, []));
   expect(strip()).toBeNull();
+});
+
+it("judges an offscreen tile against the range its data was queried for, so a refresh does not age it", async () => {
+  const observers: { callback: IntersectionObserverCallback; target: Element }[] = [];
+  class FakeObserver {
+    private readonly callback: IntersectionObserverCallback;
+    constructor(callback: IntersectionObserverCallback) { this.callback = callback; }
+    observe(target: Element) { observers.push({ callback: this.callback, target }); }
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("IntersectionObserver", FakeObserver);
+  const setVisible = (id: string, isIntersecting: boolean) => {
+    const match = observers.find((entry) => (entry.target as HTMLElement).dataset.widgetId === id)!;
+    act(() => { match.callback([{ isIntersecting, target: match.target } as IntersectionObserverEntry], {} as IntersectionObserver); });
+  };
+  // A sample 30 s before whatever range end the query was made with: fresh for that query, and stale under a later end.
+  const sampleBeforeEnd = vi.fn(async (request: QueryRequest): Promise<QueryResult> => ({ series: [{ name: "old", labels: {}, points: [{ timestamp: (request.end - 30) * 1000, value: 1 }] }] }));
+  const dashboard = dashboardOf({}, [stat("old", "old", { staleAfterSeconds: 60 })]);
+  const { view, tile } = mount(dashboard, { fetcher: sampleBeforeEnd });
+  await act(async () => { await Promise.resolve(); });
+  setVisible("old", true);
+  await waitFor(() => expect(tile("old")?.getAttribute("data-attention")).toBe("ok"));
+  const queriedBefore = sampleBeforeEnd.mock.calls.length;
+  setVisible("old", false);
+  // A refresh moves the range end 400 s on. The sample is 30 s before the first end, so it is fresh for that query.
+  view.rerender(
+    <DashboardCanvas dashboard={dashboard} providers={exampleProviders} fetcher={sampleBeforeEnd} end={4000} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()} />,
+  );
+  await act(async () => { await Promise.resolve(); });
+  expect(sampleBeforeEnd.mock.calls.length).toBe(queriedBefore);
+  expect(tile("old")?.getAttribute("data-attention")).toBe("ok");
+  expect(screen.queryByRole("button", { name: /stale/ })).toBeNull();
+});
+
+it("marks only the stats whose sample is the dashboard's newest, so the strip can state that time once", async () => {
+  const newest = { ...stat("now", "errors2"), options: {} } as Widget;
+  const older = { ...stat("then", "old"), options: {} } as Widget;
+  mount(dashboardOf({}, [newest, older]));
+  await waitFor(() => expect(screen.getByText(/Updated/)).toBeInTheDocument());
+  // The fetcher gives "errors2" the sample at 3,500 s and "old" the same sample, so both match; move one older.
+  const now = document.querySelector('article[data-widget-id="now"]');
+  const then = document.querySelector('article[data-widget-id="then"]');
+  expect(now).toHaveAttribute("data-shared-sample");
+  expect(then).toHaveAttribute("data-shared-sample");
 });
