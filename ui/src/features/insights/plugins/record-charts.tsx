@@ -10,6 +10,7 @@ import { useDashboardTimeZone } from "../dashboard-time-zone"
 import { formatTimeTick } from "../chart-data"
 import { displaySeriesNames, fallbackIdentityTitle } from "../series-display"
 import { TimeWindowLens } from "../time-window-lens"
+import { assignSeriesColors } from "../series-colors"
 import { seriesSlot } from "../series-palette"
 import type { ObservationWindow } from "../time-window"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
@@ -66,6 +67,9 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const revision=useMemo(()=>({data,zoom,tooltipEnabled}),[data,zoom,tooltipEnabled])
   const accessiblePoints=useMemo(()=>data?.series.slice(0,24).flatMap((entry,seriesIndex)=>entry.points.filter(point=>!zoom||point.x>=zoom.start&&point.x<=zoom.end).slice(0,bar?100:1000).filter(point=>point.value!==null).map(point=>({seriesIndex,point})))??[],[data,zoom,bar])
   const lensSeries=useMemo(()=>data?.xColumn.type==="timestamp"?data.series.slice(0,24).map(entry=>({name:entry.name,labels:{},points:entry.points.map(point=>({timestamp:point.x,value:point.value}))})):[],[data])
+  // Each column keeps its colour across zoom and refresh. Records carry no labels, so the series name is its identity.
+  const seriesColors=useMemo(()=>assignSeriesColors(data?.series.map(entry=>({name:entry.name}))??[],{mode:widget.options?.seriesColorMode,widgetColor:widget.color}),[data,widget.color,widget.options?.seriesColorMode])
+  const colorOf=(index:number)=>seriesColors[index]?.color??seriesSlot(index)
   useEffect(()=>{
     const element=plot.current
     if(!element)return
@@ -172,7 +176,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     {series.map((entry,index)=>{
       let connected=false
       const path=entry.points.map(point=>{if(point.value===null){connected=false;return ""}const command=connected?"L":"M";connected=true;return `${command}${xScale(point.x)},${scale(point.value,entry.right)}`}).join(" ")
-      const color=seriesSlot(index), unit=entry.unit==="percent"?"%":entry.unit||widget.unit
+      const color=colorOf(index), unit=entry.unit==="percent"?"%":entry.unit||widget.unit
       return <g key={index} aria-label={entry.name}>{!bar&&<path d={path} fill="none" stroke={color} strokeWidth={widget.options?.lineWidth??1.7}/>}{entry.points.slice(0,bar?100:1000).map((point,i)=>{
         if(point.value===null)return null
         const title=`${entry.name} · ${xText(point.x,true)} · ${formatMetric(point.value,unit,false,widget.options?.decimals)}`, selectPoint=()=>select(entry,point), zero=scale(0,entry.right),y=scale(point.value,entry.right)
@@ -182,10 +186,10 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
       })}</g>
     })}</g>
   </svg>{current&&<ObservationTooltip id={tooltipId} anchor={current.anchor} anchorRect={anchorRect} preferSide avoidWidget pinned={current.pinned} onDismiss={()=>setInspection(undefined)} onEnter={()=>clearTimeout(hideTimer.current)} onLeave={hide}>
-    <div data-record-observation={current.point.x}><div className={tooltipStyles.plotTooltipTime}><span>Selected observation</span><span>{xText(current.point.x,true)}</span></div><div className={tooltipStyles.plotTooltipValues}><ul><li className={tooltipStyles.plotTooltipSelected}><i aria-hidden="true" style={{background:seriesSlot(current.seriesIndex)}}/><span>{series[current.seriesIndex].name}</span><strong>{formatMetric(current.point.value!,series[current.seriesIndex].unit==="percent"?"%":series[current.seriesIndex].unit||widget.unit,false,widget.options?.decimals)}</strong></li></ul></div>
+    <div data-record-observation={current.point.x}><div className={tooltipStyles.plotTooltipTime}><span>Selected observation</span><span>{xText(current.point.x,true)}</span></div><div className={tooltipStyles.plotTooltipValues}><ul><li className={tooltipStyles.plotTooltipSelected}><i aria-hidden="true" style={{background:colorOf(current.seriesIndex)}}/><span>{series[current.seriesIndex].name}</span><strong>{formatMetric(current.point.value!,series[current.seriesIndex].unit==="percent"?"%":series[current.seriesIndex].unit||widget.unit,false,widget.options?.decimals)}</strong></li></ul></div>
       {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":String(value).length>128?`${String(value).slice(0,128)}…`:String(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
       <div className={tooltipStyles.tooltipFooter}><small>{current.pinned?"Pinned · press Escape to close":"Move across the chart or use arrow keys · Enter to pin"}</small></div></div>
-  </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:seriesSlot(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
+  </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colorOf(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
   {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{frame.truncated&&<span>Partial source response</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>

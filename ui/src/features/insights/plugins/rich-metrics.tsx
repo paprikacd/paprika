@@ -2,7 +2,7 @@
 
 import { axisScale, formatRange, ticksWithin } from "../units";
 import type { Widget } from "../schema";
-import { resolveSeriesColor } from "../series-colors";
+import { widgetSeriesColors } from "../series-colors";
 import { SERIES_PALETTE } from "../series-palette";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
@@ -449,6 +449,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
   const fullSeries = useMemo(() => (result.series ?? []).slice(0, config.maxSeries ?? 8), [result.series, config.maxSeries]);
+  const seriesColors = useMemo(() => widgetSeriesColors(result.series ?? [], widget, config.seriesColors), [result.series, widget, config.seriesColors]);
   const [selection, setSelection] = useState<{ source: QueryResult; window: ObservationWindow; previous?: QueryResult }>();
   const zoom = selection?.source === result ? selection.window : undefined;
   const selectedSeries = useMemo(() => zoom ? seriesInWindow(fullSeries, zoom) : fullSeries, [fullSeries, zoom]);
@@ -499,12 +500,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     const fraction = Number.isFinite(span) ? (value - domain[0]) / span : (value / 2 - domain[0] / 2) / (domain[1] / 2 - domain[0] / 2);
     return scaleTop + (1 - fraction) * scaleHeight;
   };
-  // Resolve by exact provider label, so changing series order or a shared
-  // dashboard filter cannot silently assign a different semantic color.
-  const color = (index: number) => {
-    const labels = data.tracks[index]?.series.labels ?? {};
-    return resolveSeriesColor(labels, config.seriesColors, index === 0 && widget.color ? widget.color : SERIES_PALETTE[index % SERIES_PALETTE.length]);
-  };
+  // A track's colour is its series' colour in the whole result (tracks follow result order), so the colour holds across
+  // order changes, filters and widgets. Authored rules and well-known labels are applied first; see series-colors.ts.
+  const color = (index: number) => seriesColors[index]?.color ?? SERIES_PALETTE[0];
   // Bar geometry is shared by complete bars, partial stacks, caps and hover, so they stay aligned.
   const barAt = (column: number) => {
     const time = data.timestamps;

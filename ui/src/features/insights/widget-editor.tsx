@@ -52,6 +52,8 @@ import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
 import { thresholdHex, type StatusMark, type StatusTheme } from "./status";
 import { StatusMarkFields } from "./status-mark-fields";
 import { useInsightsTheme } from "./insights-theme";
+import { seriesHex, type SeriesTheme } from "./series-palette";
+import { widgetColorSeriesIndex, widgetSeriesColors } from "./series-colors";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 
@@ -203,14 +205,37 @@ function TooltipPresentationEditor({ options, onChange }: {
   </fieldset>;
 }
 
+/** Plugins that colour their series by identity, and therefore take the series colour mode. */
+const SERIES_COLOR_PLUGINS = new Set(["small-multiples", "stacked-timeseries", "directional-traffic", "records-line", "records-bar"]);
+
+/**
+ * The colour the widget draws without an authored colour, in one appearance. It mirrors the renderers: the series the
+ * widget colour would replace (see widgetColorSeriesIndex) for series charts; the first palette slot for stat
+ * sparklines, which still draw by position; and the second slot (--gamma-series-2, the chart-2 token) that gauges and
+ * status grids use.
+ */
+function paletteSwatch(widget: Widget, result: QueryResult | undefined, theme: SeriesTheme): string {
+  if (widget.type === "stat") return seriesHex(0, theme);
+  if (widget.type === "timeseries" || widget.type === "bar" || (widget.type === "plugin" && SERIES_COLOR_PLUGINS.has(widget.pluginId ?? ""))) {
+    const series = result?.series ?? [];
+    const index = widgetColorSeriesIndex(series, widget.options?.seriesColorMode);
+    const choice = index >= 0 ? widgetSeriesColors(series, { options: widget.options })[index] : undefined;
+    if (choice?.slot !== undefined) return seriesHex(choice.slot, theme);
+    return choice?.color ?? seriesHex(0, theme);
+  }
+  return seriesHex(1, theme);
+}
+
 function StyleEditor({
   widget,
   onChange,
   onConfigureTooltips,
+  result,
 }: {
   widget: Widget;
   onChange: (widget: Widget) => void;
   onConfigureTooltips: () => void;
+  result?: QueryResult;
 }) {
   // The swatch shows the appearance the author is viewing.
   const { resolvedTheme } = useInsightsTheme();
@@ -314,11 +339,11 @@ function StyleEditor({
         return hex !== undefined && contrastRatio(options.textColor!, hex) < 4.5;
       }),
     );
-  const defaultColor = gauge
-    ? "#53876a"
-    : widget.type === "stat"
-      ? "#27332e"
-      : "#c46146";
+  // The swatch shows the colour the chart actually draws, in this appearance, unless the author chose a colour.
+  const seriesTheme: SeriesTheme = resolvedTheme === "dark" ? "dark" : "light";
+  const paletteColor = paletteSwatch(widget, result, seriesTheme);
+  const customColor = widget.color !== undefined;
+  const seriesModeRow = widget.type === "timeseries" || widget.type === "bar" || (widget.type === "plugin" && SERIES_COLOR_PLUGINS.has(widget.pluginId ?? ""));
   return (
     <div className={styles.stack}>
       {widget.type === "timeseries" && <ChartAppearancePresets options={options} onChange={update} />}
@@ -371,19 +396,54 @@ function StyleEditor({
             Series color
             <GammaInput
               type="color"
-              value={widget.color ?? defaultColor}
+              value={widget.color ?? paletteColor}
               onChange={(event) =>
                 onChange({ ...widget, color: event.target.value })
               }
             />
           </label>
+          <div role="group" aria-label="Series color source" className={styles.row}>
+            <GammaButton
+              type="button"
+              variant="secondary"
+              aria-pressed={!customColor}
+              onClick={() => onChange({ ...widget, color: undefined })}
+            >
+              Palette
+            </GammaButton>
+            <GammaButton
+              type="button"
+              variant="secondary"
+              aria-pressed={customColor}
+              onClick={() => onChange({ ...widget, color: widget.color ?? paletteColor })}
+            >
+              Custom
+            </GammaButton>
+          </div>
+          {!customColor && !result?.series?.length && (
+            <p className={styles.hint}>Palette shows the colour the first series draws; it appears once data loads.</p>
+          )}
+        </div>
+      )}
+      {seriesModeRow && (
+        <div role="group" aria-label="Series color by" className={styles.row}>
           <GammaButton
             type="button"
-            variant="quiet"
-            onClick={() => onChange({ ...widget, color: undefined })}
+            variant="secondary"
+            aria-pressed={options.seriesColorMode !== "index"}
+            onClick={() => update({ seriesColorMode: undefined })}
           >
-            Use palette
+            By name
           </GammaButton>
+          <GammaButton
+            type="button"
+            variant="secondary"
+            aria-pressed={options.seriesColorMode === "index"}
+            onClick={() => update({ seriesColorMode: "index" })}
+          >
+            By position
+          </GammaButton>
+          <p className={styles.hint}>By name keeps a series’ colour across widgets and refreshes. By position follows result order.</p>
         </div>
       )}
       <div className={styles.row}>
@@ -1296,6 +1356,7 @@ export function WidgetEditor({
             content: (
               <StyleEditor
                 widget={draft}
+                result={result}
                 onChange={setDraft}
                 onConfigureTooltips={() => {
                   setTab("tooltips");

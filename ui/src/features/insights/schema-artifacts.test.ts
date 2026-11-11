@@ -56,6 +56,13 @@ describe("published dashboard authoring artifacts", () => {
     expect(schema).toEqual(z.toJSONSchema(dashboardSchema))
   })
 
+  it("publishes the series colour mode, which old documents may omit", () => {
+    const dashboard = JSON.parse(readFileSync(new URL("../../../../docs/design/insights/dashboard.schema.json", import.meta.url), "utf8"))
+    const options = dashboard.properties.widgets.items.properties.options
+    expect(options.properties.seriesColorMode).toEqual({ type: "string", enum: ["name", "index"] })
+    expect(options.required).toBeUndefined()
+  })
+
   it("publishes the saved-query contract", () => {
     const schema = JSON.parse(readFileSync(new URL("../../../../docs/design/insights/saved-query.schema.json", import.meta.url), "utf8"))
     delete schema.title

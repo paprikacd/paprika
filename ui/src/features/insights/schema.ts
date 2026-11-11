@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { seriesColorRulesSchema } from "./series-colors"
+import { SERIES_COLOR_MODES, seriesColorRulesSchema } from "./series-colors"
 import { statusLevels } from "./status"
 import { timeZones } from "./time-zones.generated"
 import { parseDocument, stringify } from "yaml"
@@ -358,6 +358,8 @@ export const widgetOptionsSchema = z
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
     seriesColors: seriesColorRulesSchema.optional(),
+    // "name" (default, also when absent) keys colours to series identity; "index" keeps the order-based slots.
+    seriesColorMode: z.enum(SERIES_COLOR_MODES).optional(),
     fillOpacity: z.number().min(0).max(1).optional(),
     curve: z.enum(["linear", "step", "monotone"]).optional(),
     background: hexColor.optional(),

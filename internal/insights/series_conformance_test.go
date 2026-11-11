@@ -45,3 +45,34 @@ func TestSeriesColorRuleConformanceFixtures(t *testing.T) {
 		})
 	}
 }
+
+// The series colour mode cases in colors.json run through validateDashboard and the embedded dashboard JSON Schema,
+// with the same verdict as Zod (ui colors-conformance.test.ts). A document without the mode stays valid.
+func TestSeriesColorModeConformanceFixtures(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/design/insights/conformance/colors.json")
+	require.NoError(t, err)
+	var fixtures struct {
+		Modes []string `json:"modes"`
+		Cases []struct {
+			Name    string          `json:"name"`
+			Valid   bool            `json:"valid"`
+			Options json.RawMessage `json:"options"`
+		} `json:"cases"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &fixtures))
+	require.NotEmpty(t, fixtures.Cases)
+	require.Equal(t, []string{"name", "index"}, fixtures.Modes)
+	schema := compileEmbeddedDashboardSchema(t)
+	for _, entry := range fixtures.Cases {
+		t.Run(entry.Name, func(t *testing.T) {
+			document := extendedDashboard(`"type":"timeseries","options":`+string(entry.Options), "")
+			err := validateDashboard("demo", document)
+			require.Equal(t, entry.Valid, err == nil, "validateDashboard: %v", err)
+
+			var decoded any
+			require.NoError(t, json.Unmarshal(document, &decoded))
+			jsonErr := schema.Validate(decoded)
+			require.Equal(t, entry.Valid, jsonErr == nil, "embedded JSON Schema: %v", jsonErr)
+		})
+	}
+}

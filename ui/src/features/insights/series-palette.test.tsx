@@ -41,17 +41,23 @@ describe("shared series palette in time-series renderers", () => {
     expect(PALETTE[8 % PALETTE.length]).toBe(PALETTE[0]);
   });
 
-  it("draws each series in its palette slot, in series order", () => {
-    expect(drawnStrokes(base)).toEqual([seriesSlot(0), seriesSlot(1), seriesSlot(2)]);
+  // Name mode (the default): catalog hashes to slot 1, checkout to slot 2 and worker to slot 8 (FNV-1a of each name).
+  it("draws each series in its identity slot, not its position", () => {
+    expect(drawnStrokes(base)).toEqual([seriesSlot(0), seriesSlot(1), seriesSlot(7)]);
+  });
+
+  it("keeps the older position slots when a widget asks for index mode", () => {
+    expect(drawnStrokes({ ...base, options: { ...base.options, seriesColorMode: "index" } })).toEqual([seriesSlot(0), seriesSlot(1), seriesSlot(2)]);
   });
 
   it("draws an authored label rule for its series only, and leaves the other slots", () => {
     const widget: Widget = { ...base, options: { ...base.options, seriesColors: [{ label: "service", value: "checkout", color: "#15c7a1" }] } };
-    expect(drawnStrokes(widget)).toEqual([seriesSlot(0), "#15c7a1", seriesSlot(2)]);
+    expect(drawnStrokes(widget)).toEqual([seriesSlot(0), "#15c7a1", seriesSlot(7)]);
   });
 
+  // The widget colour goes to the first series in identity order (catalog), not the first in result order.
   it("keeps a widget colour on the first series ahead of its slot", () => {
-    expect(drawnStrokes({ ...base, color: "#aa1122" })).toEqual(["#aa1122", seriesSlot(1), seriesSlot(2)]);
+    expect(drawnStrokes({ ...base, color: "#aa1122" })).toEqual(["#aa1122", seriesSlot(1), seriesSlot(7)]);
   });
 
   it("draws a role rule as its named token, ahead of the slot", () => {
