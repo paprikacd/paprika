@@ -68,6 +68,55 @@ export declare enum Source {
 }
 
 /**
+ * DataState says what one widget's query returned in a dry run that executed
+ * it. The data.* rules read the same states. DATA_STATE_NOT_RUN means the dry
+ * run did not execute the document because its schema or lint checks failed.
+ *
+ * @generated from enum paprika.insights.v1.DataState
+ */
+export declare enum DataState {
+  /**
+   * @generated from enum value: DATA_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DATA_STATE_OK = 1;
+   */
+  OK = 1,
+
+  /**
+   * @generated from enum value: DATA_STATE_EMPTY = 2;
+   */
+  EMPTY = 2,
+
+  /**
+   * @generated from enum value: DATA_STATE_PARTIAL = 3;
+   */
+  PARTIAL = 3,
+
+  /**
+   * @generated from enum value: DATA_STATE_STALE = 4;
+   */
+  STALE = 4,
+
+  /**
+   * @generated from enum value: DATA_STATE_ERROR = 5;
+   */
+  ERROR = 5,
+
+  /**
+   * @generated from enum value: DATA_STATE_UNAVAILABLE = 6;
+   */
+  UNAVAILABLE = 6,
+
+  /**
+   * @generated from enum value: DATA_STATE_NOT_RUN = 7;
+   */
+  NOT_RUN = 7,
+}
+
+/**
  * CheckFinding locates one problem in a submitted dashboard document. Pointer
  * is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
  * /widgets/2/layout a field of it, and the empty string the whole document.
@@ -179,5 +228,54 @@ export declare class CheckReport extends Message<CheckReport> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CheckReport;
 
   static equals(a: CheckReport | PlainMessage<CheckReport> | undefined, b: CheckReport | PlainMessage<CheckReport> | undefined): boolean;
+}
+
+/**
+ * WidgetDataState reports one widget's data in a dry run with execute. Pointer
+ * is the widget's JSON Pointer, /widgets/N. series_returned counts the series
+ * in the provider's bounded response. error_code is the safe code of a failed
+ * query, never upstream text. The report carries these beside its issues list.
+ *
+ * @generated from message paprika.insights.v1.WidgetDataState
+ */
+export declare class WidgetDataState extends Message<WidgetDataState> {
+  /**
+   * @generated from field: string widget_id = 1;
+   */
+  widgetId: string;
+
+  /**
+   * @generated from field: string pointer = 2;
+   */
+  pointer: string;
+
+  /**
+   * @generated from field: paprika.insights.v1.DataState state = 3;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: uint32 series_returned = 4;
+   */
+  seriesReturned: number;
+
+  /**
+   * @generated from field: string error_code = 5;
+   */
+  errorCode: string;
+
+  constructor(data?: PartialMessage<WidgetDataState>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.insights.v1.WidgetDataState";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): WidgetDataState;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): WidgetDataState;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): WidgetDataState;
+
+  static equals(a: WidgetDataState | PlainMessage<WidgetDataState> | undefined, b: WidgetDataState | PlainMessage<WidgetDataState> | undefined): boolean;
 }
 

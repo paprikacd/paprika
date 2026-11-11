@@ -1,10 +1,16 @@
 package insights
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
@@ -475,4 +481,189 @@ func documentFirst(findings []*insightsv1.CheckFinding) []*insightsv1.CheckFindi
 		}
 	}
 	return ordered
+}
+
+// dryRunSummaryOptions bounds what the dry run keeps of each query result. Eight
+// series is the most a summary holds, so the unit rule sees every series the
+// summary keeps. The caller never receives these summaries, only the findings
+// and per-widget states derived from them.
+var dryRunSummaryOptions = DashboardSummaryOptions{MaxSeries: 8, MaxTraces: 1}
+
+// maxDryRunVariables matches the variables a dashboard query accepts.
+const maxDryRunVariables = 20
+
+// dryRunInputError is a caller error in a dry run with execute: the variables or
+// the document's time range cannot be used. It is reported as a 400.
+type dryRunInputError struct{ message string }
+
+func (e *dryRunInputError) Error() string { return e.message }
+
+// dryRunOutcome is what executing a document's queries reports: the data.*
+// findings and one state per widget, in document order.
+type dryRunOutcome struct {
+	findings []*insightsv1.CheckFinding
+	widgets  []*insightsv1.WidgetDataState
+}
+
+// executeDryRun answers a dry run that asks for execute. A document with a schema
+// or error-severity lint finding is not executed, because it could not be saved;
+// each of its widgets reports not_run. Otherwise every distinct query runs once,
+// through the same path query_dashboard uses, under the same budget.
+func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *checkRequest) {
+	findings := dryRunFindings(request.Document)
+	if hasErrorFinding(findings) {
+		writeDryRunReport(w, capCheckReport(findings), notRunStates(request.Document))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), dashboardQueryBudget)
+	defer cancel()
+	outcome, err := s.dryRunData(r.WithContext(ctx), request.Document, request.Variables)
+	if err != nil {
+		var input *dryRunInputError
+		if errors.As(err, &input) {
+			writeError(w, http.StatusBadRequest, input.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "dashboard validation failed")
+		return
+	}
+	writeDryRunReport(w, capCheckReport(append(findings, outcome.findings...)), outcome.widgets)
+}
+
+// dryRunData plans the document's widgets and runs their queries with the shared
+// dashboard path, then reports what each returned. It reads the document and
+// the query providers only; it never writes.
+func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[string]string) (dryRunOutcome, error) {
+	var doc dashboardReadDocument
+	if err := json.Unmarshal(document, &doc); err != nil {
+		return dryRunOutcome{}, fmt.Errorf("decode dry-run document: %w", err)
+	}
+	if len(variables) > maxDryRunVariables {
+		return dryRunOutcome{}, &dryRunInputError{message: "variables must contain at most 20 string values"}
+	}
+	values, err := dashboardVariableValues(doc.Variables, variables)
+	if err != nil {
+		return dryRunOutcome{}, &dryRunInputError{message: err.Error()}
+	}
+	now := time.Now().UTC()
+	queryRange, start, end, err := dashboardQueryTimeRange(&dashboardQueryRequest{}, &doc, now)
+	if err != nil {
+		return dryRunOutcome{}, &dryRunInputError{message: err.Error()}
+	}
+	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets)
+	if err != nil {
+		return dryRunOutcome{}, err
+	}
+	result := DashboardQueryResult{
+		SchemaVersion: 1, Dashboard: DashboardQueryDocument{ID: doc.ID, Title: doc.Title},
+		ObservedAt: now.Format(time.RFC3339Nano), Range: queryRange, Variables: values,
+		Widgets: make([]DashboardQueryWidget, 0, len(doc.Widgets)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
+	}
+	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, start, end, dryRunSummaryOptions)
+	return dryRunWidgets(&doc, &result), nil
+}
+
+// dryRunWidgets joins each planned widget to its executed query and derives the
+// data.* findings and per-widget states. Planned widgets keep the document's
+// order, so result.Widgets[i] is the widget at /widgets/i.
+func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult) dryRunOutcome {
+	signals := make(map[string]*DashboardSignal, len(result.Signals))
+	for i := range result.Signals {
+		signals[result.Signals[i].ID] = &result.Signals[i]
+	}
+	widgets := make([]dataWidget, 0, len(result.Widgets))
+	for i := range result.Widgets {
+		planned := &result.Widgets[i]
+		widget := dataWidget{
+			index: i, id: planned.ID, title: planned.Title, unit: planned.Unit,
+			queryRef: doc.Widgets[i].QueryRef != nil, failure: planned.Error, annotation: planned.AnnotationError,
+			signal: signals[planned.SignalID], freshness: planned.Freshness,
+		}
+		if widget.failure == nil && widget.signal != nil {
+			widget.failure = widget.signal.Error
+		}
+		widgets = append(widgets, widget)
+	}
+	states := make([]*insightsv1.WidgetDataState, 0, len(widgets))
+	for i := range widgets {
+		states = append(states, widgetDataState(&widgets[i]))
+	}
+	return dryRunOutcome{findings: dataFindings(widgets), widgets: states}
+}
+
+// widgetDataState reports one widget's data for the dry-run report.
+func widgetDataState(widget *dataWidget) *insightsv1.WidgetDataState {
+	state := &insightsv1.WidgetDataState{
+		WidgetId: boundedWidgetID(widget.id),
+		Pointer:  widgetBase(widget.index),
+		State:    dataStateOf(widget),
+	}
+	if widget.signal != nil && widget.signal.SeriesReturned != nil {
+		state.SeriesReturned = checkwire.Count(*widget.signal.SeriesReturned)
+	}
+	if failure := widget.failure; failure != nil {
+		state.ErrorCode = failureCode(failure.Code)
+	}
+	return state
+}
+
+// failureCode returns a query error code the report may carry. Codes are fixed
+// names; anything else is reported as a generic failure.
+func failureCode(code string) string {
+	if _, known := queryCodeText[code]; known {
+		return code
+	}
+	return "provider_error"
+}
+
+// notRunStates reports every widget of a document that was not executed. It is
+// bounded by the widget limit, which a document with more widgets fails anyway.
+func notRunStates(document Dashboard) []*insightsv1.WidgetDataState {
+	var head struct {
+		Widgets []struct {
+			ID string `json:"id"`
+		} `json:"widgets"`
+	}
+	states := []*insightsv1.WidgetDataState{}
+	if json.Unmarshal(document, &head) != nil {
+		return states
+	}
+	for i, widget := range head.Widgets {
+		if i == maxDashboardWidgets {
+			break
+		}
+		states = append(states, &insightsv1.WidgetDataState{WidgetId: boundedWidgetID(widget.ID), Pointer: widgetBase(i), State: insightsv1.DataState_DATA_STATE_NOT_RUN})
+	}
+	return states
+}
+
+// writeDryRunReport writes a dry run that executed, or was asked to. The report
+// bytes are the same CheckReport a dry run writes, with the per-widget states
+// added after its members, so the list shape stays what clients already read.
+func writeDryRunReport(w http.ResponseWriter, report *insightsv1.CheckReport, widgets []*insightsv1.WidgetDataState) {
+	body, err := checkwire.Marshal(report)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dashboard validation failed")
+		return
+	}
+	var out bytes.Buffer
+	out.Write(body[:len(body)-1])
+	out.WriteString(`,"widgets":[`)
+	for i, state := range widgets {
+		encoded, err := checkwire.Marshal(state)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "dashboard validation failed")
+			return
+		}
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		out.Write(encoded)
+	}
+	out.WriteString("]}")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(out.Bytes()); err != nil {
+		slog.Debug("could not write insights dry run report")
+	}
 }

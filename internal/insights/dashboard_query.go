@@ -144,8 +144,17 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 		ObservedAt: now.Format(time.RFC3339Nano), Range: queryRange, Variables: variables,
 		Widgets: make([]DashboardQueryWidget, 0, len(selected)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
+	s.runDashboardPlan(r, &result, selected, saved, document.Variables, start, end, options)
+	writeDashboardQueryResult(w, &result)
+}
+
+// runDashboardPlan plans the selected widgets and then executes their distinct
+// queries one at a time, in order, filling result. queryDashboard and the dry run
+// of the validate endpoint both call it, so they share planning, provider
+// resolution, admission and the caller's deadline; neither has its own path.
+func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, options DashboardSummaryOptions) {
 	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
-	queries := planDashboardQueries(&result, selected, saved, document.Variables, start, end, func(providerID, template string) *DashboardQueryError {
+	queries := planDashboardQueries(result, selected, saved, definitions, start, end, func(providerID, template string) *DashboardQueryError {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
 		if err != nil {
 			return nil // Execution reports the cached provider failure as a signal.
@@ -155,8 +164,7 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	s.executeDashboardQueries(r, queries, options, &result, &cache)
-	writeDashboardQueryResult(w, &result)
+	s.executeDashboardQueries(r, queries, options, result, &cache)
 }
 
 func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, validators ...func(string, string) *DashboardQueryError) []Query {
@@ -668,5 +676,21 @@ func dashboardProviderError(err error) *DashboardQueryError {
 			return &DashboardQueryError{Code: "invalid_query", Message: "The provider rejected the resolved query."}
 		}
 	}
-	return &DashboardQueryError{Code: "provider_error", Message: "The provider query could not be completed."}
+	// A direct provider's HTTP status is not carried in the code. The same
+	// capacity and budget statuses are still marked transient for the dry run.
+	return &DashboardQueryError{Code: "provider_error", Message: "The provider query could not be completed.", transient: directProviderTransient(err)}
+}
+
+// directProviderTransient reports whether a direct provider answered with a
+// capacity or budget status, which a retry can clear.
+func directProviderTransient(err error) bool {
+	var direct *providerHTTPError
+	if !errors.As(err, &direct) {
+		return false
+	}
+	switch direct.status {
+	case http.StatusTooManyRequests, http.StatusRequestTimeout, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
 }

@@ -2,17 +2,27 @@ package observabilitygateway_test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/connect"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
+	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/insights"
+	observe "github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 // statWidget is a compact stat that stacks a bar on a sparkline: a stat.density
@@ -390,4 +400,207 @@ func TestInsightsPatchWidgetEditsReturnsChecksAndStrippedDocument(t *testing.T) 
 	fetched, err := h.call(t, p, "get_dashboard", map[string]any{"id": "mcp-demo"})
 	require.NoError(t, err)
 	require.JSONEq(t, string(fetched["document"]), string(structured.Document))
+}
+
+// executeHarness is an authoring harness whose Prometheus provider answers each
+// query from respond, given the query range end. calls counts provider requests.
+func executeHarness(t *testing.T, calls *atomic.Int32, respond func(query string, end float64) string) *authoringHarness {
+	t.Helper()
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		end, _ := strconv.ParseFloat(r.URL.Query().Get("end"), 64)
+		_, _ = io.WriteString(w, respond(r.URL.Query().Get("query"), end))
+	}))
+	t.Cleanup(provider.Close)
+	secret := []byte(rand.Text())
+	serviceToken := rand.Text() + rand.Text()
+	store, err := insights.OpenStore(t.TempDir())
+	require.NoError(t, err)
+	service, err := insights.NewServer(insights.Config{Token: serviceToken, Providers: []insights.ProviderConfig{{ID: "prometheus", Name: "Metrics", Type: "prometheus", URL: provider.URL}}}, store)
+	require.NoError(t, err)
+	upstream := httptest.NewServer(service.Handler())
+	t.Cleanup(upstream.Close)
+	cfg := auth.Config{Enabled: true, TokenSecret: secret, RBACRules: []auth.RBACRule{
+		{Subjects: []string{"group:editors"}, Actions: []string{"read", "write"}, Resources: []string{"insights"}, Namespaces: []string{"*"}},
+		{Subjects: []string{"group:readers"}, Actions: []string{"read"}, Resources: []string{"insights"}, Namespaces: []string{"*"}},
+	}}
+	proxy, err := apiserver.NewInsightsProxy(t.Context(), cfg, upstream.URL, serviceToken)
+	require.NoError(t, err)
+	auditor := &authoringAudit{}
+	authoring, err := observe.NewInsightsAuthoringClient(proxy, secret, "https://paprika.example.test", auditor)
+	require.NoError(t, err)
+	registry := mcp.NewRegistry()
+	require.NoError(t, observe.RegisterInsightsTools(registry, authoring, nil))
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: "human", Groups: []string{"editors"}, Audience: auth.ConsoleAPIAudience, Secret: secret})
+	require.NoError(t, err)
+	return &authoringHarness{invoker: mcp.NewInvoker(registry, nil, nil, auditor), proxy: proxy, token: token, auditor: auditor, registry: registry}
+}
+
+// dryRunStructured is the structured content of an executed dry run.
+type dryRunStructured struct {
+	ErrorCount   uint32 `json:"errorCount"`
+	WarningCount uint32 `json:"warningCount"`
+	Issues       []struct {
+		RuleID   string `json:"ruleId"`
+		Source   string `json:"source"`
+		WidgetID string `json:"widgetId"`
+		Pointer  string `json:"pointer"`
+	} `json:"issues"`
+	Widgets []struct {
+		WidgetID       string `json:"widgetId"`
+		Pointer        string `json:"pointer"`
+		State          string `json:"state"`
+		SeriesReturned uint32 `json:"seriesReturned"`
+		ErrorCode      string `json:"errorCode"`
+	} `json:"widgets"`
+}
+
+func dataWidgetMap(id, query, unit string, y int) map[string]any {
+	return map[string]any{
+		"id": id, "title": "Widget " + id, "type": "timeseries", "providerId": "prometheus", "query": query, "unit": unit,
+		"layout": map[string]any{"x": 0, "y": y, "w": 12, "h": 4},
+	}
+}
+
+func promMatrixBody(series string) string {
+	return `{"status":"success","data":{"resultType":"matrix","result":[` + series + `]}}`
+}
+
+func TestValidateDashboardExecuteRunsQueriesAndReportsDataStates(t *testing.T) {
+	var calls atomic.Int32
+	var seenQueries sync.Map
+	h := executeHarness(t, &calls, func(query string, end float64) string {
+		seenQueries.Store(query, true)
+		switch {
+		case query == "share":
+			return promMatrixBody(fmt.Sprintf(`{"metric":{"__name__":"share"},"values":[[%v,"120"]]}`, end-60))
+		case strings.HasPrefix(query, "up{service="):
+			return promMatrixBody(fmt.Sprintf(`{"metric":{"service":"api"},"values":[[%v,"1"]]}`, end-60))
+		default:
+			return promMatrixBody("")
+		}
+	})
+	p := authoringPrincipal([]string{"editors"}, true)
+	document := documentWithWidgets(t, "Executed",
+		dataWidgetMap("share", "share", "%", 0),
+		dataWidgetMap("absent", "absent", "req/s", 4),
+		dataWidgetMap("scoped", `up{service={{service}}}`, "req/s", 8),
+	)
+	document["variables"] = []any{map[string]any{"name": "service", "label": "Service", "defaultValue": "checkout"}}
+	res, err := h.callRaw(t, p, "validate_dashboard", map[string]any{"document": document, "execute": true, "variables": map[string]string{"service": "api"}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+
+	text := resultText(t, res)
+	require.True(t, strings.HasPrefix(text, "Checks: 0 errors, 2 warnings\nData: 2 ok, 1 empty across 3 widgets.\n"), text)
+	require.Contains(t, text, "data.unit-mismatch")
+	require.Contains(t, text, "data.no-series")
+	_, sawVariable := seenQueries.Load(`up{service="api"}`)
+	require.True(t, sawVariable, "the variable value reaches the query")
+
+	var structured dryRunStructured
+	require.NoError(t, json.Unmarshal(structuredBytes(t, res), &structured))
+	require.Equal(t, uint32(2), structured.WarningCount)
+	require.Len(t, structured.Widgets, 3)
+	require.Equal(t, "DATA_STATE_OK", structured.Widgets[0].State)
+	require.Equal(t, "DATA_STATE_EMPTY", structured.Widgets[1].State)
+	require.Equal(t, "DATA_STATE_OK", structured.Widgets[2].State)
+	require.Equal(t, uint32(1), structured.Widgets[2].SeriesReturned)
+	require.Equal(t, "/widgets/1", structured.Widgets[1].Pointer)
+	sources := map[string]string{}
+	for _, issue := range structured.Issues {
+		sources[issue.RuleID] = issue.Source + " " + issue.Pointer
+	}
+	require.Equal(t, "SOURCE_DATA /widgets/0/unit", sources["data.unit-mismatch"])
+	require.Equal(t, "SOURCE_DATA /widgets/1/query", sources["data.no-series"])
+	require.JSONEq(t, string(structuredBytes(t, res)), resultJSON(t, res), "content[0] is the structured content")
+	require.Equal(t, int32(3), calls.Load(), "one provider request per distinct query")
+
+	_, err = h.call(t, p, "get_dashboard", map[string]any{"id": "mcp-demo"})
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err), "the executed dry run saves nothing")
+}
+
+func TestValidateDashboardExecuteByIDAsAReaderNeverWrites(t *testing.T) {
+	var calls atomic.Int32
+	h := executeHarness(t, &calls, func(_ string, end float64) string {
+		return promMatrixBody(fmt.Sprintf(`{"metric":{"__name__":"up"},"values":[[%v,"1"]]}`, end-60))
+	})
+	editor := authoringPrincipal([]string{"editors"}, true)
+	_, err := h.call(t, editor, "create_dashboard", map[string]any{"document": documentWithWidgets(t, "Stored", dataWidgetMap("up", "up", "req/s", 0))})
+	require.NoError(t, err)
+	reader := authoringPrincipal([]string{"readers"}, false)
+	res, err := h.callRaw(t, reader, "validate_dashboard", map[string]any{"id": "mcp-demo", "execute": true})
+	require.NoError(t, err)
+	require.Equal(t, "Checks passed\nData: 1 ok across 1 widget.", resultText(t, res))
+	require.Equal(t, int32(1), calls.Load())
+}
+
+func TestValidateDashboardExecuteNeverRunsBlockedDocuments(t *testing.T) {
+	var calls atomic.Int32
+	h := executeHarness(t, &calls, func(string, float64) string { return promMatrixBody("") })
+	p := authoringPrincipal([]string{"editors"}, true)
+	left := dataWidgetMap("left", "a", "req/s", 0)
+	right := dataWidgetMap("right", "b", "req/s", 0)
+	left["layout"] = map[string]any{"x": 0, "y": 0, "w": 8, "h": 4}
+	right["layout"] = map[string]any{"x": 4, "y": 0, "w": 8, "h": 4}
+	res, err := h.callRaw(t, p, "validate_dashboard", map[string]any{"document": documentWithWidgets(t, "Overlap", left, right), "execute": true})
+	require.NoError(t, err)
+	text := resultText(t, res)
+	require.True(t, strings.HasPrefix(text, "Checks: 1 error, 0 warnings\nData: not run, because the document has errors that block a save."), text)
+	require.Equal(t, int32(0), calls.Load(), "a document that cannot be saved is never executed")
+
+	var structured dryRunStructured
+	require.NoError(t, json.Unmarshal(structuredBytes(t, res), &structured))
+	require.Len(t, structured.Widgets, 2)
+	for _, widget := range structured.Widgets {
+		require.Equal(t, "DATA_STATE_NOT_RUN", widget.State)
+	}
+}
+
+func TestValidateDashboardVariablesNeedExecuteAndStayBounded(t *testing.T) {
+	var calls atomic.Int32
+	h := executeHarness(t, &calls, func(string, float64) string { return promMatrixBody("") })
+	p := authoringPrincipal([]string{"editors"}, true)
+	document := documentWithWidgets(t, "Vars", dataWidgetMap("up", "up", "req/s", 0))
+
+	_, err := h.callRaw(t, p, "validate_dashboard", map[string]any{"document": document, "variables": map[string]string{"service": "api"}})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "variables without execute are a caller error")
+
+	many := make(map[string]string, 21)
+	for i := range 21 {
+		many[fmt.Sprintf("v%02d", i)] = "x"
+	}
+	_, err = h.callRaw(t, p, "validate_dashboard", map[string]any{"document": document, "execute": true, "variables": many})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+
+	_, err = h.callRaw(t, p, "validate_dashboard", map[string]any{"document": document, "execute": true, "variables": map[string]any{"service": 7}})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "variable values must be strings")
+	require.Equal(t, int32(0), calls.Load())
+}
+
+func TestValidateDashboardExecuteFlagIsInTheSchemaAndStillReadOnly(t *testing.T) {
+	h := newAuthoringHarness(t)
+	tool, ok := h.registry.Lookup("validate_dashboard")
+	require.True(t, ok)
+	require.Equal(t, mcp.ScopeObserve, tool.Scope, "execute runs queries, which observe scope already grants")
+	require.Contains(t, string(tool.InputSchema), `"execute"`)
+	require.Contains(t, string(tool.InputSchema), `"variables"`)
+	require.Contains(t, tool.Description, "Read-only")
+	require.Contains(t, tool.Description, "execute:true")
+
+	// An unknown member is still rejected, so the schema and the decoder agree.
+	p := authoringPrincipal([]string{"editors"}, true)
+	_, err := h.callRaw(t, p, "validate_dashboard", map[string]any{"document": documentWithWidgets(t, "Unknown", statWidget("compact", 0)), "executes": true})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+func TestValidateDashboardWithoutExecuteHasNoWidgetStates(t *testing.T) {
+	h := newAuthoringHarness(t)
+	p := authoringPrincipal([]string{"editors"}, true)
+	res, err := h.callRaw(t, p, "validate_dashboard", map[string]any{"document": documentWithWidgets(t, "Plain", statWidget("compact", 0))})
+	require.NoError(t, err)
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(structuredBytes(t, res), &fields))
+	require.NotContains(t, fields, "widgets", "a dry run that did not execute keeps the checks shape")
+	require.Equal(t, "Checks: 0 errors, 1 warning", strings.SplitN(resultText(t, res), "\n", 2)[0])
 }

@@ -132,6 +132,73 @@ func (Source) EnumDescriptor() ([]byte, []int) {
 	return file_paprika_insights_v1_checks_proto_rawDescGZIP(), []int{1}
 }
 
+// DataState says what one widget's query returned in a dry run that executed
+// it. The data.* rules read the same states. DATA_STATE_NOT_RUN means the dry
+// run did not execute the document because its schema or lint checks failed.
+type DataState int32
+
+const (
+	DataState_DATA_STATE_UNSPECIFIED DataState = 0
+	DataState_DATA_STATE_OK          DataState = 1
+	DataState_DATA_STATE_EMPTY       DataState = 2
+	DataState_DATA_STATE_PARTIAL     DataState = 3
+	DataState_DATA_STATE_STALE       DataState = 4
+	DataState_DATA_STATE_ERROR       DataState = 5
+	DataState_DATA_STATE_UNAVAILABLE DataState = 6
+	DataState_DATA_STATE_NOT_RUN     DataState = 7
+)
+
+// Enum value maps for DataState.
+var (
+	DataState_name = map[int32]string{
+		0: "DATA_STATE_UNSPECIFIED",
+		1: "DATA_STATE_OK",
+		2: "DATA_STATE_EMPTY",
+		3: "DATA_STATE_PARTIAL",
+		4: "DATA_STATE_STALE",
+		5: "DATA_STATE_ERROR",
+		6: "DATA_STATE_UNAVAILABLE",
+		7: "DATA_STATE_NOT_RUN",
+	}
+	DataState_value = map[string]int32{
+		"DATA_STATE_UNSPECIFIED": 0,
+		"DATA_STATE_OK":          1,
+		"DATA_STATE_EMPTY":       2,
+		"DATA_STATE_PARTIAL":     3,
+		"DATA_STATE_STALE":       4,
+		"DATA_STATE_ERROR":       5,
+		"DATA_STATE_UNAVAILABLE": 6,
+		"DATA_STATE_NOT_RUN":     7,
+	}
+)
+
+func (x DataState) Enum() *DataState {
+	p := new(DataState)
+	*p = x
+	return p
+}
+
+func (x DataState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DataState) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_insights_v1_checks_proto_enumTypes[2].Descriptor()
+}
+
+func (DataState) Type() protoreflect.EnumType {
+	return &file_paprika_insights_v1_checks_proto_enumTypes[2]
+}
+
+func (x DataState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DataState.Descriptor instead.
+func (DataState) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_insights_v1_checks_proto_rawDescGZIP(), []int{2}
+}
+
 // CheckFinding locates one problem in a submitted dashboard document. Pointer
 // is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
 // /widgets/2/layout a field of it, and the empty string the whole document.
@@ -317,6 +384,86 @@ func (x *CheckReport) GetInfoCount() uint32 {
 	return 0
 }
 
+// WidgetDataState reports one widget's data in a dry run with execute. Pointer
+// is the widget's JSON Pointer, /widgets/N. series_returned counts the series
+// in the provider's bounded response. error_code is the safe code of a failed
+// query, never upstream text. The report carries these beside its issues list.
+type WidgetDataState struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	WidgetId       string                 `protobuf:"bytes,1,opt,name=widget_id,json=widgetId,proto3" json:"widget_id,omitempty"`
+	Pointer        string                 `protobuf:"bytes,2,opt,name=pointer,proto3" json:"pointer,omitempty"`
+	State          DataState              `protobuf:"varint,3,opt,name=state,proto3,enum=paprika.insights.v1.DataState" json:"state,omitempty"`
+	SeriesReturned uint32                 `protobuf:"varint,4,opt,name=series_returned,json=seriesReturned,proto3" json:"series_returned,omitempty"`
+	ErrorCode      string                 `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *WidgetDataState) Reset() {
+	*x = WidgetDataState{}
+	mi := &file_paprika_insights_v1_checks_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WidgetDataState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WidgetDataState) ProtoMessage() {}
+
+func (x *WidgetDataState) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_insights_v1_checks_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WidgetDataState.ProtoReflect.Descriptor instead.
+func (*WidgetDataState) Descriptor() ([]byte, []int) {
+	return file_paprika_insights_v1_checks_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *WidgetDataState) GetWidgetId() string {
+	if x != nil {
+		return x.WidgetId
+	}
+	return ""
+}
+
+func (x *WidgetDataState) GetPointer() string {
+	if x != nil {
+		return x.Pointer
+	}
+	return ""
+}
+
+func (x *WidgetDataState) GetState() DataState {
+	if x != nil {
+		return x.State
+	}
+	return DataState_DATA_STATE_UNSPECIFIED
+}
+
+func (x *WidgetDataState) GetSeriesReturned() uint32 {
+	if x != nil {
+		return x.SeriesReturned
+	}
+	return 0
+}
+
+func (x *WidgetDataState) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
 var File_paprika_insights_v1_checks_proto protoreflect.FileDescriptor
 
 const file_paprika_insights_v1_checks_proto_rawDesc = "" +
@@ -338,7 +485,14 @@ const file_paprika_insights_v1_checks_proto_rawDesc = "" +
 	"errorCount\x12#\n" +
 	"\rwarning_count\x18\x05 \x01(\rR\fwarningCount\x12\x1d\n" +
 	"\n" +
-	"info_count\x18\x06 \x01(\rR\tinfoCount*a\n" +
+	"info_count\x18\x06 \x01(\rR\tinfoCount\"\xc6\x01\n" +
+	"\x0fWidgetDataState\x12\x1b\n" +
+	"\twidget_id\x18\x01 \x01(\tR\bwidgetId\x12\x18\n" +
+	"\apointer\x18\x02 \x01(\tR\apointer\x124\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x1e.paprika.insights.v1.DataStateR\x05state\x12'\n" +
+	"\x0fseries_returned\x18\x04 \x01(\rR\x0eseriesReturned\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x05 \x01(\tR\terrorCode*a\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rSEVERITY_INFO\x10\x01\x12\x14\n" +
@@ -349,7 +503,16 @@ const file_paprika_insights_v1_checks_proto_rawDesc = "" +
 	"\rSOURCE_SCHEMA\x10\x01\x12\x0f\n" +
 	"\vSOURCE_LINT\x10\x02\x12\x0f\n" +
 	"\vSOURCE_DATA\x10\x03\x12\x11\n" +
-	"\rSOURCE_VISUAL\x10\x04BLZJgithub.com/benebsworth/paprika/internal/api/paprika/insights/v1;insightsv1b\x06proto3"
+	"\rSOURCE_VISUAL\x10\x04*\xc8\x01\n" +
+	"\tDataState\x12\x1a\n" +
+	"\x16DATA_STATE_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rDATA_STATE_OK\x10\x01\x12\x14\n" +
+	"\x10DATA_STATE_EMPTY\x10\x02\x12\x16\n" +
+	"\x12DATA_STATE_PARTIAL\x10\x03\x12\x14\n" +
+	"\x10DATA_STATE_STALE\x10\x04\x12\x14\n" +
+	"\x10DATA_STATE_ERROR\x10\x05\x12\x1a\n" +
+	"\x16DATA_STATE_UNAVAILABLE\x10\x06\x12\x16\n" +
+	"\x12DATA_STATE_NOT_RUN\x10\aBLZJgithub.com/benebsworth/paprika/internal/api/paprika/insights/v1;insightsv1b\x06proto3"
 
 var (
 	file_paprika_insights_v1_checks_proto_rawDescOnce sync.Once
@@ -363,23 +526,26 @@ func file_paprika_insights_v1_checks_proto_rawDescGZIP() []byte {
 	return file_paprika_insights_v1_checks_proto_rawDescData
 }
 
-var file_paprika_insights_v1_checks_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_paprika_insights_v1_checks_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_paprika_insights_v1_checks_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_paprika_insights_v1_checks_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_paprika_insights_v1_checks_proto_goTypes = []any{
-	(Severity)(0),        // 0: paprika.insights.v1.Severity
-	(Source)(0),          // 1: paprika.insights.v1.Source
-	(*CheckFinding)(nil), // 2: paprika.insights.v1.CheckFinding
-	(*CheckReport)(nil),  // 3: paprika.insights.v1.CheckReport
+	(Severity)(0),           // 0: paprika.insights.v1.Severity
+	(Source)(0),             // 1: paprika.insights.v1.Source
+	(DataState)(0),          // 2: paprika.insights.v1.DataState
+	(*CheckFinding)(nil),    // 3: paprika.insights.v1.CheckFinding
+	(*CheckReport)(nil),     // 4: paprika.insights.v1.CheckReport
+	(*WidgetDataState)(nil), // 5: paprika.insights.v1.WidgetDataState
 }
 var file_paprika_insights_v1_checks_proto_depIdxs = []int32{
 	0, // 0: paprika.insights.v1.CheckFinding.severity:type_name -> paprika.insights.v1.Severity
 	1, // 1: paprika.insights.v1.CheckFinding.source:type_name -> paprika.insights.v1.Source
-	2, // 2: paprika.insights.v1.CheckReport.issues:type_name -> paprika.insights.v1.CheckFinding
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	3, // 2: paprika.insights.v1.CheckReport.issues:type_name -> paprika.insights.v1.CheckFinding
+	2, // 3: paprika.insights.v1.WidgetDataState.state:type_name -> paprika.insights.v1.DataState
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_paprika_insights_v1_checks_proto_init() }
@@ -392,8 +558,8 @@ func file_paprika_insights_v1_checks_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_insights_v1_checks_proto_rawDesc), len(file_paprika_insights_v1_checks_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   2,
+			NumEnums:      3,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

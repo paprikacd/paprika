@@ -301,7 +301,7 @@ func TestDashboardValidateRejectsUnauthenticatedAndMalformedRequests(t *testing.
 		"malformed JSON":   `{"document":`,
 		"bare document":    string(dashboard("demo", "Demo")),
 		"missing document": `{}`,
-		"unknown key":      `{"document":` + string(dashboard("demo", "Demo")) + `,"execute":true}`,
+		"unknown key":      `{"document":` + string(dashboard("demo", "Demo")) + `,"extra":true}`,
 	} {
 		if w := request(t, h, "POST", "/api/dashboards/validate", []byte(body), nil); w.Code != 400 {
 			t.Fatalf("%s returned %d: %s", name, w.Code, w.Body)

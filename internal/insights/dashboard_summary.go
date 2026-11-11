@@ -21,6 +21,9 @@ type DashboardSummaryOptions struct {
 type DashboardQueryError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// transient marks a failure a retry can clear, under a code that does not
+	// say so. It is not part of the wire form.
+	transient bool
 }
 
 // DashboardSignal describes observations, not an inferred service health verdict.
