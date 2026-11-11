@@ -20,6 +20,7 @@ import chartStyles from "./charts.module.css";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
 import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
 import {
+  DEFAULT_HEATMAP_THRESHOLDS,
   contrastText,
   balancedHeatmapColumns,
   heatmapTooltipSizeLimit,
@@ -132,6 +133,15 @@ describe("bounded chart data", () => {
     rerender(<WidgetVisualization widget={{ ...widget, type: "stat" }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 0 }] }], truncated: true }} />);
     expect(screen.getByText("Provider response may be incomplete. Narrow the query or check the data source.")).toBeInTheDocument();
     expect(screen.getByText("0")).toBeInTheDocument();
+  });
+  it("paints a status-banded stat reading with its text token, not its mark", () => {
+    const result = { series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 0 }] }] };
+    const { container, rerender } = render(<WidgetVisualization widget={{ ...widget, type: "stat", options: { thresholds: [{ value: 0, status: "ok" }] } }} result={result} />);
+    // jsdom drops a var() without a fallback when computing styles, so assert the authored declaration.
+    expect(container.querySelector("[data-metric-value]")).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-ok-text)"));
+    // A hex override is text as authored.
+    rerender(<WidgetVisualization widget={{ ...widget, type: "stat", options: { thresholds: [{ value: 0, status: "ok", color: "#20cba3" }] } }} result={result} />);
+    expect(container.querySelector("[data-metric-value]")).toHaveStyle({ color: "#20cba3" });
   });
   it("reports an incomplete empty records frame inside a registered renderer", () => {
     render(<TooltipWidgetDataProvider kind="records" result={{ records: { columns: [], rows: [], truncated: true } }}><EmptyState /></TooltipWidgetDataProvider>);
@@ -742,12 +752,12 @@ describe("widget visualizations", () => {
     const healthy = screen.getByRole("button", {
       name: "healthy-api: 1.0 · Healthy",
     });
-    expect(healthy).toHaveStyle({ background: "#53876a" });
+    // jsdom drops a var() background, so the status band is checked through its on-fill ink and the default bands' statuses.
+    expect(DEFAULT_HEATMAP_THRESHOLDS.map(({ status }) => status)).toEqual(["critical", "ok"]);
+    expect(healthy).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-ok-on)"));
     expect(
       screen.getByRole("button", { name: "failed-worker: 0.0 · Unhealthy" }),
-    ).toHaveStyle({
-      background: "#b64a3a",
-    });
+    ).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-critical-on)"));
     expect(
       screen.getByRole("button", { name: "missing-job: No data" }),
     ).toHaveStyle({

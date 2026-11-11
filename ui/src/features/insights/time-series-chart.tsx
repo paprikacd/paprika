@@ -67,6 +67,7 @@ import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./ch
 import { TimeWindowLens } from "./time-window-lens";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { validTimestamp } from "./widget-context";
+import { thresholdPaint } from "./status";
 import { useWidgetPresentation } from "./widget-presentation";
 
 const CURVES = {
@@ -514,7 +515,7 @@ export function TimeSeriesChart({
           const top = eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
           // The label sits above its line at the left end, where the newest data on the right is never covered.
           // It moves below the line when there is less than 16px above it inside the plot.
-          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
+          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: thresholdPaint(threshold) }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
         })}
         {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.referenceLines ?? []).filter(reference => reference.value >= domain[0] && reference.value <= domain[1]).map((reference, index) => {
           const top = eventTop + (domain[1] - reference.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);

@@ -48,6 +48,10 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
+import { thresholdHex, type StatusTheme } from "./status";
+import { useInsightsTheme } from "./insights-theme";
+
+const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 import { TooltipEditor } from "./tooltip-editor";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
@@ -193,6 +197,8 @@ function StyleEditor({
   onChange: (widget: Widget) => void;
   onConfigureTooltips: () => void;
 }) {
+  // The swatch shows the appearance the author is viewing.
+  const { resolvedTheme } = useInsightsTheme();
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
@@ -286,8 +292,12 @@ function StyleEditor({
     (options.thresholds?.length
       ? options.thresholds
       : DEFAULT_HEATMAP_THRESHOLDS
-    ).some(
-      (threshold) => contrastRatio(options.textColor!, threshold.color) < 4.5,
+    ).some((threshold) =>
+      // A status resolves to a different mark in each appearance, so every block is checked, not only the active one.
+      THEME_BLOCKS.some((theme) => {
+        const hex = thresholdHex(threshold, theme);
+        return hex !== undefined && contrastRatio(options.textColor!, hex) < 4.5;
+      }),
     );
   const defaultColor = gauge
     ? "#53876a"
@@ -588,7 +598,7 @@ function StyleEditor({
           <p className={styles.hint}>
             {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its color still applies."}
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
-              " Without custom thresholds, heatmaps are red below 1 and green from 1."}
+              " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
           {(options.thresholds ?? []).map((threshold, index) => (
             <div className={styles.threshold} key={index}>
@@ -615,7 +625,7 @@ function StyleEditor({
                 <GammaInput
                   aria-label={`Threshold ${index + 1} color`}
                   type="color"
-                  value={threshold.color}
+                  value={thresholdHex(threshold, resolvedTheme)}
                   onChange={(event) =>
                     update({
                       thresholds: options.thresholds!.map((item, i) =>
@@ -654,7 +664,7 @@ function StyleEditor({
                     update({
                       thresholds: options.thresholds!.map((item, i) =>
                         i === index
-                          ? { ...item, label: event.target.value }
+                          ? { ...item, label: event.target.value || undefined }
                           : item,
                       ),
                     })

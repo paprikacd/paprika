@@ -78,6 +78,7 @@ type DashboardQueryWidget struct {
 type DashboardStatThreshold struct {
 	State    string   `json:"state"`
 	Boundary *float64 `json:"boundary,omitempty"`
+	Status   string   `json:"status,omitempty"`
 	Color    string   `json:"color,omitempty"`
 	Label    string   `json:"label,omitempty"`
 }
@@ -526,7 +527,7 @@ func applyDashboardThreshold(widget *DashboardQueryWidget, signal *DashboardSign
 		}
 		match = threshold
 	}
-	widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Color: match.Color, Label: match.Label}
+	widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Status: match.Status, Color: match.Color, Label: match.Label}
 }
 
 func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSignal, end float64) {

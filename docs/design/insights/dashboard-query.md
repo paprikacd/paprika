@@ -73,8 +73,10 @@ observation, matching the UI single-value card. The latest finite value retains
 its full numeric precision; widget `decimals` only describes display formatting.
 `tailMissing` explicitly marks missing values after that last finite observation.
 When a Single value has configured thresholds, widget `threshold` reports the
-matched visual band (`boundary`, `color`, optional `label`) or `unknown` when no
-valid observation is available. It uses that same last valid value, including
+matched visual band (`boundary`, plus the band's `status` (`ok`, `info`, `warning`,
+`critical` or `unknown`) and/or its hex `color`, each present only when the
+threshold names it, and an optional `label`) or `unknown` when no valid
+observation is available. It uses that same last valid value, including
 zero; the first threshold is the fallback below its boundary, matching the UI.
 An explicit text color can override the visible text color. The band is an
 author-configured visualization, not an alert or a service-health verdict;

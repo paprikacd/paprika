@@ -4,6 +4,16 @@ import { describe, expect, it } from "vitest"
 import { z } from "zod"
 import { dashboardSchema, savedQuerySchema, widgetSchema, parseDashboard } from "./schema"
 
+// Zod's JSON Schema exporter cannot emit a threshold's status-or-colour refinement either.
+// Check the published anyOf explicitly, then compare the generated remainder.
+function assertAndRemoveThresholdConstraint(widget: Record<string, unknown>) {
+  const options = (widget.properties as Record<string, Record<string, unknown>>).options
+  const thresholds = (options.properties as Record<string, Record<string, unknown>>).thresholds
+  const items = thresholds.items as Record<string, unknown>
+  expect(items.anyOf).toEqual([{ required: ["status"] }, { required: ["color"] }])
+  delete items.anyOf
+}
+
 // Zod's JSON Schema exporter cannot emit superRefine's cross-field rule.
 // Check the published rule explicitly before comparing the generated remainder.
 function assertAndRemoveStatHeightConstraint(widget: Record<string, unknown>) {
@@ -32,6 +42,7 @@ describe("published dashboard authoring artifacts", () => {
     delete schema.description
     delete schema.$comment
     assertAndRemoveStatHeightConstraint(schema.properties.widgets.items)
+    assertAndRemoveThresholdConstraint(schema.properties.widgets.items)
     expect(schema).toEqual(z.toJSONSchema(dashboardSchema))
   })
 
@@ -50,6 +61,7 @@ describe("published dashboard authoring artifacts", () => {
       $defs: dashboard.$defs,
     }
     assertAndRemoveStatHeightConstraint(widget)
+    assertAndRemoveThresholdConstraint(widget)
     expect(widget).toEqual(z.toJSONSchema(widgetSchema))
   })
 

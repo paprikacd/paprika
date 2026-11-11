@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
 import { exactMetric, formatMetric } from "../chart-data"
 import { thresholdForValue } from "../chart-renderers"
+import { statusHex, statusToken, thresholdInk, thresholdPaint } from "../status"
 import { contrastRatio, readableTextColor } from "../appearance"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
@@ -72,7 +73,16 @@ export function tableTextColor(color: string, background: string) {
 /** One small palette per table/theme, rather than observing each rendered cell. */
 export function tableTextPalette(theme: "light" | "dark", background?: string, thresholds?: readonly Threshold[], color?: string) {
   const surface = background ?? tableThemes[theme].background
-  const colors = new Map((thresholds ?? []).map(threshold => [threshold.color, tableTextColor(threshold.color, surface)]))
+  const colors = new Map<string, string>()
+  for (const threshold of thresholds ?? []) {
+    const paint = thresholdPaint(threshold)
+    if (paint === undefined) continue
+    // A hex override keeps its contrast-adjusted hue. A status uses its text token on the theme surface. On a widget
+    // background the concrete token hex is adjusted instead, as hex text is, so the result meets 4.5:1 there.
+    if (threshold.color !== undefined) colors.set(paint, tableTextColor(threshold.color, surface))
+    else if (background === undefined) colors.set(paint, statusToken(threshold.status!, "-text"))
+    else colors.set(paint, tableTextColor(statusHex(theme, threshold.status!, "-text"), surface))
+  }
   colors.set(color ?? "var(--gamma-chart-3)", tableTextColor(color ?? tableThemes[theme].color, surface))
   return colors
 }
@@ -95,15 +105,27 @@ export function tableBarGeometry(value: number, min: number, max: number) {
   return { baseline, start: Math.min(baseline, end), end: Math.max(baseline, end), outside: value < min || value > max }
 }
 
+/**
+ * A threshold band is a solid fill, as a hex band always was, and carries its on-fill ink. Other colours keep the
+ * 18 % tint. Exported so the decision is testable where the DOM cannot show a var() background.
+ */
+export function colorBackgroundFill(fill: string, banded: boolean) {
+  return banded || /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
+}
+
+function paintOf(threshold: Threshold) {
+  return thresholdPaint(threshold) ?? "var(--gamma-muted)"
+}
+
 function barGradient(min: number, max: number, thresholds: readonly Threshold[] | undefined, color: string) {
   if (!thresholds?.length) return color
-  let previous = thresholdForValue(min, thresholds)!.color
+  let previous = paintOf(thresholdForValue(min, thresholds)!)
   const stops = [`${previous} 0%`]
   for (const threshold of thresholds) {
     if (threshold.value > min && threshold.value < max) {
       const stop = positionOnScale(threshold.value, min, max) * 100
-      stops.push(`${previous} ${stop}%`, `${threshold.color} ${stop}%`)
-      previous = threshold.color
+      stops.push(`${previous} ${stop}%`, `${paintOf(threshold)} ${stop}%`)
+      previous = paintOf(threshold)
     }
   }
   stops.push(`${previous} 100%`)
@@ -189,22 +211,21 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
       : threshold ? `Color by ${style.thresholdColumn}: ${sourceValue}${threshold.label ? ` · ${threshold.label}` : ""}`
         : `Color by ${style.thresholdColumn}: ${sourceValue} · no thresholds configured`
       : undefined
-    return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? threshold?.color ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
+    return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? thresholdPaint(threshold) ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
   }
   const finite = typeof value === "number" && Number.isFinite(value)
   const unit = style.unit ?? (column.unit === "percent" ? "%" : column.unit ?? "")
   const threshold = finite ? thresholdForValue(value, thresholds) : undefined
-  const fill = threshold?.color ?? color ?? "var(--gamma-chart-3)"
+  const fill = thresholdPaint(threshold) ?? color ?? "var(--gamma-chart-3)"
   const isBar = style.display === "bar" || style.display === "bar-segments"
   const geometry = finite && isBar ? tableBarGeometry(value, style.min!, style.max!) : undefined
   const exact = finite ? exactMetric(value, unit) : "No data"
   const scale = isBar ? ` · Scale ${exactMetric(style.min!, unit)} to ${exactMetric(style.max!, unit)}${geometry?.outside ? " · Outside scale" : ""}` : ""
   const label = `${column.label ?? column.key}: ${exact}${threshold?.label ? ` · ${threshold.label}` : ""}${scale}`
-  const background = finite && style.display === "color-background"
-    ? /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
-    : undefined
+  const background = finite && style.display === "color-background" ? colorBackgroundFill(fill, threshold !== undefined) : undefined
   const foreground = finite && style.display === "color-text" ? textColors.get(fill)
-    : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background) : undefined
+    : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background)
+      : background && threshold ? thresholdInk(threshold) : undefined
   return <span className={styles.visualCell} data-cell-display={style.display} data-cell-missing={!finite || undefined}
     role="img" aria-label={label} title={nativeTitle ? label : undefined}
     style={{ "--cell-color": fill, background, color: foreground } as CSSProperties}>

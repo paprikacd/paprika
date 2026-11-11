@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, exactMetric, seriesName, thresholdForValue } from "../chart-renderers";
+import { thresholdPaint } from "../status";
 import type { Point, Series } from "../chart-data";
 import type { QueryResult } from "../schema";
 import { validTimestamp } from "../widget-context";
@@ -82,7 +83,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
           const status = cell.value === undefined ? "Unknown" : cell.threshold?.label ?? "Observed";
           const label = `${cell.name}: ${cell.value === undefined ? "No data" : exactMetric(cell.value, widget.unit)} · ${status}`;
           const className = `${styles.cell} ${cell.value === undefined ? styles.unknown : ""}`;
-          const color = cell.threshold?.color ?? widget.color ?? "var(--gamma-chart-2)";
+          const color = thresholdPaint(cell.threshold) ?? widget.color ?? "var(--gamma-chart-2)";
           const style = cell.value === undefined ? undefined : { "--status-color": color } as CSSProperties;
           if (!interactive) return <span key={cell.index} className={className} style={style} role="img" aria-label={label} />;
           return <button key={cell.index} type="button" className={className} style={style} data-status-index={cell.index}
@@ -100,7 +101,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       <span>{cells.length} {cells.length === 1 ? "monitor" : "monitors"}</span>
       {overflow && <span id={`${id}-overflow`}>Scroll to see all monitors</span>}
       {widget.options?.showLegend !== false && <div role="group" aria-label="Monitor status legend" className={styles.legend}>
-        {counts.map((threshold, index) => <span key={index}><i style={{ background:threshold.color }} />{threshold.label ?? `≥ ${exactMetric(threshold.value, widget.unit)}`} <b>{threshold.count}</b></span>)}
+        {counts.map((threshold, index) => <span key={index}><i style={{ background:thresholdPaint(threshold) }} />{threshold.label ?? `≥ ${exactMetric(threshold.value, widget.unit)}`} <b>{threshold.count}</b></span>)}
         <span><i className={styles.unknownKey} />Unknown <b>{unknown}</b></span>
       </div>}
       {all.length > cells.length && <span>Showing {cells.length} of {all.length}</span>}

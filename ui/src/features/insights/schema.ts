@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { seriesColorRulesSchema } from "./series-colors"
+import { statusLevels } from "./status"
 import { timeZones } from "./time-zones.generated"
 import { parseDocument, stringify } from "yaml"
 
@@ -213,11 +214,13 @@ export const drilldownSchema = z
   })
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color")
+/** A threshold names a semantic status, a hex hue override, or both. Mirrored by the Go validator and dashboard.schema.json. */
 export const thresholdSchema = z.strictObject({
   value: z.number(),
-  color: hexColor,
+  status: z.enum(statusLevels).optional(),
+  color: hexColor.optional(),
   label: z.string().max(80).optional(),
-})
+}).refine((threshold) => threshold.status !== undefined || threshold.color !== undefined, "Name a status or a hex colour")
 /** A labelled horizontal rule on a time series. Its value joins the y domain, so it is never clipped. */
 export const referenceLineSchema = z.strictObject({
   value: z.number(),
@@ -750,8 +753,8 @@ export function newWidget(
       ? {
           options: {
             thresholds: [
-              { value: 0, color: "#b64a3a", label: "Unhealthy" },
-              { value: 1, color: "#53876a", label: "Healthy" },
+              { value: 0, status: "critical", label: "Unhealthy" },
+              { value: 1, status: "ok", label: "Healthy" },
             ],
             showLegend: true,
             showTooltip: true,

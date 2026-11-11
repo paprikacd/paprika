@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	// Embedded zone data keeps time.LoadLocation working in the alpine runtime image, which ships no zoneinfo.
 	_ "time/tzdata"
@@ -399,7 +400,12 @@ func validateWidgetAxisLabels(options map[string]json.RawMessage) error {
 }
 
 func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error {
-	for field, limit := range map[string]int{"tooltipTitle": 120, "tooltipValueLabel": 80} {
+	// An ordered slice, not a map: when several fields are invalid, the reported field must not vary between calls.
+	for _, bound := range []struct {
+		field string
+		limit int
+	}{{"tooltipTitle", 120}, {"tooltipValueLabel", 80}} {
+		field, limit := bound.field, bound.limit
 		if value, ok := options[field]; ok {
 			var text string
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || stringUnits(text) > limit {
@@ -430,11 +436,15 @@ func validateWidgetAppearance(options map[string]json.RawMessage) error {
 	if err := validateWidgetEnum(options, "display", []string{"line", "area"}, "display must be line or area"); err != nil {
 		return err
 	}
-	for field, allowed := range map[string][]string{
-		"sparklinePlacement": {"background", "side"},
-		"statIcon":           {"arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"},
+	// Ordered, so the first invalid field reported is the same on every call.
+	for _, choice := range []struct {
+		field   string
+		allowed []string
+	}{
+		{"sparklinePlacement", []string{"background", "side"}},
+		{"statIcon", []string{"arrow-down", "arrow-up", "shield", "network", "activity", "target", "pie"}},
 	} {
-		if err := validateWidgetEnum(options, field, allowed, "invalid "+field); err != nil {
+		if err := validateWidgetEnum(options, choice.field, choice.allowed, "invalid "+choice.field); err != nil {
 			return err
 		}
 	}
@@ -657,19 +667,52 @@ func validateWidgetThresholds(options map[string]json.RawMessage) error {
 	return nil
 }
 
+// statusLevels are the semantic threshold statuses. They mirror the Zod statusLevels in ui/src/features/insights/status.ts,
+// and the shared status-tokens.json levels. schema_conformance_test.go and ui schema-conformance.test.ts fail if they drift.
+var statusLevels = []string{"ok", "info", "warning", "critical", "unknown"}
+
+// validateWidgetThreshold mirrors thresholdSchema in schema.ts: value is required; status (a semantic level) and
+// color (a hue override) are optional but at least one must be named; label is optional and may be empty.
 func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, error) {
-	if _, err := requireObjectShape(raw, []string{"value", "color"}, []string{"label"}); err != nil {
+	fields, err := requireObjectShape(raw, []string{"value"}, []string{"status", "color", "label"})
+	if err != nil {
 		return 0, err
 	}
 	var threshold struct {
-		Value float64 `json:"value"`
-		Color string  `json:"color"`
-		Label string  `json:"label"`
+		Value  float64 `json:"value"`
+		Status string  `json:"status"`
+		Color  string  `json:"color"`
+		Label  string  `json:"label"`
 	}
-	if json.Unmarshal(raw, &threshold) != nil || !finite(threshold.Value) || threshold.Value <= previous || !validWidgetColor.MatchString(threshold.Color) || stringUnits(threshold.Label) > 80 {
-		return 0, errors.New("thresholds require increasing finite values, hex colors, and labels up to 80 characters")
+	if err := json.Unmarshal(raw, &threshold); err != nil {
+		return 0, errors.New("threshold value must be a number, and status, color and label must be strings")
+	}
+	if !finite(threshold.Value) || threshold.Value <= previous {
+		return 0, errors.New("thresholds require increasing finite values")
+	}
+	if err := validateThresholdPaint(fields, threshold.Status, threshold.Color); err != nil {
+		return 0, err
+	}
+	// Count code points, as Zod's string length and the published JSON Schema maxLength do.
+	if utf8.RuneCountInString(threshold.Label) > 80 {
+		return 0, errors.New("threshold labels must be at most 80 characters")
 	}
 	return threshold.Value, nil
+}
+
+// validateThresholdPaint requires a threshold to name a status, a hex hue override, or both, and checks each one present.
+func validateThresholdPaint(fields map[string]json.RawMessage, status, color string) error {
+	_, hasStatus := fields["status"]
+	_, hasColor := fields["color"]
+	switch {
+	case !hasStatus && !hasColor:
+		return errors.New("each threshold must name a status (" + strings.Join(statusLevels, ", ") + ") or a six-digit hex color")
+	case hasStatus && !slices.Contains(statusLevels, status):
+		return errors.New("threshold status must be one of " + strings.Join(statusLevels, ", ") + "; success, danger and similar names are not statuses")
+	case hasColor && !validWidgetColor.MatchString(color):
+		return errors.New("threshold color must be a six-digit hex color")
+	}
+	return nil
 }
 
 func validateWidgetPrecisionBounds(numbers map[string]float64) error {
@@ -728,7 +771,11 @@ func validateTooltipFlags(view map[string]json.RawMessage) error {
 }
 
 func validateTooltipText(view map[string]json.RawMessage) error {
-	for field, maximum := range map[string]int{"title": 120, "unit": 24} {
+	for _, bound := range []struct {
+		field   string
+		maximum int
+	}{{"title", 120}, {"unit", 24}} {
+		field, maximum := bound.field, bound.maximum
 		value, ok := view[field]
 		if !ok {
 			continue

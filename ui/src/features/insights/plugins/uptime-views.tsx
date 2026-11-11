@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
+import { thresholdPaint } from "../status";
 import { seriesName, type Series } from "../chart-data";
 import type { QueryResult } from "../schema";
 import { useEmbeddedWidget } from "../widget-presentation";
@@ -11,7 +12,7 @@ import { UTC_DAY, uptimeObservations, type ObservationDay } from "./uptime-obser
 import styles from "./uptime-views.module.css";
 
 const configSchema = z.strictObject({ maxDays: z.number().int().min(7).max(366).optional(), maxSeries: z.number().int().min(1).max(24).optional() });
-const defaultThresholds = [{ value: 0, color: "#e34b4b", label: "Down" }, { value: 1, color: "#36b96b", label: "Up" }];
+export const defaultThresholds = [{ value: 0, status: "critical" as const, label: "Down" }, { value: 1, status: "ok" as const, label: "Up" }];
 const dayText = (day: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day * UTC_DAY));
 const monthText = (day: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", timeZone: "UTC" }).format(new Date(day * UTC_DAY));
 const stateText = (day: ObservationDay) => day.kind === "unknown" ? "No recorded value" : day.kind === "mixed" ? "Mixed or incomplete observations" : day.label ?? "Observed";
@@ -76,7 +77,7 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
         })}</div> : <><div className={styles.timeline}>{days.map((day,index) => cell(entry,day,row,index))}</div><div className={styles.axis}><span>{dayText(days[0].day)}</span><span>{dayText(days.at(-1)!.day)} UTC</span></div></>}
       </section>)}
     </div>
-    <div className={styles.footer}>{widget.options?.showLegend !== false && <div className={styles.legend} role="group" aria-label="Recorded day legend">{thresholds.map((threshold,index) => <span key={index}><i style={{ background: threshold.color }} />{threshold.label ?? `≥ ${threshold.value}`}</span>)}<span><i className={styles.mixed} />Mixed / incomplete</span><span><i className={styles.unknown} />No recorded value</span></div>}<span>Recorded observations · UTC days</span><span>Not a measured uptime percentage</span>{data.truncatedDays && <span>Showing latest {config.maxDays ?? 90} days</span>}{data.truncatedSeries && <span>Showing {data.rows.length} of {source.length} series</span>}{result.truncated && <span>Partial source response</span>}</div>
+    <div className={styles.footer}>{widget.options?.showLegend !== false && <div className={styles.legend} role="group" aria-label="Recorded day legend">{thresholds.map((threshold,index) => <span key={index}><i style={{ background: thresholdPaint(threshold) }} />{threshold.label ?? `≥ ${threshold.value}`}</span>)}<span><i className={styles.mixed} />Mixed / incomplete</span><span><i className={styles.unknown} />No recorded value</span></div>}<span>Recorded observations · UTC days</span><span>Not a measured uptime percentage</span>{data.truncatedDays && <span>Showing latest {config.maxDays ?? 90} days</span>}{data.truncatedSeries && <span>Showing {data.rows.length} of {source.length} series</span>}{result.truncated && <span>Partial source response</span>}</div>
     {open && <ObservationTooltip id={id} anchor={open.anchor} avoidWidget pinned={open.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clear(); }} onLeave={() => { interaction.current.panel = false; leave(); }}>
       <div className={styles.detail}><strong>{dayText(open.day.day)} UTC</strong><span>{stateText(open.day)}</span><span>{open.day.count} recorded sample{open.day.count === 1 ? "" : "s"}{open.day.missing ? ` · ${open.day.missing} missing` : ""}</span><span>Samples do not establish availability for the full day.</span></div>
       {open.day.latest && <MetricDetails widget={widget} series={open.entry} index={open.index} point={open.day.latest} unit={widget.unit} decimals={widget.options?.decimals} description="Latest recorded sample that day" />}
