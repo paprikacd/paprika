@@ -90,7 +90,8 @@ func TestStartersValidateAndLintClean(t *testing.T) {
 // TestStarterMetricsMatchTheSignalsReference checks every paprika_* name a starter
 // queries against the metric reference: the name exists and is not marked as never
 // recorded, counters are read through rate or increase, and each label a query
-// names belongs to a metric the query uses.
+// names belongs to a metric the query uses. Queries that name no paprika_* metric
+// are checked by TestStarterDescriptionsNameTheirMetrics.
 func TestStarterMetricsMatchTheSignalsReference(t *testing.T) {
 	signals := readSignals(t)
 	if len(signals) == 0 {
@@ -111,8 +112,10 @@ func TestStarterMetricsMatchTheSignalsReference(t *testing.T) {
 				continue
 			}
 			names := signalMetricName.FindAllString(widget.Query, -1)
+			// A query over common exporter metrics names no paprika_* metric. Those
+			// are covered by TestStarterDescriptionsNameTheirMetrics instead.
 			if len(names) == 0 {
-				t.Errorf("%s/%s: query names no paprika_* metric", starter.ID, widget.ID)
+				continue
 			}
 			var allowed []string
 			for _, name := range names {
@@ -140,6 +143,40 @@ func TestStarterMetricsMatchTheSignalsReference(t *testing.T) {
 	}
 }
 
+// starterSelector matches a metric name written as a selector or range: name{...}
+// or name[...]. A label name, a function name or a number never matches.
+var starterSelector = regexp.MustCompile(`([a-zA-Z_:][a-zA-Z0-9_:]*)\s*[{\[]`)
+
+// TestStarterDescriptionsNameTheirMetrics checks that every common-exporter metric a
+// starter queries is named in the starter's description, so a viewer can see which
+// exporter the dashboard assumes. The paprika_* metrics are exempt because the
+// reference test already ties them to the signal definitions.
+func TestStarterDescriptionsNameTheirMetrics(t *testing.T) {
+	for _, starter := range readStarters(t) {
+		var document struct {
+			Description string `json:"description"`
+			Widgets     []struct {
+				ID    string `json:"id"`
+				Query string `json:"query"`
+			} `json:"widgets"`
+		}
+		if err := json.Unmarshal(starter.Document, &document); err != nil {
+			t.Fatalf("%s: %v", starter.ID, err)
+		}
+		for _, widget := range document.Widgets {
+			for _, match := range starterSelector.FindAllStringSubmatch(widget.Query, -1) {
+				name := match[1]
+				if strings.HasPrefix(name, "paprika_") {
+					continue
+				}
+				if !strings.Contains(document.Description, name) {
+					t.Errorf("%s/%s: the description does not name the assumed metric %s", starter.ID, widget.ID, name)
+				}
+			}
+		}
+	}
+}
+
 func checkLabel(t *testing.T, starterID, widgetID, label string, allowed []string) {
 	t.Helper()
 	if label == "" {
@@ -147,5 +184,40 @@ func checkLabel(t *testing.T, starterID, widgetID, label string, allowed []strin
 	}
 	if !slices.Contains(allowed, label) {
 		t.Errorf("%s/%s: label %q is not a label of any metric the query uses", starterID, widgetID, label)
+	}
+}
+
+// TestStarterQueriesInterpolateWithTheirDefaults checks that every widget query of a
+// starter resolves with its variables' defaults, the way the query endpoint resolves
+// it, so a starter shows data the moment it is imported.
+func TestStarterQueriesInterpolateWithTheirDefaults(t *testing.T) {
+	for _, starter := range readStarters(t) {
+		var document struct {
+			Variables []struct {
+				Name         string `json:"name"`
+				DefaultValue string `json:"defaultValue"`
+			} `json:"variables"`
+			Widgets []struct {
+				ID    string `json:"id"`
+				Query string `json:"query"`
+			} `json:"widgets"`
+		}
+		if err := json.Unmarshal(starter.Document, &document); err != nil {
+			t.Fatalf("%s: %v", starter.ID, err)
+		}
+		types := map[string]string{}
+		values := map[string]any{}
+		for _, variable := range document.Variables {
+			types[variable.Name] = "string"
+			values[variable.Name] = variable.DefaultValue
+		}
+		for _, widget := range document.Widgets {
+			if widget.Query == "" {
+				continue
+			}
+			if _, err := interpolateDashboardLiterals(widget.Query, types, values); err != nil {
+				t.Errorf("%s/%s: the query does not resolve with its defaults: %v", starter.ID, widget.ID, err)
+			}
+		}
 	}
 }

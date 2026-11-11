@@ -12,6 +12,7 @@ import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insig
 import { dashboardAsSent } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
+import { parseDashboardBundle, type DashboardBundle } from "./workspace-transfer"
 
 export interface ProviderConfig {
   id: string
@@ -58,6 +59,19 @@ export interface ProviderCatalog {
   providers: Provider[]
   sharedCatalog?: SharedCatalogStatus
 }
+/** A first-party starter as the empty-state picker lists it. Reading one saves nothing. */
+export interface StarterSummary {
+  id: string
+  title: string
+  description: string
+  widgetCount: number
+  /** Dashboard variables the starter's queries read. */
+  variables: string[]
+  /** Data kinds a provider must offer, such as metrics. */
+  providers: string[]
+  /** Each widget's grid rectangle, so the picker can draw a thumbnail. */
+  tiles: { type: string; x: number; y: number; w: number; h: number }[]
+}
 export interface InsightsClient {
   /** The listing with its shared-catalog status. Absent for hosts that predate it; providers() still works. */
   providerCatalog?(signal?: AbortSignal): Promise<ProviderCatalog>
@@ -78,6 +92,10 @@ export interface InsightsClient {
   /** Dry-run checks of a document as a save would send it. Absent for hosts that predate it. */
   validate?(document: Dashboard, signal?: AbortSignal): Promise<CheckReport>
   remove(id: string, etag?: string): Promise<void>
+  /** First-party starter dashboards. Absent for hosts that predate them. */
+  listStarters?(signal?: AbortSignal): Promise<StarterSummary[]>
+  /** One starter as a portable bundle for the import review. Reading it writes nothing. */
+  getStarter?(id: string, signal?: AbortSignal): Promise<DashboardBundle>
   query(request: QueryRequest, signal: AbortSignal): Promise<QueryResult>
   providerConfigs(signal?: AbortSignal): Promise<ProviderConfig[]>
   saveProvider(config: ProviderConfig): Promise<void>
@@ -112,7 +130,7 @@ function canRetryCapacity(requestPath: string, init: RequestInit): boolean {
   // A busy shared catalog is answered 200 with sharedCatalog.retryAfter, which
   // fetchProviderCatalog replays. This covers only an explicit 429 from the route.
   if (path === "/providers" && (!init.method || init.method === "GET")) return true
-  if (!/^\/(dashboards|saved-queries)(\/[^/?]+)?$/.test(path)) return false
+  if (!/^\/(dashboards|saved-queries|starters)(\/[^/?]+)?$/.test(path)) return false
   if (!init.method || init.method === "GET") return true
   const headers = new Headers(init.headers)
   return (init.method === "PUT" || init.method === "DELETE") &&
@@ -469,6 +487,12 @@ export function createInsightsClient(
         await request(`/providers/${encodeURIComponent(id)}/metadata?${params}`, { signal })
       )
     },
+    listStarters: (signal) => cachedRead("/starters", body => {
+      return (body.starters ?? []) as StarterSummary[]
+    }, signal),
+    getStarter: (id, signal) => cachedRead(`/starters/${encodeURIComponent(id)}`, body => {
+      return parseDashboardBundle(JSON.stringify(body), "json")
+    }, signal),
     // Reads keep a stored zone as saved (storedDashboardSchema), so one dashboard's zone never fails the whole list.
     list: (signal) => cachedRead("/dashboards", body => {
       return ((body.dashboards ?? []) as unknown[]).map((item: unknown) => storedDashboardSchema.parse(item))

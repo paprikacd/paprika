@@ -375,7 +375,9 @@ explicitly for authoring. The server offers authoring only with Insights enabled
    the exact ETag from the last read. Nested objects merge, `null` removes a
    field, and arrays replace in full. Dashboard `widget_edits` address widgets
    by ID: `update` merges fields, `add` appends a complete widget, and `remove`
-   removes that widget. One batch saves atomically. Document identities and
+   removes that widget. An add whose requested layout overlaps a widget moves to
+   the first free slot of its size; the result's `placements` reports where each
+   add landed (and `requested` when it moved). One batch saves atomically. Document identities and
    saved-query provider/kind cannot change through patches. Use full-document
    `update_saved_query`/`update_dashboard` when replacement is intentional;
    preserve unrelated fields and never use wildcard ETags.

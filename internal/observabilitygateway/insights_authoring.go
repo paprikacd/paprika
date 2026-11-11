@@ -64,6 +64,8 @@ type insightsDocumentResult struct {
 	// Checks is the warnings report of a successful save. It is returned beside
 	// the document, never inside it, so an agent cannot re-PUT it.
 	Checks *insightsv1.CheckReport `json:"-"`
+	// Placements reports where each widget_edits add landed on the saved grid. Only a patch sets it.
+	Placements []insightsPlacement `json:"placements,omitempty"`
 }
 
 type insightsAuthoringArgs struct {
