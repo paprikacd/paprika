@@ -18,7 +18,7 @@ describe("guided time-series domains", () => {
   });
 
   it("keeps the top ceiling of stacked guides within one step", () => {
-    expect(resolveTimeSeriesDomain(series([20, 40, 60]), { thresholds: [{ value: 0, color: "g" }, { value: 80, color: "y" }, { value: 90, color: "r" }] })).toEqual([0, 105]);
+    expect(resolveTimeSeriesDomain(series([20, 40, 60]), { thresholds: [{ value: 0, color: "g" }, { value: 80, color: "y" }, { value: 90, color: "r" }] })).toEqual([0, 94.5]);
   });
 
   it("leaves a padded negative floor when a guide is negative, and respects authored bounds", () => {
@@ -59,5 +59,23 @@ describe("a guide-set domain is rounded once and never re-rounded", () => {
     expect(axis.ticks.every(tick => tick >= low && tick <= high)).toBe(true);
     expect(axis.ticks.length).toBeGreaterThanOrEqual(2);
     expect(axis.ticks.length).toBeLessThanOrEqual(4);
+  });
+});
+
+describe("guided domains keep their headroom at three ticks", () => {
+  it("rarely leaves more than a quarter of the axis above the guide", () => {
+    let cases = 0, loose = 0, worst = 0;
+    for (let guide = 1.5; guide < 3000; guide *= 1.23)
+      for (const fraction of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]) {
+        const dataTop = guide * fraction;
+        const [low, high] = resolveTimeSeriesDomain(series([dataTop * 0.6, dataTop]), { thresholds: [{ value: guide, color: "r" }] }, 3)!;
+        // Headroom is the axis above the guide, as a share of the axis: how much of the plot is wasted above the limit.
+        const headroom = (high - guide) / (high - low);
+        cases++;
+        if (headroom > 0.25) loose++;
+        worst = Math.max(worst, headroom);
+      }
+    expect(loose / cases).toBeLessThanOrEqual(0.05);
+    expect(worst).toBeLessThan(0.5);
   });
 });

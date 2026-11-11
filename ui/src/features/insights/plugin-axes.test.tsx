@@ -157,14 +157,33 @@ describe("byte axis labels", () => {
   });
 });
 
-describe("gauge reads one scale when the value exceeds the maximum", () => {
-  it("reads the track, bounds and markers in ms when the value reads 1,200 ms against a 900 ms scale", () => {
-    const widget = { ...base, type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", unit: "ms", options: { min: 0, max: 900, thresholds: [{ value: 800, color: "#c5584f", label: "Slow" }] } };
-    const { container } = render(<WidgetVisualization widget={widget as never} result={{ series: [pointSeries([1200])] } as never} />);
+describe("a gauge reads its track, bounds, markers and reading on one scale", () => {
+  const gauge = (min: number, max: number, value: number, thresholds: Array<{ value: number; label: string; color: string }> = []) =>
+    render(<WidgetVisualization widget={{ ...base, type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", unit: "ms", options: { min, max, thresholds: [{ value: 0, color: "#36876c" }, ...thresholds] } } as never} result={{ series: [pointSeries([value])] } as never} />);
+
+  it("reads a sub-millisecond value in ms on a 0–1,000 ms gauge", () => {
+    const text = gauge(0, 1000, 0.4).container.textContent ?? "";
+    expect(text).toContain("0.4ms");
+    expect(text).toContain("0 ms");
+    expect(text).toContain("1,000 ms");
+    expect(text).not.toContain("us");
+  });
+
+  it("reads 12.3 ms in ms on a 0–2,000 ms gauge, with its bounds in ms too", () => {
+    const { container } = gauge(0, 2000, 12.3, [{ value: 1500, label: "Slow", color: "#c5584f" }]);
     const text = container.textContent ?? "";
-    expect(text).toContain("1,200");
-    expect(text).toContain("900 ms");
-    expect(text).toContain("Slow 800 ms");
+    expect(text).toContain("12.3ms");
+    expect(text).toContain("2,000 ms");
+    expect(text).toContain("Slow 1,500 ms");
     expect(text).not.toMatch(/\d s\b/);
+  });
+
+  it("reads a value above the maximum in the same unit as the bounds beside it", () => {
+    const { container } = gauge(0, 900, 1200, [{ value: 800, label: "Slow", color: "#c5584f" }]);
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/1\.2\s?s/);
+    expect(text).toContain("0.9 s");
+    expect(text).toContain("Slow 0.8 s");
+    expect(text).not.toContain("ms");
   });
 });

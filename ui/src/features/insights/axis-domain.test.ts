@@ -65,7 +65,15 @@ describe("tiny values never ask Intl for more than its digit limit", () => {
   it.each([1e-120, 1e-320, 5e-324])("formats %s as a reading and a record without throwing", value => {
     expect(() => formatMetric(value, "ms")).not.toThrow();
     expect(() => formatRecordValue(value, "")).not.toThrow();
-    expect(formatRecordValue(value, "")).not.toMatch(/e[+-]/);
+    // Below the digit limit a record shows its exponent rather than a misleading zero.
+    expect(formatRecordValue(value, "")).toBe(`${value.toExponential()}`);
+  });
+
+  it("never prints -0 in a record, and shows a tiny negative exactly", () => {
+    expect(formatRecordValue(-3e-22, "")).toBe("-3e-22");
+    expect(formatRecordValue(-0, "")).toBe("0");
+    expect(formatRecordValue(1.5e-21, "")).toBe("1.5e-21");
+    expect(formatRecordValue(0, "")).toBe("0");
   });
 
   it("shows a tiny reading in exponent form, which is exact enough", () => {
@@ -103,5 +111,34 @@ describe("gridline count", () => {
       const drawn = niceDomain(domain, 3);
       expect(ticksWithin(drawn, 3).length).toBeLessThanOrEqual(4);
     }
+  });
+});
+
+describe("fewer headroom on short tiles and at three ticks", () => {
+  it("keeps the 40–100.5 % line inside about 110 %, not 150 %", () => {
+    const [, high] = autoAxisDomain([40, 100.5], 3, false);
+    expect(high).toBeLessThanOrEqual(110);
+  });
+
+  it("keeps stacked shares of 100.2 % inside about 125 %", () => {
+    const [, high] = autoAxisDomain([0, 100.2], 3, true);
+    expect(high).toBeLessThanOrEqual(125);
+  });
+
+  it("keeps a 1 GiB limit over 0.40–0.85 GiB inside about 1.25 GiB", () => {
+    const gib = 1024 ** 3;
+    const [, high] = autoAxisDomain([0.4 * gib, 0.85 * gib, gib], 3, true);
+    expect(high).toBeLessThanOrEqual(1.25 * gib);
+  });
+});
+
+describe("two steps with the same count: the one landing on both ends wins", () => {
+  it("draws [0, 50] as 0/25/50, not 0/20/40", () => {
+    expect(ticksWithin([0, 50], 3)).toEqual([0, 25, 50]);
+  });
+
+  it("keeps a 500 guide on [0, 525] from sitting above a top label of 400", () => {
+    const ticks = ticksWithin([0, 525], 3);
+    expect(Math.max(...ticks)).toBe(500);
   });
 });

@@ -182,7 +182,7 @@ describe("zero, negatives, non-finite and extreme values", () => {
 describe("axis labels", () => {
   it("uses the tick step for precision", () => {
     const axis = axisScale([0, 1], "");
-    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.00", "0.25", "0.50", "0.75", "1.00"]);
+    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0", "0.25", "0.50", "0.75", "1.00"]);
   });
 
   it("does not add decimals to integer steps", () => {
@@ -193,7 +193,7 @@ describe("axis labels", () => {
   it("shares one scaled unit across the axis and labels every tick in it", () => {
     const axis = axisScale([0, 1000], "ms", { count: 4 });
     expect(axis.unit).toBe("s");
-    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.00", "0.25", "0.50", "0.75", "1.00"]);
+    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0", "0.25", "0.50", "0.75", "1.00"]);
   });
 
   it("scales rate axes with a count prefix", () => {
@@ -204,7 +204,7 @@ describe("axis labels", () => {
 
   it("labels custom evenly spaced ticks without collisions", () => {
     const axis = axisScale([0, 1], "", { ticks: [0, 0.25, 0.5, 0.75, 1] });
-    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0.00", "0.25", "0.50", "0.75", "1.00"]);
+    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0", "0.25", "0.50", "0.75", "1.00"]);
   });
 
   it("gives colliding labels more digits instead of duplicating them", () => {
@@ -319,7 +319,7 @@ describe("zero ticks and near-zero ticks", () => {
     const counts = axisScale([0, 1_500_000_000_000_000], "", { compact: true, count: 3 });
     expect(counts.ticks.map(tick => counts.label(tick, false))[0]).toBe("0");
     const near = axisScale([-0.1, 0.3], "", { ticks: [-0.1, -1.3877787807814457e-17, 0.09999999999999999, 0.19999999999999998, 0.3] });
-    expect(near.ticks.map(tick => near.label(tick, false))).toEqual(["-0.1", "0.0", "0.1", "0.2", "0.3"]);
+    expect(near.ticks.map(tick => near.label(tick, false))).toEqual(["-0.1", "0", "0.1", "0.2", "0.3"]);
   });
 });
 
@@ -328,7 +328,7 @@ describe("byte axes", () => {
     const axis = axisScale([0, 2048], "B", { count: 4 });
     expect(axis.unit).toBe("KiB");
     const labels = axis.ticks.map(tick => axis.label(tick));
-    expect(labels).toEqual(["0.0 KiB", "0.5 KiB", "1.0 KiB", "1.5 KiB", "2.0 KiB"]);
+    expect(labels).toEqual(["0 KiB", "0.5 KiB", "1.0 KiB", "1.5 KiB", "2.0 KiB"]);
     expect(Math.max(...labels.map(label => label.length))).toBeLessThan(10);
   });
 });

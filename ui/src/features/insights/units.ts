@@ -234,7 +234,12 @@ function readingText(value: number, guards: readonly number[]) {
 
 /** Record text never uses an exponent: every digit stays, grouped, up to the digit limit. */
 function recordText(value: number, guards: readonly number[]) {
-  return keepingSides(value, guards, recordPlaces(Math.abs(value)), textAt => plainText(value, Math.min(textAt, MAX_TEXT_PLACES), true));
+  const magnitude = Math.abs(value);
+  // Below the digit limit fixed text would print zero (or -0): the exponent form is the honest value, and still no
+  // exponent is used anywhere a fixed form shows the value.
+  if (magnitude > 0 && magnitude < 10 ** -MAX_TEXT_PLACES) return exponentText(value);
+  const text = keepingSides(value, guards, recordPlaces(magnitude), textAt => plainText(value, Math.min(textAt, MAX_TEXT_PLACES), true));
+  return text === "-0" ? "0" : text;
 }
 
 /** Whether three-figure precision in this step shows the wrong side of a guard. */
@@ -285,12 +290,13 @@ export function formatRecordValue(value: number, unit = "", decimals?: number): 
  * or a pair of extremes never mixes "1.03 s" with "640 ms". `number` formats one value of the scale without its unit;
  * `unit` is the shared display unit.
  */
-export function sharedScale(values: readonly number[], unit = "", options: { compact?: boolean } = {}): { unit: string; number(value: number): string } {
+export function sharedScale(values: readonly number[], unit = "", options: { compact?: boolean; scaleDown?: boolean } = {}): { unit: string; number(value: number): string } {
   if (unit === "%") return { unit, number: value => (Number.isFinite(value) ? percentText(value, []) : "—") };
   const finite = values.filter(Number.isFinite);
   const { steps, index } = unitsFor(unit, options.compact ?? false);
   const largest = finite.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
-  const candidate = chooseStep(steps, index, largest);
+  // With `scaleDown: false` the authored unit is the floor: a reading scales up past it, never down (0.4 ms stays ms).
+  const candidate = options.scaleDown === false ? Math.max(index, chooseStep(steps, index, largest)) : chooseStep(steps, index, largest);
   const step = steps[candidate];
   return {
     unit: candidate === index ? unit : step.unit,
@@ -379,7 +385,7 @@ export function niceAxis(domain: readonly [number, number], count = 5): { domain
   // Already nice: a domain whose ends sit on a step near the requested count is kept exactly as it is.
   const span = high - low;
   const aligned = candidates.filter(candidate => Math.abs(candidate.first * candidate.step - low) <= 1e-9 * Math.max(span, Math.abs(low)) && Math.abs(candidate.last * candidate.step - high) <= 1e-9 * Math.max(span, Math.abs(high)));
-  const kept = aligned.filter(candidate => Math.abs(candidate.ticks - target) <= 1);
+  const kept = aligned.filter(candidate => candidate.ticks <= target * 2 + 2);
   const chosen = kept.length ? kept.reduce((best, candidate) => (Math.abs(candidate.ticks - target) < Math.abs(best.ticks - target) ? candidate : best)) : chooseOuter(candidates, target);
   const { step, first, last } = chosen;
   if (kept.length) return { domain: [low === 0 ? 0 : low, high === 0 ? 0 : high], ticks: ticksBetween(step, first, last) };
@@ -413,10 +419,10 @@ function stepCandidates(low: number, high: number, target: number, outer: boolea
 function chooseOuter(candidates: { step: number; first: number; last: number; ticks: number }[], target: number) {
   const width = (candidate: { step: number; first: number; last: number }) => (candidate.last - candidate.first) * candidate.step;
   // Only steps giving a sane tick count compete: a fine step can be as tight but has far too many ticks.
-  const sane = candidates.filter(candidate => candidate.ticks <= target + 1);
+  const sane = candidates.filter(candidate => candidate.ticks <= target * 2 + 2);
   const pool = sane.length ? sane : candidates;
   const tightest = Math.min(...pool.map(width));
-  const within = pool.filter(candidate => width(candidate) <= tightest * 1.3);
+  const within = pool.filter(candidate => width(candidate) <= tightest * (1 + 1e-9));
   return within.reduce((chosen, candidate) => {
     const distance = Math.abs(candidate.ticks - target), chosenDistance = Math.abs(chosen.ticks - target);
     if (distance !== chosenDistance) return distance < chosenDistance ? candidate : chosen;
@@ -444,13 +450,18 @@ export function ticksWithin(domain: readonly [number, number], count = 5): numbe
   const [low, high] = domain;
   if (!Number.isFinite(low) || !Number.isFinite(high) || !(high > low)) return Number.isFinite(low) && low === high ? [low] : [];
   const target = Math.max(2, Math.floor(count));
+  const span = high - low;
   const candidates = stepCandidates(low, high, target, false);
   if (!candidates.length) return [];
   const sane = candidates.filter(candidate => candidate.ticks <= target + 1);
   const pool = sane.length ? sane : candidates;
+  // Among steps giving the same count, the one whose first and last ticks sit closest to the domain ends wins: [0, 50]
+  // takes 0/25/50 rather than 0/20/40, and a 500 guide on [0, 525] takes 0/250/500 rather than 0/200/400.
+  const gap = (candidate: { step: number; first: number; last: number }) => (high - candidate.last * candidate.step) + (candidate.first * candidate.step - low);
   const best = pool.reduce((chosen, candidate) => {
     const distance = Math.abs(candidate.ticks - target), chosenDistance = Math.abs(chosen.ticks - target);
     if (distance !== chosenDistance) return distance < chosenDistance ? candidate : chosen;
+    if (Math.abs(gap(candidate) - gap(chosen)) > 1e-9 * span) return gap(candidate) < gap(chosen) ? candidate : chosen;
     return candidate.ticks > chosen.ticks ? candidate : chosen;
   });
   return ticksBetween(best.step, best.first, best.last);
@@ -526,7 +537,7 @@ export function axisScale(
     label: (value, withUnit = true) => {
       let scaled = toScaled(value);
       if (Math.abs(scaled) < 0.5 * 10 ** -digits) scaled = 0;
-      const text = scaled === 0 ? fixedText(0, digits) : `${fixedText(scaled, digits)}${step.prefix}`;
+      const text = scaled === 0 ? "0" : `${fixedText(scaled, digits)}${step.prefix}`;
       return withUnit ? `${text}${unitSuffix(unitText)}` : text;
     },
   };
@@ -546,8 +557,9 @@ export function autoAxisDomain(values: readonly number[], count: number, include
   if (!Number.isFinite(low) || !Number.isFinite(high)) return [0, 1];
   if (low === high) {
     if (low === 0) return [0, 1];
+    // Symmetric about the value, so a single point sits centred; its ticks are chosen inside this domain.
     const pad = Math.abs(low) * 0.05;
-    return niceDomain([finiteBound(low - pad), finiteBound(high + pad)], count);
+    return [finiteBound(low - pad), finiteBound(high + pad)];
   }
   return niceDomain([low, high], count);
 }

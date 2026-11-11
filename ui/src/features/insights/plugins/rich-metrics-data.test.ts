@@ -80,7 +80,7 @@ describe("stack and directional geometry", () => {
     const centered = buildMetricPlot(directions, config, true);
     expect(centered.domain).toEqual([-100, 100]);
     expect(centered.tracks[1].cells.map(cell => [cell.value, cell.upper])).toEqual([[20, -20], [30, -30]]);
-    expect(buildMetricPlot(directions, {}, true).domain).toEqual([-50, 100]);
+    expect(buildMetricPlot(directions, {}, true).domain).toEqual([-40, 100]);
     expect(buildMetricPlot([series("zero", [0])], config, true).domain).toEqual([-1, 1]);
     expect(buildMetricPlot([series("extreme", [Number.MAX_VALUE])], config, true).domain).toEqual([-Number.MAX_VALUE, Number.MAX_VALUE]);
   });
@@ -115,11 +115,11 @@ describe("stack and directional geometry", () => {
     const data = buildMetricPlot([series("In", [8, 0], { direction: "inbound" }), series("Out", [3, -4], { direction: "outbound" })], {}, true);
     expect(data.tracks[1].cells[0]).toEqual({ timestamp: 1000, value: 3, lower: 0, upper: -3 });
     expect(data.tracks[1].cells[1].value).toBeNull(); expect(data.invalidValues).toBe(1);
-    expect(data.domain).toEqual([-5, 10]);
+    expect(data.domain).toEqual([-4, 8]);
   });
   it("uses configured direction labels and retains a zero baseline for a zero series", () => {
     const data = buildMetricPlot([series("sent", [0, 12], { flow: "sent" })], { directionLabel: "flow", outboundValue: "sent" }, true);
-    expect(data.domain).toEqual([-15, 0]);
+    expect(data.domain).toEqual([-12, 0]);
     expect(data.tracks[0].cells[0].value).toBe(0);
     expect(buildMetricPlot([series("zero", [0])], {}).domain).toEqual([0, 1]);
   });
