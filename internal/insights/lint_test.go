@@ -151,35 +151,56 @@ func TestLintOverlapIgnoresTouchingEdges(t *testing.T) {
 	requireNoHits(t, lintFor(t, stacked), "layout.overlap")
 }
 
-func TestLintHoleIsAnEmptyBandBetweenWidgets(t *testing.T) {
+// A full-width gap is closed by the canvas, so it is not a hole.
+func TestLintFullWidthGapIsNotAHole(t *testing.T) {
 	gap := documentWithWidgets("demo", widgetJSON("a", `{"x":0,"y":0,"w":12,"h":2}`, ""), widgetJSON("b", `{"x":0,"y":5,"w":12,"h":2}`, ""))
-	finding := requireOneHit(t, lintFor(t, gap), "layout.hole", "/widgets/1/layout/y")
-	if finding.GetMessage() != "grid rows 2 to 4 hold no widget between the widgets above and below" || finding.GetSeverity() != insightsv1.Severity_SEVERITY_WARNING {
+	requireNoHits(t, lintFor(t, gap), "layout.hole")
+}
+
+// The Fleet Atlas shape: a narrow widget above and beside a gap, with a wider
+// widget below it. The canvas cannot close the cells beside the narrow widget.
+func TestLintHoleBesideANarrowWidget(t *testing.T) {
+	document := documentWithWidgets("demo",
+		widgetJSON("a", `{"x":0,"y":0,"w":4,"h":2}`, ""),
+		widgetJSON("b", `{"x":0,"y":2,"w":8,"h":2}`, ""),
+		widgetJSON("c", `{"x":8,"y":0,"w":4,"h":2}`, ""),
+	)
+	finding := requireOneHit(t, lintFor(t, document), "layout.hole", "/widgets/1/layout/y")
+	if finding.GetMessage() != `8 empty grid cells sit above "Widget b" (b)` || finding.GetSeverity() != insightsv1.Severity_SEVERITY_WARNING {
 		t.Fatalf("hole finding = %v", finding)
 	}
 }
 
-func TestLintHoleReportsEachGapAndIgnoresLeadingSpace(t *testing.T) {
-	twoGaps := documentWithWidgets("demo",
-		widgetJSON("a", `{"x":0,"y":0,"w":12,"h":1}`, ""),
-		widgetJSON("b", `{"x":0,"y":3,"w":12,"h":1}`, ""),
-		widgetJSON("c", `{"x":0,"y":6,"w":12,"h":1}`, ""),
+// Holes count on the drawn layout. A stored overlap is pushed apart, so the cells
+// the push leaves above a widget are holes, and the stored positions are not.
+func TestLintHolesAreMeasuredOnTheDrawnLayout(t *testing.T) {
+	stacked := documentWithWidgets("demo",
+		widgetJSON("a", `{"x":0,"y":0,"w":12,"h":2}`, ""),
+		widgetJSON("b", `{"x":0,"y":0,"w":12,"h":2}`, ""),
+	)
+	requireNoHits(t, lintFor(t, stacked), "layout.hole")
+
+	contiguous := documentWithWidgets("demo", widgetJSON("a", `{"x":0,"y":0,"w":6,"h":2}`, ""), widgetJSON("b", `{"x":6,"y":0,"w":6,"h":2}`, ""), widgetJSON("c", `{"x":0,"y":2,"w":12,"h":2}`, ""))
+	requireNoHits(t, lintFor(t, contiguous), "layout.hole")
+}
+
+// Each widget is reported once, with every empty cell above it.
+func TestLintHoleReportsEachWidgetOnce(t *testing.T) {
+	document := documentWithWidgets("demo",
+		widgetJSON("a", `{"x":0,"y":0,"w":4,"h":2}`, ""),
+		widgetJSON("b", `{"x":0,"y":2,"w":8,"h":2}`, ""),
+		widgetJSON("c", `{"x":8,"y":0,"w":4,"h":2}`, ""),
+		widgetJSON("d", `{"x":4,"y":4,"w":8,"h":2}`, ""),
 	)
 	var holes []string
-	for _, finding := range lintFor(t, twoGaps) {
+	for _, finding := range lintFor(t, document) {
 		if finding.GetRuleId() == "layout.hole" {
 			holes = append(holes, finding.GetPointer())
 		}
 	}
-	if strings.Join(holes, " ") != "/widgets/1/layout/y /widgets/2/layout/y" {
+	if len(holes) != 2 || holes[0] != "/widgets/1/layout/y" {
 		t.Fatalf("hole pointers = %v", holes)
 	}
-
-	contiguous := documentWithWidgets("demo", widgetJSON("a", `{"x":0,"y":0,"w":6,"h":2}`, ""), widgetJSON("b", `{"x":6,"y":0,"w":6,"h":2}`, ""), widgetJSON("c", `{"x":0,"y":2,"w":12,"h":2}`, ""))
-	requireNoHits(t, lintFor(t, contiguous), "layout.hole")
-
-	leading := documentWithWidgets("demo", widgetJSON("a", `{"x":0,"y":3,"w":12,"h":2}`, ""))
-	requireNoHits(t, lintFor(t, leading), "layout.hole")
 }
 
 func TestLintUndeclaredVariablePointsAtTheBinding(t *testing.T) {

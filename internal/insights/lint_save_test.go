@@ -44,7 +44,9 @@ func TestSaveRejectsOverlapOnCreateAndUpdate(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error != `"Widget b" (b) overlaps "Widget a" (a)` || body.Total != 1 || body.Truncated || len(body.Issues) != 1 {
+	// The push-down that resolves the overlap also leaves cells above widget b, so a
+	// hole warning follows the error. The error leads, and it is the save's message.
+	if body.Error != `"Widget b" (b) overlaps "Widget a" (a)` || body.Total != 2 || body.Truncated || len(body.Issues) != 2 {
 		t.Fatalf("rejected create body = %+v", body)
 	}
 	issue := body.Issues[0]
