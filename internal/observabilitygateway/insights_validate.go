@@ -83,6 +83,13 @@ func (c *InsightsAuthoringClient) validate(ctx context.Context, args *insightsVa
 	if err := validateDryRunArgs(args); err != nil {
 		return nil, err
 	}
+	// An executing dry run runs nested data queries, so it needs the same
+	// orchestration admission as query_dashboard. The HTTP layer records it.
+	if args.Execute {
+		if err := requireDashboardQueryAdmission(ctx); err != nil {
+			return nil, err
+		}
+	}
 	document, err := c.validationDocument(ctx, args.insightsAuthoringArgs)
 	if err != nil {
 		return nil, err

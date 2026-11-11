@@ -17,6 +17,13 @@ import (
 
 const dashboardAdmissionEnvelope = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dashboard","arguments":{"id":"demo"}}}`
 
+// validateExecuteEnvelope is a dry run that executes queries: nested data work
+// through the gateway, so it needs the orchestration pool like query_dashboard.
+const validateExecuteEnvelope = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":true}}}`
+
+// validatePlainEnvelope is a dry run that only checks: ordinary work.
+const validatePlainEnvelope = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo"}}}`
+
 func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
@@ -34,6 +41,14 @@ func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 		{"duplicate method last wins", `{"jsonrpc":"2.0","id":1,"method":"tools/call","method":"tools/list","params":{"name":"query_dashboard"}}`, observabilityCatalogRequest},
 		{"escaped exact name", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_metrics","n\u0061me":"query_dashboard"}}`, observabilityDashboardRequest},
 		{"dashboard ignores differently cased name", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dashboard","Name":"query_metrics"}}`, observabilityDashboardRequest},
+		{"render dashboard", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"render_dashboard","arguments":{"id":"demo"}}}`, observabilityDashboardRequest},
+		{"validate with execute true", validateExecuteEnvelope, observabilityDashboardRequest},
+		{"validate without execute", validatePlainEnvelope, observabilityWorkRequest},
+		{"validate execute false", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":false}}}`, observabilityWorkRequest},
+		{"validate execute string true", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":"true"}}}`, observabilityWorkRequest},
+		{"validate execute capitalised", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","Execute":true}}}`, observabilityWorkRequest},
+		{"validate duplicate execute last wins", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":true,"execute":false}}}`, observabilityWorkRequest},
+		{"validate without arguments", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard"}}`, observabilityWorkRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			message, err := sdkjsonrpc.DecodeMessage([]byte(tc.body))
@@ -45,7 +60,7 @@ func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 				require.NoError(t, json.Unmarshal(request.Params, &params))
 				var tool string
 				require.NoError(t, json.Unmarshal(params["name"], &tool))
-				require.Equal(t, tc.class == observabilityDashboardRequest, tool == "query_dashboard")
+				require.Equal(t, tc.class == observabilityDashboardRequest, sdkOrchestrates(tool, params["arguments"]))
 			}
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(tc.body))
 			req.Header.Set("Mcp-Method", "tools/call")
@@ -56,6 +71,17 @@ func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 			require.Equal(t, tc.body, string(preserved))
 		})
 	}
+}
+
+// sdkOrchestrates is the SDK-side reading of the same classification: the three
+// orchestration tools, with validate_dashboard only when it executes.
+func sdkOrchestrates(tool string, arguments json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	var execute bool
+	if json.Unmarshal(arguments, &fields) != nil || json.Unmarshal(fields["execute"], &execute) != nil {
+		execute = false
+	}
+	return tool == "query_dashboard" || tool == "render_dashboard" || (tool == "validate_dashboard" && execute)
 }
 
 func TestObservabilityDashboardAdmissionBoundsAndPreservesBody(t *testing.T) {
@@ -110,6 +136,15 @@ func TestObservabilityDashboardAdmissionPreservesUploadErrorAndRejectsMalformed(
 }
 
 func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
+	t.Run("query_dashboard", func(t *testing.T) { assertDashboardReserveServesNested(t, dashboardAdmissionEnvelope) })
+	t.Run("validate_dashboard execute", func(t *testing.T) { assertDashboardReserveServesNested(t, validateExecuteEnvelope) })
+}
+
+// assertDashboardReserveServesNested holds both orchestration slots with the
+// envelope, runs real nested MCP calls from inside each, and checks that a third
+// orchestration call is refused while the nested work completes: the orchestration
+// slots never compete with the data pool they feed.
+func assertDashboardReserveServesNested(t *testing.T, envelope string) {
 	ready := make(chan error, 2)
 	completed := make(chan int, 2)
 	release := make(chan struct{})
@@ -159,7 +194,7 @@ func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
 	defer close(release)
 	for range 2 {
 		go func() {
-			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(dashboardAdmissionEnvelope))
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(envelope))
 			if err != nil {
 				completed <- 0
 				return
@@ -176,7 +211,7 @@ func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
 		require.NoError(t, awaitAdmissionEvent(t, ready, "nested dashboard calls could not complete"))
 	}
 	// Both dashboard slots remain held while their nested work has completed.
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(dashboardAdmissionEnvelope))
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(envelope))
 	require.NoError(t, err)
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)

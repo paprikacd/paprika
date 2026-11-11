@@ -604,3 +604,30 @@ func TestValidateDashboardWithoutExecuteHasNoWidgetStates(t *testing.T) {
 	require.NotContains(t, fields, "widgets", "a dry run that did not execute keeps the checks shape")
 	require.Equal(t, "Checks: 0 errors, 1 warning", strings.SplitN(resultText(t, res), "\n", 2)[0])
 }
+
+// An executing dry run needs orchestration admission; a check that executes
+// nothing does not. The HTTP layer records admission; here it is set directly.
+func TestValidateDashboardExecuteRequiresOrchestrationAdmission(t *testing.T) {
+	var calls atomic.Int32
+	h := executeHarness(t, &calls, func(string, float64) string { return promMatrixBody("") })
+	p := authoringPrincipal([]string{"editors"}, true)
+	raw := func(args map[string]any) json.RawMessage {
+		encoded, err := json.Marshal(args)
+		require.NoError(t, err)
+		return encoded
+	}
+	document := documentWithWidgets(t, "Admission", dataWidgetMap("up", "up", "req/s", 0))
+	refused := observe.WithDashboardQueryAdmission(auth.WithPrincipal(t.Context(), p), false)
+
+	_, err := h.invoker.Call(refused, p, "validate_dashboard", raw(map[string]any{"document": document, "execute": true}))
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "an unadmitted execute runs no nested query")
+	require.Equal(t, int32(0), calls.Load())
+
+	_, err = h.invoker.Call(refused, p, "validate_dashboard", raw(map[string]any{"document": document}))
+	require.NoError(t, err, "a dry run that does not execute keeps ordinary work admission")
+
+	admitted := observe.WithDashboardQueryAdmission(auth.WithPrincipal(t.Context(), p), true)
+	_, err = h.invoker.Call(admitted, p, "validate_dashboard", raw(map[string]any{"document": document, "execute": true}))
+	require.NoError(t, err)
+	require.Equal(t, int32(1), calls.Load())
+}

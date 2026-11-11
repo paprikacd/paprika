@@ -96,16 +96,46 @@ func readObservabilityEnvelope(r *http.Request, limit int) ([]byte, bool) {
 }
 
 // isObservabilityDashboardEnvelope recognises the orchestration tools: the ones
-// that run nested data requests through this gateway's own work pool.
+// that run nested data requests through this gateway's own work pool. A dry run
+// is one only when it executes queries; without execute it is ordinary work.
 func isObservabilityDashboardEnvelope(body []byte) bool {
+	name, arguments, ok := toolCallEnvelope(body)
+	if !ok {
+		return false
+	}
+	switch name {
+	case "query_dashboard", "render_dashboard":
+		return true
+	case "validate_dashboard":
+		return dryRunExecutes(arguments)
+	default:
+		return false
+	}
+}
+
+// toolCallEnvelope returns the tool name and arguments of a JSON-RPC 2.0
+// tools/call envelope, using exact member names as the SDK does.
+func toolCallEnvelope(body []byte) (name string, arguments json.RawMessage, ok bool) {
 	var envelope map[string]json.RawMessage
-	var version, method, name string
+	var version, method string
 	var params map[string]json.RawMessage
-	return json.Unmarshal(body, &envelope) == nil &&
-		json.Unmarshal(envelope["jsonrpc"], &version) == nil && version == "2.0" &&
-		json.Unmarshal(envelope["method"], &method) == nil && method == "tools/call" &&
-		json.Unmarshal(envelope["params"], &params) == nil &&
-		json.Unmarshal(params["name"], &name) == nil && (name == "query_dashboard" || name == "render_dashboard")
+	if json.Unmarshal(body, &envelope) != nil ||
+		json.Unmarshal(envelope["jsonrpc"], &version) != nil || version != "2.0" ||
+		json.Unmarshal(envelope["method"], &method) != nil || method != "tools/call" ||
+		json.Unmarshal(envelope["params"], &params) != nil ||
+		json.Unmarshal(params["name"], &name) != nil {
+		return "", nil, false
+	}
+	return name, params["arguments"], true
+}
+
+// dryRunExecutes reports whether a validate_dashboard argument object sets execute
+// to the boolean true. Only that exact member, read case-sensitively, classifies
+// the call as orchestration; a string or an alias does not.
+func dryRunExecutes(arguments json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	var execute bool
+	return json.Unmarshal(arguments, &fields) == nil && json.Unmarshal(fields["execute"], &execute) == nil && execute
 }
 
 type observabilityBodyError struct{ err error }
@@ -210,8 +240,9 @@ func rejectObservabilityAdmission(w http.ResponseWriter) {
 //     arrives while intake and all pool capacity are already taken.
 //   - work holds MCP data-tool requests. Its waiters equal the budget queue.
 //   - catalog holds discovery and handshakes, and dashboards holds orchestration
-//     (query_dashboard and render_dashboard), whose nested data requests need the
-//     work pool. Neither waits behind data requests.
+//     (query_dashboard, render_dashboard and validate_dashboard with execute),
+//     whose nested data requests need the work pool. Neither waits behind data
+//     requests.
 //
 // Each request has one deadline, AdmissionWait from the start of the handler,
 // shared by its intake and pool waits.
