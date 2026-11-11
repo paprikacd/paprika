@@ -163,7 +163,7 @@ describe("provider management", () => {
         }),
       ),
     )
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith(publicProviders))
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ providers: publicProviders }))
   })
   it("uses the provider etag when removing and explains affected widgets", async () => {
     const client = makeClient()

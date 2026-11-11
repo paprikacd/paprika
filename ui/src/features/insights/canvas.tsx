@@ -197,6 +197,8 @@ const Tile = memo(function Tile({
   const sourceStatus = useSourceStatus();
   const waitingOn = sourceStatus !== "ready" && !provider ? sourceStatus : null;
   const awaitingSources = waitingOn !== null;
+  // A shared tile stays busy while the shared catalog reloads, even though it still queries.
+  const busyOnSources = waitingOn === "pending" || (sourceStatus === "pending" && provider?.source === "observability");
   const { data, loading, error, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
@@ -417,7 +419,8 @@ const Tile = memo(function Tile({
       {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.sampleSelection} role="status">
         Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time>
       </div>}
-      <div className={styles.visualization}>
+      {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
+      <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
           <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetVisualization
             widget={widget}

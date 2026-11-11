@@ -2,7 +2,7 @@ import { createElement } from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
-import { createInsightsClient, InsightsHTTPError, type InsightsClient } from "./client"
+import { createInsightsClient, InsightsHTTPError, type InsightsClient, type ProviderCatalog } from "./client"
 import type { Dashboard, Provider } from "./schema"
 
 // Real canvas and tiles, unlike insights-app.test.tsx: these assertions read
@@ -193,7 +193,9 @@ describe("live region, focus, and waiting markup", () => {
     await screen.findAllByText("Waiting for data sources…")
     expect(document.querySelectorAll('[role="status"][tabindex="-1"]')).toHaveLength(1)
     // Waiting and unavailable tiles carry data state and busy markers, never a status of their own.
-    expect(document.querySelectorAll('[data-widget-state] [role="status"]')).toHaveLength(0)
+    // The only status a source-state tile may contain is its existing loading status.
+    const inState = [...document.querySelectorAll('[data-widget-state="waiting-for-sources"] [role="status"], [data-widget-state="source-unavailable"] [role="status"]')]
+    expect(inState.every(node => node.getAttribute("aria-label") === "Loading widget")).toBe(true)
   })
 
   it("marks a waiting tile busy and an unavailable tile final, with neither an alert nor a status", async () => {
@@ -272,3 +274,94 @@ describe("session expiry and access after render", () => {
 function api_(providers: InsightsClient["providers"] | ReturnType<typeof vi.fn>): InsightsClient & { providers: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> } {
   return api(providers as InsightsClient["providers"]) as InsightsClient & { providers: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }
 }
+
+// A listing sequence on the mock client: each providerCatalog call takes the next answer.
+function catalogClient(answers: Array<() => Promise<ProviderCatalog>>) {
+  let call = 0
+  const client = api(() => Promise.reject(new Error("unused")))
+  return Object.assign(client, { providerCatalog: vi.fn(() => answers[Math.min(call++, answers.length - 1)]()) })
+}
+const localProvider = { id: "local", name: "Local metrics", type: "prometheus", capabilities: ["metrics"] } as Provider
+const readyCatalog = (): Promise<ProviderCatalog> => Promise.resolve({ providers: [localProvider, sharedProvider] })
+const busyCatalog = (retryAfter = 1): Promise<ProviderCatalog> => Promise.resolve({
+  providers: [localProvider],
+  sharedCatalog: { status: "busy", code: 429, message: "too many active observability requests; retry shortly", retryAfter },
+})
+
+describe("a shared catalog that is busy after the workspace renders", () => {
+  it("a refresh that is still busy keeps the banner and the shared tiles waiting, never 'not configured'", async () => {
+    let answerRefresh: (catalog: ProviderCatalog) => void = () => undefined
+    const client = Object.assign(catalogClient([readyCatalog, () => new Promise<ProviderCatalog>(resolve => { answerRefresh = resolve })]), {
+      observeConnection: vi.fn().mockResolvedValue({ configured: true, connected: true, providerCount: 1, tools: [], transport: "mcp" }),
+    })
+    render(createElement(InsightsApp, { client }))
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    await waitFor(() => expect(queriedShared(client)).toBe(true))
+    fireEvent.click(screen.getAllByRole("button", { name: /Data sources/ })[0])
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh connection and providers" }))
+    // While the refresh is in flight, the shared tiles are busy, not stale-and-clean.
+    await waitFor(() => expect(document.querySelector('[data-widget-id="inline"] [aria-busy="true"]')).not.toBeNull())
+    await act(async () => answerRefresh(await busyCatalog(1)))
+    expect(await screen.findByText("Data sources are busy.")).toBeInTheDocument()
+    expectNoMissingSourceCopy()
+    // The tile keeps the result it already had, without an alert, under the banner.
+    expect(document.querySelector('[data-widget-id="inline"] [role="alert"]')).toBeNull()
+  })
+
+  it("a busy listing is replayed by the client and recovers without a click, with its tiles busy meanwhile", async () => {
+    const listingAnswers = [
+      { providers: [localProvider], sharedCatalog: { status: "busy", code: 429, message: "busy", retryAfter: 1 } },
+      { providers: [localProvider, sharedProvider] },
+    ]
+    let listings = 0
+    const queriedProviders: string[] = []
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://console.test")
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+      if (url.pathname === "/api/insights/dashboards") return json({ dashboards: [dashboard] })
+      if (url.pathname === "/api/insights/dashboards/a") return new Response(JSON.stringify(dashboard), { status: 200, headers: { "Content-Type": "application/json", ETag: '"v1"' } })
+      if (url.pathname === "/api/insights/saved-queries") return json({ queries: [] })
+      if (url.pathname === "/api/insights/providers") return json(listingAnswers[Math.min(listings++, listingAnswers.length - 1)])
+      if (url.pathname === "/api/insights/query") queriedProviders.push(JSON.parse(String(init?.body)).providerId)
+      return json({ series: [] })
+    }))
+    render(createElement(InsightsApp, { client: createInsightsClient("/api/insights", () => "tok") }))
+    expect((await screen.findAllByText("Waiting for data sources…")).length).toBeGreaterThan(0)
+    expect(document.querySelector('[data-widget-id="inline"] [aria-busy="true"]')).not.toBeNull()
+    await waitFor(() => expect(queriedProviders).toContain(shared), { timeout: 4000 })
+    expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument()
+    expect(listings).toBe(2)
+  })
+
+  it("a busy spell that outlasts the client's replays shows the banner with a manual retry", async () => {
+    const client = catalogClient([() => busyCatalog(1)])
+    render(createElement(InsightsApp, { client }))
+    expect(await screen.findByText("Data sources are busy.", undefined, { timeout: 6000 })).toBeInTheDocument()
+    expect(client.providerCatalog).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("button", { name: "Retry data sources" })).toBeInTheDocument()
+  }, 10000)
+
+  it("after a successful retry, focus moves to the named Data sources control", async () => {
+    const client = catalogClient([() => busyCatalog(1), readyCatalog])
+    render(createElement(InsightsApp, { client }))
+    fireEvent.click(await screen.findByRole("button", { name: "Retry data sources" }, { timeout: 6000 }))
+    await waitFor(() => expect(screen.queryByText("Data sources are busy.")).not.toBeInTheDocument())
+    expect(document.activeElement?.tagName).toBe("BUTTON")
+    expect(document.activeElement).toHaveTextContent("Data sources")
+  }, 10000)
+
+  it("a renewed session reloads a sign-in banner's sources, which clears the banner and its tile copy", async () => {
+    const client = catalogClient([
+      () => Promise.reject(new InsightsHTTPError("Sign in to access your dashboards.", 401, null)),
+      readyCatalog,
+    ])
+    const view = render(createElement(InsightsApp, { client, sessionRevision: 1 }))
+    await screen.findByText("Your session has expired. Sign in again to load data sources.")
+    expect(screen.getAllByText("Sign in again to load this tile.").length).toBeGreaterThan(0)
+    view.rerender(createElement(InsightsApp, { client, sessionRevision: 2 }))
+    await waitFor(() => expect(screen.queryByText("Your session has expired. Sign in again to load data sources.")).not.toBeInTheDocument())
+    expect(screen.queryByText("Sign in again to load this tile.")).not.toBeInTheDocument()
+    await waitFor(() => expect(queriedShared(client)).toBe(true))
+    expect(client.providerCatalog).toHaveBeenCalledTimes(2)
+  })
+})

@@ -212,16 +212,50 @@ describe("catalog session expiry", () => {
 })
 
 describe("shared catalog status", () => {
-  it("returns the local listing with a busy shared catalog and no whole-request failure", async () => {
-    mockFetch(response({ providers: [{ id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }], sharedCatalog: { status: "busy", code: 429, message: "too many active observability requests; retry shortly" } }))
-    const catalog = await createInsightsClient().providerCatalog?.(new AbortController().signal)
-    expect(catalog?.providers.map(provider => provider.id)).toEqual(["local"])
-    expect(catalog?.sharedCatalog).toMatchObject({ status: "busy", code: 429 })
+  const local = { id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }
+  const busyListing = (retryAfter?: number) => response({ providers: [local], sharedCatalog: { status: "busy", code: 429, message: "too many active observability requests; retry shortly", retryAfter } })
+  const readyListing = response({ providers: [local] })
+
+  it("replays a busy shared catalog with its jittered retryAfter and returns the recovered listing", async () => {
+    const fetcher = mockFetch(busyListing(2), readyListing)
+    const pending = createInsightsClient().providerCatalog?.(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual({ providers: [local] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][0]).toBe("/api/insights/providers")
   })
-  it("keeps the plain providers() contract for callers that do not need the status", async () => {
-    mockFetch(response({ providers: [{ id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }], sharedCatalog: { status: "forbidden", code: 403, message: "x" } }))
-    expect(await createInsightsClient().providers()).toEqual([{ id: "local", name: "Local", type: "prometheus", capabilities: ["metrics"] }])
+
+  it("replays a busy listing at most three times, then returns it busy with its delay", async () => {
+    const fetcher = mockFetch(busyListing(1), busyListing(1), busyListing(1), busyListing(1))
+    const pending = createInsightsClient().providerCatalog?.()
+    await vi.advanceTimersByTimeAsync(3000)
+    const catalog = await pending
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(catalog?.providers).toEqual([local])
+    expect(catalog?.sharedCatalog).toMatchObject({ status: "busy", code: 429, retryAfter: 1 })
+    expect(vi.getTimerCount()).toBe(0)
   })
+
+  it("stops replaying when the caller aborts, so an unmount or a newer request ends the wait", async () => {
+    const fetcher = mockFetch(busyListing(1), readyListing)
+    const abort = new AbortController()
+    const rejected = expect(createInsightsClient().providerCatalog?.(abort.signal)).rejects.toMatchObject({ name: "AbortError" })
+    await vi.advanceTimersByTimeAsync(0)
+    abort.abort()
+    await rejected
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("does not replay a settled shared failure", async () => {
+    const fetcher = mockFetch(response({ providers: [local], sharedCatalog: { status: "forbidden", code: 403, message: "denied" } }))
+    expect((await createInsightsClient().providerCatalog?.())?.sharedCatalog).toMatchObject({ status: "forbidden" })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
   it("never renews or clears the session for the catalog read", async () => {
     const session = { ensureToken: vi.fn().mockResolvedValue("token"), recoverUnauthorized: vi.fn().mockResolvedValue(null), clearRejectedSession: vi.fn(), identity: () => "same" }
     mockFetch(response({ error: "expired" }, 401))

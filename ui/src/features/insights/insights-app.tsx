@@ -96,7 +96,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { classifySourceFailure, InsightsHTTPError, type ProviderCatalog, type SharedCatalogStatus } from "./client"
+import { classifySourceFailure, InsightsHTTPError, loadProviderCatalog, type ProviderCatalog, type SharedCatalogStatus } from "./client"
 import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -157,6 +157,8 @@ export interface InsightsAppProps {
   client: InsightsClient
   initialExample?: boolean
   onBack?: () => void
+  /** Changes when the host renews its session; a sign-in banner reloads its sources on a change. */
+  sessionRevision?: number
 }
 
 // Desktop compact chrome is a view preference, independent of measured canvas
@@ -206,6 +208,7 @@ function sharedFailureReason(status: SharedCatalogStatus["status"]): SourceFailu
 }
 
 export default function InsightsApp({
+  sessionRevision,
   client,
   initialExample = false,
   onBack,
@@ -300,6 +303,18 @@ export default function InsightsApp({
   const [sources, setSources] = useState<SourceState>({ status: "ready" })
   const [sourceRequest, setSourceRequest] = useState<object | null>(null)
   const sourceNoticeRef = useRef<HTMLDivElement>(null)
+  const sourcesButton = useRef<HTMLButtonElement>(null)
+  // After a user retry succeeds, focus moves to the named Data sources control.
+  const focusSourcesOnRetry = useRef(false)
+  // A session change while the banner asks for sign-in reloads the sources.
+  const [seenSessionRevision, setSeenSessionRevision] = useState(sessionRevision)
+  if (sessionRevision !== seenSessionRevision) {
+    setSeenSessionRevision(sessionRevision)
+    if (mode === "live" && sources.status === "unavailable" && sources.reason === "signin") {
+      setSources({ status: "pending" })
+      setSourceRequest({})
+    }
+  }
   // The sign-in action only exists when the host can start sign-in.
   const sourceContext: SourceStatus = sources.status === "unavailable"
     ? (sources.reason === "signin" && client.signIn ? "signin" : "unavailable")
@@ -308,9 +323,32 @@ export default function InsightsApp({
   // persistent live region, which stays mounted for the whole episode.
   const retrySources = () => {
     sourceNoticeRef.current?.focus()
+    focusSourcesOnRetry.current = true
     setSources({ status: "pending" })
     setSourceRequest({})
   }
+  // The one way a listing reaches the workspace: boot, retry, and the provider
+  // manager all share it, so a busy shared catalog is never mistaken for a clean one.
+  const acceptCatalog = useCallback((catalog: ProviderCatalog) => {
+    setProviders(catalog.providers)
+    const shared = catalog.sharedCatalog
+    setSources(shared
+      ? { status: "unavailable", reason: sharedFailureReason(shared.status), message: shared.message }
+      : { status: "ready" })
+  }, [])
+  // A refresh from the provider manager marks the sources pending while it loads (and
+  // replays a busy listing), so the tiles stay busy rather than reading a stale state.
+  const refreshCatalog = useCallback(async (signal?: AbortSignal) => {
+    setSources({ status: "pending" })
+    try {
+      const catalog = await loadProviderCatalog(client, signal)
+      if (!signal?.aborted) acceptCatalog(catalog)
+      return catalog
+    } catch (error) {
+      if (!signal?.aborted) setSources({ status: "unavailable", reason: sourceFailureReason(error), message: error instanceof Error ? error.message : "Data sources are unavailable." })
+      throw error
+    }
+  }, [client, acceptCatalog])
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
   const openRequest = useRef(0)
@@ -468,20 +506,18 @@ export default function InsightsApp({
   useEffect(() => {
     if (!sourceRequest || mode !== "live") return
     const controller = new AbortController()
-    const load: Promise<ProviderCatalog> = client.providerCatalog
-      ? client.providerCatalog(controller.signal)
-      : client.providers(controller.signal).then((providers) => ({ providers }))
-    load.then(
+    loadProviderCatalog(client, controller.signal).then(
       (catalog) => {
         if (controller.signal.aborted) return
-        setProviders(catalog.providers)
-        const shared = catalog.sharedCatalog
-        setSources(shared
-          ? { status: "unavailable", reason: sharedFailureReason(shared.status), message: shared.message }
-          : { status: "ready" })
+        acceptCatalog(catalog)
+        if (focusSourcesOnRetry.current) {
+          focusSourcesOnRetry.current = false
+          sourcesButton.current?.focus()
+        }
       },
       (error: unknown) => {
         if (controller.signal.aborted) return
+        focusSourcesOnRetry.current = false
         // The workspace is already on screen: a rejected catalog never unmounts it,
         // so unsaved edits survive. Sign-in is offered as an explicit action.
         const message = error instanceof Error ? error.message : "Data sources are unavailable."
@@ -489,7 +525,8 @@ export default function InsightsApp({
       },
     )
     return () => controller.abort()
-  }, [client, mode, sourceRequest])
+  }, [client, mode, sourceRequest, acceptCatalog])
+
 
   useEffect(() => {
     if (!dirty && !widgetDraftDirty && !explorerDirty && !importingBundle) return
@@ -1347,7 +1384,7 @@ export default function InsightsApp({
             disabled={importingBundle}
             onClick={openQueryExplorer}
           ><Search size={16} /> Explore <span>{savedQueries.length}</span></GammaButton>
-          <GammaButton size="sm" variant="quiet"
+          <GammaButton ref={sourcesButton} size="sm" variant="quiet"
             className={styles.sideLink}
             title={compactShell ? "Data sources" : undefined}
             disabled={importingBundle}
@@ -1665,7 +1702,7 @@ export default function InsightsApp({
         )}
         {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
         {/* One persistent live region for the source banner: it exists before its content changes. */}
-        <div ref={sourceNoticeRef} role="status" tabIndex={-1} className={sources.status === "unavailable" ? styles.notice : undefined}>
+        <div ref={sourceNoticeRef} role="status" tabIndex={-1} data-source-state={sources.status === "unavailable" ? sources.reason : sources.status} className={sources.status === "unavailable" ? styles.notice : undefined}>
           {sources.status === "unavailable" && (
             <>
               <span>{sourceBannerCopy(sources)}</span>
@@ -1905,10 +1942,10 @@ export default function InsightsApp({
                   example={mode === "example"}
                   onClose={close}
                   onExplore={exploreProvider}
-                  onChange={(next) => {
-                    setProviders(next)
-                    // The manager's list is authoritative now: it replaces any failed or pending load.
-                    setSources({ status: "ready" })
+                  loadCatalog={refreshCatalog}
+                  onChange={(catalog) => {
+                    // The manager's listing is authoritative now: it replaces any failed or pending load.
+                    acceptCatalog(catalog)
                     setSourceRequest(null)
                     setQueryRevision((value) => value + 1)
                     setLibraryRevision((value) => value + 1)

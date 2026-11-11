@@ -38,6 +38,8 @@ export default function InsightsPage() {
       key={JSON.stringify([session.identityKey, session.identityEpoch])}
       client={client}
       initialExample={example}
+      // A renewed token is a new revision: a banner waiting on sign-in reloads its sources.
+      sessionRevision={session.revision}
       onBack={() => router.push("/dashboard/")}
     />
   )

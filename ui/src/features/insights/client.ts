@@ -50,6 +50,8 @@ export interface SharedCatalogStatus {
   status: "busy" | "forbidden" | "unavailable"
   code: number
   message: string
+  /** Seconds to wait before replaying a busy listing; the gateway's Retry-After, or a default. */
+  retryAfter?: number
 }
 export interface ProviderCatalog {
   providers: Provider[]
@@ -100,7 +102,8 @@ function canRetryCapacity(path: string, init: RequestInit): boolean {
   // The query endpoint is read-only even though its bounded request is POST.
   // A 429 is a definite admission rejection, so replay is safe.
   if (path === "/query" && init.method === "POST") return true
-  // The provider catalog is a read; the server answers a busy gateway with Retry-After.
+  // A busy shared catalog is answered 200 with sharedCatalog.retryAfter, which
+  // fetchProviderCatalog replays. This covers only an explicit 429 from the route.
   if (path === "/providers" && (!init.method || init.method === "GET")) return true
   if (!/^\/(dashboards|saved-queries)(\/[^/?]+)?$/.test(path)) return false
   if (!init.method || init.method === "GET") return true
@@ -118,10 +121,16 @@ function capacityRetryDelay(response: Response, attempt: number): number | undef
     if (!Number.isNaN(requested)) delay = Math.max(100, requested)
   }
   // A long server cooldown should surface the error, never retry prematurely.
-  // Spread the actual wait by +-30% so viewers blocked by one busy spell do
-  // not all replay in the same instant.
-  return delay <= 10_000 ? Math.round(delay * (0.7 + 0.6 * Math.random())) : undefined
+  return delay <= 10_000 ? jitter(delay) : undefined
 }
+
+/** Spreads a replay delay by +-30%, so viewers blocked by one busy spell do not replay in step. */
+function jitter(delay: number): number {
+  return Math.round(delay * (0.7 + 0.6 * Math.random()))
+}
+
+// A busy listing is replayed at most this many times, as a 429 read is.
+const BUSY_LISTING_REPLAYS = 3
 
 function waitForCapacity(delay: number, signal?: AbortSignal | null): Promise<void> {
   signal?.throwIfAborted()
@@ -302,6 +311,20 @@ export function createInsightsClient(
     }
     return value
   }
+  // A busy shared catalog arrives as 200 with sharedCatalog busy, so it is replayed
+  // here by its retryAfter. The replay stops when the caller aborts, which is how
+  // an unmount or a newer request ends it.
+  async function fetchProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalog> {
+    for (let attempt = 0; ; attempt++) {
+      const body = await readJSON<{ providers: Provider[]; sharedCatalog?: SharedCatalogStatus }>(
+        await request("/providers", { signal }, undefined, false, true),
+      )
+      const shared = body.sharedCatalog
+      if (shared?.status !== "busy" || attempt >= BUSY_LISTING_REPLAYS)
+        return { providers: body.providers, ...(shared ? { sharedCatalog: shared } : {}) }
+      await waitForCapacity(jitter((shared.retryAfter ?? 1) * 1000), signal)
+    }
+  }
   return {
     ...(onUnauthorized ? { signIn: () => onUnauthorized() } : {}),
     observeConnection: async (signal) => readJSON(await request("/observe-connection", { signal })),
@@ -329,13 +352,8 @@ export function createInsightsClient(
       await request(`/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "If-Match": etag } })
     },
     // The shared catalog loads behind a rendered workspace; its 401 becomes a banner, not a navigation.
-    providerCatalog: async (signal) => {
-      const body = await readJSON<{ providers: Provider[]; sharedCatalog?: SharedCatalogStatus }>(
-        await request("/providers", { signal }, undefined, false, true),
-      )
-      return { providers: body.providers, ...(body.sharedCatalog ? { sharedCatalog: body.sharedCatalog } : {}) }
-    },
-    providers: async (signal) => (await readJSON<{ providers: Provider[] }>(await request("/providers", { signal }, undefined, false, true))).providers,
+    providerCatalog: fetchProviderCatalog,
+    providers: async (signal) => (await fetchProviderCatalog(signal)).providers,
     providerConfigs: async (signal) =>
       (await readJSON<{ providers: ProviderConfig[] }>(await request("/provider-configs", { signal }))).providers,
     saveProvider: async ({ managed: _managed, etag, ...config }) => {
@@ -404,4 +422,14 @@ export function createInsightsClient(
       return result
     },
   }
+}
+
+/**
+ * The listing with its shared-catalog status, from any client. Hosts that predate
+ * providerCatalog fall back to providers(), which carries no status.
+ */
+export function loadProviderCatalog(client: InsightsClient, signal?: AbortSignal): Promise<ProviderCatalog> {
+  return client.providerCatalog
+    ? client.providerCatalog(signal)
+    : client.providers(signal).then((providers) => ({ providers }))
 }
