@@ -17,6 +17,13 @@ import (
 
 const dashboardAdmissionEnvelope = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dashboard","arguments":{"id":"demo"}}}`
 
+// validateExecuteEnvelope is a dry run that executes queries: nested data work
+// through the gateway, so it needs the orchestration pool like query_dashboard.
+const validateExecuteEnvelope = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":true}}}`
+
+// validatePlainEnvelope is a dry run that only checks: ordinary work.
+const validatePlainEnvelope = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo"}}}`
+
 func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
@@ -34,6 +41,14 @@ func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 		{"duplicate method last wins", `{"jsonrpc":"2.0","id":1,"method":"tools/call","method":"tools/list","params":{"name":"query_dashboard"}}`, observabilityCatalogRequest},
 		{"escaped exact name", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_metrics","n\u0061me":"query_dashboard"}}`, observabilityDashboardRequest},
 		{"dashboard ignores differently cased name", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dashboard","Name":"query_metrics"}}`, observabilityDashboardRequest},
+		{"render dashboard", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"render_dashboard","arguments":{"id":"demo"}}}`, observabilityDashboardRequest},
+		{"validate with execute true", validateExecuteEnvelope, observabilityDashboardRequest},
+		{"validate without execute", validatePlainEnvelope, observabilityWorkRequest},
+		{"validate execute false", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":false}}}`, observabilityWorkRequest},
+		{"validate execute string true", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":"true"}}}`, observabilityWorkRequest},
+		{"validate execute capitalised", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","Execute":true}}}`, observabilityWorkRequest},
+		{"validate duplicate execute last wins", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"id":"demo","execute":true,"execute":false}}}`, observabilityWorkRequest},
+		{"validate without arguments", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard"}}`, observabilityWorkRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			message, err := sdkjsonrpc.DecodeMessage([]byte(tc.body))
@@ -45,7 +60,7 @@ func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 				require.NoError(t, json.Unmarshal(request.Params, &params))
 				var tool string
 				require.NoError(t, json.Unmarshal(params["name"], &tool))
-				require.Equal(t, tc.class == observabilityDashboardRequest, tool == "query_dashboard")
+				require.Equal(t, tc.class == observabilityDashboardRequest, sdkOrchestrates(tool, params["arguments"]))
 			}
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(tc.body))
 			req.Header.Set("Mcp-Method", "tools/call")
@@ -56,6 +71,17 @@ func TestObservabilityDashboardAdmissionAgreesWithSDK(t *testing.T) {
 			require.Equal(t, tc.body, string(preserved))
 		})
 	}
+}
+
+// sdkOrchestrates is the SDK-side reading of the same classification: the three
+// orchestration tools, with validate_dashboard only when it executes.
+func sdkOrchestrates(tool string, arguments json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	var execute bool
+	if json.Unmarshal(arguments, &fields) != nil || json.Unmarshal(fields["execute"], &execute) != nil {
+		execute = false
+	}
+	return tool == "query_dashboard" || tool == "render_dashboard" || (tool == "validate_dashboard" && execute)
 }
 
 func TestObservabilityDashboardAdmissionBoundsAndPreservesBody(t *testing.T) {
@@ -82,9 +108,6 @@ func TestObservabilityDashboardAdmissionBoundsAndPreservesBody(t *testing.T) {
 				req.ContentLength = -1
 			}
 			require.Equal(t, tc.class, classifyObservabilityProtocolRequest(req))
-			if !tc.unknownLength && tc.size > maxObserveDashboardEnvelopeBytes {
-				require.Zero(t, body.reads)
-			}
 			require.LessOrEqual(t, tc.size-reader.Len(), maxObserveDashboardEnvelopeBytes+1)
 			preserved, err := io.ReadAll(req.Body)
 			require.NoError(t, err)
@@ -110,6 +133,15 @@ func TestObservabilityDashboardAdmissionPreservesUploadErrorAndRejectsMalformed(
 }
 
 func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
+	t.Run("query_dashboard", func(t *testing.T) { assertDashboardReserveServesNested(t, dashboardAdmissionEnvelope) })
+	t.Run("validate_dashboard execute", func(t *testing.T) { assertDashboardReserveServesNested(t, validateExecuteEnvelope) })
+}
+
+// assertDashboardReserveServesNested holds both orchestration slots with the
+// envelope, runs real nested MCP calls from inside each, and checks that a third
+// orchestration call is refused while the nested work completes: the orchestration
+// slots never compete with the data pool they feed.
+func assertDashboardReserveServesNested(t *testing.T, envelope string) {
 	ready := make(chan error, 2)
 	completed := make(chan int, 2)
 	release := make(chan struct{})
@@ -159,7 +191,7 @@ func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
 	defer close(release)
 	for range 2 {
 		go func() {
-			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(dashboardAdmissionEnvelope))
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(envelope))
 			if err != nil {
 				completed <- 0
 				return
@@ -176,7 +208,7 @@ func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
 		require.NoError(t, awaitAdmissionEvent(t, ready, "nested dashboard calls could not complete"))
 	}
 	// Both dashboard slots remain held while their nested work has completed.
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(dashboardAdmissionEnvelope))
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/observe/mcp", strings.NewReader(envelope))
 	require.NoError(t, err)
 	response, err := server.Client().Do(request)
 	require.NoError(t, err)
@@ -188,5 +220,62 @@ func TestObservabilityDashboardReserveServesRealNestedRequests(t *testing.T) {
 	}
 	for range 2 {
 		require.Equal(t, http.StatusOK, awaitAdmissionEvent(t, completed, "dashboard orchestration retained its slot"))
+	}
+}
+
+// oversizeValidate is a validate_dashboard envelope of about 200 KiB. The tool name
+// comes first, as MCP clients send it; the document is padded past the prefix.
+func oversizeValidate(t *testing.T, execute string) string {
+	t.Helper()
+	document := `{"schemaVersion":1,"id":"demo","title":"Big","description":"` + strings.Repeat("d", 200<<10) + `"}`
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate_dashboard","arguments":{"document":` + document + execute + `}}}`
+	require.Greater(t, len(body), maxObserveDashboardEnvelopeBytes)
+	return body
+}
+
+// A validate_dashboard whose name the classifier reads first is orchestration, with
+// or without execute: the execute flag may lie beyond the prefix, and the dashboard
+// pool is the more restrictive choice. The whole body still reaches the SDK.
+func TestObservabilityOversizeValidateIsOrchestrationWhenItsNameIsReadable(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		chunked    bool
+	}{
+		{"execute true", oversizeValidate(t, `,"execute":true`), false},
+		{"without execute", oversizeValidate(t, ""), false},
+		{"execute true chunked", oversizeValidate(t, `,"execute":true`), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(tc.body))
+			if tc.chunked {
+				req.ContentLength = -1
+			}
+			require.Equal(t, observabilityDashboardRequest, classifyObservabilityProtocolRequest(req))
+			preserved, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.body, string(preserved), "the SDK receives the whole envelope")
+		})
+	}
+}
+
+// Only a name the classifier can read in its prefix counts. A name past the prefix,
+// a non-tools/call method, and another oversize tool all stay ordinary work, and the
+// tools then refuse any nested work they cannot prove admitted.
+func TestObservabilityOversizeEnvelopesWithoutAReadableNameStayWork(t *testing.T) {
+	padded := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{"document":{"description":"` + strings.Repeat("d", 40<<10) + `"}},"name":"validate_dashboard"}}`
+	notCall := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"name":"validate_dashboard","arguments":{"document":{"description":"` + strings.Repeat("d", 200<<10) + `"}}}}`
+	for _, tc := range []struct{ name, body string }{
+		{"name after a prefix-sized argument", padded},
+		{"method is not tools/call", notCall},
+		{"oversize query_dashboard", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dashboard","arguments":{"id":"demo","description":"` + strings.Repeat("d", 200<<10) + `"}}}`},
+		{"not json", strings.Repeat("x", 200<<10)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/mcp", strings.NewReader(tc.body))
+			require.Equal(t, observabilityWorkRequest, classifyObservabilityProtocolRequest(req))
+			preserved, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.body, string(preserved))
+		})
 	}
 }

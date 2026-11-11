@@ -39,6 +39,27 @@ export const Source = /*@__PURE__*/ proto3.makeEnum(
 );
 
 /**
+ * DataState says what one widget's query returned in a dry run that executed
+ * it. The data.* rules read the same states. DATA_STATE_NOT_RUN means the dry
+ * run did not execute the document because its schema or lint checks failed.
+ *
+ * @generated from enum paprika.insights.v1.DataState
+ */
+export const DataState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.insights.v1.DataState",
+  [
+    {no: 0, name: "DATA_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "DATA_STATE_OK", localName: "OK"},
+    {no: 2, name: "DATA_STATE_EMPTY", localName: "EMPTY"},
+    {no: 3, name: "DATA_STATE_PARTIAL", localName: "PARTIAL"},
+    {no: 4, name: "DATA_STATE_STALE", localName: "STALE"},
+    {no: 5, name: "DATA_STATE_ERROR", localName: "ERROR"},
+    {no: 6, name: "DATA_STATE_UNAVAILABLE", localName: "UNAVAILABLE"},
+    {no: 7, name: "DATA_STATE_NOT_RUN", localName: "NOT_RUN"},
+  ],
+);
+
+/**
  * CheckFinding locates one problem in a submitted dashboard document. Pointer
  * is an RFC 6901 JSON Pointer into that document: /widgets/2 names a widget,
  * /widgets/2/layout a field of it, and the empty string the whole document.
@@ -64,7 +85,9 @@ export const CheckFinding = /*@__PURE__*/ proto3.makeMessageType(
  * save and the validate dry run both carry it. Issues holds at most 32 entries;
  * total counts every finding, and truncated is true when some were omitted.
  * The per-severity counts cover every finding, not only the listed ones, so a
- * truncated list never understates how many errors a check found.
+ * truncated list never understates how many errors a check found. A dry run with
+ * execute adds a `widgets` member beside these members, one WidgetDataState per
+ * widget; the members above are the same with or without it.
  *
  * @generated from message paprika.insights.v1.CheckReport
  */
@@ -77,6 +100,27 @@ export const CheckReport = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "error_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 5, name: "warning_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 6, name: "info_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * WidgetDataState reports one widget's data in a dry run with execute. Pointer
+ * is the widget's JSON Pointer, /widgets/N. series_returned counts the series
+ * in the provider's bounded response. error_code is the safe code of a failed
+ * query, never upstream text. On the JSON wire the execute response carries a
+ * `widgets` member holding these, in document order, beside the CheckReport
+ * members; a dry run without execute has no such member.
+ *
+ * @generated from message paprika.insights.v1.WidgetDataState
+ */
+export const WidgetDataState = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.insights.v1.WidgetDataState",
+  () => [
+    { no: 1, name: "widget_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "pointer", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 4, name: "series_returned", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "error_code", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

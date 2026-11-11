@@ -32,9 +32,19 @@ func WithDashboardQueryAdmission(ctx context.Context, admitted bool) context.Con
 	return context.WithValue(ctx, dashboardQueryAdmissionKey{}, admitted)
 }
 
+// dashboardAdmissionLimitText names the envelope limit the HTTP layer applies to
+// orchestration requests (cmd's maxObserveDashboardEnvelopeBytes). A refusal names
+// it, so the caller knows what to change.
+const dashboardAdmissionLimitText = "36 KiB"
+
+// requireDashboardQueryAdmission refuses nested data work that the HTTP layer did
+// not admit as orchestration. The refusal is invalid_argument, never a capacity
+// code: retrying the same request cannot succeed, so agents must change the
+// request. A request marked as not admitted is one whose tool name the layer
+// could not read within its first 36 KiB.
 func requireDashboardQueryAdmission(ctx context.Context) error {
 	if admitted, marked := ctx.Value(dashboardQueryAdmissionKey{}).(bool); marked && !admitted {
-		return connect.NewError(connect.CodeResourceExhausted, errors.New("dashboard query requires bounded orchestration admission; reduce the MCP request envelope"))
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("dashboard query requires bounded orchestration admission; name the tool within the first "+dashboardAdmissionLimitText+" of the MCP request and keep the envelope within that limit"))
 	}
 	return nil
 }

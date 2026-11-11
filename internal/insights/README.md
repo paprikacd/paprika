@@ -179,7 +179,7 @@ through Paprika. All service API routes require `Authorization: Bearer <token>`.
 | GET | `/api/dashboards/{id}` | Dashboard and `ETag` |
 | PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag`; `?checks=true` adds `checks` (see below) |
 | DELETE | `/api/dashboards/{id}` | 204 |
-| POST | `/api/dashboards/validate` | Dry run: `{document}` in, `{issues,total,truncated}` out; never writes |
+| POST | `/api/dashboards/validate` | Dry run: `{document, execute?, variables?}` in. Without `execute`: `{issues,total,truncated,errorCount,warningCount,infoCount}` out, a schema and lint dry run that never writes. With `execute: true`: the same members plus `widgets`, one `WidgetDataState` per widget in document order (`widgetId`, `pointer`, `state`, `seriesReturned`, `errorCode`). Execute runs each distinct widget query once, read-only, over the dashboard default range (or its custom range) with the given variables (at most 20 string values, each at most 1024 UTF-16 units). A document with a schema or error-severity finding is not executed, and each widget reports `DATA_STATE_NOT_RUN`. `variables` without `execute` is a 400. The MCP gateway runs an executing dry run under its orchestration admission, and refuses it with `resource_exhausted` when that admission is unavailable. `state` is one of `OK`, `EMPTY`, `PARTIAL`, `STALE`, `ERROR`, `UNAVAILABLE` (capacity, timeout or cancellation, a retry clears it) or `NOT_RUN`. |
 
 Query request:
 
@@ -367,6 +367,48 @@ The built-in plugin ids that `plugin.unknown` accepts are listed in
 [widget-plugins.json](../../docs/design/insights/widget-plugins.json), regenerated
 from the UI registry. A host can register more plugins, which the rule reports as
 not built in.
+
+### Data rules (dry run with execute)
+
+A dry run with `execute: true` runs the document's queries and reports what they
+returned. The `data.*` findings carry source `SOURCE_DATA`; they never block a save,
+because a save executes nothing. Each rule's default severity is in brackets.
+
+- `data.query-error` [warning]: a widget or event query the provider rejected or
+  could not resolve. Points at `query`, `queryRef`, `annotationSource`, or
+  `providerId` for a provider-setting failure. Capacity, timeout, cancellation,
+  and direct-provider 408, 429, 502, 503 and 504 responses are transient: they produce
+  no finding and report `UNAVAILABLE`. Upstream response text is never copied.
+- `data.no-series` [warning; info for an alert (`ALERTS`) or a comparison filter
+  such as `> 0`, whose empty result can be expected]: a metrics query returned no
+  series with a value. A partial response is left to `data.series-cap`.
+- `data.unit-mismatch` [info]: a value outside the declared `options.min` or
+  `options.max`, or a `%` unit whose values all lie in [0, 1] under a declared
+  max or threshold of 10 or more (a ratio shown as a percent). Nothing else is
+  judged: a percent above 100 with no declared scale is a legitimate multi-core
+  reading, and a negative value is a legitimate change.
+- `data.stale` [warning]: the newest valid sample is older than
+  `options.staleAfterSeconds` when the range ends. Applies to `stat`,
+  `timeseries` and the `rich-metrics` plugin over metrics. A stat judges its
+  primary series; the others the newest sample of any series. A bar chart
+  does not honour the option and is not judged.
+- `data.series-cap` [warning]: the provider truncated its response by a row or
+  series cap or an incomplete search, so values may miss data.
+- `data.many-series` [info]: more than eight series with no
+  `options.seriesColors` rules.
+- `data.constant-sparkline` [info]: a stat with a sparkline whose primary series
+  holds at least two valid samples, all equal.
+
+A widget whose event query failed reports `PARTIAL`, and keeps its finding.
+
+Lint and data rules are listed in one catalogue (rule id, source, severity,
+summary). Each rule keeps its own check input, so a lint rule never reads query
+results and a data rule never runs on a save. Findings keep the source of the
+rule that produced them.
+
+Not implemented: the unnamed-series advisory (series are named by R14, so the
+plan dropped it), and the `%` bar and `max` under 10 advisories, which are
+deferred. Neither is reported by a dry run.
 
 ### Lint CLI
 

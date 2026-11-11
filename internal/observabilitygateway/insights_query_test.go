@@ -631,7 +631,7 @@ func TestDashboardQueryRequiresItsHTTPOrchestrationAdmission(t *testing.T) {
 			before := calls.Load()
 			_, err := insightsQueryDashboardTool(c).Invoke(tc.ctx, nil, json.RawMessage(`{"id":"demo"}`))
 			if tc.deny {
-				require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+				require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a refusal is never a capacity code")
 				require.Equal(t, before, calls.Load(), "misclassified request must never reach dashboard execution")
 			} else {
 				require.NoError(t, err)

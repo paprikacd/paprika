@@ -46,7 +46,9 @@ message CheckFinding {
 // save and the validate dry run both carry it. Issues holds at most 32 entries;
 // total counts every finding, and truncated is true when some were omitted.
 // The per-severity counts cover every finding, not only the listed ones, so a
-// truncated list never understates how many errors a check found.
+// truncated list never understates how many errors a check found. A dry run with
+// execute adds a `widgets` member beside these members, one WidgetDataState per
+// widget; the members above are the same with or without it.
 message CheckReport {
   repeated CheckFinding issues = 1;
   uint32 total = 2;
@@ -54,4 +56,32 @@ message CheckReport {
   uint32 error_count = 4;
   uint32 warning_count = 5;
   uint32 info_count = 6;
+}
+
+// DataState says what one widget's query returned in a dry run that executed
+// it. The data.* rules read the same states. DATA_STATE_NOT_RUN means the dry
+// run did not execute the document because its schema or lint checks failed.
+enum DataState {
+  DATA_STATE_UNSPECIFIED = 0;
+  DATA_STATE_OK = 1;
+  DATA_STATE_EMPTY = 2;
+  DATA_STATE_PARTIAL = 3;
+  DATA_STATE_STALE = 4;
+  DATA_STATE_ERROR = 5;
+  DATA_STATE_UNAVAILABLE = 6;
+  DATA_STATE_NOT_RUN = 7;
+}
+
+// WidgetDataState reports one widget's data in a dry run with execute. Pointer
+// is the widget's JSON Pointer, /widgets/N. series_returned counts the series
+// in the provider's bounded response. error_code is the safe code of a failed
+// query, never upstream text. On the JSON wire the execute response carries a
+// `widgets` member holding these, in document order, beside the CheckReport
+// members; a dry run without execute has no such member.
+message WidgetDataState {
+  string widget_id = 1;
+  string pointer = 2;
+  DataState state = 3;
+  uint32 series_returned = 4;
+  string error_code = 5;
 }
