@@ -4,17 +4,17 @@ This is a dated record of one MCP-authored dashboard, kept out of the Observe
 skill and AGENTS.md. It is evidence of what happened on that day, not a
 statement about the dashboard's current data or health. The procedure it
 illustrates is in `plugins/paprika-observe/skills/paprika-observe/SKILL.md`.
+Dashboard IDs, service names and URLs are placeholders in angle brackets.
 
 ## What was built
 
-The saved dashboard `omega-observe-operations-control-room` reused existing
-saved queries from `omega-k8s-cluster-overview`, `telesis-metrics-gateway` and
-`service-overview`. Its service variable was bound explicitly to `uptime-api`
-or `brandbrain-api`, and the Kubernetes selectors were explicit constant
-bindings rather than unbound variables. Reusing verified saved queries avoided
-mismatched provider IDs and invented PromQL.
+The saved dashboard `<dashboard-id>` reused existing saved queries from
+`<source-dashboard-1>`, `<source-dashboard-2>` and `<source-dashboard-3>`. Its
+service variable was bound explicitly to `<service-a>` or `<service-b>`, and the
+Kubernetes selectors were explicit constant bindings rather than unbound variables.
+Reusing verified saved queries avoided mismatched provider IDs and invented PromQL.
 
-Dashboard URL at the time: `https://paprika.benebsworth.com/dashboard/insights/?dashboard=omega-observe-operations-control-room`
+UI URL at the time: `<ui-url>`
 
 Save sequence used: `list_insights_providers`, then `get_insights_schema`
 (`kind: "dashboard"`), then `get_dashboard` for the source query references,
@@ -27,8 +27,8 @@ The first MCP visual styling pass bulk-added `showStatBar: true` with
 sparklines and only two grid rows of height, and some carried long source
 descriptions. The fixed-height cards scrolled internally, the repeated
 descriptions pushed the primary readings down, and unnecessary axis captions
-reduced chart readability. The telemetry stayed healthy the whole time, so
-the data checks passed while the layout got worse.
+reduced chart readability. The provider queries stayed available, so the data
+checks passed while the layout got worse.
 
 The corrective patch removed the five percentage bars, the empty or bulky
 source descriptions, the redundant axis captions and the forced 100% scales.

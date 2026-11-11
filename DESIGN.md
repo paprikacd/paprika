@@ -40,11 +40,11 @@ Insights supports Light, Dark and System independently of the main shell. Warm w
 
 ### Status and series vocabulary
 
-- **Statuses** are `ok`, `info`, `warning`, `critical` and `unknown`. A threshold names a status, a six-digit hex colour, or both; a hex colour overrides only the hue of its band. Each status resolves to `--gamma-status-{level}` with `-soft`, `-text` and `-on` companions, in the light, dark and compact-dark scopes that `docs/design/insights/status-tokens.json` mirrors. Start a threshold list with an `ok` base band, because a reading below the first threshold takes that band's status.
+- **Statuses** are `ok`, `info`, `warning`, `critical` and `unknown`. A threshold names a status, a six-digit hex colour, or both; a hex colour overrides only the hue of its band. Each status resolves to `--gamma-status-{level}` with `-soft`, `-text` and `-on` companions, in the light, dark and compact-dark scopes that `docs/design/insights/status-tokens.json` mirrors. Start with the lowest meaningful value and the status that applies there, since a reading below the first threshold takes that threshold's status.
 - **Status words never decorate.** A status word, glyph or status frame appears only where an author-set threshold, a status-badge mapping or an attention count sets that status. Every status mark pairs its colour with a glyph and a word. Warning and critical cells also draw an inset frame of 1px and 2px, skipped on cells too small to keep their fill.
 - **Series roles** are `traffic`, `success`, `client-error`, `server-error`, `p50`, `p95` and `p99`. A series colour comes from an authored rule (a hex colour or a role), then a well-known label (2xx/4xx/5xx, quantiles), then the widget colour for a single series, then a hashed slot.
 - **`seriesColorMode`** is `name` by default, which keys each series to its identity so a colour follows the series; `index` keeps position-based slots.
-- **Hatching** marks missing data. The one other hatch is the warning-toned hatch for invalid source data in `docs/design/insights/UX-CONTRACT.md`; a status never uses hatching. Tool-level throttling and capacity errors are described in `.agents/skills/paprika-dashboard-design/SKILL.md`.
+- **Hatching** marks missing data. Invalid source data uses a second, warning-toned hatch (`docs/design/insights/UX-CONTRACT.md`). Status colour never uses hatching. Tool-level throttling and capacity errors are described in `.agents/skills/paprika-dashboard-design/SKILL.md`.
 
 ## Typography
 

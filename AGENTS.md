@@ -14,22 +14,17 @@ before designing or implementing changes. Its bundled references, visual
 fixtures, review templates, and contract checker guide the work alongside the
 current `DESIGN.md` and applicable directory instructions.
 
-**Authoring procedure and gates.** Build or change a dashboard with the Paprika
-Observe skill procedure in `plugins/paprika-observe/skills/paprika-observe/SKILL.md`.
-Its visual QA gate applies to every presentation change. Composition rules are served
-with `get_insights_schema` (`kind: "dashboard"`) and the observe server instructions; this
-file does not restate them.
+**Authoring procedure and gates.** Build or change a dashboard with the Paprika Observe
+skill procedure (`plugins/paprika-observe/skills/paprika-observe/SKILL.md`). Composition rules
+are served by `get_insights_schema` and the observe server instructions; this file does not restate them.
 
 - Lint: `go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json internal/insights/starters`.
-  CI runs the same command and also lints the gallery export.
-- Visual matrix: `ui/e2e/insights-visual-matrix-linux.sh` checks the structural baseline in
-  Docker (`--update` records it; needs a built `ui/out`).
-- Playground: `cd ui && npm run insights:lab` starts a hot-reloading workspace on synthetic fixtures.
-- Local loop: `docs/guides/local-dashboard-polish.md`. `render_dashboard` is registered
-  only when `PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET` are set; see
-  `docs/guides/observe-browser-renderer.md`.
-- Dated evidence, such as the Omega control room receipt, lives in
-  `docs/design/insights/receipts/`, not in agent instructions.
+  CI also lints the gallery export and the reference fixtures.
+- Visual matrix: `ui/e2e/insights-visual-matrix-linux.sh` (Docker; `--update` records the baseline).
+- Playground: `cd ui && npm run insights:lab` (hot-reloading, synthetic fixtures).
+- Local loop: `docs/guides/local-dashboard-polish.md`. `render_dashboard` needs
+  `PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET`; see `docs/guides/observe-browser-renderer.md`.
+- Dated evidence lives in `docs/design/insights/receipts/`, not here.
 
 ### Repairing a live dashboard
 
@@ -89,6 +84,31 @@ apply.
    dashboard: read it back, and `query_dashboard` must show its signals. Visual QA
    is a separate `render_dashboard` check and may report NOT RUN. Do not burst
    parallel dashboard reads; the skill's rate-limit section says how to back off.
+
+## Core fleet console: adapt demo quality without synthetic data
+
+The production fleet overview, rollouts, clusters and observability screens
+are separate from the Insights builder and the Widget Lab reference artboards.
+Promote the demos' hierarchy, measured spacing, chart anatomy and useful
+interactions into maintained core owners, not into parallel fixtures.
+
+The main console uses Tailwind/Blueprint and a light-only shell; Insights
+uses independently scoped Gamma light/dark/compact tokens. Never blindly
+copy demo CSS or synthetic observations into the core shell. Reuse existing
+status-tone, data-state, navigation and auth components. Only add a sparkline
+when a real, time-indexed signal exists. Avoid decorative percent bars.
+
+GetSystemStatus returns whole-fleet totals/health/attention; its request
+does not accept the current fleet URL filters. QueryApplications does apply
+the URL scope. Label server status totals as whole-fleet, never as per-project
+or filtered values; missing responses remain unavailable rather than zero.
+
+For each main-console adaptation, test 1440px desktop and 390px mobile,
+capture Playwright screenshots, verify overflow/reading density/selection,
+and keep actual-data semantics independent from style. A successful unit
+test or a sample screenshot cannot establish live deployment or demo parity.
+The first production adaptation is core overview PR #193, which adds a
+whole-fleet instrument strip and measured board-header styling.
 
 ## Constraints & Preferences
 

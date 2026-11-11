@@ -161,13 +161,11 @@ Never average a failed gate into a high beauty score. Never claim runtime verifi
 
 Use these terms exactly; the contracts are in `DESIGN.md` and `docs/design/insights/UX-CONTRACT.md`.
 
-- **Statuses:** `ok`, `info`, `warning`, `critical`, `unknown`. A threshold names a status, a hex colour, or both; a hex colour only overrides the hue of its band. Start a threshold list with an `ok` base band, since a reading below the first threshold takes its status.
+- **Statuses:** `ok`, `info`, `warning`, `critical`, `unknown`. A threshold names a status, a hex colour, or both; a hex colour only overrides the hue of its band. Start with the lowest meaningful value and the status that applies there, since a reading below the first threshold takes that threshold's status.
 - **Status words never decorate.** A status word, glyph or frame appears only where an author-set threshold, status mapping or attention count sets it. Pair every status colour with a glyph and a word.
 - **Series roles:** `traffic`, `success`, `client-error`, `server-error`, `p50`, `p95`, `p99`. A series colour comes from an authored rule, then a well-known label, then the widget colour (single series), then a hashed slot.
 - **`seriesColorMode`:** `name` (default) keys colour to series identity; `index` keeps position-based slots.
-- **Hatching** marks missing data only. Status colour never uses it.
-
-Tool errors need different responses. An HTTP 429 on the transport means stop parallel calls, honour `Retry-After`, and retry later. A `resource_exhausted` tool error is a capacity or queue limit: wait any `RetryInfo` delay and retry serially. A message that a request exceeds its size limit will not succeed unchanged.
+- **Hatching** marks missing data. Invalid source data uses a second, warning-toned hatch. Status colour never uses hatching.
 
 ## Repair a live dashboard
 
@@ -201,6 +199,8 @@ Source requirements and the reasoning behind them are in
 Use [the review report template](assets/review-report.template.md) for substantial work. Report the concrete outcome, the analytical/design decisions that matter, checks actually run, and any remaining limitation. Identify whether evidence came from static source, fixtures, measured browser behavior, or live data. Keep the final answer proportional to the request.
 
 For an audit, lead with material findings, exact affected owner, user consequence, and remedy. For implementation, include a rendered result when available and the commands/results needed to assess it. Describe unimplemented capabilities as proposals.
+
+When tool calls fail while you gather evidence, respond by error type. An HTTP 429 on the transport means stop parallel calls, honour `Retry-After`, and retry later. A `resource_exhausted` tool error is a capacity or queue limit: wait the `retryAfterSeconds` the result carries (its text reads "Retry after N seconds.") and retry serially. A message that a request exceeds its size limit will not succeed unchanged.
 
 ## Reference routing
 
