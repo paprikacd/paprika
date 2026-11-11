@@ -707,22 +707,19 @@
 
 /*
  * A stat whose sample is the dashboard's newest does not repeat the time on every card: the attention strip states it
- * once, with its zone. The time stays in the accessible name, and it shows on hover or focus. A stale stat keeps its own
- * "Stale · age" chip, which is a separate element, so its age stays visible.
+ * once, with its zone. The caption keeps its box in the layout and is faded out, so revealing it on hover or focus moves
+ * nothing. It is not hidden with visibility or display, so the time stays in the accessibility tree. A stale stat keeps
+ * its own "Stale · age" chip, a separate element, so its age stays visible. Side-sparkline and stat-bar placements still
+ * take the caption out of flow (their rules are separate and unchanged).
  */
 [data-shared-sample] .stat .statMeta {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
 }
 [data-shared-sample]:hover .stat .statMeta,
 [data-shared-sample]:focus-within .stat .statMeta {
-  position: static;
-  width: auto;
-  height: auto;
-  overflow: visible;
-  clip-path: none;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-shared-sample] .stat .statMeta { transition: none; }
 }

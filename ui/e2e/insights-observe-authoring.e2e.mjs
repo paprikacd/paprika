@@ -581,8 +581,19 @@ try {
       assert.equal((await tooltip.locator("[data-metric-value]").innerText()).replace(/\s+/g, ""), `${after.value.toFixed(3)}req/s`)
       await tooltip.getByText("Source details", { exact: true }).click()
       await tooltip.getByText(`${after.value} req/s`, { exact: true }).waitFor()
-      const bounds = await tooltip.boundingBox()
-      assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= page.viewportSize().height, "The authored tooltip must stay inside the viewport")
+      // The tooltip grows after Source details opens: poll its bounds for up to 1 s, and report every sample if it never settles.
+      const viewportHeight = page.viewportSize().height
+      const inside = (box) => !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= viewportHeight
+      const samples = []
+      const deadline = Date.now() + 1000
+      let bounds = await tooltip.boundingBox()
+      samples.push(bounds && [Math.round(bounds.x), Math.round(bounds.y), Math.round(bounds.width), Math.round(bounds.height)])
+      while (!inside(bounds) && Date.now() < deadline) {
+        await page.waitForTimeout(50)
+        bounds = await tooltip.boundingBox()
+        samples.push(bounds && [Math.round(bounds.x), Math.round(bounds.y), Math.round(bounds.width), Math.round(bounds.height)])
+      }
+      assert.ok(inside(bounds), `The authored tooltip must stay inside the viewport ${width}x${viewportHeight}; samples [x,y,w,h]: ${JSON.stringify(samples)}`)
       await page.screenshot({ path: join(output, `authored-tooltip-${theme.toLowerCase()}-${width}.png`), fullPage: false })
       await history.press("Escape")
       await tooltip.waitFor({ state: "hidden" })

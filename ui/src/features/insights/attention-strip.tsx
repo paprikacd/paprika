@@ -248,7 +248,7 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
       </div>
       <p className={styles.counts}>
         {checked} of {summary.widgets} checked
-        {notLoaded > 0 && <span className={styles.notLoaded}> · {notLoaded} not loaded yet</span>}
+        {notLoaded > 0 && <>{" "}<span className={styles.notLoaded}>{notLoaded} not loaded yet</span></>}
       </p>
       {/* Polite regions without the status role, so they do not join other status messages on the page. */}
       <p aria-live="polite" aria-atomic="true" className={styles.srOnly}>{announced}</p>

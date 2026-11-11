@@ -236,8 +236,26 @@ async function stateAssertions(page, state) {
       } else if (kind === "stat") {
         assert.match(text, state === "zero" ? /0\.00/ : state === "negative" ? /-12\.50/ : /42\.57/)
         assert.match(text, /Latest valid sample/)
-        const caption = await tile.getByText(/Latest valid sample/).boundingBox()
-        assert.ok(caption && caption.height >= 12, "Latest valid sample caption must not collapse when inspection controls are present")
+        // The caption keeps its box whether or not the sample is shared with the strip; a shared caption is faded, not removed.
+        const caption = tile.locator('[data-stat-reading] > [class*="statMeta"]')
+        const stat = tile.locator("[data-stat-summary]").locator("xpath=..")
+        const captionBox = await caption.boundingBox()
+        assert.ok(captionBox && captionBox.height >= 12, "Latest valid sample caption must not collapse when inspection controls are present")
+        if (await tile.evaluate(element => element.closest("[data-shared-sample]") !== null)) {
+          assert.equal(await caption.evaluate(element => getComputedStyle(element).opacity), "0", "A shared sample's caption is faded until the tile is hovered or focused")
+          assert.match(await page.locator("[data-attention-strip]").innerText(), /Newest sample/, "The attention strip must state the shared sample time")
+          const hiddenScroll = await stat.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, overflow: getComputedStyle(element).overflow, captionTop: Math.round(element.querySelector("[data-stat-reading] > [class*='statMeta']").getBoundingClientRect().bottom - element.getBoundingClientRect().top), height: Math.round(element.getBoundingClientRect().height)}))
+          assert.ok(hiddenScroll.scrollHeight <= hiddenScroll.clientHeight + 1, `The stat must not scroll internally while its caption is hidden: ${JSON.stringify(hiddenScroll)}`)
+          await tile.hover()
+          await caption.evaluate(element => new Promise((resolve, reject) => {
+            const started = performance.now()
+            const tick = () => getComputedStyle(element).opacity === "1" ? resolve() : performance.now() - started > 2000 ? reject(new Error("Caption did not reveal on hover")) : setTimeout(tick, 30)
+            tick()
+          }))
+          assert.equal(await stat.evaluate(element => element.scrollHeight <= element.clientHeight + 1), true, "The stat must not scroll internally while its caption is revealed")
+          const revealedBox = await caption.boundingBox()
+          assert.ok(revealedBox && revealedBox.height === captionBox.height, "Hidden and revealed captions must have identical layout")
+        }
       } else if (kind === "gauge") {
         const meter = tile.getByRole("meter")
         if (["null", "tail-null"].includes(state)) {
@@ -296,6 +314,8 @@ async function editWidget(page, kind) {
   if (await edit.isVisible()) await edit.click()
   await page.getByRole("button", { name: `Edit ${titles[kind]}`, exact: true }).click()
   await editor(page).waitFor()
+  // The editor is lazy-loaded: wait for its tabs before measuring or switching tabs.
+  await editor(page).getByRole("tablist", { name: "Widget settings", exact: true }).getByRole("tab").first().waitFor()
   await stable(page)
 }
 async function editingAudit() {
