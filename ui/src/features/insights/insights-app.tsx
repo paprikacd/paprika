@@ -96,7 +96,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { classifySourceFailure } from "./client"
+import { classifySourceFailure, InsightsHTTPError } from "./client"
 import { SourceStatusContext, sourceWaitMessage } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -179,7 +179,26 @@ const finePointerSnapshot = () => window.matchMedia("(pointer: fine)").matches;
 type SourceState =
   | { status: "pending" }
   | { status: "ready" }
-  | { status: "unavailable"; busy: boolean; message: string }
+  | { status: "unavailable"; reason: SourceFailureReason; message: string }
+
+/** Why a shared source list is unavailable; each reason has its own banner copy and action. */
+type SourceFailureReason = "busy" | "signin" | "access" | "failed"
+
+function sourceBannerCopy(sources: Extract<SourceState, { status: "unavailable" }>): string {
+  switch (sources.reason) {
+    case "busy": return "Data sources are busy."
+    case "signin": return "Your session has expired. Sign in again to load data sources."
+    case "access": return "Your account cannot load data sources. Check its Observability permissions."
+    case "failed": return `Data sources did not load: ${sources.message}`
+  }
+}
+
+function sourceFailureReason(error: unknown): SourceFailureReason {
+  const failure = classifySourceFailure(error)
+  if (failure === "busy") return "busy"
+  if (failure === "access") return error instanceof InsightsHTTPError && error.status === 401 ? "signin" : "access"
+  return "failed"
+}
 
 export default function InsightsApp({
   client,
@@ -439,15 +458,10 @@ export default function InsightsApp({
       },
       (error: unknown) => {
         if (controller.signal.aborted) return
+        // The workspace is already on screen: a rejected catalog never unmounts it,
+        // so unsaved edits survive. Sign-in is offered as an explicit action.
         const message = error instanceof Error ? error.message : "Data sources are unavailable."
-        const failure = classifySourceFailure(error)
-        if (failure === "access") {
-          // Without Observability access, Insights cannot serve this viewer: the setup landing.
-          setMode("unavailable")
-          setError(message)
-          return
-        }
-        setSources({ status: "unavailable", busy: failure === "busy", message })
+        setSources({ status: "unavailable", reason: sourceFailureReason(error), message })
       },
     )
     return () => controller.abort()
@@ -1625,11 +1639,15 @@ export default function InsightsApp({
         {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
         {sources.status === "unavailable" && (
           <div className={styles.notice} role="status">
-            <span>{sources.busy ? "Data sources are busy." : `Data sources did not load: ${sources.message}`}</span>
-            <GammaButton size="sm" variant="secondary" onClick={() => {
-              setSources({ status: "pending" })
-              setSourceRequest({})
-            }}>Retry data sources</GammaButton>
+            <span>{sourceBannerCopy(sources)}</span>
+            {sources.reason === "signin" && client.signIn ? (
+              <GammaButton size="sm" variant="secondary" onClick={() => client.signIn?.()}>Sign in again</GammaButton>
+            ) : (
+              <GammaButton size="sm" variant="secondary" onClick={() => {
+                setSources({ status: "pending" })
+                setSourceRequest({})
+              }}>Retry data sources</GammaButton>
+            )}
           </div>
         )}
         {(error || message) && (

@@ -325,7 +325,7 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	response, err := base.RoundTrip(r)
 	if err != nil {
-		return nil, sanitizeObserveMCPError(err)
+		return nil, observeTransportError(err, request.Context(), t.ctx)
 	}
 	defer closeReadBody(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -340,6 +340,31 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	response.Body = io.NopCloser(bytes.NewReader(body))
 	return response, nil
+}
+
+// observeTransportError maps a failed round trip. The merged request is
+// cancelled with a bare Canceled when a deadline on the operation or the session
+// fires, so the deadline is reported instead: a spent budget is a 504, not a 502.
+func observeTransportError(err error, contexts ...context.Context) error {
+	if cause := observeContextCause(contexts...); cause != nil {
+		err = cause
+	}
+	return sanitizeObserveMCPError(err)
+}
+
+// observeContextCause returns the deadline that ended either context, if any.
+// A deadline is more specific than the cancellation that propagates from it.
+func observeContextCause(contexts ...context.Context) error {
+	var cause error
+	for _, ctx := range contexts {
+		switch err := ctx.Err(); {
+		case errors.Is(err, context.DeadlineExceeded):
+			return context.DeadlineExceeded
+		case err != nil:
+			cause = err
+		}
+	}
+	return cause
 }
 
 func sanitizeObserveMCPError(err error) error {

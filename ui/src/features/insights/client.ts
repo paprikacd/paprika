@@ -46,6 +46,8 @@ export interface MetricSeriesMetadata {
   labels: { name: string; cardinality: number; values: string[]; valuesTruncated?: boolean }[]
 }
 export interface InsightsClient {
+  /** Starts the host's sign-in flow, returning to this view afterwards. Absent when the host has no sign-in. */
+  signIn?(): void
   /** Optional for embedded hosts that do not expose Paprika Observe. */
   observeConnection?(signal?: AbortSignal): Promise<ObserveConnection>
   listSavedQueries(signal?: AbortSignal): Promise<SavedQueryEntry[]>
@@ -174,7 +176,7 @@ export function createInsightsClient(
     }
     return { bearer, principal }
   }
-  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false) {
+  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false, notifyUnauthorized = true) {
     const current = context ?? requestContext(session ? await session.ensureToken() : token?.() ?? null)
     let bearer = current.bearer
     const send = async () => {
@@ -218,7 +220,9 @@ export function createInsightsClient(
       if (response.status === 401) {
         // Parallel startup/query requests must not repeatedly navigate the host.
         // A late response from a previous session must not sign out a newer one.
-        if (!authenticationRequested && ((token?.() ?? null) === bearer || (session && !(token?.() ?? null)))) {
+        // A caller that can show its own sign-in prompt may defer the host's
+        // navigation, so unsaved work stays mounted until the user chooses.
+        if (notifyUnauthorized && !authenticationRequested && ((token?.() ?? null) === bearer || (session && !(token?.() ?? null)))) {
           authenticationRequested = true
           onUnauthorized?.()
         }
@@ -282,6 +286,7 @@ export function createInsightsClient(
     return value
   }
   return {
+    ...(onUnauthorized ? { signIn: () => onUnauthorized() } : {}),
     observeConnection: async (signal) => readJSON(await request("/observe-connection", { signal })),
     listSavedQueries: (signal) => cachedRead("/saved-queries", body => {
       return ((body.queries ?? []) as SavedQueryEntry[]).map((entry: SavedQueryEntry) => {
@@ -306,7 +311,8 @@ export function createInsightsClient(
       if (!etag) throw new Error("Reload this saved query before deleting it.")
       await request(`/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "If-Match": etag } })
     },
-    providers: async (signal) => (await readJSON<{ providers: Provider[] }>(await request("/providers", { signal }))).providers,
+    // The shared catalog loads behind a rendered workspace; its 401 becomes a banner, not a navigation.
+    providers: async (signal) => (await readJSON<{ providers: Provider[] }>(await request("/providers", { signal }, undefined, false, false))).providers,
     providerConfigs: async (signal) =>
       (await readJSON<{ providers: ProviderConfig[] }>(await request("/provider-configs", { signal }))).providers,
     saveProvider: async ({ managed: _managed, etag, ...config }) => {

@@ -96,7 +96,7 @@ describe("Insights renewable sessions", () => {
   it("stops after a second unauthorized response instead of looping", async () => {
     const { api, session, onUnauthorized } = host()
     const fetcher = mockFetch(response({}, 401), response({}, 401))
-    await expect(api.providers()).rejects.toThrow(/Sign in/)
+    await expect(api.list()).rejects.toThrow(/Sign in/)
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(session.clearRejectedSession).toHaveBeenCalledWith("renewed")
     expect(onUnauthorized).toHaveBeenCalledOnce()

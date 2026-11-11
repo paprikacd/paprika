@@ -422,10 +422,9 @@ const Tile = memo(function Tile({
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
             deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
-            waitingLabel={!savedQueryLoading && awaitingSources && sourceStatus === "pending" ? "Waiting for data sources…" : undefined}
+            waitingLabel={!savedQueryLoading && awaitingSources ? (sourceStatus === "pending" ? "Waiting for data sources…" : sourceWaitMessage(sourceStatus)) : undefined}
             error={
               savedQueryLoading ? null : error ??
-              (awaitingSources && sourceStatus === "unavailable" ? sourceWaitMessage(sourceStatus) : null) ??
               (!provider && !widget.queryRef && sourceStatus === "ready"
                 ? `Provider “${widget.providerId}” is not configured.`
                 : null)

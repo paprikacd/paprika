@@ -174,6 +174,24 @@ describe("provider catalog capacity backoff", () => {
   })
 })
 
+describe("catalog session expiry", () => {
+  it("does not navigate the host for a catalog 401, but still does for other reads", async () => {
+    const onUnauthorized = vi.fn()
+    mockFetch(response({ error: "expired" }, 401), response({ error: "expired" }, 401))
+    const api = createInsightsClient("/api/insights", () => "token", onUnauthorized)
+    await expect(api.providers()).rejects.toMatchObject({ status: 401 })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+    await expect(api.list()).rejects.toMatchObject({ status: 401 })
+    expect(onUnauthorized).toHaveBeenCalledOnce()
+  })
+  it("starts the host's sign-in flow only when the user asks for it", () => {
+    const onUnauthorized = vi.fn()
+    createInsightsClient("/api/insights", () => "token", onUnauthorized).signIn?.()
+    expect(onUnauthorized).toHaveBeenCalledOnce()
+    expect(createInsightsClient().signIn).toBeUndefined()
+  })
+})
+
 describe("shared source failure classification", () => {
   it.each([401, 403])("treats HTTP %s as an access failure", status => {
     expect(classifySourceFailure(new InsightsHTTPError("denied", status, null))).toBe("access")

@@ -29,6 +29,7 @@ function api(providers: InsightsClient["providers"]): InsightsClient {
     getSavedQuery: vi.fn(), saveSavedQuery: vi.fn(), removeSavedQuery: vi.fn(),
     providerConfigs: vi.fn().mockResolvedValue([]), saveProvider: vi.fn(), removeProvider: vi.fn(),
     testProvider: vi.fn(), metadata: vi.fn().mockResolvedValue({ values: [] }),
+    signIn: vi.fn(),
   }
 }
 function bodyText() {
@@ -139,23 +140,51 @@ describe("tiles and banner while shared sources are busy", () => {
   })
 })
 
-describe("setup landing", () => {
-  it("keeps the landing for a 403 and makes Retry connection the primary action", async () => {
-    const api = api_(() => Promise.reject(new InsightsHTTPError("Your account does not have access to Insights.", 403, null)))
+describe("session expiry and access after render", () => {
+  it("a 401 keeps the workspace and an unsaved draft mounted and offers sign-in", async () => {
+    let reject: (error: unknown) => void = () => undefined
+    const api = api_(() => new Promise<Provider[]>((_, no) => { reject = no }))
     render(createElement(InsightsApp, { client: api }))
-    const alert = await screen.findByRole("alert")
-    expect(alert).toHaveTextContent("Your account does not have access to Insights.")
-    expect(screen.getByRole("button", { name: "Retry connection" })).toHaveAttribute("data-variant", "primary")
-    expect(screen.getByRole("button", { name: /Explore the example/ })).toHaveAttribute("data-variant", "secondary")
-    expect(screen.queryByRole("heading", { name: "Dashboard A" })).not.toBeInTheDocument()
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Unsaved title" } })
+    await act(async () => reject(new InsightsHTTPError("Sign in to access your dashboards.", 401, null)))
+    expect(await screen.findByText("Your session has expired. Sign in again to load data sources.")).toBeInTheDocument()
+    expect(screen.getByText("Your session has expired. Sign in again to load data sources.").closest("[role=status]")).not.toBeNull()
+    expect(screen.queryByRole("heading", { name: "A clearer view of your stack." })).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue("Unsaved title")
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }))
+    expect(api.signIn).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue("Unsaved title")
   })
 
-  it("keeps the landing when the dashboard list fails", async () => {
+  it("a 401 without a host sign-in offers a retry instead", async () => {
+    const api = api_(() => Promise.reject(new InsightsHTTPError("Sign in to access your dashboards.", 401, null)))
+    delete api.signIn
+    render(createElement(InsightsApp, { client: api }))
+    expect(await screen.findByText("Your session has expired. Sign in again to load data sources.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Sign in again" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Retry data sources" }))
+    expect(api.providers).toHaveBeenCalledTimes(2)
+  })
+
+  it("a 403 after render is an access banner that keeps the workspace", async () => {
+    const api = api_(() => Promise.reject(new InsightsHTTPError("Your account does not have access to Insights.", 403, null)))
+    render(createElement(InsightsApp, { client: api }))
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    expect(await screen.findByText("Your account cannot load data sources. Check its Observability permissions.")).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Sign in again" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Retry data sources" })).toBeInTheDocument()
+  })
+
+  it("keeps the setup landing for a failed boot with Retry connection as the primary action", async () => {
     const client = api_(() => Promise.resolve([]))
     vi.mocked(client.list).mockRejectedValue(new InsightsHTTPError("dashboard storage operation failed", 500, null))
     render(createElement(InsightsApp, { client }))
     expect(await screen.findByRole("alert")).toHaveTextContent("Dashboard storage operation failed")
     expect(screen.getByRole("button", { name: "Retry connection" })).toHaveAttribute("data-variant", "primary")
+    expect(screen.getByRole("button", { name: /Explore the example/ })).toHaveAttribute("data-variant", "secondary")
   })
 })
 
