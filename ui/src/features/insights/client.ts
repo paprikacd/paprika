@@ -1,5 +1,4 @@
 import {
-  dashboardSchema,
   savedQuerySchema,
   storedDashboardSchema,
   type Dashboard,
@@ -9,7 +8,7 @@ import {
   type SavedQuery,
   type SavedQueryEntry,
 } from "./schema"
-import { compactDashboardLayout } from "./layout-compaction"
+import { dashboardAsSent } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
 
@@ -322,7 +321,7 @@ export function createInsightsClient(
     save: async (dashboard, etag) => {
       const response = await request(`/dashboards/${encodeURIComponent(dashboard.id)}`, {
         method: "PUT",
-        body: JSON.stringify(dashboardSchema.parse(compactDashboardLayout(dashboard))),
+        body: JSON.stringify(dashboardAsSent(dashboard)),
         headers: etag ? { "If-Match": etag } : { "If-None-Match": "*" },
       })
       return documentETag(response)

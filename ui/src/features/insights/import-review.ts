@@ -1,6 +1,5 @@
 import { documentFingerprint } from "./fingerprint";
 import {
-  dashboardSchema,
   MAX_DOCUMENT_BYTES,
   widgetKind,
   type Dashboard,
@@ -9,6 +8,7 @@ import {
   type SavedQuery,
   type SavedQueryReference,
 } from "./schema";
+import { dashboardAsSent } from "./layout-compaction";
 import { savedQueryParameterValue } from "./saved-queries";
 import {
   buildDashboardBundle,
@@ -55,8 +55,10 @@ export interface ImportReview {
 export const MAX_IMPORT_DIFF_CHANGES = 200;
 
 function canonicalDashboard(input: Dashboard): Dashboard {
+  // A save writes the layout as the canvas draws it, so a stored dashboard holds those positions. Canonicalize
+  // incoming documents the same way, or a gapped bundle that is drawn identically would compare as a conflict.
   // JSON removes optional undefined fields but never normalizes actual values.
-  const document = dashboardSchema.parse(input);
+  const document = dashboardAsSent(input);
   const source = documentFingerprint(document);
   if (new TextEncoder().encode(source).byteLength > MAX_DOCUMENT_BYTES)
     throw new Error("Each dashboard must be smaller than 256 KiB.");

@@ -1,5 +1,7 @@
 import { verticalCompactor } from "react-grid-layout"
 
+import { dashboardSchema, type Dashboard } from "./schema"
+
 /** The desktop canvas's column count. Saved layouts are authored on this grid. */
 export const CANVAS_COLUMNS = 12
 
@@ -14,6 +16,15 @@ export type CompactItem = GridBox & { i: string }
  */
 export function compactBoxes(items: readonly CompactItem[]): CompactItem[] {
   return verticalCompactor.compact(items.map(item => ({ ...item })), CANVAS_COLUMNS).map(({ i, x, y, w, h }) => ({ i, x, y, w, h }))
+}
+
+/**
+ * The dashboard exactly as a save writes it: parsed against the schema, with each widget at the position the canvas
+ * draws. Every place that stores a dashboard after a save uses this, so the document kept in memory and the one on the
+ * server are the same, and a re-review of the same layout compares equal.
+ */
+export function dashboardAsSent(input: unknown): Dashboard {
+  return compactDashboardLayout(dashboardSchema.parse(input))
 }
 
 /**

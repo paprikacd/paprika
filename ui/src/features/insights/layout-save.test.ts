@@ -85,13 +85,57 @@ describe("saving the layout as the canvas draws it", () => {
     }
   })
 
-  it("keeps the server rejecting a layout that overlaps when it is sent as stored", async () => {
+  it("sends a dashboard that is already drawn byte-identical to the one the UI holds", async () => {
+    const drawn: Dashboard = {
+      ...overlappingDashboard, id: "drawn",
+      widgets: [
+        { ...overlappingDashboard.widgets[0], layout: { x: 0, y: 0, w: 6, h: 4 } },
+        { ...overlappingDashboard.widgets[1], layout: { x: 6, y: 0, w: 6, h: 4 } },
+      ],
+    }
     const server = emulator([])
-    const response = await server.fetcher("/api/insights/dashboards/overlap", {
-      method: "PUT", headers: { "If-None-Match": "*" }, body: JSON.stringify(overlappingDashboard),
-    })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: 'widget "latency" overlaps widget "requests"' })
+    vi.stubGlobal("fetch", server.fetcher)
+    try {
+      const client = createInsightsClient("/api/insights", () => "token")
+      await client.save(drawn)
+      const put = server.fetcher.mock.calls.map(([, init]) => init).find(init => init?.method === "PUT")!
+      expect(put.body).toBe(JSON.stringify(drawn))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("confirms an overlapping bundle whose acknowledgement was lost after the write", async () => {
+    const providers: Provider[] = [{ id: "prom", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }]
+    const server = emulator([])
+    vi.stubGlobal("fetch", server.fetcher)
+    try {
+      const client = createInsightsClient("/api/insights", () => "token")
+      // The write reaches the server, then the response is lost. The importer must read the dashboard back and
+      // compare it with what it meant to write, so the target it fingerprints has to be the layout that was stored.
+      const lostAcknowledgement = {
+        ...client,
+        save: async (item: Dashboard, etag?: string) => {
+          await client.save(item, etag)
+          throw new Error("Connection reset after the write")
+        },
+      }
+      const saved: Dashboard[] = []
+      const environment = {
+        client: lostAcknowledgement, providers, dashboards: [], onQueriesChange: vi.fn(),
+        onDashboardSaved: vi.fn((item: Dashboard) => { saved.push(item) }),
+      }
+      const result = await createBundleImporter()({
+        sessionId: "lost-acknowledgement",
+        bundle: buildDashboardBundle([overlappingDashboard], []),
+        providerMapping: { prom: "prom" },
+        queryChoices: {},
+      }, environment)
+      expect(result).toMatchObject({ complete: true, added: 1, errors: [] })
+      expect(overlapping(server.stored.get(saved[0].id)!.value)).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it("imports an old overlapping bundle completely through the real client", async () => {

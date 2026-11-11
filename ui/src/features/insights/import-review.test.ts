@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dashboardAsSent } from "./layout-compaction";
 import {
   canKeepSavedQuery,
   diffImportDocuments,
@@ -198,13 +199,29 @@ describe("import review snapshots", () => {
 });
 
 describe("readable structural changes", () => {
+  it("re-reviews a gapped bundle as identical to the dashboard the save stored", () => {
+    // The canvas closes the empty row between the two widgets, so a save stores b at y 4. A bundle
+    // exported with its original gap is drawn identically and must not be reported as a conflict.
+    const gapped: Dashboard = {
+      schemaVersion: 1, id: "gapped", title: "Gapped", timeRange: "1h", refreshInterval: 0,
+      widgets: [
+        { id: "a", title: "A", type: "timeseries", providerId: "prom", query: "up", unit: "req/s", layout: { x: 0, y: 0, w: 6, h: 4 } },
+        { id: "b", title: "B", type: "timeseries", providerId: "prom", query: "up", unit: "req/s", layout: { x: 0, y: 6, w: 6, h: 4 } },
+      ],
+    };
+    const stored = dashboardAsSent(gapped);
+    expect(stored.widgets[1].layout.y).toBe(4);
+    expect(reviewDashboard(gapped, { document: stored, etag: '"v1"' }).status).toBe("identical");
+  });
+
   it("uses widget, parameter and binding identities while preserving additions, removals and reordering", () => {
+    // Laid out as the canvas draws them, so comparing either document does not move a widget.
     const old: Dashboard = {
       ...dashboard,
       widgets: [
         ...dashboard.widgets,
-        { ...dashboard.widgets[0], id: "remove", title: "Remove" },
-        { ...dashboard.widgets[0], id: "second", title: "Second" },
+        { ...dashboard.widgets[0], id: "remove", title: "Remove", layout: { x: 6, y: 0, w: 6, h: 4 } },
+        { ...dashboard.widgets[0], id: "second", title: "Second", layout: { x: 0, y: 4, w: 6, h: 4 } },
       ],
     };
     const changed = structuredClone(old);
@@ -213,7 +230,7 @@ describe("readable structural changes", () => {
     changed.widgets = [
       changed.widgets[2],
       changed.widgets[0],
-      { ...changed.widgets[1], id: "add", title: "Add" },
+      { ...changed.widgets[1], id: "add", title: "Add", layout: { x: 0, y: 8, w: 6, h: 4 } },
     ];
     changed.widgets[1].layout.w = 12;
     changed.widgets[1].queryRef!.bindings![0] = {
