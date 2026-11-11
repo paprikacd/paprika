@@ -75,3 +75,23 @@ describe("daily observed state", () => {
     expect(screen.getByRole("group", { name: "Recorded day legend" })).toHaveTextContent("Down");
   });
 });
+
+describe("status cues on recorded days", () => {
+  const statusThresholds = [{ value: 0, status: "critical" as const, label: "Down" }, { value: 1, status: "warning" as const, label: "Degraded" }, { value: 2, status: "ok" as const, label: "Up" }];
+  const days = (values: (number | null)[]): NonNullable<QueryResult["series"]>[number] => ({ name: "api", labels: { service: "api" }, points: values.map((value, index) => ({ timestamp: base + index * UTC_DAY + 3600000, value })) });
+  it("strokes warning days 1 px and critical days 2 px, with a glyph chip in the legend, and never hatches a status", () => {
+    const { container } = render(<UptimeTimeline widget={{ ...widget, pluginId: "uptime-timeline", options: { thresholds: statusThresholds } }} result={{ series: [days([0, 1, 2])] }} />);
+    const observed = [...container.querySelectorAll<HTMLElement>('[data-uptime-state="observed"]')];
+    expect(observed.map(cell => cell.getAttribute("data-status-stroke"))).toEqual(["critical", "warning", null]);
+    expect(container.querySelector('[role="group"][aria-label="Recorded day legend"]')!.querySelectorAll("[data-status]")).toHaveLength(3);
+    expect(observed[0].className).not.toMatch(/mixed|unknown/);
+  });
+  it("ships status-named defaults rather than hex", () => {
+    expect(defaultThresholds.map(threshold => [threshold.status, threshold.color])).toEqual([["critical", undefined], ["ok", undefined]]);
+  });
+  it("leaves hex-only days without a stroke or glyph", () => {
+    const { container } = render(<UptimeTimeline widget={{ ...widget, pluginId: "uptime-timeline", options: { thresholds } }} result={{ series: [days([0, 1])] }} />);
+    expect(container.querySelector("[data-status-stroke]")).toBeNull();
+    expect(container.querySelector("[data-status]")).toBeNull();
+  });
+});

@@ -80,7 +80,7 @@ try {
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
       await page.getByRole("button", { name: "Edit Service health", exact: true }).click()
       await editor().getByRole("tab", { name: "Style", exact: true }).click()
-      await editor().getByLabel("Threshold 1 color", { exact: true }).fill("#ad3f32")
+      await editor().getByLabel("Threshold 1 hue override", { exact: true }).fill("#ad3f32")
       await editor().getByLabel("Threshold 1 label", { exact: true }).fill("Needs attention")
       await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
       const changed = heatmap.getByRole("button", {

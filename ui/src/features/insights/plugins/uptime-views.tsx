@@ -4,18 +4,19 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { thresholdPaint } from "../status";
+import { StatusChip, statusName, statusStrokeLevel, statusStrokeStyle } from "../status-chip";
 import { seriesName, type Series } from "../chart-data";
-import type { QueryResult } from "../schema";
+import type { QueryResult, Threshold } from "../schema";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import { UTC_DAY, uptimeObservations, type ObservationDay } from "./uptime-observations";
 import styles from "./uptime-views.module.css";
 
 const configSchema = z.strictObject({ maxDays: z.number().int().min(7).max(366).optional(), maxSeries: z.number().int().min(1).max(24).optional() });
-export const defaultThresholds = [{ value: 0, status: "critical" as const, label: "Down" }, { value: 1, status: "ok" as const, label: "Up" }];
+export const defaultThresholds: Threshold[] = [{ value: 0, status: "critical", label: "Down" }, { value: 1, status: "ok", label: "Up" }];
 const dayText = (day: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day * UTC_DAY));
 const monthText = (day: number) => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", timeZone: "UTC" }).format(new Date(day * UTC_DAY));
-const stateText = (day: ObservationDay) => day.kind === "unknown" ? "No recorded value" : day.kind === "mixed" ? "Mixed or incomplete observations" : day.label ?? "Observed";
+const stateText = (day: ObservationDay) => day.kind === "unknown" ? "No recorded value" : day.kind === "mixed" ? "Mixed or incomplete observations" : day.label ?? statusName(day.threshold);
 type Active = { entry: Series; index: number; day: ObservationDay; anchor: HTMLButtonElement; pinned: boolean; revision: QueryResult };
 
 function UptimeView({ widget, result, onContextChange, embedded, calendar }: WidgetRendererProps & { calendar: boolean }) {
@@ -54,10 +55,12 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
     const name = seriesName(entry, row), state = stateText(day), label = `${name} · ${dayText(day.day)} UTC · ${state} · ${day.count} recorded samples`;
     const color = day.kind === "observed" ? day.color ?? widget.color ?? "var(--gamma-accent)" : undefined;
     const className = `${styles.cell} ${styles[day.kind]}`;
-    if (!interactive) return <span key={day.day} className={className} title={label} style={{ backgroundColor: color }} />;
+    const stroke = day.kind === "observed" ? statusStrokeLevel(day.threshold) : undefined;
+    const cellStyle = { backgroundColor: color, ...(day.kind === "observed" ? statusStrokeStyle(day.threshold) : {}) } as CSSProperties;
+    if (!interactive) return <span key={day.day} className={className} title={label} data-status-stroke={stroke} style={cellStyle} />;
     const [focusedRow, focusedIndex] = focusKey.split("-").map(Number);
     const tabKey = data.rows[focusedRow]?.days[focusedIndex] ? focusKey : "0-0";
-    return <button key={day.day} type="button" data-uptime-key={key(row,index)} data-uptime-day={day.day} data-uptime-state={day.kind} aria-label={label} aria-describedby={`${id}-help${open?.anchor.dataset.uptimeKey === key(row,index) ? ` ${id}` : ""}`} aria-pressed={detailsEnabled ? open?.pinned && open.anchor.dataset.uptimeKey === key(row,index) : undefined} tabIndex={tabKey === key(row,index) ? 0 : -1} className={className} style={{ backgroundColor: color }}
+    return <button key={day.day} type="button" data-uptime-key={key(row,index)} data-uptime-day={day.day} data-uptime-state={day.kind} aria-label={label} aria-describedby={`${id}-help${open?.anchor.dataset.uptimeKey === key(row,index) ? ` ${id}` : ""}`} aria-pressed={detailsEnabled ? open?.pinned && open.anchor.dataset.uptimeKey === key(row,index) : undefined} tabIndex={tabKey === key(row,index) ? 0 : -1} className={className} data-status-stroke={stroke} style={cellStyle}
       onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hover = true; show(entry,row,day,event.currentTarget); } }}
       onPointerLeave={() => { interaction.current.hover = false; leave(); }}
       onFocus={event => { interaction.current.focus = true; setFocusKey(key(row,index)); show(entry,row,day,event.currentTarget); }}
@@ -77,9 +80,9 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
         })}</div> : <><div className={styles.timeline}>{days.map((day,index) => cell(entry,day,row,index))}</div><div className={styles.axis}><span>{dayText(days[0].day)}</span><span>{dayText(days.at(-1)!.day)} UTC</span></div></>}
       </section>)}
     </div>
-    <div className={styles.footer}>{widget.options?.showLegend !== false && <div className={styles.legend} role="group" aria-label="Recorded day legend">{thresholds.map((threshold,index) => <span key={index}><i style={{ background: thresholdPaint(threshold) }} />{threshold.label ?? `≥ ${threshold.value}`}</span>)}<span><i className={styles.mixed} />Mixed / incomplete</span><span><i className={styles.unknown} />No recorded value</span></div>}<span>Recorded observations · UTC days</span><span>Not a measured uptime percentage</span>{data.truncatedDays && <span>Showing latest {config.maxDays ?? 90} days</span>}{data.truncatedSeries && <span>Showing {data.rows.length} of {source.length} series</span>}{result.truncated && <span>Partial source response</span>}</div>
+    <div className={styles.footer}>{widget.options?.showLegend !== false && <div className={styles.legend} role="group" aria-label="Recorded day legend">{thresholds.map((threshold,index) => <span key={index}>{threshold.status ? <StatusChip status={threshold.status} color={threshold.color} label={threshold.label ?? `≥ ${threshold.value}`} /> : <><i style={{ background: thresholdPaint(threshold) }} />{threshold.label ?? `≥ ${threshold.value}`}</>}</span>)}<span><i className={styles.mixed} />Mixed / incomplete</span><span><i className={styles.unknown} />No recorded value</span></div>}<span>Recorded observations · UTC days</span><span>Not a measured uptime percentage</span>{data.truncatedDays && <span>Showing latest {config.maxDays ?? 90} days</span>}{data.truncatedSeries && <span>Showing {data.rows.length} of {source.length} series</span>}{result.truncated && <span>Partial source response</span>}</div>
     {open && <ObservationTooltip id={id} anchor={open.anchor} avoidWidget pinned={open.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clear(); }} onLeave={() => { interaction.current.panel = false; leave(); }}>
-      <div className={styles.detail}><strong>{dayText(open.day.day)} UTC</strong><span>{stateText(open.day)}</span><span>{open.day.count} recorded sample{open.day.count === 1 ? "" : "s"}{open.day.missing ? ` · ${open.day.missing} missing` : ""}</span><span>Samples do not establish availability for the full day.</span></div>
+      <div className={styles.detail}><strong>{dayText(open.day.day)} UTC</strong>{open.day.kind === "observed" && open.day.threshold?.status ? <StatusChip status={open.day.threshold.status} color={open.day.threshold.color} label={open.day.threshold.label} /> : <span>{stateText(open.day)}</span>}<span>{open.day.count} recorded sample{open.day.count === 1 ? "" : "s"}{open.day.missing ? ` · ${open.day.missing} missing` : ""}</span><span>Samples do not establish availability for the full day.</span></div>
       {open.day.latest && <MetricDetails widget={widget} series={open.entry} index={open.index} point={open.day.latest} unit={widget.unit} decimals={widget.options?.decimals} description="Latest recorded sample that day" />}
     </ObservationTooltip>}
   </div>;

@@ -29,6 +29,20 @@ describe("monitor status grid", () => {
     fireEvent.click(screen.getByRole("button",{name:/empty: No data/}));
     expect(select).toHaveBeenLastCalledWith({ labels:{service:"empty"}, value:null, series:"empty" });
   });
+  it("adds a glyph chip and a 1 px or 2 px inset stroke for status bands, and leaves hex-only bands unmarked", () => {
+    const statusOptions = { ...widget.options, thresholds: [{ value: 0, status: "critical" as const, label: "Down" }, { value: 2, status: "warning" as const, label: "Degraded" }, { value: 4, status: "ok" as const, label: "Up" }] };
+    const { unmount } = render(<StatusGrid widget={{ ...widget, options: statusOptions }} result={{ series: [series("down", [0]), series("warn", [2]), series("up", [5])] }} />);
+    expect(screen.getByRole("button", { name: /down: 0 · Down/ })).toHaveAttribute("data-status-stroke", "critical");
+    expect(screen.getByRole("button", { name: /warn: 2 · Degraded/ })).toHaveAttribute("data-status-stroke", "warning");
+    expect(screen.getByRole("button", { name: /up: 5 · Up/ })).not.toHaveAttribute("data-status-stroke");
+    const legend = screen.getByRole("group", { name: "Monitor status legend" });
+    expect(legend.querySelectorAll("[data-status]")).toHaveLength(3);
+    expect(legend.querySelector('[data-status="critical"]')).toHaveTextContent("Critical: Down");
+    unmount();
+    const hex = render(<StatusGrid widget={{ ...widget, options: { ...widget.options, thresholds: [{ value: 0, color: "#10aa33", label: "Healthy" }, { value: 4, color: "#dd4422", label: "Warning" }] } }} result={{ series: [series("down", [0]), series("up", [5])] }} />);
+    expect(hex.container.querySelector("[data-status-stroke]")).toBeNull();
+    expect(hex.container.querySelector("[data-status]")).toBeNull();
+  });
   it("bounds series and reports omissions and partial provider responses", () => {
     expect(() => statusGridConfigSchema.parse({maxSeries:2049})).toThrow();
     render(<StatusGrid widget={{...widget,config:{maxSeries:2}}} result={{series:[series("one",[1]),series("two",[0]),series("three",[1])],truncated:true}} />);

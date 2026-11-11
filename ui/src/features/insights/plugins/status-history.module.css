@@ -20,13 +20,13 @@
   background: var(--gamma-surface-2);
 }
 .cells > button, .cells > span { position: absolute; top: 0; bottom: 0; min-width: 1px; border-radius: 1px; }
-.mark { transform: translateX(-50%); }
+.mark { transform: translateX(-50%); box-shadow: var(--status-inset, 0 0 #0000); }
 /* Keep time-axis endpoints reachable even when subpixel marks are rounded
    against an adjacent sample. Their outside edge stays at the exact boundary. */
 .mark[data-history-edge="start"] { transform: none; min-width: 2px; z-index: 1; }
 .mark[data-history-edge="end"] { transform: translateX(-100%); min-width: 2px; z-index: 1; }
-.cells[data-segmented="true"] > .mark { box-shadow: inset -1px 0 var(--gamma-surface-2); }
-.band { pointer-events: none; }
+.cells[data-segmented="true"] > .mark { box-shadow: inset -1px 0 var(--gamma-surface-2), var(--status-inset, 0 0 #0000); }
+.band { pointer-events: none; box-shadow: var(--status-inset, 0 0 #0000); }
 .cells > button:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; z-index: 2; }
 .unknown { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }
 .cells > button.unknown, .cells > button.unknown:hover:not(:disabled) { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }

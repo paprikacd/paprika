@@ -30,6 +30,7 @@ import styles from "../chart-styles.module.css";
 import { metricContext, validTimestamp } from "../widget-context";
 import { widgetTextColor } from "../appearance";
 import { thresholdPaint, thresholdText } from "../status";
+import { StatusChip, statusName, statusStrokeLevel, statusStrokeStyle } from "../status-chip";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { compactSeriesLabels } from "../series-display";
 import meterStyles from "./capacity-meter.module.css";
@@ -175,7 +176,9 @@ function GaugeLegend({ widget, config, compactRows = false }: Pick<WidgetRendere
   const markers = config.showThresholds === false ? [] : (widget.options?.thresholds ?? []).filter(item => item.value > min && item.value < max);
   return <div className={meterStyles.legend} data-gauge-legend data-gauge-legend-layout={compactRows ? "rows" : undefined}>
     <div className={meterStyles.bounds}>{compactRows ? <span>Scale {formatMetric(min, widget.unit, false, widget.options?.decimals)} – {formatMetric(max, widget.unit, false, widget.options?.decimals)}</span> : <><span>{formatMetric(min, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(max, widget.unit, false, widget.options?.decimals)}</span></>}</div>
-    {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}><i aria-hidden="true" style={{ background: thresholdPaint(marker) }} />{marker.label ?? "Threshold"} {formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}</span>)}</div>}
+    {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}>{marker.status
+        ? <StatusChip status={marker.status} color={marker.color} label={`${marker.label ?? statusName(marker, "Threshold")} ${formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}`} />
+        : <><i aria-hidden="true" style={{ background: thresholdPaint(marker) }} />{marker.label ?? "Threshold"} {formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}</>}</span>)}</div>}
   </div>;
 }
 
@@ -268,7 +271,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     onSelect={interactive && onContextChange ? () => onContextChange(metricContext(series, index, true)) : undefined}
     details={<MetricDetails widget={widget} series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample"
       seriesLabel={displayLabel ?? name}>
-      <span className={styles.tooltipStatus}>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: thresholdPaint(threshold) }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</span>
+      <span className={styles.tooltipStatus}>{threshold?.status ? <StatusChip status={threshold.status} color={threshold.color} label={threshold.label ?? statusName(threshold)} /> : <>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: thresholdPaint(threshold) }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</>}</span>
       {scaleNotice && <span className={styles.tooltipRange}>{scaleNotice}</span>}
       {band && <span className={styles.tooltipRange}>{band}</span>}
       <span className={styles.tooltipRange}>Scale: {min} to {max}{widget.unit ? ` ${widget.unit}` : ""}</span>
@@ -282,11 +285,11 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
   </ObservationDetails>;
   const track = <GaugeTrack widget={widget} config={config} value={value} title={title} />;
   const showStatus = bank && display !== "radial" && orientation === "horizontal" && config.showStatus;
-  const statusLabel = value === undefined ? "Unknown" : threshold?.label ?? "Observed";
+  const statusLabel = value === undefined ? "Unknown" : threshold?.label ?? statusName(threshold);
   return <div className={meterStyles.item} data-gauge-series={name} data-gauge-kind={display}
     data-gauge-orientation={display === "radial" ? undefined : orientation} data-gauge-bank-item={bank || undefined}>
     {display === "radial" ? <><RadialLayout reading={reading} track={track} cue={rangeCue} bank={bank} /><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span></> :
-      <div className={meterStyles.body} data-gauge-show-status={showStatus || undefined}><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span>{track}{reading}{showStatus && <span className={meterStyles.status} data-gauge-status title={statusLabel} style={{ "--gauge-status-color": thresholdPaint(threshold) ?? "var(--gamma-muted)" } as CSSProperties}><i aria-hidden="true" />{statusLabel}</span>}</div>}
+      <div className={meterStyles.body} data-gauge-show-status={showStatus || undefined}><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span>{track}{reading}{showStatus && <span className={meterStyles.status} data-gauge-status title={statusLabel} style={{ "--gauge-status-color": thresholdPaint(threshold) ?? "var(--gamma-muted)" } as CSSProperties}>{threshold?.status ? <StatusChip status={threshold.status} color={threshold.color} label={statusLabel} data-status-stroke={statusStrokeLevel(threshold)} style={statusStrokeStyle(threshold)} /> : <><i aria-hidden="true" />{statusLabel}</>}</span>}</div>}
     {value === undefined && <span role="status" className={meterStyles.srOnly}>Unknown · latest sample has no finite value</span>}
     {!bank && <GaugeLegend widget={widget} config={config} />}
   </div>;

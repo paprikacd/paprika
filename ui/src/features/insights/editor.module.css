@@ -400,7 +400,7 @@
 }
 .threshold {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 65px 44px;
+  grid-template-columns: 65px minmax(0, 1fr) 44px;
   gap: 8px;
   align-items: end;
 }

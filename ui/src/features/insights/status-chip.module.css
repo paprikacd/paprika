@@ -1,0 +1,44 @@
+/* Status glyph chips and inset strokes. Colours arrive as --chip-* and --status-stroke-color from status-chip.tsx. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 7px 1px 1px;
+  border-radius: 999px;
+  background: var(--chip-soft, transparent);
+  color: var(--chip-text, var(--gamma-ink));
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+.chip[data-size="tile"] { gap: 6px; padding: 2px 9px 2px 2px; font-size: 12px; }
+.glyph {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--chip-mark, var(--gamma-muted));
+  color: var(--chip-ink, #000000);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.chip[data-size="tile"] .glyph { width: 17px; height: 17px; font-size: 12px; }
+.text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Inset strokes on status cells: 1 px for warning, 2 px for critical. Owners add var(--status-inset) to their box-shadow. */
+:global([data-status-stroke="warning"]) { --status-inset: inset 0 0 0 1px var(--status-stroke-color, currentColor); }
+:global([data-status-stroke="critical"]) { --status-inset: inset 0 0 0 2px var(--status-stroke-color, currentColor); }
+
+/* Colour swatch that shows the colour actually drawn in the active theme. */
+.swatch { display: inline-block; flex: none; width: 18px; height: 18px; border: 1px solid var(--gamma-border); border-radius: 4px; }
+.markFields { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; min-width: 0; }
+.hue { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 11px; color: var(--gamma-ink); }
+.hueControls { display: inline-flex; align-items: center; gap: 4px; }
+.hueControls input[type="color"] { width: 36px; height: 36px; padding: 4px; cursor: pointer; }

@@ -13,7 +13,7 @@
 .calendarGrid .cell { aspect-ratio: 1; width: 100%; min-width: 0; }
 .timeline { display: grid; grid-template-columns: repeat(var(--uptime-days), minmax(3px, 1fr)); gap: 2px; min-width: calc(var(--uptime-days) * 5px); }
 .timeline .cell { height: 18px; width: 100%; min-width: 0; }
-.cell { display: block; border: 0; padding: 0; border-radius: 2px; cursor: pointer; transition: filter 100ms ease; }
+.cell { display: block; border: 0; padding: 0; border-radius: 2px; cursor: pointer; transition: filter 100ms ease; box-shadow: var(--status-inset, 0 0 #0000); }
 .cell:hover { filter: brightness(1.12); }
 .cell:focus-visible { outline: 2px solid var(--gamma-ink); outline-offset: 2px; position: relative; z-index: 1; }
 .unknown { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }

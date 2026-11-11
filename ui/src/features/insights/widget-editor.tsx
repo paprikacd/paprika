@@ -23,6 +23,7 @@ import {
   supportsAnnotationSource,
   type Dashboard,
   type Provider,
+  type Threshold,
   type Widget,
   type QueryResult,
   type WidgetOptions,
@@ -48,10 +49,20 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
-import { thresholdHex, type StatusTheme } from "./status";
+import { thresholdHex, type StatusMark, type StatusTheme } from "./status";
+import { StatusMarkFields } from "./status-mark-fields";
 import { useInsightsTheme } from "./insights-theme";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
+
+/** Replaces a band's status and hue, keeping its value and label and omitting absent keys. */
+function withStatusMark(threshold: Threshold, mark: StatusMark): Threshold {
+  const next: Threshold = { value: threshold.value };
+  if (mark.status !== undefined) next.status = mark.status;
+  if (mark.color !== undefined) next.color = mark.color;
+  if (threshold.label !== undefined) next.label = threshold.label;
+  return next;
+}
 import { TooltipEditor } from "./tooltip-editor";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
@@ -620,23 +631,18 @@ function StyleEditor({
                   }
                 />
               </label>
-              <label className={styles.field}>
-                Color
-                <GammaInput
-                  aria-label={`Threshold ${index + 1} color`}
-                  type="color"
-                  value={thresholdHex(threshold, resolvedTheme)}
-                  onChange={(event) =>
-                    update({
-                      thresholds: options.thresholds!.map((item, i) =>
-                        i === index
-                          ? { ...item, color: event.target.value }
-                          : item,
-                      ),
-                    })
-                  }
-                />
-              </label>
+              <StatusMarkFields
+                name={`Threshold ${index + 1}`}
+                mark={threshold}
+                theme={resolvedTheme}
+                onChange={(mark) =>
+                  update({
+                    thresholds: options.thresholds!.map((item, i) =>
+                      i === index ? withStatusMark(item, mark) : item,
+                    ),
+                  })
+                }
+              />
               <GammaButton
                 type="button"
                 variant="quiet"
@@ -681,13 +687,10 @@ function StyleEditor({
               update({
                 thresholds: [
                   ...(options.thresholds ?? []),
-                  {
-                    value: options.thresholds?.length
-                      ? options.thresholds[options.thresholds.length - 1]
-                          .value + 1
-                      : 0,
-                    color: options.thresholds?.length ? "#6e947a" : "#c46146",
-                  },
+                  // Matches the heatmap default: critical below the first limit, ok from it.
+                  options.thresholds?.length
+                    ? { value: options.thresholds[options.thresholds.length - 1].value + 1, status: "ok" }
+                    : { value: 0, status: "critical" },
                 ],
               })
             }

@@ -132,7 +132,7 @@ describe("widget inspector", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
-    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({options: expect.objectContaining({thresholds:[{value:0,color:"#c46146"}]})}));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({options: expect.objectContaining({thresholds:[{value:0,status:"critical"}]})}));
   });
   it("previews title, style and dimensions without Apply and inspects the same unsaved JSON/YAML", () => {
     const callbacks = props();
@@ -776,13 +776,36 @@ describe("widget inspector", () => {
         options: expect.objectContaining({
           decimals: 3,
           thresholds: [
-            { value: 0, color: "#c46146" },
-            { value: 1, color: "#6e947a" },
+            { value: 0, status: "critical" },
+            { value: 1, status: "ok" },
           ],
         }),
       }),
     );
   });
+  it("edits threshold status and hue from the picker, keeping legacy hex bands as authored", () => {
+    const callbacks = props();
+    const heatmap: Widget = { ...widget, type: "heatmap", options: { thresholds: [{ value: 0, color: "#123456", label: "Legacy" }, { value: 5, status: "warning" }] } };
+    render(<WidgetEditor {...callbacks} widget={heatmap} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    expect(screen.getByRole("combobox", { name: "Threshold 1 level" })).toHaveTextContent("Colour only");
+    expect(screen.getByRole("combobox", { name: "Threshold 2 level" })).toHaveTextContent("Warning");
+    expect(screen.getByRole("img", { name: "Threshold 1 drawn colour #123456" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Threshold 2 drawn colour #986111" })).toBeInTheDocument();
+    const thresholds = () => callbacks.onApply.mock.lastCall![0].options.thresholds;
+    const trigger = screen.getByRole("combobox", { name: "Threshold 2 level" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(thresholds()).toEqual([{ value: 0, color: "#123456", label: "Legacy" }, { value: 5, status: "critical" }]);
+    fireEvent.change(screen.getByLabelText("Threshold 1 hue override"), { target: { value: "#00aa33" } });
+    expect(thresholds()[0]).toEqual({ value: 0, color: "#00aa33", label: "Legacy" });
+    expect(thresholds()[0]).not.toHaveProperty("status");
+    fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
+    expect(thresholds()[2]).toEqual({ value: 6, status: "ok" });
+  });
+
   it("validates custom plugin configuration without offering gauge-only controls", () => {
     const dispose = registerWidgetPlugin({
       id: "test-gauge",
@@ -877,7 +900,7 @@ describe("widget inspector", () => {
           max: 80,
           textColor: "#123456",
           showLegend: false,
-          thresholds: [{ value: 0, color: "#c46146" }],
+          thresholds: [{ value: 0, status: "critical" }],
         }),
       }),
     );
@@ -891,7 +914,7 @@ describe("widget inspector", () => {
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
-    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ pluginId, options: expect.objectContaining({ thresholds: [{ value: 0, color: "#c46146" }] }) }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ pluginId, options: expect.objectContaining({ thresholds: [{ value: 0, status: "critical" }] }) }));
   });
 
   it("exposes calendar thresholds only when threshold colors are configured", () => {
@@ -902,7 +925,7 @@ describe("widget inspector", () => {
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
-    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining({ colorMode: "thresholds" }), options: expect.objectContaining({ thresholds: [{ value: 0, color: "#c46146" }] }) }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining({ colorMode: "thresholds" }), options: expect.objectContaining({ thresholds: [{ value: 0, status: "critical" }] }) }));
   });
 
   it("offers record-table colors, precision and thresholds without plot-only controls", () => {
@@ -918,7 +941,7 @@ describe("widget inspector", () => {
     expect(screen.queryByRole("switch", { name: "Show grid" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
-    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining(config), options: expect.objectContaining({ thresholds: [{ value: 0, color: "#c46146" }] }) }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining(config), options: expect.objectContaining({ thresholds: [{ value: 0, status: "critical" }] }) }));
   });
 
   it("restores registered gauge defaults when resetting its appearance", () => {
