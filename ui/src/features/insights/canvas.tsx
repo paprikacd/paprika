@@ -70,6 +70,7 @@ import contextStyles from "./widget-context.module.css";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
 import { AttentionStoreProvider, useAttentionPublisher } from "./attention-store";
+import { AttentionStrip, type AutoRefresh } from "./attention-strip";
 import { isAttentionLevel, widgetAttention, WidgetAttentionContext, type AttentionFailure } from "./widget-attention";
 import { statusToken, thresholdPaint } from "./status";
 
@@ -289,11 +290,17 @@ const Tile = memo(function Tile({
     () => widgetAttention(widget, { result: savedQueryLoading ? undefined : data, failure: sourceFailure, rangeEnd: end * 1000 }),
     [widget, savedQueryLoading, data, sourceFailure, end],
   );
+  // The newest settled query. The retained record keeps it across a remount, so a restored result keeps its age.
+  const retention = memoryOf.retention;
+  // Read on each render: a settle writes the record and then re-renders the tile, so the read is never stale.
+  const completedAt = retention.read()?.request?.settledAt;
+  // The strip counts the same facts query_dashboard does. An unmounted tile keeps its last facts, released not dropped.
   const attentionPublisher = useAttentionPublisher();
+  const facts = attention.facts;
   useEffect(() => {
-    attentionPublisher.publish({ widgetId: widget.id, title: widget.title, state: attention.state });
-  }, [attentionPublisher, widget.id, widget.title, attention.state]);
-  useEffect(() => () => attentionPublisher.clear(widget.id), [attentionPublisher, widget.id]);
+    attentionPublisher.publish({ widgetId: widget.id, title: widget.title, facts, completedAt });
+  }, [attentionPublisher, widget.id, widget.title, facts, completedAt]);
+  useEffect(() => () => attentionPublisher.release(widget.id), [attentionPublisher, widget.id]);
   const attentionMark = isAttentionLevel(attention.state) ? (thresholdPaint(attention.band) ?? statusToken(attention.state)) : undefined;
   const textColor = widgetTextColor(widget.options);
   const StatIcon = widget.type === "stat" && widget.options?.statIcon ? STAT_ICONS[widget.options.statIcon] : undefined;
@@ -660,6 +667,9 @@ export function DashboardCanvas({
                 />
               </div>
             ));
+  const autoRefresh: AutoRefresh = dashboard.customTimeRange
+    ? { mode: "fixed" }
+    : dashboard.refreshInterval ? { mode: "every", seconds: dashboard.refreshInterval } : { mode: "off" };
   return (
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
     <AttentionStoreProvider>
@@ -685,6 +695,7 @@ export function DashboardCanvas({
         }}
       >
         {draggable && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
+        {!!dashboard.widgets.length && <AttentionStrip widgets={orderedWidgets} scopeRef={containerRef} autoRefresh={autoRefresh} />}
         <ChartCursorProvider key={dashboard.id}>
         {mounted && (focus ? focus.render(tiles) : stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
