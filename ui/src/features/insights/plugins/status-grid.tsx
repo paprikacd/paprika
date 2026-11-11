@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, ty
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, exactMetric, seriesName, thresholdForValue } from "../chart-renderers";
 import { thresholdPaint } from "../status";
+import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip";
 import type { Point, Series } from "../chart-data";
 import type { QueryResult } from "../schema";
 import { validTimestamp } from "../widget-context";
@@ -47,6 +48,8 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     observer?.observe(element); observer?.observe(content);
     return () => { stopped = true; cancelAnimationFrame(frame); observer?.disconnect(); };
   }, [result, config.maxSeries]);
+  // Cells share one CSS size, so the first measured cell gives the frame gate the real size.
+  const cellSize = useTrackSize(grid, "[data-status-grid] > *", result);
   if (!selected.length) return <EmptyState />;
   const thresholds = widget.options?.thresholds?.length ? widget.options.thresholds : DEFAULT_HEATMAP_THRESHOLDS;
   const cells = selected.map((entry, index) => {
@@ -80,13 +83,14 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     <div ref={scroll} className={styles.scroll} role="region" aria-label={`${widget.title} monitor statuses`} tabIndex={interactive && overflow ? 0 : undefined} aria-describedby={overflow ? `${id}-overflow` : undefined} data-status-overflow={overflow || undefined}>
       <div ref={grid} className={styles.grid} data-status-grid>
         {cells.map(cell => {
-          const status = cell.value === undefined ? "Unknown" : cell.threshold?.label ?? "Observed";
+          const status = cell.value === undefined ? "Unknown" : bandReading(cell.threshold);
           const label = `${cell.name}: ${cell.value === undefined ? "No data" : exactMetric(cell.value, widget.unit)} · ${status}`;
           const className = `${styles.cell} ${cell.value === undefined ? styles.unknown : ""}`;
           const color = thresholdPaint(cell.threshold) ?? widget.color ?? "var(--gamma-chart-2)";
-          const style = cell.value === undefined ? undefined : { "--status-color": color } as CSSProperties;
-          if (!interactive) return <span key={cell.index} className={className} style={style} role="img" aria-label={label} />;
-          return <button key={cell.index} type="button" className={className} style={style} data-status-index={cell.index}
+          const style = cell.value === undefined ? undefined : { "--status-color": color, ...statusStrokeStyle(cell.threshold, cellSize) } as CSSProperties;
+          const stroke = cell.value === undefined ? undefined : statusStrokeLevel(cell.threshold, cellSize);
+          if (!interactive) return <span key={cell.index} className={className} style={style} data-status-stroke={stroke} role="img" aria-label={label} />;
+          return <button key={cell.index} type="button" className={className} style={style} data-status-stroke={stroke} data-status-index={cell.index}
             data-status-value={cell.value ?? "unknown"} aria-label={label} aria-pressed={detailsEnabled ? active?.index === cell.index && active.pinned : undefined}
             aria-describedby={`${id}-keys${active?.index === cell.index ? ` ${id}` : ""}`} tabIndex={cell.index === tabIndex ? 0 : -1}
             onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hovered = true; show(cell.index,event.currentTarget); } }}
@@ -101,7 +105,9 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       <span>{cells.length} {cells.length === 1 ? "monitor" : "monitors"}</span>
       {overflow && <span id={`${id}-overflow`}>Scroll to see all monitors</span>}
       {widget.options?.showLegend !== false && <div role="group" aria-label="Monitor status legend" className={styles.legend}>
-        {counts.map((threshold, index) => <span key={index}><i style={{ background:thresholdPaint(threshold) }} />{threshold.label ?? `≥ ${exactMetric(threshold.value, widget.unit)}`} <b>{threshold.count}</b></span>)}
+        {counts.map((threshold, index) => <span key={index}>{threshold.status
+          ? <StatusChip status={threshold.status} color={threshold.color} label={threshold.label ?? `≥ ${exactMetric(threshold.value, widget.unit)}`} />
+          : <><i style={{ background:thresholdPaint(threshold) }} />{threshold.label ?? `≥ ${exactMetric(threshold.value, widget.unit)}`}</>} <b>{threshold.count}</b></span>)}
         <span><i className={styles.unknownKey} />Unknown <b>{unknown}</b></span>
       </div>}
       {all.length > cells.length && <span>Showing {cells.length} of {all.length}</span>}
@@ -110,7 +116,11 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     {current && active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss}
       onEnter={() => { interaction.current.panel = true; clearHide(); }} onLeave={() => { interaction.current.panel = false; scheduleHide(); }}>
       <MetricDetails widget={widget} series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest sample">
-        <span>{current.value === undefined ? "Unknown" : current.threshold?.label ?? "Observed"}</span>
+        {current.value === undefined
+          ? <span>No data</span>
+          : current.threshold?.status
+            ? <StatusChip status={current.threshold.status} color={current.threshold.color} label={current.threshold.label} />
+            : <span>{current.threshold?.label ?? "Observed"}</span>}
       </MetricDetails>
       <div className={styles.tooltipHint}>{active.pinned ? "Pinned · tap again to close" : "Click or tap to keep open"} · Esc to close</div>
     </ObservationTooltip>}

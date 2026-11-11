@@ -81,6 +81,7 @@
   line-height: 1.3;
   vertical-align: middle;
 }
+.statusChipCell { display: inline-flex; align-items: center; max-width: 100%; vertical-align: middle; }
 .statusBadge > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .statusDot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--gamma-muted); }
 .statusBadge[data-status-state="missing"] { color: var(--gamma-muted); }

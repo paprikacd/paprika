@@ -5,7 +5,7 @@ import type { Threshold } from "../schema";
 import { validTimestamp } from "../widget-context";
 
 export const UTC_DAY = 86_400_000;
-export type ObservationDay = { day: number; kind: "observed" | "mixed" | "unknown"; color?: string; label?: string; latest?: Point; count: number; missing: number };
+export type ObservationDay = { day: number; kind: "observed" | "mixed" | "unknown"; color?: string; label?: string; threshold?: Threshold; latest?: Point; count: number; missing: number };
 
 /** Classify recorded samples by UTC day. No coverage, percentage or duration is inferred. */
 export function uptimeObservations(series: readonly Series[], thresholds: readonly Threshold[], maxDays: number, maxSeries: number) {
@@ -33,7 +33,7 @@ export function uptimeObservations(series: readonly Series[], thresholds: readon
         const states = new Set(finite.map(point => thresholds.length ? thresholds.indexOf(thresholdForValue(point.value!, thresholds)!) : 0));
         const kind: ObservationDay["kind"] = !finite.length ? "unknown" : missing || states.size > 1 ? "mixed" : "observed";
         const threshold = kind === "observed" ? thresholdForValue(finite[0].value!, thresholds) : undefined;
-        return { day, kind, color: thresholdPaint(threshold), label: threshold?.label, latest, count: points.length, missing };
+        return { day, kind, color: thresholdPaint(threshold), label: threshold?.label, threshold, latest, count: points.length, missing };
       }) };
     }),
   };

@@ -3,19 +3,27 @@ import { z } from "zod"
 import { exactMetric } from "../chart-data"
 import { formatRecordValue } from "../units"
 import { thresholdForValue } from "../chart-renderers"
-import { statusHex, statusToken, thresholdInk, thresholdPaint } from "../status"
+import { statusHex, statusLevels, statusToken, thresholdInk, thresholdPaint } from "../status"
+import { StatusChip } from "../status-chip"
 import { contrastRatio, readableTextColor } from "../appearance"
 import { seriesHex } from "../series-palette"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
 import styles from "./records.module.css"
 
+/** A mapping names a status, a hex hue override, or both. Hex-only mappings render as before; a status renders as a glyph chip. */
+const mappingSchema = z.strictObject({
+  value: z.string().min(1).max(128),
+  status: z.enum(statusLevels).optional(),
+  color: z.string().regex(/^#[\da-f]{6}$/i).optional(),
+}).refine(mapping => mapping.status !== undefined || mapping.color !== undefined, "Name a status or a hex colour")
+
 const cellStyle = z.strictObject({
   column: z.string().min(1).max(128),
   display: z.enum(["bar", "bar-segments", "color-text", "color-background", "sparkline", "status-badge"]),
   barColorMode: z.enum(["gradient", "value"]).optional(),
   thresholdColumn: z.string().min(1).max(128).optional(),
-  mappings: z.array(z.strictObject({ value: z.string().min(1).max(128), color: z.string().regex(/^#[\da-f]{6}$/i) })).max(16).optional(),
+  mappings: z.array(mappingSchema).max(16).optional(),
   min: z.number().finite().optional(),
   max: z.number().finite().optional(),
   unit: z.string().max(24).optional(),
@@ -199,6 +207,11 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   if (style.display === "status-badge") {
     const missing = value === null || value === undefined || value === ""
     const mapping = typeof value === "string" ? style.mappings?.find(entry => entry.value === value) : undefined
+    // The chip is the badge: no second pill around it. Hex-only mappings keep the dot and text below.
+    if (mapping?.status) return <span className={styles.statusChipCell} data-cell-display="status-badge" data-status-state="mapped"
+      title={nativeTitle ? `${column.label ?? column.key}: ${String(value)}` : undefined}>
+      <StatusChip status={mapping.status} color={mapping.color} label={String(value)} />
+    </span>
     return <span className={styles.statusBadge} data-cell-display="status-badge" data-status-state={missing ? "missing" : mapping ? "mapped" : "unmapped"}
       title={nativeTitle ? `${column.label ?? column.key}: ${missing ? "No data" : String(value)}` : undefined}>
       <span className={styles.statusDot} aria-hidden="true" style={mapping ? { backgroundColor: mapping.color } : undefined} />

@@ -23,6 +23,7 @@ import {
   supportsAnnotationSource,
   type Dashboard,
   type Provider,
+  type Threshold,
   type Widget,
   type QueryResult,
   type WidgetOptions,
@@ -48,10 +49,23 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
-import { thresholdHex, type StatusTheme } from "./status";
+import { thresholdHex, type StatusMark, type StatusTheme } from "./status";
+import { StatusMarkFields } from "./status-mark-fields";
 import { useInsightsTheme } from "./insights-theme";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
+
+/** New bands start with the healthy band, then escalate: ok, warning, then critical for every later band. */
+const NEW_BAND_STATUSES = ["ok", "warning", "critical"] as const;
+
+/** Replaces a band's status and hue, keeping its value and label and omitting absent keys. */
+function withStatusMark(threshold: Threshold, mark: StatusMark): Threshold {
+  const next: Threshold = { value: threshold.value };
+  if (mark.status !== undefined) next.status = mark.status;
+  if (mark.color !== undefined) next.color = mark.color;
+  if (threshold.label !== undefined) next.label = threshold.label;
+  return next;
+}
 import { TooltipEditor } from "./tooltip-editor";
 import { useSourceStatus } from "./source-status";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
@@ -597,7 +611,7 @@ function StyleEditor({
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
           <p className={styles.hint}>
-            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its color still applies."}
+            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its status or colour still applies."}
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
               " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
@@ -621,23 +635,6 @@ function StyleEditor({
                   }
                 />
               </label>
-              <label className={styles.field}>
-                Color
-                <GammaInput
-                  aria-label={`Threshold ${index + 1} color`}
-                  type="color"
-                  value={thresholdHex(threshold, resolvedTheme)}
-                  onChange={(event) =>
-                    update({
-                      thresholds: options.thresholds!.map((item, i) =>
-                        i === index
-                          ? { ...item, color: event.target.value }
-                          : item,
-                      ),
-                    })
-                  }
-                />
-              </label>
               <GammaButton
                 type="button"
                 variant="quiet"
@@ -654,6 +651,18 @@ function StyleEditor({
               >
                 <Trash2 size={14} />
               </GammaButton>
+              <StatusMarkFields
+                name={`Threshold ${index + 1}`}
+                mark={threshold}
+                theme={resolvedTheme}
+                onChange={(mark) =>
+                  update({
+                    thresholds: options.thresholds!.map((item, i) =>
+                      i === index ? withStatusMark(item, mark) : item,
+                    ),
+                  })
+                }
+              />
               <label className={styles.thresholdLabel}>
                 Label
                 <GammaInput
@@ -684,10 +693,9 @@ function StyleEditor({
                   ...(options.thresholds ?? []),
                   {
                     value: options.thresholds?.length
-                      ? options.thresholds[options.thresholds.length - 1]
-                          .value + 1
+                      ? options.thresholds[options.thresholds.length - 1].value + 1
                       : 0,
-                    color: options.thresholds?.length ? "#6e947a" : "#c46146",
+                    status: NEW_BAND_STATUSES[Math.min(options.thresholds?.length ?? 0, NEW_BAND_STATUSES.length - 1)],
                   },
                 ],
               })
