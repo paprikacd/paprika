@@ -70,9 +70,15 @@ when the response is written. A failed operation discards the session. No
 catalog or session is retained across requests, so removing access takes effect
 on the next request. The adapter discovers read-only tools, calls
 provider/query/exploration tools and requires structured results; it never
-parses the truncated text preview or falls back to REST. Each MCP operation
-(session setup, discovery, and each tool call) has a 20-second deadline, with
-bounded responses and no redirect or retry behavior.
+parses the truncated text preview or falls back to REST. Each HTTP request has
+one 20-second budget for all of its shared gateway work: session setup,
+discovery and every tool call draw on it, and each is capped at the lesser of
+20 seconds and the budget that remains. The budget keeps `/providers` under 20
+seconds end to end, inside the API proxy's 25-second response-header timeout,
+so callers see Insights' own 504. A `/query` catalog phase is capped at 10
+seconds and holds an admission slot; at most four queries may be in that phase
+at once, so local queries keep their slots. Bounded responses, no redirects and
+no retries.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard

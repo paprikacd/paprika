@@ -45,16 +45,36 @@ type observeMCPConnection struct {
 	tools   map[string]observeMCPTool
 }
 
-// observeOperationTimeout bounds each MCP operation: session setup and
-// discovery, then every tool call. One request may run several operations on
-// a shared session, so the deadline applies per operation, not per session.
-const observeOperationTimeout = 20 * time.Second
+// observeTimeouts bounds the shared gateway work of one HTTP request. The
+// request budget keeps shared-catalog responses inside the API proxy's 25 s
+// response-header timeout, so a slow gateway yields Insights' own 504 rather
+// than the proxy's 502. Every operation draws on the budget and is capped at
+// the operation limit.
+type observeTimeouts struct {
+	operation time.Duration // one MCP setup, discovery or tool call
+	request   time.Duration // all shared gateway work for one HTTP request
+	catalog   time.Duration // a query's catalog phase, which holds an admission slot
+}
+
+var defaultObserveTimeouts = observeTimeouts{operation: 20 * time.Second, request: 20 * time.Second, catalog: 10 * time.Second}
+
+// operation returns ctx limited to the operation timeout and to the budget's
+// remaining deadline, so no single gateway call outlives its request.
+func (g *observeGateway) operation(ctx, budget context.Context) (context.Context, context.CancelFunc) {
+	deadline := time.Now().Add(g.timeouts.operation)
+	if limit, ok := budget.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
+	}
+	return context.WithDeadline(ctx, deadline)
+}
 
 // Authorization and sessions are request-local. Neither the process token nor
 // another caller's catalog/session may substitute for the delegated identity.
-func (g *observeGateway) connect(ctx context.Context, token string) (*observeMCPConnection, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	setup, stopSetup := context.WithTimeout(ctx, observeOperationTimeout)
+// The session lives until lifetime ends; setup only bounds establishing it, so
+// a narrow operation context never ends a session that later operations share.
+func (g *observeGateway) connect(lifetime, setup context.Context, token string) (*observeMCPConnection, error) {
+	ctx, cancel := context.WithCancel(lifetime)
+	setupCtx, stopSetup := g.operation(setup, lifetime)
 	defer stopSetup()
 	u := *g.baseURL
 	u.Path, u.RawPath = "/observe/mcp", ""
@@ -62,7 +82,7 @@ func (g *observeGateway) connect(ctx context.Context, token string) (*observeMCP
 	httpClient.Transport = &observeMCPTransport{base: g.client.Transport, token: token, ctx: ctx, endpoint: u.String()}
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "paprika-insights", Version: "1"}, nil)
-	session, err := client.Connect(setup, &sdkmcp.StreamableClientTransport{
+	session, err := client.Connect(setupCtx, &sdkmcp.StreamableClientTransport{
 		Endpoint: u.String(), HTTPClient: &httpClient, MaxRetries: -1,
 		DisableStandaloneSSE: true, MaxEventSize: maxResponseBytes,
 	}, nil)
@@ -71,7 +91,7 @@ func (g *observeGateway) connect(ctx context.Context, token string) (*observeMCP
 		return nil, sanitizeObserveMCPError(err)
 	}
 	connection := &observeMCPConnection{ctx: ctx, cancel: cancel, session: session, tools: make(map[string]observeMCPTool)}
-	if err := connection.discover(setup); err != nil {
+	if err := connection.discover(setupCtx); err != nil {
 		connection.close()
 		return nil, err
 	}
@@ -85,7 +105,9 @@ func (c *observeMCPConnection) close() { c.cancel(); closeReadBody(c.session) }
 // creates it per request and closes it when the response is written. Nothing
 // is stored on Server, so the next request re-checks the caller's grants.
 type observeScope struct {
-	token string
+	token  string
+	ctx    context.Context    // request budget: bounds the session's lifetime
+	cancel context.CancelFunc // ends the budget when the response is written
 
 	mu            sync.Mutex
 	connection    *observeMCPConnection
@@ -101,8 +123,14 @@ func (s *Server) scopeObserveSessions(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		scope := &observeScope{token: r.Header.Get(observeTokenHeader)}
-		defer scope.close()
+		// Only the scope carries the budget. The request itself keeps its own
+		// context, so local providers and stores are unaffected.
+		budget, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.request)
+		scope := &observeScope{token: r.Header.Get(observeTokenHeader), ctx: budget, cancel: cancel}
+		defer func() {
+			scope.close()
+			cancel()
+		}()
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), observeScopeKey{}, scope)))
 	})
 }
@@ -117,18 +145,21 @@ func observeScopeFor(ctx context.Context, token string) *observeScope {
 	return scope
 }
 
-// runLocked opens the scope's session on first use and runs fn on it. A failed
-// operation discards the session so a later operation in the same request
-// starts clean instead of inheriting a broken transport. Caller holds s.mu.
-func (s *observeScope) runLocked(ctx context.Context, g *observeGateway, fn func(*observeMCPConnection) error) error {
+// runLocked opens the scope's session on first use and runs fn on it. The
+// session is bound to the request budget, never to the operation that happened
+// to open it. A failed operation discards the session so a later operation in
+// the same request starts clean. Caller holds s.mu.
+func (s *observeScope) runLocked(ctx context.Context, g *observeGateway, fn func(*observeMCPConnection, context.Context) error) error {
 	if s.connection == nil {
-		connection, err := g.connect(ctx, s.token)
+		connection, err := g.connect(s.ctx, ctx, s.token)
 		if err != nil {
 			return err
 		}
 		s.connection = connection
 	}
-	if err := fn(s.connection); err != nil {
+	opCtx, stop := g.operation(ctx, s.ctx)
+	defer stop()
+	if err := fn(s.connection, opCtx); err != nil {
 		s.discardLocked()
 		return err
 	}
@@ -202,8 +233,6 @@ func (c *observeMCPConnection) call(ctx context.Context, name string, args any, 
 	if err := c.requireTool(name); err != nil {
 		return nil, false, err
 	}
-	ctx, stop := context.WithTimeout(ctx, observeOperationTimeout)
-	defer stop()
 	result, err := c.session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		return nil, false, sanitizeObserveMCPError(err)
@@ -244,13 +273,15 @@ func (s *Server) observeConnection(w http.ResponseWriter, r *http.Request) {
 		writeProviderError(w, err)
 		return
 	}
-	connection, err := s.observe.connect(r.Context(), token)
+	ctx, cancel := context.WithTimeout(r.Context(), s.observe.timeouts.request)
+	defer cancel()
+	connection, err := s.observe.connect(ctx, ctx, token)
 	if err != nil {
 		writeProviderError(w, err)
 		return
 	}
 	defer connection.close()
-	providers, err := connection.providers(r.Context())
+	providers, err := connection.providers(ctx)
 	if err != nil {
 		writeProviderError(w, err)
 		return

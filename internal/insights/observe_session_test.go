@@ -2,6 +2,7 @@ package insights
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -225,7 +226,7 @@ func TestObserveFailedOperationDoesNotPoisonRequestSession(t *testing.T) {
 	require.ErrorAs(t, busy, &failure)
 	assert.Equal(t, http.StatusTooManyRequests, failure.status)
 	require.NoError(t, recovered, "a failed operation must not break later operations in the same request")
-	assert.Equal(t, 1, counts.count("tool:list_observability_providers"), "catalog failures are request-scoped, successes are memoized")
+	assert.Equal(t, 1, counts.count("tool:list_observability_providers"), "the catalog outcome, success or failure, is memoized for the request")
 	assert.Equal(t, 2, counts.count("session"), "the failed session is replaced, not reused")
 }
 
@@ -266,4 +267,255 @@ func TestObserveWidgetQueryWireCostBeforeAndAfterSharing(t *testing.T) {
 		assert.Equal(t, 1, counts.count("method:server/discover"))
 		assert.Equal(t, 6, counts.posts(), "POSTs for one widget query after sharing")
 	})
+}
+
+// observeHeldGateway serves the catalog and metrics fixtures, but holds a
+// listing or a query until its gate closes or its request is canceled.
+func observeHeldGateway(t *testing.T, holdCatalog, holdQuery <-chan struct{}, listings *atomic.Int64) *httptest.Server {
+	t.Helper()
+	return observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hold := func(gate <-chan struct{}) bool {
+			if gate == nil {
+				return true
+			}
+			select {
+			case <-gate:
+				return true
+			case <-r.Context().Done():
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return false
+			}
+		}
+		switch r.URL.Path {
+		case "/list_observability_providers":
+			if listings != nil {
+				listings.Add(1)
+			}
+			if !hold(holdCatalog) {
+				return
+			}
+			writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
+		case "/query_metrics":
+			if !hold(holdQuery) {
+				return
+			}
+			writeJSON(w, 200, map[string]any{"state": "OK", "data": json.RawMessage(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+// A slow shared catalog may occupy only a bounded number of catalog phases.
+// Local queries stay admitted, unknown local ids stay 404, and the excess
+// shared queries fail fast without listing the catalog.
+func TestObserveSharedCatalogPhaseCannotStarveLocalQueries(t *testing.T) {
+	release := make(chan struct{})
+	var listings atomic.Int64
+	gateway := observeHeldGateway(t, release, nil, &listings)
+	defer gateway.Close()
+	open := sync.OnceFunc(func() { close(release) })
+	defer open()
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": []any{}}})
+	}))
+	defer prom.Close()
+	s := observeTestService(t, gateway.URL, ProviderConfig{ID: "local", Name: "Local", Type: "prometheus", URL: prom.URL})
+	h := s.Handler()
+	codes := make([]int, cap(s.queries))
+	var wg sync.WaitGroup
+	for i := range codes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = request(t, h, http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice")).Code
+		}()
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for listings.Load() < int64(cap(s.catalogPhases)) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.Equal(t, int64(cap(s.catalogPhases)), listings.Load())
+	localBody := savedQueryJSON(t, Query{ProviderID: "local", Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 1})
+	assert.Equal(t, http.StatusOK, request(t, h, http.MethodPost, "/api/query", localBody, nil).Code, "local query while catalog phases are pending")
+	unknown := savedQueryJSON(t, Query{ProviderID: "deleted", Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 1})
+	assert.Equal(t, http.StatusNotFound, request(t, h, http.MethodPost, "/api/query", unknown, nil).Code, "unknown local id while catalog phases are pending")
+	open()
+	wg.Wait()
+	var ok, busy int
+	for _, code := range codes {
+		switch code {
+		case http.StatusOK:
+			ok++
+		case http.StatusTooManyRequests:
+			busy++
+		default:
+			t.Errorf("unexpected shared query status %d", code)
+		}
+	}
+	assert.Equal(t, cap(s.catalogPhases), ok)
+	assert.Equal(t, cap(s.queries)-cap(s.catalogPhases), busy)
+	assert.Equal(t, int64(cap(s.catalogPhases)), listings.Load(), "excess shared queries listed the catalog")
+	assert.Zero(t, len(s.queries), "admission slot leaked")
+	assert.Zero(t, len(s.catalogPhases), "catalog phase leaked")
+}
+
+func TestObserveUnknownLocalIDIsNotFoundWhenSaturated(t *testing.T) {
+	gateway := observeHeldGateway(t, nil, nil, nil)
+	defer gateway.Close()
+	s := observeTestService(t, gateway.URL)
+	s.queryWaitTimeout = time.Millisecond
+	for range cap(s.queries) {
+		s.queries <- struct{}{}
+	}
+	defer func() {
+		for range cap(s.queries) {
+			<-s.queries
+		}
+	}()
+	unknown := savedQueryJSON(t, Query{ProviderID: "deleted", Kind: "metrics", Query: "up", Start: 1700000000, End: 1700000600, Step: 1})
+	assert.Equal(t, http.StatusNotFound, request(t, s.Handler(), http.MethodPost, "/api/query", unknown, nil).Code)
+	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	assert.Equal(t, http.StatusTooManyRequests, w.Code, "shared query while saturated")
+	assert.Equal(t, "1", w.Header().Get("Retry-After"))
+}
+
+// A catalog phase is capped on its own, so a listing that never answers
+// releases its admission slot promptly with Insights' own 504.
+func TestObserveCatalogPhaseIsCappedAndReleasesSlots(t *testing.T) {
+	release := make(chan struct{})
+	gateway := observeHeldGateway(t, release, nil, nil)
+	defer gateway.Close()
+	defer close(release)
+	s := observeTestService(t, gateway.URL)
+	s.observe.timeouts.catalog = 100 * time.Millisecond
+	started := time.Now()
+	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+	assert.Less(t, time.Since(started), 5*time.Second)
+	assert.Zero(t, len(s.queries), "admission slot leaked after a slow catalog")
+	assert.Zero(t, len(s.catalogPhases), "catalog phase leaked after a slow catalog")
+}
+
+// One HTTP request has a single gateway budget. Setup, discovery and every
+// call draw on it, so /providers and /query answer within it.
+func TestObserveRequestBudgetBoundsSharedWork(t *testing.T) {
+	release := make(chan struct{})
+	gateway := observeHeldGateway(t, release, nil, nil)
+	defer gateway.Close()
+	defer close(release)
+	s := observeTestService(t, gateway.URL)
+	s.observe.timeouts.request = 300 * time.Millisecond
+	s.observe.timeouts.operation = 5 * time.Second
+	started := time.Now()
+	w := request(t, s.Handler(), http.MethodGet, "/api/providers", nil, observeHeaders("alice"))
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+	assert.Less(t, time.Since(started), 3*time.Second, "/providers outlived the request budget")
+	started = time.Now()
+	w = request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+	assert.Less(t, time.Since(started), 3*time.Second, "/query outlived the request budget")
+	assert.Zero(t, len(s.queries))
+}
+
+// Each operation is capped at the operation limit even when the request
+// budget has plenty of time left.
+func TestObserveOperationCapIsMinimumOfOperationAndRemainingBudget(t *testing.T) {
+	release := make(chan struct{})
+	gateway := observeHeldGateway(t, release, nil, nil)
+	defer gateway.Close()
+	defer close(release)
+	s := observeTestService(t, gateway.URL)
+	s.observe.timeouts.operation = 100 * time.Millisecond
+	started := time.Now()
+	w := request(t, s.Handler(), http.MethodGet, "/api/providers", nil, observeHeaders("alice"))
+	assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
+	assert.Less(t, time.Since(started), 3*time.Second, "one operation ignored its own cap")
+}
+
+// A narrow context that opened the session must not poison later operations
+// in the same request: the session belongs to the request budget.
+func TestObserveSessionSurvivesNarrowFirstOperation(t *testing.T) {
+	gateway := observeCatalogAndQueryGateway(t, http.StatusOK)
+	defer gateway.Close()
+	s := observeTestService(t, gateway.URL)
+	counts := countObserveWire(s)
+	reference := observeProviderID("prod/prom")
+	var firstErr, laterErr error
+	h := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		narrow, cancel := context.WithCancel(r.Context())
+		_, firstErr = s.observe.providers(narrow, "alice")
+		cancel() // The narrow operation finished; the request continues.
+		p, err := s.resolveProvider(r, reference)
+		if err != nil {
+			t.Errorf("resolve: %v", err)
+			return
+		}
+		_, laterErr = p.query(r.Context(), &Query{ProviderID: reference, Kind: "metrics", Query: "up", Start: 1, End: 2, Step: 1})
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	w := request(t, h, http.MethodGet, "/", nil, observeHeaders("alice"))
+	require.Equal(t, http.StatusNoContent, w.Code)
+	require.NoError(t, firstErr)
+	require.NoError(t, laterErr, "a narrow first operation poisoned the request's session")
+	assert.Equal(t, 1, counts.count("session"))
+}
+
+// The scope never hands one delegated token's session to another caller,
+// even inside the same HTTP request. Each caller's catalog is its own.
+func TestObserveScopeNeverSharesSessionsAcrossTokens(t *testing.T) {
+	var seen sync.Map
+	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.Store(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), true)
+		writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
+	}))
+	defer gateway.Close()
+	s := observeTestService(t, gateway.URL)
+	counts := countObserveWire(s)
+	h := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, token := range []string{"alice", "bob", "alice"} {
+			_, err := s.observe.providers(r.Context(), token)
+			assert.NoError(t, err, token)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	require.Equal(t, http.StatusNoContent, request(t, h, http.MethodGet, "/", nil, observeHeaders("alice")).Code)
+	assert.Equal(t, 2, counts.count("session"), "alice's scope session plus bob's private session")
+	assert.Equal(t, 2, counts.count("tool:list_observability_providers"), "alice's second lookup is memoized")
+	_, bob := seen.Load("bob")
+	assert.True(t, bob)
+}
+
+// A request canceled while its catalog listing is in flight releases its slot.
+func TestObserveCanceledDuringCatalogReleasesSlot(t *testing.T) {
+	started := make(chan struct{}, 1)
+	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list_observability_providers" {
+			started <- struct{}{}
+			<-r.Context().Done()
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	defer gateway.Close()
+	s := observeTestService(t, gateway.URL)
+	ctx, cancel := context.WithCancel(t.Context())
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/query", bytes.NewReader(observeQueryBody(t, "prod/prom", "metrics")))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	r.Header.Set(observeTokenHeader, "alice")
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.Handler().ServeHTTP(w, r)
+		close(done)
+	}()
+	<-started
+	assert.Equal(t, 1, len(s.queries), "slot held during the catalog listing")
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler did not return after cancellation")
+	}
+	assert.Zero(t, len(s.queries), "slot leaked after cancellation")
+	assert.Zero(t, len(s.catalogPhases), "catalog phase leaked after cancellation")
 }

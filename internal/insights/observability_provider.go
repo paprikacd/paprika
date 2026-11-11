@@ -23,8 +23,9 @@ const observeProviderPrefix = "observe-"
 const observeTokenHeader = "X-Paprika-Observe-Token" //nolint:gosec // Header name, not a credential value.
 
 type observeGateway struct {
-	baseURL *url.URL
-	client  *http.Client
+	baseURL  *url.URL
+	client   *http.Client
+	timeouts observeTimeouts
 }
 
 type observeProvider struct {
@@ -65,7 +66,7 @@ func newObserveGateway(rawURL string) (*observeGateway, error) {
 	}
 	transport.MaxIdleConnsPerHost = 8
 	transport.ResponseHeaderTimeout = 15 * time.Second
-	return &observeGateway{baseURL: u, client: &http.Client{
+	return &observeGateway{baseURL: u, timeouts: defaultObserveTimeouts, client: &http.Client{
 		Transport: transport, Timeout: 20 * time.Second,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
@@ -132,14 +133,14 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 	return nil, ErrNotFound
 }
 
-// providers lists the caller's shared catalog. Within one request the listing
-// is memoized, including a failure, so a dashboard resolves its catalog once.
+// providers lists the caller's shared catalog. Within one request the outcome,
+// success or failure, is memoized, so a dashboard lists its catalog once.
 func (g *observeGateway) providers(ctx context.Context, token string) ([]Provider, error) {
 	scope := observeScopeFor(ctx, token)
 	if scope == nil {
 		var result []Provider
-		err := g.withConnection(ctx, token, func(c *observeMCPConnection) (err error) {
-			result, err = c.providers(ctx)
+		err := g.withConnection(ctx, token, func(c *observeMCPConnection, opCtx context.Context) (err error) {
+			result, err = c.providers(opCtx)
 			return err
 		})
 		return result, err
@@ -148,8 +149,8 @@ func (g *observeGateway) providers(ctx context.Context, token string) ([]Provide
 	defer scope.mu.Unlock()
 	if !scope.catalogLoaded {
 		scope.catalogLoaded = true
-		scope.catalogErr = scope.runLocked(ctx, g, func(c *observeMCPConnection) (err error) {
-			scope.catalog, err = c.providers(ctx)
+		scope.catalogErr = scope.runLocked(ctx, g, func(c *observeMCPConnection, opCtx context.Context) (err error) {
+			scope.catalog, err = c.providers(opCtx)
 			return err
 		})
 	}
@@ -158,18 +159,20 @@ func (g *observeGateway) providers(ctx context.Context, token string) ([]Provide
 
 // withConnection runs fn on the request's shared session when one exists.
 // Otherwise it opens a private session that closes when fn returns.
-func (g *observeGateway) withConnection(ctx context.Context, token string, fn func(*observeMCPConnection) error) error {
+func (g *observeGateway) withConnection(ctx context.Context, token string, fn func(*observeMCPConnection, context.Context) error) error {
 	if scope := observeScopeFor(ctx, token); scope != nil {
 		scope.mu.Lock()
 		defer scope.mu.Unlock()
 		return scope.runLocked(ctx, g, fn)
 	}
-	connection, err := g.connect(ctx, token)
+	connection, err := g.connect(ctx, ctx, token)
 	if err != nil {
 		return err
 	}
 	defer connection.close()
-	return fn(connection)
+	opCtx, stop := g.operation(ctx, ctx)
+	defer stop()
+	return fn(connection, opCtx)
 }
 
 func (c *observeMCPConnection) providers(ctx context.Context) ([]Provider, error) {
@@ -245,8 +248,8 @@ func observeHTTPError(status int) error {
 func (p *observeProvider) data(ctx context.Context, tool string, request any, limit int64) ([]byte, error) {
 	var body []byte
 	var failed bool
-	err := p.gateway.withConnection(ctx, p.token, func(c *observeMCPConnection) (err error) {
-		body, failed, err = c.call(ctx, tool, request, maxResponseBytes)
+	err := p.gateway.withConnection(ctx, p.token, func(c *observeMCPConnection, opCtx context.Context) (err error) {
+		body, failed, err = c.call(opCtx, tool, request, maxResponseBytes)
 		return err
 	})
 	if err != nil {
