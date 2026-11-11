@@ -312,9 +312,10 @@ const Tile = memo(function Tile({
     attentionPublisher.publish({ widgetId: widget.id, title: widget.title, facts, completedAt, sampleAt });
   }, [attentionPublisher, widget.id, widget.title, facts, completedAt, sampleAt]);
   useEffect(() => () => attentionPublisher.release(widget.id), [attentionPublisher, widget.id]);
-  // A stat whose sample is the dashboard's newest drops its repeated time; the strip states it once.
+  // A stat whose sample is the dashboard's newest drops its repeated time; the strip states it once. The editor's preview has
+  // no strip, so it keeps its own caption.
   const newestSample = useSampleAsOf();
-  const sharesSample = sampleAt !== undefined && newestSample !== undefined && Math.floor(sampleAt / 60_000) === Math.floor(newestSample / 60_000);
+  const sharesSample = !focused && sampleAt !== undefined && newestSample !== undefined && Math.floor(sampleAt / 60_000) === Math.floor(newestSample / 60_000);
   const attentionMark = isAttentionLevel(attention.state) ? (thresholdPaint(attention.band) ?? statusToken(attention.state)) : undefined;
   const textColor = widgetTextColor(widget.options);
   const StatIcon = widget.type === "stat" && widget.options?.statIcon ? STAT_ICONS[widget.options.statIcon] : undefined;

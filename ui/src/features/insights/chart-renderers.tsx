@@ -129,6 +129,14 @@ function Stat({
     if (validTimestamp(point.timestamp) && (!latestObservation || point.timestamp >= latestObservation.timestamp)) latestObservation = point;
   }
   const latestMissing = latestObservation !== undefined && (typeof latestObservation.value !== "number" || !Number.isFinite(latestObservation.value));
+  // Under the reading the card holds three lines: the extra rows and, when more than three series are left over, the note
+  // that counts the rest. The latest-missing notice takes the caption's place rather than adding a line, so it needs no
+  // room of its own. Measured at 74 px and 148 px (1, 3, 4, 5 and 120 series, shared and older captions, with and
+  // without the missing line, at 390, 768 and 1512 px) every combination fits without scrolling.
+  const extraSeries = entries.length - 1;
+  const noteNeeded = extraSeries > 3;
+  const extraRows = noteNeeded ? 2 : extraSeries;
+  const shownSeries = extraRows + 1;
   const { ageSeconds, stale, band } = attention;
   const thresholds = widget.options?.thresholds;
   // Colour names the threshold's hue on the trend and the bar; the reading stays in ink (or an author's text colour).
@@ -159,8 +167,10 @@ function Stat({
     {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}
   </>;
   return (
-    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
-      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
+    // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
+    // hidden (kept for assistive technology) exactly as for a shared sample.
+    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined} data-caption-merged={latestMissing || undefined}>
+      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Latest missing · last valid {sampleTime.format(new Date(first.point.timestamp))}</div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""
@@ -208,17 +218,29 @@ function Stat({
         data-stat-bar="" data-stat-bar-value={first.point.value} data-stat-bar-fraction={fraction}>
         <span className={styles.statBarFill} style={{ width: `${fraction * 100}%`, backgroundColor: barColor }} />
       </div>}
-      {entries.slice(1, 4).map((entry) => (
-        <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
-          <span>{entry.name}</span>
-          <strong>
-            {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) }))}
-          </strong>
+      {entries.length > 1 && (
+        // With more than four series the reading and two rows fill the card, so the note takes the third row; the
+        // rest are counted in the note. One section for the extra rows and their note, so the card's gap separates the reading from the list once.
+        <div className={styles.statExtras} data-stat-extras="">
+          {entries.slice(1, extraRows + 1).map((entry) => (
+            <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
+              <span>{entry.name}</span>
+              <strong>
+                {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) }))}
+              </strong>
+            </div>
+          ))}
+          {entries.length > shownSeries && (
+            <span className={styles.notice} role="status">
+              +{entries.length - shownSeries} more series. Switch to table to inspect.
+            </span>
+          )}
         </div>
-      ))}
-      {entries.length > 4 && (
-        <span className={styles.notice} role="status">
-          +{entries.length - 4} more series. Switch to table to inspect.
+      )}
+      {/* In short cards the rows above are hidden and this one-line note stands in for them. It counts every extra series. */}
+      {entries.length > 1 && (
+        <span className={styles.statCompactNote} data-stat-compact-note="">
+          {entries.length - 1} more series · Switch to table to inspect
         </span>
       )}
     </div>

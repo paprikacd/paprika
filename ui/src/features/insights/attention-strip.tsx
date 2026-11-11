@@ -100,6 +100,37 @@ function reducedMotion(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/** The space a keyboard-focused chip keeps from the row's edges, so it is never flush with them. */
+const CHIP_EDGE_MARGIN = 8;
+
+/**
+ * Scrolls the chip row sideways so a keyboard-focused chip is visible with a margin at each edge. Mouse focus is left
+ * alone: a pointer press should not move the row. Browsers do not reliably scroll a focused element inside this row, so
+ * the row is adjusted from the rects; rects are zero outside a layout engine, so tests are unaffected.
+ */
+function keepInRow(chip: HTMLElement) {
+  let keyboard = false;
+  try { keyboard = chip.matches(":focus-visible"); } catch { keyboard = false; }
+  const row = chip.parentElement;
+  if (!keyboard || !row || row.scrollWidth <= row.clientWidth) return;
+  const element = chip.getBoundingClientRect();
+  const track = row.getBoundingClientRect();
+  if (element.left < track.left + CHIP_EDGE_MARGIN) row.scrollLeft -= track.left + CHIP_EDGE_MARGIN - element.left;
+  else if (element.right > track.right - CHIP_EDGE_MARGIN) row.scrollLeft += element.right - (track.right - CHIP_EDGE_MARGIN);
+}
+
+/**
+ * Marks a chip row that has more chips past its right edge, so CSS can fade that edge. Scrolled to the end, or not
+ * overflowing, the mark is removed.
+ */
+function updateChipEdge(row: HTMLElement | null) {
+  if (!row) return;
+  const overflowing = row.scrollWidth > row.clientWidth + 1;
+  const atEnd = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+  if (overflowing && !atEnd) row.setAttribute("data-overflow-end", "");
+  else row.removeAttribute("data-overflow-end");
+}
+
 function tileElement(scope: HTMLElement | null, widgetId: string): HTMLElement | undefined {
   return Array.from(scope?.querySelectorAll<HTMLElement>("article[data-widget-id]") ?? []).find((element) => element.dataset.widgetId === widgetId);
 }
@@ -179,6 +210,8 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
   }, []);
 
   const flagged = ATTENTION_REASONS.filter((reason) => counts[reason] > 0);
+  const hasStrip = ids.length > 0;
+  const chipsRef = useRef<HTMLDivElement>(null);
   // A chip that was focused and is gone leaves focus on the body. Move it to the strip, which is always there.
   useEffect(() => {
     const reason = focusedReason.current;
@@ -210,18 +243,40 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
     }, OUTLINE_MS));
   }
 
+  // The chip row's overflow edge: checked after every render, since chips and widths change, and on scroll and resize.
+  useEffect(() => { updateChipEdge(chipsRef.current); });
+  useEffect(() => {
+    const row = chipsRef.current;
+    if (!row) return;
+    const update = () => updateChipEdge(row);
+    row.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+    observer?.observe(row);
+    return () => { row.removeEventListener("scroll", update); observer?.disconnect(); };
+  }, [hasStrip]);
+
   if (!ids.length) return null;
   const age = oldestCompletedAt === undefined ? undefined : formatAge(now - oldestCompletedAt);
   const sampleTime = newestSample === undefined ? undefined : new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }).format(new Date(newestSample));
   const titleOf = (widgetId: string) => entries.find((entry) => entry.widgetId === widgetId)?.title ?? widgetId;
+  const ageText = age === undefined ? (notLoaded ? "Loading results" : "No results yet") : `Updated ${age}`;
+  const sampleText = sampleTime === undefined ? undefined : `Newest sample ${sampleTime}`;
+  const refreshText = refreshLabel(autoRefresh);
+  // The full time text sits in a title as well, since the visible text is cut with an ellipsis when it does not fit.
+  const timeText = [ageText, sampleText, refreshText].filter(Boolean).join(" · ");
+  // Counts are one nowrap item, with the separator in its text, so they read as one phrase at every width.
+  const countsText = `${checked} of ${summary.widgets} checked${notLoaded > 0 ? ` · ${notLoaded} not loaded yet` : ""}`;
+  // Narrow canvases show the compact count to sighted users; the full text stays in the DOM for assistive technology.
+  const countsCompact = `${checked}/${summary.widgets} checked`;
   return (
     <section ref={sectionRef} tabIndex={-1} aria-label="Dashboard attention" className={styles.strip} data-attention-strip="">
-      <span className={styles.age} data-freshness={oldestCompletedAt === undefined ? "none" : "settled"}>
-        {age === undefined ? (notLoaded ? "Loading results" : "No results yet") : `Updated ${age}`}
-      </span>
-      {sampleTime && <span className={styles.sample}>Newest sample {sampleTime}</span>}
-      <span className={styles.refresh}>{refreshLabel(autoRefresh)}</span>
-      <div className={styles.chips}>
+      <div className={styles.text} title={timeText}>
+        <span className={styles.age} data-freshness={oldestCompletedAt === undefined ? "none" : "settled"}>{ageText}</span>
+        {sampleText && <>{" "}<span className={styles.separator} aria-hidden="true">·</span>{" "}<span className={styles.sample}>{sampleText}</span></>}
+        {" "}<span className={styles.separator} aria-hidden="true">·</span>{" "}
+        <span className={styles.refresh}>{refreshText}</span>
+      </div>
+      <div className={styles.chips} ref={chipsRef}>
         {!flagged.length && <span className={styles.clear}>{notLoaded ? "Nothing flagged so far" : "Nothing flagged"}</span>}
         {flagged.map((reason) => {
           const label = `${counts[reason]} ${reason}`;
@@ -237,7 +292,7 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
               aria-label={position === undefined
                 ? `${label}: show first ${reason} widget, ${titleOf(first)}`
                 : `${label}: showing ${titleOf(summary.listed[reason][position])}, ${position + 1} of ${counts[reason]}; activate for the next`}
-              onFocus={() => { focusedReason.current = reason; }}
+              onFocus={(event) => { focusedReason.current = reason; keepInRow(event.currentTarget); }}
               onClick={() => reveal(reason)}
             >
               <StatusChip status={REASON_STATUS[reason]} label={label} />
@@ -247,8 +302,8 @@ export function AttentionStrip({ widgets, scopeRef, autoRefresh }: {
         })}
       </div>
       <p className={styles.counts}>
-        {checked} of {summary.widgets} checked
-        {notLoaded > 0 && <span className={styles.notLoaded}> · {notLoaded} not loaded yet</span>}
+        <span className={styles.countsCompact} aria-hidden="true">{countsCompact}</span>
+        <span className={styles.countsFull}>{countsText}</span>
       </p>
       {/* Polite regions without the status role, so they do not join other status messages on the page. */}
       <p aria-live="polite" aria-atomic="true" className={styles.srOnly}>{announced}</p>

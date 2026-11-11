@@ -163,6 +163,14 @@ try {
       await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" });
       const side = page.locator('[data-widget-id="side"]');
       await side.locator('[data-metric-value="42.34"]').waitFor();
+      // Stat cards taller than the 40px compact band fit their box: the band's own overflow:auto rule covers shorter ones.
+      const scrolling = await page.locator("article[data-widget-id]").evaluateAll(tiles => tiles.flatMap(tile => {
+        const summary = tile.querySelector("[data-stat-summary]");
+        if (!summary) return [];
+        const stat = summary.parentElement;
+        return stat.clientHeight > 40 && stat.scrollHeight > stat.clientHeight + 1 ? [{ id: tile.dataset.widgetId, scrollHeight: stat.scrollHeight, clientHeight: stat.clientHeight }] : [];
+      }));
+      assert.deepEqual(scrolling, [], "Stat cards must not scroll internally");
       const measurements = await side.evaluate(card => {
         const bounds = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
         const chain = []; for (let p = card.querySelector("[data-metric-value]"); p && p !== card; p = p.parentElement) { const cs = getComputedStyle(p); chain.push({ tag:p.tagName, class:p.className, box:bounds(p), display:cs.display, flex:cs.flex, minHeight:cs.minHeight, overflow:cs.overflow }); }
