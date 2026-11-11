@@ -299,7 +299,9 @@ func (x *CheckFinding) GetFix() string {
 // save and the validate dry run both carry it. Issues holds at most 32 entries;
 // total counts every finding, and truncated is true when some were omitted.
 // The per-severity counts cover every finding, not only the listed ones, so a
-// truncated list never understates how many errors a check found.
+// truncated list never understates how many errors a check found. A dry run with
+// execute adds a `widgets` member beside these members, one WidgetDataState per
+// widget; the members above are the same with or without it.
 type CheckReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Issues        []*CheckFinding        `protobuf:"bytes,1,rep,name=issues,proto3" json:"issues,omitempty"`
@@ -387,7 +389,9 @@ func (x *CheckReport) GetInfoCount() uint32 {
 // WidgetDataState reports one widget's data in a dry run with execute. Pointer
 // is the widget's JSON Pointer, /widgets/N. series_returned counts the series
 // in the provider's bounded response. error_code is the safe code of a failed
-// query, never upstream text. The report carries these beside its issues list.
+// query, never upstream text. On the JSON wire the execute response carries a
+// `widgets` member holding these, in document order, beside the CheckReport
+// members; a dry run without execute has no such member.
 type WidgetDataState struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	WidgetId       string                 `protobuf:"bytes,1,opt,name=widget_id,json=widgetId,proto3" json:"widget_id,omitempty"`
