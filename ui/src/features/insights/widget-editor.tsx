@@ -82,7 +82,6 @@ import {
 import { validateLinkedTooltip } from "./saved-query-editor";
 import { gridPlacement, layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit";
 import type { Layout } from "react-grid-layout";
-import type { CanvasMode } from "./responsive-layout";
 
 export const widgetLabels = {
   timeseries: "Time series",
@@ -852,7 +851,7 @@ export function WidgetEditor({
   onApply: (widget: Widget, layout?: Layout) => void;
   onPreview?: (widget: Widget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[]; canvasMode?: CanvasMode };
+  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[] };
   onDraftValidityChange?: (valid: boolean) => void;
   onClose: () => void;
   onDuplicate: () => void;

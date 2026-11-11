@@ -72,7 +72,7 @@ describe("widget inspector", () => {
     const callbacks = props(), onPreview = vi.fn();
     const below = { ...widget, id: "below", title: "Below", layout: { ...widget.layout, y: 4 } };
     render(<WidgetEditor {...callbacks} onPreview={onPreview}
-      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn(), widgets: [widget, below], canvasMode: "wide" }} />);
+      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn(), widgets: [widget, below] }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
     fireEvent.click(screen.getByRole("button", { name: "Move widget down" }));
     expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ layout: expect.objectContaining({ y: 4 }) }));
