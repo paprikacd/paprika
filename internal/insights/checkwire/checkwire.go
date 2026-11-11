@@ -32,6 +32,19 @@ const (
 	MaxPointerBytes = 256
 	// MaxMessageRunes caps messages and fix text.
 	MaxMessageRunes = 200
+	// MaxDryRunVariables caps the variable values a dry run with execute takes.
+	MaxDryRunVariables = 20
+	// MaxDryRunVariableUnits caps one variable value in UTF-16 code units, which is
+	// how the dashboard counts it. A unit is at most six bytes once JSON escapes it
+	// (a control, <, > or & written as \uXXXX), so the envelope allowance is sized
+	// on that worst case, not on the typical one.
+	MaxDryRunVariableUnits = 1024
+	// MaxDryRunNameUnits caps a variable name in UTF-16 code units.
+	MaxDryRunNameUnits = 64
+	// DryRunEnvelopeBytes is the room a dry-run request needs beyond its document:
+	// every variable at the worst escaped size, the member syntax around each one,
+	// and a fixed allowance for the envelope itself.
+	DryRunEnvelopeBytes = MaxDryRunVariables*(6*(MaxDryRunVariableUnits+MaxDryRunNameUnits)+40) + 4<<10
 )
 
 var options = protojson.MarshalOptions{EmitUnpopulated: true}

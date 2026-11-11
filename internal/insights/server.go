@@ -460,10 +460,10 @@ func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, f
 	}
 }
 
-// maxCheckRequestBytes allows the envelope and whitespace around a document at
-// the size limit, and up to maxDryRunVariables variable values of at most 1 KiB
-// each. The document itself is still checked against maxDocumentBytes.
-const maxCheckRequestBytes = maxDocumentBytes + 32<<10
+// maxCheckRequestBytes allows a document at its size limit, the envelope around it,
+// and the worst-case escaped size of the dry run's variables (see checkwire).
+// The document itself is still checked against maxDocumentBytes.
+const maxCheckRequestBytes = maxDocumentBytes + checkwire.DryRunEnvelopeBytes
 
 // checkRequest is the dry-run body. The document sits under a key so that the
 // options join it without a second route. Execute runs the document's queries

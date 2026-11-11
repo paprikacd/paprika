@@ -24,11 +24,8 @@ import (
 const insightsValidateDocumentBytes = 256 << 10
 
 // insightsValidateRequestBytes is the largest dry-run request the service takes:
-// a document at its limit, the execute envelope and up to 20 variable values.
-const insightsValidateRequestBytes = insightsValidateDocumentBytes + 32<<10
-
-// maxInsightsValidateVariables matches the variables a dashboard query accepts.
-const maxInsightsValidateVariables = 20
+// a document at its limit, the envelope, and the worst escaped variables.
+const insightsValidateRequestBytes = insightsValidateDocumentBytes + checkwire.DryRunEnvelopeBytes
 
 // maxInsightsValidateWidgets is the widget limit a dashboard document has, so
 // the per-widget states of a dry run never exceed it.
@@ -126,7 +123,7 @@ func validateDryRunArgs(args *insightsValidateArgs) error {
 	if len(args.Variables) > 0 && !args.Execute {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("variables apply only with execute:true"))
 	}
-	if len(args.Variables) > maxInsightsValidateVariables {
+	if len(args.Variables) > checkwire.MaxDryRunVariables {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("variables must contain at most 20 string values"))
 	}
 	return nil

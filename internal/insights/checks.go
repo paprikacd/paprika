@@ -490,9 +490,6 @@ func documentFirst(findings []*insightsv1.CheckFinding) []*insightsv1.CheckFindi
 // and per-widget states derived from them.
 var dryRunSummaryOptions = DashboardSummaryOptions{MaxSeries: 8, MaxTraces: 1}
 
-// maxDryRunVariables matches the variables a dashboard query accepts.
-const maxDryRunVariables = 20
-
 // dryRunInputError is a caller error in a dry run with execute: the variables or
 // the document's time range cannot be used. It is reported as a 400.
 type dryRunInputError struct{ message string }
@@ -539,7 +536,7 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 	if err := json.Unmarshal(document, &doc); err != nil {
 		return dryRunOutcome{}, fmt.Errorf("decode dry-run document: %w", err)
 	}
-	if len(variables) > maxDryRunVariables {
+	if len(variables) > checkwire.MaxDryRunVariables {
 		return dryRunOutcome{}, &dryRunInputError{message: "variables must contain at most 20 string values"}
 	}
 	values, err := dashboardVariableValues(doc.Variables, variables)

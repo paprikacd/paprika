@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 // widgetAt is a widget that reads the fake provider, placed at a grid rectangle.
@@ -153,9 +154,11 @@ func documentOf(id string, widgets ...string) string {
 }
 
 func TestDryRunQueryErrorIsSafeAndNamesTheMember(t *testing.T) {
+	// The "boom" answer is a 200 whose body the client reads and cannot decode. Its
+	// text is the leak to catch: a sanitised finding never carries it.
 	provider, _ := newDataProvider(t, func(query string, _ float64) (int, string) {
 		if query == "boom" {
-			return http.StatusInternalServerError, "upstream secret token leaked"
+			return http.StatusOK, "upstream secret token leaked"
 		}
 		return http.StatusTooManyRequests, `{"status":"error"}`
 	})
@@ -404,8 +407,8 @@ func TestDryRunVariablesAreAnInputErrorWithoutExecute(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "declared dashboard variables")
 
-	many := make(map[string]string, maxDryRunVariables+1)
-	for i := range maxDryRunVariables + 1 {
+	many := make(map[string]string, checkwire.MaxDryRunVariables+1)
+	for i := range checkwire.MaxDryRunVariables + 1 {
 		many[fmt.Sprintf("v%02d", i)] = "x"
 	}
 	body, err := json.Marshal(map[string]any{"document": json.RawMessage(document), "execute": true, "variables": many})
@@ -583,4 +586,34 @@ func TestNotRunStatesKeepEveryWidgetWhenAnIDIsNotAString(t *testing.T) {
 	for _, state := range states {
 		require.Equal(t, insightsv1.DataState_DATA_STATE_NOT_RUN, state.GetState())
 	}
+}
+
+// The largest dry run the service takes: a document near its size limit and 20
+// variable values of 1024 units, every unit escaped to six bytes. The envelope
+// is larger than the old 32 KiB allowance, so the test fails if that is restored.
+func TestDryRunAcceptsWorstCaseVariableEnvelope(t *testing.T) {
+	provider, _ := newDataProvider(t, func(string, float64) (int, string) { return http.StatusOK, promMatrix() })
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	declared := make([]map[string]string, 0, checkwire.MaxDryRunVariables)
+	values := make(map[string]string, checkwire.MaxDryRunVariables)
+	for i := range checkwire.MaxDryRunVariables {
+		name := fmt.Sprintf("v%02d", i)
+		declared = append(declared, map[string]string{"name": name})
+		values[name] = strings.Repeat("<", checkwire.MaxDryRunVariableUnits)
+	}
+	widgets := make([]string, 0, maxDashboardWidgets)
+	for i := range maxDashboardWidgets {
+		query := fmt.Sprintf("q%02d%s", i, strings.Repeat("x", 4700))
+		widgets = append(widgets, dataWidgetJSON(fmt.Sprintf("w%02d", i), "timeseries", query, "req/s", i*4, ""))
+	}
+	variables, err := json.Marshal(declared)
+	require.NoError(t, err)
+	document := `{"schemaVersion":1,"id":"demo","title":"Worst case","timeRange":"1h","refreshInterval":30,"variables":` + string(variables) + `,"widgets":[` + strings.Join(widgets, ",") + `]}`
+	encoded, err := json.Marshal(values)
+	require.NoError(t, err)
+	body := []byte(`{"document":` + document + `,"execute":true,"variables":` + string(encoded) + `}`)
+	require.Greater(t, len(body), maxDocumentBytes+32<<10, "the request is larger than the old allowance")
+	require.LessOrEqual(t, len(body), maxDocumentBytes+checkwire.DryRunEnvelopeBytes, "and within the new one")
+	w := request(t, s.Handler(), "POST", "/api/dashboards/validate", body, nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
