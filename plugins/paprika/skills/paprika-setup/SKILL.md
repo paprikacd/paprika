@@ -12,6 +12,12 @@ connection flow and let the user sign in and grant scopes there. Do not ask for
 pasted credentials, bearer tokens, kubeconfigs, or secrets; do not store them
 in the package or chat.
 
+Observability is a separate package. To query logs, metrics and traces, or to create
+saved queries and dashboards, use the Paprika Observe plugin (`paprika-observe`). It
+connects `https://paprika.benebsworth.com/observe/mcp` through its own native OAuth
+consent; a fleet `/mcp` token does not authorize that endpoint, and this package does
+not connect it.
+
 Start with `paprika:read` for fleet/application inspection. Add `paprika:write`
 only when the user wants delivery actions. Scope grants and Paprika's RBAC are
 both required; write access does not imply read access.

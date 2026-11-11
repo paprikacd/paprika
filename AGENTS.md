@@ -14,6 +14,17 @@ before designing or implementing changes. Its bundled references, visual
 fixtures, review templates, and contract checker guide the work alongside the
 current `DESIGN.md` and applicable directory instructions.
 
+### Repairing a live dashboard
+
+Repair drifted dashboards with the tested toolkit before writing new queries:
+`hack/dashboard-presentation/patches.json` (reviewed widget edits, applied with
+`patch_dashboard` after the UI release is deployed), `hack/service-overview/`
+(exact-ETag query patches; `migrate.mjs` previews, then applies through an authenticated
+Observe MCP client), the coverage gate `ui/e2e/service-overview-coverage.mjs` that CI runs,
+and the promtool PromQL fixtures. Missing telemetry stays empty, never zero. The full
+section is in the design skill, and the source requirements are in
+[dashboard data coverage](docs/guides/dashboard-data-coverage.md).
+
 ## Get changes live and prove Paprika Observe works
 
 This is the **execution checklist**, not a claim about the current deployment.

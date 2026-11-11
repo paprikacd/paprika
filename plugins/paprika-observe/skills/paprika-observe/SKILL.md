@@ -85,6 +85,9 @@ dialect. Check the provider type and use its language:
 | `aws-xray` | traces | `trace_id`, or an X-Ray filter expression |
 | `aws-cloudtrail` | logs | comma-separated `Key=Value` lookup attributes |
 | `vultr-monitoring` | metrics | one catalog metric name (`account_bandwidth`, `instance_bandwidth_in`, `instance_bandwidth_outgoing_bytes`) |
+| `shorted` | records (`query_records`), metrics | JSON `{operation,args,projection?}`; fixed public reads and separately authorized admin reads |
+| `uptime` | records (`query_records`), metrics | JSON `{operation,args,projection?}`; organization pinned in provider config |
+| `postgresql` | records (`query_records`), metrics | read-only SQL, or `{sql,parameters,projection?}` with driver-bound scalar values |
 
 For metrics, inspect `get_metric_metadata` and use that provider's native
 query language as the table states. Use an actually discovered metric rather
@@ -127,6 +130,23 @@ Report endpoint, provider identity, time range, query outcome, observed time,
 partial failures, and truncation with the evidence. Empty successful results,
 unavailable providers, and sanitized errors do not prove that a service is
 healthy or that there are no errors. Keep pass, fail, and not-run separate.
+
+**Typed records.** `query_records` returns bounded `columns` and `rows`, preserving
+null, zero, timestamps and partial-result status, with explicit truncation. Records
+never accept a metric projection. The range defaults to 30 minutes (maximum 31 days)
+and `limit` to 100 (maximum 1000). Dashboard compact responses keep only a bounded row
+preview and report truncation separately. Application windows use their explicit
+operation arguments. PostgreSQL does not filter SQL by the dashboard range; to use one,
+bind `{"range":"start"}` or `{"range":"end"}` in `parameters` and reference the
+positional `$n` placeholder in the SQL.
+
+In a saved PostgreSQL query, write `$1` in the fixed SQL text and place an unquoted
+`{{service}}` placeholder in the JSON `parameters` array, for example
+`{"sql":"SELECT ... WHERE service=$1","parameters":[{{service}}]}`. Never interpolate
+values into SQL text. PostgreSQL providers require verify-full TLS and an unprivileged
+reader role; never copy an application's writer credentials into one. `get_insights_schema`
+with `kind: "widget"` has record-table, record-treemap and connection-map examples and
+their config shapes.
 
 `list_provider_types` and `describe_provider_type` expose static connector
 capabilities and configuration guidance. `validate_provider` checks configuration
@@ -182,6 +202,35 @@ Layout and query expressions are omitted. Tooltip-only queries need a hovered
 observation and are not executed. Plugin widgets expose their underlying query
 data, not the plugin's arbitrary rendering behavior. Narrow `widget_ids` after
 a result-size limit; do not repeatedly request the whole dashboard.
+
+## Encode what is wrong
+
+When a metric has a supplied or named objective (an SLO, a limit or a policy), encode it in
+the widget rather than only in prose. Tie each threshold to that named source, as
+`.agents/skills/paprika-dashboard-design/references/chart-grammar.md` (thresholds and
+uncertainty) requires, and do not invent an objective. Option names are those in
+`ui/src/features/insights/schema.ts`.
+
+- **Stat:** `options.thresholds`, ascending `{value,color,label}` rules (at most 12,
+  strictly increasing). Thresholds colour the value. The schema has no severity field, so
+  carry severity in the label and colour, for example `"label":"Breach: above objective"`.
+- **Time series:** `options.referenceLines` (at most 8, `{value,label,color?}`) for the
+  objective. Use `options.thresholds` for breach levels; they are drawn as labelled guides
+  and widen autoscaling, not as shaded bands.
+- **Staleness:** `options.staleAfterSeconds` (1 to 2678400), set from the known scrape or
+  evaluation interval, for example two intervals. Do not apply one universal value. A stale
+  single value warns, and a stale time series is hatched after its last sample.
+- **Record table:** a text column with `cellStyles` `display: "status-badge"` and
+  `mappings: [{value,color}]` (at most 16 exact values). Unmapped values stay neutral.
+  Sorting is interactive; no default-sort option exists.
+- **Incidents:** a time series can overlay recorded events through
+  `annotationSource` (`queryRef`, `timestampColumn`, `labelColumn`, and optional `endColumn`
+  and `severityColumn`), up to 20 events from a records query.
+
+**Paprika's own signals.** Platform metrics (`paprika_*`, health and SLO series) are listed
+with their labels, meaning and documented PromQL in
+`.agents/skills/paprika-dashboard-design/references/paprika-signals.md`. `get_system_health`
+is served by the platform MCP at `/mcp`, not by this Observe endpoint.
 
 ## Mandatory visual QA for dashboard authoring and edits
 
@@ -264,6 +313,12 @@ and `focus_widget` to inspect pointer and keyboard states. Without it,
 the existing Playwright Insights E2E suite can provide actual visual
 evidence in a properly authenticated test environment; those fixtures
 must never be misrepresented as live production screenshots.
+
+**Local authoring loop.** To author or test against synthetic providers without
+touching production, start the local harness and attach an agent client to its
+`/observe/mcp` endpoint, as `docs/guides/local-dashboard-polish.md` describes. Use the
+`mcpURL` and `mcpWriteToken` from its private ready file and never the production token.
+The `npx` installer cannot target a local endpoint.
 
 **Corrected Omega reference (6 Nov 2026):** the first MCP visual styling
 pass broke the two-row KPI layout despite 13/13 successful saved queries.

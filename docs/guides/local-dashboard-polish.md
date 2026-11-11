@@ -51,3 +51,43 @@ Run `node e2e/insights-tooltip-structure.e2e.mjs` for the shared inspector anato
 ## Focused chart editor
 
 Run `node e2e/run-insights.mjs e2e/insights-editor-focus.e2e.mjs` from `ui/` with `INSIGHTS_E2E_URL` set to the local production export. This exercises both themes at 1512, 768 and 390px: one-chart focus, retained query data, staged changes, invalid drafts, undo/redo, guarded Back, nested Escape, focus restoration, explicit save/reload, and map/honeycomb/table settings. Captures and measurements are under `artifacts/insights/editor-focus/`. The generated layout concepts in `output/imagegen/` are design exploration; the browser captures are the implementation evidence.
+
+## Agent authoring against the local harness
+
+To let an agent author or test saved queries and dashboards against the synthetic
+providers, run the Observe/Insights fixture the gallery uses and attach the agent to its
+`/observe/mcp` endpoint. The result appears in the same local browser session as the
+dashboard you are polishing, and production is never involved.
+
+```sh
+state=artifacts/insights/agent-authoring
+mkdir -p "$state" && chmod 700 "$state"
+go run ./hack/insights-observe-e2e \
+  --ready-file="$state/private-connection.json" \
+  --data-dir="$state/documents" \
+  --token-ttl=1h
+```
+
+The harness writes its private ready file only after it is listening. Wait for the line
+`Observe/Insights E2E fixture ready`, then read the endpoint and a token from that file in
+a second shell. Do not print the token into shared logs.
+
+```sh
+connection="$PWD/$state/private-connection.json"
+export TOKEN="$(node -p "require('$connection').mcpWriteToken")"
+claude mcp add --transport http paprika-local \
+  "$(node -p "require('$connection').mcpURL")" \
+  --header "Authorization: Bearer $TOKEN"
+```
+
+`mcpWriteToken` carries `insights:write` and may create or update documents. For read-only
+checks, use `mcpViewerToken` instead. `mcpURL` points at `http://127.0.0.1:<port>/observe/mcp`
+and the token expires after `--token-ttl`; restart the harness to mint new ones. Remove the
+client with `claude mcp remove paprika-local` when finished. Use a fresh `--data-dir` for a
+clean run, because documents persist between runs.
+
+The `paprika-plugins` installer cannot target this endpoint. It always installs the
+production Observe package with its OAuth configuration. The gallery
+(`demo/insights-gallery/serve.mjs`) starts the same harness and writes the same file under
+its own `artifacts/insights/gallery-insights-*` directory; add `--ui-url=<loopback static UI>`
+to the harness command to serve the UI as well.
