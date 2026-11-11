@@ -364,3 +364,45 @@ func TestInsightsProxyDelegatesHumanIdentityWithoutForwardingBrowserSecrets(t *t
 		t.Fatal("unauthenticated delegation accepted")
 	}
 }
+
+func TestInsightsValidateDryRunTakesReadPermissionOnly(t *testing.T) {
+	const serviceToken = "service-token-with-at-least-32-characters"
+	var upstreamPaths []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamPaths = append(upstreamPaths, r.Method+" "+r.URL.Path)
+		_, _ = io.WriteString(w, `{"findings":[],"total":0,"truncated":false}`)
+	}))
+	defer upstream.Close()
+	cfg := insightsAuthConfig("read")
+	h, err := NewInsightsProxy(context.Background(), cfg, upstream.URL, serviceToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: "reader", Email: "reader@example.test", Name: "Reader", Secret: cfg.TokenSecret, Audience: auth.ConsoleAPIAudience})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method, token string
+		status        int
+	}{
+		{"POST", "", 401},
+		{"POST", token, 200},
+		{"PUT", token, 403},
+	} {
+		path := "/api/insights/dashboards/validate"
+		if tc.method == "PUT" {
+			path = "/api/insights/dashboards/demo"
+		}
+		r := httptest.NewRequestWithContext(context.Background(), tc.method, path, strings.NewReader(`{}`))
+		r.Header.Set("Authorization", "Bearer "+tc.token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != tc.status {
+			t.Errorf("%s %s returned %d: %s", tc.method, path, w.Code, w.Body)
+		}
+	}
+	if len(upstreamPaths) != 1 || upstreamPaths[0] != "POST /api/dashboards/validate" {
+		t.Fatalf("upstream saw %v, want only the validate dry run", upstreamPaths)
+	}
+}

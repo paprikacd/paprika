@@ -7,16 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
 )
 
@@ -144,7 +151,7 @@ func readInsightsResponseLimit(resp *http.Response, limit int64) (payload json.R
 		return nil, "", connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds its size limit"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", insightsStatusError(resp.StatusCode, body)
+		return nil, "", insightsStatusError(resp.StatusCode, body, resp.Header)
 	}
 	if !json.Valid(body) {
 		return nil, "", connect.NewError(connect.CodeInternal, errors.New("insights returned invalid JSON"))
@@ -183,11 +190,17 @@ var insightsHTTPFailures = map[int]insightsHTTPFailure{
 	http.StatusGatewayTimeout:        {connect.CodeUnavailable, "insights service is unavailable"},
 }
 
-func insightsStatusError(status int, body []byte) error {
+// insightsStatusError maps a failed Insights response to a Connect error. The
+// message is fixed text, or the service's own short validation message. A 400
+// also carries the bounded finding list as a CheckReport detail, and a capacity
+// response that names a Retry-After carries a RetryInfo detail. Upstream bodies
+// are never copied beyond those two fields.
+func insightsStatusError(status int, body []byte, header http.Header) *connect.Error {
 	failure, ok := insightsHTTPFailures[status]
 	if !ok {
 		failure = insightsHTTPFailure{connect.CodeInternal, "insights request failed"}
 	}
+	var report *insightsv1.CheckReport
 	if status == http.StatusBadRequest {
 		var response struct {
 			Error string `json:"error"`
@@ -195,8 +208,93 @@ func insightsStatusError(status int, body []byte) error {
 		if json.Unmarshal(body, &response) == nil && len(response.Error) <= 512 && response.Error != "" {
 			failure.message = response.Error
 		}
+		report = insightsCheckReport(body)
 	}
-	return connect.NewError(failure.code, errors.New(failure.message))
+	err := connect.NewError(failure.code, errors.New(failure.message))
+	if report != nil {
+		if detail, detailErr := connect.NewErrorDetail(report); detailErr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	if delay, ok := insightsRetryDelay(status, header); ok {
+		if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(delay)}); detailErr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	return err
+}
+
+// Limits mirror the service's own bounds. Each finding is cut down again here, so
+// a changed or misbehaving upstream still cannot widen what an agent receives.
+const (
+	maxInsightsIssues         = 32
+	maxInsightsIssueRunes     = 200
+	maxInsightsIssuePointer   = 256
+	maxInsightsRetryAfterSecs = 300
+)
+
+// insightsValidationBody is the 400 body of a rejected save: Error keeps the
+// single historical message, Issues lists the findings and Total counts them.
+type insightsValidationBody struct {
+	Error  string            `json:"error"`
+	Issues []json.RawMessage `json:"issues"`
+	Total  uint32            `json:"total"`
+}
+
+func insightsCheckReport(body []byte) *insightsv1.CheckReport {
+	var response insightsValidationBody
+	if json.Unmarshal(body, &response) != nil || len(response.Issues) == 0 {
+		return nil
+	}
+	report := &insightsv1.CheckReport{}
+	decoder := protojson.UnmarshalOptions{DiscardUnknown: true}
+	for _, raw := range response.Issues {
+		if len(report.Findings) == maxInsightsIssues {
+			break
+		}
+		var finding insightsv1.CheckFinding
+		if decoder.Unmarshal(raw, &finding) != nil {
+			continue
+		}
+		finding.Message = truncateInsightsText(finding.GetMessage(), maxInsightsIssueRunes)
+		finding.Fix = truncateInsightsText(finding.GetFix(), maxInsightsIssueRunes)
+		if len(finding.GetPointer()) > maxInsightsIssuePointer {
+			finding.Pointer = ""
+		}
+		report.Findings = append(report.Findings, &finding)
+	}
+	report.Total = max(response.Total, countOfInsights(len(response.Issues)))
+	report.Truncated = report.Total > countOfInsights(len(report.Findings))
+	return report
+}
+
+// countOfInsights converts a length to a uint32 count, saturating for any value
+// a response could reach.
+func countOfInsights(n int) uint32 {
+	if n < 0 {
+		return 0
+	}
+	return uint32(min(n, math.MaxUint32))
+}
+
+func truncateInsightsText(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
+}
+
+// insightsRetryDelay reads a Retry-After in seconds from a throttling or
+// unavailable response. A date-form or out-of-range value is ignored.
+func insightsRetryDelay(status int, header http.Header) (time.Duration, bool) {
+	if status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {
+		return 0, false
+	}
+	seconds, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After")))
+	if err != nil || seconds < 1 || seconds > maxInsightsRetryAfterSecs {
+		return 0, false
+	}
+	return time.Duration(seconds) * time.Second, true
 }
 
 func (c *InsightsAuthoringClient) get(ctx context.Context, collection, id string) (*insightsDocumentResult, error) {

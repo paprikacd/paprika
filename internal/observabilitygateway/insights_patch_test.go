@@ -17,6 +17,7 @@ import (
 
 	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/insights"
 )
@@ -339,4 +340,22 @@ func TestInsightsPatchSavedQueryRetainsReferenceCompatibilityGuard(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, initial.ETag, current.ETag)
 	require.Zero(t, h.queries.Load())
+}
+
+func TestInsightsPatchRejectionNamesWidgetPointer(t *testing.T) {
+	h := newInsightsPatchHarness(t)
+	initial := h.seed(t, "dashboards", patchDashboardFixture)
+	args := patchArgs(t, "demo", initial.ETag, `"widget_edits":[{"op":"update","id":"rate","patch":{"layout":{"w":13}}}]`)
+	_, err := h.c.patch(patchEditor(t), "dashboards", args)
+	var ce *connect.Error
+	require.ErrorAs(t, err, &ce)
+	require.Equal(t, connect.CodeInvalidArgument, ce.Code())
+	require.Len(t, ce.Details(), 1)
+	message, valueErr := ce.Details()[0].Value()
+	require.NoError(t, valueErr)
+	report, ok := message.(*insightsv1.CheckReport)
+	require.True(t, ok)
+	require.Len(t, report.GetFindings(), 1)
+	require.Equal(t, "/widgets/0/layout", report.GetFindings()[0].GetPointer())
+	require.Equal(t, "rate", report.GetFindings()[0].GetWidgetId())
 }

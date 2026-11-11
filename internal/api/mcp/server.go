@@ -23,11 +23,13 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
@@ -958,11 +960,93 @@ func toolErrorResult(err error) *sdkmcp.CallToolResult {
 	} else if !operational {
 		return nil
 	}
+	errorBody := map[string]any{"code": ce.Code().String()}
+	report, retryAfter := connectErrorDetails(ce)
+	if report != nil {
+		issues, err := issueListText(report)
+		if err == nil {
+			text += issues.text
+			errorBody["issues"] = issues.structured
+			errorBody["total"] = report.GetTotal()
+			errorBody["truncated"] = report.GetTruncated() || issues.omitted
+		}
+	}
+	if retryAfter > 0 {
+		seconds := int64(retryAfter / time.Second)
+		text += fmt.Sprintf(" Retry after %d s.", seconds)
+		errorBody["retry_after_seconds"] = seconds
+	}
 	return &sdkmcp.CallToolResult{
 		IsError:           true,
-		StructuredContent: map[string]any{"error": map[string]string{"code": ce.Code().String()}},
+		StructuredContent: map[string]any{"error": errorBody},
 		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: text}},
 	}
+}
+
+// maxToolIssues caps the issue list an agent sees for one failed call. The
+// gateway already bounds each finding; this bounds the count for any producer.
+const maxToolIssues = 32
+
+// connectErrorDetails reads the bounded details an upstream attached to a
+// Connect error: a dashboard CheckReport and a RetryInfo delay. Other details
+// are ignored, so nothing else reaches the tool result.
+func connectErrorDetails(ce *connect.Error) (*insightsv1.CheckReport, time.Duration) {
+	var report *insightsv1.CheckReport
+	var retryAfter time.Duration
+	for _, detail := range ce.Details() {
+		message, err := detail.Value()
+		if err != nil {
+			continue
+		}
+		switch value := message.(type) {
+		case *insightsv1.CheckReport:
+			if report == nil {
+				report = value
+			}
+		case *errdetails.RetryInfo:
+			retryAfter = value.GetRetryDelay().AsDuration()
+		}
+	}
+	return report, retryAfter
+}
+
+type issueList struct {
+	text       string
+	structured []json.RawMessage
+	omitted    bool
+}
+
+// issueListText renders at most maxToolIssues findings as text lines naming
+// each widget and JSON pointer, and as structured issues in protojson form.
+func issueListText(report *insightsv1.CheckReport) (issueList, error) {
+	findings := report.GetFindings()
+	shown := min(len(findings), maxToolIssues)
+	var list issueList
+	list.omitted = shown < len(findings)
+	var b strings.Builder
+	total := max(uint64(report.GetTotal()), uint64(len(findings)))
+	fmt.Fprintf(&b, "\n\nIssues (%d of %d shown):", shown, total)
+	for _, finding := range findings[:shown] {
+		location := finding.GetPointer()
+		if location == "" {
+			location = "document"
+		}
+		fmt.Fprintf(&b, "\n- %s", location)
+		if finding.GetWidgetId() != "" {
+			fmt.Fprintf(&b, " (widget %s)", finding.GetWidgetId())
+		}
+		fmt.Fprintf(&b, ": %s", finding.GetMessage())
+		if finding.GetFix() != "" {
+			fmt.Fprintf(&b, " Fix: %s", finding.GetFix())
+		}
+		raw, err := protojson.Marshal(finding)
+		if err != nil {
+			return issueList{}, fmt.Errorf("mcp: marshal issue: %w", err)
+		}
+		list.structured = append(list.structured, raw)
+	}
+	list.text = b.String()
+	return list, nil
 }
 
 func toolConnectError(err error) *connect.Error {

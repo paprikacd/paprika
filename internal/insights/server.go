@@ -19,6 +19,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 )
 
 type Config struct {
@@ -101,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/saved-queries/{id}", s.deleteSavedQuery)
 	api.HandleFunc("GET /api/dashboards", s.listDashboards)
 	api.HandleFunc("GET /api/dashboards/{id}", s.getDashboard)
+	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
 	mux.Handle("/api/", s.authenticate(api))
@@ -246,8 +249,8 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid dashboard document")
 		return
 	}
-	if err := validateDashboard(r.PathValue("id"), doc); err != nil {
-		writeError(w, 400, err.Error())
+	if findings := schemaFindings(r.PathValue("id"), doc); len(findings) > 0 {
+		writeSchemaFindings(w, findings)
 		return
 	}
 	s.mutations.Lock()
@@ -259,6 +262,61 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	setDocumentETag(w, tag)
 	writeJSON(w, 200, doc)
+}
+
+// checkDashboard is the dry run: it reports what a save would reject and never
+// writes. It reads the same document a PUT takes, and a read-only caller may use it.
+func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
+	var doc json.RawMessage
+	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
+		writeError(w, 400, "invalid dashboard document")
+		return
+	}
+	// The identity comes from the document itself, because there is no path id.
+	// A document without a readable id fails the id check like any other invalid id.
+	var identity struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(doc, &identity) != nil {
+		identity.ID = ""
+	}
+	writeCheckReport(w, 200, capCheckReport(schemaFindings(identity.ID, doc)))
+}
+
+// validationErrorBody is the 400 response to a rejected save. Error keeps the
+// single message clients have always read. Issues lists the findings, at most
+// 32, and Total counts them all so a caller can tell when some were omitted.
+type validationErrorBody struct {
+	Error  string            `json:"error"`
+	Issues []json.RawMessage `json:"issues"`
+	Total  uint32            `json:"total"`
+}
+
+func writeSchemaFindings(w http.ResponseWriter, findings []*insightsv1.CheckFinding) {
+	report := capCheckReport(findings)
+	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetFindings())), Total: report.GetTotal()}
+	for _, finding := range report.GetFindings() {
+		issue, err := checkJSON.Marshal(finding)
+		if err != nil {
+			writeError(w, 500, "dashboard validation failed")
+			return
+		}
+		body.Issues = append(body.Issues, issue)
+	}
+	writeJSON(w, 400, body)
+}
+
+func writeCheckReport(w http.ResponseWriter, status int, report *insightsv1.CheckReport) {
+	data, err := checkJSON.Marshal(report)
+	if err != nil {
+		writeError(w, 500, "dashboard validation failed")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if _, err := w.Write(data); err != nil {
+		slog.Debug("could not write insights check report")
+	}
 }
 
 func (s *Server) deleteDashboard(w http.ResponseWriter, r *http.Request) {
