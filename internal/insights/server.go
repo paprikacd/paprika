@@ -494,11 +494,15 @@ type validationErrorBody struct {
 	Issues    []json.RawMessage `json:"issues"`
 	Total     uint32            `json:"total"`
 	Truncated bool              `json:"truncated"`
+	// Severity counts cover every finding, including those past the issue cap.
+	ErrorCount   uint32 `json:"errorCount"`
+	WarningCount uint32 `json:"warningCount"`
+	InfoCount    uint32 `json:"infoCount"`
 }
 
 func writeSchemaFindings(w http.ResponseWriter, findings []*insightsv1.CheckFinding) {
 	report := capCheckReport(findings)
-	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated()}
+	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated(), ErrorCount: report.GetErrorCount(), WarningCount: report.GetWarningCount(), InfoCount: report.GetInfoCount()}
 	for _, finding := range report.GetIssues() {
 		issue, err := checkwire.Marshal(finding)
 		if err != nil {

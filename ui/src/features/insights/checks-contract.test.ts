@@ -50,11 +50,16 @@ describe("dashboard check wire contract", () => {
   })
 
   it("keeps the dry run in the same list shape as the save body", () => {
-    expect(Object.keys(golden.dryRun).sort()).toEqual(["issues", "total", "truncated"])
+    const listShape = ["errorCount", "infoCount", "issues", "total", "truncated", "warningCount"]
+    expect(Object.keys(golden.dryRun).sort()).toEqual(listShape)
+    expect(Object.keys(golden.save).filter((key) => key !== "error").sort()).toEqual(listShape)
     expect(golden.dryRun).toEqual({
       issues: golden.save.issues,
       total: golden.save.total,
       truncated: golden.save.truncated,
+      errorCount: golden.save.errorCount,
+      warningCount: golden.save.warningCount,
+      infoCount: golden.save.infoCount,
     })
   })
 

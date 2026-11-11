@@ -448,6 +448,10 @@ func dryRunFindings(document Dashboard) []*insightsv1.CheckFinding {
 func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
 	ordered := documentFirst(findings)
 	report := &insightsv1.CheckReport{Total: checkwire.Count(len(ordered))}
+	// Severity counts cover every finding, including those past the cap, so a
+	// truncated report never understates its errors.
+	counts := checkwire.CountSeverities(ordered)
+	report.ErrorCount, report.WarningCount, report.InfoCount = counts.Errors, counts.Warnings, counts.Infos
 	if len(ordered) > checkwire.MaxIssues {
 		ordered = ordered[:checkwire.MaxIssues]
 		report.Truncated = true

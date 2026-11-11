@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
@@ -345,7 +346,7 @@ func TestDashboardValidateIsAReadOnlyDryRun(t *testing.T) {
 	}
 
 	w = request(t, h, "POST", "/api/dashboards/validate", checkBody(dashboard("demo", "Demo")), nil)
-	if w.Code != 200 || w.Body.String() != `{"issues":[],"total":0,"truncated":false}` {
+	if w.Code != 200 || w.Body.String() != `{"issues":[],"total":0,"truncated":false,"errorCount":0,"warningCount":0,"infoCount":0}` {
 		t.Fatalf("valid dry run = %d %s", w.Code, w.Body)
 	}
 
@@ -385,5 +386,22 @@ func TestLargeDocumentIsCheapThroughDryRunAndSave(t *testing.T) {
 		if elapsed > time.Second {
 			t.Fatalf("%s of a %d byte document took %s", name, len(document), elapsed)
 		}
+	}
+}
+
+func TestCheckReportCountsSeveritiesPastTheCap(t *testing.T) {
+	findings := make([]*insightsv1.CheckFinding, 0, 45)
+	for range 40 {
+		findings = append(findings, &insightsv1.CheckFinding{RuleId: "layout.hole", Severity: insightsv1.Severity_SEVERITY_WARNING, Pointer: "/widgets/0"})
+	}
+	for range 5 {
+		findings = append(findings, &insightsv1.CheckFinding{RuleId: "layout.overlap", Severity: insightsv1.Severity_SEVERITY_ERROR, Pointer: "/widgets/1"})
+	}
+	report := capCheckReport(findings)
+	if !report.GetTruncated() || len(report.GetIssues()) != checkwire.MaxIssues {
+		t.Fatalf("report = truncated %v with %d issues", report.GetTruncated(), len(report.GetIssues()))
+	}
+	if report.GetTotal() != 45 || report.GetErrorCount() != 5 || report.GetWarningCount() != 40 || report.GetInfoCount() != 0 {
+		t.Fatalf("counts = total %d errors %d warnings %d info %d", report.GetTotal(), report.GetErrorCount(), report.GetWarningCount(), report.GetInfoCount())
 	}
 }

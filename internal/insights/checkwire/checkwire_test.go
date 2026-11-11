@@ -15,7 +15,7 @@ func TestMarshalIsCompactAndStable(t *testing.T) {
 	first, err := Marshal(report)
 	require.NoError(t, err)
 	require.NotContains(t, string(first), " ")
-	require.JSONEq(t, `{"issues":[{"ruleId":"schema.widget.layout","severity":"SEVERITY_ERROR","source":"SOURCE_UNSPECIFIED","widgetId":"","pointer":"","message":"","fix":""}],"total":1,"truncated":false}`, string(first))
+	require.JSONEq(t, `{"issues":[{"ruleId":"schema.widget.layout","severity":"SEVERITY_ERROR","source":"SOURCE_UNSPECIFIED","widgetId":"","pointer":"","message":"","fix":""}],"total":1,"truncated":false,"errorCount":0,"warningCount":0,"infoCount":0}`, string(first))
 	for i := 0; i < 20; i++ {
 		again, err := Marshal(report)
 		require.NoError(t, err)

@@ -151,7 +151,7 @@ func TestCleanSaveReturnsAnEmptyChecksFieldWhenAsked(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(w.Body.String()), `,"checks":{"issues":[],"total":0,"truncated":false}}`) {
+	if !strings.HasSuffix(strings.TrimSpace(w.Body.String()), `,"checks":{"issues":[],"total":0,"truncated":false,"errorCount":0,"warningCount":0,"infoCount":0}}`) {
 		t.Fatalf("body = %s", w.Body)
 	}
 }

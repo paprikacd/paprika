@@ -229,6 +229,11 @@ type insightsValidationBody struct {
 	Issues    []json.RawMessage `json:"issues"`
 	Total     uint32            `json:"total"`
 	Truncated bool              `json:"truncated"`
+	// Severity counts cover every finding the service found, not only the
+	// issues it returned. Older services omit them.
+	ErrorCount   *uint32 `json:"errorCount"`
+	WarningCount *uint32 `json:"warningCount"`
+	InfoCount    *uint32 `json:"infoCount"`
 }
 
 // insightsCheckReport decodes the issue list of a 400 and bounds every finding,
@@ -249,9 +254,22 @@ func insightsCheckReport(body []byte) *insightsv1.CheckReport {
 		}
 		report.Issues = append(report.Issues, checkwire.Bound(&finding))
 	}
-	report.Total = max(response.Total, checkwire.Count(len(response.Issues)))
+	decoded := checkwire.CountSeverities(report.GetIssues())
+	report.ErrorCount = serviceCount(response.ErrorCount, decoded.Errors)
+	report.WarningCount = serviceCount(response.WarningCount, decoded.Warnings)
+	report.InfoCount = serviceCount(response.InfoCount, decoded.Infos)
+	report.Total = max(response.Total, checkwire.Count(len(response.Issues)), report.GetErrorCount()+report.GetWarningCount()+report.GetInfoCount())
 	report.Truncated = response.Truncated || report.GetTotal() > checkwire.Count(len(report.GetIssues()))
 	return report
+}
+
+// serviceCount prefers the service's own severity count, which covers findings
+// past the issue cap, and never reports fewer than the issues decoded here.
+func serviceCount(reported *uint32, decoded uint32) uint32 {
+	if reported == nil {
+		return decoded
+	}
+	return max(min(*reported, 1<<16), decoded)
 }
 
 // maxInsightsRetryAfterSecs bounds the delay a Retry-After may ask an agent to wait.
