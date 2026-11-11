@@ -1,4 +1,5 @@
-import type { InsightsClient } from "./client"
+import { checksFromError, type InsightsClient } from "./client"
+import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { documentFingerprint } from "./fingerprint"
 import { compactDashboardLayout } from "./layout-compaction"
 import { dashboardSchema, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
@@ -26,12 +27,20 @@ export interface BundleImportRequest {
   dashboardBaselines?: Record<string, ImportBaseline>
   queryBaselines?: Record<string, ImportBaseline>
 }
+export interface ImportFailure {
+  dashboardId?: string
+  queryId?: string
+  message: string
+  checks?: CheckReport
+}
 export interface BundleImportResult {
   added: number
   /** All completed dashboard decisions, including Keep and Replace. */
   totalAdded: number
   failed: Dashboard[]
   errors: string[]
+  /** The same failures as errors, with their ids and any findings a rejected save carried. errors stays the display text. */
+  errorDetails?: ImportFailure[]
   queriesAdded: number
   queriesReused: number
   dashboardsKept: number
@@ -113,7 +122,7 @@ export function createBundleImporter() {
       session.dashboardActions.set(document.id, action)
     }
     const pending = original.dashboards.filter(document => !session!.completed.has(document.id))
-    const result: BundleImportResult = { added: 0, totalAdded: session.completed.size, failed: pending, errors: [], queriesAdded: 0, queriesReused: 0, dashboardsKept: 0, dashboardsReplaced: 0, queriesReplaced: 0, complete: !pending.length }
+    const result: BundleImportResult = { added: 0, totalAdded: session.completed.size, failed: pending, errors: [], errorDetails: [], queriesAdded: 0, queriesReused: 0, dashboardsKept: 0, dashboardsReplaced: 0, queriesReplaced: 0, complete: !pending.length }
     if (!pending.length) return result
     running = true
     try {
@@ -212,6 +221,7 @@ export function createBundleImporter() {
           } catch (error) {
             queryErrors.set(query.id, message(error))
             result.errors.push(`${query.name}: ${message(error)}`)
+            result.errorDetails!.push({ queryId: query.id, message: message(error) })
           }
         }
         for (const document of mapped.dashboards) {
@@ -265,7 +275,10 @@ export function createBundleImporter() {
             if (action === "replace") result.dashboardsReplaced++
             else result.added++
             environment.onDashboardSaved(target, etag)
-          } catch (error) { result.errors.push(`${document.title}: ${message(error)}`) }
+          } catch (error) {
+            result.errors.push(`${document.title}: ${message(error)}`)
+            result.errorDetails!.push({ dashboardId: document.id, message: message(error), checks: checksFromError(error) })
+          }
         }
       }
       // Publish Keep receipts only with a returned result. A failed preflight
