@@ -36,6 +36,7 @@ import {
   type Series,
 } from "./chart-data";
 import { validTimestamp } from "./widget-context";
+import { SERIES_ROLES, seriesSlot } from "./series-palette";
 import styles from "./tooltip-widgets.module.css";
 
 export const MAX_TOOLTIP_POINTS = 240;
@@ -79,10 +80,10 @@ export interface TooltipRendererDefinition {
   render: ComponentType<TooltipRendererProps>;
 }
 
-const DEFAULT_TOOLTIP_COLOR = "var(--gamma-chart-1, #b65332)";
-// Only host-owned chart tokens may pass through the renderer boundary. Keep
-// arbitrary CSS out while preserving series identity across themed portals.
-const chartTokenColor = /^var\(--gamma-chart-[1-8](?:,\s*#[0-9a-f]{6})?\)$/i;
+const DEFAULT_TOOLTIP_COLOR = seriesSlot(0);
+// Only host-owned palette tokens may pass through the renderer boundary: the series slots, the named series roles and
+// the legacy chart tokens they alias. Keep arbitrary CSS out while preserving series identity across themed portals.
+const paletteTokenColor = new RegExp(`^var\\(--gamma-(?:chart-[1-8]|series-(?:[1-8]|${SERIES_ROLES.join("|")}))(?:,\\s*#[0-9a-f]{6})?\\)$`, "i");
 
 /** Normalize once per active series. No provider, widget or query API is exposed. */
 export function buildTooltipContext(
@@ -168,7 +169,7 @@ export function buildTooltipContext(
           entry.points.length > (bounded.series?.[index]?.points.length ?? 0),
       ),
     unit: view.unit ?? unit,
-    color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || chartTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
+    color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || paletteTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
     height: [80, 120, 160, 200, 320].includes(view.height ?? 160)
       ? (view.height ?? 160)
       : 160,

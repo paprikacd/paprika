@@ -430,3 +430,30 @@ describe("series palette", () => {
     }
   });
 });
+
+describe("query editor syntax tokens", () => {
+  const sets = themeTokenSets();
+  const syntax = ["--gamma-syntax-keyword", "--gamma-syntax-function", "--gamma-syntax-string", "--gamma-syntax-number"];
+
+  it("gives the editor its own syntax colours, each at least 4.5:1 on the editor surface in every block", () => {
+    for (const [block, tokens] of Object.entries(sets))
+      for (const token of syntax)
+        expect(contrastRatio(tokens[token], tokens["--gamma-surface"]), `${block} ${token}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps the four syntax colours at least 15 dE2000 apart in every block", () => {
+    for (const [block, tokens] of Object.entries(sets))
+      for (let index = 0; index < syntax.length; index++)
+        for (let other = index + 1; other < syntax.length; other++)
+          expect(deltaE2000(tokens[syntax[index]], tokens[syntax[other]]), `${block} ${syntax[index]} vs ${syntax[other]}`).toBeGreaterThanOrEqual(15);
+  });
+
+  it("reads the syntax tokens in the editor rather than chart or status colours", () => {
+    const source = readFileSync("src/features/insights/query-code-editor.tsx", "utf8");
+    expect(source).toContain("var(--gamma-syntax-keyword");
+    expect(source).toContain("var(--gamma-syntax-function");
+    expect(source).toContain("var(--gamma-syntax-string");
+    expect(source).toContain("var(--gamma-syntax-number");
+    expect(source).not.toMatch(/var\(--gamma-chart-/);
+  });
+});

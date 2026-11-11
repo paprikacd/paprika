@@ -4,8 +4,8 @@
   z-index: 4;
   pointer-events: none;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--gamma-chart-1, #2867b9) 16%, transparent);
-  border-inline: 1px solid var(--gamma-chart-1, #2867b9);
+  background: color-mix(in srgb, var(--gamma-series-1, #003d75) 16%, transparent);
+  border-inline: 1px solid var(--gamma-series-1, #003d75);
 }
 .brush > span {
   position: absolute;

@@ -656,7 +656,11 @@ func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
 var seriesColorRoles = []string{"traffic", "success", "client-error", "server-error", "p50", "p95", "p99"}
 
 func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
-	if _, err := requireObjectShape(entry, []string{"label", "value"}, []string{"color", "role"}); err != nil {
+	members, err := requireObjectShape(entry, []string{"label", "value"}, []string{"color", "role"})
+	if err != nil {
+		return [2]string{}, err
+	}
+	if err := validateSeriesColorRoleType(members); err != nil {
 		return [2]string{}, err
 	}
 	var rule struct {
@@ -678,6 +682,19 @@ func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
 		return [2]string{}, err
 	}
 	return [2]string{rule.Label, rule.Value}, nil
+}
+
+// validateSeriesColorRoleType reports a role that is not a string, naming the allowed roles rather than the hex form.
+func validateSeriesColorRoleType(members map[string]json.RawMessage) error {
+	value, ok := members["role"]
+	if !ok {
+		return nil
+	}
+	var role string
+	if json.Unmarshal(value, &role) != nil {
+		return fieldErr("role", "series color role must be one of "+strings.Join(seriesColorRoles, ", "))
+	}
+	return nil
 }
 
 // validateSeriesColorChoice requires exactly one of a hex colour or a known role.

@@ -5,15 +5,15 @@
 .header h2 { font-size: 17px; margin: 0 0 3px; }
 .header span, .dialog p { color: var(--gamma-muted); font-size: 12px; line-height: 1.5; }
 .dialog p { margin: 12px 0; }
-.overview { display: block; width: 100%; height: 112px; cursor: crosshair; touch-action: none; background: color-mix(in srgb, var(--gamma-chart-3) 6%, var(--gamma-bg)); border: 1px solid var(--gamma-border); border-radius: 4px; overflow: hidden; }
-.line { fill: none; stroke: var(--gamma-chart-3); stroke-width: 1.5px; opacity: .8; }
-.line[data-series="1"] { stroke: var(--gamma-chart-2); }
-.line[data-series="2"] { stroke: var(--gamma-chart-4); }
-.selected { fill: color-mix(in srgb, var(--gamma-chart-3) 20%, transparent); stroke: var(--gamma-chart-3); stroke-width: 1px; pointer-events: none; }
+.overview { display: block; width: 100%; height: 112px; cursor: crosshair; touch-action: none; background: color-mix(in srgb, var(--gamma-accent) 6%, var(--gamma-bg)); border: 1px solid var(--gamma-border); border-radius: 4px; overflow: hidden; }
+.line { fill: none; stroke: var(--gamma-series-1); stroke-width: 1.5px; opacity: .8; }
+.line[data-series="1"] { stroke: var(--gamma-series-2); }
+.line[data-series="2"] { stroke: var(--gamma-series-3); }
+.selected { fill: color-mix(in srgb, var(--gamma-accent) 20%, transparent); stroke: var(--gamma-accent); stroke-width: 1px; pointer-events: none; }
 .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
 .controls label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; }
 .controls time { font-weight: 400; color: var(--gamma-muted); font-variant-numeric: tabular-nums; }
-.controls input { width: 100%; accent-color: var(--gamma-chart-3); }
+.controls input { width: 100%; accent-color: var(--gamma-accent); }
 .tableScroll { max-height: 210px; overflow: auto; border: 1px solid var(--gamma-border); border-radius: 4px; }
 .tableScroll table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; font-variant-numeric: tabular-nums; }
 .tableScroll th, .tableScroll td { padding: 9px 10px; border-bottom: 1px solid var(--gamma-border); }

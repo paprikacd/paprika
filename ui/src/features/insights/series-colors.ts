@@ -8,7 +8,8 @@ const seriesRule = z.strictObject({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color").optional(),
   role: z.enum(SERIES_ROLES).optional(),
 }).superRefine((rule, context) => {
-  if ((rule.color === undefined) === (rule.role === undefined)) context.addIssue({ code: "custom", message: "Name a hex color or a series role, not both" });
+  if (rule.color === undefined && rule.role === undefined) context.addIssue({ code: "custom", message: "Name a hex color or a series role" });
+  else if (rule.color !== undefined && rule.role !== undefined) context.addIssue({ code: "custom", message: "Use a hex color or a series role, not both" });
 });
 
 /** Exact metric labels, not array positions, identify a semantic series. */

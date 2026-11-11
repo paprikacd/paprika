@@ -2,6 +2,7 @@ package insights
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -47,5 +48,18 @@ func TestSeriesColorRoleRules(t *testing.T) {
 				t.Fatalf("valid=%v; error=%v", tc.valid, err)
 			}
 		})
+	}
+}
+
+// A role that is not a known name must say which roles are allowed, never demand a hex colour.
+func TestSeriesColorRoleErrorsNameTheRoles(t *testing.T) {
+	for _, raw := range []string{
+		`{"seriesColors":[{"label":"quantile","value":"p95","role":5}]}`,
+		`{"seriesColors":[{"label":"quantile","value":"p95","role":"error-5xx"}]}`,
+	} {
+		err := validateWidgetOptions(json.RawMessage(raw))
+		if err == nil || !strings.Contains(err.Error(), "series color role must be one of traffic, success, client-error, server-error, p50, p95, p99") {
+			t.Fatalf("%s: error %v", raw, err)
+		}
 	}
 }

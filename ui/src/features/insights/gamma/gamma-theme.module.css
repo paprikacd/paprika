@@ -58,6 +58,12 @@
   --gamma-chart-6: #61516f;
   --gamma-chart-7: #b77080;
   --gamma-chart-8: #86885b;
+  /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+     kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+  --gamma-syntax-keyword: #a24628;
+  --gamma-syntax-function: #245a94;
+  --gamma-syntax-string: #2a6a43;
+  --gamma-syntax-number: #7a5210;
   /* Semantic series roles name a slot, so a rule can say "server errors" without a hex value. They are aliases:
      the colour follows the active block's slot on this same element. Roles never carry status meaning. */
   --gamma-series-traffic: var(--gamma-series-1);
@@ -181,6 +187,12 @@
   --gamma-chart-6: #a5a1c9;
   --gamma-chart-7: #e7a5c4;
   --gamma-chart-8: #999a66;
+  /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+     kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+  --gamma-syntax-keyword: #f0a98c;
+  --gamma-syntax-function: #9fc3f2;
+  --gamma-syntax-string: #83b69b;
+  --gamma-syntax-number: #dec48b;
   --gamma-chart-grid: #26343d;
   --gamma-chart-axis: #a8bac6;
   --gamma-chart-empty: #11171b;
@@ -271,6 +283,12 @@
     --gamma-chart-6: #9e9ed1;
     --gamma-chart-7: #ff92b7;
     --gamma-chart-8: #8f9e54;
+    /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+       kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+    --gamma-syntax-keyword: #60dbea;
+    --gamma-syntax-function: #9ccbff;
+    --gamma-syntax-string: #7fcc9d;
+    --gamma-syntax-number: #f2b84b;
     --gamma-chart-grid: #1c3440;
     --gamma-chart-axis: #a9becd;
     --gamma-chart-empty: #060e12;
