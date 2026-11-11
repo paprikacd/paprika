@@ -651,14 +651,23 @@ func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
 	return nil
 }
 
+// seriesColorRoles mirrors the --gamma-series-<role> aliases in ui/src/features/insights/series-palette.ts. The
+// shared fixture docs/design/insights/conformance/series-rules.json lists the same roles, and the Go test checks it.
+var seriesColorRoles = []string{"traffic", "success", "client-error", "server-error", "p50", "p95", "p99"}
+
 func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
-	if _, err := requireObjectShape(entry, []string{"label", "value", "color"}, nil); err != nil {
+	members, err := requireObjectShape(entry, []string{"label", "value"}, []string{"color", "role"})
+	if err != nil {
+		return [2]string{}, err
+	}
+	if err := validateSeriesColorRoleType(members); err != nil {
 		return [2]string{}, err
 	}
 	var rule struct {
-		Label string `json:"label"`
-		Value string `json:"value"`
-		Color string `json:"color"`
+		Label string  `json:"label"`
+		Value string  `json:"value"`
+		Color *string `json:"color"`
+		Role  *string `json:"role"`
 	}
 	if err := decodeMember(entry, &rule, "series colors require a valid metric label, nonempty value, and six-digit hex color"); err != nil {
 		return [2]string{}, err
@@ -669,10 +678,37 @@ func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
 	if stringUnits(rule.Value) < 1 || stringUnits(rule.Value) > 256 {
 		return [2]string{}, fieldErr("value", "series colors require a valid metric label, nonempty value, and six-digit hex color")
 	}
-	if !validWidgetColor.MatchString(rule.Color) {
-		return [2]string{}, fieldErr("color", "series colors require a valid metric label, nonempty value, and six-digit hex color")
+	if err := validateSeriesColorChoice(rule.Color, rule.Role); err != nil {
+		return [2]string{}, err
 	}
 	return [2]string{rule.Label, rule.Value}, nil
+}
+
+// validateSeriesColorRoleType reports a role that is not a string, naming the allowed roles rather than the hex form.
+func validateSeriesColorRoleType(members map[string]json.RawMessage) error {
+	value, ok := members["role"]
+	if !ok {
+		return nil
+	}
+	var role string
+	if json.Unmarshal(value, &role) != nil {
+		return fieldErr("role", "series color role must be one of "+strings.Join(seriesColorRoles, ", "))
+	}
+	return nil
+}
+
+// validateSeriesColorChoice requires exactly one of a hex colour or a known role.
+func validateSeriesColorChoice(color, role *string) error {
+	if (color == nil) == (role == nil) {
+		return errors.New("series colors need exactly one of color or role")
+	}
+	if color != nil && !validWidgetColor.MatchString(*color) {
+		return fieldErr("color", "series colors require a valid metric label, nonempty value, and six-digit hex color")
+	}
+	if role != nil && !slices.Contains(seriesColorRoles, *role) {
+		return fieldErr("role", "series color role must be one of "+strings.Join(seriesColorRoles, ", "))
+	}
+	return nil
 }
 
 func validateWidgetThresholds(options map[string]json.RawMessage) error {

@@ -30,8 +30,8 @@
 .name .treeNode { position: absolute; top: calc(50% - 2px); width: 5px; height: 5px; border-radius: 50%; background: var(--gamma-muted); }
 .track { position: relative; height: 16px; background: var(--gamma-surface, #fff); border-radius: 3px; }
 .track::before { content: ""; position: absolute; inset: -12px 0; pointer-events: none; background: repeating-linear-gradient(to right, var(--gamma-border) 0 1px, transparent 1px 25%); opacity: .7; }
-.bar { position: absolute; top: 2px; height: 12px; border-radius: 2px; background: var(--gamma-chart-2, #3b9e9e); }
-.bar[data-instant]::after { content: ""; position: absolute; left: -1px; top: 0; width: 2px; height: 100%; background: var(--gamma-chart-2, #3b9e9e); }
+.bar { position: absolute; top: 2px; height: 12px; border-radius: 2px; background: var(--gamma-series-2, #0c9a93); }
+.bar[data-instant]::after { content: ""; position: absolute; left: -1px; top: 0; width: 2px; height: 100%; background: var(--gamma-series-2, #0c9a93); }
 .bar[data-instant][data-span-status="error"]::after { background: var(--gamma-danger, #ce4a51); }
 .bar[data-span-status="error"] { background: var(--gamma-danger, #ce4a51); }
 .duration { display: flex; flex-direction: column; gap: 2px; text-align: right; white-space: nowrap; }

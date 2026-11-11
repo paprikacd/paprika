@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { portal } from "@tanstack/charts/tooltip/portal";
 import { widgetTextColor } from "./appearance";
+import { SERIES_PALETTE } from "./series-palette";
 import { autoAxisDomain, axisScale } from "./units";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
 import type { QueryResult, Threshold, WidgetOptions } from "./schema";
@@ -11,16 +12,8 @@ import { validTimestamp } from "./widget-context";
 export type Series = NonNullable<QueryResult["series"]>[number];
 export type Point = Series["points"][number];
 
-export const PALETTE = [
-  "var(--gamma-chart-1, #c46146)",
-  "var(--gamma-chart-2, #6e947a)",
-  "var(--gamma-chart-3, #6a8a9c)",
-  "var(--gamma-chart-4, #b29658)",
-  "var(--gamma-chart-5, #9c82a1)",
-  "var(--gamma-chart-6, #7d9690)",
-  "var(--gamma-chart-7, #ac805f)",
-  "var(--gamma-chart-8, #969f5c)",
-];
+// The shared categorical slots (series-palette.ts). Renderers pick by index; a series colour rule overrides the slot.
+export const PALETTE = SERIES_PALETTE;
 export const MAX_SERIES = 12;
 
 export const themedPortal: typeof portal = {

@@ -40,14 +40,39 @@
   --gamma-page: #f2f5f5;
   --gamma-sidebar: #eaf0f1;
   --gamma-sage: #517e66;
-  --gamma-chart-1: #2867b9;
-  --gamma-chart-2: #087f7a;
-  --gamma-chart-3: #bb5037;
-  --gamma-chart-4: #977017;
-  --gamma-chart-5: #7c58ad;
-  --gamma-chart-6: #427449;
-  --gamma-chart-7: #167b96;
-  --gamma-chart-8: #a44d80;
+  /* Categorical series palette, slots 1-8. series-palette.ts mirrors these values for canvas and SVG uses.
+     --gamma-chart-N repeats slot N for consumers that predate the series tokens. */
+  --gamma-series-1: #003d75;
+  --gamma-series-2: #0c9a93;
+  --gamma-series-3: #887fd0;
+  --gamma-series-4: #127a8b;
+  --gamma-series-5: #a75fa7;
+  --gamma-series-6: #61516f;
+  --gamma-series-7: #b77080;
+  --gamma-series-8: #86885b;
+  --gamma-chart-1: #003d75;
+  --gamma-chart-2: #0c9a93;
+  --gamma-chart-3: #887fd0;
+  --gamma-chart-4: #127a8b;
+  --gamma-chart-5: #a75fa7;
+  --gamma-chart-6: #61516f;
+  --gamma-chart-7: #b77080;
+  --gamma-chart-8: #86885b;
+  /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+     kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+  --gamma-syntax-keyword: #a24628;
+  --gamma-syntax-function: #245a94;
+  --gamma-syntax-string: #2a6a43;
+  --gamma-syntax-number: #7a5210;
+  /* Semantic series roles name a slot, so a rule can say "server errors" without a hex value. They are aliases:
+     the colour follows the active block's slot on this same element. Roles never carry status meaning. */
+  --gamma-series-traffic: var(--gamma-series-1);
+  --gamma-series-success: var(--gamma-series-2);
+  --gamma-series-client-error: var(--gamma-series-3);
+  --gamma-series-server-error: var(--gamma-series-7);
+  --gamma-series-p50: var(--gamma-series-4);
+  --gamma-series-p95: var(--gamma-series-6);
+  --gamma-series-p99: var(--gamma-series-5);
   --gamma-chart-grid: #e4ebed;
   --gamma-chart-axis: #52636f;
   --gamma-chart-empty: #f8fafb;
@@ -146,14 +171,28 @@
   --gamma-page: #10171b;
   --gamma-sidebar: #121c22;
   --gamma-sage: #83b69b;
-  --gamma-chart-1: #78a8ed;
-  --gamma-chart-2: #62c7be;
-  --gamma-chart-3: #ed8d70;
-  --gamma-chart-4: #e2bd69;
-  --gamma-chart-5: #b49cdb;
-  --gamma-chart-6: #8ec390;
-  --gamma-chart-7: #6bc5df;
-  --gamma-chart-8: #d69bbf;
+  --gamma-series-1: #21ccfe;
+  --gamma-series-2: #32dcd5;
+  --gamma-series-3: #ae7ecf;
+  --gamma-series-4: #29a1a3;
+  --gamma-series-5: #d76fa1;
+  --gamma-series-6: #a5a1c9;
+  --gamma-series-7: #e7a5c4;
+  --gamma-series-8: #999a66;
+  --gamma-chart-1: #21ccfe;
+  --gamma-chart-2: #32dcd5;
+  --gamma-chart-3: #ae7ecf;
+  --gamma-chart-4: #29a1a3;
+  --gamma-chart-5: #d76fa1;
+  --gamma-chart-6: #a5a1c9;
+  --gamma-chart-7: #e7a5c4;
+  --gamma-chart-8: #999a66;
+  /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+     kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+  --gamma-syntax-keyword: #f0a98c;
+  --gamma-syntax-function: #9fc3f2;
+  --gamma-syntax-string: #83b69b;
+  --gamma-syntax-number: #dec48b;
   --gamma-chart-grid: #26343d;
   --gamma-chart-axis: #a8bac6;
   --gamma-chart-empty: #11171b;
@@ -228,14 +267,28 @@
     --gamma-accent-text: #60dbea;
     --gamma-accent-ink: #071a20;
     --gamma-accent-soft: #10343e;
-    --gamma-chart-1: #20c8dc;
-    --gamma-chart-2: #a78af2;
-    --gamma-chart-3: #27cda9;
-    --gamma-chart-4: #f2b84b;
-    --gamma-chart-5: #f47b6a;
-    --gamma-chart-6: #83bcfa;
-    --gamma-chart-7: #b6d57d;
-    --gamma-chart-8: #e6a0cf;
+    --gamma-series-1: #14c2e8;
+    --gamma-series-2: #00d8cf;
+    --gamma-series-3: #b499aa;
+    --gamma-series-4: #1fa6a9;
+    --gamma-series-5: #cf7abf;
+    --gamma-series-6: #9e9ed1;
+    --gamma-series-7: #ff92b7;
+    --gamma-series-8: #8f9e54;
+    --gamma-chart-1: #14c2e8;
+    --gamma-chart-2: #00d8cf;
+    --gamma-chart-3: #b499aa;
+    --gamma-chart-4: #1fa6a9;
+    --gamma-chart-5: #cf7abf;
+    --gamma-chart-6: #9e9ed1;
+    --gamma-chart-7: #ff92b7;
+    --gamma-chart-8: #8f9e54;
+    /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+       kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+    --gamma-syntax-keyword: #60dbea;
+    --gamma-syntax-function: #9ccbff;
+    --gamma-syntax-string: #7fcc9d;
+    --gamma-syntax-number: #f2b84b;
     --gamma-chart-grid: #1c3440;
     --gamma-chart-axis: #a9becd;
     --gamma-chart-empty: #060e12;

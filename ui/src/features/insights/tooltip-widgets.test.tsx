@@ -7,6 +7,7 @@ import {
   within,
   waitFor,
 } from "@testing-library/react";
+import { seriesSlot } from "./series-palette";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetVisualization } from "./charts";
 import {
@@ -59,13 +60,16 @@ const widget: Widget = {
 
 describe("bounded tooltip rendering", () => {
   it("preserves trusted series colors through themed tooltips and honors an authored override", () => {
-    for (const color of ["var(--gamma-chart-2)", "var(--gamma-chart-3, #597a98)", "#336699"]) {
+    for (const color of ["var(--gamma-chart-2)", "var(--gamma-chart-3, #597a98)", "var(--gamma-series-3)", "var(--gamma-series-server-error, #ffa6cc)", "#336699"]) {
       expect(buildTooltipContext(series, view, "ms", color).color).toBe(color);
       expect(buildTooltipContext(series, { ...view, color: "#123456" }, "ms", color).color).toBe("#123456");
     }
+    // A series that is violet on the chart must keep that colour in its tooltip history, not fall back to slot 1.
+    expect(buildTooltipContext(series, view, "ms", "var(--gamma-series-3, #735f8b)").color).toBe("var(--gamma-series-3, #735f8b)");
     const fallback = buildTooltipContext(series, view, "ms").color;
-    expect(fallback).toBe("var(--gamma-chart-1, #b65332)");
-    for (const color of ["var(--arbitrary)", "var(--gamma-chart-9)", "var(--gamma-chart-3, url(https://example.com))", "red; color: white"]) {
+    expect(fallback).toBe(seriesSlot(0));
+    expect(fallback).toBe("var(--gamma-series-1, #003d75)");
+    for (const color of ["var(--arbitrary)", "var(--gamma-chart-9)", "var(--gamma-series-9)", "var(--gamma-series-warning)", "var(--gamma-chart-3, url(https://example.com))", "red; color: white"]) {
       expect(buildTooltipContext(series, view, "ms", color).color).toBe(fallback);
     }
   });
