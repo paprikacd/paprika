@@ -186,3 +186,38 @@ func checkLabel(t *testing.T, starterID, widgetID, label string, allowed []strin
 		t.Errorf("%s/%s: label %q is not a label of any metric the query uses", starterID, widgetID, label)
 	}
 }
+
+// TestStarterQueriesInterpolateWithTheirDefaults checks that every widget query of a
+// starter resolves with its variables' defaults, the way the query endpoint resolves
+// it, so a starter shows data the moment it is imported.
+func TestStarterQueriesInterpolateWithTheirDefaults(t *testing.T) {
+	for _, starter := range readStarters(t) {
+		var document struct {
+			Variables []struct {
+				Name         string `json:"name"`
+				DefaultValue string `json:"defaultValue"`
+			} `json:"variables"`
+			Widgets []struct {
+				ID    string `json:"id"`
+				Query string `json:"query"`
+			} `json:"widgets"`
+		}
+		if err := json.Unmarshal(starter.Document, &document); err != nil {
+			t.Fatalf("%s: %v", starter.ID, err)
+		}
+		types := map[string]string{}
+		values := map[string]any{}
+		for _, variable := range document.Variables {
+			types[variable.Name] = "string"
+			values[variable.Name] = variable.DefaultValue
+		}
+		for _, widget := range document.Widgets {
+			if widget.Query == "" {
+				continue
+			}
+			if _, err := interpolateDashboardLiterals(widget.Query, types, values); err != nil {
+				t.Errorf("%s/%s: the query does not resolve with its defaults: %v", starter.ID, widget.ID, err)
+			}
+		}
+	}
+}

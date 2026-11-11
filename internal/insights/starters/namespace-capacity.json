@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "namespace-capacity",
   "title": "Namespace capacity",
-  "description": "CPU, memory and throttling for the containers of one namespace, from the kubelet cAdvisor metrics container_cpu_usage_seconds_total, container_memory_working_set_bytes, container_cpu_cfs_throttled_periods_total and container_cpu_cfs_periods_total, which carry namespace, pod and container labels. Choose the namespace variable after importing.",
+  "description": "CPU, memory and throttling for the containers of one namespace. Assumes the kubelet cAdvisor metrics container_cpu_usage_seconds_total, container_memory_working_set_bytes, container_cpu_cfs_throttled_periods_total and container_cpu_cfs_periods_total, which carry namespace, pod and container labels, and kube-state-metrics for kube_pod_container_resource_requests, which carries the requested CPU per pod. Choose the namespace variable after importing.",
   "timeRange": "6h",
   "refreshInterval": 60,
   "variables": [
@@ -32,7 +32,12 @@
       "description": "Share of CPU scheduling periods in which containers hit their limit. Sustained throttling means limits are below what the workload needs.",
       "options": {
         "decimals": 1,
-        "showSparkline": true
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 25, "status": "warning" },
+          { "value": 50, "status": "critical" }
+        ]
       },
       "layout": { "x": 6, "y": 0, "w": 6, "h": 2 }
     },
@@ -61,6 +66,20 @@
         "decimals": 1
       },
       "layout": { "x": 6, "y": 2, "w": 6, "h": 4 }
+    },
+    {
+      "id": "cpu-against-requests",
+      "title": "CPU use against requests",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "100 * sum by (pod) (rate(container_cpu_usage_seconds_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m])) / sum by (pod) (kube_pod_container_resource_requests{namespace={{namespace}},resource=\"cpu\"})",
+      "unit": "%",
+      "description": "CPU use as a share of the CPU requested by each pod. A pod with no CPU request has no series here. Above 100% the pod uses more than it reserved.",
+      "options": {
+        "min": 0,
+        "decimals": 0
+      },
+      "layout": { "x": 0, "y": 6, "w": 12, "h": 4 }
     }
   ]
 }
