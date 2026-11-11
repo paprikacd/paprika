@@ -1,6 +1,15 @@
-import type { MouseEventHandler, ReactNode } from "react";
-import { worldLandPath } from "./plugins/world-land";
+import { lazy, Suspense, type MouseEventHandler, type ReactNode } from "react";
+import { LazyPanelBoundary } from "./lazy-panel";
 import styles from "./geographic-plot.module.css";
+
+// The 110m land outline is about 60 KB of path data that only map widgets need. A failed chunk drops the outline and
+// keeps the grid and observations, since a map without land is still a usable plot.
+const loadWorldLand = () => import("./plugins/world-land");
+const WorldLandPath = lazy(() => loadWorldLand().then(({ worldLandPath }) => ({
+  default: function WorldLandOutline() {
+    return <path d={worldLandPath} fillRule="evenodd" className={styles.land} data-geographic-land="natural-earth-110m" />;
+  },
+})));
 
 /** One fitted WGS84 plane for every record map. Land, grid and observations
  * share the same 2:1 transform; a short panel never crops the southern half. */
@@ -14,7 +23,9 @@ export function GeographicPlot({ children, showGrid = false, showCoordinates = f
   return <div className={styles.surface} data-geographic-plot="" data-coordinates={showCoordinates || undefined}>
     <div className={styles.plane} data-map-plane="" data-geo-plane="map" data-density={density || undefined} role="group" aria-label="Geographic map · WGS84 equirectangular projection" onClickCapture={onClickCapture}>
       <svg viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-        <path d={worldLandPath} fillRule="evenodd" className={styles.land} data-geographic-land="natural-earth-110m" />
+        <LazyPanelBoundary label="World land" renderFailure={() => null}>
+          <Suspense fallback={null}><WorldLandPath /></Suspense>
+        </LazyPanelBoundary>
         {showGrid && [-180, -120, -60, 0, 60, 120, 180].map(lon => <line key={`lon-${lon}`} x1={(lon + 180) * 2} x2={(lon + 180) * 2} y1={0} y2={360} className={styles.grid} />)}
         {showGrid && [-90, -60, -30, 0, 30, 60, 90].map(lat => <line key={`lat-${lat}`} x1={0} x2={720} y1={(90 - lat) * 2} y2={(90 - lat) * 2} className={styles.grid} />)}
       </svg>
