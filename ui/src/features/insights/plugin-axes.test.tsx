@@ -156,3 +156,15 @@ describe("byte axis labels", () => {
     for (const tick of axis.ticks) expect(Number(axis.label(tick, false).split(" ")[0]) * 1024).toBeCloseTo(tick, 6);
   });
 });
+
+describe("gauge reads one scale when the value exceeds the maximum", () => {
+  it("reads the track, bounds and markers in ms when the value reads 1,200 ms against a 900 ms scale", () => {
+    const widget = { ...base, type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", unit: "ms", options: { min: 0, max: 900, thresholds: [{ value: 800, color: "#c5584f", label: "Slow" }] } };
+    const { container } = render(<WidgetVisualization widget={widget as never} result={{ series: [pointSeries([1200])] } as never} />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("1,200");
+    expect(text).toContain("900 ms");
+    expect(text).toContain("Slow 800 ms");
+    expect(text).not.toMatch(/\d s\b/);
+  });
+});

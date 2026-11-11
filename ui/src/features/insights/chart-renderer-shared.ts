@@ -151,7 +151,8 @@ export function axisUnitIsCaption(unit: string, mode: WidgetOptions["axisUnit"] 
  */
 export function chartYAxisLayout(values: number[], unit: string, decimals?: number, axisLabel?: string, axisUnit?: WidgetOptions["axisUnit"], domain?: readonly [number, number], count = 4) {
   const axis = domain ?? autoAxisDomain(values, count, true);
-  const scale = axisScale(axis, unit, { decimals, count, compact: true });
+  // The caller passes the domain the chart draws, already rounded once: the scale must not round it again.
+  const scale = axisScale(axis, unit, { decimals, count, compact: true, fixedDomain: true });
   const separateUnit = axisUnitIsCaption(scale.unit, axisUnit);
   const labels = [...scale.ticks, axis[0], axis[1]].map(value => scale.label(value, !separateUnit));
   const width = Math.max(...labels.map(label => label.length)) * 7 + 12;

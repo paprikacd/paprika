@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { z } from "zod"
 import { formatMetric, EmptyState, ObservationTooltip } from "../chart-renderers"
-import { axisScale, niceAxis, niceDomain } from "../units"
+import { axisScale, niceDomain, ticksWithin } from "../units"
 import type { RecordFrame } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
@@ -112,8 +112,8 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const extent=(right:boolean)=>{const values=series.filter(s=>s.right===right).flatMap(s=>s.points.flatMap(p=>p.value===null?[]:[p.value]));const [min,max]=niceDomain([Math.min(0,...values),Math.max(1,...values)],yTicks.length);return {min,max}}
   const left=extent(false),right=extent(true), scale=(value:number,isRight:boolean)=>{const range=isRight?right:left;return plotBottom-positionFraction(value,range.min,range.max)*plotHeight}
   // Each side shares one label scale across its ticks, so precision and any unit stay consistent down the axis.
-  const leftTicks=niceAxis([left.min,left.max],yTicks.length).ticks.map(tick=>({tick,fraction:positionFraction(tick,left.min,left.max)})),
-  rightTicks=niceAxis([right.min,right.max],yTicks.length).ticks.map(tick=>({tick,fraction:positionFraction(tick,right.min,right.max)})),
+  const leftTicks=ticksWithin([left.min,left.max],yTicks.length).map(tick=>({tick,fraction:positionFraction(tick,left.min,left.max)})),
+  rightTicks=ticksWithin([right.min,right.max],yTicks.length).map(tick=>({tick,fraction:positionFraction(tick,right.min,right.max)})),
   leftLabels=axisScale([left.min,left.max],"",{compact:true,decimals:widget.options?.decimals,ticks:leftTicks.map(({tick})=>tick)}),
   rightLabels=axisScale([right.min,right.max],"",{compact:true,decimals:widget.options?.decimals,ticks:rightTicks.map(({tick})=>tick)});
   const xText=(x:number,exact=false)=>data.category?data.categories[Math.round(x)]??"":data.xColumn.type==="timestamp"?(exact?new Date(x).toISOString():formatTimeTick(x,maxX-minX,timeZone)):exact?String(x):formatMetric(x,"",false,0)

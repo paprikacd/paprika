@@ -89,7 +89,15 @@ function formatFor(key: string, options: Intl.NumberFormatOptions) {
  * Intl rounds the shortest decimal that round-trips the value, so 1.005 becomes 1.01 and 5e8 stays whole. No nudge
  * is needed, and large integers keep every digit.
  */
+/** Intl accepts at most 100 fraction digits, and far fewer are meaningful; past this an exponent is exact enough. */
+const MAX_TEXT_PLACES = 20;
+
+function exponentText(value: number) {
+  return Number(value.toPrecision(SIGNIFICANT_FIGURES)).toExponential();
+}
+
 function plainText(value: number, places: number, grouping = true) {
+  if (places > MAX_TEXT_PLACES) return exponentText(value);
   return formatFor(`plain-${grouping}-${places}`, { useGrouping: grouping, minimumFractionDigits: 0, maximumFractionDigits: places }).format(value === 0 ? 0 : value);
 }
 
@@ -216,13 +224,17 @@ export function joinReading(reading: Reading) {
 /** Reading text for a value already in its step's unit. */
 function readingText(value: number, guards: readonly number[]) {
   const magnitude = Math.abs(value);
-  if (magnitude >= 1e15 || (magnitude > 0 && magnitude < 1e-6)) return Number(value.toPrecision(SIGNIFICANT_FIGURES)).toExponential();
+  if (magnitude >= 1e15 || (magnitude > 0 && magnitude < 1e-6)) {
+    // The exponent form keeps a guard too: if its three figures would cross one, the full shortest form is shown.
+    const short = exponentText(value);
+    return guards.some(guard => (Number(short) >= guard) !== (value >= guard)) ? value.toExponential() : short;
+  }
   return keepingSides(value, guards, readingPlaces(magnitude), textAt => plainText(value, textAt));
 }
 
-/** Record text never uses an exponent: every digit stays, grouped. */
+/** Record text never uses an exponent: every digit stays, grouped, up to the digit limit. */
 function recordText(value: number, guards: readonly number[]) {
-  return keepingSides(value, guards, recordPlaces(Math.abs(value)), textAt => plainText(value, textAt));
+  return keepingSides(value, guards, recordPlaces(Math.abs(value)), textAt => plainText(value, Math.min(textAt, MAX_TEXT_PLACES), true));
 }
 
 /** Whether three-figure precision in this step shows the wrong side of a guard. */
@@ -302,6 +314,7 @@ export function formatSharedScale(values: readonly number[], unit = "", options:
  */
 export function formatRange(lower: number, upper: number, unit = "", options: FormatOptions = {}): string {
   if (!Number.isFinite(lower) || !Number.isFinite(upper)) return "—";
+  if (unit === "%") return `${percentText(lower, [])}%–${percentText(upper, [])}%`;
   const { compact = false } = options;
   const { steps, index } = unitsFor(unit, compact);
   const candidate = chooseStep(steps, index, Math.max(Math.abs(lower), Math.abs(upper)));
@@ -346,52 +359,101 @@ function cleanZeros(ticks: readonly number[]) {
   return ticks.map(tick => (Math.abs(tick) <= tolerance ? 0 : tick));
 }
 
+/** A finite number: a value beyond the float range is clamped to ±Number.MAX_VALUE. */
+function finiteBound(value: number) {
+  return Math.max(-Number.MAX_VALUE, Math.min(Number.MAX_VALUE, value));
+}
+
 /**
- * Nice bounds and ticks for an axis. The step (1, 2, 2.5 or 5 times a power of ten) is chosen so the number of ticks
- * is as close as possible to `count`, and the bounds are the outermost multiples of that step that contain the input.
- * The chart draws these ticks, so the labels and gridlines are the same values.
+ * Nice bounds and ticks for an axis, rounding the domain outwards once. The step (1, 2, 2.5 or 5 times a power of ten)
+ * is chosen so the number of ticks is near `count`. A domain already nice for that count is returned unchanged, so
+ * rounding again is a no-op. Bounds clamp to the float range instead of overflowing to infinity.
  */
 export function niceAxis(domain: readonly [number, number], count = 5): { domain: [number, number]; ticks: number[] } {
   const [low, high] = domain;
   if (!Number.isFinite(low) || !Number.isFinite(high) || !(high > low))
     return { domain: [low, high], ticks: Number.isFinite(low) && low === high ? [low] : [] };
   const target = Math.max(2, Math.floor(count));
+  const candidates = stepCandidates(low, high, target, true);
+  if (!candidates.length) return { domain: [low, high], ticks: [] };
+  // Already nice: a domain whose ends sit on a step near the requested count is kept exactly as it is.
+  const span = high - low;
+  const aligned = candidates.filter(candidate => Math.abs(candidate.first * candidate.step - low) <= 1e-9 * Math.max(span, Math.abs(low)) && Math.abs(candidate.last * candidate.step - high) <= 1e-9 * Math.max(span, Math.abs(high)));
+  const kept = aligned.filter(candidate => Math.abs(candidate.ticks - target) <= 1);
+  const chosen = kept.length ? kept.reduce((best, candidate) => (Math.abs(candidate.ticks - target) < Math.abs(best.ticks - target) ? candidate : best)) : chooseOuter(candidates, target);
+  const { step, first, last } = chosen;
+  if (kept.length) return { domain: [low === 0 ? 0 : low, high === 0 ? 0 : high], ticks: ticksBetween(step, first, last) };
+  return { domain: [unsignedZero(finiteBound(first * step)), unsignedZero(finiteBound(last * step))], ticks: ticksBetween(step, first, last) };
+}
+
+/** Candidate steps for a span: the outermost multiples of each step that contain it, with their tick counts. */
+function stepCandidates(low: number, high: number, target: number, outer: boolean) {
   // Half the extent first, so an extent wider than the float range (±1e308) still has a finite step.
   const half = high / 2 - low / 2;
-  if (!(half > 0) || !Number.isFinite(half)) return { domain: [low, high], ticks: [] };
-  // Never overflows: half the extent is finite, and the step per tick is computed from it without doubling.
+  if (!(half > 0) || !Number.isFinite(half)) return [];
   const perStep = Number.isFinite(high - low) ? (high - low) / (target - 1) : (half / (target - 1)) * 2;
   const magnitude = Math.floor(Math.log10(perStep));
-  if (!Number.isFinite(magnitude)) return { domain: [low, high], ticks: [] };
-  const candidates: { step: number; first: number; last: number; ticks: number; width: number }[] = [];
+  if (!Number.isFinite(magnitude)) return [];
+  const candidates: { step: number; first: number; last: number; ticks: number }[] = [];
   for (let exponent = magnitude - 1; exponent <= magnitude + 1; exponent++)
     for (const mantissa of NICE_MANTISSAS) {
       const step = mantissa * 10 ** exponent;
       if (!Number.isFinite(step) || step <= 0) continue;
-      const first = Math.floor(low / step + 1e-9);
-      const last = Math.ceil(high / step - 1e-9);
-      if (!Number.isFinite(first) || !Number.isFinite(last) || last - first > 1000) continue;
+      const first = outer ? Math.floor(low / step + 1e-9) : Math.ceil(low / step - 1e-9);
+      const last = outer ? Math.ceil(high / step - 1e-9) : Math.floor(high / step + 1e-9);
+      const ticks = last - first + 1;
+      if (!Number.isFinite(first) || !Number.isFinite(last) || ticks < 2 || ticks > 1000) continue;
       if (!Number.isFinite(first * step) || !Number.isFinite(last * step)) continue;
-      candidates.push({ step, first, last, ticks: last - first + 1, width: (last - first) * step });
+      candidates.push({ step, first, last, ticks });
     }
-  // The tightest domain is the default: a 105 % axis is 0 to 150 %, not 0 to 200 %. Among candidates within 30 % of that
-  // width, the one nearest the requested count wins; then the tighter, then the one with more ticks.
+  return candidates;
+}
+
+/** The outer domain: the tightest candidate, within 30 % of it, nearest the requested count and not above count + 1 ticks. */
+function chooseOuter(candidates: { step: number; first: number; last: number; ticks: number }[], target: number) {
+  const width = (candidate: { step: number; first: number; last: number }) => (candidate.last - candidate.first) * candidate.step;
   // Only steps giving a sane tick count compete: a fine step can be as tight but has far too many ticks.
-  if (!candidates.length) return { domain: [low, high], ticks: [] };
-  const sane = candidates.filter(candidate => candidate.ticks <= target * 2 + 2);
+  const sane = candidates.filter(candidate => candidate.ticks <= target + 1);
   const pool = sane.length ? sane : candidates;
-  const tightest = Math.min(...pool.map(candidate => candidate.width));
-  const within = pool.filter(candidate => candidate.width <= tightest * 1.3);
-  const best = within.reduce((chosen, candidate) => {
+  const tightest = Math.min(...pool.map(width));
+  const within = pool.filter(candidate => width(candidate) <= tightest * 1.3);
+  return within.reduce((chosen, candidate) => {
     const distance = Math.abs(candidate.ticks - target), chosenDistance = Math.abs(chosen.ticks - target);
     if (distance !== chosenDistance) return distance < chosenDistance ? candidate : chosen;
-    if (Math.abs(candidate.width - chosen.width) > 1e-9 * chosen.width) return candidate.width < chosen.width ? candidate : chosen;
+    if (Math.abs(width(candidate) - width(chosen)) > 1e-9 * width(chosen)) return width(candidate) < width(chosen) ? candidate : chosen;
     return candidate.ticks > chosen.ticks ? candidate : chosen;
   });
-  const { step, first, last } = best;
+}
+
+/** Negative zero reads and compares as zero everywhere. */
+function unsignedZero(value: number) {
+  return value === 0 ? 0 : value;
+}
+
+function ticksBetween(step: number, first: number, last: number) {
   const ticks: number[] = [];
-  for (let k = first; k <= last; k++) ticks.push(Number((k * step).toPrecision(12)));
-  return { domain: [Number((first * step).toPrecision(12)), Number((last * step).toPrecision(12))], ticks };
+  for (let k = first; k <= last; k++) ticks.push(unsignedZero(Number((k * step).toPrecision(12))));
+  return ticks;
+}
+
+/**
+ * Ticks inside `domain`, and only inside it. The domain is not changed: a chart drawn on it shows each tick, and no
+ * tick falls outside the plot. The step is near the requested count and need not land on both ends.
+ */
+export function ticksWithin(domain: readonly [number, number], count = 5): number[] {
+  const [low, high] = domain;
+  if (!Number.isFinite(low) || !Number.isFinite(high) || !(high > low)) return Number.isFinite(low) && low === high ? [low] : [];
+  const target = Math.max(2, Math.floor(count));
+  const candidates = stepCandidates(low, high, target, false);
+  if (!candidates.length) return [];
+  const sane = candidates.filter(candidate => candidate.ticks <= target + 1);
+  const pool = sane.length ? sane : candidates;
+  const best = pool.reduce((chosen, candidate) => {
+    const distance = Math.abs(candidate.ticks - target), chosenDistance = Math.abs(chosen.ticks - target);
+    if (distance !== chosenDistance) return distance < chosenDistance ? candidate : chosen;
+    return candidate.ticks > chosen.ticks ? candidate : chosen;
+  });
+  return ticksBetween(best.step, best.first, best.last);
 }
 
 /** Axis bounds rounded outwards to nice ticks. Used when guides, a symmetric axis or a record extent set the domain. */
@@ -408,21 +470,24 @@ export function symmetricDomain(low: number, high: number, count = 5): [number, 
 }
 
 /**
- * The labels for one axis. The display unit is chosen first, from the domain (or the custom ticks), and the domain is
- * then rounded to nice ticks in that unit, so byte axes read 0.5 KiB steps rather than binary fractions. Every tick
- * shares a fraction-digit count taken from the tick step. Labels that still collide get more digits. Pass `ticks` to
- * label custom ticks (for example a record extent already rounded); their digits come from the step.
+ * The labels for one axis. The display unit is chosen first, from the domain (or the custom ticks). By default the
+ * domain is then rounded to nice bounds in that unit, so byte axes read 0.5 KiB steps. With `fixedDomain` the domain
+ * is taken exactly as the chart draws it (already rounded once, or set by an author) and only its ticks are chosen,
+ * inside it. Every tick shares a fraction-digit count taken from the tick step, and labels that collide get more digits.
+ * Pass `ticks` to label custom ticks; their digits come from the step.
  */
 export function axisScale(
   domain: readonly [number, number],
   unit: string,
-  options: FormatOptions & { count?: number; ticks?: readonly number[] } = {},
+  options: FormatOptions & { count?: number; ticks?: readonly number[]; fixedDomain?: boolean } = {},
 ): AxisScale {
-  const { compact = false, decimals, count = 5 } = options;
+  const { compact = false, decimals, count = 5, fixedDomain = false } = options;
   const finiteDomain = domain.every(Number.isFinite);
   const customTicks = options.ticks?.filter(Number.isFinite);
   if (decimals !== undefined && Number.isFinite(decimals)) {
-    const axis = finiteDomain && !customTicks ? niceAxis(domain, count) : { domain: [domain[0], domain[1]] as [number, number], ticks: customTicks ?? [] };
+    const axis = finiteDomain && !customTicks
+      ? fixedDomain ? { domain: [domain[0], domain[1]] as [number, number], ticks: ticksWithin(domain, count) } : niceAxis(domain, count)
+      : { domain: [domain[0], domain[1]] as [number, number], ticks: customTicks ?? [] };
     return {
       unit,
       domain: axis.domain,
@@ -447,9 +512,8 @@ export function axisScale(
     scaledTicks = cleanZeros(customTicks.map(toScaled));
     digits = digitsFromStep(scaledTicks);
   } else if (finiteDomain) {
-    const axis = niceAxis(scaledDomain, count);
-    outDomain = axis.domain;
-    scaledTicks = cleanZeros(axis.ticks);
+    if (!fixedDomain) outDomain = niceAxis(scaledDomain, count).domain;
+    scaledTicks = cleanZeros(ticksWithin(outDomain, count));
     digits = digitsNeeded(scaledTicks);
   }
   const labelsFor = (places: number) => scaledTicks.map(value => fixedText(value, places));
@@ -457,8 +521,8 @@ export function axisScale(
   const unitText = candidate === index ? unit : step.unit;
   return {
     unit: unitText,
-    domain: [toBase(outDomain[0]), toBase(outDomain[1])],
-    ticks: scaledTicks.map(toBase),
+    domain: [finiteBound(toBase(outDomain[0])), finiteBound(toBase(outDomain[1]))],
+    ticks: scaledTicks.map(toBase).filter(Number.isFinite),
     label: (value, withUnit = true) => {
       let scaled = toScaled(value);
       if (Math.abs(scaled) < 0.5 * 10 ** -digits) scaled = 0;
@@ -483,7 +547,7 @@ export function autoAxisDomain(values: readonly number[], count: number, include
   if (low === high) {
     if (low === 0) return [0, 1];
     const pad = Math.abs(low) * 0.05;
-    return niceDomain([low - pad, high + pad], count);
+    return niceDomain([finiteBound(low - pad), finiteBound(high + pad)], count);
   }
   return niceDomain([low, high], count);
 }

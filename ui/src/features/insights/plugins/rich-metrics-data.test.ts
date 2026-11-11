@@ -97,7 +97,7 @@ describe("stack and directional geometry", () => {
       [[1e308, null, null], [-1e308, null, null]],
     ]);
     expect(data.tracks.map(track => track.cells[2].upper)).toEqual([2, 5]);
-    expect(data.domain).toEqual([0, 6]);
+    expect(data.domain).toEqual([0, 5]);
   });
   it("leaves an entire stack gap when any series is missing, while retaining inspectable raw values", () => {
     const data = buildMetricPlot([series("A", [4, 8, 0]), series("B", [3, null, -2])], {});
@@ -353,7 +353,7 @@ describe("stacked columns, partial stacks and totals", () => {
   it("includes partial stacks in the bar-mode domain, and leaves the area-mode domain to complete stacks", () => {
     const spike = [series("A", [1, 1, 50]), series("B", [null, 1, null])];
     expect(buildMetricPlot(spike, {}).domain).toEqual([0, 2]);
-    expect(buildMetricPlot(spike, stackedConfigSchema.parse({ display: "bar" })).domain).toEqual([0, 60]);
+    expect(buildMetricPlot(spike, stackedConfigSchema.parse({ display: "bar" })).domain).toEqual([0, 50]);
     // With no complete column, bar mode still shows the reporting stacks instead of an empty [0, 1] axis.
     const sparse = [series("A", [null, 40]), series("B", [7, null])];
     expect(buildMetricPlot(sparse, stackedConfigSchema.parse({ display: "bar" })).domain).toEqual([0, 40]);

@@ -72,7 +72,8 @@ function gaugeFraction(value: number, min: number, max: number) {
 
 /** Keep the configured cells honest: below four pixels use the continuous scale. */
 /**
- * One scale for a gauge's value, bounds and markers, so none of them reads in a different unit. Authored decimals keep
+ * One scale for a gauge's track, bounds, markers and value. It is chosen from the bounds and markers, so a value above
+ * the maximum reads in the same unit as the scale beside it rather than in a unit of its own. Authored decimals keep
  * the exact authored unit and precision.
  */
 function gaugeScale(widget: WidgetRendererProps["widget"], values: readonly number[]): { unit: string; number(value: number): string } {
@@ -163,8 +164,8 @@ function GaugeTrack({ widget, config, value, title }: {
       <path d="M16 98 A84 84 0 0 1 184 98" pathLength={100} className={meterStyles.arcTrack} />
       {value !== undefined && <path d="M16 98 A84 84 0 0 1 184 98" pathLength={100} className={meterStyles.arcFill} stroke={color} strokeDasharray={`${progress * 100} 100`} />}
     </svg><div className={meterStyles.radialBounds} data-gauge-radial-bounds aria-hidden="true">
-      <span data-gauge-bound="min" title={exactMetric(min, widget.unit)}>{gaugeScale(widget, [value ?? NaN]).number(min)}</span>
-      <span data-gauge-bound="max" title={exactMetric(max, widget.unit)}>{gaugeScale(widget, [value ?? NaN]).number(max)}</span>
+      <span data-gauge-bound="min" title={exactMetric(min, widget.unit)}>{gaugeScale(widget, []).number(min)}</span>
+      <span data-gauge-bound="max" title={exactMetric(max, widget.unit)}>{gaugeScale(widget, []).number(max)}</span>
     </div></> : display === "segmented" && !continuous ? Array.from({ length: segments }, (_, index) => {
       const start = index / segments, fraction = value === undefined ? 0 : Math.max(0, Math.min(1, (progress - start) * segments));
       const middle = (index + .5) / segments, segmentValue = min * (1 - middle) + max * middle;
@@ -287,7 +288,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
       style={{ color: widgetTextColor(options) ?? (bank ? undefined : threshold?.color ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": threshold.color } : {}) } as CSSProperties}>
       {display !== "radial" && rangeCue}
-      <span data-gauge-number>{value === undefined ? "No data" : gaugeScale(widget, [value]).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, [value]).unit}</small>}
+      <span data-gauge-number>{value === undefined ? "No data" : gaugeScale(widget, []).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, []).unit}</small>}
     </span>
   </ObservationDetails>;
   const track = <GaugeTrack widget={widget} config={config} value={value} title={title} />;

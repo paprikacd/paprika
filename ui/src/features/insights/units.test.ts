@@ -382,3 +382,18 @@ describe("a guard that needs extra digits keeps the authored unit", () => {
     expect(formatReading(999.5, "ms")).toEqual({ value: "1", unit: "s" });
   });
 });
+
+describe("percent ranges and exponent guards", () => {
+  it("applies the percent rule to range bounds", () => {
+    expect(formatRange(99.9996, 100, "%")).toBe("99.9996%–100%");
+  });
+
+  it("keeps a guard in the exponent form, showing the full value when three figures would cross it", () => {
+    expect(formatReading(1.2345e-7, "", { keepSides: [1.234e-7] }).value).toBe("1.2345e-7");
+    expect(formatReading(1.2345e-7, "", { keepSides: [1.2e-7] }).value).toBe("1.23e-7");
+  });
+
+  it("shows 99.995% for a value that would otherwise round to 100", () => {
+    expect(formatMetric(99.995, "%")).toBe("99.995%");
+  });
+});

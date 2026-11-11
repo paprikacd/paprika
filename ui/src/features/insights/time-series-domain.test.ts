@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveTimeSeriesDomain } from "./time-series-chart";
+import { axisScale } from "./units";
 import type { QueryResult } from "./schema";
 
 type Series = NonNullable<QueryResult["series"]>[number];
@@ -24,5 +25,39 @@ describe("guided time-series domains", () => {
     const [low] = resolveTimeSeriesDomain(series([-10, 10]), { showZeroLine: true })!;
     expect(low).toBeLessThan(0);
     expect(resolveTimeSeriesDomain(series([20, 40]), { thresholds: [{ value: 50, color: "r" }], min: 10 })?.[0]).toBe(10);
+  });
+});
+
+describe("a guide-set domain is rounded once and never re-rounded", () => {
+  const points = (values: number[]) => series(values);
+
+  it("keeps availability and CPU guides within about 105 %", () => {
+    expect(resolveTimeSeriesDomain(points([99.91, 99.93, 99.94]), { thresholds: [{ value: 0, color: "red" }, { value: 99.95, color: "green" }] }, 3)).toEqual([0, 105]);
+    expect(resolveTimeSeriesDomain(points([20, 40, 60]), { thresholds: [{ value: 0, color: "g" }, { value: 80, color: "y" }, { value: 90, color: "r" }] }, 3)?.[1]).toBeLessThanOrEqual(105);
+  });
+
+  it("does not stretch thresholds -3 and 5 over -5..8 to -10..20", () => {
+    const [low, high] = resolveTimeSeriesDomain(points([-5, 8]), { thresholds: [{ value: -3, color: "a" }, { value: 5, color: "b" }] }, 3)!;
+    expect(low).toBeGreaterThan(-7);
+    expect(high).toBeLessThan(11);
+  });
+
+  it("keeps a ceiling of 10 over data 1..9 at the top, rather than 0 to 15", () => {
+    const [, high] = resolveTimeSeriesDomain(points([1, 9]), { thresholds: [{ value: 10, color: "r" }] }, 3)!;
+    expect(high).toBeLessThanOrEqual(10.5);
+  });
+
+  it("honours explicit author bounds exactly, guides or not", () => {
+    expect(resolveTimeSeriesDomain(points([10, 60]), { max: 70, thresholds: [{ value: 0, color: "g" }] }, 3)?.[1]).toBe(70);
+    expect(resolveTimeSeriesDomain(points([10, 60]), { max: 120, thresholds: [{ value: 0, color: "g" }] }, 3)?.[1]).toBe(120);
+  });
+
+  it("draws the fixed domain's ticks inside it, with a count near the request", () => {
+    const [low, high] = resolveTimeSeriesDomain(points([99.91, 99.93, 99.94]), { thresholds: [{ value: 0, color: "red" }, { value: 99.95, color: "green" }] }, 3)!;
+    const axis = axisScale([low, high], "%", { count: 3, fixedDomain: true });
+    expect(axis.domain).toEqual([low, high]);
+    expect(axis.ticks.every(tick => tick >= low && tick <= high)).toBe(true);
+    expect(axis.ticks.length).toBeGreaterThanOrEqual(2);
+    expect(axis.ticks.length).toBeLessThanOrEqual(4);
   });
 });

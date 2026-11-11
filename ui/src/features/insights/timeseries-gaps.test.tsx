@@ -414,15 +414,17 @@ describe("threshold guide labels", () => {
   const samples = Array.from({ length: 9 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index + 1 }));
 
   it("sets each label at the left end of its line, dropping it below only when no room is left above", () => {
-    const configured = { ...guided, options: { thresholds: [{ value: 10, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
+    // An explicit 0–10 domain puts the ceiling exactly on the plot's top edge, so it has no room above and drops below.
+    // The target sits well inside the plot and keeps its label above.
+    const configured = { ...guided, options: { min: 0, max: 10, thresholds: [{ value: 10, color: "#b64a3a", label: "Ceiling" }, { value: 4, color: "#53876a", label: "Target" }] } };
     render(<WidgetVisualization widget={configured} result={{ series: [{ name: "api", labels: {}, points: samples }] }} />);
     const ceiling = screen.getByRole("img", { name: "Ceiling: 10 req" });
     const target = screen.getByRole("img", { name: "Target: 4 req" });
-    // A label drops below its line only when less than 16px of plot lies above it. The plot's top is a nice tick
-    // (15 here), so the ceiling's own position decides, not a fixed expectation.
-    const placement = (line: HTMLElement) => (parseFloat(line.style.top) - 10 < 16 ? "below" : "above");
-    expect(ceiling).toHaveAttribute("data-label-placement", placement(ceiling));
-    expect(target).toHaveAttribute("data-label-placement", placement(target));
+    const ceilingTop = parseFloat(ceiling.style.top), targetTop = parseFloat(target.style.top);
+    expect(ceilingTop).toBeLessThan(16);
+    expect(targetTop).toBeGreaterThan(40);
+    expect(ceiling).toHaveAttribute("data-label-placement", "below");
+    expect(target).toHaveAttribute("data-label-placement", "above");
     expect(within(ceiling).getByText("Ceiling")).toBeInTheDocument();
     expect(within(target).getByText("Target")).toBeInTheDocument();
   });

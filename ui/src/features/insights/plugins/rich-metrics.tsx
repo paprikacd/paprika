@@ -1,6 +1,6 @@
 "use client";
 
-import { axisScale, formatRange, niceAxis } from "../units";
+import { axisScale, formatRange, ticksWithin } from "../units";
 import type { Widget } from "../schema";
 import { resolveSeriesColor } from "../series-colors";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
@@ -481,7 +481,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const domain: [number, number] = overlayDomain ? [Math.min(data.domain[0], overlayDomain[0]), Math.max(data.domain[1], overlayDomain[1])] : data.domain;
   const minTime = zoom?.start ?? displayTimes[0] ?? 0, span = zoom ? zoom.end - zoom.start : (displayTimes.at(-1) ?? minTime) - minTime;
   // Nice ticks for the requested count, so gridlines fall on readable values (never 37.5 between 0 and 150).
-  const ticks = niceAxis(domain, height < 150 ? 3 : 5).ticks;
+  const ticks = ticksWithin(domain, height < 150 ? 3 : 5);
   const tickAxis = axisScale(domain, widget.unit, { compact: true, decimals: widget.options?.decimals, ticks });
   const tickLabels = ticks.map(value => tickAxis.label(value));
   const gutter = useAxisGutter(tickLabels, ref, width);

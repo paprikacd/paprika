@@ -533,7 +533,7 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
   // One domain and one label scale for this chart's Y ticks, so the labels describe the ticks the chart draws.
   const yTickCount = height <= 120 ? 2 : 3;
   const yValues = useMemo(() => points.flatMap(point => typeof point.value === "number" && Number.isFinite(point.value) ? [point.value] : []), [points]);
-  const yLabels = useMemo(() => axisScale(autoAxisDomain(yValues, yTickCount, false), unit, { compact: true, decimals: context.view.decimals, count: yTickCount }), [yValues, unit, context.view.decimals, yTickCount]);
+  const yLabels = useMemo(() => axisScale(autoAxisDomain(yValues, yTickCount, false), unit, { compact: true, decimals: context.view.decimals, count: yTickCount, fixedDomain: true }), [yValues, unit, context.view.decimals, yTickCount]);
   const yDomain = yLabels.domain;
   const definition = useMemo(
     () =>
