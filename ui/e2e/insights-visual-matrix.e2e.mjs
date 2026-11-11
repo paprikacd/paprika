@@ -1,25 +1,42 @@
 // Structural visual baseline for Insights dashboards.
 //
 // Renders the 16 repository examples (sample mode) and the 4 reference dashboards (imported
-// through the real UI into the Go fixture workspace) in light and dark at 1512, 768 and 390 px.
-// Each render is judged by the DOM probe (ui/dashboard-probe.mjs) and summarised as: probe
-// findings, page scroll overflow, every widget's tile box and a widget state (loaded, empty,
-// error). The summary is compared with ui/e2e/baselines/visual-matrix.json, so a new finding,
-// new page overflow, a lost or gained widget, a moved tile or a changed state fails the run.
-// Pixels are not compared; the structural summary is the gate.
+// through the real UI into the Go fixture workspace) in light and dark at 1512, 768 and 390 px,
+// plus an edit-mode pass on two reference dashboards at 1512 and 768 px. Each render is judged by
+// the DOM probe (ui/dashboard-probe.mjs) and summarised as probe findings, page scroll overflow,
+// every widget's tile box and a widget state (loaded, empty, error). Tile boxes are measured
+// relative to the dashboard canvas, not the page, so a header that wraps differently moves no
+// tile. The summary is compared with ui/e2e/baselines/visual-matrix.json: a new finding, new page
+// overflow, a lost or gained widget, a moved or resized tile or a changed state fails the run.
 //
-// No Docker and no Next dev server. The Go fixture harness serves the static export in ui/out,
-// so build it first (CI already does):
+// The page-overflow rule can only fire from outside the canvas: .canvas is overflow-x:clip, so a
+// wide tile is clipped inside it and only the header or toolbar can widen the page.
+//
+// Pixels are never compared. Advisory screenshots of each canvas go to
+// artifacts/insights/visual-matrix/screenshots and never fail the run.
+//
+// The baseline is recorded and checked on the CI platform, Linux x86_64 (ubuntu-latest). Font
+// metrics differ between macOS and Linux, so record the baseline in the Playwright Linux image:
+//
+//   ui/e2e/insights-visual-matrix-linux.sh --update    # record
+//   ui/e2e/insights-visual-matrix-linux.sh             # check
+//
+// That script cross-builds the Go fixture harness for linux/amd64 and runs this file in
+// mcr.microsoft.com/playwright:v1.61.1-noble (Docker required). Native checks, which need no
+// Docker, run the same way on a Linux or macOS host with a build of ui/out:
 //
 //   cd ui && npm run build
 //   node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs            # check
-//   node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs --update   # rewrite baseline
+//   node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs --update   # rewrite
+//   node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs --update --allow-errors
 //
-// Output for a failed run is written to artifacts/insights/visual-matrix/ (gitignored).
+// --update refuses to record an ERROR finding or an error widget state unless --allow-errors is
+// given. Output for every run goes to artifacts/insights/visual-matrix (gitignored): current.json,
+// diff.txt (the full diff when the check fails), report.json and screenshots/.
 //
-// Gallery matrix (local only, not in CI): the same probe over the real Prometheus, Tempo and
-// PostgreSQL gallery needs Docker, so it is not part of this baseline. To inspect those nine
-// dashboards by hand, start the stack with `node demo/insights-gallery/up.mjs` from the repo root.
+// Gallery matrix: NOT implemented here. It needs the real Prometheus, Tempo and PostgreSQL stack
+// from demo/insights-gallery (Docker). That is deferred. To inspect the nine gallery dashboards by
+// hand, run `node demo/insights-gallery/up.mjs` from the repository root.
 import assert from "node:assert/strict"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
@@ -29,41 +46,48 @@ import { dashboardProbe } from "../dashboard-probe.mjs"
 import { tileNotReadySelector } from "../render-worker.mjs"
 import { createReferenceDashboardEnvironment } from "./fixtures/reference-dashboard-environment.mjs"
 import { referenceDashboards, resultForReferenceQuery } from "./fixtures/reference-dashboard-data.ts"
-import { compareMatrix, formatProblems } from "./fixtures/visual-matrix-diff.mjs"
+import { compareMatrix, errorRenders, formatReport, serializeBaseline } from "./fixtures/visual-matrix-diff.mjs"
 import { selectGammaOption } from "./gamma-controls.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const baselinePath = fileURLToPath(new URL("./baselines/visual-matrix.json", import.meta.url))
 const output = join(repository, "artifacts/insights/visual-matrix")
+const screenshotDirectory = join(output, "screenshots")
 const catalogPath = join(repository, "ui/src/features/insights/repository-examples/catalog.json")
 const widths = [1512, 768, 390]
+const editWidths = [1512, 768]
 const themes = ["light", "dark"]
 const tolerancePx = 3
 const viewportHeight = 980
 const settleTimeout = 30_000
+const anchorSelector = '[data-testid="dashboard-canvas"]'
 // Fixed clock so sample and reference data render the same text, and so the baseline is stable.
 const fixedTime = new Date("2026-10-28T13:00:00Z")
 const pendingSelector = `${tileNotReadySelector},[role="status"][aria-label="Loading widget"]`
 const update = process.argv.includes("--update")
+const allowErrors = process.argv.includes("--allow-errors")
+// A prebuilt harness binary (the container script builds one for linux/amd64). Unset, the harness is built here.
+const harnessBinary = process.env.VISUAL_MATRIX_HARNESS || undefined
 const started = Date.now()
 
 // Runs in the page. Self-contained, because Playwright serializes only this function's source.
-function measureDashboard() {
+function measureDashboard(anchorSelector) {
   const within = (element, selector) => element.matches(selector) || element.querySelector(selector) !== null
   const visible = element => typeof element.checkVisibility !== "function" || element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
   const stateOf = tile => {
-    const alerts = [...tile.querySelectorAll('[role="alert"]')].filter(alert => visible(alert))
-    if (alerts.length || within(tile, '[data-widget-state="source-unavailable"]')) return "error"
-    if (/No data in this time range|No observations returned/.test(tile.textContent)) return "empty"
+    if ([...tile.querySelectorAll('[role="alert"]')].some(alert => visible(alert)) || within(tile, '[data-widget-state="source-unavailable"]')) return "error"
+    if (within(tile, '[data-widget-state="empty"]')) return "empty"
     return "loaded"
   }
-  const tiles = [...document.querySelectorAll("[data-widget-id]")]
+  const anchor = document.querySelector(anchorSelector)
+  if (!anchor) throw new Error(`no ${anchorSelector} element to measure tiles against`)
+  const origin = anchor.getBoundingClientRect()
   const widgets = {}
-  for (const tile of tiles) {
+  for (const tile of document.querySelectorAll("[data-widget-id]")) {
     const id = tile.getAttribute("data-widget-id")
     if (id in widgets) throw new Error(`duplicate widget id ${id}`)
     const box = tile.getBoundingClientRect()
-    widgets[id] = { box: [box.left, box.top, box.width, box.height].map(Math.round), state: stateOf(tile) }
+    widgets[id] = { box: [box.left - origin.left, box.top - origin.top, box.width, box.height].map(Math.round), state: stateOf(tile) }
   }
   return {
     scrollWidth: document.documentElement.scrollWidth,
@@ -93,17 +117,22 @@ async function settle(page, key) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
-async function captureRender(page, key, url) {
+// Renders one dashboard and returns its summary. `edit` opens edit mode first. An advisory
+// screenshot of the canvas is written beside the summary; a failure to write it is ignored.
+async function captureRender(page, key, url, { edit = false } = {}) {
   const pageErrors = []
   const onError = error => pageErrors.push(error.message)
   page.on("pageerror", onError)
   try {
     await page.goto(url, { waitUntil: "domcontentloaded" })
     await page.waitForSelector("[data-widget-id]", { timeout: settleTimeout })
+    if (edit) await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
     await settle(page, key)
     const probed = await page.evaluate(dashboardProbe, {})
-    const measured = await page.evaluate(measureDashboard)
+    const measured = await page.evaluate(measureDashboard, anchorSelector)
     assert.deepEqual(pageErrors, [], `${key}: page errors during render`)
+    await page.locator(anchorSelector).screenshot({ path: join(screenshotDirectory, `${key.replaceAll("/", "__")}.png`), animations: "disabled" })
+      .catch(() => {})
     return {
       findings: probed.findings
         .map(finding => `${finding.ruleId}@${finding.widgetId || "(page)"}:${finding.severity.replace("SEVERITY_", "")}`)
@@ -155,12 +184,12 @@ async function importReferenceDashboards(environment, browser) {
 }
 
 const renders = {}
-const pageErrorsSeen = []
 const timings = { milliseconds: {} }
+const errors = []
 let environment, browser
 try {
-  await mkdir(output, { recursive: true })
-  environment = await createReferenceDashboardEnvironment(repository, undefined)
+  await mkdir(screenshotDirectory, { recursive: true })
+  environment = await createReferenceDashboardEnvironment(repository, undefined, harnessBinary ? { binary: harnessBinary } : {})
   browser = await chromium.launch({ headless: true })
   const references = await importReferenceDashboards(environment, browser)
   const catalog = JSON.parse(await readFile(catalogPath, "utf8"))
@@ -172,8 +201,9 @@ try {
     const label = `${theme}/${width}`
     const began = Date.now()
     // Examples run without a token; references run with the fixture credential and query resolver.
-    const exampleContext = await browser.newContext({ viewport: { width, height: viewportHeight }, colorScheme: theme, reducedMotion: "reduce", timezoneId: "Australia/Melbourne", serviceWorkers: "block" })
-    const referenceContext = await browser.newContext({ viewport: { width, height: viewportHeight }, colorScheme: theme, reducedMotion: "reduce", timezoneId: "Australia/Melbourne", serviceWorkers: "block" })
+    const options = { viewport: { width, height: viewportHeight }, colorScheme: theme, reducedMotion: "reduce", timezoneId: "Australia/Melbourne", serviceWorkers: "block" }
+    const exampleContext = await browser.newContext(options)
+    const referenceContext = await browser.newContext(options)
     try {
       for (const context of [exampleContext, referenceContext]) {
         await context.addInitScript(value => { try { localStorage.setItem("paprika-insights-theme", value) } catch { /* Storage can be blocked. */ } }, theme)
@@ -191,40 +221,55 @@ try {
         const key = `reference/${reference.id}/${label}`
         renders[key] = await captureRender(referencePage, key, `${environment.baseURL}/dashboard/insights/?dashboard=${encodeURIComponent(reference.boardId)}`)
       }
+      if (editWidths.includes(width)) {
+        for (const reference of references.slice(0, 2)) {
+          const key = `edit/${reference.id}/${label}`
+          renders[key] = await captureRender(referencePage, key, `${environment.baseURL}/dashboard/insights/?dashboard=${encodeURIComponent(reference.boardId)}`, { edit: true })
+        }
+      }
     } finally {
       await exampleContext.close()
       await referenceContext.close()
     }
     timings.milliseconds[label] = Date.now() - began
-    console.log(`PASS rendered ${label}: ${Object.keys(renders).filter(key => key.endsWith(label)).length} dashboards in ${Math.round((Date.now() - began) / 1000)}s`)
+    console.log(`PASS rendered ${label} in ${Math.round((Date.now() - began) / 1000)}s`)
   }
 
-  const current = { schema: 1, tolerancePx, viewportHeight, renders: Object.fromEntries(Object.keys(renders).sort().map(key => [key, renders[key]])) }
+  const current = { schema: 1, anchor: "dashboard-canvas", tolerancePx, viewportHeight, renders: Object.fromEntries(Object.keys(renders).sort().map(key => [key, renders[key]])) }
   const runtimeSeconds = Math.round((Date.now() - started) / 1000)
-  await writeFile(join(output, "current.json"), JSON.stringify(current, null, 2) + "\n")
+  await writeFile(join(output, "current.json"), serializeBaseline(current))
 
   if (update) {
-    await mkdir(dirname(baselinePath), { recursive: true })
-    await writeFile(baselinePath, JSON.stringify(current, null, 2) + "\n")
-    console.log(`Wrote ${Object.keys(current.renders).length} renders to ${baselinePath} in ${runtimeSeconds}s`)
+    const refused = errorRenders(current)
+    if (refused.length && !allowErrors) {
+      console.error(`Refusing to record ${refused.length} renders with errors (ERROR findings or error widgets). Fix them, or pass --allow-errors:\n  ${refused.join("\n  ")}`)
+      process.exitCode = 1
+    } else {
+      await mkdir(dirname(baselinePath), { recursive: true })
+      await writeFile(baselinePath, serializeBaseline(current))
+      console.log(`Wrote ${Object.keys(current.renders).length} renders to ${baselinePath} in ${runtimeSeconds}s`)
+    }
   } else {
     const baseline = JSON.parse(await readFile(baselinePath, "utf8").catch(() => {
       throw new Error(`No visual baseline at ${baselinePath}. Create it with --update.`)
     }))
     const problems = compareMatrix(baseline, current, tolerancePx)
     if (problems.length) {
-      console.error(formatProblems(problems, Object.keys(current.renders).length, "ui/e2e/baselines/visual-matrix.json"))
+      const diffPath = join(output, "diff.txt")
+      const report = formatReport(problems, { renderCount: Object.keys(current.renders).length, baselinePath: "ui/e2e/baselines/visual-matrix.json", diffPath })
+      await writeFile(diffPath, report.full + "\n")
+      console.error(report.summary)
       process.exitCode = 1
     } else {
       console.log(`PASS visual matrix: ${Object.keys(current.renders).length} renders match the baseline in ${runtimeSeconds}s`)
     }
   }
 } catch (error) {
-  pageErrorsSeen.push(error.message)
+  errors.push(error.message)
   console.error(error.stack ?? error.message)
   process.exitCode = 1
 } finally {
-  await writeFile(join(output, "report.json"), JSON.stringify({ update, timings, errors: pageErrorsSeen }, null, 2) + "\n").catch(() => {})
+  await writeFile(join(output, "report.json"), JSON.stringify({ update, timings, errors }, null, 2) + "\n").catch(() => {})
   await browser?.close()
   await environment?.close()
 }

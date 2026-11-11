@@ -128,7 +128,7 @@ jobs:
         working-directory: ui
 
       - name: Browser-render worker and visual probe tests
-        run: node --test render-worker.test.mjs dashboard-probe.test.mjs
+        run: node --test render-worker.test.mjs dashboard-probe.test.mjs e2e/fixtures/visual-matrix-diff.test.mjs
         working-directory: ui
 
       - name: Lint
@@ -532,6 +532,7 @@ jobs:
             artifacts/insights/dashboard-polish
             artifacts/insights/presentation
             artifacts/insights/reference-dashboards
+            artifacts/insights/visual-matrix
           if-no-files-found: ignore
           retention-days: 14
 
