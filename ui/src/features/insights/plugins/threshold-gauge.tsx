@@ -29,6 +29,7 @@ import {
 import styles from "../chart-styles.module.css";
 import { metricContext, validTimestamp } from "../widget-context";
 import { widgetTextColor } from "../appearance";
+import { thresholdPaint } from "../status";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { compactSeriesLabels } from "../series-display";
 import meterStyles from "./capacity-meter.module.css";
@@ -129,12 +130,12 @@ function GaugeTrack({ widget, config, value, title }: {
   const { min, max } = gaugeBounds(widget);
   const progress = value === undefined ? 0 : gaugeFraction(value, min, max);
   const threshold = value === undefined ? undefined : thresholdForValue(value, widget.options?.thresholds);
-  const baseColor = widget.color ?? "var(--gamma-chart-2)", color = threshold?.color ?? baseColor;
+  const baseColor = widget.color ?? "var(--gamma-chart-2)", color = thresholdPaint(threshold) ?? baseColor;
   const layout = gaugeTrackLayout(extent, segments);
   const continuous = display === "segmented" && layout.continuous;
   const boundaries = [min, ...(widget.options?.thresholds ?? []).filter(threshold => threshold.value > min && threshold.value < max).map(threshold => threshold.value), max];
   const gradient = boundaries.slice(0, -1).flatMap((start, index) => {
-    const end = boundaries[index + 1], fill = thresholdForValue(start / 2 + end / 2, widget.options?.thresholds)?.color ?? baseColor;
+    const end = boundaries[index + 1], fill = thresholdPaint(thresholdForValue(start / 2 + end / 2, widget.options?.thresholds)) ?? baseColor;
     return [`${fill} ${gaugeFraction(start, min, max) * 100}%`, `${fill} ${gaugeFraction(end, min, max) * 100}%`];
   });
   return <div ref={ref}
@@ -157,7 +158,7 @@ function GaugeTrack({ widget, config, value, title }: {
     </div></> : display === "segmented" && !continuous ? Array.from({ length: segments }, (_, index) => {
       const start = index / segments, fraction = value === undefined ? 0 : Math.max(0, Math.min(1, (progress - start) * segments));
       const middle = (index + .5) / segments, segmentValue = min * (1 - middle) + max * middle;
-      const segmentColor = thresholdForValue(segmentValue, widget.options?.thresholds)?.color ?? baseColor;
+      const segmentColor = thresholdPaint(thresholdForValue(segmentValue, widget.options?.thresholds)) ?? baseColor;
       return <span key={index} className={meterStyles.segment} aria-hidden="true" data-filled={fraction > 0}
         style={{ "--meter-fill": segmentColor, "--meter-fraction": fraction } as CSSProperties} />;
     }) : value !== undefined && <div aria-hidden="true" className={meterStyles.fill} data-gauge-solid-fill
@@ -174,7 +175,7 @@ function GaugeLegend({ widget, config, compactRows = false }: Pick<WidgetRendere
   const markers = config.showThresholds === false ? [] : (widget.options?.thresholds ?? []).filter(item => item.value > min && item.value < max);
   return <div className={meterStyles.legend} data-gauge-legend data-gauge-legend-layout={compactRows ? "rows" : undefined}>
     <div className={meterStyles.bounds}>{compactRows ? <span>Scale {formatMetric(min, widget.unit, false, widget.options?.decimals)} – {formatMetric(max, widget.unit, false, widget.options?.decimals)}</span> : <><span>{formatMetric(min, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(max, widget.unit, false, widget.options?.decimals)}</span></>}</div>
-    {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}><i aria-hidden="true" style={{ background: marker.color }} />{marker.label ?? "Threshold"} {formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}</span>)}</div>}
+    {markers.length > 0 && <div className={meterStyles.thresholds} aria-label="Threshold limits">{markers.map(marker => <span key={marker.value}><i aria-hidden="true" style={{ background: thresholdPaint(marker) }} />{marker.label ?? "Threshold"} {formatMetric(marker.value, widget.unit, false, widget.options?.decimals)}</span>)}</div>}
   </div>;
 }
 
@@ -267,14 +268,14 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     onSelect={interactive && onContextChange ? () => onContextChange(metricContext(series, index, true)) : undefined}
     details={<MetricDetails widget={widget} series={series} index={index} point={point} unit={widget.unit} decimals={options.decimals} description="Latest sample"
       seriesLabel={displayLabel ?? name}>
-      <span className={styles.tooltipStatus}>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: threshold.color }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</span>
+      <span className={styles.tooltipStatus}>{threshold && <i data-gauge-threshold-swatch aria-hidden="true" style={{ background: thresholdPaint(threshold) }} />}{value === undefined ? "Unknown" : threshold?.label ?? "Observed value"}</span>
       {scaleNotice && <span className={styles.tooltipRange}>{scaleNotice}</span>}
       {band && <span className={styles.tooltipRange}>{band}</span>}
       <span className={styles.tooltipRange}>Scale: {min} to {max}{widget.unit ? ` ${widget.unit}` : ""}</span>
     </MetricDetails>}>
     <span className={`${styles.gaugeValue} ${display === "radial" ? meterStyles.radialValue : meterStyles.value} ${bank && threshold ? meterStyles.statusValue : ""}`}
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
-      style={{ color: widgetTextColor(options) ?? (bank ? undefined : threshold?.color ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": threshold.color } : {}) } as CSSProperties}>
+      style={{ color: widgetTextColor(options) ?? (bank ? undefined : thresholdPaint(threshold) ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": thresholdPaint(threshold) } : {}) } as CSSProperties}>
       {display !== "radial" && rangeCue}
       <span data-gauge-number>{value === undefined ? "No data" : formatMetric(value, "", false, options.decimals)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{widget.unit}</small>}
     </span>
@@ -285,7 +286,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
   return <div className={meterStyles.item} data-gauge-series={name} data-gauge-kind={display}
     data-gauge-orientation={display === "radial" ? undefined : orientation} data-gauge-bank-item={bank || undefined}>
     {display === "radial" ? <><RadialLayout reading={reading} track={track} cue={rangeCue} bank={bank} /><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span></> :
-      <div className={meterStyles.body} data-gauge-show-status={showStatus || undefined}><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span>{track}{reading}{showStatus && <span className={meterStyles.status} data-gauge-status title={statusLabel} style={{ "--gauge-status-color": threshold?.color ?? "var(--gamma-muted)" } as CSSProperties}><i aria-hidden="true" />{statusLabel}</span>}</div>}
+      <div className={meterStyles.body} data-gauge-show-status={showStatus || undefined}><span className={meterStyles.label} data-gauge-label title={label}>{labelContent}</span>{track}{reading}{showStatus && <span className={meterStyles.status} data-gauge-status title={statusLabel} style={{ "--gauge-status-color": thresholdPaint(threshold) ?? "var(--gamma-muted)" } as CSSProperties}><i aria-hidden="true" />{statusLabel}</span>}</div>}
     {value === undefined && <span role="status" className={meterStyles.srOnly}>Unknown · latest sample has no finite value</span>}
     {!bank && <GaugeLegend widget={widget} config={config} />}
   </div>;
@@ -315,9 +316,9 @@ export function registerDefaultWidgetPlugins() {
       max: 100,
       decimals: 1,
       thresholds: [
-        { value: 0, color: "#53876a", label: "Healthy" },
-        { value: 70, color: "#b29658", label: "Elevated" },
-        { value: 90, color: "#b64a3a", label: "Critical" },
+        { value: 0, status: "ok", label: "Healthy" },
+        { value: 70, status: "warning", label: "Elevated" },
+        { value: 90, status: "critical", label: "Critical" },
       ],
     },
     defaultConfig: { display: "linear", orientation: "horizontal", segments: 24, showThresholds: true, seriesMode: "first", maxSeries: 6 },

@@ -657,19 +657,46 @@ func validateWidgetThresholds(options map[string]json.RawMessage) error {
 	return nil
 }
 
+// statusLevels are the semantic threshold statuses. They mirror the Zod statusLevels in ui/src/features/insights/status.ts,
+// and the shared status-tokens.json levels. schema_conformance_test.go and ui schema-conformance.test.ts fail if they drift.
+var statusLevels = []string{"ok", "info", "warning", "critical", "unknown"}
+
+const thresholdRuleMessage = "thresholds require increasing finite values, a status or six-digit hex color, and labels up to 80 characters"
+
+// validateWidgetThreshold mirrors thresholdSchema in schema.ts: value is required; status (a semantic level) and
+// color (a hue override) are optional but at least one must be named; label is optional.
 func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, error) {
-	if _, err := requireObjectShape(raw, []string{"value", "color"}, []string{"label"}); err != nil {
+	fields, err := requireObjectShape(raw, []string{"value"}, []string{"status", "color", "label"})
+	if err != nil {
 		return 0, err
 	}
 	var threshold struct {
-		Value float64 `json:"value"`
-		Color string  `json:"color"`
-		Label string  `json:"label"`
+		Value  float64 `json:"value"`
+		Status string  `json:"status"`
+		Color  string  `json:"color"`
+		Label  string  `json:"label"`
 	}
-	if json.Unmarshal(raw, &threshold) != nil || !finite(threshold.Value) || threshold.Value <= previous || !validWidgetColor.MatchString(threshold.Color) || stringUnits(threshold.Label) > 80 {
-		return 0, errors.New("thresholds require increasing finite values, hex colors, and labels up to 80 characters")
+	if json.Unmarshal(raw, &threshold) != nil || !finite(threshold.Value) || threshold.Value <= previous {
+		return 0, errors.New(thresholdRuleMessage)
+	}
+	if !validThresholdPaint(fields, threshold.Status, threshold.Color) || stringUnits(threshold.Label) > 80 {
+		return 0, errors.New(thresholdRuleMessage)
 	}
 	return threshold.Value, nil
+}
+
+// validThresholdPaint requires a threshold to name a status, a hex hue override, or both, and checks each one present.
+func validThresholdPaint(fields map[string]json.RawMessage, status, color string) bool {
+	_, hasStatus := fields["status"]
+	_, hasColor := fields["color"]
+	switch {
+	case !hasStatus && !hasColor:
+		return false
+	case hasStatus && !slices.Contains(statusLevels, status):
+		return false
+	default:
+		return !hasColor || validWidgetColor.MatchString(color)
+	}
 }
 
 func validateWidgetPrecisionBounds(numbers map[string]float64) error {

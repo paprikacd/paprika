@@ -61,9 +61,9 @@ describe("daily observed state", () => {
     const { container } = render(component({ widget: { ...widget, options: {} }, result: { series: [entry] } }));
     const cells = [...container.querySelectorAll<HTMLButtonElement>("[data-uptime-key]")];
     expect(cells[0]).toHaveAttribute("aria-label", expect.stringContaining("Down"));
-    expect(cells[0]).toHaveStyle({ backgroundColor: "#e34b4b" });
+    expect(cells[0]).toHaveStyle({ backgroundColor: "var(--gamma-status-critical, #881418)" });
     expect(cells[1]).toHaveAttribute("aria-label", expect.stringContaining("Up"));
-    expect(cells[1]).toHaveStyle({ backgroundColor: "#36b96b" });
+    expect(cells[1]).toHaveStyle({ backgroundColor: "var(--gamma-status-ok, #59a26f)" });
     expect(cells[2]).toHaveAttribute("data-uptime-state", "unknown");
     expect(screen.getByRole("group", { name: "Recorded day legend" })).toHaveTextContent("Down");
   });

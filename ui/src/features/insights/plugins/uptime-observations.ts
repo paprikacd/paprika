@@ -1,4 +1,5 @@
 import { thresholdForValue } from "../chart-renderers";
+import { thresholdPaint } from "../status";
 import type { Point, Series } from "../chart-data";
 import type { Threshold } from "../schema";
 import { validTimestamp } from "../widget-context";
@@ -32,7 +33,7 @@ export function uptimeObservations(series: readonly Series[], thresholds: readon
         const states = new Set(finite.map(point => thresholds.length ? thresholds.indexOf(thresholdForValue(point.value!, thresholds)!) : 0));
         const kind: ObservationDay["kind"] = !finite.length ? "unknown" : missing || states.size > 1 ? "mixed" : "observed";
         const threshold = kind === "observed" ? thresholdForValue(finite[0].value!, thresholds) : undefined;
-        return { day, kind, color: threshold?.color, label: threshold?.label, latest, count: points.length, missing };
+        return { day, kind, color: thresholdPaint(threshold), label: threshold?.label, latest, count: points.length, missing };
       }) };
     }),
   };

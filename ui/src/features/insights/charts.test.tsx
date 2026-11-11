@@ -742,11 +742,11 @@ describe("widget visualizations", () => {
     const healthy = screen.getByRole("button", {
       name: "healthy-api: 1.0 · Healthy",
     });
-    expect(healthy).toHaveStyle({ background: "#53876a" });
+    expect(healthy).toHaveStyle({ background: "var(--gamma-status-ok, #59a26f)" });
     expect(
       screen.getByRole("button", { name: "failed-worker: 0.0 · Unhealthy" }),
     ).toHaveStyle({
-      background: "#b64a3a",
+      background: "var(--gamma-status-critical, #881418)",
     });
     expect(
       screen.getByRole("button", { name: "missing-job: No data" }),

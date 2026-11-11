@@ -47,6 +47,7 @@ import {
 } from "./widget-context";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { EMPTY_OPTIONS, PALETTE, thresholdForValue, usePlotSize, type Point, type Series } from "./chart-renderer-shared";
+import { thresholdInk, thresholdPaint } from "./status";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
@@ -64,8 +65,8 @@ type Trace = NonNullable<QueryResult["traces"]>[number];
 const MAX_ROWS = 100;
 
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
-  { value: 0, color: "#b64a3a", label: "Unhealthy" },
-  { value: 1, color: "#53876a", label: "Healthy" },
+  { value: 0, status: "critical", label: "Unhealthy" },
+  { value: 1, status: "ok", label: "Healthy" },
 ];
 
 function Stat({
@@ -106,7 +107,7 @@ function Stat({
   const stale = ageSeconds !== undefined && widget.options?.staleAfterSeconds !== undefined && ageSeconds > widget.options.staleAfterSeconds;
   const color =
     widgetTextColor(widget.options) ??
-    thresholdForValue(first.point.value, widget.options?.thresholds)?.color ??
+    thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) ??
     widget.color;
   const minimum = widget.options?.min, maximum = widget.options?.max;
   const showBar = widget.options?.showStatBar === true && minimum !== undefined && maximum !== undefined && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum < maximum;
@@ -114,7 +115,7 @@ function Stat({
   const span = showBar ? maximum - minimum : 1;
   const magnitude = showBar ? Math.max(Math.abs(minimum), Math.abs(maximum), 1) : 1;
   const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
-  const barColor = thresholdForValue(first.point.value, widget.options?.thresholds)?.color ?? widget.color ?? "var(--gamma-chart-1)";
+  const barColor = thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) ?? widget.color ?? "var(--gamma-chart-1)";
   return (
     <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
       {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
@@ -131,7 +132,7 @@ function Stat({
           <span
             className={styles.statValue}
             data-metric-value={String(first.point.value)}
-            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
+            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdPaint(thresholdForValue(first.point.value, widget.options?.thresholds)) : color }}
           >
             {formatMetric(
               first.point.value,
@@ -772,10 +773,10 @@ export function Heatmap({
                 aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
                 className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
                 style={{
-                  background: threshold?.color ?? "#e6e9e0",
+                  background: thresholdPaint(threshold) ?? "#e6e9e0",
                   color:
                     options.textColor ??
-                    (threshold ? contrastText(threshold.color) : "#69725f"),
+                    (thresholdInk(threshold) ?? "#69725f"),
                 }}
               >
                 {options.showLabels !== false && (
@@ -801,10 +802,10 @@ export function Heatmap({
               type="button"
               className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
               style={{
-                background: threshold?.color ?? "#e6e9e0",
+                background: thresholdPaint(threshold) ?? "#e6e9e0",
                 color:
                   options.textColor ??
-                  (threshold ? contrastText(threshold.color) : "#69725f"),
+                  (thresholdInk(threshold) ?? "#69725f"),
               }}
               aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
               aria-describedby={
@@ -931,7 +932,7 @@ export function Heatmap({
             </strong>
             <span className={configStyles.tooltipStatus}>
               <i
-                style={{ background: selectedThreshold?.color ?? "#a5ad9b" }}
+                style={{ background: thresholdPaint(selectedThreshold) ?? "#a5ad9b" }}
               />
               {selectedThreshold?.label ??
                 (selectedThreshold ? "Threshold matched" : "Unknown")}
@@ -995,7 +996,7 @@ export function Heatmap({
         >
           {thresholds.map((threshold, index) => (
             <span key={threshold.value}>
-              <i style={{ background: threshold.color }} />
+              <i style={{ background: thresholdPaint(threshold) }} />
               <span>
                 {threshold.label ||
                   formatMetric(

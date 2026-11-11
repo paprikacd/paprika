@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
 import { exactMetric, formatMetric } from "../chart-data"
 import { thresholdForValue } from "../chart-renderers"
+import { statusToken, thresholdPaint } from "../status"
 import { contrastRatio, readableTextColor } from "../appearance"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
@@ -72,7 +73,12 @@ export function tableTextColor(color: string, background: string) {
 /** One small palette per table/theme, rather than observing each rendered cell. */
 export function tableTextPalette(theme: "light" | "dark", background?: string, thresholds?: readonly Threshold[], color?: string) {
   const surface = background ?? tableThemes[theme].background
-  const colors = new Map((thresholds ?? []).map(threshold => [threshold.color, tableTextColor(threshold.color, surface)]))
+  const colors = new Map<string, string>()
+  for (const threshold of thresholds ?? []) {
+    const paint = thresholdPaint(threshold)
+    // A hex override keeps its contrast-adjusted hue; a status uses its theme text token.
+    if (paint !== undefined) colors.set(paint, threshold.color !== undefined ? tableTextColor(threshold.color, surface) : statusToken(threshold.status!, "-text"))
+  }
   colors.set(color ?? "var(--gamma-chart-3)", tableTextColor(color ?? tableThemes[theme].color, surface))
   return colors
 }
@@ -95,15 +101,19 @@ export function tableBarGeometry(value: number, min: number, max: number) {
   return { baseline, start: Math.min(baseline, end), end: Math.max(baseline, end), outside: value < min || value > max }
 }
 
+function paintOf(threshold: Threshold) {
+  return thresholdPaint(threshold) ?? "var(--gamma-muted)"
+}
+
 function barGradient(min: number, max: number, thresholds: readonly Threshold[] | undefined, color: string) {
   if (!thresholds?.length) return color
-  let previous = thresholdForValue(min, thresholds)!.color
+  let previous = paintOf(thresholdForValue(min, thresholds)!)
   const stops = [`${previous} 0%`]
   for (const threshold of thresholds) {
     if (threshold.value > min && threshold.value < max) {
       const stop = positionOnScale(threshold.value, min, max) * 100
-      stops.push(`${previous} ${stop}%`, `${threshold.color} ${stop}%`)
-      previous = threshold.color
+      stops.push(`${previous} ${stop}%`, `${paintOf(threshold)} ${stop}%`)
+      previous = paintOf(threshold)
     }
   }
   stops.push(`${previous} 100%`)
@@ -189,12 +199,12 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
       : threshold ? `Color by ${style.thresholdColumn}: ${sourceValue}${threshold.label ? ` · ${threshold.label}` : ""}`
         : `Color by ${style.thresholdColumn}: ${sourceValue} · no thresholds configured`
       : undefined
-    return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? threshold?.color ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
+    return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? thresholdPaint(threshold) ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
   }
   const finite = typeof value === "number" && Number.isFinite(value)
   const unit = style.unit ?? (column.unit === "percent" ? "%" : column.unit ?? "")
   const threshold = finite ? thresholdForValue(value, thresholds) : undefined
-  const fill = threshold?.color ?? color ?? "var(--gamma-chart-3)"
+  const fill = thresholdPaint(threshold) ?? color ?? "var(--gamma-chart-3)"
   const isBar = style.display === "bar" || style.display === "bar-segments"
   const geometry = finite && isBar ? tableBarGeometry(value, style.min!, style.max!) : undefined
   const exact = finite ? exactMetric(value, unit) : "No data"

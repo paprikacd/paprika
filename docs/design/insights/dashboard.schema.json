@@ -875,6 +875,16 @@
                     "value": {
                       "type": "number"
                     },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "info",
+                        "warning",
+                        "critical",
+                        "unknown"
+                      ]
+                    },
                     "color": {
                       "type": "string",
                       "pattern": "^#[0-9a-fA-F]{6}$"
@@ -885,10 +895,21 @@
                     }
                   },
                   "required": [
-                    "value",
-                    "color"
+                    "value"
                   ],
-                  "additionalProperties": false
+                  "additionalProperties": false,
+                  "anyOf": [
+                    {
+                      "required": [
+                        "status"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "color"
+                      ]
+                    }
+                  ]
                 }
               },
               "seriesColors": {

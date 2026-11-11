@@ -228,7 +228,7 @@ describe("trusted widget registry", () => {
       "aria-valuetext",
       "92% · Critical",
     );
-    expect(screen.getByText("92.0")).toHaveStyle({ color: "#b64a3a" });
+    expect(screen.getByText("92.0")).toHaveStyle({ color: "var(--gamma-status-critical, #881418)" });
   });
 
   it("lets a plugin render its own all-null and empty result semantics", () => {

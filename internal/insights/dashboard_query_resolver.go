@@ -46,9 +46,10 @@ type dashboardReadWidget struct {
 }
 
 type dashboardReadThreshold struct {
-	Value float64 `json:"value"`
-	Color string  `json:"color"`
-	Label string  `json:"label"`
+	Value  float64 `json:"value"`
+	Status string  `json:"status,omitempty"`
+	Color  string  `json:"color,omitempty"`
+	Label  string  `json:"label,omitempty"`
 }
 
 type dashboardReadAnnotation struct {

@@ -148,3 +148,43 @@ describe("dashboard appearance", () => {
       expect(tokens["--gamma-chart-empty"]).not.toBe(tokens["--gamma-bg"]);
   });
 });
+
+describe("status tokens", () => {
+  const levels = ["ok", "info", "warning", "critical", "unknown"];
+  const mirror = JSON.parse(readFileSync("../docs/design/insights/status-tokens.json", "utf8")) as { levels: string[]; blocks: Record<string, Record<string, string>> };
+  const surfaces = ["--gamma-bg", "--gamma-surface", "--gamma-surface-2", "--gamma-page", "--gamma-sidebar"];
+
+  it("mirrors the scoped CSS values in status-tokens.json for every block", () => {
+    const sets = themeTokenSets();
+    for (const block of ["light", "dark", "compact"] as const) {
+      const css = Object.fromEntries(Object.entries(sets[block]).filter(([name]) => name.startsWith("--gamma-status-")));
+      expect(Object.keys(css)).toHaveLength(levels.length * 4);
+      expect(css).toEqual(mirror.blocks[block]);
+    }
+    expect(mirror.levels).toEqual(levels);
+  });
+
+  it("keeps every status mark at least 3:1 against its block background", () => {
+    for (const [block, tokens] of Object.entries(themeTokenSets()))
+      for (const level of levels)
+        expect(contrastRatio(tokens[`--gamma-status-${level}`], tokens["--gamma-bg"]), `${block} ${level}`).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps status text at least 4.5:1 on every surface and tint it sits on", () => {
+    for (const [block, tokens] of Object.entries(themeTokenSets()))
+      for (const level of levels)
+        for (const surface of [...surfaces, `--gamma-status-${level}-soft`])
+          expect(contrastRatio(tokens[`--gamma-status-${level}-text`], tokens[surface]), `${block} ${level} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps on-fill ink at least 4.5:1 against its status mark", () => {
+    for (const [block, tokens] of Object.entries(themeTokenSets()))
+      for (const level of levels)
+        expect(contrastRatio(tokens[`--gamma-status-${level}-on`], tokens[`--gamma-status-${level}`]), `${block} ${level}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps ok and critical at least 3:1 apart in lightness in every block", () => {
+    for (const [block, tokens] of Object.entries(themeTokenSets()))
+      expect(contrastRatio(tokens["--gamma-status-ok"], tokens["--gamma-status-critical"]), block).toBeGreaterThanOrEqual(3);
+  });
+});

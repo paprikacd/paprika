@@ -32,6 +32,7 @@ import { PlotHatchSvg, plotHatchFill } from "./plot-hatch";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import type { Widget } from "./schema";
+import { thresholdPaint } from "./status";
 import { compactSeriesLabels } from "./series-display";
 import { useWidgetPresentation } from "./widget-presentation";
 
@@ -95,7 +96,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
           value: point.value,
           timestamp: point.timestamp,
           color:
-            thresholdForValue(point.value, options.thresholds)?.color ??
+            thresholdPaint(thresholdForValue(point.value, options.thresholds)) ??
             (index === 0 && widget.color
               ? widget.color
               : PALETTE[index % PALETTE.length]),

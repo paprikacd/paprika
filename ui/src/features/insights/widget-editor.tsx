@@ -48,6 +48,7 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
+import { thresholdHex } from "./status";
 import { TooltipEditor } from "./tooltip-editor";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
@@ -286,9 +287,11 @@ function StyleEditor({
     (options.thresholds?.length
       ? options.thresholds
       : DEFAULT_HEATMAP_THRESHOLDS
-    ).some(
-      (threshold) => contrastRatio(options.textColor!, threshold.color) < 4.5,
-    );
+    ).some((threshold) => {
+      // A status names a theme token, so its light-theme mark stands in for the contrast check.
+      const hex = thresholdHex(threshold);
+      return hex !== undefined && contrastRatio(options.textColor!, hex) < 4.5;
+    });
   const defaultColor = gauge
     ? "#53876a"
     : widget.type === "stat"
@@ -588,7 +591,7 @@ function StyleEditor({
           <p className={styles.hint}>
             {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its color still applies."}
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
-              " Without custom thresholds, heatmaps are red below 1 and green from 1."}
+              " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
           {(options.thresholds ?? []).map((threshold, index) => (
             <div className={styles.threshold} key={index}>
@@ -615,7 +618,7 @@ function StyleEditor({
                 <GammaInput
                   aria-label={`Threshold ${index + 1} color`}
                   type="color"
-                  value={threshold.color}
+                  value={thresholdHex(threshold)}
                   onChange={(event) =>
                     update({
                       thresholds: options.thresholds!.map((item, i) =>
