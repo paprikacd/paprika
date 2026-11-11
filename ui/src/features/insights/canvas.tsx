@@ -28,7 +28,7 @@ import { TooltipQueryProvider } from "./tooltip-query";
 import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
 import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
-import { fullDateTimeOptions } from "./chart-data";
+import { fullDateTimeOptions, latestPoint } from "./chart-data";
 import type { ObservationWindow } from "./time-window";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
@@ -69,7 +69,8 @@ import { GammaActionMenu } from "./gamma/action-menu";
 import contextStyles from "./widget-context.module.css";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
-import { AttentionStoreProvider, useAttentionPublisher } from "./attention-store";
+import { AttentionStoreProvider, SampleAsOfProvider, settledRequestEnd, useAttentionPublisher, useSampleAsOf } from "./attention-store";
+import { AttentionStrip, type AutoRefresh } from "./attention-strip";
 import { isAttentionLevel, widgetAttention, WidgetAttentionContext, type AttentionFailure } from "./widget-attention";
 import { statusToken, thresholdPaint } from "./status";
 
@@ -118,6 +119,14 @@ function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention:
 function sameFields(previous: object, next: object) {
   const entries = Object.entries(previous);
   return entries.length === Object.keys(next).length && entries.every(([key, value]) => Object.is(value, Reflect.get(next, key)));
+}
+/** The time of the sample a stat displays: the latest valid point of the first series that has one. */
+function displayedSampleAt(result: QueryResult | undefined): number | undefined {
+  for (const series of result?.series ?? []) {
+    const point = latestPoint(series);
+    if (point) return point.timestamp;
+  }
+  return undefined;
 }
 const Tile = memo(function Tile({
   widget,
@@ -285,15 +294,27 @@ const Tile = memo(function Tile({
   const sourceFailure: Exclude<AttentionFailure, "none"> | undefined = !savedQueryLoading && (waitingOn === "unavailable" || waitingOn === "signin") ? "provider"
     : !savedQueryLoading && !provider && !widget.queryRef && sourceStatus === "ready" ? "planning"
     : !savedQueryLoading && error ? "provider" : undefined;
+  // The retained record holds the settle time and the range end of the request that produced the shown result. It is read
+  // on each render: a settle writes the record and then re-renders the tile, and a remount restores the same record. A
+  // tile that was not re-queried keeps its own range end, so a refresh of the dashboard does not age its data.
+  const retained = memoryOf.retention.read();
+  const completedAt = retained?.request?.settledAt;
+  const resultRangeEnd = settledRequestEnd(retained?.request?.key) ?? end;
   const attention = useMemo(
-    () => widgetAttention(widget, { result: savedQueryLoading ? undefined : data, failure: sourceFailure, rangeEnd: end * 1000 }),
-    [widget, savedQueryLoading, data, sourceFailure, end],
+    () => widgetAttention(widget, { result: savedQueryLoading ? undefined : data, failure: sourceFailure, rangeEnd: resultRangeEnd * 1000 }),
+    [widget, savedQueryLoading, data, sourceFailure, resultRangeEnd],
   );
+  // The strip counts the same facts query_dashboard does. An unmounted tile keeps its last facts, released not dropped.
   const attentionPublisher = useAttentionPublisher();
+  const facts = attention.facts;
+  const sampleAt = widget.type === "stat" ? displayedSampleAt(savedQueryLoading ? undefined : data) : undefined;
   useEffect(() => {
-    attentionPublisher.publish({ widgetId: widget.id, title: widget.title, state: attention.state });
-  }, [attentionPublisher, widget.id, widget.title, attention.state]);
-  useEffect(() => () => attentionPublisher.clear(widget.id), [attentionPublisher, widget.id]);
+    attentionPublisher.publish({ widgetId: widget.id, title: widget.title, facts, completedAt, sampleAt });
+  }, [attentionPublisher, widget.id, widget.title, facts, completedAt, sampleAt]);
+  useEffect(() => () => attentionPublisher.release(widget.id), [attentionPublisher, widget.id]);
+  // A stat whose sample is the dashboard's newest drops its repeated time; the strip states it once.
+  const newestSample = useSampleAsOf();
+  const sharesSample = sampleAt !== undefined && newestSample !== undefined && Math.floor(sampleAt / 60_000) === Math.floor(newestSample / 60_000);
   const attentionMark = isAttentionLevel(attention.state) ? (thresholdPaint(attention.band) ?? statusToken(attention.state)) : undefined;
   const textColor = widgetTextColor(widget.options);
   const StatIcon = widget.type === "stat" && widget.options?.statIcon ? STAT_ICONS[widget.options.statIcon] : undefined;
@@ -343,6 +364,7 @@ const Tile = memo(function Tile({
       data-sparkline-placement={widget.type === "stat" ? widget.options?.sparklinePlacement : undefined}
       data-stat-icon={StatIcon ? "true" : undefined}
       data-attention={attention.state}
+      data-shared-sample={sharesSample || undefined}
       data-compact-stat={widget.type === "stat" && widget.layout.h === 1 ? "true" : undefined}
       aria-label={widget.title}
       style={
@@ -619,6 +641,8 @@ export function DashboardCanvas({
     }
     return layout.map((item) => byId.get(item.i)!);
   }, [dashboard.id, dashboard.widgets, layout, draggable, editingOrder]);
+  // Chips step through widgets in the order they are now laid out, so a drag in edit mode changes the order they follow.
+  const attentionOrder = useMemo(() => [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => ({ id: item.i })), [layout]);
   const range = dashboardRange(dashboard, end);
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
@@ -660,9 +684,13 @@ export function DashboardCanvas({
                 />
               </div>
             ));
+  const autoRefresh: AutoRefresh = dashboard.customTimeRange
+    ? { mode: "fixed" }
+    : dashboard.refreshInterval ? { mode: "every", seconds: dashboard.refreshInterval } : { mode: "off" };
   return (
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
     <AttentionStoreProvider>
+    <SampleAsOfProvider>
     <TooltipQueryProvider
       fetcher={tooltipFetcher}
       providers={providers}
@@ -670,6 +698,9 @@ export function DashboardCanvas({
       end={range.end}
       step={Math.max(1, Math.ceil((range.end - range.start) / 300))}
     >
+      {/* Above the measured canvas, so tile geometry stays relative to the anchor and the strip reserves its own height. */}
+      {/* Not in focus mode: the workbench owns the top of the page, and the tiles it hides keep their last known state in the store. */}
+      {!!dashboard.widgets.length && !focus && <AttentionStrip widgets={attentionOrder} scopeRef={containerRef} autoRefresh={autoRefresh} />}
       <div
         ref={containerRef}
         className={`${styles.canvas} ${editing && !focus ? styles.editingCanvas : ""}`}
@@ -728,6 +759,7 @@ export function DashboardCanvas({
         </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>
+    </SampleAsOfProvider>
     </AttentionStoreProvider>
     </DashboardTimeZoneProvider>
   );
