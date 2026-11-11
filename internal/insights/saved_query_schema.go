@@ -214,10 +214,10 @@ func validateQueryReference(raw json.RawMessage, tooltip bool) error {
 	}
 	var id string
 	if json.Unmarshal(fields["id"], &id) != nil || !validID.MatchString(id) {
-		return errors.New("saved query references require a valid id")
+		return fieldErr("id", "saved query references require a valid id")
 	}
 	if rawBindings, ok := fields["bindings"]; ok {
-		return validateQueryBindings(rawBindings, tooltip)
+		return in("bindings", validateQueryBindings(rawBindings, tooltip))
 	}
 	return nil
 }
@@ -320,9 +320,9 @@ func validateQueryBindings(rawBindings json.RawMessage, tooltip bool) error {
 		return errors.New("saved query bindings must be an array of at most 20 entries")
 	}
 	seen := map[string]bool{}
-	for _, rawBinding := range bindings {
+	for i, rawBinding := range bindings {
 		if err := validateQueryBinding(rawBinding, tooltip, seen); err != nil {
-			return err
+			return in(strconv.Itoa(i), err)
 		}
 	}
 	return nil
@@ -333,7 +333,7 @@ type queryBinding struct{ Parameter, Source, Variable, Label, Field string }
 func validateQueryBinding(rawBinding json.RawMessage, tooltip bool, seen map[string]bool) error {
 	var binding queryBinding
 	if json.Unmarshal(rawBinding, &binding) != nil || !validVariableName(binding.Parameter) || seen[binding.Parameter] {
-		return errors.New("saved query bindings require unique valid parameter names")
+		return fieldErr("parameter", "saved query bindings require unique valid parameter names")
 	}
 	seen[binding.Parameter] = true
 	member, err := queryBindingMember(&binding, tooltip)
@@ -346,34 +346,36 @@ func validateQueryBinding(rawBinding json.RawMessage, tooltip bool, seen map[str
 	}
 	if member == "value" {
 		if err := validateQueryLiteral(fields[member], ""); err != nil {
-			return err
+			return in(member, err)
 		}
 	}
 	return nil
 }
 
+// queryBindingMember names the member a binding source requires. A failure
+// points at the member the source needs, or at source when the source is unknown.
 func queryBindingMember(binding *queryBinding, tooltip bool) (string, error) {
 	var member string
 	switch binding.Source {
 	case "variable":
 		member = "variable"
 		if !validVariableName(binding.Variable) {
-			return "", errors.New("saved query variable bindings require a valid dashboard variable name")
+			return "", fieldErr("variable", "saved query variable bindings require a valid dashboard variable name")
 		}
 	case "constant":
 		member = "value"
 	case "label":
 		if !validTooltipQueryLabel(tooltip, binding.Label) {
-			return "", errors.New("tooltip label bindings require a label of 1–128 characters")
+			return "", fieldErr("label", "tooltip label bindings require a label of 1–128 characters")
 		}
 		member = "label"
 	case "field":
 		if !validTooltipQueryField(tooltip, binding.Field) {
-			return "", errors.New("tooltip field bindings require value, timestamp, or series")
+			return "", fieldErr("field", "tooltip field bindings require value, timestamp, or series")
 		}
 		member = "field"
 	default:
-		return "", errors.New("unsupported saved query binding source")
+		return "", fieldErr("source", "unsupported saved query binding source")
 	}
 	return member, nil
 }

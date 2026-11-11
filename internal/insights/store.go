@@ -276,10 +276,10 @@ func requireObjectShape(data json.RawMessage, required, optional []string) (map[
 	for _, key := range slices.Sorted(maps.Keys(object)) {
 		value := object[key]
 		if !allowed[key] {
-			return nil, fmt.Errorf("unknown dashboard field %q", key)
+			return nil, errAt(keyPointer(key), fmt.Sprintf("unknown dashboard field %q", key))
 		}
 		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return nil, fmt.Errorf("dashboard field %q must not be null", key)
+			return nil, errAt(keyPointer(key), fmt.Sprintf("dashboard field %q must not be null", key))
 		}
 	}
 	return object, nil
@@ -318,12 +318,12 @@ func validateDashboardWidgetShape(raw json.RawMessage) error {
 		return err
 	}
 	if _, err := requireObjectShape(widget["layout"], []string{"x", "y", "w", "h"}, nil); err != nil {
-		return err
+		return in("layout", err)
 	}
 	if color, exists := widget["color"]; exists {
 		var value string
 		if json.Unmarshal(color, &value) != nil || !validWidgetColor.MatchString(value) {
-			return errors.New("widget color must be a six-digit hex color")
+			return fieldErr("color", "widget color must be a six-digit hex color")
 		}
 	}
 	return nil
@@ -358,7 +358,7 @@ type dashboardWidget struct {
 
 func validateDashboardWidget(w *dashboardWidget, seen map[string]bool) error {
 	if !validID.MatchString(w.ID) || seen[w.ID] {
-		return errors.New("widget ids must be valid and unique")
+		return fieldErr("id", "widget ids must be valid and unique")
 	}
 	seen[w.ID] = true
 	if err := validateWidgetText(w); err != nil {
@@ -367,48 +367,77 @@ func validateDashboardWidget(w *dashboardWidget, seen map[string]bool) error {
 	switch w.Type {
 	case "timeseries", "bar", "stat", "table", "traces", "heatmap", "plugin":
 	default:
-		return errors.New("unsupported widget type")
+		return fieldErr("type", "unsupported widget type")
 	}
 	return validateWidgetLayout(w)
 }
 
+// validateWidgetText checks each text member on its own, so the pointer names
+// the member that is out of bounds.
 func validateWidgetText(w *dashboardWidget) error {
-	if trimJS(w.Title) == "" || stringUnits(trimJS(w.Title)) > 120 || stringUnits(w.Description) > 500 || stringUnits(w.Unit) > 24 {
-		return errors.New("widget title or metadata is invalid")
+	if trimJS(w.Title) == "" || stringUnits(trimJS(w.Title)) > 120 {
+		return fieldErr("title", "widget title or metadata is invalid")
 	}
-	if !validID.MatchString(w.ProviderID) || trimJS(w.Query) == "" || stringUnits(trimJS(w.Query)) > 8192 {
-		return errors.New("widget provider and query are required")
+	if stringUnits(w.Description) > 500 {
+		return fieldErr("description", "widget title or metadata is invalid")
+	}
+	if stringUnits(w.Unit) > 24 {
+		return fieldErr("unit", "widget title or metadata is invalid")
+	}
+	if !validID.MatchString(w.ProviderID) {
+		return fieldErr("providerId", "widget provider and query are required")
+	}
+	if trimJS(w.Query) == "" || stringUnits(trimJS(w.Query)) > 8192 {
+		return fieldErr("query", "widget provider and query are required")
 	}
 	return nil
 }
 
+// validateWidgetLayout checks x, y, w and h in that order and reports the first
+// one outside the grid. An x and w that overflow the 12-column grid name w,
+// the extent that runs past the edge.
 func validateWidgetLayout(w *dashboardWidget) error {
 	minHeight := 2
 	if w.Type == "stat" {
 		minHeight = 1
 	}
-	if w.Layout.X < 0 || w.Layout.Y < 0 || w.Layout.Y > 1000 || w.Layout.W < 1 || w.Layout.W > 12 || w.Layout.X+w.Layout.W > 12 || w.Layout.H < minHeight || w.Layout.H > 12 {
-		return errors.New("widget layout is outside the dashboard grid")
+	const message = "widget layout is outside the dashboard grid"
+	switch {
+	case w.Layout.X < 0:
+		return errAt("/layout/x", message)
+	case w.Layout.Y < 0 || w.Layout.Y > 1000:
+		return errAt("/layout/y", message)
+	case w.Layout.W < 1 || w.Layout.W > 12 || w.Layout.X+w.Layout.W > 12:
+		return errAt("/layout/w", message)
+	case w.Layout.H < minHeight || w.Layout.H > 12:
+		return errAt("/layout/h", message)
 	}
 	return nil
 }
 
 func validateDashboardIdentity(d *dashboardDocument, id string) error {
-	if d.SchemaVersion != 1 || d.ID != id {
-		return errors.New("dashboard schemaVersion must be 1 and id must match the path")
+	const identityMessage = "dashboard schemaVersion must be 1 and id must match the path"
+	if d.SchemaVersion != 1 {
+		return errAt("/schemaVersion", identityMessage)
 	}
-	if trimJS(d.Title) == "" || stringUnits(trimJS(d.Title)) > 120 || stringUnits(d.Description) > 500 {
-		return errors.New("dashboard title or description is invalid")
+	if d.ID != id {
+		return errAt("/id", identityMessage)
+	}
+	if trimJS(d.Title) == "" || stringUnits(trimJS(d.Title)) > 120 {
+		return errAt("/title", "dashboard title or description is invalid")
+	}
+	if stringUnits(d.Description) > 500 {
+		return errAt("/description", "dashboard title or description is invalid")
 	}
 	switch d.TimeRange {
 	case "15m", "30m", "1h", "6h", "24h", "7d", "30d":
 	default:
-		return errors.New("unsupported dashboard time range")
+		return errAt("/timeRange", "unsupported dashboard time range")
 	}
 	switch d.RefreshInterval {
 	case 0, 15, 30, 60:
 	default:
-		return errors.New("unsupported refresh interval")
+		return errAt("/refreshInterval", "unsupported refresh interval")
 	}
 	return nil
 }

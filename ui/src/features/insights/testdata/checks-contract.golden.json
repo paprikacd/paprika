@@ -3,11 +3,11 @@
     "error": "threshold color must be a six-digit hex color",
     "issues": [
       {
-        "ruleId": "schema.widget.shape",
+        "ruleId": "schema.widget.options",
         "severity": "SEVERITY_ERROR",
         "source": "SOURCE_SCHEMA",
         "widgetId": "latency",
-        "pointer": "/widgets/1",
+        "pointer": "/widgets/1/options/thresholds/1/color",
         "message": "threshold color must be a six-digit hex color",
         "fix": ""
       },
@@ -16,7 +16,7 @@
         "severity": "SEVERITY_ERROR",
         "source": "SOURCE_SCHEMA",
         "widgetId": "requests",
-        "pointer": "/widgets/0/layout",
+        "pointer": "/widgets/0/layout/w",
         "message": "widget layout is outside the dashboard grid",
         "fix": "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets)."
       }
@@ -27,11 +27,11 @@
   "dryRun": {
     "issues": [
       {
-        "ruleId": "schema.widget.shape",
+        "ruleId": "schema.widget.options",
         "severity": "SEVERITY_ERROR",
         "source": "SOURCE_SCHEMA",
         "widgetId": "latency",
-        "pointer": "/widgets/1",
+        "pointer": "/widgets/1/options/thresholds/1/color",
         "message": "threshold color must be a six-digit hex color",
         "fix": ""
       },
@@ -40,7 +40,7 @@
         "severity": "SEVERITY_ERROR",
         "source": "SOURCE_SCHEMA",
         "widgetId": "requests",
-        "pointer": "/widgets/0/layout",
+        "pointer": "/widgets/0/layout/w",
         "message": "widget layout is outside the dashboard grid",
         "fix": "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets)."
       }

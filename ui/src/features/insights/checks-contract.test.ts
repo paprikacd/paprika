@@ -30,15 +30,15 @@ describe("dashboard check wire contract", () => {
     expect(report.truncated).toBe(false)
 
     const [shape, layout] = report.issues
-    expect(shape.ruleId).toBe("schema.widget.shape")
+    expect(shape.ruleId).toBe("schema.widget.options")
     expect(shape.severity).toBe(Severity.ERROR)
     expect(shape.source).toBe(Source.SCHEMA)
     expect(shape.widgetId).toBe("latency")
-    expect(shape.pointer).toBe("/widgets/1")
+    expect(shape.pointer).toBe("/widgets/1/options/thresholds/1/color")
     expect(shape.message).toBe(golden.save.error)
 
     expect(layout.ruleId).toBe("schema.widget.layout")
-    expect(layout.pointer).toBe("/widgets/0/layout")
+    expect(layout.pointer).toBe("/widgets/0/layout/w")
     expect(layout.fix).not.toBe("")
   })
 
