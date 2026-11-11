@@ -157,6 +157,33 @@ Record each gate as **pass**, **fail**, **unverified**, or **not applicable with
 
 Never average a failed gate into a high beauty score. Never claim runtime verification from a manifest, source scan, screenshot alone, or an unexecuted test command.
 
+## Repair a live dashboard
+
+Before writing new queries for a dashboard whose data has drifted, use the tested repair
+toolkit. These are local repository tools for the named deployments, not MCP tools; run
+them from a checkout with access to the target.
+
+- `hack/dashboard-presentation/patches.json`: reviewed widget edits for three operational
+  dashboards, applied with `patch_dashboard` after the matching UI release is deployed.
+  Use each document's exact ETag and read its README first.
+- `hack/service-overview/`: exact-ETag patches for the six HTTP saved queries of
+  `service-overview`. `queries.json` holds the patches; `migrate.mjs` exports
+  `migrate(call, {expectedProviderId})`, which previews first and writes only with
+  `{apply: true}`, through an authenticated Observe MCP client.
+- `hack/shorted-queries/`: the Shorted query fixtures and their promtool tests, run by the
+  same CI step.
+- `ui/e2e/service-overview-coverage.mjs`: the coverage gate CI runs with the hack tests.
+  Missing telemetry stays empty. An absent error-class series may become zero only against
+  observed request traffic, and zero-traffic ratios and quantiles stay undefined.
+- Promtool: the PromQL fixtures run `promtool test rules` in a pinned Prometheus image with
+  networking disabled, or in a local binary named by `PROMTOOL`. Follow
+  `hack/service-overview/promql.test.mjs` for the pattern.
+
+After a change, run `node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs`,
+which is the command CI runs.
+Source requirements and the reasoning behind them are in
+[dashboard data coverage](../../../docs/guides/dashboard-data-coverage.md).
+
 ## Finish with evidence
 
 Use [the review report template](assets/review-report.template.md) for substantial work. Report the concrete outcome, the analytical/design decisions that matter, checks actually run, and any remaining limitation. Identify whether evidence came from static source, fixtures, measured browser behavior, or live data. Keep the final answer proportional to the request.
@@ -186,3 +213,4 @@ For an audit, lead with material findings, exact affected owner, user consequenc
 | [Validation](references/validation.md) | Planning acceptance checks and reporting evidence. |
 | [Contract format](references/contract-format.md) | Using the optional declared-contract checker. |
 | [Research sources](references/research-sources.md) | Checking rationale, external standards, provenance, or new architecture decisions. |
+| [Paprika platform signals](references/paprika-signals.md) | Dashboards about Paprika's own health: `paprika_*` metric names, labels, documented healthy ranges and PromQL. |

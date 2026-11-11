@@ -1,6 +1,6 @@
 ---
 name: paprika-observe
-description: Discover authorized Paprika observability providers, query bounded telemetry, and create or update saved queries and dashboards with explicit Insights authoring access.
+description: Discover authorized Paprika observability providers, query bounded telemetry and typed records (Shorted, Uptime and read-only PostgreSQL), and create or update saved queries and dashboards with explicit Insights authoring access.
 ---
 
 # Paprika observability
@@ -63,7 +63,8 @@ enumerable, and the optional `namespace` argument scopes AWS CloudWatch
 enumeration only.
 
 For dashboard label inspection, pass explicit `start` and `end` RFC 3339
-bounds. `list_metric_series` enumerates a bounded series sample, not a global
+bounds. `list_metric_names` takes an optional `prefix`, which matches names that contain
+that substring. `list_metric_series` enumerates a bounded series sample, not a global
 active-series count. Paprika Insights consumes these tools through the same
 Observe MCP endpoint; its native PromQL/TraceQL editors, saved-query parameters,
 dashboard service filters and tooltip bindings remain the authoring surface.
@@ -85,6 +86,9 @@ dialect. Check the provider type and use its language:
 | `aws-xray` | traces | `trace_id`, or an X-Ray filter expression |
 | `aws-cloudtrail` | logs | comma-separated `Key=Value` lookup attributes |
 | `vultr-monitoring` | metrics | one catalog metric name (`account_bandwidth`, `instance_bandwidth_in`, `instance_bandwidth_outgoing_bytes`) |
+| `shorted` | records (`query_records`), metrics | JSON `{operation,args,projection?}`; fixed public reads and separately authorized admin reads |
+| `uptime` | records (`query_records`), metrics | JSON `{operation,args,projection?}`; organization pinned in provider config |
+| `postgresql` | records (`query_records`), metrics | read-only SQL, or `{sql,parameters,projection?}` with driver-bound scalar values |
 
 For metrics, inspect `get_metric_metadata` and use that provider's native
 query language as the table states. Use an actually discovered metric rather
@@ -127,6 +131,28 @@ Report endpoint, provider identity, time range, query outcome, observed time,
 partial failures, and truncation with the evidence. Empty successful results,
 unavailable providers, and sanitized errors do not prove that a service is
 healthy or that there are no errors. Keep pass, fail, and not-run separate.
+
+**Typed records.** `query_records` returns bounded `columns` and `rows`, preserving
+null, zero, timestamps and partial-result status, with explicit truncation. Records
+never accept a metric projection. The range defaults to 30 minutes (maximum 31 days)
+and `limit` to 100 (maximum 1000; the Uptime connector rejects more than 100 rows). Dashboard compact responses keep only a bounded row
+preview and report truncation separately. Application windows use their explicit
+operation arguments. PostgreSQL does not filter SQL by the dashboard range; to use one,
+bind `{"range":"start"}` or `{"range":"end"}` in `parameters` and reference the
+positional `$n` placeholder in the SQL.
+
+In a saved PostgreSQL query, write `$1` in the fixed SQL text and place an unquoted
+`{{service}}` placeholder in the JSON `parameters` array, for example
+`{"sql":"SELECT ... WHERE service=$1","parameters":[{{service}}]}`. Never interpolate
+values into SQL text. PostgreSQL providers require verify-full TLS and an unprivileged
+reader role; never copy an application's writer credentials into one. `get_insights_schema`
+with `kind: "widget"` has record-table, record-treemap and connection-map examples and
+their config shapes.
+
+Backend errors from Shorted and Uptime never include response bodies or request URLs, and
+connector errors are fixed sentences by design. Do not ask the gateway for the hidden detail.
+`Forbidden` means the backend refused the supplied credentials, which is a permissions
+answer rather than a connectivity one.
 
 `list_provider_types` and `describe_provider_type` expose static connector
 capabilities and configuration guidance. `validate_provider` checks configuration
@@ -183,6 +209,39 @@ observation and are not executed. Plugin widgets expose their underlying query
 data, not the plugin's arbitrary rendering behavior. Narrow `widget_ids` after
 a result-size limit; do not repeatedly request the whole dashboard.
 
+## Encode what is wrong
+
+When a metric has a supplied or named objective (an SLO, a limit or a policy), encode it in
+the widget rather than only in prose. Tie each threshold to that named source, as
+[the chart grammar's thresholds and uncertainty section](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/chart-grammar.md) (thresholds and
+uncertainty) requires, and do not invent an objective. Widget option names come from the
+authoring schema (`get_insights_schema` with `kind: "widget"`). Record-table cell styles are
+part of the record-table plugin config, which the same schema describes.
+
+- **Stat:** `options.thresholds`, ascending `{value,color,label}` rules (at most 12,
+  strictly increasing). Thresholds colour the reading. With `showStatBar` they colour the bar
+  fill and the value keeps its text colour. The schema has no severity field, and a stat card
+  does not draw threshold labels, so express severity through colour and show labels where
+  labels appear: legends, labelled `referenceLines` and status-badge mappings.
+- **Time series:** `options.referenceLines` (at most 8, `{value,label?,color?}`) for the
+  objective. Give each one a label. Use `options.thresholds` for breach levels; they are drawn as labelled guides
+  and widen autoscaling, not as shaded bands.
+- **Staleness:** `options.staleAfterSeconds` (1 to 2678400), set only when the scrape or
+  evaluation interval is known, and at least twice that interval so one late sample does not
+  flap. Do not apply one universal value. A stale
+  single value warns, and a stale time series is hatched after its last sample.
+- **Record table:** a text column whose record-table config has a `cellStyles` entry with
+  `display: "status-badge"` and `mappings: [{value,color}]` (at most 16 exact values). Unmapped values stay neutral.
+  Sorting is interactive; no default-sort option exists.
+- **Incidents:** a time series can overlay recorded events through
+  `annotationSource` (`queryRef`, `timestampColumn`, `labelColumn`, and optional `endColumn`
+  and `severityColumn`), up to 20 events from a records query.
+
+**Paprika's own signals.** Platform metrics (`paprika_*`, health and SLO series) are listed
+with their labels, meaning and documented PromQL in
+[paprika-signals.md](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/paprika-signals.md). `get_system_health`
+is served by the platform MCP at `/mcp`, not by this Observe endpoint.
+
 ## Mandatory visual QA for dashboard authoring and edits
 
 **A successful MCP document write and a green `query_dashboard` are not proof
@@ -207,8 +266,9 @@ Apply these checks to **every** new or edited dashboard, especially bulk
    should ordinarily show its short title, a prominent exact reading and
    at most one sparkline. Do not add a progress/percentage bar simply
    because a metric is a percentage. `showStatBar:true` is appropriate
-   only when an intentional **bounded scale** with an explained objective
-   adds interpretive value and there is sufficient vertical space.
+   only when the bar length is the reading: a bounded quantity such as
+   the percent of an error budget that remains, with explicit `min` and
+   `max` and `layout.h` of at least 3. Do not add a bar to a rate or a count.
    A 4xx response ratio is not progress towards completion; 0% 5xx
    does not benefit from an empty bar. Avoid combining stat bars, sparklines,
    long descriptions and two-row KPI cards. Remove unused `min/max`
@@ -264,6 +324,12 @@ and `focus_widget` to inspect pointer and keyboard states. Without it,
 the existing Playwright Insights E2E suite can provide actual visual
 evidence in a properly authenticated test environment; those fixtures
 must never be misrepresented as live production screenshots.
+
+**Local authoring loop.** To author or test against synthetic providers without
+touching production, start the gallery stack and attach an agent client to its
+`/observe/mcp` endpoint, as [the local dashboard polish guide](https://github.com/paprikacd/paprika/blob/master/docs/guides/local-dashboard-polish.md) describes. Use the
+`mcpURL` and `mcpWriteToken` from the gallery's private connection file, never the production
+token. The `npx` installer cannot target a local endpoint.
 
 **Corrected Omega reference (6 Nov 2026):** the first MCP visual styling
 pass broke the two-row KPI layout despite 13/13 successful saved queries.
@@ -358,7 +424,7 @@ after exact-ETag patches rather than assuming the UI matches old data.
 
 If this tool is not advertised, do not claim screenshot capture occurred.
 The main container has no Chromium. See the opt-in renderer runbook in
-`docs/guides/observe-browser-renderer.md`. Report the missing deployment
+[the browser renderer runbook](https://github.com/paprikacd/paprika/blob/master/docs/guides/observe-browser-renderer.md). Report the missing deployment
 rather than inventing an image. A screenshot helps inspect spacing,
 legends, overlap and tooltip placement; structured `query_dashboard`
 continues to establish observed values and missing/partial data.
