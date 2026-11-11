@@ -53,7 +53,8 @@ import { thresholdHex, type StatusMark, type StatusTheme } from "./status";
 import { StatusMarkFields } from "./status-mark-fields";
 import { useInsightsTheme } from "./insights-theme";
 import { seriesHex, type SeriesTheme } from "./series-palette";
-import { widgetColorSeriesIndex, widgetSeriesColors } from "./series-colors";
+import { widgetColorSeriesIndex, widgetSeriesColors, type SeriesColorRule } from "./series-colors";
+import { useCanvasDensity } from "./canvas-density";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 
@@ -207,23 +208,47 @@ function TooltipPresentationEditor({ options, onChange }: {
 
 /** Plugins that colour their series by identity, and therefore take the series colour mode. */
 const SERIES_COLOR_PLUGINS = new Set(["small-multiples", "stacked-timeseries", "directional-traffic", "records-line", "records-bar"]);
+/** Plugins whose own fallback is the second palette slot (--gamma-chart-2). */
+const CHART2_PLUGINS = new Set(["threshold-gauge", "status-grid"]);
 
 /**
- * The colour the widget draws without an authored colour, in one appearance. It mirrors the renderers: the series the
- * widget colour would replace (see widgetColorSeriesIndex) for series charts; the first palette slot for stat
- * sparklines, which still draw by position; and the second slot (--gamma-series-2, the chart-2 token) that gauges and
- * status grids use.
+ * What the widget draws without its own colour: "series" when its series take identity colours, "chart2" when it draws
+ * the second slot, and "none" when no palette slot applies (record tables, connection maps and other plugins that
+ * colour cells or nodes by their own rules).
  */
-function paletteSwatch(widget: Widget, result: QueryResult | undefined, theme: SeriesTheme): string {
-  if (widget.type === "stat") return seriesHex(0, theme);
-  if (widget.type === "timeseries" || widget.type === "bar" || (widget.type === "plugin" && SERIES_COLOR_PLUGINS.has(widget.pluginId ?? ""))) {
-    const series = result?.series ?? [];
-    const index = widgetColorSeriesIndex(series, widget.options?.seriesColorMode);
-    const choice = index >= 0 ? widgetSeriesColors(series, { options: widget.options })[index] : undefined;
-    if (choice?.slot !== undefined) return seriesHex(choice.slot, theme);
-    return choice?.color ?? seriesHex(0, theme);
-  }
-  return seriesHex(1, theme);
+function paletteDrawing(widget: Widget): "series" | "chart2" | "none" {
+  if (widget.type === "stat" || widget.type === "timeseries" || widget.type === "bar") return "series";
+  if (widget.type !== "plugin") return "none";
+  if (SERIES_COLOR_PLUGINS.has(widget.pluginId ?? "")) return "series";
+  return CHART2_PLUGINS.has(widget.pluginId ?? "") ? "chart2" : "none";
+}
+
+/** Rich metrics reads its colour rules from its plugin configuration, and the other series widgets from their options. */
+function pluginSeriesRules(widget: Widget): SeriesColorRule[] | undefined {
+  const config = widget.config as { seriesColors?: unknown } | undefined;
+  return widget.type === "plugin" && Array.isArray(config?.seriesColors) ? (config.seriesColors as SeriesColorRule[]) : undefined;
+}
+
+/** The compact-dark appearance is dark, dense, and at least 1024px wide, as the Insights theme stylesheet decides. */
+function seriesTheme(resolvedTheme: string, dense: boolean): SeriesTheme {
+  if (resolvedTheme !== "dark") return "light";
+  const wide = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1024px)").matches;
+  return dense && wide ? "compact" : "dark";
+}
+
+/**
+ * The colour the widget draws without an authored colour, in one appearance, or undefined when no palette slot applies.
+ * Series charts show the series the widget colour would replace; stat sparklines and series plugins use the same rule.
+ */
+function paletteSwatch(widget: Widget, result: QueryResult | undefined, theme: SeriesTheme): string | undefined {
+  const drawing = paletteDrawing(widget);
+  if (drawing === "none") return undefined;
+  if (drawing === "chart2") return seriesHex(1, theme);
+  const series = result?.series ?? [];
+  const index = widgetColorSeriesIndex(series, widget.options?.seriesColorMode);
+  const choice = index >= 0 ? widgetSeriesColors(series, { options: widget.options }, pluginSeriesRules(widget))[index] : undefined;
+  if (choice?.slot !== undefined) return seriesHex(choice.slot, theme);
+  return choice?.color ?? seriesHex(0, theme);
 }
 
 function StyleEditor({
@@ -239,6 +264,7 @@ function StyleEditor({
 }) {
   // The swatch shows the appearance the author is viewing.
   const { resolvedTheme } = useInsightsTheme();
+  const { dense } = useCanvasDensity();
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
@@ -340,10 +366,13 @@ function StyleEditor({
       }),
     );
   // The swatch shows the colour the chart actually draws, in this appearance, unless the author chose a colour.
-  const seriesTheme: SeriesTheme = resolvedTheme === "dark" ? "dark" : "light";
-  const paletteColor = paletteSwatch(widget, result, seriesTheme);
-  const customColor = widget.color !== undefined;
-  const seriesModeRow = widget.type === "timeseries" || widget.type === "bar" || (widget.type === "plugin" && SERIES_COLOR_PLUGINS.has(widget.pluginId ?? ""));
+  const palette = paletteDrawing(widget);
+  const paletteColor = paletteSwatch(widget, result, seriesTheme(resolvedTheme, dense));
+  const seriesCount = result?.series?.length ?? 0;
+  // A chosen colour draws only on a single-series widget, or on any widget in index mode (where it applies to position 0).
+  const colourApplies = widget.options?.seriesColorMode === "index" || palette !== "series" || seriesCount <= 1;
+  const customColor = widget.color !== undefined && colourApplies;
+  const seriesModeRow = palette === "series" && widget.type !== "stat";
   return (
     <div className={styles.stack}>
       {widget.type === "timeseries" && <ChartAppearancePresets options={options} onChange={update} />}
@@ -396,32 +425,39 @@ function StyleEditor({
             Series color
             <GammaInput
               type="color"
-              value={widget.color ?? paletteColor}
+              value={widget.color ?? paletteColor ?? "#000000"}
               onChange={(event) =>
                 onChange({ ...widget, color: event.target.value })
               }
             />
           </label>
-          <div role="group" aria-label="Series color source" className={styles.row}>
-            <GammaButton
-              type="button"
-              variant="secondary"
-              aria-pressed={!customColor}
-              onClick={() => onChange({ ...widget, color: undefined })}
-            >
-              Palette
-            </GammaButton>
-            <GammaButton
-              type="button"
-              variant="secondary"
-              aria-pressed={customColor}
-              onClick={() => onChange({ ...widget, color: widget.color ?? paletteColor })}
-            >
-              Custom
-            </GammaButton>
-          </div>
-          {!customColor && !result?.series?.length && (
-            <p className={styles.hint}>Palette shows the colour the first series draws; it appears once data loads.</p>
+          {palette !== "none" && (
+            <div role="group" aria-label="Series color source" className={styles.row}>
+              <GammaButton
+                type="button"
+                variant="secondary"
+                aria-pressed={!customColor}
+                onClick={() => onChange({ ...widget, color: undefined })}
+              >
+                Palette
+              </GammaButton>
+              <GammaButton
+                type="button"
+                variant="secondary"
+                aria-pressed={customColor}
+                disabled={!seriesCount && palette === "series"}
+                onClick={() => onChange({ ...widget, color: widget.color ?? paletteColor })}
+              >
+                Custom
+              </GammaButton>
+            </div>
+          )}
+          {palette === "none" && <p className={styles.hint}>No palette colour applies to this widget. Choose a colour to set one.</p>}
+          {palette === "series" && !seriesCount && (
+            <p className={styles.hint}>Palette shows the colour the first series draws. Custom becomes available once data loads.</p>
+          )}
+          {palette === "series" && seriesCount > 1 && widget.options?.seriesColorMode !== "index" && widget.color !== undefined && (
+            <p className={styles.hint}>A chosen colour applies only when this widget draws one series. These series keep their identity colours.</p>
           )}
         </div>
       )}
