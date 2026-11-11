@@ -276,11 +276,11 @@ func checkDataStale(widgets []dataWidget) []dataHit {
 	for i := range widgets {
 		widget := &widgets[i]
 		freshness := widget.freshness
-		if freshness == nil || freshness.State != "stale" || freshness.AgeSeconds == nil {
+		if freshness == nil || freshness.State != "stale" || freshness.AgeSeconds == nil || freshness.ThresholdSeconds == nil {
 			continue
 		}
 		hits = append(hits, newDataHit(widget, widgetBase(widget.index)+"/options/staleAfterSeconds",
-			fmt.Sprintf("%s newest sample is %s s old, past its staleAfterSeconds of %d", dataLabel(widget), strconv.FormatFloat(math.Round(*freshness.AgeSeconds), 'f', 0, 64), freshness.ThresholdSeconds)))
+			fmt.Sprintf("%s newest sample is %s s old, past its staleAfterSeconds of %d", dataLabel(widget), strconv.FormatFloat(math.Round(*freshness.AgeSeconds), 'f', 0, 64), *freshness.ThresholdSeconds)))
 	}
 	return hits
 }

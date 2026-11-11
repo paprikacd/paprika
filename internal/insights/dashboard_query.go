@@ -39,6 +39,7 @@ type DashboardQueryResult struct {
 	Signals       []DashboardSignal        `json:"signals"`
 	QueryCount    DashboardQueryCount      `json:"queryCount"`
 	State         string                   `json:"state"`
+	Attention     DashboardAttention       `json:"attention"`
 }
 
 type DashboardQueryDocument struct {
@@ -71,22 +72,30 @@ type DashboardQueryWidget struct {
 	AnnotationSignalID     string                          `json:"annotationSignalId,omitempty"`
 	AnnotationError        *DashboardQueryError            `json:"annotationError,omitempty"`
 	AnnotationColumns      *dashboardReadAnnotationColumns `json:"annotationColumns,omitempty"`
+	// Attention is set only when this widget needs it: critical, warning, failed or stale.
+	Attention string `json:"attention,omitempty"`
+	// Breaches is set for time-series widgets with an author-declared warning or critical status.
+	Breaches *DashboardBreaches `json:"breaches,omitempty"`
 }
 
 // A configured visual band, not an inferred alert or service-health verdict.
-// The threshold is evaluated using the same last valid observation as Stat.
+// A stat is evaluated on its last valid observation, as displayed. Gauges, status
+// views and heatmaps are evaluated per series on the latest recorded sample, and
+// Series names the series that set the band when several were evaluated.
 type DashboardStatThreshold struct {
 	State    string   `json:"state"`
 	Boundary *float64 `json:"boundary,omitempty"`
 	Status   string   `json:"status,omitempty"`
 	Color    string   `json:"color,omitempty"`
 	Label    string   `json:"label,omitempty"`
+	Series   *int     `json:"series,omitempty"`
 }
 
 // Freshness describes the latest valid returned sample relative to the query
-// range end, not the underlying provider's scrape or ingestion health.
+// range end, not the underlying provider's scrape or ingestion health. A metric
+// widget without staleAfterSeconds reports its age with the state no_threshold.
 type DashboardObservationFreshness struct {
-	ThresholdSeconds int      `json:"thresholdSeconds"`
+	ThresholdSeconds *int     `json:"thresholdSeconds,omitempty"`
 	State            string   `json:"state"`
 	LastTimestamp    *float64 `json:"lastTimestamp,omitempty"`
 	AgeSeconds       *float64 `json:"ageSeconds,omitempty"`
@@ -165,6 +174,7 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		return nil
 	})
 	s.executeDashboardQueries(r, queries, options, result, &cache)
+	result.Attention = applyDashboardAttention(result)
 }
 
 func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, validators ...func(string, string) *DashboardQueryError) []Query {
@@ -212,11 +222,21 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 	if widget.Type == "plugin" {
 		output.PluginID, output.DataKind = widget.PluginID, widget.DataKind
 	}
-	if widget.Type == "stat" && widget.Options.StaleAfterSeconds != nil {
-		output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: int(*widget.Options.StaleAfterSeconds), State: "unknown"}
+	if dashboardWidgetKind(widget) == "metrics" {
+		output.Freshness = &DashboardObservationFreshness{State: "unknown"}
+		if widget.Options.StaleAfterSeconds != nil {
+			threshold := int(*widget.Options.StaleAfterSeconds)
+			output.Freshness.ThresholdSeconds = &threshold
+		}
 	}
-	if widget.Type == "stat" && len(widget.Options.Thresholds) > 0 {
+	switch {
+	case widget.Type == "stat" && len(widget.Options.Thresholds) > 0:
 		output.Threshold = &DashboardStatThreshold{State: "unknown"}
+		output.thresholds = widget.Options.Thresholds
+	case dashboardMultiSeriesBandWidget(widget) && dashboardHasStatusThreshold(widget.Options.Thresholds):
+		output.Threshold = &DashboardStatThreshold{State: "unknown"}
+		output.thresholds = widget.Options.Thresholds
+	case widget.Type == "timeseries" && dashboardHasBreachThreshold(widget.Options.Thresholds):
 		output.thresholds = widget.Options.Thresholds
 	}
 	return output
@@ -476,7 +496,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 	}
 	for index := range queries {
 		query := &queries[index]
-		signal, executed, columns := s.executeDashboardQuery(r, query, options, cache)
+		signal, executed, columns, raw := s.executeDashboardQuery(r, query, options, cache)
 		signal.ID = fmt.Sprintf("q%d", index+1)
 		signal.Kind = query.Kind
 		// Do not disclose a provider selected by a saved query unless this
@@ -487,8 +507,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		}
 		for i := range result.Widgets {
 			widget := &result.Widgets[i]
-			applyDashboardThreshold(widget, &signal)
-			applyDashboardFreshness(widget, &signal, query.End)
+			applyDashboardSignal(widget, &signal, raw, query.End)
 			applyDashboardAnnotation(widget, &signal, columns, result)
 		}
 		if executed {
@@ -520,6 +539,22 @@ func dashboardPrimaryObservation(signal *DashboardSignal, requireValue bool) *Po
 	return nil
 }
 
+// applyDashboardSignal applies one executed signal to a widget bound to it. Stat
+// bands read the displayed summary; the other evaluations need every returned series,
+// so they read the raw result, which is nil when the provider did not answer.
+func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult, end float64) {
+	if widget.SignalID != signal.ID {
+		return
+	}
+	if widget.Type == "stat" {
+		applyDashboardThreshold(widget, signal)
+	} else {
+		applyDashboardSeriesBand(widget, signal, raw)
+	}
+	applyDashboardFreshness(widget, signal, end)
+	applyDashboardBreaches(widget, signal, raw)
+}
+
 func applyDashboardThreshold(widget *DashboardQueryWidget, signal *DashboardSignal) {
 	if widget.SignalID != signal.ID || widget.Threshold == nil {
 		return
@@ -528,14 +563,123 @@ func applyDashboardThreshold(widget *DashboardQueryWidget, signal *DashboardSign
 	if last == nil {
 		return
 	}
-	match := widget.thresholds[0]
-	for _, threshold := range widget.thresholds {
-		if threshold.Value > *last.Value {
+	match := matchDashboardBand(*last.Value, widget.thresholds)
+	widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Status: match.Status, Color: match.Color, Label: match.Label}
+}
+
+// matchDashboardBand is the band a value falls in: the highest threshold it reaches.
+// The first threshold also applies below its boundary. Thresholds are sorted.
+func matchDashboardBand(value float64, thresholds []dashboardReadThreshold) dashboardReadThreshold {
+	match := thresholds[0]
+	for _, threshold := range thresholds {
+		if threshold.Value > value {
 			break
 		}
 		match = threshold
 	}
-	widget.Threshold = &DashboardStatThreshold{State: "matched", Boundary: &match.Value, Status: match.Status, Color: match.Color, Label: match.Label}
+	return match
+}
+
+// applyDashboardSeriesBand evaluates a gauge, status view or heatmap. Each series'
+// latest recorded sample sets its band, as the UI draws it: a missing latest sample is
+// unknown and sets no band. The widget reports the most severe declared band among the
+// series, with the lowest series position winning a tie.
+func applyDashboardSeriesBand(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult) {
+	if widget.SignalID != signal.ID || widget.Threshold == nil || signal.Error != nil || raw == nil {
+		return
+	}
+	if worst := worstSeriesBand(raw.Series, widget.thresholds); worst != nil {
+		widget.Threshold = worst
+	}
+}
+
+// worstSeriesBand is the most severe matched band across the series' latest recorded
+// samples, or nil when no series has a valid latest sample.
+func worstSeriesBand(series []Series, thresholds []dashboardReadThreshold) *DashboardStatThreshold {
+	var worst *DashboardStatThreshold
+	worstRank := 0
+	for index := range series {
+		latest := latestRecordedPoint(series[index].Points)
+		if latest == nil || !dashboardFiniteValue(latest.Value) {
+			continue
+		}
+		match := matchDashboardBand(*latest.Value, thresholds)
+		seriesIndex, boundary := index, match.Value
+		band := &DashboardStatThreshold{State: "matched", Boundary: &boundary, Status: match.Status, Color: match.Color, Label: match.Label, Series: &seriesIndex}
+		if rank := dashboardStatusRank(match.Status); worst == nil || rank > worstRank {
+			worst, worstRank = band, rank
+		}
+	}
+	return worst
+}
+
+// latestRecordedPoint is the point with the latest valid timestamp. A tie keeps the
+// later point, as the UI's status grid does. The value may be missing.
+func latestRecordedPoint(points []Point) *Point {
+	var latest *Point
+	for index := range points {
+		point := &points[index]
+		if dashboardTimestamp(point.Timestamp) && (latest == nil || point.Timestamp >= latest.Timestamp) {
+			latest = point
+		}
+	}
+	return latest
+}
+
+// dashboardStatusRank orders declared statuses by severity for a multi-series band.
+// A colour-only band has no status and ranks lowest.
+func dashboardStatusRank(status string) int {
+	switch status {
+	case "critical":
+		return 4
+	case "warning":
+		return 3
+	case "unknown":
+		return 2
+	case "info":
+		return 1
+	case "ok":
+		return 0
+	default:
+		return -1
+	}
+}
+
+// applyDashboardBreaches evaluates a time series against its declared warning and critical
+// bands. A failed or missing signal reports no breaches rather than an empty result.
+func applyDashboardBreaches(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult) {
+	if widget.SignalID != signal.ID || widget.Type != "timeseries" || !dashboardHasBreachThreshold(widget.thresholds) || signal.Error != nil || raw == nil {
+		return
+	}
+	widget.Breaches = dashboardBreaches(raw.Series, widget.thresholds)
+}
+
+// dashboardMultiSeriesBandWidget names the visualizations whose band is evaluated per
+// series on its latest recorded sample. Their bands are authored in options.thresholds.
+func dashboardMultiSeriesBandWidget(widget *dashboardReadWidget) bool {
+	return widget.Type == "heatmap" || (widget.Type == "plugin" && (widget.PluginID == "threshold-gauge" || widget.PluginID == "status-grid" || widget.PluginID == "status-history"))
+}
+
+// dashboardHasStatusThreshold reports whether any authored threshold names a status.
+// A colour-only threshold has no status to report.
+func dashboardHasStatusThreshold(thresholds []dashboardReadThreshold) bool {
+	for _, threshold := range thresholds {
+		if threshold.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// dashboardHasBreachThreshold reports whether any authored threshold is a warning or
+// critical status, the only statuses that breach.
+func dashboardHasBreachThreshold(thresholds []dashboardReadThreshold) bool {
+	for _, threshold := range thresholds {
+		if threshold.Status == "warning" || threshold.Status == "critical" {
+			return true
+		}
+	}
+	return false
 }
 
 func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSignal, end float64) {
@@ -549,9 +693,13 @@ func applyDashboardFreshness(widget *DashboardQueryWidget, signal *DashboardSign
 	timestamp := last.Timestamp
 	age := math.Max(0, end-timestamp/1000)
 	widget.Freshness.LastTimestamp, widget.Freshness.AgeSeconds = &timestamp, &age
-	widget.Freshness.State = "fresh"
-	if age > float64(widget.Freshness.ThresholdSeconds) {
+	switch {
+	case widget.Freshness.ThresholdSeconds == nil:
+		widget.Freshness.State = "no_threshold"
+	case age > float64(*widget.Freshness.ThresholdSeconds):
 		widget.Freshness.State = "stale"
+	default:
+		widget.Freshness.State = "fresh"
 	}
 }
 
@@ -596,24 +744,27 @@ func (s *Server) dashboardQueryProvider(r *http.Request, id string, cache *dashb
 	return provider, err
 }
 
-func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders) (DashboardSignal, bool, []dataframe.Column) {
+// executeDashboardQuery returns the compact signal, the raw result when the provider
+// answered (nil otherwise) and the record columns. The raw result is used once, by
+// the widgets bound to this signal, and then dropped.
+func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders) (DashboardSignal, bool, []dataframe.Column, *QueryResult) {
 	provider, err := s.dashboardQueryProvider(r, query.ProviderID, cache)
 	if err != nil {
-		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, false, nil
+		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, false, nil, nil
 	}
 	if !provider.public.supports(query.Kind) {
-		return DashboardSignal{State: "error", Error: &DashboardQueryError{Code: "incompatible_provider", Message: "The provider does not support this widget's data kind."}}, false, nil
+		return DashboardSignal{State: "error", Error: &DashboardQueryError{Code: "incompatible_provider", Message: "The provider does not support this widget's data kind."}}, false, nil, nil
 	}
 	raw, executed, err := s.runProviderQuery(r.Context(), provider, query)
 	if err != nil {
-		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, executed, nil
+		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, executed, nil, nil
 	}
 	// Compact before beginning another query; never retain all raw results.
 	var columns []dataframe.Column
 	if raw.Records != nil {
 		columns = raw.Records.Columns
 	}
-	return summarizeDashboardResult(&raw, options), executed, columns
+	return summarizeDashboardResult(&raw, options), executed, columns, &raw
 }
 
 func validateAnnotationColumns(columns []dataframe.Column, mapping *dashboardReadAnnotationColumns) *DashboardQueryError {

@@ -594,9 +594,11 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 
 // dryRunWidgetFreshness is the freshness a widget's data state and data.stale
 // read. A stat keeps the query path's judgement; a timeseries or rich-metrics
-// widget over metrics is judged here against its own staleAfterSeconds.
+// widget over metrics is judged here against its own staleAfterSeconds. The query
+// path now reports every metric widget's age, but the dry run still judges only
+// the types staleJudgedByDryRun names.
 func dryRunWidgetFreshness(planned *DashboardQueryWidget, declared *dashboardReadWidget, signal *DashboardSignal, end float64) *DashboardObservationFreshness {
-	if planned.Freshness != nil {
+	if declared.Type == "stat" && planned.Freshness != nil {
 		return planned.Freshness
 	}
 	if signal == nil || signal.Error != nil || signal.Kind != "metrics" || declared.Options.StaleAfterSeconds == nil || !staleJudgedByDryRun(declared) {
@@ -646,7 +648,8 @@ func dryRunFreshness(signal *DashboardSignal, end, threshold float64) *Dashboard
 		return nil
 	}
 	age := math.Max(0, end-newest/1000)
-	freshness := &DashboardObservationFreshness{ThresholdSeconds: int(threshold), State: "fresh", LastTimestamp: &newest, AgeSeconds: &age}
+	thresholdSeconds := int(threshold)
+	freshness := &DashboardObservationFreshness{ThresholdSeconds: &thresholdSeconds, State: "fresh", LastTimestamp: &newest, AgeSeconds: &age}
 	if age > threshold {
 		freshness.State = "stale"
 	}
