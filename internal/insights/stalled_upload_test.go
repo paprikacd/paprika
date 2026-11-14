@@ -28,13 +28,15 @@ func (s *signalReader) Read(p []byte) (int, error) {
 }
 
 // Stalled uploads hold no check slot. Each request sends its headers and the start
-// of a body, then the body never finishes. Twice the slot count of them run first,
-// and a normal dry run and a checked save must still succeed.
+// of a body, then the body never finishes. They hold document-read slots, so one
+// fewer than the read pool runs first: the check slots and the read pool both stay
+// free, and a normal dry run and a checked save must still succeed.
 func TestStalledUploadsHoldNoCheckSlot(t *testing.T) {
 	s, _ := testService(t)
 	h := s.Handler()
 	document := dashboard("demo", "Clean")
-	const stalled = 2 * maxActiveDashboardChecks
+	const stalled = maxActiveDashboardChecks
+	require.Less(t, stalled, cap(s.documentReads))
 	var handlers sync.WaitGroup
 	writers := make([]*io.PipeWriter, 0, stalled)
 	t.Cleanup(func() {

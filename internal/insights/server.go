@@ -70,10 +70,21 @@ type Server struct {
 	// only until their report is built, so provider latency never blocks checked
 	// saves; this pool bounds the executing dry runs on their own.
 	dryRunSlots chan struct{}
+	// documentReads caps the dashboard requests that read a whole body at once: a
+	// save and a dry run, before any check slot. Their bodies can be 400 KB each,
+	// and without this cap a flood of uploads could fill the heap before the check
+	// slots refuse anything. A request waits up to bodyWaitTimeout for a read slot,
+	// and at most cap(documentWaiting) requests may wait at once.
+	documentReads       chan struct{}
+	documentWaiting     chan struct{}
+	documentWaitTimeout time.Duration
 }
 
 // maxActiveDashboardChecks is the number of dry runs and checked saves that may decode a document at once.
 const maxActiveDashboardChecks = 4
+
+// maxActiveDocumentReads is the number of dashboard requests that may read a body at once.
+const maxActiveDocumentReads = 8
 
 // maxActiveDryRunQueries is the number of dry runs with execute that may run their queries at once.
 const maxActiveDryRunQueries = 4
@@ -97,7 +108,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries)}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentReads: make(chan struct{}, maxActiveDocumentReads), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -421,10 +432,17 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	// The body is read before a check slot is taken, so a stalled upload holds no
-	// slot. The slot covers the rest of a checked save: the lock wait, the check,
-	// the write and the response.
+	// slot. It is read under a document-read slot, which is released before the
+	// check slot is taken. The check slot covers the rest of a checked save: the
+	// lock wait, the check, the write and the response.
+	release, ok := s.admitDocumentRead(w, r)
+	if !ok {
+		return
+	}
 	var doc json.RawMessage
-	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
+	err := decodeBody(w, r, &doc, maxDocumentBytes)
+	release()
+	if err != nil {
 		writeError(w, 400, "invalid dashboard document")
 		return
 	}
@@ -563,16 +581,21 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 // The slot is released before any query runs, so a slow provider never keeps a
 // checked save out.
 func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequest, *findingSet, bool) {
+	release, ok := s.admitDocumentRead(w, r)
+	if !ok {
+		return nil, nil, false
+	}
 	raw, err := readBody(w, r, maxCheckRequestBytes)
+	release()
 	if err != nil {
 		writeError(w, 400, "invalid dashboard check request")
 		return nil, nil, false
 	}
-	release, ok := s.admitCheck(w)
+	releaseCheck, ok := s.admitCheck(w)
 	if !ok {
 		return nil, nil, false
 	}
-	defer release()
+	defer releaseCheck()
 	var request checkRequest
 	if err := decodeJSON(bytes.NewReader(raw), &request); err != nil {
 		writeError(w, 400, "invalid dashboard check request")
@@ -639,6 +662,66 @@ func (s *Server) deleteDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// admitDocumentRead takes a document-read slot for a request that reads a whole
+// body. A request waits up to documentWaitTimeout for one. When none frees in time,
+// or the waiting queue is full, it writes the 429 the other Insights admission
+// errors use, with a one-second retry hint, and reports false.
+func (s *Server) admitDocumentRead(w http.ResponseWriter, r *http.Request) (func(), bool) {
+	release, err := s.acquireDocumentRead(r.Context())
+	if err == nil {
+		return release, true
+	}
+	if errors.Is(err, errDocumentReadCapacity) {
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "too many active dashboard uploads; retry shortly")
+		return nil, false
+	}
+	writeError(w, http.StatusServiceUnavailable, "dashboard upload ended before a read slot was free")
+	return nil, false
+}
+
+var errDocumentReadCapacity = errors.New("dashboard document read capacity reached")
+
+// acquireDocumentRead mirrors acquireQuery: a free slot is taken at once, a request
+// may queue when the pool is full, up to a fixed number of waiters, and a canceled
+// caller releases its place without reading.
+func (s *Server) acquireDocumentRead(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("dashboard upload admission context: %w", err)
+	}
+	select {
+	case s.documentReads <- struct{}{}:
+		return s.acquiredDocumentRead(ctx)
+	default:
+	}
+	select {
+	case s.documentWaiting <- struct{}{}:
+		defer func() { <-s.documentWaiting }()
+	default:
+		return nil, errDocumentReadCapacity
+	}
+	timer := time.NewTimer(s.documentWaitTimeout)
+	defer timer.Stop()
+	select {
+	case s.documentReads <- struct{}{}:
+		return s.acquiredDocumentRead(ctx)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("dashboard upload admission context: %w", ctx.Err())
+	case <-timer.C:
+		return nil, errDocumentReadCapacity
+	}
+}
+
+// acquiredDocumentRead releases a new read slot if its caller was canceled while it
+// was being taken; otherwise ownership passes to the returned cleanup.
+func (s *Server) acquiredDocumentRead(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		<-s.documentReads
+		return nil, fmt.Errorf("dashboard upload admission context: %w", err)
+	}
+	return func() { <-s.documentReads }, nil
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
