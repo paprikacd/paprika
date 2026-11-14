@@ -71,31 +71,76 @@ type dashboardHeader struct {
 // so the existing error field keeps its meaning. Document-structure failures
 // stop the check, as they always have. Widget failures are collected for every
 // widget: a widget whose shape is broken is reported as a shape finding, and
-// the content checks still run on every widget whose shape passed.
+// the content checks still run on every widget whose shape passed. A document
+// with more widgets than the limit is shape-checked only up to the limit.
 //
 // Each finding names its own JSON Pointer: the validator that failed reports
 // the member it concerns, and its parents add their segments. See pointedError.
 func schemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
-	findings := unanchoredSchemaFindings(id, document)
-	if len(findings) == 0 {
-		return findings
-	}
-	return anchorFindings(document, findings)
+	set := newFindingSet(unboundedFindings)
+	schemaInto(set, id, document)
+	return set.findings()
+}
+
+// schemaInto adds the document's schema findings to set, each anchored to the
+// pointer of a node the document holds. A save and a dry run report through a
+// bounded set; schemaFindings keeps them all.
+func schemaInto(set *findingSet, id string, document Dashboard) {
+	unanchoredSchemaInto(set, id, document)
+	anchorFindings(document, set.list)
 }
 
 // anchorFindings moves a finding whose pointer names a member the document does
 // not have to the nearest ancestor it does have. A required member that is
 // missing, or an element that is null, is reported at the object that should
 // hold it, so every pointer resolves against the document it was checked from.
+// Findings are anchored in place.
 func anchorFindings(document Dashboard, findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {
-	var tree any
-	if json.Unmarshal(document, &tree) != nil {
+	tree, ok := anchorTree(document)
+	if !ok {
 		return findings
 	}
 	for _, finding := range findings {
 		finding.Pointer = nearestPresentPointer(tree, finding.GetPointer())
 	}
 	return findings
+}
+
+// anchorTree decodes the nodes a finding can name. Widgets past the limit are not
+// shape-checked, so no finding names them, and they are not decoded. The tree is
+// therefore bounded by the limit whatever the length of the widgets array.
+func anchorTree(document Dashboard) (any, bool) {
+	var root map[string]json.RawMessage
+	if json.Unmarshal(document, &root) != nil {
+		return nil, false
+	}
+	tree := make(map[string]any, len(root))
+	for key, raw := range root {
+		if key == "widgets" {
+			continue
+		}
+		var value any
+		if json.Unmarshal(raw, &value) != nil {
+			return nil, false
+		}
+		tree[key] = value
+	}
+	if raw, ok := root["widgets"]; ok {
+		widgets, _, err := boundedWidgets(raw)
+		if err != nil {
+			return nil, false
+		}
+		list := make([]any, 0, len(widgets))
+		for _, widget := range widgets {
+			var value any
+			if json.Unmarshal(widget, &value) != nil {
+				return nil, false
+			}
+			list = append(list, value)
+		}
+		tree["widgets"] = list
+	}
+	return tree, true
 }
 
 // nearestPresentPointer returns pointer if the tree holds the node it names,
@@ -140,33 +185,77 @@ func pointerPresent(tree any, pointer string) bool {
 	return true
 }
 
-// unanchoredSchemaFindings runs the schema checks and reports each finding at the
-// pointer its validator named. schemaFindings anchors those pointers.
-func unanchoredSchemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
+// unanchoredSchemaInto runs the schema checks and adds each finding at the pointer
+// its validator named. schemaInto anchors those pointers.
+func unanchoredSchemaInto(set *findingSet, id string, document Dashboard) {
 	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
-		return []*insightsv1.CheckFinding{findingAt("", errAt("", "dashboard id or size is invalid"), "")}
+		set.add(findingAt("", errAt("", "dashboard id or size is invalid"), ""))
+		return
 	}
 	root, err := requireObjectShape(document, dashboardRequiredFields, dashboardOptionalFields)
 	if err != nil {
-		return []*insightsv1.CheckFinding{findingAt("", err, "")}
+		set.add(findingAt("", err, ""))
+		return
 	}
 	if finding := extensionFinding(root); finding != nil {
-		return []*insightsv1.CheckFinding{finding}
+		set.add(finding)
+		return
 	}
-	var widgets []json.RawMessage
-	if json.Unmarshal(root["widgets"], &widgets) != nil {
-		return []*insightsv1.CheckFinding{findingAt("", errAt("/widgets", "widgets must be an array"), "")}
+	widgets, total, err := boundedWidgets(root["widgets"])
+	if err != nil {
+		set.add(findingAt("", errAt("/widgets", "widgets must be an array"), ""))
+		return
 	}
-	findings, shapeOK := widgetShapeFindings(widgets)
+	shapeOK := widgetShapeInto(set, widgets)
 	var header dashboardHeader
 	if json.Unmarshal(document, &header) != nil {
-		return append(findings, findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
+		set.add(findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
+		return
 	}
-	findings = append(findings, identityFindings(id, &header)...)
-	if len(widgets) > maxDashboardWidgets {
-		return append(findings, findingAt("", errAt("/widgets", "dashboard requires an array of at most 48 widgets"), ""))
+	for _, finding := range identityFindings(id, &header) {
+		set.add(finding)
 	}
-	return append(findings, widgetContentFindings(widgets, shapeOK)...)
+	if total > maxDashboardWidgets {
+		set.add(findingAt("", errAt("/widgets", "dashboard requires an array of at most 48 widgets"), ""))
+		return
+	}
+	widgetContentInto(set, widgets, shapeOK)
+}
+
+// boundedWidgets decodes a widgets array. It keeps the first maxDashboardWidgets
+// elements and counts every element, so an array of any length costs what the
+// limit costs: the elements past the limit are validated as JSON and then dropped.
+func boundedWidgets(raw json.RawMessage) (widgets []json.RawMessage, total int, err error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, 0, fmt.Errorf("read widgets: %w", err)
+	}
+	if token == nil {
+		// A null widgets member reads as an empty array, as json.Unmarshal reads it.
+		return nil, 0, nil
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return nil, 0, errors.New("widgets must be an array")
+	}
+	var discard json.RawMessage
+	for decoder.More() {
+		if total < maxDashboardWidgets {
+			var widget json.RawMessage
+			if err := decoder.Decode(&widget); err != nil {
+				return nil, 0, fmt.Errorf("read widget: %w", err)
+			}
+			widgets = append(widgets, widget)
+		} else if err := decoder.Decode(&discard); err != nil {
+			// One buffer serves every discarded element: RawMessage reuses its backing array.
+			return nil, 0, fmt.Errorf("read widget: %w", err)
+		}
+		total++
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, 0, fmt.Errorf("read widgets end: %w", err)
+	}
+	return widgets, total, nil
 }
 
 // extensionFinding runs the document-level extension checks, in their fixed
@@ -194,40 +283,38 @@ func identityFindings(id string, header *dashboardHeader) []*insightsv1.CheckFin
 	return nil
 }
 
-// widgetShapeFindings checks each widget's structure and reports every failure.
-// It also returns which widgets passed, so content checks run only on those.
-func widgetShapeFindings(widgets []json.RawMessage) (findings []*insightsv1.CheckFinding, shapeOK []bool) {
+// widgetShapeInto checks each widget's structure and adds every failure to set.
+// It returns which widgets passed, so content checks run only on those.
+func widgetShapeInto(set *findingSet, widgets []json.RawMessage) (shapeOK []bool) {
 	shapeOK = make([]bool, len(widgets))
 	for i, widget := range widgets {
 		if err := validateDashboardWidgetShape(widget); err != nil {
-			findings = append(findings, findingAt(widgetBase(i), err, widgetIDOf(widget)))
+			set.add(findingAt(widgetBase(i), err, widgetIDOf(widget)))
 			continue
 		}
 		shapeOK[i] = true
 	}
-	return findings, shapeOK
+	return shapeOK
 }
 
-// widgetContentFindings runs the id, text, type and layout checks on every
-// widget whose shape passed. Duplicate ids are judged across the widgets that
-// were checked, in document order.
-func widgetContentFindings(widgets []json.RawMessage, shapeOK []bool) []*insightsv1.CheckFinding {
+// widgetContentInto runs the id, text, type and layout checks on every widget
+// whose shape passed. Duplicate ids are judged across the widgets that were
+// checked, in document order.
+func widgetContentInto(set *findingSet, widgets []json.RawMessage, shapeOK []bool) {
 	seen := make(map[string]bool, len(widgets))
-	var findings []*insightsv1.CheckFinding
 	for i, raw := range widgets {
 		if !shapeOK[i] {
 			continue
 		}
 		var widget dashboardWidget
 		if json.Unmarshal(raw, &widget) != nil {
-			findings = append(findings, findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
+			set.add(findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
 			continue
 		}
 		if err := validateDashboardWidget(&widget, seen); err != nil {
-			findings = append(findings, findingAt(widgetBase(i), err, widget.ID))
+			set.add(findingAt(widgetBase(i), err, widget.ID))
 		}
 	}
-	return findings
 }
 
 // findingAt turns a validator error into an error-severity schema finding. base
@@ -434,36 +521,28 @@ func truncateRunes(value string, limit int) string {
 // has no string id. The structure checks then report the document the way a save does.
 const dryRunPlaceholderID = "dry-run"
 
-// dryRunFindings checks a document the way a save at the path named by its own
-// id would, so a dry run reports exactly what the save reports. Structure is
-// checked before identity, and a missing or non-string id is never compared.
-func dryRunFindings(document Dashboard) []*insightsv1.CheckFinding {
+// dryRunID is the path id a dry run checks a document at: its own string id, or
+// the placeholder when it has none. The structure checks then report the document
+// the way a save at that path does.
+func dryRunID(document Dashboard) string {
 	var head struct {
 		ID *string `json:"id"`
 	}
-	id := dryRunPlaceholderID
 	if json.Unmarshal(document, &head) == nil && head.ID != nil {
-		id = *head.ID
+		return *head.ID
 	}
-	return saveFindings(id, document)
+	return dryRunPlaceholderID
 }
 
-// capCheckReport keeps the first checkwire.MaxIssues findings and counts the rest.
-// Document-level findings come first, so a count or identity failure is never
-// pushed past the cap by many widget findings.
+// capCheckReport reports a list of findings: it keeps the first checkwire.MaxIssues
+// and counts the rest. Document-level findings come first, so a count or identity
+// failure is never pushed past the cap by many widget findings.
 func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
-	ordered := documentFirst(findings)
-	report := &insightsv1.CheckReport{Total: checkwire.Count(len(ordered))}
-	// Severity counts cover every finding, including those past the cap, so a
-	// truncated report never understates its errors.
-	counts := checkwire.CountSeverities(ordered)
-	report.ErrorCount, report.WarningCount, report.InfoCount = counts.Errors, counts.Warnings, counts.Infos
-	if len(ordered) > checkwire.MaxIssues {
-		ordered = ordered[:checkwire.MaxIssues]
-		report.Truncated = true
+	set := newFindingSet(checkwire.MaxIssues)
+	for _, finding := range findings {
+		set.add(finding)
 	}
-	report.Issues = ordered
-	return report
+	return set.report()
 }
 
 // documentFirst returns the findings with document-level ones ahead of widget
@@ -507,9 +586,9 @@ type dryRunOutcome struct {
 // each of its widgets reports not_run. Otherwise every distinct query runs once,
 // through the same path query_dashboard uses, under the same budget.
 func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *checkRequest) {
-	findings := dryRunFindings(request.Document)
-	if hasErrorFinding(findings) {
-		writeDryRunReport(w, capCheckReport(findings), notRunStates(request.Document))
+	set := s.checkReport(request.Document)
+	if set.hasErrors() {
+		writeDryRunReport(w, set.report(), notRunStates(request.Document))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), dashboardQueryBudget)
@@ -524,7 +603,10 @@ func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *
 		writeError(w, http.StatusInternalServerError, "dashboard validation failed")
 		return
 	}
-	writeDryRunReport(w, capCheckReport(append(findings, outcome.findings...)), outcome.widgets)
+	for _, finding := range outcome.findings {
+		set.add(finding)
+	}
+	writeDryRunReport(w, set.report(), outcome.widgets)
 }
 
 // dryRunData plans the document's widgets and runs their queries with the shared

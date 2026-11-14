@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 // lintRule is one design rule a dashboard document can break. Schema checks
@@ -34,6 +35,8 @@ type lintHit struct {
 	pointer  string
 	widgetID string
 	message  string
+	// pair names the two widgets of a layout overlap; it is zero for other hits.
+	pair overlapKey
 }
 
 const (
@@ -309,27 +312,72 @@ func variableRefs(base string, ref *wireQueryRef) []lintVariableRef {
 	return refs
 }
 
-// lintFindings runs every rule over a schema-valid document and returns its
-// findings, errors first. Rules run in registry order and hits in document
-// order, so the same document always produces the same list.
+// overlapRuleID is the rule a stored overlap is grandfathered under.
+const overlapRuleID = "layout.overlap"
+
+// lintFindings runs every rule over a schema-valid document and returns every
+// finding, errors first. It is the full list the tests and the lint command read.
 func lintFindings(document Dashboard) []*insightsv1.CheckFinding {
+	set := newFindingSet(unboundedFindings)
+	lintInto(set, document, nil)
+	return set.findings()
+}
+
+// lintInto runs every rule over a schema-valid document and adds its findings to
+// set. Findings are added errors first, then warnings, then info, and in rule and
+// hit order within each severity, so the same document always reports the same
+// list. known names the widget pairs a stored dashboard already overlapped: those
+// overlaps are warnings, not errors. A document the schema rejects is not read.
+func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool) {
 	doc, ok := decodeLintDocument(document)
+	if !ok {
+		return
+	}
+	for _, severity := range []insightsv1.Severity{errorSeverity, warningSeverity, infoSeverity} {
+		for _, rule := range lintRules {
+			hits := rule.check(doc)
+			for i := range hits {
+				hit := &hits[i]
+				if hitSeverity(rule, hit, known) != severity {
+					continue
+				}
+				finding := lintFinding(rule, hit)
+				finding.Severity = severity
+				set.add(finding)
+			}
+		}
+	}
+}
+
+// hitSeverity is the severity a rule's hit is reported at. A layout overlap between
+// a pair the stored dashboard already had is a warning, so a harmless edit that
+// leaves it in place is saved.
+func hitSeverity(rule lintRule, hit *lintHit, known map[overlapKey]bool) insightsv1.Severity {
+	if rule.ID == overlapRuleID && known[hit.pair] {
+		return warningSeverity
+	}
+	return rule.Severity
+}
+
+// storedOverlaps names the widget pairs that overlap in a stored dashboard. A save
+// that leaves one of those pairs overlapping is not blocked. A create has no stored
+// dashboard, so it has no such pairs.
+func storedOverlaps(stored Dashboard) map[overlapKey]bool {
+	if stored == nil {
+		return nil
+	}
+	doc, ok := decodeLintDocument(stored)
 	if !ok {
 		return nil
 	}
-	var findings []*insightsv1.CheckFinding
-	for _, rule := range lintRules {
-		for _, hit := range rule.check(doc) {
-			findings = append(findings, lintFinding(rule, hit))
-		}
+	known := map[overlapKey]bool{}
+	for _, pair := range overlapPairs(doc) {
+		known[pair.key] = true
 	}
-	slices.SortStableFunc(findings, func(a, b *insightsv1.CheckFinding) int {
-		return int(b.GetSeverity()) - int(a.GetSeverity())
-	})
-	return findings
+	return known
 }
 
-func lintFinding(rule lintRule, hit lintHit) *insightsv1.CheckFinding {
+func lintFinding(rule lintRule, hit *lintHit) *insightsv1.CheckFinding {
 	widgetID := hit.widgetID
 	if !validID.MatchString(widgetID) {
 		widgetID = ""
@@ -359,30 +407,51 @@ func widgetLabel(widget *lintWidget) string {
 	return fmt.Sprintf("%q (%s)", string(title), widget.id)
 }
 
-// hasErrorFinding reports whether any finding is error severity, which rejects a save.
-func hasErrorFinding(findings []*insightsv1.CheckFinding) bool {
-	for _, finding := range findings {
-		if finding.GetSeverity() == insightsv1.Severity_SEVERITY_ERROR {
-			return true
-		}
-	}
-	return false
+// saveFindings is what a save and a dry run report for a document at the path
+// id, as a full list. Schema findings come first. Lint only reads a document that
+// passed the schema, so it runs only then.
+func saveFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
+	return saveReport(id, document, nil, unboundedFindings).findings()
 }
 
-// saveFindings is what a save and a dry run report for a document at the path
-// id. Schema findings come first. Lint only reads a document that passed the
-// schema, so it runs only then.
-func saveFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
-	if findings := schemaFindings(id, document); len(findings) > 0 {
-		return findings
+// saveReport is what a save, or a dry run, reports for a document at the path id.
+// stored is the dashboard the save would replace, or nil for a create. Schema
+// findings come first, and lint reads only a document that passed the schema.
+// keep bounds the widget findings the set materialises; the counts stay exact.
+func saveReport(id string, document, stored Dashboard, keep int) *findingSet {
+	set := newFindingSet(keep)
+	schemaInto(set, id, document)
+	if set.total == 0 {
+		lintInto(set, document, storedOverlaps(stored))
 	}
-	return lintFindings(document)
+	return set
+}
+
+// checkReport is the report of a dry run or a checked save at the path the document
+// names. It reads the stored dashboard at that path, so an overlap the stored
+// version already has is reported the way the save reports it.
+func (s *Server) checkReport(document Dashboard) *findingSet {
+	id := dryRunID(document)
+	return saveReport(id, document, s.storedDashboard(id), checkwire.MaxIssues)
+}
+
+// storedDashboard returns the dashboard a save at id would replace, or nil when
+// there is none or the id is not a valid dashboard id.
+func (s *Server) storedDashboard(id string) Dashboard {
+	if !validID.MatchString(id) {
+		return nil
+	}
+	document, _, err := s.store.Get(id)
+	if err != nil {
+		return nil
+	}
+	return document
 }
 
 // CheckDocument reports every finding for a document at its own id, the same
 // findings a dry run reports. The paprika-insights lint command uses it.
 func CheckDocument(document Dashboard) []*insightsv1.CheckFinding {
-	return dryRunFindings(document)
+	return saveFindings(dryRunID(document), document)
 }
 
 // DashboardSchemaExamples returns the dashboard examples the schema endpoint

@@ -59,7 +59,14 @@ type Server struct {
 	queryBudget   time.Duration
 	queryCount    metric.Int64Counter
 	queryDuration metric.Float64Histogram
+	// checkSlots caps the dry runs and checked saves in flight. Each one parses a
+	// whole document and builds its report, so a burst of them is refused rather
+	// than allowed to grow the heap of a single replica.
+	checkSlots chan struct{}
 }
+
+// maxActiveDashboardChecks is the number of dry runs and checked saves that may run at once.
+const maxActiveDashboardChecks = 4
 
 func NewServer(config Config, store *Store) (*Server, error) {
 	if err := validateServerConfig(&config, store); err != nil {
@@ -80,7 +87,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks)}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -403,21 +410,32 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
+	if wantsChecks(r) {
+		release, ok := s.admitCheck(w)
+		if !ok {
+			return
+		}
+		defer release()
+	}
 	var doc json.RawMessage
 	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
 		writeError(w, 400, "invalid dashboard document")
 		return
 	}
+	id := r.PathValue("id")
+	// The stored version is read under the mutation lock, so the overlap check and
+	// the write see the same dashboard.
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
 	// Schema findings and error-severity lint findings reject the save. Warnings
-	// and info are returned in the checks field of a successful save.
-	findings := saveFindings(r.PathValue("id"), doc)
-	if hasErrorFinding(findings) {
+	// and info are returned in the checks field of a successful save. An overlap
+	// the stored version already has is a warning, so it does not reject the save.
+	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues)
+	if findings.hasErrors() {
 		writeSchemaFindings(w, findings)
 		return
 	}
-	s.mutations.Lock()
-	defer s.mutations.Unlock()
-	tag, err := s.store.Put(r.PathValue("id"), doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
+	tag, err := s.store.Put(id, doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -428,6 +446,19 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, doc)
+}
+
+// admitCheck takes a dry-run or checked-save slot. When every slot is taken it
+// writes the 429 the other Insights endpoints use, with a one-second retry hint.
+func (s *Server) admitCheck(w http.ResponseWriter) (func(), bool) {
+	select {
+	case s.checkSlots <- struct{}{}:
+		return func() { <-s.checkSlots }, true
+	default:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "too many active dashboard checks; retry shortly")
+		return nil, false
+	}
 }
 
 // wantsChecks reports whether a save asks for its warnings in the response. The
@@ -441,8 +472,8 @@ func wantsChecks(r *http.Request) bool {
 
 // writeSavedDocument writes the saved document with a checks field added after
 // its members. The document bytes are otherwise written as they always were.
-func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, findings []*insightsv1.CheckFinding) {
-	report, err := checkwire.Marshal(capCheckReport(findings))
+func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, findings *findingSet) {
+	report, err := checkwire.Marshal(findings.report())
 	if err != nil {
 		writeError(w, 500, "dashboard validation failed")
 		return
@@ -462,7 +493,7 @@ func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, f
 	w.WriteHeader(status)
 	// The bytes are a compacted, schema-checked document plus the checks report,
 	// and the handler sends nosniff, so this is not an HTML or script response.
-	if _, err := w.Write(out); err != nil { //nolint:gosec // JSON body; nosniff is set by Handler.
+	if _, err := w.Write(out); err != nil {
 		slog.Debug("could not write insights document")
 	}
 }
@@ -485,6 +516,11 @@ type checkRequest struct {
 // checkDashboard is the dry run: it reports what a save would reject and never
 // writes. It reads the same document a PUT takes, and a read-only caller may use it.
 func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
+	release, ok := s.admitCheck(w)
+	if !ok {
+		return
+	}
+	defer release()
 	var request checkRequest
 	if err := decodeBody(w, r, &request, maxCheckRequestBytes); err != nil {
 		writeError(w, 400, "invalid dashboard check request")
@@ -499,7 +535,7 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "variables apply only when execute is true")
 			return
 		}
-		writeCheckReport(w, 200, capCheckReport(dryRunFindings(request.Document)))
+		writeCheckReport(w, 200, s.checkReport(request.Document).report())
 		return
 	}
 	s.executeDryRun(w, r, &request)
@@ -520,9 +556,9 @@ type validationErrorBody struct {
 	InfoCount    uint32 `json:"infoCount"`
 }
 
-func writeSchemaFindings(w http.ResponseWriter, findings []*insightsv1.CheckFinding) {
-	report := capCheckReport(findings)
-	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated(), ErrorCount: report.GetErrorCount(), WarningCount: report.GetWarningCount(), InfoCount: report.GetInfoCount()}
+func writeSchemaFindings(w http.ResponseWriter, findings *findingSet) {
+	report := findings.report()
+	body := validationErrorBody{Error: findings.first.GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated(), ErrorCount: report.GetErrorCount(), WarningCount: report.GetWarningCount(), InfoCount: report.GetInfoCount()}
 	for _, finding := range report.GetIssues() {
 		issue, err := checkwire.Marshal(finding)
 		if err != nil {

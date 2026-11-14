@@ -393,13 +393,13 @@ func dataFindings(widgets []dataWidget) []*insightsv1.CheckFinding {
 	var findings []*insightsv1.CheckFinding
 	for _, rule := range dataRules {
 		for _, hit := range rule.check(widgets) {
-			findings = append(findings, dataFinding(rule, hit))
+			findings = append(findings, dataFinding(rule, &hit))
 		}
 	}
 	return findings
 }
 
-func dataFinding(rule dataRule, hit dataHit) *insightsv1.CheckFinding {
+func dataFinding(rule dataRule, hit *dataHit) *insightsv1.CheckFinding {
 	severity := rule.Severity
 	if hit.severity != insightsv1.Severity_SEVERITY_UNSPECIFIED {
 		severity = hit.severity
