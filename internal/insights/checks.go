@@ -95,94 +95,182 @@ func schemaInto(set *findingSet, id string, document Dashboard) {
 // missing, or an element that is null, is reported at the object that should
 // hold it, so every pointer resolves against the document it was checked from.
 // Findings are anchored in place.
+//
+// The document is read once, token by token. Only the nodes the findings name are
+// tracked, and every other value is skipped without being built, so the cost does
+// not grow with the size of members no finding names.
 func anchorFindings(document Dashboard, findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {
-	tree, ok := anchorTree(document)
-	if !ok {
+	root := newAnchorNode()
+	paths := make([][]*anchorNode, len(findings))
+	for i, finding := range findings {
+		paths[i] = root.path(finding.GetPointer())
+	}
+	if len(root.members) == 0 {
+		// Every finding names the document itself, which is always held.
 		return findings
 	}
-	for _, finding := range findings {
-		finding.Pointer = nearestPresentPointer(tree, finding.GetPointer())
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	var discard json.RawMessage
+	if root.scan(decoder, &discard) != nil {
+		// The document is not JSON. Its findings keep the pointers they were given.
+		return findings
+	}
+	for i, finding := range findings {
+		finding.Pointer = presentPrefix(finding.GetPointer(), paths[i])
 	}
 	return findings
 }
 
-// anchorTree decodes the nodes a finding can name. Widgets past the limit are not
-// shape-checked, so no finding names them, and they are not decoded. The tree is
-// therefore bounded by the limit whatever the length of the widgets array.
-func anchorTree(document Dashboard) (any, bool) {
-	var root map[string]json.RawMessage
-	if json.Unmarshal(document, &root) != nil {
-		return nil, false
-	}
-	tree := make(map[string]any, len(root))
-	for key, raw := range root {
-		if key == "widgets" {
-			continue
-		}
-		var value any
-		if json.Unmarshal(raw, &value) != nil {
-			return nil, false
-		}
-		tree[key] = value
-	}
-	if raw, ok := root["widgets"]; ok {
-		widgets, _, err := boundedWidgets(raw)
-		if err != nil {
-			return nil, false
-		}
-		list := make([]any, 0, len(widgets))
-		for _, widget := range widgets {
-			var value any
-			if json.Unmarshal(widget, &value) != nil {
-				return nil, false
-			}
-			list = append(list, value)
-		}
-		tree["widgets"] = list
-	}
-	return tree, true
+// anchorNode is one node a finding can name. A scan of the document marks the
+// nodes it holds. A node is shared by every pointer that names it, so a member
+// name and an array index that spell the same segment find the same node.
+type anchorNode struct {
+	present bool
+	members map[string]*anchorNode
+	// items keys the nodes whose segment is a canonical array index, so an array
+	// element is found without formatting its position.
+	items map[int]*anchorNode
 }
 
-// nearestPresentPointer returns pointer if the tree holds the node it names,
-// and otherwise the longest ancestor of it that the tree holds.
-func nearestPresentPointer(tree any, pointer string) string {
-	for !pointerPresent(tree, pointer) {
-		cut := strings.LastIndex(pointer, "/")
-		if cut <= 0 {
-			return ""
-		}
-		pointer = pointer[:cut]
+func newAnchorNode() *anchorNode { return &anchorNode{} }
+
+// child returns the node for an unescaped pointer segment below n, creating it.
+func (n *anchorNode) child(segment string) *anchorNode {
+	if n.members == nil {
+		n.members = map[string]*anchorNode{}
 	}
-	return pointer
+	if node := n.members[segment]; node != nil {
+		return node
+	}
+	node := newAnchorNode()
+	n.members[segment] = node
+	if index, err := strconv.Atoi(segment); err == nil && index >= 0 && strconv.Itoa(index) == segment {
+		if n.items == nil {
+			n.items = map[int]*anchorNode{}
+		}
+		n.items[index] = node
+	}
+	return node
 }
 
-// pointerPresent reports whether the tree holds the node at an RFC 6901 pointer.
-// The empty pointer names the root, which is always present.
-func pointerPresent(tree any, pointer string) bool {
-	node := tree
+// path returns the nodes a pointer names, from n down: the node for each
+// prefix of its segments, so path[k] names the first k segments.
+func (n *anchorNode) path(pointer string) []*anchorNode {
+	nodes := []*anchorNode{n}
 	if pointer == "" {
-		return true
+		return nodes
 	}
 	for _, segment := range strings.Split(pointer[1:], "/") {
-		segment = strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
-		switch current := node.(type) {
-		case map[string]any:
-			next, ok := current[segment]
-			if !ok {
-				return false
-			}
-			node = next
-		case []any:
-			index, err := strconv.Atoi(segment)
-			if err != nil || index < 0 || index >= len(current) {
-				return false
-			}
-			node = current[index]
-		default:
-			return false
+		nodes = append(nodes, nodes[len(nodes)-1].child(unescapePointerSegment(segment)))
+	}
+	return nodes
+}
+
+// scan reads one JSON value from decoder and marks each tracked node it holds.
+// A node's children are reset first, so when a member appears more than once the
+// last occurrence decides, as it does when the document is decoded into a value.
+func (n *anchorNode) scan(decoder *json.Decoder, discard *json.RawMessage) error {
+	n.present = true
+	if len(n.members) == 0 {
+		return skipValue(decoder, discard)
+	}
+	for _, child := range n.members {
+		child.clear()
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("read document token: %w", err)
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if err := n.scanContents(decoder, delim, discard); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("read document close: %w", err)
+	}
+	return nil
+}
+
+// scanContents reads the members of an object or the elements of an array, leaving
+// the closing delimiter to the caller.
+func (n *anchorNode) scanContents(decoder *json.Decoder, opening json.Delim, discard *json.RawMessage) error {
+	if opening == '{' {
+		return n.scanMembers(decoder, discard)
+	}
+	return n.scanElements(decoder, discard)
+}
+
+func (n *anchorNode) scanMembers(decoder *json.Decoder, discard *json.RawMessage) error {
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("read member name: %w", err)
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return errors.New("member name is not a string")
+		}
+		if err := n.scanChild(decoder, n.members[key], discard); err != nil {
+			return err
 		}
 	}
-	return true
+	return nil
+}
+
+func (n *anchorNode) scanElements(decoder *json.Decoder, discard *json.RawMessage) error {
+	for index := 0; decoder.More(); index++ {
+		if err := n.scanChild(decoder, n.items[index], discard); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scanChild scans the value at the decoder's position under child, or skips it
+// when no finding names it.
+func (n *anchorNode) scanChild(decoder *json.Decoder, child *anchorNode, discard *json.RawMessage) error {
+	if child == nil {
+		return skipValue(decoder, discard)
+	}
+	return child.scan(decoder, discard)
+}
+
+// skipValue reads the next value without keeping it. discard is reused, so the
+// skipped values share one buffer.
+func skipValue(decoder *json.Decoder, discard *json.RawMessage) error {
+	if err := decoder.Decode(discard); err != nil {
+		return fmt.Errorf("skip document value: %w", err)
+	}
+	return nil
+}
+
+// clear marks n and everything below it as not held by the document.
+func (n *anchorNode) clear() {
+	n.present = false
+	for _, child := range n.members {
+		child.clear()
+	}
+}
+
+// presentPrefix returns pointer, or its longest ancestor that the document holds.
+// path is the pointer's node path from anchorNode.path.
+func presentPrefix(pointer string, path []*anchorNode) string {
+	depth := 0
+	for depth+1 < len(path) && path[depth+1].present {
+		depth++
+	}
+	if depth == 0 {
+		return ""
+	}
+	return strings.Join(strings.Split(pointer, "/")[:depth+1], "/")
+}
+
+// unescapePointerSegment reverses RFC 6901 escaping of one pointer segment.
+func unescapePointerSegment(segment string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
 }
 
 // unanchoredSchemaInto runs the schema checks and adds each finding at the pointer
@@ -201,7 +289,7 @@ func unanchoredSchemaInto(set *findingSet, id string, document Dashboard) {
 		set.add(finding)
 		return
 	}
-	widgets, total, err := boundedWidgets(root["widgets"])
+	widgets, total, err := boundedArray(root["widgets"], maxDashboardWidgets)
 	if err != nil {
 		set.add(findingAt("", errAt("/widgets", "widgets must be an array"), ""))
 		return
@@ -222,40 +310,41 @@ func unanchoredSchemaInto(set *findingSet, id string, document Dashboard) {
 	widgetContentInto(set, widgets, shapeOK)
 }
 
-// boundedWidgets decodes a widgets array. It keeps the first maxDashboardWidgets
-// elements and counts every element, so an array of any length costs what the
-// limit costs: the elements past the limit are validated as JSON and then dropped.
-func boundedWidgets(raw json.RawMessage) (widgets []json.RawMessage, total int, err error) {
+// boundedArray decodes a JSON array. It keeps the first keep elements and counts
+// every element, so an array of any length costs what keep costs: the elements
+// past keep are validated as JSON and then dropped. A null value decodes to nil;
+// an empty array decodes to an empty, non-nil slice.
+func boundedArray(raw json.RawMessage, keep int) (elements []json.RawMessage, total int, err error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	token, err := decoder.Token()
 	if err != nil {
-		return nil, 0, fmt.Errorf("read widgets: %w", err)
+		return nil, 0, fmt.Errorf("read array: %w", err)
 	}
 	if token == nil {
-		// A null widgets member reads as an empty array, as json.Unmarshal reads it.
 		return nil, 0, nil
 	}
 	if delim, ok := token.(json.Delim); !ok || delim != '[' {
-		return nil, 0, errors.New("widgets must be an array")
+		return nil, 0, errors.New("value must be an array")
 	}
+	elements = []json.RawMessage{}
 	var discard json.RawMessage
 	for decoder.More() {
-		if total < maxDashboardWidgets {
-			var widget json.RawMessage
-			if err := decoder.Decode(&widget); err != nil {
-				return nil, 0, fmt.Errorf("read widget: %w", err)
+		if total < keep {
+			var element json.RawMessage
+			if err := decoder.Decode(&element); err != nil {
+				return nil, 0, fmt.Errorf("read element: %w", err)
 			}
-			widgets = append(widgets, widget)
+			elements = append(elements, element)
 		} else if err := decoder.Decode(&discard); err != nil {
 			// One buffer serves every discarded element: RawMessage reuses its backing array.
-			return nil, 0, fmt.Errorf("read widget: %w", err)
+			return nil, 0, fmt.Errorf("read element: %w", err)
 		}
 		total++
 	}
 	if _, err := decoder.Token(); err != nil {
-		return nil, 0, fmt.Errorf("read widgets end: %w", err)
+		return nil, 0, fmt.Errorf("read array end: %w", err)
 	}
-	return widgets, total, nil
+	return elements, total, nil
 }
 
 // extensionFinding runs the document-level extension checks, in their fixed
@@ -738,16 +827,17 @@ func failureCode(code string) string {
 // widgets fails anyway.
 func notRunStates(document Dashboard) []*insightsv1.WidgetDataState {
 	var head struct {
-		Widgets []json.RawMessage `json:"widgets"`
+		Widgets json.RawMessage `json:"widgets"`
 	}
 	states := []*insightsv1.WidgetDataState{}
 	if json.Unmarshal(document, &head) != nil {
 		return states
 	}
-	for i, widget := range head.Widgets {
-		if i == maxDashboardWidgets {
-			break
-		}
+	widgets, _, err := boundedArray(head.Widgets, maxDashboardWidgets)
+	if err != nil {
+		return states
+	}
+	for i, widget := range widgets {
 		states = append(states, &insightsv1.WidgetDataState{WidgetId: boundedWidgetID(widgetIDOf(widget)), Pointer: widgetBase(i), State: insightsv1.DataState_DATA_STATE_NOT_RUN})
 	}
 	return states

@@ -41,53 +41,94 @@ type reportBody struct {
 	} `json:"issues"`
 }
 
-// An oversized widgets array costs a bounded amount, whatever its length: the
-// report counts every widget as a failure, but only the first widgets are checked
-// and only the first findings are built. The totals still describe the request:
-// one count finding plus one shape failure for each of the first 48 widgets.
-func TestOversizedWidgetArrayStaysWithinAllocationBudget(t *testing.T) {
-	for name, element := range map[string]string{"empty objects": "{}", "numbers": "1"} {
+// oversizedMemberDocument builds a document whose named array member holds n copies
+// of element. The widgets array is empty, so the member is the only problem a
+// request can make large.
+func oversizedMemberDocument(member string, n int, element string) Dashboard {
+	var b strings.Builder
+	b.WriteString(`{"schemaVersion":1,"id":"demo","title":"Big","timeRange":"1h","refreshInterval":30,"widgets":[],"` + member + `":[`)
+	for i := range n {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(element)
+	}
+	b.WriteString("]}")
+	return Dashboard(b.String())
+}
+
+// Every array a request can make large is read at a bounded cost: the widgets
+// array, the variables array, and a dry run that asks for execute.
+func TestOversizedArraysStayWithinAllocationBudget(t *testing.T) {
+	// Each case names the report it must produce: the total, and the rule of the first issue.
+	cases := map[string]struct {
+		document  Dashboard
+		wantTotal uint32
+		wantRule  string
+	}{
+		"widgets of objects":   {oversizedWidgetsDocument(87000, "{}"), 48 + 1, "schema.widgets"},
+		"widgets of numbers":   {oversizedWidgetsDocument(131000, "1"), 48 + 1, "schema.widgets"},
+		"variables of objects": {oversizedMemberDocument("variables", 87000, "{}"), 1, "schema.document.variables"},
+		"variables of numbers": {oversizedMemberDocument("variables", 131000, "1"), 1, "schema.document.variables"},
+	}
+	for name, tc := range cases {
+		document := tc.document
 		t.Run(name, func(t *testing.T) {
 			s, _ := testService(t)
 			h := s.Handler()
-			document := oversizedWidgetsDocument(87000, element)
 			require.LessOrEqual(t, len(document), maxDocumentBytes)
 			// Build the request bodies before measuring, so only the service's work counts.
 			dryRun := checkBody(document)
+			executed := []byte(`{"document":` + string(document) + `,"execute":true}`)
 			saved := []byte(document)
 
-			var before, after runtime.MemStats
-			runtime.ReadMemStats(&before)
-			w := request(t, h, "POST", "/api/dashboards/validate", dryRun, nil)
-			runtime.ReadMemStats(&after)
+			w, allocated := measured(t, func() *httptest.ResponseRecorder {
+				return request(t, h, "POST", "/api/dashboards/validate", dryRun, nil)
+			})
 			require.Equal(t, http.StatusOK, w.Code, "dry run body %.200s", w.Body)
-			require.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(16<<20), "dry run allocated too much")
-			assertOversizedReport(t, w.Body.Bytes())
+			require.Less(t, allocated, uint64(16<<20), "dry run allocated too much")
+			assertRejectedReport(t, w.Body.Bytes(), tc.wantTotal, tc.wantRule)
 
-			runtime.ReadMemStats(&before)
-			w = request(t, h, "PUT", "/api/dashboards/demo?checks=true", saved, map[string]string{"If-None-Match": "*"})
-			runtime.ReadMemStats(&after)
+			w, allocated = measured(t, func() *httptest.ResponseRecorder {
+				return request(t, h, "POST", "/api/dashboards/validate", executed, nil)
+			})
+			require.Equal(t, http.StatusOK, w.Code, "executed dry run body %.200s", w.Body)
+			require.Less(t, allocated, uint64(16<<20), "executed dry run allocated too much")
+			assertRejectedReport(t, w.Body.Bytes(), tc.wantTotal, tc.wantRule)
+
+			w, allocated = measured(t, func() *httptest.ResponseRecorder {
+				return request(t, h, "PUT", "/api/dashboards/demo?checks=true", saved, map[string]string{"If-None-Match": "*"})
+			})
 			require.Equal(t, http.StatusBadRequest, w.Code, "save body %.200s", w.Body)
-			require.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(16<<20), "save allocated too much")
-			assertOversizedReport(t, w.Body.Bytes())
+			require.Less(t, allocated, uint64(16<<20), "save allocated too much")
+			assertRejectedReport(t, w.Body.Bytes(), tc.wantTotal, tc.wantRule)
 		})
 	}
 }
 
-// assertOversizedReport checks the totals of an over-limit report. The count finding
-// comes first, so the capped issue list starts with it.
-func assertOversizedReport(t *testing.T, body []byte) {
+// measured runs call and returns its response with the bytes the process allocated
+// while it ran.
+func measured(t *testing.T, call func() *httptest.ResponseRecorder) (*httptest.ResponseRecorder, uint64) {
+	t.Helper()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	w := call()
+	runtime.ReadMemStats(&after)
+	return w, after.TotalAlloc - before.TotalAlloc
+}
+
+// assertRejectedReport checks a report of an oversized request: its total, its error
+// count, and the rule of its first issue, which the report lists first.
+func assertRejectedReport(t *testing.T, body []byte, wantTotal uint32, wantRule string) {
 	t.Helper()
 	var report reportBody
 	require.NoError(t, json.Unmarshal(body, &report))
-	const wantTotal = 48 + 1
-	require.Equal(t, uint32(wantTotal), report.Total)
-	require.Equal(t, uint32(wantTotal), report.ErrorCount)
+	require.Equal(t, wantTotal, report.Total)
+	require.Equal(t, wantTotal, report.ErrorCount)
 	require.Zero(t, report.WarningCount)
 	require.Zero(t, report.InfoCount)
-	require.True(t, report.Truncated)
-	require.Len(t, report.Issues, checkwire.MaxIssues)
-	require.Equal(t, "schema.widgets", report.Issues[0].RuleID)
+	require.NotEmpty(t, report.Issues)
+	require.Equal(t, wantRule, report.Issues[0].RuleID)
 }
 
 // The dry run and the save share one slot pool. A full pool refuses new work with
@@ -142,4 +183,39 @@ func TestFindingSetKeepsTheCapAndCountsTheRest(t *testing.T) {
 	require.Equal(t, uint32(3), report.GetWarningCount())
 	require.True(t, report.GetTruncated())
 	require.Equal(t, ruleWidgets, set.first.GetRuleId(), "the first finding is the save error")
+}
+
+// A finding that names a member the document does not hold is anchored to its
+// nearest ancestor the document holds. Duplicate members resolve to the last one,
+// as a decoded value does, and an escaped member name is matched by its key.
+func TestAnchorFindingsNamesTheNearestHeldNode(t *testing.T) {
+	document := Dashboard(`{"a/b":{"c":1},"list":[{"x":1},null],"dup":{"gone":1},"dup":{"kept":2},"widgets":[]}`)
+	pointers := []string{
+		"",
+		"/a~1b",
+		"/a~1b/c",
+		"/a~1b/missing",
+		"/list/0/x",
+		"/list/1/x",
+		"/list/9",
+		"/dup/gone",
+		"/dup/kept",
+		"/widgets/0/layout",
+	}
+	want := []string{"", "/a~1b", "/a~1b/c", "/a~1b", "/list/0/x", "/list/1", "/list", "/dup", "/dup/kept", "/widgets"}
+	findings := make([]*insightsv1.CheckFinding, len(pointers))
+	for i, pointer := range pointers {
+		findings[i] = &insightsv1.CheckFinding{Pointer: pointer}
+	}
+	anchorFindings(document, findings)
+	for i, finding := range findings {
+		require.Equal(t, want[i], finding.GetPointer(), "pointer %q", pointers[i])
+	}
+}
+
+// A document that is not JSON keeps the pointers its findings were given.
+func TestAnchorFindingsLeavesANonJSONDocumentAlone(t *testing.T) {
+	findings := []*insightsv1.CheckFinding{{Pointer: "/title"}}
+	anchorFindings(Dashboard(`{"title":`), findings)
+	require.Equal(t, "/title", findings[0].GetPointer())
 }

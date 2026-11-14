@@ -14,8 +14,9 @@ func validVariableName(name string) bool {
 }
 
 func validateDashboardVariables(raw json.RawMessage) error {
-	var variables []json.RawMessage
-	if json.Unmarshal(raw, &variables) != nil || variables == nil || len(variables) > 20 {
+	// Only the first 21 entries are read: one more than the limit is enough to refuse the array.
+	variables, total, err := boundedArray(raw, 21)
+	if err != nil || variables == nil || total > 20 {
 		return errors.New("dashboard variables must be an array of at most 20 entries")
 	}
 	seen := map[string]bool{}
@@ -28,8 +29,9 @@ func validateDashboardVariables(raw json.RawMessage) error {
 }
 
 func validateDrilldowns(raw json.RawMessage) error {
-	var drilldowns []json.RawMessage
-	if json.Unmarshal(raw, &drilldowns) != nil || drilldowns == nil || len(drilldowns) > 8 {
+	// Only the first 9 entries are read: one more than the limit is enough to refuse the array.
+	drilldowns, total, err := boundedArray(raw, 9)
+	if err != nil || drilldowns == nil || total > 8 {
 		return errors.New("widget drilldowns must be an array of at most 8 entries")
 	}
 	seen := map[string]bool{}
