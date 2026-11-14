@@ -8,12 +8,26 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // documentBodyBudget caps the request-body bytes that saves and dry runs hold in
-// memory at once, across every connection. It is 32 MiB, a fraction of the 256 MiB
-// pod, and a save or dry run takes its bytes as they arrive.
-const documentBodyBudget = 32 << 20
+// memory at once, across every connection. It is 8 MiB, so a flood of full-size
+// bodies admits about 21 reads at once and the check slots refuse the rest. In a
+// 256 MiB container the 32 MiB budget peaked at 266 MiB in one run, and this budget at
+// 157 to 266 MiB across eight runs; the README has the runs. The cost is that about
+// 8 MiB of stalled upload bytes refuses every save and dry run until the server's read
+// timeout ends them.
+const documentBodyBudget = 8 << 20
+
+// Refusal routes name the request kinds that take bytes from the budget. Both are
+// bounded, so they are safe as a metric attribute.
+const (
+	uploadRouteSave   = "save"
+	uploadRouteDryRun = "dry_run"
+)
 
 var errDocumentReadCapacity = errors.New("dashboard document read capacity reached")
 
@@ -138,15 +152,16 @@ func (b *documentBody) release() {
 
 // writeBodyError writes the response for a body read that failed. A refused
 // reservation gets the 429 the other Insights admission errors use, with a one-second
-// retry hint. A read that ended because the caller went away gets a 503. Any other
-// failure is an invalid request.
-func writeBodyError(w http.ResponseWriter, body *documentBody, invalid string) {
+// retry hint, and is counted under route. A read that ended because the caller went
+// away gets a 503. Any other failure is an invalid request.
+func (s *Server) writeBodyError(w http.ResponseWriter, body *documentBody, route, invalid string) {
 	switch {
 	case errors.Is(body.err, errDocumentReadCapacity):
+		s.uploadRefusals.Add(body.ctx, 1, metric.WithAttributes(attribute.String("route", route)))
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, "too many active dashboard uploads; retry shortly")
 	case body.err != nil:
-		writeError(w, http.StatusServiceUnavailable, "dashboard upload ended before a read slot was free")
+		writeError(w, http.StatusServiceUnavailable, "dashboard upload ended before its bytes could be admitted")
 	default:
 		writeError(w, http.StatusBadRequest, invalid)
 	}

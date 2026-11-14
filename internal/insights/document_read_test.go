@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 // fillDocumentBytes takes the whole body budget, so the next body byte must wait.
@@ -95,4 +98,39 @@ func TestCanceledDocumentReadReleasesItsPlace(t *testing.T) {
 	}
 	require.Zero(t, len(s.documentWaiting), "a canceled waiter left its queue place behind")
 	require.Equal(t, s.documentBytes.capacity, s.documentBytes.inUse(), "the canceled waiter reserved bytes")
+}
+
+// Each refusal of the body budget is counted by route, so an operator can see the
+// window in which every save and dry run is refused.
+func TestBodyBudgetRefusalsAreCounted(t *testing.T) {
+	s, _ := testService(t)
+	s.documentWaitTimeout = 10 * time.Millisecond
+	h := s.Handler()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	counter, err := provider.Meter("test").Int64Counter("paprika_insights_dashboard_upload_refusals")
+	require.NoError(t, err)
+	s.uploadRefusals = counter
+	fillDocumentBytes(t, s)
+	document := dashboard("demo", "Clean")
+
+	require.Equal(t, http.StatusTooManyRequests, request(t, h, "PUT", "/api/dashboards/demo", document, nil).Code)
+	require.Equal(t, http.StatusTooManyRequests, request(t, h, "POST", "/api/dashboards/validate", checkBody(document), nil).Code)
+	require.Equal(t, http.StatusTooManyRequests, request(t, h, "POST", "/api/dashboards/validate", checkBody(document), nil).Code)
+
+	var collected metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &collected))
+	counts := map[string]int64{}
+	for _, scope := range collected.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			require.True(t, ok, "the refusal counter is an int64 sum")
+			for _, point := range sum.DataPoints {
+				route, _ := point.Attributes.Value(attribute.Key("route"))
+				counts[route.AsString()] += point.Value
+			}
+		}
+	}
+	require.Equal(t, map[string]int64{uploadRouteSave: 1, uploadRouteDryRun: 2}, counts)
 }

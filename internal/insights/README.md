@@ -353,15 +353,33 @@ client that stores it never sends back an unknown member. The dry run lists ever
 finding, warnings included, without writing, and reads the stored dashboard at the
 same id so it reports the same overlap warnings a save would.
 
-A dry run or save reads its body through a byte budget of 32 MiB shared by every
-request. Each read reserves the bytes it returned. A dry run holds them only while it
-reads its body. A save holds them until its lock and check slot are released, before
-its response is written. A stalled upload therefore holds only the bytes it has sent,
-and it holds no check slot. A request whose read cannot reserve waits up to 2 seconds
-for bytes to free, with at most 16 requests queued. Past that it gets `429` with
-`Retry-After: 1` and "too many active dashboard uploads". A stalled upload also holds
-its connection until the server's read timeout ends it, but no budget beyond its
-bytes. Dry runs and saves with `?checks=true` then share four concurrent slots: a dry
+Saves (`PUT /api/dashboards/{id}`, with or without `?checks=true`, which the MCP
+writes and the portable import also use) and dry runs (`POST /api/dashboards/validate`)
+read their bodies through one byte budget of 8 MiB shared by all of them. Saved-query
+and provider-config writes do not use it: their bodies are capped at 32 KiB and 16 KiB.
+Each read reserves the bytes it returned. A dry run frees them once its body is read,
+so its response is written holding none. A save frees them after its lock and check
+slot are released and before its response is written. A stalled upload therefore holds
+only the bytes it has sent, and it holds no check slot. A request whose read cannot
+reserve waits up to 2 seconds for bytes to free, with at most 16 requests queued. Past
+that it gets `429` with `Retry-After: 1` and "too many active dashboard uploads". Each
+such refusal is counted in `paprika_insights_dashboard_upload_refusals`, labelled
+`route="save"` or `route="dry_run"`.
+
+A principal can fill the budget with stalled uploads. In a test, 32 connections that
+each sent 256 KiB of a larger body (8 MiB in all) got `429` for a dry run and a checked
+save at 4 seconds, and both got `200` at 13 seconds, after the 10-second read timeout
+ended the uploads. Every save and dry run is refused for that window, and the principal
+can repeat it. The refusals are visible in the counter above.
+
+Memory under a flood of full bodies, measured in a 256 MiB container with 0.5 CPU and
+dry runs of 397 KB at 384 workers for 30 seconds. The 32 MiB budget peaked at 266 MiB
+with 1,100 `memory.max` events in one run. The 8 MiB budget peaked at 157, 173, 183,
+187, 220, 234, 241 and 266 MiB across eight runs. Only the 266 MiB run had events (849),
+and a separate build of the same 8 MiB budget peaked at 118 MiB in one run. Peaks vary
+from run to run, so the budget lowers the peak without removing the limit's pressure.
+
+Dry runs and saves with `?checks=true` then share four concurrent slots: a dry
 run holds one while it decodes its request and builds its report, and a checked save
 holds one through its lock wait, its check and the build of its response. The
 response is written after the lock and the slot are released, so a client that stops

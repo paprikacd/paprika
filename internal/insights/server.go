@@ -71,15 +71,18 @@ type Server struct {
 	// only until their report is built, so provider latency never blocks checked
 	// saves; this pool bounds the executing dry runs on their own.
 	dryRunSlots chan struct{}
-	// documentBytes caps the request-body bytes that saves and dry runs hold at once.
-	// Each read reserves the bytes it returns, before any check slot is taken, so a
-	// flood of uploads cannot fill the heap before the check slots refuse anything.
-	// A stalled upload holds only the bytes it has sent. A request that cannot
-	// reserve waits up to documentWaitTimeout, and at most cap(documentWaiting)
-	// requests may wait at once.
+	// documentBytes caps the request-body bytes that saves and dry runs hold at once,
+	// at documentBodyBudget. Each read reserves the bytes it returns, before any check
+	// slot is taken, so a flood of uploads holds no more than documentBodyBudget bytes
+	// before the check slots refuse anything. A stalled upload holds only the bytes it
+	// has sent. A request that cannot reserve waits up to documentWaitTimeout, and at
+	// most cap(documentWaiting) requests may wait at once.
 	documentBytes       *byteBudget
 	documentWaiting     chan struct{}
 	documentWaitTimeout time.Duration
+	// uploadRefusals counts saves and dry runs refused because the body budget was
+	// full, by route.
+	uploadRefusals metric.Int64Counter
 }
 
 // maxActiveDashboardChecks is the number of dry runs and checked saves that may decode a document at once.
@@ -115,6 +118,10 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	s.queryDuration, err = otel.Meter("paprika").Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"))
 	if err != nil {
 		return nil, fmt.Errorf("create query duration histogram: %w", err)
+	}
+	s.uploadRefusals, err = otel.Meter("paprika").Int64Counter("paprika_insights_dashboard_upload_refusals", metric.WithDescription("Dashboard saves and dry runs refused because the request-body budget was full, by route"))
+	if err != nil {
+		return nil, fmt.Errorf("create upload refusal counter: %w", err)
 	}
 	return s, nil
 }
@@ -438,7 +445,7 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	defer body.release()
 	var doc json.RawMessage
 	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
-		writeBodyError(w, body, "invalid dashboard document")
+		s.writeBodyError(w, body, uploadRouteSave, "invalid dashboard document")
 		return
 	}
 	checks := wantsChecks(r)
@@ -596,7 +603,7 @@ func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequ
 	raw, err := readBody(w, r, maxCheckRequestBytes)
 	body.release()
 	if err != nil {
-		writeBodyError(w, body, "invalid dashboard check request")
+		s.writeBodyError(w, body, uploadRouteDryRun, "invalid dashboard check request")
 		return nil, nil, false
 	}
 	releaseCheck, ok := s.admitCheck(w)
