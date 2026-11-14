@@ -71,13 +71,14 @@ type Server struct {
 	// only until their report is built, so provider latency never blocks checked
 	// saves; this pool bounds the executing dry runs on their own.
 	dryRunSlots chan struct{}
-	// documentBytes caps the request-body bytes that saves and dry runs hold at once, at
-	// documentBodyBudget. Each read reserves the bytes it returns, before any check slot
-	// is taken, so the bytes of body that a flood of uploads holds at once are at most
-	// documentBodyBudget. The budget does not bound kernel socket memory (the listener
-	// bounds each connection's receive buffer). A stalled upload holds only the bytes it
-	// has sent. A request that cannot reserve waits up to documentWaitTimeout, and at most
-	// cap(documentWaiting) requests may wait at once.
+	// documentBytes caps the request-body bytes that saves and dry runs have reserved at
+	// once, at documentBodyBudget. Each read reserves the bytes it returns, before any
+	// check slot is taken, so the reserved bytes of a flood of uploads are at most
+	// documentBodyBudget. A dry run keeps its raw bytes through decode after releasing
+	// its reservation, and its check slot bounds them. The budget does not bound kernel
+	// socket memory (the listener bounds each connection's receive buffer). A stalled
+	// upload holds only the bytes it has sent. A request that cannot reserve waits up to
+	// documentWaitTimeout, and at most cap(documentWaiting) requests may wait at once.
 	documentBytes       *byteBudget
 	documentWaiting     chan struct{}
 	documentWaitTimeout time.Duration

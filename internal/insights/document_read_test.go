@@ -136,9 +136,9 @@ func TestBodyBudgetRefusalsAreCounted(t *testing.T) {
 	require.Equal(t, map[string]int64{uploadRouteSave: 1, uploadRouteDryRun: 2}, counts)
 }
 
-// The production refusal counter has the name the README and the dashboards use. The
-// other tests swap in their own counter, so this one reads the instrument NewServer
-// creates through the constructor it calls.
+// The production refusal counter has the name the README documents. The other tests
+// swap in their own counter, so this one reads the instrument NewServer creates through
+// the constructor it calls.
 func TestUploadRefusalCounterHasItsDocumentedName(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))

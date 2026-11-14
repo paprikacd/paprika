@@ -17,13 +17,16 @@ import (
 // across every connection. It is 8 MiB, which admits about 21 full 397 KB bodies at
 // once; the check slots and this budget together refuse the rest.
 //
-// The budget bounds the body bytes the handlers are reading or holding. It does not
-// bound the kernel memory of the connections that send them: the listener caps each
-// connection's receive buffer (cmd/paprika-insights), but the connections that a refused
-// request leaves closing still hold kernel memory for a while, and the page cache is
-// not counted at all. The README has the measured residual. A principal that holds about
-// the budget's worth of stalled upload bytes refuses every save and dry run until the
-// server's read timeout ends those uploads.
+// The budget caps the body bytes that handlers have reserved at once. A dry run releases
+// its reservation once its body is read and keeps the raw bytes through decode, where
+// its check slot bounds them (at most maxActiveDashboardChecks, each under
+// maxCheckRequestBytes). The budget does not bound the kernel memory of the connections
+// that send the bytes: the listener caps each connection's receive buffer
+// (cmd/paprika-insights), but the connections that a refused request leaves closing still
+// hold kernel memory for a while, and the page cache is not counted at all. The README
+// has the measured residual. A principal that holds about the budget's worth of stalled
+// upload bytes refuses every save and dry run until the server's read timeout ends those
+// uploads.
 const documentBodyBudget = 8 << 20
 
 // Refusal routes name the request kinds that take bytes from the budget. Both are

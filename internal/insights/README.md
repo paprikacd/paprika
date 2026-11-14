@@ -358,18 +358,20 @@ The requests that use it are `PUT /api/dashboards/{id}`, with or without `?check
 (the MCP's writes and the portable import use this route too), and `POST /api/dashboards/validate`.
 Saved-query and provider-config writes do not use it: their bodies are capped at 32 KiB and 16 KiB.
 Each read reserves the bytes it returned. A dry run frees them once its body is read, so
-its response is written holding none. An admitted save frees them after its lock and check
-slot are released and before its response is written. A refused save, one whose body is
+its response is written holding none. An admitted save frees them after its lock is released,
+and before its check slot is released and its response is written. A refused save, one whose body is
 invalid or whose check slot is taken, frees them before its 400 or 429 is written. A
 stalled upload therefore holds only the bytes it has sent, and it holds no check slot. A
 request whose read cannot reserve waits up to 2 seconds for bytes to free, with at most 16
 requests queued. Past that it gets `429` with `Retry-After: 1` and "too many active dashboard
-uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals`,
-labelled `route="save"` or `route="dry_run"`. Prometheus exposes that counter as
-`paprika_insights_dashboard_upload_refusals_total`, on Insights' own `/metrics` endpoint, or
-over OTLP when telemetry is configured. The chart as it stands does not scrape Insights, and
-its NetworkPolicy admits port 8090 only from the API server, controller and gateway pods, so
-an operator has to add a scrape to see the counter. The same is true of `paprika_insights_queries`.
+uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals_total`,
+labelled `route="save"` or `route="dry_run"`. The counter appears on Insights' own `/metrics`
+endpoint, or over OTLP when telemetry is configured. The chart as it stands does not scrape
+Insights. When `insights.enabled` and `networkPolicy.enabled` are both set (`networkPolicy.enabled`
+defaults to `false`), the Insights NetworkPolicy admits port 8090 only from the API server,
+controller and gateway pods. The chart has no value for an extra ingress rule, so a scrape
+needs a chart change as well as an operator's scrape job. The same is true of
+`paprika_insights_queries_total`.
 
 A principal can fill the budget with stalled uploads. The budget's worth of stalled bytes
 (8 MiB) refuses every save and dry run for up to the server's 10-second `ReadTimeout`, the
@@ -381,9 +383,10 @@ above, so watch `route="dry_run"` and `route="save"` together.
 Memory under a flood, measured in a 256 MiB container with 0.5 CPU, with the load generator
 in a second container on the same Docker network and 397 KB dry runs (`POST /api/dashboards/validate`)
 or 397 KB bodies to a route that never reads them (`POST /api/nonexistent`). Each run lasted 25 seconds.
-The budget bounds the body bytes that saves and dry runs hold. At 8 MiB that is about 21
-full reads at once, and the check slots and the waiting queue refuse the rest. It does not
-bound kernel memory. Each accepted connection's receive buffer is capped at 8 KiB by the
+The budget caps the body bytes that saves and dry runs have reserved. At 8 MiB that is about 21
+full reads at once, and the check slots and the waiting queue refuse the rest. A dry run keeps
+its raw bytes through decode after its reservation is released, and its check slot bounds them.
+The budget does not bound kernel memory. Each accepted connection's receive buffer is capped at 8 KiB by the
 listener (`cmd/paprika-insights/listen.go`, Linux doubles it to 16 KiB). The connections that
 a refused request leaves closing still hold their buffers for Go's half-second close delay,
 so their kernel memory grows with the refusal rate, and the page cache is not counted at all.
@@ -406,12 +409,36 @@ alive (158 MiB of socket memory), 768 workers OOM-killed, 1,024 workers OOM-kill
 the kill). The 404 route at 384 workers was OOM-killed. An intermediate build that allowed 32 KiB per connection
 was OOM-killed in one of five runs of the 768-worker dry-run flood, so one run per row is a
 sample, not a rate. A `memory.max` event means the kernel reclaimed to hold the container at its
-limit, so a run with events is under pressure without being killed. The residual risk is that
-a flood at a worker count beyond these, or from a route with a larger per-connection cost, can
-still kill the pod. Per-principal or upstream connection limits would bound it further, and
-are not in this change.
+limit, so a run with events is under pressure without being killed. The table's rows and the
+reruns below are separate runs, so their `memory.max` counts differ.
 
-Dry runs and saves with `?checks=true` then share four concurrent slots: a dry
+**Known limit.** An in-network flood of 768 or more concurrent requests can still hold the
+256 MiB pod at its limit. In the review's reruns at this build, 768 dry-run workers peaked at
+256.0 MiB with 192 and 653 `memory.max` events, and 1,024 workers with 397 and 449 events. Nothing
+was OOM-killed, but the pod is at its limit. The kernel socket buffers dominate at that load, so
+the per-connection bound does not cap it. The API proxy transport (`internal/api/insights_proxy.go`)
+sets no `MaxConnsPerHost`, and it has no per-principal limit. The fix belongs upstream, as
+per-principal limits or a connection cap at that proxy. It is not in this change.
+
+The bound has no setting. Turning it off means a code change in `cmd/paprika-insights/listen.go`.
+
+The bound costs latency whenever a round trip is long. Measured at HEAD (with the 8 KiB bound)
+and at the build before it (without the bound), with Insights at 256 MiB and 0.5 CPU and netem
+delay on the client's egress, p50 latency was:
+
+| Request | Client delay | With the bound | Without the bound |
+| --- | --- | --- | --- |
+| 397 KB dry run | none | 9.5 ms | 9.4 ms |
+| 397 KB dry run | +1 ms | 68.8 ms | 20.9 ms |
+| 397 KB dry run | +5 ms | 320 ms | 60 ms |
+| 244 KB save | +1 ms | 43 ms | 8 ms |
+| 244 KB save | +5 ms | 196 ms | 14 ms |
+
+Under a concurrent-upload flood, admitted checked saves fell from 411 to 127 with the bound,
+and `execute: true` dry runs that returned 200 fell from 613 to 466. The bound trades that
+throughput and latency for the memory limit above.
+
+Dry runs and saves with `?checks=true` share four concurrent slots: a dry
 run holds one while it decodes its request and builds its report, and a checked save
 holds one through its lock wait, its check and the build of its response. The
 response is written after the lock and the slot are released, so a client that stops
