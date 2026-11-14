@@ -1,6 +1,7 @@
 import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry } from "./query-editor.mjs"
+import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
 // Run from ui/: INSIGHTS_E2E_URL=http://127.0.0.1:3015 node e2e/insights-tooltip-query.e2e.mjs
 // Real Go adapters + deterministic providers. A test-owned same-origin gateway
 // forwards the static UI and API, including disconnects; route.fetch would hide
@@ -445,6 +446,7 @@ async function typedAuthoring(width) {
 
 try {
   await mkdir(output, { recursive: true })
+  proxyWebSocketUpgrades(gateway, baseURL)
   const upstreamPort = await listen(upstream), reservation = createServer()
   const servicePort = await listen(reservation); await new Promise(resolve => reservation.close(resolve))
   serviceURL = `http://127.0.0.1:${servicePort}`

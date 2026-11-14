@@ -10,6 +10,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
+import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -67,25 +68,7 @@ const gateway = createServer((request, response) => {
   request.pipe(forward)
 })
 // Next's development debug channel uses WebSockets to complete hydration.
-// Preserve that channel when the shared runner starts a dev server for this fixture.
-gateway.on("upgrade", (request, socket, head) => {
-  const target = new URL(request.url, baseURL)
-  const forward = httpRequest(target, { headers: { ...request.headers, host: target.host } })
-  forward.on("upgrade", (response, upstreamSocket, upstreamHead) => {
-    const headers = response.rawHeaders.reduce((text, value, index, all) => index % 2 ? text : `${text}${value}: ${all[index + 1]}\r\n`, "")
-    socket.write(`HTTP/1.1 ${response.statusCode} ${response.statusMessage}\r\n${headers}\r\n`)
-    if (head.length) upstreamSocket.write(head)
-    if (upstreamHead.length) socket.write(upstreamHead)
-    socket.on("error", () => upstreamSocket.destroy())
-    upstreamSocket.on("error", () => socket.destroy())
-    socket.on("close", () => upstreamSocket.destroy())
-    upstreamSocket.on("close", () => socket.destroy())
-    socket.pipe(upstreamSocket).pipe(socket)
-  })
-  forward.on("response", () => socket.destroy())
-  forward.on("error", () => socket.destroy())
-  forward.end()
-})
+proxyWebSocketUpgrades(gateway, baseURL)
 async function listen(server) { server.listen(0, "127.0.0.1"); await once(server, "listening"); return server.address().port }
 async function until(predicate, message, timeout = 10000) {
   const deadline = Date.now() + timeout

@@ -21,6 +21,7 @@ import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
 import { formatReading, formatSharedScale, joinReading } from "./units";
+import { heatmapValueEm, heatmapValueGlyphs, useHeatmapValueFit } from "./heatmap-value-width";
 export {
   downsamplePoints,
   latestPoint,
@@ -80,6 +81,11 @@ function critical(threshold: Threshold | undefined) {
  */
 function criticalStroke(threshold: Threshold | undefined): CSSProperties {
   return critical(threshold) ? ({ "--status-stroke-color": "currentColor" } as CSSProperties) : {};
+}
+
+/** The value text a heatmap cell shows. Its width (heatmapValueEm) sizes the value so a long unit or number stays inside its cell. */
+function heatmapValueText(value: number | undefined, unit: Widget["unit"], decimals: number | undefined): string {
+  return value === undefined ? "No data" : formatMetric(value, unit, false, decimals);
 }
 
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
@@ -825,13 +831,18 @@ export function Heatmap({
       ? new Date(selected.point.timestamp).toISOString()
       : undefined;
   const hasText = options.showLabels !== false || options.showValues !== false;
+  // One value text per cell feeds the visible text, its width and both accessible names, so they cannot drift apart.
+  const valueTexts = cells.map((cell) => heatmapValueText(cell.value, widget.unit, options.decimals));
+  // The fit re-runs when the column count changes: the cells re-render after the ResizeObserver has already measured the old layout.
+  const columns = balancedHeatmapColumns(cells.length, cellsWidth, hasText);
+  useHeatmapValueFit(cellsRef, [columns, options.showValues !== false, ...valueTexts].join("\u0000"));
   return (
     <div className={configStyles.heatmap}>
       <div
         ref={cellsRef}
         className={`${configStyles.cells} ${hasText ? "" : configStyles.colorOnlyCells}`}
         style={{
-          gridTemplateColumns: `repeat(${balancedHeatmapColumns(cells.length, cellsWidth, hasText)}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
         }}
         role="group"
         aria-label={`${widget.title} heatmap`}
@@ -841,12 +852,15 @@ export function Heatmap({
             cell.value === undefined
               ? undefined
               : thresholdForValue(cell.value, thresholds);
+          const valueText = valueTexts[index];
+          const valueStyle = { "--value-em": heatmapValueEm(valueText), "--value-glyphs": heatmapValueGlyphs(valueText) } as CSSProperties;
+          const label = `${cell.name}: ${valueText}${threshold?.label ? ` · ${threshold.label}` : ""}`;
           if (embedded)
             return (
               <div
                 key={`${cell.name}-${index}`}
                 role="img"
-                aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
+                aria-label={label}
                 className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
                 data-heatmap-cell=""
                 data-status-stroke={critical(threshold)}
@@ -862,16 +876,7 @@ export function Heatmap({
                   <span className={configStyles.cellName}>{cell.name}</span>
                 )}
                 {options.showValues !== false && (
-                  <strong>
-                    {cell.value === undefined
-                      ? "No data"
-                      : formatMetric(
-                          cell.value,
-                          widget.unit,
-                          false,
-                          options.decimals,
-                        )}
-                  </strong>
+                  <strong data-heatmap-value="" style={valueStyle}>{valueText}</strong>
                 )}
               </div>
             );
@@ -889,7 +894,7 @@ export function Heatmap({
                   (thresholdInk(threshold) ?? "#69725f"),
                 ...criticalStroke(threshold),
               }}
-              aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
+              aria-label={label}
               aria-describedby={
                 active?.index === index && options.showTooltip !== false
                   ? tooltipId
@@ -961,16 +966,7 @@ export function Heatmap({
                 <span className={configStyles.cellName}>{cell.name}</span>
               )}
               {options.showValues !== false && (
-                <strong>
-                  {cell.value === undefined
-                    ? "No data"
-                    : formatMetric(
-                        cell.value,
-                        widget.unit,
-                        false,
-                        options.decimals,
-                      )}
-                </strong>
+                <strong data-heatmap-value="" style={valueStyle}>{valueText}</strong>
               )}
             </button>
           );

@@ -20,6 +20,8 @@
   overflow: auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Rows never shrink below their content, so a dense or scrolling layout grows a short row instead of clipping its value. */
+  grid-auto-rows: minmax(min-content, auto);
   gap: 6px;
   flex: 1;
   align-content: stretch;
@@ -34,6 +36,7 @@
   padding: 10px;
   min-height: 64px;
   min-width: 0;
+  container-type: inline-size;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -76,10 +79,24 @@
   opacity: 1;
 }
 .cell strong {
-  font-size: 21px;
+  /* A value stays on one line and scales with its cell. The 10px floor keeps it readable; ellipsis is the last resort,
+     and the full value stays in the cell's aria-label and tooltip. */
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  /* --value-em is the value's measured width in em (heatmap-value-width.ts). Dividing the cell's width by it fills the
+     cell, so a short value keeps the 21px ceiling and a long one shrinks toward the 10px floor before it ellipsizes.
+     Browsers that round each glyph advance to whole pixels (Linux at DPR 1) run wider than the fractional sum, so
+     --value-glyphs reserves half a pixel per glyph before dividing. The measured fit in heatmap-value-width.ts corrects
+     whatever the estimate still gets wrong. */
+  flex-shrink: 0;
+  font-size: clamp(10px, calc((100cqi - var(--value-glyphs, 0) * 0.5px) / var(--value-em, 4)), var(--heatmap-value-size, 21px));
   line-height: 1.1;
   font-weight: 570;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .thresholdLegend {
   display: flex;
@@ -425,7 +442,7 @@
     padding: 0;
   }
   .cell strong {
-    font-size: 17px;
+    --heatmap-value-size: 17px;
   }
   .thresholdLegend {
     max-height: 26px;
