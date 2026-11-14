@@ -353,31 +353,63 @@ client that stores it never sends back an unknown member. The dry run lists ever
 finding, warnings included, without writing, and reads the stored dashboard at the
 same id so it reports the same overlap warnings a save would.
 
-Saves (`PUT /api/dashboards/{id}`, with or without `?checks=true`, which the MCP
-writes and the portable import also use) and dry runs (`POST /api/dashboards/validate`)
-read their bodies through one byte budget of 8 MiB shared by all of them. Saved-query
-and provider-config writes do not use it: their bodies are capped at 32 KiB and 16 KiB.
-Each read reserves the bytes it returned. A dry run frees them once its body is read,
-so its response is written holding none. A save frees them after its lock and check
-slot are released and before its response is written. A stalled upload therefore holds
-only the bytes it has sent, and it holds no check slot. A request whose read cannot
-reserve waits up to 2 seconds for bytes to free, with at most 16 requests queued. Past
-that it gets `429` with `Retry-After: 1` and "too many active dashboard uploads". Each
-such refusal is counted in `paprika_insights_dashboard_upload_refusals`, labelled
-`route="save"` or `route="dry_run"`.
+Saves and dry runs read their bodies through one byte budget of 8 MiB shared by all of them.
+The requests that use it are `PUT /api/dashboards/{id}`, with or without `?checks=true`
+(the MCP's writes and the portable import use this route too), and `POST /api/dashboards/validate`.
+Saved-query and provider-config writes do not use it: their bodies are capped at 32 KiB and 16 KiB.
+Each read reserves the bytes it returned. A dry run frees them once its body is read, so
+its response is written holding none. An admitted save frees them after its lock and check
+slot are released and before its response is written. A refused save, one whose body is
+invalid or whose check slot is taken, frees them before its 400 or 429 is written. A
+stalled upload therefore holds only the bytes it has sent, and it holds no check slot. A
+request whose read cannot reserve waits up to 2 seconds for bytes to free, with at most 16
+requests queued. Past that it gets `429` with `Retry-After: 1` and "too many active dashboard
+uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals`,
+labelled `route="save"` or `route="dry_run"`. Prometheus exposes that counter as
+`paprika_insights_dashboard_upload_refusals_total`, on Insights' own `/metrics` endpoint, or
+over OTLP when telemetry is configured. The chart as it stands does not scrape Insights, and
+its NetworkPolicy admits port 8090 only from the API server, controller and gateway pods, so
+an operator has to add a scrape to see the counter. The same is true of `paprika_insights_queries`.
 
-A principal can fill the budget with stalled uploads. In a test, 32 connections that
-each sent 256 KiB of a larger body (8 MiB in all) got `429` for a dry run and a checked
-save at 4 seconds, and both got `200` at 13 seconds, after the 10-second read timeout
-ended the uploads. Every save and dry run is refused for that window, and the principal
-can repeat it. The refusals are visible in the counter above.
+A principal can fill the budget with stalled uploads. The budget's worth of stalled bytes
+(8 MiB) refuses every save and dry run for up to the server's 10-second `ReadTimeout`, the
+time the stalled uploads take to end. In a test, 32 connections that each sent 256 KiB of a
+larger body (8 MiB in all) got `429` for a dry run and a checked save at 4 seconds, and both
+got `200` at 13 seconds. The principal can repeat it, and each refusal shows in the counter
+above, so watch `route="dry_run"` and `route="save"` together.
 
-Memory under a flood of full bodies, measured in a 256 MiB container with 0.5 CPU and
-dry runs of 397 KB at 384 workers for 30 seconds. The 32 MiB budget peaked at 266 MiB
-with 1,100 `memory.max` events in one run. The 8 MiB budget peaked at 157, 173, 183,
-187, 220, 234, 241 and 266 MiB across eight runs. Only the 266 MiB run had events (849),
-and a separate build of the same 8 MiB budget peaked at 118 MiB in one run. Peaks vary
-from run to run, so the budget lowers the peak without removing the limit's pressure.
+Memory under a flood, measured in a 256 MiB container with 0.5 CPU, with the load generator
+in a second container on the same Docker network and 397 KB dry runs (`POST /api/dashboards/validate`)
+or 397 KB bodies to a route that never reads them (`POST /api/nonexistent`). Each run lasted 25 seconds.
+The budget bounds the body bytes that saves and dry runs hold. At 8 MiB that is about 21
+full reads at once, and the check slots and the waiting queue refuse the rest. It does not
+bound kernel memory. Each accepted connection's receive buffer is capped at 8 KiB by the
+listener (`cmd/paprika-insights/listen.go`, Linux doubles it to 16 KiB). The connections that
+a refused request leaves closing still hold their buffers for Go's half-second close delay,
+so their kernel memory grows with the refusal rate, and the page cache is not counted at all.
+
+The residual is measured. Without the listener's bound, the 8 MiB build peaked at 155 to 212 MiB
+of kernel socket memory and was OOM-killed at 768 and 1,024 dry-run workers and at 384 workers
+on the 404 route. With the bound, the same floods peaked at 34 to 73 MiB of socket memory, and
+no run was OOM-killed:
+
+| Route | Workers | Result with the bound | Peak socket memory | `memory.max` events |
+| --- | --- | --- | --- | --- |
+| dry run | 384 | alive | 34 MiB | 0 |
+| dry run | 768 | alive | 51 MiB | 131 |
+| dry run | 1,024 | alive | 55 MiB | 853 |
+| 404 route | 384 | alive | 69 MiB | 0 |
+| 404 route | 768 | alive | 73 MiB | 0 |
+
+Each row is one run. The build without the bound ran the same floods: 384 dry-run workers
+alive (158 MiB of socket memory), 768 workers OOM-killed, 1,024 workers OOM-killed (179 MiB at
+the kill). The 404 route at 384 workers was OOM-killed. An intermediate build that allowed 32 KiB per connection
+was OOM-killed in one of five runs of the 768-worker dry-run flood, so one run per row is a
+sample, not a rate. A `memory.max` event means the kernel reclaimed to hold the container at its
+limit, so a run with events is under pressure without being killed. The residual risk is that
+a flood at a worker count beyond these, or from a route with a larger per-connection cost, can
+still kill the pod. Per-principal or upstream connection limits would bound it further, and
+are not in this change.
 
 Dry runs and saves with `?checks=true` then share four concurrent slots: a dry
 run holds one while it decodes its request and builds its report, and a checked save
