@@ -116,7 +116,13 @@ func breachDetailDashboard() *DashboardQueryResult {
 // the omitted list those steps report. The title filler added later is measured against these.
 func sizeAfterSteps(t *testing.T, n int) int {
 	t.Helper()
-	result := breachDetailDashboard()
+	return sizeAfterStepsOf(t, breachDetailDashboard, n)
+}
+
+// sizeAfterStepsOf measures a fresh dashboard from build after the first n ladder steps.
+func sizeAfterStepsOf(t *testing.T, build func() *DashboardQueryResult, n int) int {
+	t.Helper()
+	result := build()
 	for _, step := range dashboardOmissionSteps[:n] {
 		require.True(t, step.drop(result), "step %s must remove detail from this dashboard", step.name)
 		result.Omitted = append(result.Omitted, step.name)
@@ -179,7 +185,7 @@ func TestDashboardOmittedListsExactlyWhatWasDropped(t *testing.T) {
 				}
 				require.NotEmpty(t, widget.Breaches.Summary, "summaries are kept until the breach object itself is dropped")
 			}
-			require.Equal(t, dropped["bandSeries"], widget.BandSeries.Series == nil && widget.BandSeries.Name == "", "band series detail on %s", widget.ID)
+			require.Equal(t, dropped["bandSeries"], widget.BandSeries == nil, "the bandSeries object on %s", widget.ID)
 			require.Equal(t, dropped["sample"], widget.Freshness == nil, "first-contract freshness on %s", widget.ID)
 			switch {
 			case !dropped["sample"]:
@@ -307,5 +313,152 @@ func requireOmittedMatchesWidgets(t *testing.T, omitted []string, widgets []Dash
 		if dropped["breaches"] {
 			require.Nil(t, widget.Breaches, "breaches is reported, so none is present on %s", widget.ID)
 		}
+	}
+}
+
+// withStatWidgets is breachDetailDashboard plus stat widgets with staleAfterSeconds. The first contract
+// gave every stat a freshness object, so a capped result must keep each one, stale or fresh.
+func withStatWidgets() *DashboardQueryResult {
+	result := breachDetailDashboard()
+	seconds, age, last := 60.0, 12.5, 1792972800000.0
+	threshold := 60
+	for index := range 4 {
+		state := "stale"
+		if index%2 == 1 {
+			state = "fresh"
+		}
+		result.Widgets = append(result.Widgets, DashboardQueryWidget{
+			ID: fmt.Sprintf("stat-%02d", index), Title: "Stat", Type: "stat", Unit: "req/s", Attention: "stale",
+			Sample:    &DashboardSample{State: state, Basis: sampleBasisStaleAfter, StaleAfterSeconds: &seconds, LastTimestamp: &last, AgeSeconds: &age},
+			Freshness: &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: state, LastTimestamp: &last, AgeSeconds: &age},
+		})
+	}
+	return result
+}
+
+// A capped result keeps every stat's first-contract freshness, so a client of the first contract still
+// reads each stat's stale judgement. Only time-series freshness, which this release added, is dropped.
+func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
+	const steps = 4 // The sample step runs, so the time-series freshness and sample detail are dropped.
+	result := withStatWidgets()
+	result.Dashboard.Title = strings.Repeat("t", DashboardQueryResponseBytes-sizeAfterStepsOf(t, withStatWidgets, steps))
+	encoded, err := encodeDashboardQueryResult(result)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(encoded), DashboardQueryResponseBytes)
+	require.Equal(t, dashboardOmissionStepNamesThrough(steps), result.Omitted)
+	stats := 0
+	for index := range result.Widgets {
+		widget := &result.Widgets[index]
+		if widget.Type == "stat" {
+			stats++
+			require.NotNil(t, widget.Freshness, "stat %s keeps its first-contract freshness", widget.ID)
+			require.Equal(t, 60, *widget.Freshness.ThresholdSeconds)
+			require.Contains(t, []string{"fresh", "stale"}, widget.Freshness.State)
+			require.NotNil(t, widget.Freshness.AgeSeconds, "stat %s keeps its age", widget.ID)
+			continue
+		}
+		require.Nil(t, widget.Freshness, "time-series freshness is dropped on %s", widget.ID)
+	}
+	require.Equal(t, 4, stats)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &raw))
+	require.Contains(t, raw, "omitted")
+}
+
+// dashboardOmissionStepNamesThrough names the first n steps in ladder order.
+func dashboardOmissionStepNamesThrough(n int) []string {
+	names := make([]string, 0, n)
+	for _, step := range dashboardOmissionSteps[:n] {
+		names = append(names, step.name)
+	}
+	return names
+}
+
+// Step 4 drops a stale sample stub entirely when the widget's attention already reads stale, because
+// attention says the same. A stale sample on a widget with a more severe reason keeps its state.
+func TestDashboardOmissionDropsStaleSampleStubWhenAttentionReadsStale(t *testing.T) {
+	seconds, age, last := 120.0, 600.0, 1792975800000.0
+	threshold := 120
+	stale := func() *DashboardSample {
+		return &DashboardSample{State: "stale", Basis: sampleBasisCadence, StaleAfterSeconds: &seconds, LastTimestamp: &last, AgeSeconds: &age}
+	}
+	result := &DashboardQueryResult{Widgets: []DashboardQueryWidget{
+		{ID: "stale-only", Type: "timeseries", Attention: "stale", Sample: stale(), Freshness: &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "stale"}},
+		{ID: "critical", Type: "timeseries", Attention: "critical", Sample: stale()},
+		{ID: "stat-stale", Type: "stat", Attention: "stale", Sample: stale(), Freshness: &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "stale", LastTimestamp: &last, AgeSeconds: &age}},
+	}}
+	require.True(t, dashboardOmissionSteps[3].drop(result))
+	require.Nil(t, result.Widgets[0].Sample, "a stale stub on a widget whose attention reads stale is dropped")
+	require.Nil(t, result.Widgets[0].Freshness)
+	require.NotNil(t, result.Widgets[1].Sample, "a stale stub under a more severe attention is kept")
+	require.Equal(t, "stale", result.Widgets[1].Sample.State)
+	require.Empty(t, result.Widgets[1].Sample.Basis)
+	require.Nil(t, result.Widgets[1].Sample.AgeSeconds)
+	require.Nil(t, result.Widgets[2].Sample, "a stat's stale stub under stale attention is dropped too")
+	require.NotNil(t, result.Widgets[2].Freshness, "a stat keeps its first-contract freshness")
+	require.Equal(t, "stale", result.Widgets[2].Freshness.State)
+}
+
+// kubeStateNineLabelMatrix is a three-series matrix of raw kube-state series with nine labels each. Its
+// samples stop at lastIndex, so a widget judged by cadence is stale when the window ends after it.
+func kubeStateNineLabelMatrix(t *testing.T, value string, samples, padding int) string {
+	t.Helper()
+	result := make([]map[string]any, 0, 3)
+	for index := range 3 {
+		metric := map[string]string{
+			"__name__":  "kube_pod_container_status_restarts_total",
+			"container": "api-server",
+			"endpoint":  "http",
+			"instance":  fmt.Sprintf("10.244.%d.%d:8080", index, index+1),
+			"job":       "kube-state-metrics",
+			"namespace": "paprika-e2e-observability-namespace" + strings.Repeat("x", padding),
+			"pod":       fmt.Sprintf("insights-query-gateway-deployment-7f9c8d6b5-%05d", index),
+			"service":   "kube-prometheus-stack-kube-state-metrics",
+			"uid":       fmt.Sprintf("6f1e2d3c-4b5a-4978-8a6b-9c0d1e2f3a4%d", index),
+		}
+		values := make([][]any, 0, samples)
+		for sample := range samples {
+			values = append(values, []any{1792972800 + sample*60, value})
+		}
+		result = append(result, map[string]any{"metric": metric, "values": values})
+	}
+	body, err := json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": result}})
+	require.NoError(t, err)
+	return string(body)
+}
+
+// A 48-widget colour-only time series, each judged stale by the cadence fallback because its samples end
+// ten minutes before the range end, must return 200 within the cap. The namespace label carries 30 extra
+// characters so that the result is over the cap on the previous ladder (131,916 bytes, a 413), while
+// the current ladder brings it to 130,620 bytes. The padding sizes the fixture; it is not a claim about
+// real namespaces.
+func TestDashboardQueryColourOnlyCadenceStale48WidgetsReturnWithinTheCap(t *testing.T) {
+	body := kubeStateNineLabelMatrix(t, "0", 51, 30)
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, body)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	widgets := make([]map[string]any, 0, 48)
+	for index := range 48 {
+		title := fmt.Sprintf("Pod restarts by container, namespace and node for shard %02d over the last hour", index)
+		widget := queryReadWidget(fmt.Sprintf("pod-restarts-widget-%02d", index), fmt.Sprintf("sum by (pod) (kube_pod_container_status_restarts_total{job=\"kube-state-%d\"})", index))
+		widget["title"], widget["type"] = title, "timeseries"
+		widget["options"] = map[string]any{"thresholds": []map[string]any{{"value": 0, "color": "#2a9d8f"}, {"value": 60, "color": "#e9c46a"}, {"value": 85, "color": "#e76f51"}}}
+		widgets = append(widgets, widget)
+	}
+	putReadDashboard(t, s, widgets...)
+	w := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil)
+	require.Equal(t, http.StatusOK, w.Code, "a 48-widget cadence-stale time-series dashboard must not exceed the cap: %s", w.Body.String()[:min(w.Body.Len(), 200)])
+	require.LessOrEqual(t, w.Body.Len(), DashboardQueryResponseBytes)
+	result := readDashboardResult(t, w)
+	require.Equal(t, []string{"sample"}, result.Omitted, "the stale stubs are dropped, and nothing else is needed")
+	require.Len(t, result.Widgets, 48)
+	require.Equal(t, 48, result.Attention.Stale, "attention keeps every stale widget counted")
+	for index := range result.Widgets {
+		widget := &result.Widgets[index]
+		require.Equal(t, "stale", widget.Attention, "attention is kept on %s", widget.ID)
+		require.Nil(t, widget.Sample, "the stale stub on %s is dropped because its attention reads stale", widget.ID)
+		require.Nil(t, widget.Freshness)
 	}
 }

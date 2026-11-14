@@ -80,8 +80,9 @@ type DashboardQueryWidget struct {
 	AnnotationError        *DashboardQueryError            `json:"annotationError,omitempty"`
 	AnnotationColumns      *dashboardReadAnnotationColumns `json:"annotationColumns,omitempty"`
 	// Sample reports the age of the widget's latest observation and whether a staleness
-	// limit judges it. Every metric widget carries it. It is the version-tolerant home of
-	// the staleness judgement; freshness is kept for clients of the first contract.
+	// limit judges it. Every metric widget carries it, unless the result cap removes it. It
+	// is the version-tolerant home of the staleness judgement; freshness is kept for clients
+	// of the first contract.
 	Sample *DashboardSample `json:"sample,omitempty"`
 	// BandSeries names the series that set a multi-series band, and how many series the
 	// visualization draws. It sits beside threshold so the band keeps its first-contract shape.

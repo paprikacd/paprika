@@ -15,13 +15,24 @@ type dashboardOmissionStep struct {
 
 // dashboardOmissionSteps is the fixed order in which optional detail is dropped when the encoded
 // result exceeds DashboardQueryResponseBytes. The ladder stops as soon as the result fits. Attention
-// counts, band states, signals and their series are never dropped. Breach summaries and latest
-// levels go only with a widget's breach object, in step 2.
+// counts, band thresholds, signals and their series are never dropped. Breach summaries and latest
+// levels go only with a widget's breach object, in step 2. The series behind a band go with its
+// whole bandSeries object, in step 3.
 var dashboardOmissionSteps = []dashboardOmissionStep{
 	{name: "breachIntervals", drop: dropDashboardBreachIntervals},
 	{name: "breaches", drop: dropDashboardWidgetBreaches},
 	{name: "bandSeries", drop: dropDashboardBandSeriesDetail},
 	{name: "sample", drop: dropDashboardSampleDetail},
+}
+
+// DashboardOmissionStepNames is the name of each omission step, in the order the ladder applies them.
+// The MCP output schema and the gateway's text phrases use the same names, and a test ties them here.
+func DashboardOmissionStepNames() []string {
+	names := make([]string, 0, len(dashboardOmissionSteps))
+	for _, step := range dashboardOmissionSteps {
+		names = append(names, step.name)
+	}
+	return names
 }
 
 // dropDashboardBreachIntervals removes the listed breach intervals and their series names from every
@@ -53,45 +64,64 @@ func dropDashboardWidgetBreaches(result *DashboardQueryResult) bool {
 	return dropped
 }
 
-// dropDashboardBandSeriesDetail removes the series that set a multi-series band and its name. The
-// counts of drawn and omitted series stay, as they are required by the band's shape.
+// dropDashboardBandSeriesDetail removes each multi-series band's bandSeries object: the drawn and
+// omitted counts, and the series that set the band. The band's threshold stays, so the widget still
+// shows its status.
 func dropDashboardBandSeriesDetail(result *DashboardQueryResult) bool {
 	dropped := false
 	for index := range result.Widgets {
-		bands := result.Widgets[index].BandSeries
-		if bands == nil || (bands.Series == nil && bands.Name == "") {
-			continue
+		if result.Widgets[index].BandSeries != nil {
+			result.Widgets[index].BandSeries = nil
+			dropped = true
 		}
-		bands.Series, bands.Name = nil, ""
-		dropped = true
 	}
 	return dropped
 }
 
 // dropDashboardSampleDetail removes the optional sample facts. A stale sample keeps its state, so the
-// widget stays identified as stale, and loses its limit and age. A sample in any other state is removed
-// entirely, so a widget without a sample has a fresh, no_threshold or unknown state that the cap removed.
-// The first-contract freshness object repeats the sample, so it goes too, on every widget that has one.
+// widget stays identified as stale, and loses its limit and age. A stale sample whose widget attention
+// already reads stale is removed entirely, as attention says the same. A sample in any other state is
+// removed entirely, so a widget without a sample has a fresh, no_threshold or unknown state that the cap
+// removed. Time-series freshness, the fact this release added, repeats the sample and goes too. A stat's
+// first-contract freshness predates this release, so it stays on every stat.
 func dropDashboardSampleDetail(result *DashboardQueryResult) bool {
 	dropped := false
 	for index := range result.Widgets {
 		widget := &result.Widgets[index]
-		if widget.Freshness != nil {
-			widget.Freshness = nil
+		if dropTimeSeriesFreshness(widget) {
 			dropped = true
 		}
-		sample := widget.Sample
-		switch {
-		case sample == nil:
-		case sample.State != "stale":
-			widget.Sample = nil
-			dropped = true
-		case sample.Basis != "" || sample.StaleAfterSeconds != nil || sample.LastTimestamp != nil || sample.AgeSeconds != nil:
-			sample.Basis, sample.StaleAfterSeconds, sample.LastTimestamp, sample.AgeSeconds = "", nil, nil, nil
+		if trimDashboardSample(widget) {
 			dropped = true
 		}
 	}
 	return dropped
+}
+
+// dropTimeSeriesFreshness removes a time series' first-contract freshness, which repeats its sample.
+func dropTimeSeriesFreshness(widget *DashboardQueryWidget) bool {
+	if widget.Type != "timeseries" || widget.Freshness == nil {
+		return false
+	}
+	widget.Freshness = nil
+	return true
+}
+
+// trimDashboardSample applies step 4 to one widget's sample: it removes a sample that is not stale or
+// whose widget attention already reads stale, and strips the limit and age from any other stale sample.
+func trimDashboardSample(widget *DashboardQueryWidget) bool {
+	sample := widget.Sample
+	switch {
+	case sample == nil:
+		return false
+	case sample.State != "stale" || widget.Attention == "stale":
+		widget.Sample = nil
+		return true
+	case sample.Basis != "" || sample.StaleAfterSeconds != nil || sample.LastTimestamp != nil || sample.AgeSeconds != nil:
+		sample.Basis, sample.StaleAfterSeconds, sample.LastTimestamp, sample.AgeSeconds = "", nil, nil, nil
+		return true
+	}
+	return false
 }
 
 // encodeDashboardQueryResult encodes the result within DashboardQueryResponseBytes when possible. It
