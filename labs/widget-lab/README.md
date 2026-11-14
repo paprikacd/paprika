@@ -8,6 +8,8 @@ The authenticated `ui/src/app/dashboard/insights` app remains the **dashboard bu
 
 Local public build: after dependencies are installed, run `bash hack/build-landing-with-charts.sh /tmp/paprika-public-pages`, then serve that directory with an HTTP server to verify the nested `/charts/` routes and relative Vite assets. All public charts use labelled synthetic fixtures and do not connect to a production backend.
 
+`npm ci` applies the canonical grid patch from [`ui/patches`](../../ui/patches/README.md) to the lab's own dependencies. This keeps the shared dashboard canvas's drag behavior and types consistent without maintaining a second patch.
+
 
 Dashboard studies built with the **Paprika Dashboard Design** skill and Paprika's chart host, trusted widget registry and shared cursor. The lab now includes **85 working chart examples and 26 dashboard lenses**, with typed field mapping, guided configuration and exact inspection. **Iteration 11 makes Edge Watch and Reliability Room fluid at every available width**: panels reflow, charts measure their content, and map points, flags, controls and labels keep usable sizes. The original **1592 × 988** artboards remain available explicitly through source-size and comparison modes.
 

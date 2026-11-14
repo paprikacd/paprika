@@ -21,6 +21,7 @@ import {
 import type { Series } from "./chart-data";
 import type { TooltipView, Widget, Provider, QueryResult } from "./schema";
 import { TooltipQueryProvider } from "./tooltip-query";
+import { TraceFetcherProvider } from "./trace-waterfall";
 import {
   registerWidgetPlugin,
   type WidgetRendererProps,
@@ -589,7 +590,7 @@ describe("shared embedded tooltip renderers", () => {
           ? {
               traces: [
                 {
-                  traceId: "trace-1",
+                  traceId: "00112233445566778899aabbccddeeff",
                   service: "worker",
                   operation: "Process payment",
                   durationMs: 123.456,
@@ -608,17 +609,20 @@ describe("shared embedded tooltip renderers", () => {
                 },
               ],
             };
+      const fetchTrace = vi.fn();
       const { container } = render(
-        <Host
-          view={{
-            ...queryView(type),
-            showAxis: false,
-            showGrid: false,
-            showLegend: false,
-            title: "Queried data",
-          }}
-          result={result}
-        />,
+        <TraceFetcherProvider fetchTrace={fetchTrace}>
+          <Host
+            view={{
+              ...queryView(type),
+              showAxis: false,
+              showGrid: false,
+              showLegend: false,
+              title: "Queried data",
+            }}
+            result={result}
+          />
+        </TraceFetcherProvider>,
       );
       await waitFor(() =>
         expect(
@@ -628,6 +632,7 @@ describe("shared embedded tooltip renderers", () => {
       expect(screen.queryByRole("alert")).toBeNull();
       expect(screen.queryByRole("button")).toBeNull();
       expect(screen.queryByRole("tooltip")).toBeNull();
+      expect(fetchTrace).not.toHaveBeenCalled();
       if (type === "traces")
         expect(
           screen.getByRole("table", { name: "Queried data" }),

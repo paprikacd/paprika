@@ -6,7 +6,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { stringify as stringifyYAML } from "yaml"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
 import { portableEnvironment, until } from "./insights-portable-fixture.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -87,7 +87,7 @@ async function review(document = bundle, { format = "json", code = false } = {})
     await writeFile(path, format === "json" ? JSON.stringify(document) : stringifyYAML(document))
     await page.getByRole("region", { name: "Dashboard source editor", exact: true }).getByLabel("Import dashboard document", { exact: true }).setInputFiles(path)
   } else {
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    await activateDashboardAction(page, "Manage dashboards")
     await selectGammaOption(page, importer().getByRole("combobox", { name: "Library import format", exact: true }), format.toUpperCase())
     await importer().getByRole("textbox", { name: "Library import source", exact: true }).fill(format === "json" ? JSON.stringify(document) : stringifyYAML(document))
     await importer().getByRole("button", { name: "Review import", exact: true }).click()

@@ -23,6 +23,16 @@
     color var(--gamma-duration-fast) var(--gamma-ease-standard),
     box-shadow var(--gamma-duration-fast) var(--gamma-ease-standard);
 }
+.button.button[data-gamma-button][data-size="mark"] {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
 .button:where([data-size="sm"]) {
   min-height: 31px;
   padding: 0 11px;
@@ -99,6 +109,13 @@
   color: var(--gamma-accent-text);
   background: var(--gamma-accent-soft);
   box-shadow: inset 2px 0 var(--gamma-accent);
+}
+/* Chart marks supply their own shape and state paint. Keep this after the
+   variant hover rules: they otherwise win the equal-specificity cascade and
+   put a rectangular background behind clipped marks such as hexes. */
+.button.button[data-gamma-button][data-size="mark"]:is(:hover, :active, [aria-pressed="true"]) {
+  background: transparent;
+  box-shadow: none;
 }
 .spinner {
   width: 14px;

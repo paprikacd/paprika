@@ -200,4 +200,8 @@ it("records a keyboard move as one document edit that Undo restores", () => {
   expect(positions(rgl.props.layout)).toEqual({ requests: [0, 4, 6, 4], errors: [0, 0, 6, 4] });
   fireEvent.click(screen.getByRole("button", { name: "Undo" }));
   expect(positions(rgl.props.layout)).toEqual({ requests: [0, 0, 6, 4], errors: [0, 4, 6, 4] });
+  // A stable keyboard callback must read the restored layout, not its first
+  // render or the layout before Undo.
+  fireEvent.keyDown(screen.getByRole("article", { name: "Requests" }), { key: "ArrowDown", altKey: true });
+  expect(positions(rgl.props.layout)).toEqual({ requests: [0, 4, 6, 4], errors: [0, 0, 6, 4] });
 });

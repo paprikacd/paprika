@@ -5,7 +5,7 @@ import { MetricDetails } from '@insights/metric-tooltip-content';
 import { makeCatalogFixture } from '../src/catalog/chart-fixtures';
 
 describe('metric tooltip source disclosure', () => {
-  it('keeps ordinary source disclosure collapsed, with optional visible pinned source context', () => {
+  it.each([false, true])('keeps source metadata collapsed beneath the reading (compact=%s)', compact => {
     const widget = makeCatalogFixture('timeseries').widget;
     const series = {
       name: 'paprika_example_node_cpu{cluster="staging", node="node-01"}',
@@ -13,25 +13,22 @@ describe('metric tooltip source disclosure', () => {
       points: [{timestamp:Date.UTC(2026,10,4),value:0.75}],
     };
     const html = renderToStaticMarkup(createElement(MetricDetails, {
-      widget, series, index:0, point:series.points[0], unit:'cores',
+      widget, series, index:0, point:series.points[0], unit:'cores', compact, seriesLabel:'CPU per node',
     }));
-    expect(html).not.toMatch(/<details[^>]+open/);
-    expect(html).toContain(series.name.replaceAll('"', '&quot;'));
-    expect(html).toContain('node-01');
-    expect(html).toContain('paprika-collector-01');
-    expect(html).toContain('Source details');
-    expect(html).toContain('Exact value');
-
-    const pinned = renderToStaticMarkup(createElement(MetricDetails, {
-      widget, series, index:0, point:series.points[0], unit:'cores', showSourceContext:true,
-    }));
-    expect(pinned).not.toMatch(/<details[^>]+open/);
-    expect(pinned).toContain(series.name.replaceAll('"', '&quot;'));
-    expect(pinned).toContain('paprika-collector-01');
-    expect(pinned).toContain('node-01');
-    expect((pinned.match(/paprika-collector-01/g) ?? []).length).toBe(1);
-    expect((pinned.match(/node-01/g) ?? []).length).toBe(2);
-    expect(pinned).toContain('Source details');
+    const source = html.match(/<details\b[^>]*>.*?<\/details>/s)?.[0];
+    expect(source).toBeDefined();
+    expect(source).not.toMatch(/<details[^>]+open/);
+    expect(source).toContain(series.name.replaceAll('"', '&quot;'));
+    expect(source).toContain('node-01');
+    expect(source).toContain('paprika-collector-01');
+    expect(source).toContain('Source details');
+    expect(source).toContain('Exact value');
+    const reading = html.replace(source!, '');
+    expect(reading).toContain('CPU per node');
+    expect(reading).toContain('data-metric-value="0.75"');
+    expect(reading).not.toContain('node-01');
+    expect(reading).not.toContain('paprika-collector-01');
+    expect((html.match(/paprika-collector-01/g) ?? []).length).toBe(1);
   });
 
   it('keeps extensive metadata collapsed until deliberately inspected', () => {

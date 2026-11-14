@@ -1,20 +1,21 @@
 import { useCallback, useState } from "react"
 import type { Dashboard } from "./schema"
 
-export function useDashboardHistory(initial: Dashboard) {
+/** Bounded draft history, shared by dashboard and focused widget editing. */
+export function useDraftHistory<T>(initial: T) {
   const [state, setState] = useState({
-    past: [] as Dashboard[],
+    past: [] as T[],
     present: initial,
-    future: [] as Dashboard[],
+    future: [] as T[],
   })
-  const update = useCallback((next: Dashboard | ((current: Dashboard) => Dashboard)) => {
+  const update = useCallback((next: T | ((current: T) => T)) => {
     setState((current) => {
-      const present = typeof next === "function" ? next(current.present) : next
+      const present = typeof next === "function" ? (next as (current: T) => T)(current.present) : next
       if (JSON.stringify(present) === JSON.stringify(current.present)) return current
       return { past: [...current.past.slice(-49), current.present], present, future: [] }
     })
   }, [])
-  const reset = useCallback((present: Dashboard) => setState({ past: [], present, future: [] }), [])
+  const reset = useCallback((present: T) => setState({ past: [], present, future: [] }), [])
   const undo = useCallback(
     () =>
       setState((current) =>
@@ -42,7 +43,7 @@ export function useDashboardHistory(initial: Dashboard) {
     [],
   )
   return {
-    dashboard: state.present,
+    present: state.present,
     update,
     reset,
     undo,
@@ -50,4 +51,9 @@ export function useDashboardHistory(initial: Dashboard) {
     canUndo: !!state.past.length,
     canRedo: !!state.future.length,
   }
+}
+
+export function useDashboardHistory(initial: Dashboard) {
+  const { present, ...history } = useDraftHistory(initial)
+  return { dashboard: present, ...history }
 }

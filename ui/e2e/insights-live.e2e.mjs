@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorValue } from "./query-editor.mjs"
 // Run from ui/ with a local Next development server already running:
@@ -250,8 +251,7 @@ try {
     await editor.getByRole("textbox", { name: /^PromQL query/ }).fill("live_requests")
     await editor.getByRole("tab", { name: "Style", exact: true }).click()
     await editor.getByLabel("Unit", { exact: true }).fill("req/s")
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     await page.getByRole("article", { name: "Live requests", exact: true }).getByText("42.5", { exact: false }).waitFor()
 
     await page.getByRole("button", { name: "Add widget", exact: true }).click()
@@ -259,8 +259,7 @@ try {
     editor = page.getByRole("region", { name: "Widget editor" })
     await editor.getByLabel("Title", { exact: true }).fill("Live traces")
     await editor.getByRole("textbox", { name: /^TraceQL query/ }).fill('{ resource.service.name = "live-checkout" }')
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     const traces = page.getByRole("region", { name: "Live traces traces" })
     await traces.getByText("POST /live/orders", { exact: true }).waitFor()
     await traces.getByText("72.25 ms", { exact: true }).waitFor()
@@ -272,6 +271,7 @@ try {
 
   let saved
   await check("save survives service restart and browser reload", async () => {
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByText("Dashboard saved.", { exact: true }).waitFor()
     const documents = await getSavedDashboards()
@@ -297,8 +297,7 @@ try {
     await page.getByRole("button", { name: "Edit Live requests", exact: true }).click()
     const editor = page.getByRole("region", { name: "Widget editor" })
     await editor.getByRole("textbox", { name: /^PromQL query/ }).fill("fail_query")
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     const widget = page.getByRole("article", { name: "Live requests", exact: true })
     await widget.getByRole("alert").getByText("Query failed", { exact: true }).waitFor()
     assert.match(await widget.innerText(), /provider query failed/)
@@ -306,8 +305,7 @@ try {
     assert.ok(bridgedRequests.some((request) => request.path.endsWith("/query") && request.status === 502))
     await page.getByRole("button", { name: "Edit Live requests", exact: true }).click()
     await editor.getByRole("textbox", { name: /^PromQL query/ }).fill("live_requests")
-    await editor.getByRole("button", { name: "Apply widget", exact: true }).click()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes", exact: true }).click()
     await widget.getByText("42.5", { exact: false }).waitFor()
   })
 
@@ -317,6 +315,7 @@ try {
     const changed = await fetch(`${serviceURL}/api/dashboards/${saved.id}`, { method: "PUT", headers: { "content-type": "application/json", "if-match": original.headers.get("etag") }, body: JSON.stringify(external) })
     assert.equal(changed.status, 200)
     await page.getByRole("textbox", { name: "Dashboard title", exact: true }).fill("My stale local edit")
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByRole("alert").getByText(/This dashboard changed on the server/).waitFor()
     assert.equal(await page.getByRole("textbox", { name: "Dashboard title", exact: true }).inputValue(), "My stale local edit", "Conflict should preserve the user's draft")
@@ -399,8 +398,9 @@ try {
     assert.deepEqual((await getSavedDashboards())[0], persistedBefore, "Live preview must not persist draft changes")
     await editor.getByRole("button", { name: "Run query", exact: true }).click()
     await editor.getByLabel("Query preview", { exact: true }).getByText("42.5", { exact: false }).waitFor()
-    await editor.getByRole("button", { name: "Close widget editor" }).click()
+    await editor.getByRole("button", { name: "Apply changes" }).click()
     assert.deepEqual((await getSavedDashboards())[0], persistedBefore, "Closing the editor must not persist draft changes")
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await until(async () => (await getSavedDashboards())[0].widgets.find(widget => widget.type === "stat").query === query, "Explicit dashboard Save must persist the generated query")
     await page.getByText("All changes saved", { exact: true }).waitFor()
@@ -427,6 +427,7 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     for (const path of expected) assert.ok(providerRequests.slice(requestStart).some((item) => item.path === path && Number(item.query.start) === start && Number(item.query.end) === end), `Missing exact custom time range for ${path}`)
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByText("All changes saved", { exact: true }).waitFor()
     const document = (await getSavedDashboards())[0]

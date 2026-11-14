@@ -6,7 +6,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { parse as parseYAML, stringify as stringifyYAML } from "yaml"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
 import { portableEnvironment, until } from "./insights-portable-fixture.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -125,7 +125,7 @@ async function review(document, { format = "json", file, code = false } = {}) {
     controlMetrics.push({ name: "Code import hierarchy", width: page.viewportSize().width, gap, backHeight: back.height })
     await screenshot(`code-review-top-${page.viewportSize().width}.png`)
   } else {
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    await activateDashboardAction(page, "Manage dashboards")
     if (file) await importer().getByLabel("Choose dashboard bundle", { exact: true }).setInputFiles(file)
     else {
       await selectGammaOption(page, importer().getByRole("combobox", { name: "Library import format", exact: true }), format.toUpperCase())
@@ -233,7 +233,7 @@ try {
   })
   await check("Manage exports an actual YAML library with referenced Prometheus and Tempo queries only", async () => {
     await editor().getByRole("button", { name: "Close source editor", exact: true }).click()
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    await activateDashboardAction(page, "Manage dashboards")
     const exported = await download(() => manager().getByRole("button", { name: "YAML", exact: true }).click(), "yaml")
     assertBundle(exported.document, bundle.dashboards, [metricQuery, traceQuery])
     assert.equal(exported.document.savedQueries[1].kind, "traces")
@@ -479,7 +479,7 @@ try {
     await importedDocuments(0)
     assert.equal((await library()).length, 0)
     await fresh("incomplete-destination", 390)
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    await activateDashboardAction(page, "Manage dashboards")
     await selectGammaOption(page, importer().getByRole("combobox", { name: "Library import format", exact: true }), "JSON")
     await importer().getByRole("textbox", { name: "Library import source", exact: true }).fill(JSON.stringify({ ...downloads.json.document, savedQueries: [] }))
     await importer().getByRole("button", { name: "Review import", exact: true }).click()

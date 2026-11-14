@@ -4,7 +4,8 @@ import styles from "./controls.module.css";
 
 export interface GammaButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "quiet" | "ghost" | "danger";
-  size?: "sm" | "md";
+  /** Marks take geometry from their chart. Ordinary actions retain touch sizing. */
+  size?: "sm" | "md" | "mark";
   loading?: boolean;
   /** Use only when the visible content is an icon and aria-label names the action. */
   iconOnly?: boolean;

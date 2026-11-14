@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // The real Go Insights/Observe service owns documents and ETags. Only metric
 // query responses use deterministic test observations; no production data.
 import assert from "node:assert/strict";
@@ -40,9 +41,9 @@ try {
   const editor = page.getByRole("region", { name: "Widget editor" });
   await editor.getByRole("tab", { name: "Style" }).click();
   await editor.getByLabel("Threshold 1 label", { exact: true }).fill("Unavailable locally");
-  await editor.getByRole("button", { name: "Apply widget" }).click();
-  await editor.getByRole("button", { name: "Close widget editor" }).click();
+  await editor.getByRole("button", { name: "Apply changes" }).click();
   assert.equal((await environment.api(`dashboards/${board.id}`)).etag, original.etag, "draft is not persisted before Save");
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
   await page.getByText("All changes saved", { exact: true }).waitFor();
   const saved = await environment.api(`dashboards/${board.id}`);

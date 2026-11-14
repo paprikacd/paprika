@@ -20,6 +20,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.sampleSelection {
+  padding: 0 17px 7px;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.5;
+}
+.sampleSelection time { color: var(--widget-text, var(--gamma-ink)); font-variant-numeric: tabular-nums; }
 .interactiveRow {
   cursor: pointer;
 }

@@ -1,26 +1,44 @@
-.wrapper { display:flex; flex-direction:column; min-height:0; height:100%; gap:8px; color:var(--widget-text, var(--gamma-ink)); }
-.scroll { flex:1 1 auto; min-height:0; overflow:auto; scrollbar-width:thin; }
-.plane { position:relative; width:100%; aspect-ratio:var(--plane-ratio); background:var(--gamma-surface-2); overflow:hidden; }
-.plane[data-geo-plane="grid"] { width:calc(100% - 8px); margin:4px; overflow:visible; }
-.plane svg { position:absolute; inset:0; width:100%; height:100%; }
-.land { fill:var(--gamma-border); stroke:var(--gamma-muted); stroke-opacity:.3; stroke-width:.55; }
-.gridLine { stroke:var(--gamma-muted); stroke-opacity:.18; stroke-width:.65; }
-.cellPosition { position:absolute; transform:translate(-50%, -50%); }
-.trigger.trigger { display:block; width:100%; height:100%; min-width:0; min-height:0; padding:0; border:0; border-radius:0; background:transparent; }
-.trigger:focus-visible { outline:2px solid var(--gamma-ink); outline-offset:2px; z-index:2; }
-.cell { display:block; width:100%; height:100%; background:var(--hex-color); clip-path:polygon(50% 2%, 96% 26%, 96% 74%, 50% 98%, 4% 74%, 4% 26%); transition:filter .12s; }
-.trigger:hover .cell { filter:brightness(1.18); }
-.cell[data-missing] { background:repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 3px, var(--gamma-muted) 3px 5px); }
-.footer { display:flex; gap:4px 12px; flex-wrap:wrap; align-items:center; color:var(--gamma-muted); font-size:10px; line-height:1.4; }
-.legend { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
-.ramp { display:flex; width:72px; height:8px; overflow:hidden; border-radius:2px; }
-.ramp i { flex:1; }
-.unknown::before { content:""; display:inline-block; width:8px; height:8px; margin-right:4px; background:repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 2px, var(--gamma-muted) 2px 3px); }
-.details { display:grid; gap:5px; padding:2px; font-size:12px; }
-.details b { font-variant-numeric:tabular-nums; }
-.scrollHint { display:none; }
-@media (max-width:700px), (pointer:coarse) {
-  .plane { min-width:1080px; }
-  .scrollHint { display:inline; }
+.wrapper { display: flex; flex-direction: column; min-height: 0; height: 100%; gap: 8px; color: var(--widget-text, var(--gamma-ink)); }
+.viewport { display: flex; flex: 1 1 0; min-height: 0; min-width: 0; }
+.scroll { container-type: size; display: grid; place-items: center; flex: 1 1 0; min-height: 0; min-width: 0; overflow: auto; padding: 4px; }
+.plane { position: relative; width: min(100cqw, calc(100cqh * var(--plane-aspect))); height: min(calc(100cqw / var(--plane-aspect)), 100cqh); }
+.cellPosition { position: absolute; transform: translate(-50%, -50%); }
+.cellPosition:hover { z-index: 1; }
+.cellPosition:has(.trigger[aria-pressed="true"]) { z-index: 2; }
+.cellPosition:has(.trigger:focus-visible) { z-index: 3; }
+.trigger.trigger { position: relative; display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+/* This mark supplies a visible hexagonal focus contour in place of Gamma's
+   rectangular button outline. Keep the full hit target and native button. */
+.trigger.trigger[data-gamma-button][data-size="mark"] { outline: none; }
+.cell { display: block; width: 100%; height: 100%; background-color: var(--hex-color); clip-path: var(--hex-clip); }
+.cell[data-missing] { background-color: var(--gamma-chart-empty); }
+/* SVG strokes straddle their path. Clip both contrast and foreground strokes
+   to the fill's polygon so inspection cannot erase a neighbouring cell. */
+.contour { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: hidden; clip-path: var(--hex-clip); opacity: 0; pointer-events: none; }
+.contour polygon { fill: none; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.contourHalo { stroke: var(--widget-background, var(--gamma-bg)); stroke-width: 4px; }
+.contourEdge { stroke: var(--gamma-ink); stroke-width: 2px; }
+.trigger[data-gamma-button]:is(:hover, :focus-visible, [aria-pressed="true"]) .contour { opacity: 1; }
+.trigger:is(:focus-visible, [aria-pressed="true"]) .contourEdge { stroke: var(--gamma-accent); }
+.trigger:focus-visible .contourEdge { stroke-width: 3px; }
+.trigger:focus-visible .contourHalo { stroke-width: 5px; }
+.footer { display: flex; gap: 4px 12px; flex: none; flex-wrap: wrap; align-items: center; padding-top: 4px; border-top: 1px solid var(--gamma-chart-grid); color: var(--widget-text, var(--gamma-muted)); font-size: 11px; line-height: 1.4; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.ramp { display: flex; width: 96px; height: 8px; overflow: hidden; border-radius: 2px; }
+.ramp i { flex: 1; }
+.unknown { display: inline-flex; align-items: center; gap: 4px; }
+.unknown i { width: 10px; height: 10px; }
+.scrollHint { display: none; }
+@media (max-width: 700px), (pointer: coarse) {
+  /* Dense records keep distinct touch targets in a labelled scroll region.
+     Geographic maps always fit their panel and never use this minimum. */
+  .scroll { display: block; place-items: start; }
+  .plane { width: max(100%, calc(var(--grid-columns) * 50px)); height: auto; aspect-ratio: var(--plane-aspect); }
+  .scrollHint { display: inline; }
 }
-@media (prefers-reduced-motion:reduce) { .cell { transition:none; } }
+@media (forced-colors: active) {
+  .contour { forced-color-adjust: none; opacity: 1; }
+  .contourHalo { stroke: Canvas; }
+  .contourEdge { stroke: CanvasText; stroke-width: 1px; }
+  .trigger:is(:hover, :focus-visible, [aria-pressed="true"]) .contourEdge { stroke: Highlight; stroke-width: 3px; }
+}

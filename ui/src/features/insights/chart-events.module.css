@@ -1,0 +1,32 @@
+.events { flex: none; min-width: 0; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted)); }
+.events > summary { cursor: pointer; padding: 6px 3px; white-space: nowrap; }
+.events > summary:focus-visible, .events > ul:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; border-radius: 3px; }
+/* The footer owns positioning, so even the last control fits its panel. */
+.events > ul {
+  position: absolute;
+  z-index: 3;
+  bottom: calc(100% + 4px);
+  right: 0;
+  width: min(100%, 440px);
+  max-height: min(180px, 55cqh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  list-style: none;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 4px;
+  background: var(--widget-background, var(--gamma-bg));
+  box-shadow: var(--gamma-shadow-mid);
+}
+.events li { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: baseline; gap: 3px 7px; padding: 7px 0; }
+.events li + li { border-top: 1px solid var(--gamma-border); }
+.events strong { color: var(--widget-text, var(--gamma-ink)); font-weight: 500; overflow-wrap: anywhere; }
+.severity { font-size: 10px; }
+.time { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.bullet { width: 7px; height: 7px; border-radius: 50%; background: var(--gamma-muted); }
+.bullet[data-severity="info"] { background: var(--gamma-chart-1); }
+.bullet[data-severity="warning"] { background: var(--gamma-chart-4); }
+.bullet[data-severity="critical"] { background: var(--gamma-danger); }
+@media (pointer: coarse) { .events > summary { min-height: 44px; align-content: center; } }

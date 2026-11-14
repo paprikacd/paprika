@@ -51,7 +51,7 @@ try {
     await page.keyboard.press("Enter"); assert.equal(await cells.nth(1).getAttribute("aria-pressed"),"true")
     await page.keyboard.press("Escape"); await tooltip.waitFor({state:"hidden"})
     if (width === 390) {
-      await cells.nth(0).tap(); await tooltip.getByText("No data",{exact:true}).waitFor(); await page.keyboard.press("Escape"); await tooltip.waitFor({state:"hidden"})
+      await cells.nth(0).tap(); await tooltip.locator("strong").filter({hasText:/^No data$/}).waitFor(); await page.keyboard.press("Escape"); await tooltip.waitFor({state:"hidden"})
       const region=host.getByRole("region",{name:"Current monitor status monitor statuses"})
       await host.getByText("Scroll to see all monitors",{exact:true}).waitFor()
       await region.focus(); assert.equal(await region.getAttribute("tabindex"),"0")

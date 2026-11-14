@@ -7,7 +7,7 @@ const field = z.string().min(1).max(128)
 export const geoHeatmapConfig = z.strictObject({
   mode: z.enum(["map", "grid"]).default("map"), latitude: field.default("latitude"), longitude: field.default("longitude"),
   label: field.default("label"), value: field.optional(), aggregation: z.enum(["count", "sum", "mean"]).default("count"),
-  radius: z.number().int().min(8).max(36).default(18), gridColumns: z.number().int().min(8).max(48).default(20), maxRecords: z.number().int().min(1).max(500).default(200),
+  radius: z.number().int().min(8).max(36).default(18), gridColumns: z.number().int().min(8).max(48).optional(), maxRecords: z.number().int().min(1).max(500).default(200),
 }).refine(value => value.aggregation === "count" || !!value.value, "A value field is required for sum and mean")
 type Config = z.infer<typeof geoHeatmapConfig>
 type Row = RecordFrame["rows"][number]
@@ -45,8 +45,9 @@ export function buildGeoHeatmap(input: RecordFrame, config: Config) {
       if (!finite(latitude) || !finite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) { invalid++; return }
       tile = cellFor((longitude + 180) * 2, (90 - latitude) * 2, config.radius)
     } else {
-      const step = 684 / config.gridColumns, radius = step / Math.sqrt(3)
-      const rowIndex = Math.floor(index / config.gridColumns), col = index % config.gridColumns
+      const columns = config.gridColumns ?? 20
+      const step = 684 / columns, radius = step / Math.sqrt(3)
+      const rowIndex = Math.floor(index / columns), col = index % columns
       // Reserve space around the first tile for the visible keyboard focus ring.
       tile = { key: String(index), x: step / 2 + 5 + col * step + (rowIndex % 2) * step / 2, y: radius + 5 + rowIndex * radius * 1.5 }
     }

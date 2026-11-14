@@ -31,35 +31,7 @@
   flex: 0 0 auto;
 }
 .scrollHint svg { flex: 0 0 auto; }
-.wrapper table {
-  border-collapse: collapse;
-  width: 100%;
-  text-align: left;
-  font-variant-numeric: tabular-nums;
-}
-.wrapper th {
-  position: sticky;
-  top: 0;
-  background: var(--widget-background, var(--gamma-bg));
-  color: var(--gamma-muted);
-  font-size: 11px;
-  font-weight: 550;
-  white-space: nowrap;
-  z-index: 1;
-}
-.wrapper td,
-.wrapper th {
-  border-bottom: 1px solid var(--gamma-border);
-  padding: 9px 10px;
-  max-width: 320px;
-  overflow-wrap: anywhere;
-}
-.wrapper td {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wrapper :is(th, td)[data-numeric] { text-align: right; }
+.wrapper td { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wrapper :is(th, td).rowNumber { width: 1%; color: var(--gamma-muted); text-align: right; white-space: nowrap; }
 .wrapper td[data-styled-cell] { padding-block: 3px; }
 .visualCell {
@@ -118,12 +90,8 @@
 .cellHistoryReading { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .cellHistoryState { color: var(--gamma-muted); font-size: 11px; }
 .cellHistoryMeaning { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-.recordCellDetails { display: grid; gap: 6px; min-width: 150px; max-width: 340px; overflow-wrap: anywhere; }
-.recordCellDetails strong { font-size: 12px; }
-.recordCellDetails > span { font-size: 13px; font-variant-numeric: tabular-nums; }
-.recordCellDetails small { color: var(--gamma-muted); font-size: 11px; }
-.recordCellDetails button { justify-self: start; }
-.recordTooltip { width: min(230px, calc(100vw - 24px)); }
+.recordCellValue { font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.recordTooltip { width: min(300px, calc(100vw - 24px)); }
 .wrapper td[data-record-cell-row] svg { pointer-events: none; }
 .cellOverflow { color: var(--gamma-muted); font-size: 10px; }
 .visualCell[data-cell-missing] { color: var(--gamma-muted); }
@@ -136,7 +104,9 @@
 .compactTable .cellBar { flex-basis: 48px; min-width: 32px; height: 10px; }
 .compactTable .cellHistory { min-width: 86px; gap: 4px; }
 .compactTable .cellHistoryPlot { flex-basis: 48px; width: 48px; height: 20px; }
-.wrapper button {
+/* Exclude table controls without increasing the reset's specificity over
+   chart states such as the status-history missing-observation hatch. */
+.wrapper:where(:not([data-record-table])) button {
   border: 0;
   background: transparent;
   color: inherit;
@@ -145,10 +115,10 @@
   padding: 4px;
   border-radius: 3px;
 }
-.wrapper button:hover:not(:disabled) {
+.wrapper:where(:not([data-record-table])) button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--gamma-ink) 7%, transparent);
 }
-.wrapper button:disabled {
+.wrapper:where(:not([data-record-table])) button:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -167,39 +137,9 @@
   font-size: 11px;
   color: var(--gamma-muted);
 }
-.toolbar input {
-  width: 160px;
-  min-width: 60px;
-  max-width: 100%;
-  border: 1px solid var(--gamma-border);
-  border-radius: 4px;
-  background: var(--gamma-bg);
-  padding: 5px 8px;
-  font: inherit;
-  color: var(--gamma-ink);
-}
+.toolbar input { width: 160px; min-width: 60px; max-width: 100%; }
 .compactTable {
   gap: 4px;
-}
-.compactTable td,
-.compactTable th {
-  padding: 2px 3px;
-  font-size: 11px;
-  line-height: 1.35;
-}
-.compactTable th {
-  padding-block: 1px;
-}
-.compactTable :is(th, td) > button {
-  min-height: 24px;
-  padding: 2px 4px;
-}
-@media (pointer: coarse), (max-width: 700px) {
-  .compactTable button,
-  .compactTable :is(th, td) > button {
-    min-height: 44px;
-    min-width: 44px;
-  }
 }
 .list {
   margin: 0;
@@ -253,13 +193,6 @@
 .treemap g[role="button"] {
   cursor: pointer;
 }
-.treeTooltip { min-width: 0; padding: 12px; font-size: 12px; line-height: 1.4; }
-.treeTooltip > strong { display: block; overflow-wrap: anywhere; }
-.treeTooltip dl { display: grid; gap: 5px; margin: 8px 0; }
-.treeTooltip dl div { display: flex; justify-content: space-between; gap: 12px; }
-.treeTooltip dt { color: var(--gamma-muted); }
-.treeTooltip dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.treeTooltip small { color: var(--gamma-muted); font-size: 11px; }
 .tileText {
   font: 12px var(--gamma-font-ui);
   fill: #23332c;
@@ -418,3 +351,5 @@
     & :is(th, td) { padding-inline: 2px; }
   }
 }
+
+.wrapper[data-record-table] > .note { border-top: 1px solid var(--gamma-chart-grid); padding-top: 4px; }

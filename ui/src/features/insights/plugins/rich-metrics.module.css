@@ -28,24 +28,21 @@
 .annotationRange[data-severity="info"] { fill: var(--gamma-chart-1, #2867b9); }
 .annotationRange[data-severity="warning"] { fill: var(--gamma-chart-4, #977017); }
 .annotationRange[data-severity="critical"] { fill: var(--gamma-danger, #b4473d); }
-.annotationMarker, .annotationBullet { fill: var(--gamma-chart-1, #2867b9); background: var(--gamma-chart-1, #2867b9); }
+.annotationMarker { fill: var(--gamma-chart-1, #2867b9); }
 .annotationLine[data-severity="warning"] { stroke: var(--gamma-chart-4, #977017); }
-.annotationMarker[data-severity="warning"], .annotationBullet[data-severity="warning"] { fill: var(--gamma-chart-4, #977017); background: var(--gamma-chart-4, #977017); }
+.annotationMarker[data-severity="warning"] { fill: var(--gamma-chart-4, #977017); }
 .annotationLine[data-severity="critical"] { stroke: var(--gamma-danger, #b4473d); }
-.annotationMarker[data-severity="critical"], .annotationBullet[data-severity="critical"] { fill: var(--gamma-danger, #b4473d); background: var(--gamma-danger, #b4473d); }
+.annotationMarker[data-severity="critical"] { fill: var(--gamma-danger, #b4473d); }
 .annotationLine[data-severity="unclassified"] { stroke: var(--gamma-muted, #697c73); }
-.annotationMarker[data-severity="unclassified"], .annotationBullet[data-severity="unclassified"] { fill: var(--gamma-muted, #697c73); background: var(--gamma-muted, #697c73); }
-.annotationEvents { flex: 0 1 auto; min-height: 0; max-height: 35%; overflow: auto; margin-top: 4px; font-size: 11px; line-height: 1.4; color: var(--widget-text, var(--gamma-muted)); }
+.annotationMarker[data-severity="unclassified"] { fill: var(--gamma-muted, #697c73); }
 .priorLegend { display: flex; flex: 0 1 auto; flex-wrap: wrap; gap: 4px 12px; max-height: 48px; min-width: 0; overflow: auto; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; }
 .priorLegend span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .priorLegend i { width: 12px; flex: none; border-top: 2px dashed; }
-.comparisonActions { display: flex; flex: none; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 12px; min-width: 0; }
-.annotationEvents summary { cursor: pointer; padding: 3px; }
-.annotationEvents summary:focus-visible { outline: 2px solid var(--gamma-accent); }
-.annotationEvents ul { list-style: none; margin: 0; padding: 4px 3px; }
-.annotationEvents li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 3px 0; }
-.annotationEvents time { font-variant-numeric: tabular-nums; }
-.annotationBullet { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; }
+.chartFooter { position: relative; display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
+.comparisonActions { display: flex; flex: 0 1 auto; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0 12px; min-width: 0; margin-left: auto; order: 1; }
+.chartFooter > .notices { flex: 1 1 140px; padding-block: 3px; }
+.chartFooter > .notices:empty { display: none; }
+.chartFooter > p { flex-basis: 100%; margin: 3px 0; font-size: 11px; }
 .legendContainer { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; max-height: min(128px, 42%); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; min-height: 0; max-height: 104px; flex: 0 1 auto; overflow: auto; padding: 9px 3px 3px; border-top: 1px solid var(--gamma-chart-grid, var(--gamma-border)); scrollbar-width: thin; }
 .legend:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; border-radius: 3px; }
@@ -65,7 +62,7 @@
 .legendTableName { display: flex; align-items: center; gap: 6px; max-width: 180px; }
 .legendTableName i { width: 12px; height: 3px; flex-shrink: 0; border-radius: 1px; }
 .legendTableName > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.srOnly { position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 /* Keep a four-series statistics legend useful on narrow panels without
    consuming the plot or requiring a separate scroll for ordinary results. */
 @container rich-metric (max-width: 679px) {
@@ -85,27 +82,23 @@
 .unknownKey::before { content: ""; width: 10px; height: 8px; border: 1px dashed var(--gamma-muted); background: var(--gamma-surface); }
 .notices { flex-shrink: 0; display: flex; gap: 4px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
 .notices:not(:empty) { padding: 4px 3px 0; }
-.inspector.inspector { width: min(300px, calc(100vw - 24px)); padding: 12px; font-size: 12px; line-height: 1.45; border-radius: 6px; }
+.inspector.inspector { font-size: 12px; line-height: 1.5; }
 .inspector:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
-.inspectorActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: var(--gamma-muted); font-size: 11px; }
-.inspectorActions button { flex-shrink: 0; }
 /* MetricDetails puts the full series title before the reading in its semantic
    order. Present the reading first so long labels cannot push it out of a
    short chart, while keeping the complete title and labels available below. */
 .inspectorDetails { display: flex; flex-direction: column; }
-.inspectorDetails > :nth-child(2) { order: -1; }
-.inspectorPeers { list-style: none; padding: 8px 0; margin: 8px 0 0; border-top: 1px solid var(--gamma-border); display: grid; gap: 5px; font-size: 11px; }
+.inspectorPeers { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 12px; }
 .inspectorPeers li { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 7px; }
 .inspectorPeers i { width: 7px; height: 7px; border-radius: 50%; }
 .inspectorPeers li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspectorPeers b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.pinHint { color: var(--widget-text, var(--gamma-muted)); font-size: 11px; margin-top: 6px; }
-.history { height: 48px; position: relative; margin: 8px 0; }
+.history { height: 48px; position: relative; }
 .history > svg { position: static; width: 100%; height: 48px; opacity: .85; mask-image: none; }
-.note { margin: 7px 0 0; font-size: 11px; line-height: 1.4; color: var(--gamma-muted); }
+.note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--gamma-muted); }
+.history + .note { margin-top: 8px; }
 /* The stack-total trend is a figure with its own caption; the default figure margin would push it out of the inspector. */
 .stackTotal { margin: 0; }
-@media (pointer: coarse) { .inspectorActions button { min-height: 44px; min-width: 44px; } }
 
 .heatmapFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 4px 3px 0; flex: 0 0 auto; }
 .heatmapFooter .densityLegend { padding: 0; font-size: 10px; gap: 7px; }
@@ -117,9 +110,25 @@
    The scrollable statistics yield space before the signal does. */
 .metricContent > .plot { min-height: min(128px, 55cqh); overflow: clip; }
 .metricContent > .legendContainer { max-height: min(128px, 38cqh); }
-/* A compact key still needs one complete text row plus its scroll hint. */
+/* Ordinary keys share one row; longer identities scroll without stealing plot height. */
 .metricContent[data-legend-display="compact"] > .plot { min-height: min(128px, max(48px, calc(100% - 48px))); }
-.metricContent[data-legend-display="compact"] > .legendContainer { min-height: 48px; }
+.metricContent[data-legend-display="compact"] > .legendContainer { flex: none; max-height: none; }
+.metricContent[data-legend-display="compact"] .legend { flex: none; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; min-height: 30px; max-height: none; padding-block: 5px; gap: 16px; }
+.metricContent[data-legend-display="compact"] .legendItem { flex: 1 0 auto; gap: 6px; }
+.metricContent[data-legend-display="compact"] .legendItem > span { flex: 0 1 auto; max-width: 160px; }
+.metricContent[data-legend-display="compact"] .legendItem b { margin-left: auto; padding-left: 6px; }
+@container rich-metric (max-width: 540px) {
+  .metricContent[data-legend-display="compact"] .legend { min-height: 44px; gap: 12px; }
+  .metricContent[data-legend-display="compact"] .legendItem { display: grid; grid-template-columns: 12px max-content; gap: 0 6px; }
+  .metricContent[data-legend-display="compact"] .legendItem > span,
+  .metricContent[data-legend-display="compact"] .legendItem b { grid-column: 2; }
+  .metricContent[data-legend-display="compact"] .legendItem b { margin-left: 0; padding-left: 0; }
+}
+@container rich-metric (min-width: 680px) {
+  .metricContent[data-legend-display="compact"][data-legend-position="right"] > .legendContainer { flex: 0 0 230px; max-height: 100%; }
+  .metricContent[data-legend-display="compact"][data-legend-position="right"] .legend { flex: 0 1 auto; flex-direction: column; align-items: stretch; gap: 6px; overflow-y: auto; }
+  .metricContent[data-legend-display="compact"][data-legend-position="right"] .legendItem { flex: none; }
+}
 @container rich-metric (max-width: 679px) {
   .metricContent[data-legend-display="table"] > .legendContainer { max-height: min(128px, 38cqh); }
 }

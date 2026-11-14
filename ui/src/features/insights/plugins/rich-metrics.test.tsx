@@ -127,7 +127,7 @@ describe("rich metric renderers", () => {
     const chart = screen.getByRole("group", { name: /Request outcomes/ });
     fireEvent.focus(chart);
     const inspector = screen.getByRole("region", { name: "Observation details" });
-    expect(within(inspector).getByText(longName)).toBeInTheDocument();
+    expect(inspector.querySelector("details")).toHaveTextContent(longName);
     expect(inspector.querySelector('[data-metric-value="3.14159"]')).toHaveTextContent("3.14 req/s");
     expect(within(inspector).getByText(labels.pod)).toBeInTheDocument();
     fireEvent.keyDown(chart, { key: "Enter" });
@@ -376,6 +376,7 @@ describe("rich metric renderers", () => {
       act(() => callbacks.forEach(callback => callback()));
       expect(legend).toHaveAttribute("tabindex", "0");
       expect(legend).toHaveAccessibleDescription("Scroll to see all series");
+      expect(screen.getByText("Scroll to see all series")).toHaveTextContent("↕");
       legend.focus(); expect(legend).toHaveFocus();
       expect(Number(container.querySelector("clipPath rect")?.getAttribute("height"))).toBeGreaterThan(48);
       expect(container.querySelectorAll("g[data-series] path").length).toBeGreaterThan(0);
@@ -424,6 +425,7 @@ describe("rich metric renderers", () => {
       const tableRegion = screen.getByRole("region", { name: "Series statistics" });
       expect(tableRegion).toHaveAttribute("tabindex", "0");
       expect(tableRegion).toHaveAccessibleDescription("Scroll to see all statistics");
+      expect(screen.getByText("Scroll to see all statistics")).toHaveTextContent("↔");
       tableRegion.focus(); expect(tableRegion).toHaveFocus();
       contentWidth = 280; act(() => callbacks.forEach(callback => callback()));
       expect(tableRegion).not.toHaveAttribute("tabindex");

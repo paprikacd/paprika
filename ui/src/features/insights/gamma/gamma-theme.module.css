@@ -31,6 +31,8 @@
   --gamma-chart-axis: #52636f;
   --gamma-chart-empty: #f8fafb;
   --gamma-chart-hatch: #75858e;
+  --gamma-map-land: #e5edef;
+  --gamma-map-coast: #8a9ea8;
   --gamma-density-0: #13a0ab;
   --gamma-density-1: #119ca5;
   --gamma-density-2: #0f979f;
@@ -112,6 +114,8 @@
   --gamma-chart-axis: #a8bac6;
   --gamma-chart-empty: #11171b;
   --gamma-chart-hatch: #6f808a;
+  --gamma-map-land: #263c46;
+  --gamma-map-coast: #4d6a79;
   --gamma-density-0: #0e8299;
   --gamma-density-1: #0e889c;
   --gamma-density-2: #0e8da0;
@@ -215,6 +219,13 @@
     --gamma-duration-slow: 0ms;
     --gamma-duration-reveal: 0ms;
   }
+  /* The main shell's universal 0.01ms override activates the CSS initial
+     transition-property: all, even on chart marks with no transition. A
+     density/theme change then dispatches thousands of transition events.
+     Reduced motion in this independently scoped app means no transitions. */
+  .scope, .scope *, .scope *::before, .scope *::after {
+    transition: none !important;
+  }
 }
 /* An explicit reduced-motion scope (data-motion="reduced") zeroes every duration, as the OS setting does. */
 .scope[data-motion="reduced"] {
@@ -222,6 +233,12 @@
   --gamma-duration-base: 0ms;
   --gamma-duration-slow: 0ms;
   --gamma-duration-reveal: 0ms;
+}
+.scope[data-motion="reduced"],
+.scope[data-motion="reduced"] *,
+.scope[data-motion="reduced"] *::before,
+.scope[data-motion="reduced"] *::after {
+  transition: none !important;
 }
 
 .scope,

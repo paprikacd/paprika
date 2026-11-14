@@ -15,6 +15,7 @@ import { tooltip } from "@tanstack/charts/tooltip";
 import type { ChartLinearGradient } from "@tanstack/charts";
 import { curveMonotoneX, curveStepAfter } from "d3-shape";
 import { useAnnotationEvents } from "./annotation-events";
+import { ChartEvents } from "./chart-events";
 import { useChartCursor } from "./chart-cursor";
 import { ChartDataInspector } from "./chart-data-inspector";
 import {
@@ -58,7 +59,6 @@ import { useDashboardWindow } from "./dashboard-window";
 import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
-import eventStyles from "./plugins/rich-metrics.module.css";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
 import { resolveSeriesColor } from "./series-colors";
 import { compactSeriesLabels } from "./series-display";
@@ -584,11 +584,11 @@ export function TimeSeriesChart({
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}
-      {!embedded && <div className={styles.chartActions} data-chart-actions><TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />
+      {!embedded && <div className={styles.chartActions} data-chart-actions><ChartEvents events={visibleEvents} /><TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />
       {!embedded && previousData.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={previousData.map(entry => entry.original)} buttonText="Inspect prior data" />}
       <ChartDataInspector widget={widget} series={visibleSeries} /></div>}
       </div>}
-      {visibleEvents.length > 0 && <details className={eventStyles.annotationEvents} role="group" aria-label="Chart events"><summary>{visibleEvents.length} {visibleEvents.length === 1 ? "event" : "events"} in view</summary><ul>{visibleEvents.map((event, index) => <li key={`${event.timestamp}-${index}`}><span className={eventStyles.annotationBullet} data-severity={event.severity ?? "unclassified"} aria-hidden="true" /><strong>{event.label}</strong><time dateTime={event.timestamp} title={new Date(event.timestamp).toISOString()}>{new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short", timeZone }).format(new Date(event.timestamp))}</time>{event.endTimestamp && <time dateTime={event.endTimestamp}>to {new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short", timeZone }).format(new Date(event.endTimestamp))}</time>}<span>{event.severity ?? "unclassified"}</span></li>)}</ul></details>}
+
       {widget.annotationSource && !embedded && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
       {widget.annotationSource && !embedded && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
       {widget.annotationSource && !embedded && eventsInView.length > visibleEvents.length && <p>{eventsInView.length - visibleEvents.length} additional events in view omitted.</p>}

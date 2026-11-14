@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // A visualisation change must not hide retained dashboard-filter bindings.
 // This uses a unique ETag-protected dashboard against the local provider.
 import assert from "node:assert/strict"
@@ -60,8 +61,9 @@ try {
       await editor.getByRole("button", { name: "Remove inactive selection bindings" }).click()
       assert.equal(await editor.getByText(/retained but inactive/).count(), 0)
       if (theme === "dark" && width === 390) {
-        await editor.getByRole("button", { name: "Apply widget" }).click()
+        await editor.getByRole("button", { name: "Apply changes" }).click()
         const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === path && response.ok())
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
         await write
         const saved = await api(path)
@@ -73,7 +75,7 @@ try {
         revision = nextRevision
       } else {
         // Closing a draft must leave the persisted binding and ETag unchanged.
-        await editor.getByRole("button", { name: "Close widget editor" }).click()
+        await editor.getByRole("button", { name: "Apply changes" }).click()
         const persisted = await api(path)
         assert.equal(persisted.headers.get("x-paprika-document-etag") ?? persisted.headers.get("etag"), revision)
         assert.deepEqual((await persisted.json()).widgets[0].selectionBindings, document.widgets[0].selectionBindings)

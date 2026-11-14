@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Exact-label series colors through the real Insights store and Prometheus.
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
@@ -39,18 +40,24 @@ try {
       const plot = tile.getByRole("img", { name: "Availability burn rate · request errors" });
       await plot.focus();
       const tooltip = page.getByRole("tooltip"); await tooltip.waitFor();
-      const selected = tooltip.locator("[data-observation-series]");
-      const series = await selected.getAttribute("data-observation-series");
-      const glyph = tooltip.locator("li i").first();
-      const tipColor = await glyph.evaluate(el => getComputedStyle(el).backgroundColor);
-      assert.equal(tipColor, series.includes("1h") ? "rgb(52, 140, 240)" : "rgb(21, 199, 161)", "Tooltip swatch must match its selected line");
+      // Swatches identify the comparison rows; the selected reading has its
+      // own heading and source details. Match each swatch to its actual row.
+      const peers = tooltip.locator("[data-peer-series]");
+      assert.equal(await peers.count(), 1, "Two plotted series must expose one comparison row");
+      for (const peer of await peers.all()) {
+        const series = await peer.getAttribute("data-peer-series");
+        assert.match(series, /[16]h/, "Comparison identity must include its burn window");
+        const tipColor = await peer.locator("i").evaluate(el => getComputedStyle(el).backgroundColor);
+        assert.equal(tipColor, series.includes("1h") ? "rgb(52, 140, 240)" : "rgb(21, 199, 161)", "Tooltip swatch must match its comparison series");
+      }
       await plot.press("Escape");
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
       await tile.getByRole("button", { name: "Edit Availability burn rate · request errors", exact: true }).click();
       const editor = page.getByRole("region", { name: "Widget editor" });
       await editor.getByRole("tab", { name: "Style" }).click();
       await editor.getByRole("textbox", { name: "Color rule 1 color" }).fill("#297ac0");
-      await editor.getByRole("button", { name: "Apply widget" }).click();
+      await editor.getByRole("button", { name: "Apply changes" }).click();
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
       const savedResponse = await api(`/api/insights/dashboards/${id}`);
       const saved = await savedResponse.json();

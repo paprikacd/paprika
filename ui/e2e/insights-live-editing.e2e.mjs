@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Real Go storage/adapters + deterministic Prometheus/Tempo providers. The local
 // gateway serves the final static UI and forwards API disconnects; production
@@ -167,7 +168,7 @@ try {
     assert.deepEqual((await api("dashboards/editing-board")).document, original, "Live previews must not persist")
     assert.equal(queries().length, before, "Title, styles and size must not refetch")
     await shot(`source-${width}.png`)
-    await panel().getByRole("button", { name: "Close widget editor", exact: true }).click()
+    await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
     await tile().getByRole("heading", { name: "Unsaved live preview", exact: true }).waitFor()
     await page.reload({ waitUntil: "networkidle" })
     await tile().getByRole("heading", { name: "Original widget", exact: true }).waitFor()
@@ -196,6 +197,7 @@ try {
 
   await check("Dashboard Save persists the immediate live draft and reload restores it", async () => {
     await panel().getByRole("textbox", { name: "Title", exact: true }).fill("Saved live preview")
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
     const persisted = (await api("dashboards/editing-board")).document
@@ -209,18 +211,20 @@ try {
   await check("Invalid plugin settings retain the valid preview and prevent Save until corrected", async () => {
     await openScenario(); await edit()
     await selectGammaOption(page, panel().getByRole("combobox", { name: "Visualization", exact: true }), /^Threshold gauge/)
+    await panel().getByRole("tab", { name: "Options", exact: true }).click()
     await panel().getByText("Advanced configuration", { exact: true }).click()
     const field = panel().getByRole("textbox", { name: "Plugin configuration", exact: true })
     const validConfig = JSON.parse(await field.inputValue())
     await field.fill('{"label":')
-    await until(() => page.getByRole("button", { name: "Save dashboard", exact: true }).isDisabled(), "Invalid widget draft did not disable Save")
+    await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isDisabled(), "Invalid widget draft did not disable Save")
     await panel().getByRole("alert").waitFor()
     const inspected = await source()
     assert.equal(inspected.type, "plugin"); assert.deepEqual(inspected.config, validConfig)
     assert.deepEqual((await api("dashboards/editing-board")).document, original)
-    await panel().getByRole("tab", { name: "Query", exact: true }).click()
+    await panel().getByRole("tab", { name: "Options", exact: true }).click()
     await field.fill('{"label":"Live gauge"}')
-    await until(() => page.getByRole("button", { name: "Save dashboard", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
+    await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
     assert.deepEqual((await api("dashboards/editing-board")).document.widgets[0].config, { label: "Live gauge" })
@@ -232,18 +236,18 @@ try {
     await panel().getByText("Guided query builder", { exact: true }).click()
     await selectGammaOption(page, panel().getByRole("combobox", { name: "Function", exact: true }), "Rate per second")
     await panel().getByLabel("Rate window", { exact: true }).fill("0m")
-    await until(() => page.getByRole("button", { name: "Save dashboard", exact: true }).isDisabled(), "Invalid widget draft did not disable Save")
+    await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isDisabled(), "Invalid widget draft did not disable Save")
     assert.deepEqual((await api("dashboards/editing-board")).document, original)
     await panel().getByRole("textbox", { name: "PromQL query", exact: true }).fill("fast_probe")
-    await until(() => page.getByRole("button", { name: "Save dashboard", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
+    await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
     await panel().getByLabel("Rate window", { exact: true }).fill("-1")
-    await until(() => page.getByRole("button", { name: "Save dashboard", exact: true }).isDisabled(), "Invalid widget draft did not disable Save")
+    await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isDisabled(), "Invalid widget draft did not disable Save")
     await panel().getByText("Guided query builder", { exact: true }).click()
-    await until(() => page.getByRole("button", { name: "Save dashboard", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
+    await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
     return { incompleteGuidedDraftBlocked: true, explicitCodeOrCloseRecovers: true, storageUnchanged: true }
   })
 
-  for (const width of [1512, 320]) await check(`All inspector tabs and saved-query tags remain visible at ${width}px`, async () => {
+  for (const width of [1512, 320]) await check(`Inspector tabs scroll in one row and saved-query tags remain visible at ${width}px`, async () => {
     const tagged = { schemaVersion: 1, id: `tagged-${width}`, name: `Tagged requests ${width}`, providerId: "metrics", kind: "metrics", query: "up", description: "Production request health", tags: ["production", "critical", "request-volume", "platform"], metadata: { team: "observability" } }
     await api(`saved-queries/${tagged.id}`, "PUT", tagged, { "If-None-Match": "*" })
     await openScenario(width); await edit()
@@ -251,16 +255,20 @@ try {
     const tabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
     const geometry = await tabs.evaluate(list => {
       const bounds = list.getBoundingClientRect()
-      return { width: bounds.width, height: bounds.height, tabs: [...list.querySelectorAll('[role="tab"]')].map(tab => { const rect = tab.getBoundingClientRect(); return { name: tab.textContent, inside: rect.left >= bounds.left && rect.right <= bounds.right && rect.top >= bounds.top && rect.bottom <= bounds.bottom, complete: tab.scrollWidth <= tab.clientWidth } }), pageOverflow: document.documentElement.scrollWidth - innerWidth }
+      return { width: bounds.width, height: bounds.height, tabs: [...list.querySelectorAll('[role="tab"]')].map(tab => { const rect = tab.getBoundingClientRect(); return { name: tab.textContent, top: rect.top, complete: tab.scrollWidth <= tab.clientWidth } }), pageOverflow: document.documentElement.scrollWidth - innerWidth }
     })
-    assert.equal(geometry.tabs.length, 6)
-    assert.ok(geometry.tabs.every(tab => tab.inside && tab.complete), JSON.stringify(geometry))
+    assert.equal(geometry.tabs.length, 4)
+    assert.ok(geometry.tabs.every(tab => tab.top === geometry.tabs[0].top && tab.complete), JSON.stringify(geometry))
     assert.ok(geometry.pageOverflow <= 1, JSON.stringify(geometry))
-    await tabs.getByRole("tab", { name: "Query", exact: true }).focus()
+    await tabs.getByRole("tab", { name: "Style", exact: true }).focus()
     await page.keyboard.press("End")
-    assert.equal(await tabs.getByRole("tab", { name: "Source", exact: true }).evaluate(tab => document.activeElement === tab && tab.getAttribute("aria-selected") === "true"), true)
+    assert.equal(await tabs.getByRole("tab", { name: "Layout", exact: true }).evaluate(tab => document.activeElement === tab && tab.getAttribute("aria-selected") === "true"), true)
+    assert.equal(await tabs.getByRole("tab", { name: "Layout", exact: true }).evaluate(tab => {
+      const bounds = tab.parentElement.getBoundingClientRect(), rect = tab.getBoundingClientRect()
+      return rect.left >= bounds.left + 3 && rect.right <= bounds.right - 3
+    }), true, "Keyboard navigation reveals the full tab and focus ring")
     await page.keyboard.press("Home")
-    assert.equal(await tabs.getByRole("tab", { name: "Query", exact: true }).evaluate(tab => document.activeElement === tab), true)
+    assert.equal(await tabs.getByRole("tab", { name: "Style", exact: true }).evaluate(tab => document.activeElement === tab), true)
     await shot(`inspector-tabs-${width}.png`)
     await selectGammaOption(page, panel().getByRole("combobox", { name: "Widget query source", exact: true }), "Saved query")
     const picker = panel().getByRole("combobox", { name: "Saved query", exact: true })
@@ -276,7 +284,8 @@ try {
     await picker.getByText("critical", { exact: true }).waitFor()
     assert.equal(await picker.getByText("+2", { exact: true }).count(), 1)
     await shot(`selected-query-tags-${width}.png`)
-    await panel().getByRole("button", { name: "Close widget editor", exact: true }).click()
+    await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
     await page.reload({ waitUntil: "networkidle" }); await edit()

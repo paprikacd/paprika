@@ -4,6 +4,22 @@ import { exampleDashboard } from "./example"
 import type { Widget } from "./schema"
 
 describe("responsive canvas projection", () => {
+  it("honours registered reading heights in compact projections without editing saved placement", () => {
+    const base = exampleDashboard.widgets[0]
+    const widgets: Widget[] = [
+      { ...base, id: "map", type: "plugin", pluginId: "geo-heatmap", layout: { x: 0, y: 0, w: 6, h: 4 } },
+      { ...base, id: "table", type: "plugin", pluginId: "record-table", layout: { x: 6, y: 0, w: 6, h: 4 } },
+      { ...base, id: "below", type: "timeseries", layout: { x: 0, y: 4, w: 12, h: 4 } },
+    ]
+    const before = JSON.stringify(widgets), heights = new Map([["map", 320], ["table", 240]])
+    const dense = denseCanvasLayout(widgets, "wide", 1200, true, heights)
+    expect(dense[0].h * 29 - 4).toBeGreaterThanOrEqual(320)
+    expect(dense[1].h).toBe(dense[0].h)
+    expect(dense[2].y).toBeGreaterThanOrEqual(dense[0].y + dense[0].h)
+    expect(canvasLayout(widgets, "stacked", 390, heights)[0].h * 74 - 16).toBeGreaterThanOrEqual(320)
+    expect(canvasLayout(widgets, "wide", 1200, heights)[0].h).toBe(4)
+    expect(JSON.stringify(widgets)).toBe(before)
+  })
   it("starts balanced metric groups after an occupied plugin half-row", () => {
     const base = exampleDashboard.widgets[0]
     const widgets: Widget[] = [{ ...base, id: "plugin", type: "plugin", layout: { x: 0, y: 0, w: 4, h: 2 } },

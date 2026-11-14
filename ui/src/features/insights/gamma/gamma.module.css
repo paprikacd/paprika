@@ -382,23 +382,90 @@
 }
 
 .sample-tabs [role="tablist"] {
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 5px;
   border: 1px solid var(--gamma-border);
   gap: 4px;
   padding: 4px;
 }
 .sample-tabs [role="tab"] {
-  flex: 1 1 70px;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  flex: 1 0 auto;
+  white-space: nowrap;
   min-height: 32px;
   color: var(--gamma-muted);
+}
+.sample-tabs [role="tab"]:hover {
+  background: var(--gamma-bg);
+  color: var(--gamma-ink);
+}
+.tabNavigation {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  min-width: 0;
+}
+.tabNavigation::before,
+.tabNavigation::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 1px;
+  bottom: 1px;
+  width: 16px;
+  border-radius: var(--gamma-radius-control);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--gamma-duration-fast) var(--gamma-ease-standard);
+}
+.tabNavigation::before {
+  left: 1px;
+  background: linear-gradient(to right, var(--gamma-surface-2), transparent);
+}
+.tabNavigation::after {
+  right: 1px;
+  background: linear-gradient(to left, var(--gamma-surface-2), transparent);
+}
+.tabNavigation[data-overflow-left]::before,
+.tabNavigation[data-overflow-right]::after {
+  opacity: 1;
+}
+@media (forced-colors: active) {
+  .tabNavigation::before,
+  .tabNavigation::after { display: none; }
 }
 .sample-tabs [role="tab"][aria-selected="true"] {
   box-shadow: var(--gamma-shadow-low);
   color: var(--gamma-ink);
 }
+.sample-tabs[data-variant="underline"] [role="tablist"] {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--gamma-border);
+  border-radius: 0;
+  padding: 4px;
+}
+.sample-tabs[data-variant="underline"] [role="tab"] {
+  flex: 0 0 auto;
+  min-width: 76px;
+  min-height: 40px;
+  padding-inline: 12px;
+  border-radius: var(--gamma-radius-control) var(--gamma-radius-control) 0 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.sample-tabs[data-variant="underline"] [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--gamma-accent);
+  color: var(--gamma-ink);
+}
+.sample-tabs[data-variant="underline"] [role="tab"]:hover { background: var(--gamma-surface-2); }
+.sample-tabs[data-variant="underline"] .tabNavigation::before { background: linear-gradient(to right, var(--gamma-surface), transparent); }
+.sample-tabs[data-variant="underline"] .tabNavigation::after { background: linear-gradient(to left, var(--gamma-surface), transparent); }
 .search-combobox input[role="combobox"]:focus {
   box-shadow: none;
 }
@@ -420,6 +487,7 @@
 @media (pointer: coarse), (max-width: 700px) {
   .switch-row,
   .sample-tabs [role="tab"],
+  .sample-tabs[data-variant="underline"] [role="tab"],
   .search-combobox-option,
   .search-combobox-action {
     min-height: 44px;
@@ -435,14 +503,4 @@
   .search-combobox input[role="combobox"] {
     min-height: 44px;
   }
-}
-
-/* Short editor labels stay in one evenly spaced row rather than an orphan
-   fifth tab. Longer tab sets retain the wrapping default. */
-.sample-tabs [role="tablist"][aria-label="Widget settings"] {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-.sample-tabs [role="tablist"][aria-label="Widget settings"] [role="tab"] {
-  padding-inline: 3px;
 }

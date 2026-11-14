@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Real authenticated Insights -> Observe MCP -> application connectors. Shorted
 // and Uptime use local HTTP sources; PostgreSQL uses a disposable real database.
 // Optional live Uptime reads use the existing source E2E password login only.
@@ -324,8 +325,9 @@ try {
     }
     await page.setViewportSize({ width: 1512, height: 1080 })
     await explorer().getByRole("button", { name: "Use in dashboard", exact: true }).click()
-    await page.getByRole("heading", { name: "Widget settings", exact: true }).waitFor()
-    await page.getByRole("button", { name: "Apply widget", exact: true }).click()
+    await page.getByRole("region", { name: "Widget editor", exact: true }).waitFor()
+    await page.getByRole("button", { name: "Apply changes", exact: true }).click()
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await until(async () => (await tool("get_dashboard", { id: dashboard.id })).document.widgets.length === 5, "Saved records query was not added to the dashboard")
     board = await tool("get_dashboard", { id: dashboard.id })

@@ -494,11 +494,22 @@
   padding: 3px 12px 8px;
 }
 .canvas {
+  position: relative;
   min-width: 0;
   /* Keep the previous measured grid width from briefly widening the page while
      ResizeObserver publishes the new geometry. Tooltips render in a portal. */
   overflow-x: clip;
 }
+.root[data-widget-focus] .topbar,
+.root[data-widget-focus] .pageHeader,
+.root[data-widget-focus] .toolbar,
+.root[data-widget-focus] .saveBlockedHint {
+  display: none;
+}
+.root[data-widget-focus] .workArea { min-height: 0; }
+.root[data-widget-focus] .canvasArea { padding: 0; }
+.root[data-widget-focus] .canvas { overflow: visible; }
+.focusedTile { height: 100%; min-height: 0; }
 .editingCanvas {
   border-radius: var(--gamma-radius-panel);
   background-image: radial-gradient(var(--gamma-surface-2) 1px, transparent 1px);
@@ -604,6 +615,20 @@
   padding: 1px 4px 3px 0;
   cursor: grab;
   touch-action: none;
+  user-select: none;
+}
+.canvas[data-layout-interacting]::after {
+  /* One hit-test surface keeps hover inspectors quiet without restyling every
+     mark. The grid's document listeners retain the active drag/resize. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  cursor: grabbing;
+  user-select: none;
+}
+.canvas[data-layout-resizing]::after {
+  cursor: se-resize;
 }
 .dragHandle:active {
   cursor: grabbing;
@@ -659,6 +684,8 @@
 .canvas :global(.react-resizable-handle) {
   width: 22px;
   height: 22px;
+  user-select: none;
+  touch-action: none;
 }
 .canvas :global(.react-resizable-handle::after) {
   border-color: var(--gamma-border);

@@ -55,7 +55,6 @@
 .field > button { text-align: left; }
 .optional { color: var(--gamma-muted); font-weight: 400; }
 .description { --gamma-field-min-height: 108px; resize: vertical; max-height: 200px; line-height: 1.65; }
-.detailsFields [role="tablist"] { flex: none; }
 .detailsFields [role="tab"] { min-width: 0; white-space: nowrap; font-size: 11px; padding: 8px 6px; }
 .detailsFields [role="tabpanel"] { padding: 16px 0 0; }
 .detailsSection { align-content: start; }
@@ -154,7 +153,7 @@
   .resultsCard > .sectionHeading { flex: none; margin-bottom: 10px; padding-bottom: 10px; gap: 8px; }
   .resultsBody { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: auto; }
   .resultsBody > :not(.resultView):not(.empty) { flex: none; }
-  .resultView { height: auto; min-height: 120px; flex: 1; }
+  .resultView { height: auto; min-height: 240px; flex: 1; }
   .testValues { max-height: 76px; overflow: auto; }
   .empty { flex: 1; min-height: 90px; padding: 8px; }
   .emptyIcon { width: 28px; height: 28px; margin-bottom: 6px; }

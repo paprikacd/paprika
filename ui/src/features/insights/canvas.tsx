@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import ReactGridLayout, {
   useContainerWidth,
@@ -18,16 +19,18 @@ import ReactGridLayout, {
 } from "react-grid-layout";
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
+import { useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import { ChartEntranceContext, type ChartEntranceSlot } from "./chart-entrance";
 import { TooltipQueryProvider } from "./tooltip-query";
 import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
-import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
+import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
+import { fullDateTimeOptions } from "./chart-data";
 import type { ObservationWindow } from "./time-window";
 import { TraceFetcherProvider } from "./trace-waterfall";
-import { AnnotationEventsProvider, useRecordedEvents } from "./annotation-events";
+import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
 import type {
   Dashboard,
   Drilldown,
@@ -90,19 +93,27 @@ export interface WidgetResultSnapshot {
  * What a canvas keeps for one widget between remounts: the last outcome it showed and whether its draw-in has played.
  * It lives with the canvas, so it ends with the page session and never reaches another user's session.
  */
-interface WidgetMemory { retained?: RetainedQuery; entered: boolean }
+interface WidgetMemory { retained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
 /** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
-function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; entrance: ChartEntranceSlot } {
+function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
   return {
     retention: {
       read: () => memory.get(key)?.retained,
-      write: (retained) => { memory.set(key, { retained, entered: memory.get(key)?.entered ?? false }); },
+      write: (retained) => { memory.set(key, { ...memory.get(key), retained, entered: memory.get(key)?.entered ?? false }); },
+    },
+    annotationRetention: {
+      read: () => memory.get(key)?.annotation,
+      write: (annotation) => { memory.set(key, { ...memory.get(key), annotation, entered: memory.get(key)?.entered ?? false }); },
     },
     entrance: {
       entered: () => memory.get(key)?.entered ?? false,
-      markEntered: () => { memory.set(key, { retained: memory.get(key)?.retained, entered: true }); },
+      markEntered: () => { memory.set(key, { ...memory.get(key), entered: true }); },
     },
   };
+}
+function sameFields(previous: object, next: object) {
+  const entries = Object.entries(previous);
+  return entries.length === Object.keys(next).length && entries.every(([key, value]) => Object.is(value, Reflect.get(next, key)));
 }
 const Tile = memo(function Tile({
   widget,
@@ -115,6 +126,7 @@ const Tile = memo(function Tile({
   draggable,
   naturalHeight = false,
   referenceCompact = false,
+  focused = false,
   selected,
   onSelect,
   onDrilldown,
@@ -136,6 +148,7 @@ const Tile = memo(function Tile({
   draggable: boolean;
   naturalHeight?: boolean;
   referenceCompact?: boolean;
+  focused?: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
   onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
@@ -174,13 +187,15 @@ const Tile = memo(function Tile({
     observer.observe(element.current);
     return () => observer.disconnect();
   }, []);
+  // A focused editor stays engaged while its author scrolls down to query controls.
+  const engaged = visible || focused;
   const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
   const { data, loading, error, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
     end,
     step: Math.max(1, Math.ceil((end - start) / 300)),
-    enabled: active && visible && !savedQueryLoading && (!!widget.queryRef || !!provider),
+    enabled: active && engaged && !savedQueryLoading && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
     retention: memoryOf.retention,
   });
@@ -188,7 +203,7 @@ const Tile = memo(function Tile({
   // response. Keep that distinction through the observer-to-effect handoff.
   const canQuery = !!widget.queryRef || (!!provider && !!widget.providerId && !!widget.query.trim());
   const awaitingFirstResult = active && canQuery && !data && !error;
-  const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && visible && !library.loading && !library.error);
+  const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && engaged && !library.loading && !library.error, memoryOf.annotationRetention);
   const annotationState = widget.annotationSource && library.error ? { events: [], error: library.error } : annotationData;
   const fetchTrace = useCallback((traceId: string, signal: AbortSignal) => fetcher({
     providerId: widget.providerId, query: widget.query, kind: "traces", start, end,
@@ -251,6 +266,8 @@ const Tile = memo(function Tile({
   const textColor = widgetTextColor(widget.options);
   const StatIcon = widget.type === "stat" && widget.options?.statIcon ? STAT_ICONS[widget.options.statIcon] : undefined;
   const links = widget.drilldowns ?? [];
+  const timeZone = useDashboardTimeZone();
+  const sampleTimeFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const needsContext = links.some((link) =>
     link.bindings?.some((binding) => binding.source !== "constant"),
   );
@@ -286,7 +303,7 @@ const Tile = memo(function Tile({
       tabIndex={onNudge ? 0 : undefined}
       aria-keyshortcuts={onNudge ? LAYOUT_KEYSHORTCUTS : undefined}
       onKeyDownCapture={onNudge ? layoutKey : undefined}
-      className={`${styles.tile} ${selected ? styles.selectedTile : ""}`}
+      className={`${styles.tile} ${selected && !focused ? styles.selectedTile : ""}`}
       data-intrinsic-stat={naturalHeight || undefined}
       data-widget-id={widget.id}
       data-widget-type={widget.type}
@@ -327,7 +344,8 @@ const Tile = memo(function Tile({
         {!!links.length && onDrilldown && (
           <GammaActionMenu
             label={`Open related dashboard from ${widget.title}`}
-            trigger={<ArrowUpRight size={15} aria-hidden="true" />}
+            iconOnly={false}
+            trigger={<>Explore <ArrowUpRight size={14} aria-hidden="true" /></>}
             items={links.map((link) => {
               const reason = drilldownContextReason(link, context);
               return {
@@ -335,20 +353,21 @@ const Tile = memo(function Tile({
                 label: link.title,
                 description:
                   reason ??
-                  (context.series ? `From ${context.series}` : undefined),
+                  `${link.carryTimeRange === false ? "Destination time range" : "Current time range"}${context.series ? ` · From ${context.series}` : ""}`,
                 disabled: !!reason,
                 onSelect: () => onDrilldown(link, context),
               };
             })}
           />
         )}
-        {editing && (
+        {editing && !focused && (
           <GammaButton
             iconOnly
             size="sm"
             variant="quiet"
             className={styles.iconButton}
             aria-label={`Edit ${widget.title}`}
+            data-widget-edit={widget.id}
             onClick={() => onSelect(widget.id)}
           >
             <Settings2 size={15} />
@@ -388,8 +407,8 @@ const Tile = memo(function Tile({
           </div>
         )
       )}
-      {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.selection} role="status">
-        Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{new Date(context.timestamp).toLocaleString()}</time>
+      {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.sampleSelection} role="status">
+        Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time>
       </div>}
       <div className={styles.visualization}>
         {active && (
@@ -397,15 +416,15 @@ const Tile = memo(function Tile({
             widget={widget}
             naturalHeight={naturalHeight}
             result={savedQueryLoading ? undefined : data}
-            loading={savedQueryLoading || loading || (visible && awaitingFirstResult)}
-            deferred={!savedQueryLoading && !visible && awaitingFirstResult}
+            loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
+            deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
             error={
               savedQueryLoading ? null : error ??
               (!provider && !widget.queryRef
                 ? `Provider “${widget.providerId}” is not configured.`
                 : null)
             }
-            onRetry={error && active && visible && !savedQueryLoading ? refresh : undefined}
+            onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
             onContextChange={
               (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
             }
@@ -414,6 +433,17 @@ const Tile = memo(function Tile({
       </div>
     </article>
   );
+}, (previous, next) => {
+  // Grid position belongs to the outer layout, not the chart. A drop can move
+  // several dense maps without changing any of their observations or styling.
+  // Dimensions, all other document fields and callbacks still invalidate.
+  const { widget: before, ...beforeProps } = previous;
+  const { widget: after, ...afterProps } = next;
+  if (!sameFields(beforeProps, afterProps)) return false;
+  if (before === after) return true;
+  const { layout: beforeLayout, ...beforeContent } = before;
+  const { layout: afterLayout, ...afterContent } = after;
+  return sameFields(beforeContent, afterContent) && beforeLayout.w === afterLayout.w && beforeLayout.h === afterLayout.h;
 });
 
 export function DashboardCanvas({
@@ -435,6 +465,7 @@ export function DashboardCanvas({
   onQueryResult,
   onTimeRange,
   onModeChange,
+  focus,
 }: {
   dashboard: Dashboard;
   active?: boolean;
@@ -454,6 +485,8 @@ export function DashboardCanvas({
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
   onTimeRange?: (window: ObservationWindow) => void;
   onModeChange?: (mode: CanvasMode) => void;
+  /** Compose the editor around the same tile/query owner used on the dashboard. */
+  focus?: { widget: Widget; render: (preview: ReactNode) => ReactNode };
 }) {
   const library = useSavedQueryLibrary();
   // Per canvas, keyed by dashboard and widget id. A tile that remounts (a breakpoint swap, a return to the view) reads
@@ -469,16 +502,28 @@ export function DashboardCanvas({
   });
   const mode = canvasMode(width);
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
-  const draggable = editing && mode === "wide";
+  const draggable = editing && mode === "wide" && !focus;
+  const definitions = useWidgetDefinitions();
+  const minimumHeights = useMemo(() => new Map(dashboard.widgets.map(widget => [widget.id,
+    definitions.find(definition => definition.type === widget.type && definition.id === (widget.pluginId ?? widget.type))?.sizing?.minHeight ?? 0,
+  ])), [dashboard.widgets, definitions]);
   const layout = useMemo(
-    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact) : canvasLayout(dashboard.widgets, mode, width),
-    [dashboard.widgets, mode, width, dense, editing, referenceCompact],
+    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights) : canvasLayout(dashboard.widgets, mode, width, minimumHeights),
+    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights],
   );
   // React-grid-layout settles a drag through this compactor, both for the live preview and on drop. The saved
   // positions are read after commit, so a drag always settles against the layout that was on screen when it began.
   const settledBase = useRef(layout);
   useLayoutEffect(() => { settledBase.current = layout; }, [layout]);
   const draggedId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const canvas = containerRef.current;
+    return () => {
+      draggedId.current = undefined;
+      canvas?.removeAttribute("data-layout-interacting");
+      canvas?.removeAttribute("data-layout-resizing");
+    };
+  }, [containerRef, dashboard.id, draggable]);
   const compactor = useMemo<Compactor>(() => ({
     type: "vertical",
     allowOverlap: false,
@@ -488,8 +533,19 @@ export function DashboardCanvas({
   }), []);
   // Keyboard edits are document edits like drags: each one goes through onLayout, so it is one undo step.
   const [announcement, setAnnouncement] = useState("");
+  // Host callbacks capture current routes/documents. Keep their tile-facing
+  // identity stable so dropping one chart does not redraw every loaded chart,
+  // while every interaction still reads the most recently committed state.
+  const interaction = useRef({ widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange });
+  useLayoutEffect(() => {
+    interaction.current = { widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange };
+  });
+  const openRelated = useCallback((link: Drilldown, context: DrilldownContext) => interaction.current.onDrilldown?.(link, context), []);
+  const selectObservation = useCallback((widget: Widget, context: DrilldownContext) => interaction.current.onSelection?.(widget, context), []);
+  const selectTime = useCallback((window: ObservationWindow) => interaction.current.onTimeRange?.(window), []);
   const nudge = useCallback((id: string, key: string, resize: boolean) => {
-    const widget = dashboard.widgets.find((item) => item.id === id);
+    const { widgets, layout, onLayout } = interaction.current;
+    const widget = widgets.find((item) => item.id === id);
     const resizing = resize ? layoutResizeForKey(key) : undefined;
     const direction = resize ? undefined : layoutMoveForKey(key);
     if (!widget || (!resizing && !direction)) return;
@@ -508,23 +564,37 @@ export function DashboardCanvas({
       setAnnouncement(`Resized ${widget.title} to ${count(placed.w, "column")} by ${count(placed.h, "row")}.`);
       return;
     }
-    const partner = edit.partner ? dashboard.widgets.find((item) => item.id === edit.partner)?.title : undefined;
+    const partner = edit.partner ? widgets.find((item) => item.id === edit.partner)?.title : undefined;
     // The partner is one of the passed widgets, so the rest are the others that moved with it.
     const others = (edit.passed?.length ?? 1) - 1;
     const more = others > 0 ? ` and ${others} other ${others === 1 ? "widget" : "widgets"}` : "";
     const beside = partner ? `, ${direction === "down" ? "below" : "above"} ${partner}${more}` : "";
     setAnnouncement(`Moved ${widget.title} ${direction}${beside}: ${gridPlacement(placed)}.`);
-  }, [dashboard.widgets, layout, onLayout]);
+  }, []);
+  // Moving an existing DOM subtree with insertBefore detaches thousands of
+  // chart descendants and can lose focus. Keep the session's initial reading
+  // order while the wide grid positions edits; reflow/view mode uses the new
+  // visual order. Newly added panels append to this stable editing sequence.
+  const editingOrderKey = draggable ? dashboard.id : undefined;
+  const [editingOrder, setEditingOrder] = useState<{ key?: string; ids: string[] }>(() => ({ key: editingOrderKey, ids: layout.map(item => item.i) }));
+  if (editingOrder.key !== editingOrderKey) setEditingOrder({ key: editingOrderKey, ids: layout.map(item => item.i) });
   const orderedWidgets = useMemo(() => {
     const byId = new Map(
       dashboard.widgets.map((widget) => [widget.id, widget]),
     );
+    if (draggable && editingOrder.key === dashboard.id) {
+      const initial = new Set(editingOrder.ids);
+      return [...editingOrder.ids.flatMap(id => byId.has(id) ? [byId.get(id)!] : []), ...dashboard.widgets.filter(widget => !initial.has(widget.id))];
+    }
     return layout.map((item) => byId.get(item.i)!);
-  }, [dashboard.widgets, layout]);
+  }, [dashboard.id, dashboard.widgets, layout, draggable, editingOrder]);
   const range = dashboardRange(dashboard, end);
+  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
+    { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
+  ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
   const stackedView = mode === "stacked" && !editing;
-  const tiles = orderedWidgets.map((widget, index) => (
-              <div key={widget.id} style={stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
+  const tiles = (focus ? [focus.widget] : orderedWidgets).map((widget, index) => (
+              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
                 <Tile
                   key={`${dashboard.id}:${widget.id}`}
                   widget={widget}
@@ -541,17 +611,18 @@ export function DashboardCanvas({
                   fetcher={fetcher}
                   start={range.start}
                   end={range.end}
-                  naturalHeight={stackedView && intrinsicStat(widget)}
+                  naturalHeight={!focus && stackedView && intrinsicStat(widget)}
                   referenceCompact={referenceCompact && !editing}
                   editing={editing}
+                  focused={!!focus}
                   draggable={draggable}
                   selected={selected === widget.id}
                   onSelect={onSelect}
-                  onDrilldown={onDrilldown}
-                  onSelection={onSelection}
+                  onDrilldown={onDrilldown ? openRelated : undefined}
+                  onSelection={onSelection ? selectObservation : undefined}
                   onQueryFields={onQueryFields}
                   onQueryResult={onQueryResult}
-                  onTimeRange={onTimeRange}
+                  onTimeRange={onTimeRange ? selectTime : undefined}
                   onNudge={draggable ? nudge : undefined}
                   memory={memory}
                   memoryKey={`${dashboard.id}:${widget.id}`}
@@ -569,14 +640,21 @@ export function DashboardCanvas({
     >
       <div
         ref={containerRef}
-        className={`${styles.canvas} ${editing ? styles.editingCanvas : ""}`}
+        className={`${styles.canvas} ${editing && !focus ? styles.editingCanvas : ""}`}
         data-testid="dashboard-canvas"
+        style={focusMinimum ? { "--widget-preview-min-height": `${focusMinimum}px` } as CSSProperties : undefined}
         data-layout-mode={mode}
         data-density={dense && !editing && mode === "wide" ? "compact" : "standard"}
+        onMouseDownCapture={(event) => {
+          // Native selection suppression on the handles replaces the grid's
+          // page-wide ::selection stylesheet and body-class mutations.
+          if (draggable && event.button === 0 && event.target instanceof Element &&
+              event.target.closest(".insights-drag-handle, .react-resizable-handle")) event.preventDefault();
+        }}
       >
         {draggable && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
         <ChartCursorProvider key={dashboard.id}>
-        {mounted && (stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
+        {mounted && (focus ? focus.render(tiles) : stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
             width={width}
             layout={layout}
@@ -589,17 +667,26 @@ export function DashboardCanvas({
             dragConfig={{
               enabled: draggable,
               handle: ".insights-drag-handle",
+              enableUserSelectHack: false,
             }}
-            resizeConfig={{ enabled: draggable, handles: ["se"] }}
+            resizeConfig={{ enabled: draggable, handles: ["se"], enableUserSelectHack: false }}
             compactor={compactor}
             onDragStart={(_layout, item) => {
               draggedId.current = item?.i;
+              containerRef.current?.setAttribute("data-layout-interacting", "true");
             }}
             onDragStop={(next) => {
               draggedId.current = undefined;
+              containerRef.current?.removeAttribute("data-layout-interacting");
               if (draggable) onLayout(next);
             }}
+            onResizeStart={() => {
+              containerRef.current?.setAttribute("data-layout-interacting", "true");
+              containerRef.current?.setAttribute("data-layout-resizing", "true");
+            }}
             onResizeStop={(next) => {
+              containerRef.current?.removeAttribute("data-layout-interacting");
+              containerRef.current?.removeAttribute("data-layout-resizing");
               if (draggable) onLayout(next);
             }}
           >

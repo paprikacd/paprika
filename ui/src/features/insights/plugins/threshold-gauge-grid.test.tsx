@@ -353,7 +353,7 @@ describe("multi-series threshold gauges", () => {
     expect(select).not.toHaveBeenCalled();
   });
 
-  it("keeps full provider identity and node/pod labels visible in a pinned mobile gauge tooltip", () => {
+  it("keeps full provider identity and node/pod labels available in expandable gauge source details", () => {
     const providerLabels = {
       cluster: "staging",
       node: "node-01",
@@ -367,15 +367,22 @@ describe("multi-series threshold gauges", () => {
       config: { display: "segmented" as const, seriesMode: "all" as const, columns: 1, maxSeries: 7, segments: 16 },
     };
     const result = {
-      series: [{ name, labels: providerLabels, points: [{ timestamp: 1783450000000, value: 31.718 }] }],
+      series: ["01", "02"].map(node => ({
+        name: name.replaceAll("node-01", `node-${node}`),
+        labels: { ...providerLabels, __name__: "paprika_example_ab_fleet_atlas_node_cpu", node: `node-${node}`, pod: providerLabels.pod.replace("node-01", `node-${node}`) },
+        points: [{ timestamp: 1783450000000, value: 31.718 }],
+      })),
     };
     render(<ThresholdGauge widget={meter} result={result} onContextChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /Select signal for CPU utilization/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Select signal for CPU utilization/ })[0]);
     const tooltip = screen.getByRole("tooltip");
+    expect(tooltip.querySelector('[class*="tooltipSeries"]')).toHaveTextContent("node-01");
     expect(tooltip.querySelector("details")).not.toHaveAttribute("open");
-    expect(within(tooltip).getByText(name, { exact: true })).toBeVisible();
-    expect(within(tooltip).getByText(providerLabels.node, { exact: true })).toBeVisible();
-    expect(within(tooltip).getByText(providerLabels.pod, { exact: true })).toBeVisible();
+    fireEvent.click(within(tooltip).getByText("Source details", { exact: true }));
+    const source = tooltip.querySelector("details")!;
+    expect(source).toHaveTextContent(name);
+    expect(within(source).getByText(providerLabels.node, { exact: true })).toBeVisible();
+    expect(within(source).getByText(providerLabels.pod, { exact: true })).toBeVisible();
     expect(tooltip.querySelector('[data-metric-value="31.718"]')).toBeInTheDocument();
   });
 

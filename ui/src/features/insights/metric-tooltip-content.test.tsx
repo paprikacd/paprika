@@ -28,3 +28,14 @@ it("inherits widget decimals when a shared consumer has no explicit override", (
   expect(container.querySelector('[data-metric-value="123.456"]')).toHaveTextContent("123.46 ms");
   expect(container.querySelector("details")).toHaveTextContent("123.456 ms");
 });
+
+it("places the sample time before expandable source metadata and retains the full identity", () => {
+  const { container } = render(<MetricDetails widget={widget} series={series} index={0} point={series.points[0]} unit="ms" seriesLabel="API" />);
+  const time = container.querySelector("time")!;
+  const details = container.querySelector("details")!;
+  expect(time.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByText("API")).toBeVisible();
+  expect(details).not.toHaveAttribute("open");
+  expect(details).toHaveTextContent(series.name);
+  expect(details).toHaveTextContent("123.456 ms");
+});

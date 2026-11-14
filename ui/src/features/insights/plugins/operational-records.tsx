@@ -15,18 +15,18 @@ import {
 import styles from "./operational-records.module.css"
 import { ObservationDetails } from "../observation-tooltip"
 import { TooltipDetail, TooltipFact } from "../tooltip-content"
-import { worldLandPath } from "./world-land"
+import { GeographicPlot } from "../geographic-plot"
 
 const metric = (value: number | null, unit: string, decimals?: number) => value === null ? "No observed value" : formatMetric(value, unit === "percent" ? "%" : unit, false, decimals)
 // Compact spoken labels avoid floating-point artifacts; the selected context
 // continues to carry the original unrounded source coordinate.
 const coordinate = (value: number) => String(Number(value.toFixed(4)))
 
-function Inspect({label, context, details, children, className, props, selectOnFocus, avoidWidget, tabIndex}: {
-  label: string; context: DrilldownContext; details: ReactNode; children: ReactNode; className?: string; props: WidgetRendererProps; selectOnFocus?: boolean; avoidWidget?: boolean; tabIndex?: number
+function Inspect({label, context, details, children, className, props, selectOnFocus, avoidWidget, tabIndex, mark}: {
+  label: string; context: DrilldownContext; details: ReactNode; children: ReactNode; className?: string; props: WidgetRendererProps; selectOnFocus?: boolean; avoidWidget?: boolean; tabIndex?: number; mark?: boolean
 }) {
   return <ObservationDetails label={label} className={className} details={details} revision={props.result}
-    selectOnFocus={selectOnFocus} avoidWidget={avoidWidget} tabIndex={tabIndex}
+    selectOnFocus={selectOnFocus} avoidWidget={avoidWidget} tabIndex={tabIndex} mark={mark}
     enabled={!props.embedded && props.widget.options?.showTooltip !== false}
     onSelect={!props.embedded && props.onContextChange ? () => props.onContextChange!(context) : undefined}>{children}</ObservationDetails>
 }
@@ -123,21 +123,13 @@ export function ConnectionMap(props: WidgetRendererProps) {
   </Detail>
   return <div className={styles.wrapper} data-operational-chart="connection-map" data-choosing-locations={overlaps.length > 1 || undefined}>
     {data.locations.length ? <>
-      <div className={styles.mapPlot} data-density={density || undefined}><div className={styles.mapCoordinates} data-map-plane="" data-density={density || undefined} role="group" aria-label="Geographic map · WGS84 equirectangular projection" onClickCapture={chooseOverlaps}>
-        <svg viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-          <path d={worldLandPath} fillRule="evenodd" className={styles.land} data-geographic-land="natural-earth-110m" />
-          {showGrid && [-180,-120,-60,0,60,120,180].map(longitude => <line key={longitude} x1={(longitude+180)*2} x2={(longitude+180)*2} y1={0} y2={360} className={longitude===0 ? styles.axis : styles.gridLine}/>)}
-          {showGrid && [-90,-60,-30,0,30,60,90].map(latitude => <line key={latitude} x1={0} x2={720} y1={(90-latitude)*2} y2={(90-latitude)*2} className={latitude===0 ? styles.axis : styles.gridLine}/>)}
-        </svg>
-        {showCoordinates && <><span className={`${styles.coordinate} ${styles.north}`}>90°N</span><span className={`${styles.coordinate} ${styles.south}`}>90°S</span>
-        <span className={`${styles.coordinate} ${styles.west}`}>180°W</span><span className={`${styles.coordinate} ${styles.east}`}>180°E</span>
-        <span className={`${styles.coordinate} ${styles.equator}`}>0°</span></>}
+      <GeographicPlot showGrid={showGrid} showCoordinates={showCoordinates} density={density} onClickCapture={chooseOverlaps}>
         {data.locations.map(location => <div key={location.key} data-map-location-key={location.key} className={styles.mapMarker} style={{left:`${location.x*100}%`,top:`${location.y*100}%`,"--point-size":`${location.value === null ? density ? 4 : 8 : density ? 3 + Math.sqrt(Math.abs(location.value)/maximum)*4 : 8 + Math.sqrt(Math.abs(location.value)/maximum)*12}px`,"--point-color":location.value === null ? undefined : thresholdForValue(location.value,thresholds)?.color ?? widget.color ?? "var(--gamma-chart-3)"} as CSSProperties}>
-          <Inspect props={props} selectOnFocus={false} avoidWidget tabIndex={largeMap && !props.embedded ? -1 : undefined} label={`${location.label} · ${coordinate(location.latitude)}°, ${coordinate(location.longitude)}°${config.value ? ` · ${metric(location.value, unit, decimals)}` : ""}`} context={location.context} className={styles.mapPoint} details={details(location)}>
+          <Inspect mark props={props} selectOnFocus={false} avoidWidget tabIndex={largeMap && !props.embedded ? -1 : undefined} label={`${location.label} · ${coordinate(location.latitude)}°, ${coordinate(location.longitude)}°${config.value ? ` · ${metric(location.value, unit, decimals)}` : ""}`} context={location.context} className={styles.mapPoint} details={details(location)}>
             <span className={styles.dot} data-tone={statusTone(location.status)} data-missing={config.value && location.value===null || undefined}/>
           </Inspect>
         </div>)}
-      </div></div>
+      </GeographicPlot>
       {overlaps.length > 1 && <section ref={overlapPicker} tabIndex={-1} className={styles.overlapPicker} role="region" aria-label="Locations under this point" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeOverlaps() } }}>
         <header><strong>{overlaps.length} locations under this point</strong><GammaButton size="sm" variant="quiet" aria-label="Close location choices" onClick={closeOverlaps}>Close</GammaButton></header>
         <p>Choose a recorded location; coordinates are unchanged.</p>
@@ -237,6 +229,7 @@ export function IncidentCalendar(props: WidgetRendererProps) {
 export function operationalRecordPluginEntries(): Omit<WidgetPlugin, "dataKind">[] {
   return [
     {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,parseConfig:(config:unknown)=>connectionMapConfig.parse(config??{}),
+      sizing:{mode:"fill",minHeight:240},
       defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label",display:"markers",showLocations:true},
       styleControls:["unit","decimals","legend","tooltips","color"],
       configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"display",label:"Map display",kind:"select" as const,options:[{value:"markers",label:"Markers"},{value:"density",label:"Observation glow"}],help:"Glow marks the supplied locations; it does not interpolate data between them."},{key:"showGrid",label:"Show coordinate grid",kind:"boolean" as const},{key:"showCoordinates",label:"Show coordinate labels",kind:"boolean" as const},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Renderer/editor audit using deterministic normalized API responses. Real Go
 // adapters and durable persistence are exercised by the separate live suites.
@@ -268,7 +269,7 @@ async function stateAssertions(page, state) {
         if (state === "zero") assert.match(await cells.first().getAttribute("aria-label"), /0\.00 req\/s.*At zero/)
         if (state === "negative") assert.match(await cells.first().getAttribute("aria-label"), /-12\.50 req\/s.*Below target/)
       }
-      if (state === "bounded") assert.match(text, /limit|First 12|Showing 100/)
+      if (state === "bounded") assert.ok(text.includes("Provider response may be incomplete."), "A bounded result must keep the provider warning visible")
       return { state, widget: kind, ...(axes ? { axes } : {}) }
     }, { widget: kind, state, viewport: page.viewportSize().width })
   }
@@ -285,7 +286,7 @@ async function withinViewport(page, locator) {
 }
 const editor = page => page.getByRole("region", { name: "Widget editor", exact: true })
 async function closeEditor(page) {
-  await editor(page).getByRole("button", { name: "Close widget editor", exact: true }).click()
+  await editor(page).getByRole("button", { name: "Apply changes", exact: true }).click()
   await stable(page)
 }
 async function editWidget(page, kind) {
@@ -333,28 +334,31 @@ async function editingAudit() {
       await editor(page).getByRole("switch", { name: "Show legend", exact: true }).uncheck()
       await editor(page).getByLabel("Threshold 3 color", { exact: true }).fill("#507e6b")
     }
-    const apply = editor(page).getByRole("button", { name: "Apply widget", exact: true })
+    const apply = editor(page).getByRole("button", { name: "Apply changes", exact: true })
     await apply.scrollIntoViewIfNeeded(); await page.waitForLoadState("networkidle")
     const originalQuery = documents.get("audit").widgets.find(widget => widget.id === kind).query
     const beforeStyle = requests.filter(request => request.query === originalQuery).length
     await apply.click()
     await page.waitForLoadState("networkidle")
     assert.equal(requests.filter(request => request.query === originalQuery).length, beforeStyle, "Cosmetic edits must reuse existing query data")
+    await editWidget(page, kind)
     await screenshot(page, `editor-${kind}-390.png`)
     await editor(page).getByRole("tab", { name: "Query", exact: true }).click()
     const query = editor(page).getByRole("textbox", { name: kind === "traces" ? /^TraceQL query/ : /^PromQL query/ })
     assert.equal(await query.evaluate(element => getComputedStyle(element).resize), "none", "Gamma query textareas must retain their responsive layout")
     const edited = kind === "traces" ? '{ name = "audit_traces_edited" }' : `audit_${kind}_edited`
     const beforeDraft = requests.filter(request => request.query === edited).length
+    const previewResponse = page.waitForResponse(response => response.url().endsWith("/api/insights/query") && response.request().postDataJSON()?.query === edited)
     await query.fill(edited)
+    assert.equal((await previewResponse).status(), 200)
     await page.waitForLoadState("networkidle")
-    assert.equal(requests.filter(request => request.query === edited).length, beforeDraft, "Query drafts must wait for explicit Run query or Apply")
-    if (kind === "gauge") await editor(page).getByRole("textbox", { name: "Meter label", exact: true }).fill("Edited capacity")
-    const previewRequest = page.waitForRequest(request => request.url().endsWith("/api/insights/query") && request.postDataJSON()?.query === edited)
+    assert.equal(requests.filter(request => request.query === edited).length, beforeDraft + 1, "One settled query edit previews once before Apply")
+    if (kind === "gauge") {
+      await editor(page).getByRole("tab", { name: "Options", exact: true }).click()
+      await editor(page).getByRole("textbox", { name: "Meter label", exact: true }).fill("Edited capacity")
+    }
     await editor(page).getByRole("button", { name: "Run query", exact: true }).click()
-    await previewRequest
     await editor(page).locator('[aria-label="Query preview"]').waitFor()
-    await editor(page).getByRole("button", { name: "Apply widget", exact: true }).click()
     await closeEditor(page)
     const tile = page.locator(`[data-widget-id="${kind}"]`)
     assert.equal(await tile.evaluate(element => getComputedStyle(element).backgroundColor), "rgb(238, 243, 235)")
@@ -362,11 +366,12 @@ async function editingAudit() {
     const axes = ["timeseries", "bar"].includes(kind) ? await axisContrast(tile) : undefined
     if (kind === "gauge") { assert.equal(await tile.getByRole("meter").getAttribute("aria-valuemin"), "-50"); assert.equal(await tile.getByRole("meter").getAttribute("aria-valuemax"), "150"); await tile.getByText("Edited capacity", { exact: true }).waitFor() }
     if (kind === "heatmap") { const cell = tile.getByRole("group").getByRole("button").first(); assert.ok(!(await cell.innerText()).includes("api-east")); assert.match(await cell.getAttribute("aria-label"), /api-east/) }
+    await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
     await page.getByText("All changes saved", { exact: true }).waitFor()
     const saved = documents.get("audit").widgets.find(widget => widget.id === kind)
     assert.equal(saved.query, edited); assert.equal(saved.options.decimals, 3); assert.equal(saved.options.background, "#eef3eb")
-    return { query: edited, persistedOptions: saved.options, draftRequests: 0, cosmeticRequests: 0, viewport: 390, ...(axes ? { axes } : {}) }
+    return { query: edited, persistedOptions: saved.options, draftRequests: 1, cosmeticRequests: 0, viewport: 390, ...(axes ? { axes } : {}) }
   }, { widget: kind, category: "editor" })
   await check("all widget edits survive reload and responsive reflow preserves desktop layouts", async () => {
     await page.reload({ waitUntil: "networkidle" })
@@ -452,7 +457,10 @@ async function confirmationAudit(width) {
     await page.getByRole("heading", { name: "Audit destination", exact: true }).waitFor()
     assert.notEqual(await page.evaluate(() => document.body.style.overflow), "hidden", "Accepted navigation should release both modal and drawer scroll locks")
     assert.equal(documents.get("audit").title, "Every widget audit")
-    await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
+    if (width < 600) {
+      await page.getByRole("button", { name: "Dashboard actions", exact: true }).click()
+      await page.getByRole("menuitem", { name: "Manage dashboards", exact: true }).click()
+    } else await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
     const manager = page.getByRole("region", { name: "Manage dashboards", exact: true })
     await manager.getByRole("button", { name: "Delete dashboard", exact: true }).click()
     await respondToGammaConfirmation(page, "Cancel")
@@ -523,6 +531,7 @@ async function detailAudit(width, touch = false) {
     else { await trigger.hover(); await page.getByRole("tooltip").waitFor(); await trigger.click() }
     const tooltip = page.getByRole("tooltip")
     await tooltip.waitFor()
+    if (kind === "table") await tooltip.getByText("Source details", { exact: true }).click()
     assert.equal(await trigger.getAttribute("aria-pressed"), "true")
     assert.equal(await trigger.getAttribute("aria-describedby"), await tooltip.getAttribute("id"))
     const measured = await withinViewport(page, tooltip)

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 import { verifyProviderEditor } from "./query-editor-scenarios.mjs"
@@ -13,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+import { activateDashboardAction, selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
 import { connectionQuery, verifyConnections } from "./query-connections-scenarios.mjs"
 import { precisionFixtures, verifyPrecision } from "./precision-scenarios.mjs"
 
@@ -192,11 +193,11 @@ async function check(name, action) {
   catch (error) { await shot(`failure-${scenario}.png`).catch(() => {}); reports.push({ name, passed: false, error: error.message, stack: error.stack }); throw error }
 }
 async function applySave() {
-  await panel().getByRole("button", { name: "Apply widget", exact: true }).click()
-  await panel().getByRole("button", { name: "Close widget editor", exact: true }).click()
+  await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
   await saveBoard()
 }
 async function saveBoard() {
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
   await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
 }
@@ -212,6 +213,7 @@ async function editHost() {
 }
 
 async function centerTooltipChild(child) {
+  await contained(tooltip())
   await child.evaluate(element => {
     const popup = element.closest('[role="tooltip"]'), bounds = element.getBoundingClientRect(), popupBounds = popup.getBoundingClientRect()
     popup.scrollTop += bounds.top - popupBounds.top - Math.max(12, (popup.clientHeight - bounds.height) / 2)
@@ -221,10 +223,27 @@ async function centerTooltipChild(child) {
     const child = element.getBoundingClientRect(), popup = element.closest('[role="tooltip"]').getBoundingClientRect()
     return { top: child.top, bottom: child.bottom, popupTop: popup.top, popupBottom: popup.bottom }
   })
-  assert.ok(visible.top >= visible.popupTop - 1 && visible.bottom <= visible.popupBottom + 1, `The captured tooltip child must be fully visible: ${JSON.stringify(visible)}`)
+  if (visible.bottom - visible.top <= visible.popupBottom - visible.popupTop) {
+    assert.ok(visible.top >= visible.popupTop - 1 && visible.bottom <= visible.popupBottom + 1, `A fitting tooltip child must be fully visible: ${JSON.stringify(visible)}`)
+  } else {
+    // An authored tall child can exceed a viewport-bounded inspector. Both
+    // ends must remain reachable through the inspector's own scroll surface.
+    for (const edge of ["top", "bottom"]) {
+      await child.evaluate((element, edge) => {
+        const popup = element.closest('[role="tooltip"]'), bounds = element.getBoundingClientRect(), viewport = popup.getBoundingClientRect()
+        popup.scrollTop += bounds[edge] - viewport[edge]
+      }, edge)
+      await frames()
+      const reachable = await child.evaluate((element, edge) => {
+        const child = element.getBoundingClientRect(), popup = element.closest('[role="tooltip"]').getBoundingClientRect()
+        return child[edge] >= popup.top - 1 && child[edge] <= popup.bottom + 1
+      }, edge)
+      assert.ok(reachable, `The ${edge} of a tall tooltip child must remain scrollable into view`)
+    }
+  }
 }
 
-async function assertSparkline(scope) {
+async function assertSparkline(scope, placement = "background") {
   const graphic = scope.locator("svg[data-stat-sparkline]")
   await graphic.waitFor()
   const attributes = await graphic.evaluate(element => Object.fromEntries([...element.attributes].map(attribute => [attribute.name, attribute.value])))
@@ -251,17 +270,24 @@ async function assertSparkline(scope) {
     const valueBox = reading.getBoundingClientRect(), plotBox = plot.getBoundingClientRect(), stat = plot.parentElement.parentElement
     return { numberRects, value: valueBox.toJSON(), reading: element.querySelector("[data-stat-reading]").getBoundingClientRect().toJSON(), plot: plotBox.toJSON(), valueText: reading.textContent, fontSize: getComputedStyle(reading).fontSize,
       valueLayer: getComputedStyle(element.querySelector("[data-stat-reading]")).zIndex, plotLayer: getComputedStyle(plot).zIndex,
-      plotPointerEvents: getComputedStyle(plot).pointerEvents, plotMask: getComputedStyle(plot).maskImage, lineOpacity: plot.querySelector("[data-stat-trend]").getAttribute("stroke-opacity"),
+      plotPointerEvents: getComputedStyle(plot).pointerEvents, plotMask: getComputedStyle(plot).maskImage, lineOpacity: getComputedStyle(plot.querySelector("[data-stat-trend]")).strokeOpacity,
       container: stat.getBoundingClientRect().toJSON(), clientHeight: stat.clientHeight, scrollHeight: stat.scrollHeight }
   })
   assert.equal(geometry.numberRects.length, 1, `Stat digits must stay on one readable line: ${JSON.stringify(geometry)}`)
   const digits = geometry.numberRects[0]
   assert.ok(digits.x >= geometry.container.x - 1 && digits.right <= geometry.container.right + 1 && digits.top >= geometry.container.top - 1 && digits.bottom <= geometry.container.bottom + 1, `The readable value must remain inside the stat: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.plot.x >= geometry.container.x - 1 && geometry.plot.right <= geometry.container.right + 1 && geometry.plot.top >= geometry.container.top - 1 && geometry.plot.bottom <= geometry.container.bottom + 1, `History must stay inside the stat: ${JSON.stringify(geometry)}`)
-  assert.ok(geometry.reading.bottom > geometry.plot.top && geometry.reading.top < geometry.plot.bottom && geometry.reading.right > geometry.plot.x && geometry.reading.x < geometry.plot.right, `The lower history backdrop must overlap the reading block: ${JSON.stringify(geometry)}`)
-  assert.ok(Number(geometry.valueLayer) > Number(geometry.plotLayer) && geometry.plotPointerEvents === "none", "The number and its inspection interaction must stay above the non-interactive history")
-  assert.ok(Number(geometry.lineOpacity) > 0 && Number(geometry.lineOpacity) < 1, "Background trend must remain translucent")
-  assert.ok(geometry.plotMask && geometry.plotMask !== "none", "The history mask must reduce visual interference behind the reading")
+  if (placement === "side") {
+    assert.ok(geometry.reading.right <= geometry.plot.x, `Side history must leave the reading clear: ${JSON.stringify(geometry)}`)
+    assert.equal(geometry.plotPointerEvents, "auto", "Side history remains inspectable")
+    assert.equal(geometry.plotMask, "none", "Side history must retain its authored colour")
+    assert.equal(Number(geometry.lineOpacity), 1)
+  } else {
+    assert.ok(geometry.reading.bottom > geometry.plot.top && geometry.reading.top < geometry.plot.bottom && geometry.reading.right > geometry.plot.x && geometry.reading.x < geometry.plot.right, `The lower history backdrop must overlap the reading block: ${JSON.stringify(geometry)}`)
+    assert.ok(Number(geometry.valueLayer) > Number(geometry.plotLayer) && geometry.plotPointerEvents === "none", "The number must stay above the non-interactive embedded history")
+    assert.ok(Number(geometry.lineOpacity) > 0 && Number(geometry.lineOpacity) < 1, "Background trend must remain translucent")
+    assert.ok(geometry.plotMask && geometry.plotMask !== "none", "The history mask must reduce visual interference behind the reading")
+  }
   assert.ok(geometry.value.x >= geometry.container.x - 1 && geometry.value.right <= geometry.container.right + 1, `The complete value and unit must stay within the stat: ${JSON.stringify(geometry)}`)
   assert.ok(geometry.scrollHeight <= geometry.clientHeight + 1 && geometry.plot.bottom <= geometry.container.bottom + 1, `A single-series compact stat must show its value and history without internal clipping: ${JSON.stringify(geometry)}`)
   return { sampleCount: Number(attributes["data-sample-count"]), renderedSamples: Number(attributes["data-rendered-samples"]), start: end - 240_000, end, minimum: -7.25, maximum: 1234.5678, latestValidTime: end - 60_000, geometry }
@@ -310,7 +336,7 @@ async function freshSavedTooltip(width) {
   await menu.getByRole("option", { name: new RegExp(`^${name}`) }).click()
   await selectGammaOption(page, panel().getByRole("combobox", { name: "Tooltip visualization", exact: true }), "Single value")
   await panel().getByLabel("Tooltip unit", { exact: true }).fill("ms")
-  await panel().getByLabel("Tooltip decimal places", { exact: true }).fill("4")
+  await panel().getByRole("group", { name: "Tooltip widget", exact: true }).getByLabel("Tooltip decimal places", { exact: true }).fill("4")
   await selectGammaOption(page, panel().getByRole("combobox", { name: "Tooltip chart height", exact: true }), /^Compact/)
   const toggle = panel().getByRole("switch", { name: "Show sparkline", exact: true })
   assert.equal(await toggle.isChecked(), false, "New Single value should preserve the no-sparkline default")
@@ -390,7 +416,7 @@ async function reusedStatSparkline(width) {
   await page.getByRole("button", { name: "Edit Current response", exact: true }).click()
   await panel().getByRole("tab", { name: "Style", exact: true }).click()
   await panel().getByRole("switch", { name: "Show sparkline", exact: true }).click(); await applySave()
-  const mainHistory = await assertSparkline(main)
+  const mainHistory = await assertSparkline(main, "side")
   await page.mouse.move(0, 0); await page.keyboard.press("Escape")
   await tooltip().waitFor({ state: "hidden" })
   await main.locator('[data-metric-value="1234.5678"]').scrollIntoViewIfNeeded(); await shot(`sparkline-main-stat-${width}.png`)
@@ -995,7 +1021,7 @@ try {
     }
     let document = (await api("dashboards/explorer-board")).document
     document.title = "Explorer integration OpenUI"
-    await page.getByRole("button", { name: "Build with AI", exact: true }).click()
+    await activateDashboardAction(page, "Build with AI")
     const ai = page.getByRole("region", { name: "Build with AI", exact: true })
     await ai.getByRole("textbox", { name: "AI-generated definition", exact: true }).fill(openUI(document))
     await ai.getByRole("button", { name: "Review definition", exact: true }).click()
@@ -1107,14 +1133,23 @@ try {
       await explorer().getByRole("button", { name: "Dashboard", exact: true }).click()
       await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
       await page.getByRole("button", { name: "Edit Parent health", exact: true }).click()
-      const tabGeometry = await panel().evaluate(element => {
-        const container = element.getBoundingClientRect()
-        return [...element.querySelectorAll('[role="tablist"] [role="tab"]')].map(tab => {
+      const settingsTabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
+      const tabGeometry = await settingsTabs.evaluate(element => {
+        return [...element.querySelectorAll('[role="tab"]')].map(tab => {
           const box = tab.getBoundingClientRect()
-          return { label: tab.textContent, left: box.left, right: box.right, inside: box.width > 0 && box.left >= container.left && box.right <= container.right }
+          return { label: tab.textContent, top: box.top, complete: box.width > 0 && tab.scrollWidth <= tab.clientWidth }
         })
       })
-      assert.ok(tabGeometry.length >= 5 && tabGeometry.every(tab => tab.inside), `Every settings tab stays inside the panel: ${JSON.stringify(tabGeometry)}`)
+      assert.deepEqual(tabGeometry.map(tab => tab.label), ["Style", "Tooltips", "Links", "Layout"])
+      assert.ok(tabGeometry.every(tab => tab.top === tabGeometry[0].top && tab.complete), `Settings tabs stay in one row with full labels: ${JSON.stringify(tabGeometry)}`)
+      await settingsTabs.getByRole("tab").first().focus()
+      for (const tab of await settingsTabs.getByRole("tab").all()) {
+        assert.equal(await tab.evaluate(element => {
+          const bounds = element.parentElement.getBoundingClientRect(), box = element.getBoundingClientRect()
+          return element === document.activeElement && box.left >= bounds.left + 3 && box.right <= bounds.right - 3
+        }), true, "Every tab is fully revealed through keyboard navigation")
+        await tab.press("ArrowRight")
+      }
       await selectGammaOption(page, panel().getByRole("combobox", { name: "Widget query source", exact: true }), "Saved query")
       await panel().getByRole("combobox", { name: "Saved query", exact: true }).click()
       await page.getByRole("combobox", { name: "Search saved query", exact: true }).fill("platform")

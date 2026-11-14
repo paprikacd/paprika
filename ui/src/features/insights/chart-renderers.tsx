@@ -1,5 +1,6 @@
 "use client";
 
+import { ChartTable } from "./chart-table";
 import {
   Fragment,
   useCallback,
@@ -9,7 +10,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { useTraceFetcher } from "./trace-waterfall";
 import { TraceDialog } from "./trace-dialog";
@@ -17,6 +17,7 @@ import { TooltipInstructions } from "./tooltip-instructions";
 import { MetricDetails } from "./metric-tooltip-content";
 export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
+import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
 export {
   downsamplePoints,
@@ -77,6 +78,8 @@ function Stat({
   onContextChange?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
+  const timeZone = useDashboardTimeZone();
+  const sampleTime = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }), [timeZone]);
   const { rangeEnd } = useDashboardWindow();
   const entries = series
     .map((entry, index) => ({
@@ -140,7 +143,7 @@ function Stat({
           </span>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}
-            {timeFormat.format(new Date(first.point.timestamp))}
+            <time dateTime={new Date(first.point.timestamp).toISOString()}>{sampleTime.format(new Date(first.point.timestamp))}</time>
           </div>
         </div>
         {widget.options?.showSparkline && (
@@ -212,7 +215,7 @@ function MetricTable({
       role="region"
       aria-label={`${widget.title} data table`}
     >
-      <table className={styles.table} aria-label={widget.title}>
+      <ChartTable className={styles.table} aria-label={widget.title}>
         <thead>
           <tr>
             <th scope="col">Series</th>
@@ -354,7 +357,7 @@ function MetricTable({
             );
           })}
         </tbody>
-      </table>
+      </ChartTable>
       {series.length > MAX_ROWS && (
         <p className={styles.notice}>
           Showing {MAX_ROWS} of {series.length} series. Narrow the query to see
@@ -374,6 +377,7 @@ function TraceList({
   traces: Trace[];
   onContextChange?: (context: DrilldownContext) => void;
 }) {
+  const embedded = useEmbeddedWidget();
   const [selected, setSelected] = useState<string>();
   const [expandedTrace, setExpandedTrace] = useState<string>();
   const fetchTrace = useTraceFetcher();
@@ -422,7 +426,7 @@ function TraceList({
       aria-label={`${widget.title} traces`}
       aria-describedby={overflow ? hintId : undefined}
     >
-      <table className={styles.table} aria-label={widget.title}>
+      <ChartTable className={styles.table} aria-label={widget.title}>
         <thead>
           <tr>
             <th scope="col">Service / operation</th>
@@ -481,7 +485,7 @@ function TraceList({
                 <td>
                   <ObservationDetails
                     label={`Inspect trace ${trace.traceId}`}
-                    enabled={widget.options?.showTooltip !== false}
+                    enabled={!embedded && widget.options?.showTooltip !== false}
                     revision={trace}
                     details={
                       <>
@@ -549,10 +553,10 @@ function TraceList({
                       </span>
                     </span>
                   </ObservationDetails>
-                  {fetchTrace && /^[a-fA-F0-9]{32}$/.test(trace.traceId) && <button type="button" data-trace-waterfall-toggle className={styles.traceExpand} aria-expanded={expandedTrace === trace.traceId} onClick={event => { event.stopPropagation(); setExpandedTrace(previous => previous === trace.traceId ? undefined : trace.traceId); }}>
+                  {!embedded && fetchTrace && /^[a-fA-F0-9]{32}$/.test(trace.traceId) && <button type="button" data-trace-waterfall-toggle className={styles.traceExpand} aria-expanded={expandedTrace === trace.traceId} onClick={event => { event.stopPropagation(); setExpandedTrace(previous => previous === trace.traceId ? undefined : trace.traceId); }}>
                     {expandedTrace === trace.traceId ? "Close waterfall" : "View waterfall"}
                   </button>}
-                  {expandedTrace === trace.traceId && <TraceDialog traceId={trace.traceId} onClose={() => setExpandedTrace(undefined)} />}
+                  {!embedded && expandedTrace === trace.traceId && <TraceDialog traceId={trace.traceId} onClose={() => setExpandedTrace(undefined)} />}
                 </td>
                 <td>
                   <div className={styles.traceTime}>
@@ -595,7 +599,7 @@ function TraceList({
             );
           })}
         </tbody>
-      </table>
+      </ChartTable>
       {traces.length > MAX_ROWS && (
         <p className={styles.notice}>
           Showing {MAX_ROWS} of {traces.length} traces. Narrow the query to see
@@ -848,10 +852,6 @@ export function Heatmap({
               }}
               onBlur={() => {
                 interaction.current.focused = null;
-
-                setActive((current) =>
-                  current?.pinned ? { ...current, pinned: false } : current,
-                );
                 scheduleHide();
               }}
               onClick={(event) => {

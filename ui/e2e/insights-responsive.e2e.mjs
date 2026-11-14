@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Run from ui/ against a fresh production export or development server:
 // INSIGHTS_E2E_URL=http://127.0.0.1:3015 node e2e/insights-responsive.e2e.mjs
 // Responsive and interaction tests use fresh browser contexts. The tooltip
@@ -83,11 +84,11 @@ async function heatmapStyle() {
   await editor().getByRole("tab", { name: "Style", exact: true }).click()
 }
 async function applyWidget() {
-  await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-  await editor().getByRole("button", { name: "Close widget editor" }).click()
+  await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
   await settle()
 }
 async function save() {
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
   await page.getByText("All changes saved", { exact: true }).waitFor()
 }
@@ -133,7 +134,7 @@ async function geometry(width, withEditor, original) {
   const where = `${width}px ${withEditor ? "with editor" : "view mode"}`
   assert.ok(result.overflow <= 1, `${where}: page overflowed by ${result.overflow}px; ${JSON.stringify(result.overflowElements)}`)
   assert.ok(result.topbar.breadcrumb.x + result.topbar.breadcrumb.width <= result.topbar.actions.x + 1, `${where}: breadcrumb overlaps dashboard actions`)
-  assert.equal(result.widgets.length, original.widgets.length, `${where}: all widgets must remain rendered`)
+  assert.equal(result.widgets.length, withEditor ? 1 : original.widgets.length, `${where}: focus shows only the selected chart; the dashboard shows every widget`)
   for (const widget of result.widgets) {
     const definition = original.widgets.find((item) => item.id === widget.id)
     const minimum = definition.type === "stat" ? 180 : 240
@@ -141,7 +142,7 @@ async function geometry(width, withEditor, original) {
     assert.ok(widget.height >= (definition.type === "stat" ? 94 : 120), `${where}: ${widget.id} is too short`)
     assert.ok(widget.titleSize >= 10, `${where}: ${widget.id} title is too small`)
     assert.ok(widget.x >= -1 && widget.x + widget.width <= width + 1, `${where}: ${widget.id} escaped viewport`)
-    if (result.mode === "stacked" || (result.mode === "compact" && definition.type !== "stat")) {
+    if (!withEditor && (result.mode === "stacked" || (result.mode === "compact" && definition.type !== "stat"))) {
       assert.ok(widget.width >= result.canvas.width - 1, `${where}: ${widget.id} must use the available canvas width`)
     }
     for (const chart of widget.charts) {
@@ -165,8 +166,8 @@ async function geometry(width, withEditor, original) {
   if (withEditor) {
     assert.ok(result.panel && result.panel.width >= 280, `${where}: editor must stay usable`)
     assert.ok(result.panel.x >= -1 && result.panel.x + result.panel.width <= width + 1 && result.panel.overflow <= 1, `${where}: editor overflowed`)
-    await editor().getByRole("button", { name: "Apply widget", exact: true }).scrollIntoViewIfNeeded()
-    await editor().getByRole("button", { name: "Close widget editor" }).scrollIntoViewIfNeeded()
+    await editor().getByRole("button", { name: "Apply changes", exact: true }).scrollIntoViewIfNeeded()
+    await editor().getByRole("button", { name: "Apply changes" }).scrollIntoViewIfNeeded()
     if (result.mode !== "wide") {
       assert.equal(await page.locator(".insights-drag-handle:visible").count(), 0, `${where}: adaptive view must not offer desktop-layout dragging`)
       assert.equal(await page.locator(".react-resizable-handle:visible").count(), 0, `${where}: adaptive view must not offer desktop-layout resizing`)
@@ -272,7 +273,7 @@ try {
     await heatmapStyle()
     const measurements = []
     for (const width of widths) measurements.push(await geometry(width, true, original))
-    await editor().getByRole("button", { name: "Close widget editor" }).click()
+    await editor().getByRole("button", { name: "Apply changes" }).click()
     assert.deepEqual((await document()).widgets.map(({ id, layout }) => ({ id, layout })), original.widgets.map(({ id, layout }) => ({ id, layout })))
     assert.equal(await page.evaluate(() => localStorage.getItem("paprika-insights-example-v1")), storage)
     assert.deepEqual(measurements.at(-1).tiles, measurements[0].tiles, "Editor resize roundtrip must restore its original visual arrangement")
@@ -325,6 +326,8 @@ try {
     assert.deepEqual(restored.widgets, exported.widgets)
     assert.equal((await unavailable().innerText()).trim(), "")
     await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('[data-testid="dashboard-canvas"][data-layout-mode="stacked"]').waitFor()
+    await stableGeometry()
     await unavailable().scrollIntoViewIfNeeded()
     await page.screenshot({ path: resolve(output, "dashboard-responsive-mobile.png"), fullPage: true })
     return { importedAsNew: true, flagsPreserved: true }
@@ -385,7 +388,7 @@ try {
     await page.mouse.move(2, 422)
     await page.getByRole("tooltip").waitFor({ state: "hidden" })
     await page.screenshot({ path: resolve(output, "dashboard-responsive-mobile-editor-canvas.png"), fullPage: false })
-    await editor().getByRole("button", { name: "Close widget editor" }).click()
+    await editor().getByRole("button", { name: "Apply changes" }).click()
     await page.setViewportSize({ width: 1512, height: 1050 })
     return focus
   })
@@ -409,8 +412,10 @@ try {
     }
     measurements.push(await completeTooltip(target, cell))
     await cell.press("End")
+    await settle(target)
     assert.ok(await target.getByRole("tooltip").evaluate((el) => el.scrollTop > 0), "Keyboard users must be able to scroll long tooltip details")
     await cell.press("Home")
+    await settle(target)
     assert.equal(await target.getByRole("tooltip").evaluate((el) => el.scrollTop), 0)
     await cell.press("Escape")
     await target.getByRole("tooltip").waitFor({ state: "hidden" })

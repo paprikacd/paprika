@@ -17,7 +17,7 @@ export function intrinsicStat(widget: Widget): boolean {
 }
 
 /** Responsive views are projections of the saved layout, never document edits. */
-export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number): Layout {
+export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, minimumHeights?: ReadonlyMap<string, number>): Layout {
   const ordered = [...widgets].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
   // Fit a contiguous metric group into balanced rows when every card has
   // at least ~270px. Do not leave one metric stranded after a three-up row.
@@ -63,7 +63,7 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
         Array.isArray(widget.config?.cellStyles) && widget.config.cellStyles.some(style =>
           typeof style === "object" && style !== null && "display" in style && style.display === "sparkline")
       const minimumHeight = widget.type === "stat" ? mode === "stacked" ? 2 : 1 : heatmapText ? mode === "compact" ? 5 : 6 : statisticsLegend || sparklineTable ? 5 : 4
-      const h = Math.max(minimumHeight, widget.layout.h)
+      const h = Math.max(minimumHeight, widget.layout.h, Math.ceil(((minimumHeights?.get(widget.id) ?? 0) + 16) / 74))
       if (x + w > 12 || (metricWidths.has(widget.id) && x > 0 && x % w !== 0)) {
         y += rowHeight
         x = 0
@@ -80,8 +80,8 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
 /** A viewing-only projection for dense operational boards. Horizontal
  * placement and reading order stay intact; earlier overlapping columns always
  * finish before later rows. Saved layouts and the editor are never mutated. */
-export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false): Layout {
-  const standard = canvasLayout(widgets, mode, width)
+export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false, minimumHeights?: ReadonlyMap<string, number>): Layout {
+  const standard = canvasLayout(widgets, mode, width, minimumHeights)
   if (mode !== "wide") return standard
   const byId = new Map(widgets.map(widget => [widget.id, widget]))
   const heightFor = (item: Layout[number]) => {
@@ -145,7 +145,10 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
   const fineGroups = new Map<string, number>()
   for (const item of placed) {
     const group = `${item.y}:${item.h}`
-    fineGroups.set(group, Math.max(fineGroups.get(group) ?? 0, fineHeight(item)))
+    // The renderer declares its useful card height once. Compact viewing must
+    // not silently compress a map or readable table beneath that contract.
+    const minimum = Math.ceil(((minimumHeights?.get(item.i) ?? 0) + 4) / 29)
+    fineGroups.set(group, Math.max(fineGroups.get(group) ?? 0, fineHeight(item), minimum))
   }
   const fine: Layout[number][] = []
   for (const item of placed) {

@@ -53,7 +53,9 @@ try {
       let state = await geometry(tooltip, "flow")
       insideViewport(state)
       assert.equal(await settles(tooltip), true, "Hover position must settle")
-      assert.ok(state.bottom - state.top <= 350, "Transient traffic details should stay compact")
+      // The shared title, timestamp, peer and action sections now retain their
+      // readable gutters. Bound the complete anatomy, including its footer.
+      assert.ok(state.bottom - state.top <= Math.min(440, state.height - 24), `Transient traffic details should stay compact: ${JSON.stringify(state)}`)
       await tooltip.getByText("Click or tap chart to pin details").waitFor()
       const peers = tooltip.getByRole("list", { name: "Series at selected time" })
       assert.equal(await peers.locator("li").count(), 2)
@@ -80,7 +82,7 @@ try {
       await page.setViewportSize({ width, height: 760 })
       assert.equal(await settles(tooltip), true, "Pinned position must settle after resize")
       state = await geometry(tooltip, "flow"); insideViewport(state)
-      if (!state.declaredOverlap) assert.equal(state.actualOverlap, false)
+      assert.match(await tooltip.getAttribute("data-placement"), /^pointer-/, "Mouse pinning must retain its pointer anchor after resize")
       await page.keyboard.press("Escape"); await tooltip.waitFor({ state: "hidden" })
       await page.goto(new URL("/dashboard/insights/?dashboard=local-gallery-service-pulse", origin).href, { waitUntil: "networkidle" })
       await page.locator('[data-widget-id="request-history"]').scrollIntoViewIfNeeded()

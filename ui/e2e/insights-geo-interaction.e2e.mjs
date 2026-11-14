@@ -32,10 +32,13 @@ try {
       await cell.focus()
       const tooltip = page.getByRole("tooltip"); await tooltip.waitFor()
       const instructions = tooltip.locator("[data-tooltip-instructions]")
+      await instructions.getByText(width === 390 ? "Swipe to scroll · tap outside to close" : "Page Up/Down to scroll · Esc to close").waitFor()
       assert.equal(await instructions.getByText("Swipe to scroll · tap outside to close").isVisible(), width === 390)
       assert.equal(await instructions.getByText("Page Up/Down to scroll · Esc to close").isVisible(), width !== 390)
       await page.waitForFunction(() => document.querySelector('[data-tooltip-widget="stat"]'))
       await response
+      await tooltip.locator('[data-tooltip-widget="stat"] [data-metric-value]').waitFor()
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
       assert.equal(requests().length, 1)
       assert.match(requests()[0].document.query, /gateway="edge-01"/)
       assert.ok(!page.url().includes("Melbourne"), "Focusing should not select a location")
@@ -52,6 +55,8 @@ try {
       await cell.press("Enter")
       await page.waitForURL(/Melbourne/)
       if (width === 390) {
+        await page.keyboard.press("Escape")
+        await tooltip.waitFor({ state:"hidden" })
         await cell.tap()
         await tooltip.waitFor()
         await tooltip.getByText("Latest valid sample", {exact:false}).waitFor()

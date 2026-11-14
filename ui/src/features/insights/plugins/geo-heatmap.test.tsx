@@ -53,7 +53,7 @@ describe("geo heatmap", () => {
     const target = screen.getByRole("button",{name:/2 observations · Sum of requests: 30.00 · 2 records/})
     fireEvent.focus(target)
     expect(screen.getByRole("tooltip")).toHaveTextContent("Nearby locations grouped")
-    expect(screen.getByRole("tooltip")).toHaveTextContent("service: api")
+    expect(screen.getByText("service").nextElementSibling).toHaveTextContent("api")
     fireEvent.click(target); expect(target).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByText(/empty areas are unobserved/)).toBeInTheDocument()
     expect(screen.getByText("1 invalid coordinates omitted")).toBeInTheDocument()

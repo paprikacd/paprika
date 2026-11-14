@@ -236,6 +236,9 @@ export default function InsightsApp({
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)
   const [widgetDraftValid, setWidgetDraftValid] = useState(true)
+  const [widgetPreview, setWidgetPreview] = useState<Widget>()
+  const [widgetDraftDirty, setWidgetDraftDirty] = useState(false)
+  const widgetOpener = useRef<string | undefined>(undefined)
   const invalidWidgetSaveHintId = useId()
   const [panel, setPanel] = useState<
     "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | null
@@ -341,10 +344,15 @@ export default function InsightsApp({
   const currentWidget = dashboard.widgets.find(
     (widget) => widget.id === selected,
   )
+  const editingWidget = panel === "widget" && !!currentWidget
+  const focusedWidget = editingWidget && !exploring
+  const previewWidget = widgetPreview?.id === currentWidget?.id ? widgetPreview : currentWidget
   const builderPanel = useBuilderPanelFocus(
-    panel
+    panel && !exploring
       ? `${dashboard.id}:${panel}:${panel === "widget" ? (selected ?? "") : ""}`
       : null,
+    () => widgetOpener.current ? document.querySelector<HTMLElement>(`[data-widget-edit="${CSS.escape(widgetOpener.current)}"]`) ??
+      document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]') : null,
   )
 
   const enterExample = useCallback(() => {
@@ -408,14 +416,14 @@ export default function InsightsApp({
   }, [client, initialExample, enterExample, reset, retry])
 
   useEffect(() => {
-    if (!dirty && !explorerDirty && !importingBundle) return
+    if (!dirty && !widgetDraftDirty && !explorerDirty && !importingBundle) return
     const handler = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ""
     }
     window.addEventListener("beforeunload", handler)
     return () => window.removeEventListener("beforeunload", handler)
-  }, [dirty, explorerDirty, importingBundle])
+  }, [dirty, widgetDraftDirty, explorerDirty, importingBundle])
 
   useEffect(() => {
     if (!drawerOpen || !navigation.current) return
@@ -524,20 +532,62 @@ export default function InsightsApp({
     if (bundleImportActive.current) return
     setPanel(null)
     setSelected(undefined)
+    setWidgetPreview(undefined)
+    setWidgetDraftDirty(false)
   }, [])
   const selectWidget = useCallback((id: string) => {
     if (bundleImportActive.current) return
+    widgetOpener.current = id
+    setMessage("")
+    setWidgetPreview(undefined)
+    setWidgetDraftDirty(false)
+    setMobileSidebar(false)
     setSelected(id)
     setPanel("widget")
     setEditing(true)
   }, [])
+  const askToDiscardChart = confirmation.ask
+  const navigateFromChart = useCallback((navigate: () => void) => {
+    if (!widgetDraftDirty) {
+      navigate()
+      return
+    }
+    void askToDiscardChart({
+      title: "Discard chart changes?",
+      description: "These chart settings have not been applied to the dashboard.",
+      action: "Discard changes",
+    }).then(accepted => { if (accepted) navigate() })
+  }, [widgetDraftDirty, askToDiscardChart])
+  const leaveWidget = useCallback(() => navigateFromChart(close), [navigateFromChart, close])
+  function openBuilderPanel(next: Exclude<typeof panel, "widget">) {
+    // Explore keeps the focused chart mounted. Any other panel replaces it,
+    // so wait for its unapplied draft to be resolved before changing views.
+    navigateFromChart(() => {
+      close()
+      setExploring(false)
+      setPanel(next)
+      setMobileSidebar(false)
+      if (next === "ai") setEditing(true)
+    })
+  }
+  useEffect(() => {
+    if (!focusedWidget) return
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented ||
+        document.querySelector('dialog[open], [role="dialog"], [role="tooltip"], [role="listbox"], [role="menu"]')) return
+      event.preventDefault()
+      void leaveWidget()
+    }
+    window.addEventListener("keydown", keydown)
+    return () => window.removeEventListener("keydown", keydown)
+  }, [focusedWidget, leaveWidget])
   const layoutUpdate = useCallback(
     (layout: Layout) =>
       update((current) => ({
         ...current,
         widgets: current.widgets.map((widget) => {
           const position = layout.find((item) => item.i === widget.id)
-          return position
+          return position && (widget.layout.x !== position.x || widget.layout.y !== Math.min(1000, position.y) || widget.layout.w !== position.w || widget.layout.h !== position.h)
             ? {
                 ...widget,
                 layout: {
@@ -613,11 +663,15 @@ export default function InsightsApp({
       title: query.name, providerId: query.providerId,
       queryRef: { id: query.id, bindings: (query.parameters ?? []).map(parameter => ({ parameter: parameter.name, source: "variable" as const, variable: parameter.name })) },
     }
-    update({ ...dashboard, variables, widgets: [...dashboard.widgets, widget] })
-    setExploring(false)
-    setEditing(true)
-    selectWidget(widget.id)
-    setMessage("Saved query linked. Parameters use dashboard variables; review their values, then save the dashboard.")
+    // Keep validation synchronous for Explorer's error handling. Adding the
+    // validated widget waits until replacing the current chart is accepted.
+    navigateFromChart(() => {
+      update({ ...dashboard, variables, widgets: [...dashboard.widgets, widget] })
+      setExploring(false)
+      setEditing(true)
+      selectWidget(widget.id)
+      setMessage("Saved query linked. Parameters use dashboard variables; review their values, then save the dashboard.")
+    })
   }
   async function save() {
     if (!widgetDraftValid) {
@@ -672,7 +726,7 @@ export default function InsightsApp({
     if (busy) return false
     const request = ++openRequest.current
     const beforeLoad = documentFingerprint(dashboard)
-    if (item.id !== dashboard.id && dirty && !await confirmDiscard()) return false
+    if (((item.id !== dashboard.id && dirty) || widgetDraftDirty) && !await confirmDiscard()) return false
     if (request !== openRequest.current) return false
     try {
       const active =
@@ -815,7 +869,7 @@ export default function InsightsApp({
   async function createDashboard() {
     if (bundleImportActive.current) return
     const request = ++openRequest.current
-    if (dirty && !await confirmDiscard()) return
+    if ((dirty || widgetDraftDirty) && !await confirmDiscard()) return
     if (request !== openRequest.current) return
     const next = newDashboard()
     setExploring(false)
@@ -823,8 +877,8 @@ export default function InsightsApp({
     reset(next)
     setSaved("")
     setEditing(true)
+    close()
     setPanel("add")
-    setSelected(undefined)
     setMessage("")
     setMobileSidebar(false)
   }
@@ -1137,7 +1191,7 @@ export default function InsightsApp({
 
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
-    <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined}>
+    <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
         <button type="button"
@@ -1147,7 +1201,7 @@ export default function InsightsApp({
           onClick={() => setMobileSidebar(false)}
         />
       )}
-      {(isMobile ? drawerOpen : compactShell || sidebar) && (
+      {!focusedWidget && (isMobile ? drawerOpen : compactShell || sidebar) && (
         <aside
           ref={navigation}
           id="insights-navigation"
@@ -1175,7 +1229,7 @@ export default function InsightsApp({
             onClick={async () => {
               if (bundleImportActive.current) return
               if (
-                (!dirty && !explorerDirty) ||
+                (!dirty && !widgetDraftDirty && !explorerDirty) ||
                 await confirmation.ask({ title: "Discard unsaved changes?", description: "Your unsaved dashboard and explorer query changes will be lost when you leave Insights.", action: "Discard changes" })
               )
                 onBack?.()
@@ -1215,15 +1269,11 @@ export default function InsightsApp({
             className={styles.sideLink}
             title={compactShell ? "Data sources" : undefined}
             disabled={importingBundle}
-            onClick={() => {
-              setExploring(false)
-              setPanel("providers")
-              setMobileSidebar(false)
-            }}
+            onClick={() => openBuilderPanel("providers")}
           >
             <Database size={16} /> Data sources <span>{providers.length}</span>
           </GammaButton>
-          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => { setExploring(false); setPanel("examples"); setMobileSidebar(false) }}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
+          <GammaButton size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{repositoryExamples.length}</span></GammaButton>
           <div className={styles.sideSection}>
             <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
             <GammaButton iconOnly size="sm" variant="quiet"
@@ -1251,7 +1301,12 @@ export default function InsightsApp({
               )}
               activeId={dashboard.id}
               search={search}
-              onOpen={(item) => { setExploring(false); setReturnTo(null); void openDashboard(item) }}
+              onOpen={async (item) => {
+                if (await openDashboard(item)) {
+                  setExploring(false)
+                  setReturnTo(null)
+                }
+              }}
               onMove={moveDashboard}
             />
           </div>
@@ -1274,11 +1329,7 @@ export default function InsightsApp({
             <GammaButton size="sm" variant="quiet"
               className={styles.sideLink}
               disabled={importingBundle}
-              onClick={() => {
-                setExploring(false)
-                setPanel("source")
-                setMobileSidebar(false)
-              }}
+              onClick={() => openBuilderPanel("source")}
             >
               <Braces size={15} /> Dashboard as code
             </GammaButton>
@@ -1327,7 +1378,7 @@ export default function InsightsApp({
               className={styles.iconButton}
               aria-label="About data sources"
               disabled={importingBundle}
-              onClick={() => { setExploring(false); setPanel("providers") }}
+              onClick={() => openBuilderPanel("providers")}
             >
               <CircleHelp size={17} />
             </GammaButton>
@@ -1366,25 +1417,22 @@ export default function InsightsApp({
               className={styles.iconButton}
               disabled={importingBundle}
               items={[
-                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => setPanel(panel === "manage" ? null : "manage") },
-                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => { setPanel(panel === "ai" ? null : "ai"); setEditing(true) } },
+                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => openBuilderPanel(panel === "manage" ? null : "manage") },
+                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => openBuilderPanel(panel === "ai" ? null : "ai") },
               ]}
             /> : <>
             <GammaButton size="sm" variant="secondary"
               className={styles.secondary}
               aria-label="Manage dashboards"
               disabled={importingBundle}
-              onClick={() => setPanel(panel === "manage" ? null : "manage")}
+              onClick={() => openBuilderPanel(panel === "manage" ? null : "manage")}
             >
               <Settings2 size={15} /> Manage
             </GammaButton>
             <GammaButton size="sm" variant="secondary"
               className={styles.secondary}
               disabled={importingBundle}
-              onClick={() => {
-                setPanel(panel === "ai" ? null : "ai")
-                setEditing(true)
-              }}
+              onClick={() => openBuilderPanel(panel === "ai" ? null : "ai")}
             >
               <Sparkles size={15} /> Build with AI
             </GammaButton>
@@ -1430,7 +1478,7 @@ export default function InsightsApp({
               className={panel === "source" ? styles.activeTool : ""}
               iconOnly={compactShell} aria-label={compactShell ? "Code" : undefined} title={compactShell ? "Dashboard as code" : undefined}
               disabled={importingBundle}
-              onClick={() => setPanel(panel === "source" ? null : "source")}
+              onClick={() => openBuilderPanel(panel === "source" ? null : "source")}
             >
               <Braces size={14} />{!compactShell && " Code"}
             </GammaButton>
@@ -1508,7 +1556,7 @@ export default function InsightsApp({
             {editing && (
               <GammaButton size="sm" variant="quiet"
                 className={styles.addButton}
-                onClick={() => setPanel(panel === "add" ? null : "add")}
+                onClick={() => openBuilderPanel(panel === "add" ? null : "add")}
                 disabled={importingBundle || dashboard.widgets.length >= MAX_WIDGETS}
               >
                 <Plus size={14} /> Add widget
@@ -1555,7 +1603,7 @@ export default function InsightsApp({
         )}
         <div className={styles.workArea}>
           <div className={styles.canvasArea}>
-            {editing && (
+            {editing && !focusedWidget && (
               <div className={styles.editHint}>
                 <span className={styles.statusDot} /> Editing canvas{" "}
                 <span className={styles.wideEditHint}>
@@ -1578,6 +1626,82 @@ export default function InsightsApp({
             {dashboard.widgets.length ? (
               <DashboardCanvas
                 dashboard={viewDashboard}
+                focus={editingWidget && currentWidget && previewWidget ? {
+                  widget: previewWidget,
+                  render: preview => <section ref={builderPanel} tabIndex={-1}>
+                <WidgetEditor
+                  key={currentWidget.id}
+                  widget={currentWidget}
+                  workspace={{ preview, dashboardTitle: dashboard.title, onDiscard: close, widgets: dashboard.widgets, canvasMode }}
+                  onPreview={setWidgetPreview}
+                  onDirtyChange={setWidgetDraftDirty}
+                  dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
+                  providers={providers}
+                  client={builderClient}
+                  range={range}
+                  queryFetcher={fetcher}
+                  queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(previewWidget ?? currentWidget, range) ? queryFieldSnapshot.fields : undefined}
+                  result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
+                  onClose={leaveWidget}
+                  onDraftValidityChange={setWidgetDraftValid}
+                  onApply={(next, layout) => {
+                    update(current => ({
+                      ...current,
+                      widgets: current.widgets.map(w => {
+                        if (w.id === next.id) return next
+                        const placed = layout?.find(item => item.i === w.id)
+                        return placed ? { ...w, layout: { ...w.layout, x: placed.x, y: placed.y, w: placed.w, h: placed.h } } : w
+                      }),
+                    }))
+                    close()
+                    setMessage("Chart changes applied. Save the dashboard to keep them.")
+                  }}
+                  onDelete={() => {
+                    update({
+                      ...dashboard,
+                      widgets: dashboard.widgets.filter(
+                        (w) => w.id !== currentWidget.id,
+                      ),
+                    })
+                    close()
+                  }}
+                  onDuplicate={() => {
+                    if (dashboard.widgets.length >= MAX_WIDGETS) {
+                      setError("A dashboard supports up to 48 widgets.")
+                      return
+                    }
+                    const copy = {
+                      ...(previewWidget ?? currentWidget),
+                      id: `widget-${crypto.randomUUID()}`,
+                      title: `${(previewWidget ?? currentWidget).title.slice(0, 113)} (copy)`,
+                      layout: {
+                        ...(previewWidget ?? currentWidget).layout,
+                        x: 0,
+                        y: Math.min(
+                          1000,
+                          Math.max(
+                            ...dashboard.widgets.map(
+                              (w) => w.layout.y + w.layout.h,
+                            ),
+                          ),
+                        ),
+                      },
+                    }
+                    update({
+                      ...dashboard,
+                      widgets: [...dashboard.widgets, copy],
+                    })
+                    selectWidget(copy.id)
+                  }}
+                  moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
+                  onMove={(dx, dy) => {
+                    const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
+                    const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
+                    if ("layout" in edit) layoutUpdate(edit.layout)
+                  }}
+                />
+                  </section>,
+                } : undefined}
                 active={!exploring}
                 onDrilldown={drilldown}
                 onSelection={selectDashboardContext}
@@ -1610,7 +1734,7 @@ export default function InsightsApp({
                     disabled={importingBundle}
                     onClick={() => {
                       setEditing(true)
-                      setPanel("add")
+                      openBuilderPanel("add")
                     }}
                   >
                     <Plus size={15} /> Add your first widget
@@ -1618,14 +1742,14 @@ export default function InsightsApp({
                   <GammaButton size="sm" variant="secondary"
                     className={styles.secondary}
                     disabled={importingBundle}
-                    onClick={() => setPanel("source")}
+                    onClick={() => openBuilderPanel("source")}
                   >
                     <FilePlus2 size={15} /> Import dashboard
                   </GammaButton>
                 </div>
               </div>
             )}
-            <footer className={styles.canvasFooter}>
+            {!focusedWidget && <footer className={styles.canvasFooter}>
               <span>
                 {mode === "example"
                   ? "Generated sample data"
@@ -1635,9 +1759,9 @@ export default function InsightsApp({
                 {dirty ? "Unsaved changes" : "All changes saved"}
                 <span className={dirty ? styles.unsavedDot : styles.savedDot} />
               </span>
-            </footer>
+            </footer>}
           </div>
-          {panel && (
+          {panel && panel !== "widget" && (
             <aside
               ref={builderPanel}
               tabIndex={-1}
@@ -1675,7 +1799,7 @@ export default function InsightsApp({
                 <WidgetLibrary
                   onAdd={addWidget}
                   onClose={close}
-                  onAI={() => setPanel("ai")}
+                  onAI={() => openBuilderPanel("ai")}
                   disabled={dashboard.widgets.length >= MAX_WIDGETS}
                 />
               )}
@@ -1714,72 +1838,7 @@ export default function InsightsApp({
                   onRefreshQueries={refreshSavedQueries}
                 />
               )}
-              {panel === "widget" && currentWidget && (
-                <WidgetEditor
-                  key={currentWidget.id}
-                  widget={currentWidget}
-                  dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
-                  providers={providers}
-                  client={builderClient}
-                  range={range}
-                  queryFetcher={fetcher}
-                  queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(currentWidget, range) ? queryFieldSnapshot.fields : undefined}
-                  result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
-                  onClose={close}
-                  onDraftValidityChange={setWidgetDraftValid}
-                  onApply={(next) => {
-                    update(current => ({
-                      ...current,
-                      widgets: current.widgets.map((w) =>
-                        w.id === next.id ? next : w,
-                      ),
-                    }))
-                  }}
-                  onDelete={() => {
-                    update({
-                      ...dashboard,
-                      widgets: dashboard.widgets.filter(
-                        (w) => w.id !== currentWidget.id,
-                      ),
-                    })
-                    close()
-                  }}
-                  onDuplicate={() => {
-                    if (dashboard.widgets.length >= MAX_WIDGETS) {
-                      setError("A dashboard supports up to 48 widgets.")
-                      return
-                    }
-                    const copy = {
-                      ...currentWidget,
-                      id: `widget-${crypto.randomUUID()}`,
-                      title: `${currentWidget.title.slice(0, 113)} (copy)`,
-                      layout: {
-                        ...currentWidget.layout,
-                        x: 0,
-                        y: Math.min(
-                          1000,
-                          Math.max(
-                            ...dashboard.widgets.map(
-                              (w) => w.layout.y + w.layout.h,
-                            ),
-                          ),
-                        ),
-                      },
-                    }
-                    update({
-                      ...dashboard,
-                      widgets: [...dashboard.widgets, copy],
-                    })
-                    selectWidget(copy.id)
-                  }}
-                  moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id, canvasMode)}
-                  onMove={(dx, dy) => {
-                    const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
-                    const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
-                    if ("layout" in edit) layoutUpdate(edit.layout)
-                  }}
-                />
-              )}
+
             </aside>
           )}
         </div>

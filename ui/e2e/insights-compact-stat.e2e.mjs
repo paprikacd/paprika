@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Exercise compact and backdrop KPI presentations through the real document API
 // and browser layout at desktop and mobile sizes. Query values are deterministic.
 import assert from "node:assert/strict";
@@ -38,7 +39,8 @@ try {
       await editor.getByLabel("Bar maximum").fill("200");
       await editor.getByRole("tab", { name: "Layout" }).click();
       assert.ok((await editor.getByRole("combobox", { name: "Height" }).innerText()).includes("1 row"));
-      await editor.getByRole("button", { name: "Apply widget" }).click();
+      await editor.getByRole("button", { name: "Apply changes" }).click();
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
       assert.equal((await environment.api(`dashboards/${dashboard.id}`)).document.widgets[0].options.statIcon, "arrow-up", "Editor changes should persist through the dashboard API");
       const edited = (await environment.api(`dashboards/${dashboard.id}`)).document.widgets[0];

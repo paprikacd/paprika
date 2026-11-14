@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 import assert from "node:assert/strict"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
@@ -50,6 +51,7 @@ async function document() {
   return value
 }
 async function save() {
+  await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
   await page.getByText("All changes saved", { exact: true }).waitFor()
 }
@@ -80,8 +82,7 @@ try {
       await editor().getByRole("tab", { name: "Style", exact: true }).click()
       await editor().getByLabel("Threshold 1 color", { exact: true }).fill("#ad3f32")
       await editor().getByLabel("Threshold 1 label", { exact: true }).fill("Needs attention")
-      await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-      await editor().getByRole("button", { name: "Close widget editor" }).click()
+      await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
       const changed = heatmap.getByRole("button", {
         name: /worker-west: 0.*Needs attention/,
       })
@@ -107,8 +108,7 @@ try {
       await editor().getByLabel("Background", { exact: true }).fill("#f5f8f1")
       await editor().getByRole("tab", { name: "Tooltips", exact: true }).click()
       await editor().getByRole("switch", { name: "Show tooltips", exact: true }).uncheck()
-      await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-      await editor().getByRole("button", { name: "Close widget editor" }).click()
+      await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
       const tile = page.locator('[data-widget-id="traffic"]')
       await tile.getByText("Observation time", { exact: true }).waitFor()
       await tile.getByText("Requests per second", { exact: true }).waitFor()
@@ -142,12 +142,12 @@ try {
         })
         .click()
       await editor().getByLabel("Title", { exact: true }).fill("Available capacity")
+      await editor().getByRole("tab", { name: "Options", exact: true }).click()
       await editor().getByText("Advanced configuration", { exact: true }).click()
       await editor()
         .getByLabel(/^Plugin configuration/)
         .fill('{"label":"Worker availability"}')
-      await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-      await editor().getByRole("button", { name: "Close widget editor" }).click()
+      await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
       const tile = page.getByRole("article", {
         name: "Available capacity",
         exact: true,
@@ -288,7 +288,7 @@ try {
       path: resolve(output, "dashboard-advanced-mobile.png"),
       fullPage: true,
     })
-    await editor().getByRole("button", { name: "Close widget editor" }).click()
+    await editor().getByRole("button", { name: "Apply changes" }).click()
     await page.getByRole("button", { name: "Choose custom time range" }).click()
     await page.getByLabel("Range start", { exact: true }).waitFor()
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))

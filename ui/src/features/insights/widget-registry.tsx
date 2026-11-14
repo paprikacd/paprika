@@ -38,7 +38,7 @@ export interface WidgetDefinition {
    * an empty list means the renderer can draw the result. A check that throws is reported as one issue.
    */
   validateInput?: (result: QueryResult, config: Widget["config"]) => readonly WidgetInputIssue[];
-  /** Whether the renderer keeps its intrinsic height or fills its card. Host metadata; it changes no rendering by itself. */
+  /** Host sizing contract. Compact and narrow canvas projections respect minHeight; saved layouts remain authored. */
   sizing?: WidgetSizing;
 }
 export interface WidgetSizing {

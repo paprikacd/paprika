@@ -5,6 +5,7 @@ WORKDIR /ui
 # Install deps first (layer cached unless package.json changes)
 COPY ui/package*.json ui/tsconfig*.json ./
 COPY ui/next.config.* ./
+COPY ui/patches/ ./patches/
 RUN npm ci
 
 # Build the UI

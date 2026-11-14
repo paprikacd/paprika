@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Verify destination changes preserve a live query's drilldown bindings until
 // explicitly confirmed, and that only saving the dashboard persists them.
 import assert from "node:assert/strict"
@@ -58,7 +59,7 @@ try {
       const chooseNew = () => selectGammaOption(page, destination, new RegExp(`Drilldown new ${suffix}`))
       await chooseNew()
       await editor.getByRole("status").getByText(/Bindings for node will be removed/).waitFor()
-      const warning = editor.getByRole("status")
+      const warning = editor.getByRole("status").filter({ hasText: /Bindings for node will be removed/ })
       const bounds = await warning.boundingBox()
       assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width, "Confirmation remains inside the viewport")
       assert.match(await destination.innerText(), /Drilldown old/)
@@ -71,9 +72,10 @@ try {
       assert.match(await destination.innerText(), /Drilldown new/)
       assert.match(await editor.getByRole("combobox", { name: "Link 1 binding 1 variable" }).innerText(), /Region/)
       assert.deepEqual(await read(ids[0]), before)
-      await editor.getByRole("button", { name: "Apply widget" }).click()
+      await editor.getByRole("button", { name: "Apply changes" }).click()
       assert.deepEqual(await read(ids[0]), before)
       const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${ids[0]}` && response.ok())
+      await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
       await write
       const saved = await read(ids[0])

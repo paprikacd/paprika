@@ -11,6 +11,7 @@ import { scaleTime } from 'd3-scale';
 import { calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from '@insights/chart-presentation';
 import { widgetOptionsSchema, widgetSchema } from '@insights/schema';
 import { DistributionHeatmap } from '@insights/plugins/rich-metrics';
+import { DashboardTimeZoneProvider } from '@insights/dashboard-time-zone';
 
 describe('reference presentation owner extensions', () => {
   it('keeps mixed-family time labels in UTC and maps the same timestamp to the same plot position', () => {
@@ -70,7 +71,9 @@ describe('reference presentation owner extensions', () => {
       { name: 'Finite bucket', labels: { le: '100' }, points: timestamps.map((timestamp, index) => ({ timestamp, value: index === 1 ? null : index })) },
       { name: 'All observations', labels: { le: '+Inf' }, points: timestamps.map((timestamp, index) => ({ timestamp, value: index === 1 ? null : index + 5 })) },
     ] };
-    const markup = renderToStaticMarkup(createElement(DistributionHeatmap, { widget, result }));
+    const markup = renderToStaticMarkup(createElement(DashboardTimeZoneProvider, {
+      timeZone: 'UTC', children: createElement(DistributionHeatmap, { widget, result }),
+    }));
     // Production places each column inside the plot bounds by geometry, so no clip path is needed.
     expect(markup).toContain('data-bucket-value="unknown"');
     expect(markup).toContain('>10:00</text>');

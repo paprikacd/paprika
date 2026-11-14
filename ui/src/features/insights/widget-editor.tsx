@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useDraftHistory } from "./history";
+import { ChartAppearancePresets } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
 import { providerOption, QuerySourceIcon } from "./source-identity";
 import {
@@ -9,6 +11,8 @@ import {
   Copy,
   Plus,
   Trash2,
+  Undo2,
+  Redo2,
   X,
 } from "lucide-react";
 import {
@@ -33,6 +37,7 @@ import { GammaSwitch } from "./gamma/switch";
 import { DrilldownEditor } from "./drilldown-editor";
 import { SelectionEditor } from "./selection-editor";
 import { GammaButton } from "./gamma/button";
+import { GammaActionMenu } from "./gamma/action-menu";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
 import styles from "./editor.module.css";
@@ -53,7 +58,9 @@ import {
   SavedQueryBindingEditor,
 } from "./saved-query-controls";
 import { validateLinkedTooltip } from "./saved-query-editor";
-import type { LayoutMove } from "./layout-edit";
+import { gridPlacement, layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit";
+import type { Layout } from "react-grid-layout";
+import type { CanvasMode } from "./responsive-layout";
 
 export const widgetLabels = {
   timeseries: "Time series",
@@ -244,11 +251,9 @@ function StyleEditor({
       : "#c46146";
   return (
     <div className={styles.stack}>
+      {widget.type === "timeseries" && <ChartAppearancePresets options={options} onChange={update} />}
       {supportsTooltipSettings(widget) && (
         <div className={styles.tooltipShortcut}>
-          <p className={styles.hint}>
-            Control the details shown when you inspect this visualization.
-          </p>
           <GammaButton
             type="button"
             variant="secondary"
@@ -278,8 +283,7 @@ function StyleEditor({
       )}
       {hasStyleControl("decimals") && (
         <p className={styles.hint}>
-          Decimal places apply to displayed values and tooltip details. Leave
-          blank for Auto, or choose 0–8 places.
+          Use 0–8 decimal places, or leave blank for automatic precision.
         </p>
       )}
       {(widget.type === "stat" || widget.type === "timeseries") && <>
@@ -662,6 +666,9 @@ export function WidgetEditor({
   widget,
   providers,
   onApply,
+  onPreview,
+  onDirtyChange,
+  workspace,
   onDraftValidityChange,
   onClose,
   onDuplicate,
@@ -677,7 +684,10 @@ export function WidgetEditor({
 }: {
   widget: Widget;
   providers: Provider[];
-  onApply: (widget: Widget) => void;
+  onApply: (widget: Widget, layout?: Layout) => void;
+  onPreview?: (widget: Widget) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[]; canvasMode?: CanvasMode };
   onDraftValidityChange?: (valid: boolean) => void;
   onClose: () => void;
   onDuplicate: () => void;
@@ -696,27 +706,56 @@ export function WidgetEditor({
   const definitions = useWidgetDefinitions();
   const library = useSavedQueryLibrary();
   const editorRef = useRef<HTMLElement>(null);
-  const [draft, setDraft] = useState(widget);
+  const previewRef = useRef<HTMLElement>(null);
+  const settingsRef = useRef<HTMLElement>(null);
+  const queryRef = useRef<HTMLElement>(null);
+  const errorId = useId();
+  function jumpTo(target: HTMLElement | null) {
+    if (!target) return;
+    const headerHeight = editorRef.current?.querySelector("header")?.getBoundingClientRect().height ?? 0;
+    const top = window.scrollY + target.getBoundingClientRect().top - headerHeight - 12;
+    target.focus({ preventScroll: true });
+    window.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+  const initialDraft = {
+    draft: widget,
+    size: null as { w: number; h: number } | null,
+    pluginConfig: JSON.stringify(widget.config ?? {}, null, 2),
+    tooltipPluginConfig: JSON.stringify(widget.options?.tooltipView?.config ?? {}, null, 2),
+    layout: undefined as Layout | undefined,
+  };
+  const history = useDraftHistory(initialDraft);
+  const { draft, size, pluginConfig, tooltipPluginConfig, layout: stagedLayout } = history.present;
+  const setDraft = (draft: Widget) => history.update(current => ({ ...current, draft }));
+  const setSize = (size: { w: number; h: number } | null) => history.update(current => ({ ...current, size }));
+  const setPluginConfig = (pluginConfig: string) => history.update(current => ({ ...current, pluginConfig }));
+  const setTooltipPluginConfig = (tooltipPluginConfig: string) => history.update(current => ({ ...current, tooltipPluginConfig }));
   const [base, setBase] = useState(widget);
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  const [tab, setTab] = useState("query");
+  const [tab, setTab] = useState(workspace ? "style" : "query");
+  const [queryTab, setQueryTab] = useState("query");
   const [sourceFormat, setSourceFormat] = useState("json");
   const [queryDraftValid, setQueryDraftValid] = useState(true);
   const [pendingVisualization, setPendingVisualization] = useState<string>();
   const [editorRevision, setEditorRevision] = useState(0);
-  const [pluginConfig, setPluginConfig] = useState(
-    JSON.stringify(widget.config ?? {}, null, 2),
-  );
-  const [tooltipPluginConfig, setTooltipPluginConfig] = useState(
-    JSON.stringify(widget.options?.tooltipView?.config ?? {}, null, 2),
-  );
   const contentKey = (value: Widget) => JSON.stringify({ ...value, layout: { w: value.layout.w, h: value.layout.h } });
-  const draftKey = JSON.stringify([draft, size, pluginConfig, tooltipPluginConfig]);
+  const draftKey = JSON.stringify([draft, size, pluginConfig, tooltipPluginConfig, stagedLayout]);
   const [previewRevision, setPreviewRevision] = useState({ key: draftKey, widget });
   const emittedDraftKey = useRef(draftKey);
   const stale = contentKey(widget) !== contentKey(base) &&
     contentKey(widget) !== contentKey(previewRevision.widget);
-  const dimensions = size ?? widget.layout;
+  const dimensions = { w: size?.w ?? widget.layout.w, h: size?.h ?? widget.layout.h };
+  const position = stagedLayout?.find(item => item.i === widget.id) ?? widget.layout;
+  const layoutWidgets = workspace?.widgets?.map(item => {
+    const placed = stagedLayout?.find(box => box.i === item.id);
+    return { ...item, layout: { ...item.layout, ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h } : {}), ...(item.id === widget.id ? dimensions : {}) } };
+  });
+  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id, workspace?.canvasMode ?? "wide") : moveBlocked;
+  function move(dx: number, dy: number) {
+    if (!layoutWidgets) { onMove(dx, dy); return; }
+    const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right";
+    const edit = moveLayout(savedLayout(layoutWidgets), widget.id, direction);
+    if ("layout" in edit) history.update(current => ({ ...current, layout: edit.layout }));
+  }
   const pendingDefinition = pendingVisualization && definitions.find((item) =>
     (item.type === "plugin" ? `plugin:${item.id}` : item.type) === pendingVisualization,
   );
@@ -773,9 +812,10 @@ export function WidgetEditor({
       ...(tooltipView ? { options: { ...draft.options, tooltipView } } : {}),
       layout: {
         ...widget.layout,
+        y: position.y,
         w: dimensions.w,
         h: dimensions.h,
-        x: Math.min(widget.layout.x, 12 - dimensions.w),
+        x: Math.min(position.x, 12 - dimensions.w),
       },
     });
     if (!parsed.success) {
@@ -876,24 +916,33 @@ export function WidgetEditor({
   if (contentKey(widget) === contentKey(previewRevision.widget) && contentKey(widget) !== contentKey(base)) {
     setBase(widget);
   }
-  if (!stale && preview && previewRevision.key !== draftKey) {
+  if (!stale && preview && queryDraftValid && previewRevision.key !== draftKey) {
     setPreviewRevision({ key: draftKey, widget: preview });
   }
-  // The host owns the unsaved document; only dashboard Save writes storage.
+  // Focused editing stages a last-valid preview; only Apply commits to the dashboard draft.
   useEffect(() => {
     if (emittedDraftKey.current === previewRevision.key) return;
     emittedDraftKey.current = previewRevision.key;
-    onApply(previewRevision.widget);
-  }, [previewRevision, onApply]);
+    (onPreview ?? onApply)(previewRevision.widget);
+  }, [previewRevision, onApply, onPreview]);
   useEffect(() => {
     onDraftValidityChange?.(!stale && !validationError && queryDraftValid);
   }, [onDraftValidityChange, stale, validationError, queryDraftValid]);
   useEffect(() => () => onDraftValidityChange?.(true), [onDraftValidityChange]);
 
+  const dirty = JSON.stringify(history.present) !== JSON.stringify(initialDraft) || !queryDraftValid;
+  useEffect(() => { onDirtyChange?.(dirty); }, [onDirtyChange, dirty]);
+  function travel(direction: "undo" | "redo") {
+    history[direction]();
+    setPendingVisualization(undefined);
+    setQueryDraftValid(true);
+    setEditorRevision(revision => revision + 1);
+  }
   function apply() {
-    if (stale || !preview) return;
+    if (stale || error || !preview) return;
     setPreviewRevision({ key: draftKey, widget: preview });
-    onApply(preview);
+    if (stagedLayout) onApply(preview, stagedLayout);
+    else onApply(preview);
   }
   function chooseVisualization(value: string, acceptReplacement = false) {
     const definition = definitions.find((item) =>
@@ -921,7 +970,6 @@ export function WidgetEditor({
       next.pluginId = definition.id;
       next.dataKind = capability;
       next.config = definition.defaultConfig ? structuredClone(definition.defaultConfig) : undefined;
-      setPluginConfig(JSON.stringify(next.config ?? {}, null, 2));
       next.options = definition.defaultOptions
         ? {
             ...definition.defaultOptions,
@@ -936,35 +984,18 @@ export function WidgetEditor({
       delete next.dataKind;
       delete next.config;
     }
-    if (type !== "stat" && dimensions.h < 2) setSize({ w: dimensions.w, h: 2 });
     setPendingVisualization(undefined);
-    setDraft(next);
-    if (tab === "tooltips" && !supportsTooltipSettings(next)) setTab("style");
+    history.update(current => ({ ...current, draft: next,
+      ...(type === "plugin" ? { pluginConfig: JSON.stringify(next.config ?? {}, null, 2) } : {}),
+      ...(type !== "stat" && dimensions.h < 2 ? { size: { w: dimensions.w, h: 2 } } : {}),
+    }));
+    if ((tab === "tooltips" && !supportsTooltipSettings(next)) || (tab === "options" && next.type !== "plugin")) setTab("style");
   }
-  const source = preview ?? widget;
+  const source = preview && !error ? preview : previewRevision.widget;
   const sourceText = sourceFormat === "yaml"
     ? stringifyYaml(source, { lineWidth: 0 })
     : JSON.stringify(source, null, 2);
-  return (
-    <section
-      ref={editorRef}
-      className={styles.editor}
-      aria-label="Widget editor"
-    >
-      <div className={styles.heading}>
-        <div>
-          <h2>Widget settings</h2>
-        </div>
-        <GammaButton
-          variant="quiet"
-          size="sm"
-          iconOnly
-          aria-label="Close widget editor"
-          onClick={onClose}
-        >
-          <X size={18} />
-        </GammaButton>
-      </div>
+  const identity = <>
       {stale && (
         <div className={styles.error} role="alert">
           This widget changed on the canvas. Reload its latest settings before
@@ -973,19 +1004,10 @@ export function WidgetEditor({
             variant="secondary"
             onClick={() => {
               setBase(widget);
-              setDraft(widget);
+              history.reset(initialDraft);
               setPendingVisualization(undefined);
               setQueryDraftValid(true);
               setEditorRevision(revision => revision + 1);
-              setSize(null);
-              setPluginConfig(JSON.stringify(widget.config ?? {}, null, 2));
-              setTooltipPluginConfig(
-                JSON.stringify(
-                  widget.options?.tooltipView?.config ?? {},
-                  null,
-                  2,
-                ),
-              );
             }}
           >
             Reload widget
@@ -996,6 +1018,8 @@ export function WidgetEditor({
         Title
         <GammaInput
           value={draft.title}
+          aria-invalid={draft.title.length === 0 || undefined}
+          aria-describedby={draft.title.length === 0 ? errorId : undefined}
           maxLength={120}
           onChange={(event) =>
             setDraft({ ...draft, title: event.target.value })
@@ -1050,11 +1074,8 @@ export function WidgetEditor({
           }}>Remove inactive tooltip widget</GammaButton>
         </div>
       )}
-      <GammaTabs
-        label="Widget settings"
-        value={tab}
-        onChange={setTab}
-        tabs={[
+  </>;
+  const tabs = [
           {
             id: "query",
             title: "Query",
@@ -1185,13 +1206,16 @@ export function WidgetEditor({
                     />
                   </>
                 )}
-                {draft.type === "plugin" && (
+                {!workspace && draft.type === "plugin" && (
                   <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} result={result} />
                 )}
                 {supportsAnnotationSource(draft.type, draft.pluginId) && <AnnotationSourceEditor widget={draft} onChange={setDraft} />}
               </div>
             ),
           },
+          ...(workspace && draft.type === "plugin" ? [{
+            id: "options", title: "Options", content: <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} result={result} />,
+          }] : []),
           {
             id: "style",
             title: "Style",
@@ -1373,7 +1397,7 @@ export function WidgetEditor({
                     [ArrowRight, 1, 0, "right"],
                   ].map(([Icon, x, y, label]) => {
                     const I = Icon as typeof ArrowLeft;
-                    const blocked = moveBlocked?.[label as LayoutMove];
+                    const blocked = blockedMoves?.[label as LayoutMove];
                     return (
                       <GammaButton
                         variant="quiet"
@@ -1383,13 +1407,14 @@ export function WidgetEditor({
                         aria-label={`Move widget ${label}`}
                         disabled={!!blocked}
                         title={blocked}
-                        onClick={() => onMove(Number(x), Number(y))}
+                        onClick={() => move(Number(x), Number(y))}
                       >
                         <I size={15} />
                       </GammaButton>
                     );
                   })}
                 </div>
+                {workspace && <p className={styles.hint} role="status">Dashboard position: {gridPlacement({ ...position, ...dimensions })}. Size and placement are committed with Apply.</p>}
               </div>
             ),
           },
@@ -1424,16 +1449,87 @@ export function WidgetEditor({
               </div>
             ),
           },
-        ]}
-      />
-      {error && (
-        <pre className={styles.error} role="alert">
-          {error}
-        </pre>
-      )}
+        ];
+  const settingsTabs = tabs.filter(item => item.id !== "query" && item.id !== "source")
+    .sort((a, b) => ["style", "options", "tooltips", "links", "layout"].indexOf(a.id) - ["style", "options", "tooltips", "links", "layout"].indexOf(b.id));
+  // Undo may restore a visualization without the currently selected settings.
+  const settingsTab = settingsTabs.some(item => item.id === tab) ? tab : "style";
+  const draftError = error && <pre id={errorId} className={styles.error} role="alert">{error}</pre>;
+  if (workspace) return (
+    <section ref={editorRef} className={`${styles.editor} ${styles.focusEditor}`} aria-label="Widget editor">
+      <header className={styles.focusHeader}>
+        <GammaButton variant="quiet" size="sm" onClick={onClose} aria-label="Back to dashboard">
+          <ArrowLeft size={16} aria-hidden="true" /><span>Back to dashboard</span>
+        </GammaButton>
+        <div className={styles.focusIdentity}>
+          <span>{workspace.dashboardTitle}</span>
+          <h2>{draft.title || "Untitled chart"}</h2>
+        </div>
+        <span className={styles.draftState} role="status">{error ? "Draft needs attention" : dirty ? "Unapplied changes" : "Editing chart"}</span>
+        <div className={styles.focusActions}>
+          <GammaActionMenu label="Chart actions" items={[
+            { id: "undo", label: "Undo chart change", icon: <Undo2 size={14} />, disabled: !history.canUndo, onSelect: () => travel("undo") },
+            { id: "redo", label: "Redo chart change", icon: <Redo2 size={14} />, disabled: !history.canRedo, onSelect: () => travel("redo") },
+            { id: "duplicate", label: "Duplicate chart", icon: <Copy size={14} />, disabled: stale || !!error, onSelect: onDuplicate },
+            { id: "remove", label: "Remove chart", icon: <Trash2 size={14} />, onSelect: onDelete },
+          ]} />
+          <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Undo chart change" disabled={!history.canUndo} onClick={() => travel("undo")}><Undo2 size={16} /></GammaButton>
+          <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Redo chart change" disabled={!history.canRedo} onClick={() => travel("redo")}><Redo2 size={16} /></GammaButton>
+          <GammaButton variant="secondary" size="sm" onClick={workspace.onDiscard}>Discard</GammaButton>
+          <GammaButton variant="primary" size="sm" disabled={stale || !!error} onClick={apply}>Apply changes</GammaButton>
+        </div>
+        <nav className={styles.editorSections} aria-label="Chart editor sections">
+          <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(previewRef.current)}>Preview</GammaButton>
+          <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(settingsRef.current)}>Settings</GammaButton>
+          <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(queryRef.current)}>Query</GammaButton>
+        </nav>
+      </header>
+      <div className={styles.focusBody}>
+        <div className={styles.previewWorkspace}>
+          <section ref={previewRef} tabIndex={-1} className={styles.chartPreview} aria-label="Chart preview">
+            <div className={styles.previewHeading}><h3>Preview</h3><span>{error ? "Last valid chart" : "Live preview"}</span></div>
+            <div className={styles.previewCanvas}>{workspace.preview}</div>
+          </section>
+          <section ref={queryRef} tabIndex={-1} className={styles.queryWorkspace} aria-label="Chart data">
+            <GammaTabs variant="underline" label="Chart data" value={queryTab} onChange={setQueryTab} tabs={tabs.filter(item => item.id === "query" || item.id === "source")} />
+          </section>
+        </div>
+        <aside ref={settingsRef} tabIndex={-1} className={styles.chartSettings} aria-label="Chart settings">
+          <div className={styles.chartIdentity}>{identity}</div>
+          {draftError}
+          <GammaTabs variant="underline" label="Widget settings" value={settingsTab} onChange={setTab} tabs={settingsTabs} />
+          <p className={styles.focusSaveHint}>Apply returns to the dashboard. Save the dashboard to keep your changes.</p>
+        </aside>
+      </div>
+    </section>
+  );
+  return (
+    <section
+      ref={editorRef}
+      className={styles.editor}
+      aria-label="Widget editor"
+    >
+      <div className={styles.heading}>
+        <div>
+          <h2>Widget settings</h2>
+        </div>
+        <GammaButton
+          variant="quiet"
+          size="sm"
+          iconOnly
+          aria-label="Close widget editor"
+          onClick={onClose}
+        >
+          <X size={18} />
+        </GammaButton>
+      </div>
+      {identity}
+      <GammaTabs label="Widget settings" value={tab} onChange={setTab} tabs={tabs} />
+
+      {draftError}
       <div className={styles.footer}>
         <p className={styles.previewStatus}><span aria-hidden="true" />Live preview · Save the dashboard to keep changes.</p>
-        <GammaButton variant="primary" disabled={stale} onClick={apply}>
+        <GammaButton variant="primary" disabled={stale || !!error} onClick={apply}>
           Apply widget
         </GammaButton>
         <div className={styles.row}>

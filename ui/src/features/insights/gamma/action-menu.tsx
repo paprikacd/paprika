@@ -34,12 +34,14 @@ export function GammaActionMenu({
   items,
   className,
   disabled = false,
+  iconOnly = true,
 }: {
   label?: string;
   trigger?: ReactNode;
   items: readonly GammaActionMenuItem[];
   className?: string;
   disabled?: boolean;
+  iconOnly?: boolean;
 }) {
   const id = useId();
   const [isOpen, setOpen] = useState(false);
@@ -82,7 +84,7 @@ export function GammaActionMenu({
         ref={triggerRef}
         variant="ghost"
         size="sm"
-        iconOnly
+        iconOnly={iconOnly}
         className={className}
         disabled={disabled}
         aria-label={label}

@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // End-to-end widget authoring using deterministic, intercepted provider responses.
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
@@ -39,10 +40,10 @@ try {
         await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
         await tile.getByRole("button", { name: "Edit CPU utilization by node", exact: true }).click();
         const editor = page.getByRole("region", { name: "Widget editor", exact: true });
-        await editor.getByRole("tab", { name: "Query", exact: true }).click();
+        await editor.getByRole("tab", { name: "Options", exact: true }).click();
         await editor.getByLabel("Event 1 label").fill("Deploy v2");
-        await editor.getByRole("button", { name: "Apply widget", exact: true }).click();
-        await editor.getByRole("button", { name: "Close widget editor", exact: true }).click();
+        await editor.getByRole("button", { name: "Apply changes", exact: true }).click();
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
         await page.getByText("All changes saved", { exact: true }).waitFor();
         await page.reload({ waitUntil: "networkidle" });

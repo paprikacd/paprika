@@ -1,4 +1,5 @@
 import { changeQueryEditor } from "./query-code-editor.test-utils";
+import type { ReactNode } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
@@ -9,7 +10,14 @@ import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
 import { serializeDashboardLibrary } from "./workspace-transfer"
 
 vi.mock("./canvas", () => ({
-  DashboardCanvas: () => <div data-testid="mock-canvas" />,
+  DashboardCanvas: ({ focus, dashboard, editing, onSelect }: {
+    focus?: { render: (preview: ReactNode) => ReactNode }
+    dashboard: Dashboard
+    editing: boolean
+    onSelect: (id: string) => void
+  }) => focus ? focus.render(<div data-testid="mock-canvas" />) : <div data-testid="mock-canvas">
+    {editing && dashboard.widgets.map(widget => <button key={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>)}
+  </div>,
 }))
 
 // Deliberately use a different object-key order from the canonical Zod output.
@@ -55,6 +63,27 @@ async function queryWorkbench() {
   expect(workbench).toBeVisible()
   return workbench
 }
+async function chartDraftInExplorer(api = client(), dashboardDirty = false) {
+  const dashboard: Dashboard = {
+    ...first,
+    widgets: [{ id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } }],
+  }
+  vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
+  vi.mocked(api.list).mockResolvedValue([dashboard, second])
+  vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === dashboard.id ? dashboard : second, etag: '"v1"' }))
+  render(<InsightsApp client={api} />)
+  await screen.findByRole("heading", { name: "Dashboard A" })
+  fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+  if (dashboardDirty) fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Unsaved dashboard title" } })
+  fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
+  const title = screen.getByRole("textbox", { name: "Title", exact: true })
+  fireEvent.change(title, { target: { value: "Unapplied latency title" } })
+  fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }))
+  fireEvent.click(screen.getByRole("button", { name: "Use saved query" }))
+  fireEvent.click(await screen.findByRole("button", { name: /^(Create saved query|Manage saved queries)$/ }))
+  await queryWorkbench()
+  return { api, title }
+}
 function viewport(mobile: boolean) {
   vi.spyOn(window, "matchMedia").mockReturnValue({
     matches: mobile,
@@ -96,7 +125,7 @@ describe("Insights application state", () => {
     expect(api.query).not.toHaveBeenCalled()
   }, 10000) // Includes a cold lazy import and two complete workspace transitions.
 
-  it("preserves an unapplied widget editor draft when returning from Explore through sidebar Dashboards", async () => {
+  it("preserves a focused widget draft when returning from query creation through sidebar Dashboards", async () => {
     const api=client();
     vi.mocked(api.providers).mockResolvedValue([{id:"metrics",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]);
     render(<InsightsApp client={api}/>);
@@ -105,12 +134,105 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button",{name:"Add your first widget"}));
     fireEvent.click(screen.getByRole("button",{name:/^Time series/}));
     fireEvent.change(screen.getByLabelText("Title"),{target:{value:"Retained unapplied widget draft"}});
-    fireEvent.click(screen.getByRole("button",{name:/^Explore \d+$/}));
+    expect(screen.queryByRole("complementary", { name: "Insights navigation" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use saved query" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create saved query" }));
     await screen.findByLabelText("Query name");
     fireEvent.click(screen.getByRole("button",{name:/^Dashboards \d+$/}));
-    expect(screen.getByLabelText("Title")).toHaveValue("Retained unapplied widget draft");
-    expect(screen.getByRole("button",{name:"Apply widget"})).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Retained unapplied widget draft");
+    expect(screen.getByRole("button",{name:"Apply changes"})).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Retained unapplied widget draft" })).toHaveFocus();
   });
+
+  it.each([
+    { name: /^Examples \d+$/, region: "Repository examples", close: "Close examples" },
+    { name: /^Data sources \d+$/, region: "Data sources", close: "Close data sources" },
+    { name: "Dashboard as code", region: "Dashboard source editor", close: "Close source editor" },
+    { name: "About data sources", region: "Data sources", close: "Close data sources" },
+  ])("protects the chart draft before opening $region from Explore ($name)", async ({ name, region, close }) => {
+    const { api, title } = await chartDraftInExplorer()
+    fireEvent.click(screen.getByRole("button", { name }))
+    const confirmation = await screen.findByRole("alertdialog", { name: "Discard chart changes?" })
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
+    expect(screen.getByLabelText("Query name")).toBeVisible()
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard", exact: true }))
+    expect(title).toHaveValue("Unapplied latency title")
+    expect(screen.getByRole("button", { name: "Undo chart change", exact: true })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Create saved query" }))
+    await queryWorkbench()
+    fireEvent.click(screen.getByRole("button", { name }))
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard chart changes?" })).getByRole("button", { name: "Discard changes" }))
+    expect(await screen.findByRole("region", { name: region })).toBeVisible()
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: close }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
+    expect(screen.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Request latency")
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])("asks once before creating a dashboard with an unapplied chart (dashboard dirty: %s)", async dashboardDirty => {
+    const { api, title } = await chartDraftInExplorer(client(), dashboardDirty)
+    fireEvent.click(screen.getByRole("button", { name: "New dashboard" }))
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
+    expect(screen.getByLabelText("Query name")).toBeVisible()
+    expect(title).toBeInTheDocument()
+    expect(title).toHaveValue("Unapplied latency title")
+    fireEvent.click(screen.getByRole("button", { name: "New dashboard" }))
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Discard changes" }))
+    await waitFor(() => expect(screen.getByLabelText("Dashboard title")).toHaveValue("Untitled dashboard"))
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it("keeps Explore and the chart draft intact when cancelling dashboard navigation", async () => {
+    const { title } = await chartDraftInExplorer()
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard B" }))
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
+    expect(screen.getByLabelText("Query name")).toBeVisible()
+    expect(title).toBeInTheDocument()
+    expect(title).toHaveValue("Unapplied latency title")
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard B" }))
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Discard changes" }))
+    expect(await screen.findByRole("heading", { name: "Dashboard B" })).toBeVisible()
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  })
+
+  it("waits for chart discard before adding a saved query from Explore", async () => {
+    const api = client()
+    const saved: SavedQuery = { schemaVersion: 1, id: "saved", name: "Saved signal", providerId: "metrics", kind: "metrics", query: "up" }
+    vi.mocked(api.listSavedQueries).mockResolvedValue([{ ...saved, etag: '"q1"' }])
+    const { title } = await chartDraftInExplorer(api)
+    fireEvent.click(screen.getByRole("combobox", { name: "Open saved query" }))
+    fireEvent.click(await screen.findByRole("option", { name: /Saved signal/ }))
+    const useQuery = screen.getByRole("button", { name: "Use in dashboard" })
+    await waitFor(() => expect(useQuery).toBeEnabled())
+    fireEvent.click(useQuery)
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard chart changes?" })).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument())
+    expect(screen.getByLabelText("Query name")).toBeVisible()
+    expect(title).toBeInTheDocument()
+    expect(title).toHaveValue("Unapplied latency title")
+    fireEvent.click(useQuery)
+    fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard chart changes?" })).getByRole("button", { name: "Discard changes" }))
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Saved signal"))
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Back to dashboard" }))
+    const save = await screen.findByRole("button", { name: "Save dashboard" })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")?.textContent).toBeUndefined()
+      expect(api.save).toHaveBeenCalledOnce()
+    })
+    expect(vi.mocked(api.save).mock.calls[0][0].widgets.map(widget => widget.title)).toEqual(["Request latency", "Saved signal"])
+  })
 
   it("creates a saved query from a fresh tooltip and returns to the same unapplied tooltip draft", async () => {
     const api = client()
@@ -150,7 +272,7 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Tooltip saved query" }))
     fireEvent.click(await screen.findByRole("option", { name: /Created from tooltip/ }))
     expect(screen.getByLabelText("Tooltip saved query template")).toHaveValue("sum(rate(http_requests_total[5m]))")
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }))
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }))
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
     await waitFor(() => expect(api.save).toHaveBeenCalledOnce())
     const persisted = vi.mocked(api.save).mock.calls[0][0]

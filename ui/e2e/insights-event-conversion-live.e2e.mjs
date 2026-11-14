@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Switching visualization types must not silently remove a saved event query.
 // Exercise a unique ETag-protected dashboard with real local providers.
 import assert from "node:assert/strict"
@@ -71,8 +72,9 @@ try {
         await selectGammaOption(page, viz, /^Trace explorer/)
         await editor.getByRole("button", { name: "Replace query and switch" }).click()
         assert.match(await viz.innerText(), /Trace explorer/)
-        await editor.getByRole("button", { name: "Apply widget" }).click()
+        await editor.getByRole("button", { name: "Apply changes" }).click()
         const write = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === path && response.ok())
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
         await write
         const persisted = await api(path)
@@ -88,7 +90,7 @@ try {
         await selectGammaOption(page, viz, /^Bar chart/)
         await editor.getByRole("button", { name: "Remove event query and switch" }).click()
         assert.match(await viz.innerText(), /Bar chart/)
-        await editor.getByRole("button", { name: "Close widget editor" }).click()
+        await editor.getByRole("button", { name: "Apply changes" }).click()
         const persisted = await api(path)
         assert.equal(persisted.headers.get("x-paprika-document-etag") ?? persisted.headers.get("etag"), revision)
         assert.deepEqual((await persisted.json()).widgets[0].annotationSource, original)

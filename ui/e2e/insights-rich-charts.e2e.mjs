@@ -1,3 +1,4 @@
+import { applyWidgetChanges } from "./gamma-controls.mjs";
 // Rich chart integration uses test-only HTTP fixtures and the actual application.
 // These compositions are not dashboard templates and are never shipped in the public gallery.
 import assert from "node:assert/strict"
@@ -186,6 +187,8 @@ async function inspectMetric(id) {
     await assertOutsideWhenAvailable("Anchored hover inspection")
   }
   const hoverTransfer = !pointerPreview && !overlapping && !coveringNeighbor && !coveringControls
+  const beforePin = await details.boundingBox()
+  const beforePinPlacement = await details.getAttribute("data-placement")
   if (hoverTransfer) {
     await details.hover()
     await page.waitForTimeout(220)
@@ -211,7 +214,17 @@ async function inspectMetric(id) {
     await details.getByRole("button", { name: "Unpin observation", exact: true }).waitFor()
     assert.notEqual(await details.evaluate(node => getComputedStyle(node).pointerEvents), "none", "Pinned content must be interactive")
   }
-  const pinnedOutsideWidget = await assertOutsideWhenAvailable("Pinned pointer inspection")
+  let pinnedOutsideWidget
+  if (pointerPreview) {
+    const panel = await details.boundingBox(), card = await element.boundingBox()
+    // Pinning can reveal controls and grow the inspector. Its corner beside
+    // the pointer must stay fixed, including when it grows upward or leftward.
+    assert.equal(await details.getAttribute("data-placement"), beforePinPlacement)
+    const corner = box => ({ x: box.x + (beforePinPlacement.endsWith("-left") ? box.width : 0), y: box.y + (beforePinPlacement.startsWith("pointer-top") ? box.height : 0) })
+    const before = corner(beforePin), after = corner(panel)
+    assert.ok(Math.abs(after.x - before.x) <= 1 && Math.abs(after.y - before.y) <= 1, `Pinning must retain the pointer-side corner: ${JSON.stringify({ id, before, after })}`)
+    pinnedOutsideWidget = panel.x + panel.width <= card.x + .5 || panel.x >= card.x + card.width - .5 || panel.y + panel.height <= card.y + .5 || panel.y >= card.y + card.height - .5
+  } else pinnedOutsideWidget = await assertOutsideWhenAvailable("Pinned anchored inspection")
   if (id === "flow") {
     const theme = await page.locator("[data-insights-theme]").first().getAttribute("data-insights-theme")
     await page.screenshot({ path: join(output, `external-tooltip-${theme}-${viewport.width}.png`), fullPage: false, animations: "disabled" })
@@ -414,9 +427,17 @@ async function inspectCompactProviderLabels() {
     await first.getByRole("button").click()
     await element.getByRole("status").filter({ hasText: `Selected: ${source.name}` }).waitFor()
     const details = page.getByRole("tooltip")
-    await details.getByText(source.name, { exact: true }).waitFor()
-    await details.getByText(source.labels.node, { exact: true }).waitFor()
-    await details.getByText(source.labels.pod, { exact: true }).waitFor()
+    await details.waitFor()
+    // The floating shell mounts before its first positioning pass reveals the
+    // contents. Wait for the visible identity, not just the shell's bounds.
+    await until(async () => await details.locator('[class*="tooltipSeries"]').innerText() === source.labels.node, "The positioned inspector must reveal its readable series identity")
+    assert.equal(await details.locator('[class*="tooltipSeries"]').innerText(), source.labels.node, "The inspector starts with the same readable identity as its gauge")
+    const sourceDetails = details.locator("details").filter({ hasText: "Source details" })
+    assert.equal(await sourceDetails.getAttribute("open"), null)
+    await sourceDetails.locator("summary").click()
+    await sourceDetails.getByText(source.name, { exact: true }).waitFor()
+    await sourceDetails.getByText(source.labels.node, { exact: true }).waitFor()
+    await sourceDetails.getByText(source.labels.pod, { exact: true }).waitFor()
     assert.equal(await details.locator("[data-metric-value]").getAttribute("data-metric-value"), rawValue)
     await page.screenshot({ path: join(output, "compact-provider-labels-mobile.png"), fullPage: false, animations: "disabled" })
     await page.keyboard.press("Escape")
@@ -558,14 +579,14 @@ try {
         await open(studies[0])
         await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
         await page.getByRole("button", { name: "Edit Latency distribution", exact: true }).click()
-        await editor().getByRole("tab", { name: "Query", exact: true }).click()
+        await editor().getByRole("tab", { name: "Options", exact: true }).click()
         await editor().getByRole("spinbutton", { name: "Maximum time columns", exact: true }).fill("24")
-        await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-        await editor().getByRole("button", { name: "Close widget editor", exact: true }).click()
+        await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
         const authored = await sourceRoundtrip()
         const histogram = authored.widgets.find(widget => widget.id === "latency-distribution")
         assert.equal(histogram.config.maxColumns, 24)
         assert.equal(histogram.queryRef.id, "ab-service-pulse-latency-buckets")
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
         await page.getByText("All changes saved", { exact: true }).waitFor()
         await page.reload({ waitUntil: "networkidle" })
@@ -584,10 +605,9 @@ try {
         await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
         await tile("node-cpu").getByRole("button", { name: "Edit CPU utilization by node", exact: true }).click()
         await selectGammaOption(page, editor().getByRole("combobox", { name: "Visualization", exact: true }), /^Stacked time series /)
-        await editor().getByRole("tab", { name: "Query", exact: true }).click()
+        await editor().getByRole("tab", { name: "Options", exact: true }).click()
         await selectGammaOption(page, editor().getByRole("combobox", { name: "Stack display", exact: true }), "Stacked time bars")
-        await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-        await editor().getByRole("button", { name: "Close widget editor", exact: true }).click()
+        await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
         let authored = await sourceRoundtrip()
         const converted = authored.widgets.find(widget => widget.id === "node-cpu")
         assert.equal(converted.type, "plugin")
@@ -598,17 +618,17 @@ try {
         await ready(converted)
         assert.ok(await tile("node-cpu").locator("rect[data-raw-value]").count() > 20)
         await tile("cpu-meter").getByRole("button", { name: "Edit CPU used", exact: true }).click()
-        await editor().getByRole("tab", { name: "Query", exact: true }).click()
+        await editor().getByRole("tab", { name: "Options", exact: true }).click()
         for (const [label, display] of [["Continuous", "linear"], ["Segmented", "segmented"], ["Radial", "radial"]]) {
           await selectGammaOption(page, editor().getByRole("combobox", { name: "Meter appearance", exact: true }), label)
           await until(async () => await tile("cpu-meter").locator(`[data-gauge-display="${display}"]`).count() === 1, `${label} should preview before Apply`)
           assert.deepEqual(fixtureAPI.documents.get(board.id).widgets.find(widget => widget.id === "cpu-meter"), originalGauge, "A preview must not persist before saving")
         }
-        await editor().getByRole("button", { name: "Apply widget", exact: true }).click()
-        await editor().getByRole("button", { name: "Close widget editor", exact: true }).click()
+        await editor().getByRole("button", { name: "Apply changes", exact: true }).click()
         authored = await sourceRoundtrip()
         assert.deepEqual(authored.widgets.find(widget => widget.id === "cpu-meter").queryRef, originalGauge.queryRef)
         assert.equal(authored.widgets.find(widget => widget.id === "cpu-meter").config.display, "radial")
+        await applyWidgetChanges(page);
         await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
         await page.getByText("All changes saved", { exact: true }).waitFor()
         await page.reload({ waitUntil: "networkidle" })

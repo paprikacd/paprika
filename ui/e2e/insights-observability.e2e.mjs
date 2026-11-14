@@ -82,6 +82,7 @@ async function showServiceTooltip(service, width, theme) {
   const expected = readings[services.indexOf(service)] * 2
   const value = tooltip.locator('[data-tooltip-widget="stat"] [data-metric-value]')
   await until(async () => Number(await value.getAttribute("data-metric-value").catch(() => NaN)) === expected, "Hovered service label did not resolve through the saved tooltip query")
+  await value.waitFor({ state: "visible" })
   assert.equal((await value.innerText()).replace(/\s+/g, ""), `${expected.toFixed(2)}req/s`)
   assert.equal(await tooltip.locator("[data-stat-sparkline]").getAttribute("data-sample-count"), "4")
   const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_metrics"])

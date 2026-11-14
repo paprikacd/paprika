@@ -24,7 +24,7 @@ export async function verifyConnections({ page, width, query, api, panel, editHo
   await shot(`query-connections-${width}.png`)
   assert.deepEqual((await api("dashboards/explorer-board")).document, before)
   assert.equal(queryRequests().filter(item => item.params.query?.startsWith("connection_probe")).length, requestsBefore, "Authoring connections must not execute a tooltip query")
-  await panel().getByRole("button", { name: "Close widget editor", exact: true }).click()
+  await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
   await saveBoard(); await page.reload({ waitUntil: "networkidle" })
   const saved = (await api("dashboards/explorer-board")).document.widgets[0].options.tooltipView.source.ref
   assert.deepEqual(saved.bindings, [
@@ -45,7 +45,7 @@ export async function verifyConnections({ page, width, query, api, panel, editHo
   await panel().getByRole("textbox", { name: "Tooltip PromQL query", exact: true }).fill("connected_provider{service={{service}}} @ {{timestamp}} + {{value}}")
   await panel().getByRole("button", { name: "Connect 3 matching fields", exact: true }).click()
   assert.equal(await panel().getByRole("combobox", { name: "Tooltip mapping 1 hovered label", exact: true }).inputValue(), "service")
-  await panel().getByRole("button", { name: "Close widget editor", exact: true }).click(); await saveBoard()
+  await panel().getByRole("button", { name: "Apply changes", exact: true }).click(); await saveBoard()
   const providerBindings = (await api("dashboards/explorer-board")).document.widgets[0].options.tooltipView.source.bindings
   assert.deepEqual(providerBindings, [{ variable: "service", label: "service" }, { variable: "timestamp", field: "timestamp" }, { variable: "value", field: "value" }])
   return { width, savedBindings: saved.bindings, executed, providerBindings, authoringDoesNotQuery: true, persistedAfterSave: true }

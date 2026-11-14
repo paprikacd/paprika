@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { correctPortalPosition, installTooltipPointerTracking, pointerOverAnchor } from "./tooltip-pointer";
+import { correctPortalPosition, installTooltipPointerTracking, isTooltipHoverSuppressed, pointerOverAnchor } from "./tooltip-pointer";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
 import { GammaButton } from "./gamma/button";
 import { TooltipInstructions } from "./tooltip-instructions";
@@ -43,6 +43,8 @@ export function tooltipOverlapsOtherWidget(
 
 type PanelPosition = TooltipPosition & {
   pointer?: boolean;
+  /** Keep the nearest corner fixed while asynchronous content changes size. */
+  origin?: { x: number; y: number };
   overlapsOtherWidget?: boolean;
   overlapsControls?: boolean;
 };
@@ -126,8 +128,19 @@ export function ObservationTooltip({
   const retire = useCallback(() => dismissWith("superseded"), [dismissWith]);
   // A pinned owner keeps the scope against transient previews. Claims are retried whenever the owner changes.
   useLayoutEffect(() => {
-    if (!nested) store.claim(token, pinned, retire);
-  }, [store, token, nested, pinned, owner, retire]);
+    if (nested) return;
+    // Escape may uncover another chart beneath a stationary cursor. Keep it
+    // closed until real movement; keyboard focus and explicit pins still work.
+    if (!pinned && isTooltipHoverSuppressed() && !anchor.contains(document.activeElement)) {
+      const resume = () => {
+        if (pointerOverAnchor(anchor)) store.claim(token, false, retire);
+        else retire();
+      };
+      document.addEventListener("pointermove", resume, { capture: true, once: true });
+      return () => document.removeEventListener("pointermove", resume, true);
+    }
+    store.claim(token, pinned, retire);
+  }, [store, token, nested, pinned, owner, retire, anchor]);
   useLayoutEffect(() => {
     if (nested) return;
     return () => store.release(token);
@@ -154,6 +167,10 @@ export function ObservationTooltip({
   }, [id, nested, ownsPanel]);
   const assignRef = useCallback((element: HTMLDivElement | null) => { ref.current = element; panelRef?.(element); }, [panelRef]);
   const [position, setPosition] = useState<PanelPosition | null>(null);
+  // A mouse pin keeps the preview's anchor instead of switching to a distant
+  // gap outside the widget. Relative coordinates follow its mark on scroll or
+  // resize without following the mouse once the panel becomes interactive.
+  const pointerAnchor = useRef<{ element: Element; x: number; y: number } | null>(null);
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element || !position) return;
@@ -163,7 +180,7 @@ export function ObservationTooltip({
     element.style.left = `${position.left}px`;
     element.style.top = `${position.top}px`;
     const actual = element.getBoundingClientRect();
-    const corrected = correctPortalPosition(position, actual, { width: element.offsetWidth, height: element.offsetHeight });
+    const corrected = correctPortalPosition(position, actual, { width: element.offsetWidth, height: element.offsetHeight }, position.origin);
     element.style.left = `${corrected.left}px`;
     element.style.top = `${corrected.top}px`;
     // A panel that regains ownership is a new element, so its correction runs again.
@@ -171,6 +188,7 @@ export function ObservationTooltip({
   useLayoutEffect(() => {
     if (!ownsPanel) return;
     let frame = 0;
+    let hoverPointer: { x: number; y: number } | undefined;
     const stopPointer = installTooltipPointerTracking();
     const stopTheme = ref.current ? inheritGammaTheme(anchor, ref.current) : undefined;
     const update = () => {
@@ -185,15 +203,33 @@ export function ObservationTooltip({
       };
       setNarrow(visibleViewport.width < 600);
       const anchorBounds = anchorRect?.() ?? anchor.getBoundingClientRect();
-      const pointer = !pinned ? pointerOverAnchor(anchor) : undefined;
+      // Keep the last hover location during the short dismissal delay. A query
+      // resolving after pointer-leave must not send the panel outside the map.
+      const retained = pinned && pointerAnchor.current?.element === anchor ? pointerAnchor.current : null;
+      const candidate = retained
+        ? { x: anchorBounds.left + retained.x * (anchorBounds.width || 1), y: anchorBounds.top + retained.y * (anchorBounds.height || 1) }
+        : pointerOverAnchor(anchor) ?? (!pinned ? hoverPointer : undefined);
+      const viewportLeft = visibleViewport.left ?? 0, viewportTop = visibleViewport.top ?? 0;
+      const pointer = candidate && pinned
+        ? { x: Math.max(viewportLeft, Math.min(candidate.x, viewportLeft + visibleViewport.width)), y: Math.max(viewportTop, Math.min(candidate.y, viewportTop + visibleViewport.height)) }
+        : candidate && candidate.x >= viewportLeft && candidate.x <= viewportLeft + visibleViewport.width && candidate.y >= viewportTop && candidate.y <= viewportTop + visibleViewport.height ? candidate : undefined;
+      hoverPointer = pointer;
+      if (pointer && !retained) pointerAnchor.current = { element: anchor, x: (pointer.x - anchorBounds.left) / (anchorBounds.width || 1), y: (pointer.y - anchorBounds.top) / (anchorBounds.height || 1) };
+      else if (!pointer) pointerAnchor.current = null;
       if (pointer) {
         const target: TooltipTarget = { kind: "pointer", point: pointer };
         const limit = tooltipLimit(target, visibleViewport, settings);
         element.style.maxWidth = `${limit.width}px`;
         element.style.maxHeight = `${limit.height}px`;
-        const next = placeTooltip(target, element.getBoundingClientRect(), visibleViewport, settings);
+        const size = element.getBoundingClientRect();
+        const next = placeTooltip(target, size, visibleViewport, settings);
         element.style.maxHeight = `${next.maxHeight ?? limit.height}px`;
-        setPosition(previous => previous?.pointer && previous.left === next.left && previous.top === next.top && previous.placement === next.placement ? previous : { ...next, pointer: true });
+        const origin = { x: next.placement.endsWith("-left") ? 1 : 0, y: next.placement.startsWith("pointer-top") ? 1 : 0 };
+        // CSS translates from this corner as content grows, without waiting for
+        // the next observer/frame to move an already-painted top-left corner.
+        const left = next.left + origin.x * size.width;
+        const top = next.top + origin.y * Math.min(size.height, next.maxHeight ?? limit.height);
+        setPosition(previous => previous?.pointer && previous.left === left && previous.top === top && previous.placement === next.placement ? previous : { ...next, left, top, pointer: true, origin });
         return;
       }
       if (avoidWidget) {
@@ -262,18 +298,23 @@ export function ObservationTooltip({
     if (ref.current) observer?.observe(ref.current);
     if (ref.current) contentObserver?.observe(ref.current, { subtree: true, childList: true, characterData: true });
     observer?.observe(anchor);
-    // Scrolling *within* a pinned inspector must not move or remeasure it.
+    // Scrolling an inspector through its panel or trigger must not remeasure it.
     // Reapplying the measured max-height can reset the native scroll offset in
     // Chromium, particularly after PageDown/End on a focused mobile region.
     const externalScroll = (event: Event) => {
       if (event.target instanceof Node && ref.current?.contains(event.target)) return;
+      hoverPointer = undefined;
+      if (!pinned) pointerAnchor.current = null;
       schedule();
     };
     const geometryKey = (event: KeyboardEvent) => {
+      hoverPointer = undefined;
+      if (!pinned && event.key !== "Enter" && event.key !== " ") pointerAnchor.current = null;
       if (
         ["PageDown", "PageUp", "Home", "End"].includes(event.key) &&
         event.target instanceof Node &&
-        ref.current?.contains(event.target)
+        (ref.current?.contains(event.target) ||
+          (event.target === anchor && !(anchorOwnsHistoryKeys && ["Home", "End"].includes(event.key))))
       ) return;
       schedule();
     };
@@ -296,7 +337,7 @@ export function ObservationTooltip({
       window.visualViewport?.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("scroll", schedule);
     };
-  }, [anchor, anchorRect, preferSide, avoidWidget, minimized, pinned, ownsPanel, settings]);
+  }, [anchor, anchorRect, anchorOwnsHistoryKeys, preferSide, avoidWidget, minimized, pinned, ownsPanel, settings]);
   // Outside-pointer, blur and Escape dismissal share one path. It reads the latest state, so it attaches once per ownership.
   useLayoutEffect(() => {
     dismissal.current = ownsPanel ? { anchor, panel: () => ref.current, pinned, dismiss: dismissWith } : null;
@@ -356,12 +397,13 @@ export function ObservationTooltip({
       style={{
         left: position?.left ?? 0,
         top: position?.top ?? 0,
+        translate: position?.origin ? `${-100 * position.origin.x}% ${-100 * position.origin.y}%` : undefined,
         width: minimized ? "max-content" : undefined,
         visibility: position ? "visible" : "hidden",
         pointerEvents: !pinned && (position?.pointer || (avoidWidget && (position?.overlapsWidget || position?.overlapsOtherWidget || position?.overlapsControls))) ? "none" : undefined,
       }}
       data-placement={position?.placement}
-      data-tooltip-pointer={position?.pointer || undefined}
+      data-tooltip-pointer={(!pinned && position?.pointer) || undefined}
       data-tooltip-overlap={position?.overlapsWidget || undefined}
       data-tooltip-overlaps-other-widget={position?.overlapsOtherWidget || undefined}
       data-tooltip-overlaps-controls={position?.overlapsControls || undefined}
@@ -377,7 +419,7 @@ export function ObservationTooltip({
           onLeave?.();
       }}
     >
-      {pinned && avoidWidget && narrow && (minimized || position?.overlapsWidget || position?.overlapsOtherWidget || position?.overlapsControls) && (
+      {pinned && avoidWidget && narrow && (minimized || position?.pointer || position?.overlapsWidget || position?.overlapsOtherWidget || position?.overlapsControls) && (
         <div className={configStyles.tooltipCompactControls}>
           <GammaButton variant="ghost" size="sm" aria-label={minimized ? "Show inspector details" : "Minimize inspector"} aria-expanded={!minimized} aria-controls={`${id}-details`} onClick={() => setCompactState({ anchor, pinned, minimized: !minimized })}>
             {minimized ? "Show details" : "Minimize"}
@@ -410,6 +452,7 @@ export function ObservationDetails({
   selectOnFocus = true,
   tabIndex,
   options,
+  mark = false,
 }: {
   label: string;
   children: ReactNode;
@@ -427,6 +470,8 @@ export function ObservationDetails({
   tabIndex?: number;
   /** Placement, gap and size limits for the panel. */
   options?: TooltipPlacementOptions;
+  /** The plotted mark owns its dimensions, independently of toolbar buttons. */
+  mark?: boolean;
 }) {
   const id = useId();
   const [active, setActive] = useState<{
@@ -484,6 +529,7 @@ export function ObservationDetails({
     <>
       <GammaButton
         variant="ghost"
+        size={mark ? "mark" : undefined}
         className={className ?? configStyles.observationTrigger}
         aria-label={label}
         aria-describedby={active ? id : undefined}
