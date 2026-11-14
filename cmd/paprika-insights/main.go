@@ -70,7 +70,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	slog.Info("Paprika Insights listening", "address", *listen, "providers", len(cfg.Providers), "development", *dev)
-	return serve(ctx, server)
+	return serve(ctx, server, *listen)
 }
 
 func loadProvidersConfig(path string, cfg *insights.Config) error {
@@ -102,9 +102,13 @@ func shutdownTelemetry(telemetry *observability.Telemetry) {
 	}
 }
 
-func serve(ctx context.Context, server *http.Server) error {
+func serve(ctx context.Context, server *http.Server, addr string) error {
+	ln, err := listenInsights(ctx, addr)
+	if err != nil {
+		return err
+	}
 	errCh := make(chan error, 1)
-	go func() { errCh <- server.ListenAndServe() }()
+	go func() { errCh <- server.Serve(ln) }()
 	select {
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
