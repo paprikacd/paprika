@@ -59,9 +59,12 @@ type Server struct {
 	queryBudget   time.Duration
 	queryCount    metric.Int64Counter
 	queryDuration metric.Float64Histogram
-	// checkSlots caps the dry runs and checked saves in flight while they decode
-	// a document and build its report. Each one parses a whole document, so a
-	// burst of them is refused rather than allowed to grow the heap of a replica.
+	// checkSlots caps the dry runs and checked saves in flight. A dry run holds its
+	// slot while it decodes its request and builds its report; a checked save holds
+	// it through its lock wait, its check, its write and its response. Each one
+	// parses a whole document, so a burst of them is refused rather than allowed to
+	// grow the heap of a replica. A request body is read before a slot is taken, so
+	// a slow upload holds none.
 	checkSlots chan struct{}
 	// dryRunSlots caps the dry runs that execute queries. They hold a check slot
 	// only until their report is built, so provider latency never blocks checked
@@ -418,7 +421,8 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	// The body is read before a check slot is taken, so a stalled upload holds no
-	// slot. The slot covers only the check work that follows.
+	// slot. The slot covers the rest of a checked save: the lock wait, the check,
+	// the write and the response.
 	var doc json.RawMessage
 	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
 		writeError(w, 400, "invalid dashboard document")
@@ -553,12 +557,24 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // decodeCheck decodes a dry-run request and builds its schema and lint report. The
-// body is read before a check slot is taken, so a stalled upload holds no slot. The
-// slot covers only the report, and it is released before any query runs, so a slow
-// provider never keeps a checked save out.
+// raw body is read before a check slot is taken, so a stalled upload holds no slot.
+// The envelope is decoded only once a slot is held, so a refused request costs its
+// bytes and no more: decoding a variables object allocates several times its size.
+// The slot is released before any query runs, so a slow provider never keeps a
+// checked save out.
 func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequest, *findingSet, bool) {
+	raw, err := readBody(w, r, maxCheckRequestBytes)
+	if err != nil {
+		writeError(w, 400, "invalid dashboard check request")
+		return nil, nil, false
+	}
+	release, ok := s.admitCheck(w)
+	if !ok {
+		return nil, nil, false
+	}
+	defer release()
 	var request checkRequest
-	if err := decodeBody(w, r, &request, maxCheckRequestBytes); err != nil {
+	if err := decodeJSON(bytes.NewReader(raw), &request); err != nil {
 		writeError(w, 400, "invalid dashboard check request")
 		return nil, nil, false
 	}
@@ -570,11 +586,6 @@ func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequ
 		writeError(w, 400, "variables apply only when execute is true")
 		return nil, nil, false
 	}
-	release, ok := s.admitCheck(w)
-	if !ok {
-		return nil, nil, false
-	}
-	defer release()
 	return &request, s.checkReport(request.Document), true
 }
 
@@ -633,7 +644,25 @@ func (s *Server) deleteDashboard(w http.ResponseWriter, r *http.Request) {
 func decodeBody(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	defer closeReadBody(r.Body)
-	decoder := json.NewDecoder(r.Body)
+	return decodeJSON(r.Body, v)
+}
+
+// readBody reads the request body, up to limit bytes, without decoding it. A handler
+// that must not decode until it holds a slot reads the body first with this.
+func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	defer closeReadBody(r.Body)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read request body: %w", err)
+	}
+	return raw, nil
+}
+
+// decodeJSON decodes exactly one JSON value from in into v, with unknown members
+// rejected.
+func decodeJSON(in io.Reader, v any) error {
+	decoder := json.NewDecoder(in)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(v); err != nil {
 		return fmt.Errorf("decode request body: %w", err)

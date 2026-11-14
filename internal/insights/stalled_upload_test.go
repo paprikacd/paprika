@@ -2,8 +2,11 @@ package insights
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,20 +68,72 @@ func TestStalledUploadsHoldNoCheckSlot(t *testing.T) {
 			close(finished[i])
 		}()
 	}
-	// Each stalled request either reaches its body read or returns on its own, for
-	// example with a 429. Only the requests that are still waiting on the body stall.
+	// Every stalled request reaches its body read and is still waiting there: none
+	// has returned, so none can have failed fast, and none holds a check slot.
 	for i, signal := range started {
 		select {
 		case <-signal:
 		case <-finished[i]:
+			t.Fatalf("stalled upload %d returned before its body finished", i)
 		case <-time.After(5 * time.Second):
-			t.Fatal("a stalled upload neither reached its body read nor returned")
+			t.Fatalf("stalled upload %d never reached its body read", i)
 		}
 	}
+	for i := range finished {
+		select {
+		case <-finished[i]:
+			t.Fatalf("stalled upload %d returned before the probe", i)
+		default:
+		}
+	}
+	require.Zero(t, len(s.checkSlots), "stalled uploads hold no check slot")
 
 	dry := request(t, h, "POST", "/api/dashboards/validate", checkBody(document), nil)
 	require.Equal(t, 200, dry.Code, "a normal dry run is not refused behind stalled uploads: %s", dry.Body)
 	saved := request(t, h, "PUT", "/api/dashboards/demo?checks=true", document, map[string]string{"If-None-Match": "*"})
 	require.Equal(t, 200, saved.Code, "a checked save is not refused behind stalled uploads: %s", saved.Body)
 	require.Contains(t, saved.Body.String(), `"checks"`)
+}
+
+// A max-size dry run whose variables object holds tiny members is refused while the
+// slots are full, and refusing it costs about its own bytes. The body is read before
+// a slot is taken and the envelope is decoded only once one is held, so the refusal
+// never builds the map, which at this size is several times the body.
+func TestRefusedMaxSizeVariablesAllocateAboutTheirSize(t *testing.T) {
+	s, _ := testService(t)
+	h := s.Handler()
+	for range cap(s.checkSlots) {
+		s.checkSlots <- struct{}{}
+	}
+	var b strings.Builder
+	b.WriteString(`{"document":`)
+	b.Write(dashboard("demo", "Clean"))
+	b.WriteString(`,"variables":{`)
+	for i := 0; ; i++ {
+		member := fmt.Sprintf(`"k%06d":""`, i)
+		if b.Len()+len(member)+2 > maxCheckRequestBytes {
+			break
+		}
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(member)
+	}
+	b.WriteString(`}}`)
+	body := []byte(b.String())
+	require.LessOrEqual(t, len(body), maxCheckRequestBytes, "the body is within the request limit")
+	require.Greater(t, len(body), maxCheckRequestBytes-32, "and fills it")
+
+	w, allocated := measured(t, func() *httptest.ResponseRecorder {
+		return request(t, h, "POST", "/api/dashboards/validate", body, nil)
+	})
+	require.Equal(t, http.StatusTooManyRequests, w.Code, "a full pool refuses it: %.200s", w.Body)
+	if !raceEnabled {
+		// Reading the body with io.ReadAll takes a few times its size in buffer growth.
+		// Decoding its 40k members as a map takes about 6 MB on top of that.
+		require.Less(t, allocated, uint64(4*len(body)), "a refused dry run allocated %d bytes for a %d byte body", allocated, len(body))
+	}
+	for range cap(s.checkSlots) {
+		<-s.checkSlots
+	}
 }
