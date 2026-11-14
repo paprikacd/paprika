@@ -15,7 +15,8 @@ type dashboardOmissionStep struct {
 
 // dashboardOmissionSteps is the fixed order in which optional detail is dropped when the encoded
 // result exceeds DashboardQueryResponseBytes. The ladder stops as soon as the result fits. Attention
-// counts, summaries, latest levels, band states and signals are never dropped.
+// counts, band states, signals and their series are never dropped. Breach summaries and latest
+// levels go only with a widget's breach object, in step 2.
 var dashboardOmissionSteps = []dashboardOmissionStep{
 	{name: "breachIntervals", drop: dropDashboardBreachIntervals},
 	{name: "breaches", drop: dropDashboardWidgetBreaches},
@@ -67,17 +68,28 @@ func dropDashboardBandSeriesDetail(result *DashboardQueryResult) bool {
 	return dropped
 }
 
-// dropDashboardSampleDetail removes the limit and age of each widget's latest sample. Its state stays,
-// so a stale or unknown widget is still identified as one.
+// dropDashboardSampleDetail removes the optional sample facts. A stale sample keeps its state, so the
+// widget stays identified as stale, and loses its limit and age. A sample in any other state is removed
+// entirely, so a widget without a sample has a fresh, no_threshold or unknown state that the cap removed.
+// The first-contract freshness object repeats the sample, so it goes too, on every widget that has one.
 func dropDashboardSampleDetail(result *DashboardQueryResult) bool {
 	dropped := false
 	for index := range result.Widgets {
-		sample := result.Widgets[index].Sample
-		if sample == nil || (sample.Basis == "" && sample.StaleAfterSeconds == nil && sample.LastTimestamp == nil && sample.AgeSeconds == nil) {
-			continue
+		widget := &result.Widgets[index]
+		if widget.Freshness != nil {
+			widget.Freshness = nil
+			dropped = true
 		}
-		sample.Basis, sample.StaleAfterSeconds, sample.LastTimestamp, sample.AgeSeconds = "", nil, nil, nil
-		dropped = true
+		sample := widget.Sample
+		switch {
+		case sample == nil:
+		case sample.State != "stale":
+			widget.Sample = nil
+			dropped = true
+		case sample.Basis != "" || sample.StaleAfterSeconds != nil || sample.LastTimestamp != nil || sample.AgeSeconds != nil:
+			sample.Basis, sample.StaleAfterSeconds, sample.LastTimestamp, sample.AgeSeconds = "", nil, nil, nil
+			dropped = true
+		}
 	}
 	return dropped
 }

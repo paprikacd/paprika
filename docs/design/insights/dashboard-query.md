@@ -153,8 +153,9 @@ Up to 12 series are evaluated; `seriesEvaluated` and `seriesOmitted` say which.
 `intervals` lists the most recent intervals of each level, up to 12 per level per
 widget. The caps are per level, so one critical interval is never crowded out by
 later warning flaps. A dashboard-wide budget (96 listed intervals) lowers the
-per-widget count when many widgets are selected, so the structured result stays
-well under its 128 KiB cap; `intervalsOmitted` counts every interval not listed.
+per-widget count when many widgets are selected, which makes the structured result
+more likely to fit its 128 KiB cap before any omission; `intervalsOmitted` counts
+every interval not listed.
 When the encoded result still exceeds the cap, the listed intervals are the first
 detail omitted (see Omitted detail below).
 Each interval gives `series`, a bounded `name`, `level`, `start`, `end` and
@@ -171,15 +172,21 @@ Omitted detail. The structured result is budgeted against its encoded size. When
 would exceed 128 KiB, optional detail is dropped in this fixed order, and each step
 runs only if the result still does not fit: (1) `breachIntervals`, the listed breach
 intervals and their series names, with their count moved into `intervalsOmitted`;
-(2) `breaches`, each widget's breach object; (3) `bandSeries`, the series names that
-set a multi-series band, keeping the drawn and omitted counts; (4) `sample`, the
-limit and age of each widget's sample, keeping its `state`. The top-level `omitted`
-array names the steps applied, in order. It is absent when nothing was dropped, so
-a result that fits keeps every fact. The attention summary, summaries, latest levels,
-states, signals and their series are never dropped, and attention is counted before
-any omission. The text synopsis states what was omitted. A selection whose signals
-alone exceed the cap is still refused with 413, and the message says so; narrow the
-selection, the series or the history points.
+(2) `breaches`, each widget's whole breach object, which includes its window
+`summary` and `latestLevel`; (3) `bandSeries`, the series names that set a
+multi-series band, keeping the drawn and omitted counts; (4) `sample`: each widget's
+first-contract `freshness` is removed, a stale `sample` keeps its `state` and loses
+its limit and age, and every other `sample` is removed entirely. A widget without
+`sample` therefore has a fresh, `no_threshold` or `unknown` state that the cap
+removed. The top-level `omitted` array names the steps applied, in order. It is
+absent when nothing was dropped, so a result that fits keeps every fact. Attention
+counts, band `threshold` objects, signals and their series are never dropped, and
+attention is counted before any omission. The text synopsis states what was omitted
+and that `widget_ids` narrows the query to recover it. A selection whose remaining
+facts (signals, attention, widget identities and the `omitted` list) still exceed
+the cap after every step is refused with 413. The HTTP response says so; an MCP
+caller sees `resource_exhausted` with its fixed message. Narrow the selection, the
+series or the history points.
 
 Every metric widget reports `sample`: the age of its latest valid returned sample
 relative to the range end, and the limit that judges it. A stat measures its
@@ -198,6 +205,7 @@ stale mark. `unknown` means no usable returned sample.
 `staleAfterSeconds` judges the widget. It carries the same judgement in the same
 three states, with `thresholdSeconds`. `thresholdSeconds` is an integer, so the
 cadence-derived limit appears only in `sample`. Text describes only judged samples.
+Under the result cap, `freshness` is the first sample detail removed (step 4 above).
 
 Trace results include `returned`, `statusCounts` and a few examples with IDs,
 service, operation, duration in milliseconds and start time in Unix milliseconds. Counts describe the
