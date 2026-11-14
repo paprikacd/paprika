@@ -112,17 +112,13 @@ func breachDetailDashboard() *DashboardQueryResult {
 	return result
 }
 
-// sizeAfterSteps measures the encoded breachDetailDashboard after the first n ladder steps, with
-// the omitted list those steps report. The title filler added later is measured against these.
-func sizeAfterSteps(t *testing.T, n int) int {
-	t.Helper()
-	return sizeAfterStepsOf(t, breachDetailDashboard, n)
-}
-
-// sizeAfterStepsOf measures a fresh dashboard from build after the first n ladder steps.
+// sizeAfterStepsOf measures a fresh dashboard from build after the first n ladder steps, with the
+// omitted list those steps report. The title is set to one byte: an empty title is omitted from the
+// JSON altogether, so a one-byte placeholder is the size the filler replaces.
 func sizeAfterStepsOf(t *testing.T, build func() *DashboardQueryResult, n int) int {
 	t.Helper()
 	result := build()
+	result.Dashboard.Title = "t"
 	for _, step := range dashboardOmissionSteps[:n] {
 		require.True(t, step.drop(result), "step %s must remove detail from this dashboard", step.name)
 		result.Omitted = append(result.Omitted, step.name)
@@ -132,11 +128,19 @@ func sizeAfterStepsOf(t *testing.T, build func() *DashboardQueryResult, n int) i
 	return len(encoded)
 }
 
-// fillerForSteps sizes a title filler so that exactly n steps are needed: the result fits after the
-// n-th step and not before it. The filler is ASCII, so its JSON length equals its byte length.
+// fillerForStepsOf sizes a title filler so the result is exactly DashboardQueryResponseBytes after n
+// steps. The placeholder byte measured by sizeAfterStepsOf is replaced, so the filler is one byte
+// longer than the cap's room. Before the n-th step the result is over the cap, so exactly n steps
+// are needed. The filler is ASCII, so its JSON length equals its byte length.
+func fillerForStepsOf(t *testing.T, build func() *DashboardQueryResult, n int) string {
+	t.Helper()
+	return strings.Repeat("t", DashboardQueryResponseBytes-sizeAfterStepsOf(t, build, n)+1)
+}
+
+// fillerForSteps is fillerForStepsOf for breachDetailDashboard.
 func fillerForSteps(t *testing.T, n int) string {
 	t.Helper()
-	return strings.Repeat("t", DashboardQueryResponseBytes-sizeAfterSteps(t, n))
+	return fillerForStepsOf(t, breachDetailDashboard, n)
 }
 
 // The ladder applies steps in order and stops as soon as the result fits. Each case needs one more
@@ -148,7 +152,7 @@ func TestDashboardOmissionDropsDetailInTheFixedOrder(t *testing.T) {
 			result.Dashboard.Title = fillerForSteps(t, n)
 			encoded, err := encodeDashboardQueryResult(result)
 			require.NoError(t, err)
-			require.LessOrEqual(t, len(encoded), DashboardQueryResponseBytes)
+			require.Equal(t, DashboardQueryResponseBytes, len(encoded), "the filler lands exactly on the cap, so the cap itself is a fit")
 			want := make([]string, 0, n)
 			for _, step := range dashboardOmissionSteps[:n] {
 				want = append(want, step.name)
@@ -341,10 +345,10 @@ func withStatWidgets() *DashboardQueryResult {
 func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
 	const steps = 4 // The sample step runs, so the time-series freshness and sample detail are dropped.
 	result := withStatWidgets()
-	result.Dashboard.Title = strings.Repeat("t", DashboardQueryResponseBytes-sizeAfterStepsOf(t, withStatWidgets, steps))
+	result.Dashboard.Title = fillerForStepsOf(t, withStatWidgets, steps)
 	encoded, err := encodeDashboardQueryResult(result)
 	require.NoError(t, err)
-	require.LessOrEqual(t, len(encoded), DashboardQueryResponseBytes)
+	require.Equal(t, DashboardQueryResponseBytes, len(encoded))
 	require.Equal(t, dashboardOmissionStepNamesThrough(steps), result.Omitted)
 	stats := 0
 	for index := range result.Widgets {
@@ -430,8 +434,9 @@ func kubeStateNineLabelMatrix(t *testing.T, value string, samples, padding int) 
 // A 48-widget colour-only time series, each judged stale by the cadence fallback because its samples end
 // ten minutes before the range end, must return 200 within the cap. The namespace label carries 30 extra
 // characters so that the result is over the cap on the previous ladder (131,916 bytes, a 413), while
-// the current ladder brings it to 130,620 bytes. The padding sizes the fixture; it is not a claim about
-// real namespaces.
+// the current ladder brings it to 130,620 bytes. The padding sizes this fixture; it is not a claim about
+// real namespaces, and it is not the review probe (b), which is pinned as a refusal in
+// dashboard_omission_probe_test.go.
 func TestDashboardQueryColourOnlyCadenceStale48WidgetsReturnWithinTheCap(t *testing.T) {
 	body := kubeStateNineLabelMatrix(t, "0", 51, 30)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

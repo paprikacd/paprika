@@ -245,7 +245,7 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 		if judgesStaleAfter(widget.Type) && widget.Options.StaleAfterSeconds != nil {
 			seconds := *widget.Options.StaleAfterSeconds
 			output.Sample.Basis, output.Sample.StaleAfterSeconds = sampleBasisStaleAfter, &seconds
-			// The first contract's freshness object, kept for clients that read it.
+			// The freshness object. A stat's is the first contract's; a time series also gets one, which this release added.
 			threshold := int(seconds)
 			output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "unknown"}
 		}
