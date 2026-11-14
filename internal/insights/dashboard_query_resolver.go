@@ -28,27 +28,36 @@ type dashboardReadVariable struct {
 }
 
 type dashboardReadWidget struct {
-	ID               string                   `json:"id"`
-	Title            string                   `json:"title"`
-	Type             string                   `json:"type"`
-	PluginID         string                   `json:"pluginId"`
-	Unit             string                   `json:"unit"`
-	ProviderID       string                   `json:"providerId"`
-	Query            string                   `json:"query"`
-	DataKind         string                   `json:"dataKind"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Type       string `json:"type"`
+	PluginID   string `json:"pluginId"`
+	Unit       string `json:"unit"`
+	ProviderID string `json:"providerId"`
+	Query      string `json:"query"`
+	DataKind   string `json:"dataKind"`
+	// Config is the plugin's declared config, read only for the series a band widget draws.
+	Config           json.RawMessage          `json:"config"`
 	QueryRef         *dashboardReadReference  `json:"queryRef"`
 	AnnotationSource *dashboardReadAnnotation `json:"annotationSource"`
 	Options          struct {
 		Decimals          *int                     `json:"decimals"`
 		StaleAfterSeconds *float64                 `json:"staleAfterSeconds"`
 		Thresholds        []dashboardReadThreshold `json:"thresholds"`
+		// The declared scale and styling the dry-run data rules compare against.
+		// Query output never reads them.
+		Min           *float64        `json:"min"`
+		Max           *float64        `json:"max"`
+		ShowSparkline bool            `json:"showSparkline"`
+		SeriesColors  json.RawMessage `json:"seriesColors"`
 	} `json:"options"`
 }
 
 type dashboardReadThreshold struct {
-	Value float64 `json:"value"`
-	Color string  `json:"color"`
-	Label string  `json:"label"`
+	Value  float64 `json:"value"`
+	Status string  `json:"status,omitempty"`
+	Color  string  `json:"color,omitempty"`
+	Label  string  `json:"label,omitempty"`
 }
 
 type dashboardReadAnnotation struct {

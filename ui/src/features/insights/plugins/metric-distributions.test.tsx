@@ -162,6 +162,19 @@ describe("metric distributions",()=>{
     expect(screen.queryByRole("img")).not.toBeInTheDocument()
     expect(screen.getByText(/No data/i)).toBeInTheDocument()
   })
+  it("strokes warning and critical history marks, adds glyph chips to the legend, and leaves hex-only bands unmarked",()=>{
+    const options={...widget.options,thresholds:[{value:0,status:"ok" as const,label:"Healthy"},{value:1,status:"warning" as const,label:"Degraded"},{value:2,status:"critical" as const,label:"Critical"}]}
+    const {container,unmount}=render(<StatusHistory widget={{...widget,options}} result={{series:[series("api",[0,1.5,2.125])]}}/>)
+    const marks=[...container.querySelectorAll<HTMLElement>("[data-history-value]")]
+    // Marks carry no frame of their own; each contiguous warning or critical run is framed once, so a single sample is one framed run.
+    expect(marks.map(mark=>mark.getAttribute("data-status-stroke"))).toEqual([null,null,null])
+    expect([...container.querySelectorAll<HTMLElement>("[data-status-run]")].map(run=>run.getAttribute("data-status-run"))).toEqual(["warning","critical"])
+    expect(container.querySelector('[role="group"][aria-label="Status history legend"]')!.querySelectorAll("[data-status]")).toHaveLength(3)
+    unmount()
+    const hex=render(<StatusHistory widget={{...widget,options:{...widget.options,thresholds:[{value:0,color:"#00aa00",label:"Healthy"},{value:2,color:"#cc0000",label:"Critical"}]}}} result={{series:[series("api",[0,2.125])]}}/>)
+    expect(hex.container.querySelector("[data-status-stroke]")).toBeNull()
+    expect(hex.container.querySelector("[data-status]")).toBeNull()
+  })
   it("renders threshold labels and missing state, with exact selected values",()=>{
     const select=vi.fn()
     const options={...widget.options,thresholds:[{value:0,color:"#00aa00",label:"Healthy"},{value:2,color:"#cc0000",label:"Critical"}]}

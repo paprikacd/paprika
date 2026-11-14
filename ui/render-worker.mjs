@@ -1,6 +1,7 @@
 import {createServer} from "node:http"
 import {timingSafeEqual} from "node:crypto"
 import {chromium} from "playwright"
+import {dashboardProbe} from "./dashboard-probe.mjs"
 
 const validID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/
 const validETag = /^"[a-f0-9]{64}"$/
@@ -13,7 +14,7 @@ const failureCategories=new Set([
   "render_failed","request_invalid","request_bounds","render_deadline",
   "browser_start","browser_context","ui_navigation","ui_readiness",
   "widget_readiness","widget_error","focus_unavailable","network_error",
-  "redirect_rejected","insights_http","query_error","script_error",
+  "redirect_rejected","insights_http","query_error","script_error","visual_check_failed",
   "revision_conflict","screenshot_bounds","screenshot_failed",
 ])
 
@@ -39,12 +40,21 @@ function renderFailure(error,aborted) {
 
 export function parseRenderRequest(v) {
   if (!v || typeof v !== "object" || Array.isArray(v) ||
-      Object.keys(v).some(k => !["id","width","theme","focus_widget"].includes(k))) throw Error("invalid payload")
-  const {id, width=1512, theme="dark", focus_widget:focusWidget=""}=v
+      Object.keys(v).some(k => !["id","width","theme","focus_widget","checks_only"].includes(k))) throw Error("invalid payload")
+  const {id, width=1512, theme="dark", focus_widget:focusWidget="", checks_only:checksOnly=false}=v
   if (typeof id!=="string" || !validID.test(id) || !validWidths.includes(width) || !["light","dark"].includes(theme) || typeof focusWidget!=="string" ||
-      (focusWidget && !validID.test(focusWidget))) throw Error("invalid dashboard preview arguments")
-  return {id,width,theme,focusWidget}
+      (focusWidget && !validID.test(focusWidget)) || typeof checksOnly!=="boolean" || (checksOnly && focusWidget)) throw Error("invalid dashboard preview arguments")
+  return {id,width,theme,focusWidget,checksOnly}
 }
+
+// A caller that asks for JSON receives the visual checks with the image (or instead
+// of it, for checks_only). Any other caller keeps the PNG body it has always had.
+export function wantsJSON(accept="") {
+  return /(^|,)\s*application\/json\s*(;|,|$)/.test(accept)
+}
+
+// The response bounds the findings a caller receives, as the check wire form does.
+export const maxCheckIssues = 32
 
 export function allowedRequest(url, method, origin) {
   let u
@@ -65,9 +75,19 @@ export function allowedRequest(url, method, origin) {
     u.pathname==="/icon.png")
 }
 
-function supportsCapacityRetry(path,method) {
+// A tile is still loading while it has a "Widget waiting to load" marker or any
+// aria-busy descendant, which includes a tile waiting on a shared data source.
+export const tileNotReadySelector='[aria-label="Widget waiting to load"],[aria-busy="true"]'
+// A tile whose shared source failed is final, so it is rejected rather than awaited.
+export const tileSourceUnavailableSelector='[data-widget-state="source-unavailable"]'
+
+// The page client replays a busy shared listing (at most three times, each after its
+// capped, jittered retryAfter). The worker does not replay it again, so a persistent busy
+// spell costs one client replay cycle, and the worker's readiness and deadline decide the
+// outcome. A busy tile stays aria-busy while the client retries.
+export function supportsCapacityRetry(path,method) {
   return method==="POST" && path==="/api/insights/query" ||
-    method==="GET" && /^\/api\/insights\/(dashboards|saved-queries)(\/[a-zA-Z0-9_-]+)?$/.test(path)
+    method==="GET" && /^\/api\/insights\/(providers|dashboards|saved-queries)(\/[a-zA-Z0-9_-]+)?$/.test(path)
 }
 
 function trusted(actual, expected) {
@@ -112,6 +132,9 @@ function readBody(req,signal) {
 }
 
 async function render(params, bearer, origin, signal, etag) {
+  const started=performance.now()
+  // Visual checks change what a failed query means, so the flag is read by the route handler too.
+  const checking=params.checks===true
   signal.throwIfAborted()
   browserPromise ??= chromium.launch({headless:true,timeout:8000,args:["--no-sandbox"]}).catch(()=>{browserPromise=undefined;throw new RenderError("browser_start")})
   const b=await abortable(browserPromise,signal)
@@ -152,7 +175,9 @@ async function render(params, bearer, origin, signal, etag) {
           await route.abort("blockedbyclient").catch(()=>{})
           return
         }
-        if(new URL(target).pathname==="/api/insights/query" && response.ok()) {
+        // With visual checks, a query error envelope is shown by its widget and attributed by the
+        // probe, so the render continues. Document and listing reads still fail the render.
+        if(!checking && new URL(target).pathname==="/api/insights/query" && response.ok()) {
           const result=await response.json()
           if(typeof result?.error==="string" && result.error.trim()) {
             fail(new RenderError("query_error",422,response.status()))
@@ -174,7 +199,9 @@ async function render(params, bearer, origin, signal, etag) {
       // read paths. Let it finish its bounded retry; persistent failures still
       // fail the widget/error/deadline checks below, never produce a PNG.
       const retry=response.status()===429 && supportsCapacityRetry(path,response.request().method())
-      if (path.startsWith("/api/insights/") && response.status()>=400 && !retry) fail(new RenderError("insights_http",422,response.status()))
+      // A failed query under visual checks is attributed to its widget by the probe; see the route handler.
+      const attributable=checking && path==="/api/insights/query" && response.request().method()==="POST"
+      if (path.startsWith("/api/insights/") && response.status()>=400 && !retry && !attributable) fail(new RenderError("insights_http",422,response.status()))
       if(path==="/api/insights/dashboards/"+params.id && response.request().method()==="GET" && response.ok()) {
         observedETag=response.headers()["x-paprika-document-etag"]??response.headers().etag
         if(observedETag!==etag)fail(new RenderError("revision_conflict",409))
@@ -186,10 +213,14 @@ async function render(params, bearer, origin, signal, etag) {
     phase="ui_readiness"
     await page.getByTestId("dashboard-canvas").waitFor({state:"visible",timeout:maxTime})
     const tiles=page.locator("[data-widget-id]")
+    // With visual checks a widget error is a finding with its widget id, and the
+    // render continues. A PNG-only capture still fails on it, as it always has.
     const rejectWidgetErrors=async target=>{
       // An authorized dashboard can reference a provider the viewer cannot
       // read. That is rendered as an alert without making a failing HTTP call.
-      if(await target.locator('[role="alert"]:visible').count()) throw new RenderError("widget_error")
+      // A tile whose shared source failed is a final state, never a screenshot.
+      if(checking) return
+      if(await target.locator('[role="alert"]:visible').count() || await target.locator(tileSourceUnavailableSelector).count()) throw new RenderError("widget_error")
     }
     await tiles.first().waitFor({state:"visible",timeout:maxTime})
     const count=await tiles.count()
@@ -200,12 +231,29 @@ async function render(params, bearer, origin, signal, etag) {
       await tile.scrollIntoViewIfNeeded()
       // Wait for both deferred mounting and query completion. A skeleton is
       // never silently accepted as a completed screenshot.
-      await page.waitForFunction(id=>{
+      await page.waitForFunction(([id,notReady])=>{
         const tile=document.querySelector('[data-widget-id="'+id+'"]')
-        return tile && !tile.querySelector('[aria-label="Widget waiting to load"],[aria-busy="true"]')
-      },await tile.getAttribute("data-widget-id"),{timeout:maxTime})
+        return tile && !tile.querySelector(notReady)
+      },[await tile.getAttribute("data-widget-id"),tileNotReadySelector],{timeout:maxTime})
       if(failure)throw failure
       await rejectWidgetErrors(tile)
+    }
+    const readyMs=Math.round(performance.now()-started)
+    let checks=null,probeMs=0
+    if (checking) {
+      phase="visual_checks"
+      let probed
+      try { probed=await page.evaluate(dashboardProbe,{}) }
+      catch { throw new RenderError("visual_check_failed") }
+      if(failure)throw failure
+      checks=probed.findings
+      probeMs=probed.probeMs
+    }
+    if (params.checksOnly) {
+      signal.throwIfAborted()
+      if(failure)throw failure
+      if(observedETag!==etag)throw new RenderError("revision_conflict",409)
+      return {checks:checkReport(checks),timings:{readyMs,probeMs,renderMs:Math.round(performance.now()-started)}}
     }
     if (params.focusWidget) {
       phase="focus_unavailable"
@@ -243,13 +291,29 @@ async function render(params, bearer, origin, signal, etag) {
     if(failure)throw failure
     await rejectWidgetErrors(page.getByTestId("dashboard-canvas"))
     if (png.length>maxBytes || png.readUInt32BE(20)>12000) throw new RenderError("screenshot_bounds",413)
-    return png
+    return {png,checks:checkReport(checks),timings:{readyMs,probeMs,renderMs:Math.round(performance.now()-started)}}
   } catch(error) {
     throw failure??(error instanceof RenderError?error:new RenderError(phase))
   } finally {
     signal.removeEventListener("abort",abort)
     await context.close().catch(()=>{})
   }
+}
+
+// Severity rank for the report order: errors first, then warnings, then info.
+const severityRank={SEVERITY_ERROR:0,SEVERITY_WARNING:1,SEVERITY_INFO:2}
+
+// checkReport is the CheckReport list shape. Issues are ordered errors first, then
+// page-level findings before widget findings, then probe order. The per-severity
+// counts cover every finding, so a truncated list never hides how many errors there are.
+export function checkReport(findings) {
+  if (findings===null) return null
+  const ordered=findings.map((finding,index)=>({finding,index})).sort((a,b)=>
+    (severityRank[a.finding.severity]??3)-(severityRank[b.finding.severity]??3) ||
+    (a.finding.widgetId?1:0)-(b.finding.widgetId?1:0) || a.index-b.index).map(item=>item.finding)
+  const issues=ordered.slice(0,maxCheckIssues)
+  const count=severity=>findings.filter(finding=>finding.severity===severity).length
+  return {issues,total:findings.length,errorCount:count("SEVERITY_ERROR"),warningCount:count("SEVERITY_WARNING"),infoCount:count("SEVERITY_INFO"),truncated:findings.length>issues.length}
 }
 
 export function createRenderServer({secret,uiOrigin,renderPage=render,timeoutMs=maxTime}) {
@@ -277,8 +341,15 @@ export function createRenderServer({secret,uiOrigin,renderPage=render,timeoutMs=
       let payload
       try { payload=parseRenderRequest(JSON.parse(await readBody(req,aborter.signal))) }
       catch(error) { throw error instanceof RenderError?error:new RenderError("request_invalid") }
-      const png=await renderPage(payload,req.headers.authorization.slice(7),root.origin,aborter.signal,etag)
+      const json=payload.checksOnly||wantsJSON(req.headers.accept)
+      const result=await renderPage({...payload,checks:json},req.headers.authorization.slice(7),root.origin,aborter.signal,etag)
       aborter.signal.throwIfAborted()
+      if (json) {
+        const body=JSON.stringify({checks:result.checks,timings:result.timings,...(result.png?{png:result.png.toString("base64")}:{})})
+        res.writeHead(200,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body),"X-Paprika-Dashboard-ETag":etag}).end(body)
+        return
+      }
+      const png=result.png
       res.writeHead(200,{"Content-Type":"image/png","Content-Length":png.length,"X-Paprika-Dashboard-ETag":etag}).end(png)
     } catch(error) {
       if (!res.headersSent && !res.destroyed) {

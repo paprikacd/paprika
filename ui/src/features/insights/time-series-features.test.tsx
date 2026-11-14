@@ -177,8 +177,10 @@ describe("plot insets", () => {
   it("keeps the default inset on the y-axis side when no inset is set", () => {
     const { container } = render(<WidgetVisualization widget={timeseries} result={gapped} />);
     const band = container.querySelector<HTMLElement>("[data-no-sample-band]")!;
-    // The default left gutter is 54px and the right is 12px, so the plot is 434px wide.
-    expect(parseFloat(band.style.left)).toBeCloseTo(54 + (2000 / 7000) * 434, 1);
+    // The left gutter follows the widest label (here "10.0 ms"), so read the plot's left edge from its gridlines. The right
+    // gutter is 12px, so the plot is 500px less both.
+    const left = Number(container.querySelector('[data-ts-key^="y-grid:"]')!.getAttribute("x1"));
+    expect(parseFloat(band.style.left)).toBeCloseTo(left + (2000 / 7000) * (500 - left - 12), 1);
   });
 });
 
@@ -189,6 +191,8 @@ describe("drag brush", () => {
   it("sets the window from a drag across the plot, and reports the selected span", async () => {
     const { container } = render(<WidgetVisualization widget={timeseries} result={gapped} />);
     const chart = chartOf(container), plot = plotOf(container);
+    // The plot's left edge is the gutter the labels need, read before any interaction.
+    const left = Number(container.querySelector('[data-ts-key^="y-grid:"]')!.getAttribute("x1"));
     rect(plot);
     fireEvent.pointerDown(plot, pointer(100));
     fireEvent.pointerMove(plot, pointer(300, 1));
@@ -196,9 +200,10 @@ describe("drag brush", () => {
     fireEvent.pointerUp(plot, pointer(300));
     expect(container.querySelector("[data-time-brush-selection]")).toBeNull();
     const start = Number(chart.getAttribute("data-chart-window-start")), end = Number(chart.getAttribute("data-chart-window-end"));
-    // Plot x runs from 54px to 488px over 1s..8s; 100px and 300px are 46/434 and 246/434 of the way along.
-    expect(start).toBeCloseTo(1000 + (46 / 434) * 7000, -1);
-    expect(end).toBeCloseTo(1000 + (246 / 434) * 7000, -1);
+    // Plot x runs from the gridlines' left edge to 488px over 1s..8s; the drag positions are measured along that plot.
+    const plotWidth = 488 - left;
+    expect(start).toBeCloseTo(1000 + ((100 - left) / plotWidth) * 7000, -1);
+    expect(end).toBeCloseTo(1000 + ((300 - left) / plotWidth) * 7000, -1);
   });
 
   it("treats a movement under six pixels as a click, and selects nothing", async () => {

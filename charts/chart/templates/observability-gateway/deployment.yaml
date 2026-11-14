@@ -163,6 +163,18 @@ spec:
         # probe on this interval and patches the verdict onto each CR's
         # status (0 disables status writes).
         - --obs-provider-probe-interval={{ .Values.observabilityGateway.probeInterval }}
+        # Query-path capacity (observabilityGateway.capacity). The gateway
+        # validates the combination at startup and refuses invalid values.
+        - --observability-query-concurrency={{ .Values.observabilityGateway.capacity.queryConcurrency }}
+        - --observability-query-provider-concurrency={{ .Values.observabilityGateway.capacity.queryProviderConcurrency }}
+        - --observability-query-queue={{ .Values.observabilityGateway.capacity.queryQueue }}
+        - --observability-query-provider-queue={{ .Values.observabilityGateway.capacity.queryProviderQueue }}
+        - --observability-query-queue-wait={{ .Values.observabilityGateway.capacity.queryQueueWait }}
+        - --observability-http-work-slots={{ .Values.observabilityGateway.capacity.httpWorkSlots }}
+        - --observability-http-catalog-slots={{ .Values.observabilityGateway.capacity.httpCatalogSlots }}
+        - --observability-http-dashboard-slots={{ .Values.observabilityGateway.capacity.httpDashboardSlots }}
+        - --observability-http-intake-slots={{ .Values.observabilityGateway.capacity.httpIntakeSlots }}
+        - --observability-http-admission-wait={{ .Values.observabilityGateway.capacity.httpAdmissionWait }}
         {{- range .Values.observabilityGateway.args }}
         - {{ . }}
         {{- end }}

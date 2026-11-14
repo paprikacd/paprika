@@ -25,7 +25,7 @@ test("portable manifest and compatibility overlays preserve identity, prompts, a
   for (const key of Object.keys(portable)) assert.ok(allowed.has(key), `nonportable manifest property: ${key}`);
   for (const manifest of [portable, codex, claude]) {
     assert.equal(manifest.name, "paprika");
-    assert.equal(manifest.version, "0.2.0");
+    assert.equal(manifest.version, "0.2.1");  // bumped so Claude Code reinstalls the fleet plugin without the duplicate skill
     assert.equal(manifest.description, portable.description);
     assert.equal(manifest.homepage, "https://paprika.benebsworth.com");
   }
@@ -123,7 +123,8 @@ test("operational skill examples match the implemented tool schemas instead of o
 
 test("skills have matching names and optional setup keeps OAuth and deployed-source boundaries explicit", async () => {
   const skills = await readdir(new URL("skills/", plugin), { withFileTypes: true });
-  assert.deepEqual(skills.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(), ["paprika", "paprika-observe", "paprika-setup"]);
+  // Observe ships only in its own package (plugins/paprika-observe); see observe-plugin.test.ts.
+  assert.deepEqual(skills.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(), ["paprika", "paprika-setup"]);
   for (const entry of skills) {
     assert.ok(!entry.isSymbolicLink(), "skills must be contained source directories");
     if (!entry.isDirectory()) continue;

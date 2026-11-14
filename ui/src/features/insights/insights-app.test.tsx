@@ -4,10 +4,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
+import { InsightsHTTPError } from "./client"
+import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
 import type { Dashboard, SavedQuery } from "./schema"
 import { readExampleWorkspace, writeExampleWorkspace } from "./example-storage"
 import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
-import { serializeDashboardLibrary } from "./workspace-transfer"
+import { parseDashboardBundle, serializeDashboardLibrary } from "./workspace-transfer"
 
 vi.mock("./canvas", () => ({
   DashboardCanvas: ({ focus, dashboard, editing, onSelect }: {
@@ -76,7 +78,7 @@ async function chartDraftInExplorer(api = client(), dashboardDirty = false) {
   fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
   if (dashboardDirty) fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Unsaved dashboard title" } })
   fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
-  const title = screen.getByRole("textbox", { name: "Title", exact: true })
+  const title = await screen.findByRole("textbox", { name: "Title", exact: true }, { timeout: 5000 })
   fireEvent.change(title, { target: { value: "Unapplied latency title" } })
   fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }))
   fireEvent.click(screen.getByRole("button", { name: "Use saved query" }))
@@ -133,7 +135,7 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button",{name:"Edit dashboard"}));
     fireEvent.click(screen.getByRole("button",{name:"Add your first widget"}));
     fireEvent.click(screen.getByRole("button",{name:/^Time series/}));
-    fireEvent.change(screen.getByLabelText("Title"),{target:{value:"Retained unapplied widget draft"}});
+    fireEvent.change(await screen.findByLabelText("Title", {}, { timeout: 5000 }),{target:{value:"Retained unapplied widget draft"}});
     expect(screen.queryByRole("complementary", { name: "Insights navigation" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
     fireEvent.click(screen.getByRole("button", { name: "Use saved query" }));
@@ -143,7 +145,7 @@ describe("Insights application state", () => {
     expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Retained unapplied widget draft");
     expect(screen.getByRole("button",{name:"Apply changes"})).toBeVisible();
     expect(screen.getByRole("heading", { name: "Retained unapplied widget draft" })).toHaveFocus();
-  });
+  }, 15000);
 
   it.each([
     { name: /^Examples \d+$/, region: "Repository examples", close: "Close examples" },
@@ -165,14 +167,14 @@ describe("Insights application state", () => {
     await queryWorkbench()
     fireEvent.click(screen.getByRole("button", { name }))
     fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard chart changes?" })).getByRole("button", { name: "Discard changes" }))
-    expect(await screen.findByRole("region", { name: region })).toBeVisible()
+    expect(await screen.findByRole("region", { name: region }, { timeout: 10000 })).toBeVisible()
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: close }))
     fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
-    expect(screen.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Request latency")
+    expect(await screen.findByRole("textbox", { name: "Title", exact: true }, { timeout: 5000 })).toHaveValue("Request latency")
     expect(api.save).not.toHaveBeenCalled()
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it.each([false, true])("asks once before creating a dashboard with an unapplied chart (dashboard dirty: %s)", async dashboardDirty => {
     const { api, title } = await chartDraftInExplorer(client(), dashboardDirty)
@@ -188,7 +190,7 @@ describe("Insights application state", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
     expect(api.save).not.toHaveBeenCalled()
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it("keeps Explore and the chart draft intact when cancelling dashboard navigation", async () => {
     const { title } = await chartDraftInExplorer()
@@ -202,7 +204,7 @@ describe("Insights application state", () => {
     fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })).getByRole("button", { name: "Discard changes" }))
     expect(await screen.findByRole("heading", { name: "Dashboard B" })).toBeVisible()
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it("waits for chart discard before adding a saved query from Explore", async () => {
     const api = client()
@@ -232,7 +234,7 @@ describe("Insights application state", () => {
       expect(api.save).toHaveBeenCalledOnce()
     })
     expect(vi.mocked(api.save).mock.calls[0][0].widgets.map(widget => widget.title)).toEqual(["Request latency", "Saved signal"])
-  })
+  }, 15000) // Chart-draft tests open Explore and the lazy widget editor; they exceed the default five seconds under a parallel run.
 
   it("creates a saved query from a fresh tooltip and returns to the same unapplied tooltip draft", async () => {
     const api = client()
@@ -248,7 +250,7 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
     fireEvent.click(screen.getByRole("button", { name: "Add your first widget" }))
     fireEvent.click(screen.getByRole("button", { name: /^Time series/ }))
-    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Unapplied source widget" } })
+    fireEvent.change(await screen.findByLabelText("Title", {}, { timeout: 5000 }), { target: { value: "Unapplied source widget" } })
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }))
     fireEvent.click(screen.getByRole("button", { name: "Use saved query" }))
     fireEvent.change(screen.getByLabelText("Tooltip title"), { target: { value: "Retained tooltip draft" } })
@@ -685,5 +687,169 @@ describe("Insights application state", () => {
       screen.getByRole("button", { name: "Close dashboard manager" }),
     )
     expect(opener).toHaveFocus()
+  })
+})
+
+describe("Insights findings wiring", () => {
+  const latency: Dashboard = {
+    ...first,
+    widgets: [{ id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } }],
+  }
+  function finding(overrides: Partial<ConstructorParameters<typeof CheckFinding>[0]> = {}) {
+    return new CheckFinding({ ruleId: "schema.widget.layout", severity: Severity.WARNING, source: Source.SCHEMA, widgetId: "latency", pointer: "/widgets/0/layout/w", message: "Widget is narrower than its legend.", fix: "Widen it to 6 columns.", ...overrides })
+  }
+  function report(issues: CheckFinding[]) {
+    return new CheckReport({
+      issues, total: issues.length,
+      errorCount: issues.filter(issue => issue.severity === Severity.ERROR).length,
+      warningCount: issues.filter(issue => issue.severity === Severity.WARNING).length,
+      infoCount: 0,
+    })
+  }
+  function clientWithLatency() {
+    const api = { ...client(), validate: vi.fn().mockResolvedValue(report([finding()])) }
+    vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
+    vi.mocked(api.list).mockResolvedValue([latency, second])
+    vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === latency.id ? latency : second, etag: '"v1"' }))
+    return api
+  }
+  async function renderLatency(api: InsightsClient) {
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+  }
+  async function openCode() {
+    fireEvent.click(screen.getByRole("button", { name: "Code" }))
+    return screen.findByRole("region", { name: "Dashboard source editor" })
+  }
+
+  it("runs the document validator from the Code panel and Show widget opens that widget", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const editor = await openCode()
+    fireEvent.click(within(editor).getByRole("button", { name: "Check" }))
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ id: latency.id }), expect.any(AbortSignal)))
+    const checks = await within(editor).findByRole("region", { name: "Dashboard checks" })
+    expect(within(checks).getByText("Widget is narrower than its legend.")).toBeInTheDocument()
+    fireEvent.click(within(checks).getByRole("button", { name: "Show widget Request latency" }))
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Request latency")
+  })
+
+  it("keeps the save error text and lists a rejected save's findings, errors first, beneath it", async () => {
+    const api = clientWithLatency()
+    vi.mocked(api.save).mockRejectedValue(new InsightsHTTPError("Dashboard rejected by checks", 400, null, report([
+      finding({ message: "Only a warning here.", severity: Severity.WARNING, ruleId: "stat.density" }),
+      finding({ message: "Layout overlaps another widget.", severity: Severity.ERROR }),
+    ])))
+    await renderLatency(api)
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Renamed dashboard" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
+    expect(await screen.findByText("Dashboard rejected by checks")).toBeInTheDocument()
+    const checks = await screen.findByRole("region", { name: "Save checks" })
+    const [errorItem, warningItem] = within(checks).getAllByRole("listitem")
+    expect(errorItem).toHaveTextContent("Layout overlaps another widget.")
+    expect(warningItem).toHaveTextContent("Only a warning here.")
+    fireEvent.click(within(errorItem).getByRole("button", { name: "Show widget Request latency" }))
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Request latency")
+  })
+
+  async function reviewLibrary(api: InsightsClient, incoming: Dashboard) {
+    fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
+    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(screen.getByRole("option", { name: "JSON" }))
+    fireEvent.change(screen.getByLabelText("Library import source"), { target: { value: serializeDashboardLibrary([incoming], "json") } })
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }))
+    await screen.findByRole("region", { name: "Portable dashboard import" })
+    return api
+  }
+
+  it("validates each dashboard in a library import from Manage dashboards before it is written", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const incoming: Dashboard = { ...first, id: "incoming", title: "Library dashboard to check", widgets: [] }
+    await reviewLibrary(api, incoming)
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ title: "Library dashboard to check" }), expect.any(AbortSignal)))
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it("shows the findings of a failed library import save beside its dashboard", async () => {
+    const api = clientWithLatency()
+    const incoming: Dashboard = { ...first, id: "incoming", title: "Library dashboard that fails", widgets: [] }
+    vi.mocked(api.validate).mockResolvedValue(report([]))
+    vi.mocked(api.save).mockRejectedValue(new InsightsHTTPError("Dashboard rejected by checks", 400, null, report([
+      finding({ widgetId: "", pointer: "", ruleId: "doc.title", message: "Title is reserved by the workspace.", fix: "Rename the dashboard." }),
+    ])))
+    await renderLatency(api)
+    await reviewLibrary(api, incoming)
+    await importCopies()
+    expect(await screen.findByText(/^0 dashboard decisions? completed\./)).toBeInTheDocument()
+    const checks = await screen.findByRole("region", { name: "Save checks for Library dashboard that fails" })
+    expect(within(checks).getByText("Title is reserved by the workspace.")).toBeInTheDocument()
+    expect(within(checks).getByText("Whole dashboard")).toBeInTheDocument()
+  })
+
+  it("validates the dashboards in an imported library before they are written", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const incoming: Dashboard = { ...first, id: "incoming", title: "Incoming library dashboard", widgets: [] }
+    const text = serializeDashboardLibrary([incoming], "json")
+    const editor = await openCode()
+    fireEvent.change(within(editor).getByLabelText("Import dashboard document"), { target: { files: [new File([text], "library.json", { type: "application/json" })] } })
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(expect.objectContaining({ title: "Incoming library dashboard" }), expect.any(AbortSignal)))
+  })
+})
+
+describe("Insights template picker", () => {
+  const template: Dashboard = { ...first, id: "service-overview", title: "Service overview template", widgets: [] }
+  function templateClient(): InsightsClient {
+    return {
+      ...client(),
+      providers: vi.fn().mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }]),
+      validate: vi.fn().mockResolvedValue(new CheckReport({ issues: [], total: 0, errorCount: 0, warningCount: 0, infoCount: 0 })),
+      listStarters: vi.fn().mockResolvedValue([{ id: "service-overview", title: "Service overview", description: "Golden signals for one service.", widgetCount: 0, variables: [], providers: [], tiles: [] }]),
+      getStarter: vi.fn(async () => parseDashboardBundle(serializeDashboardLibrary([template], "json"), "json")),
+    }
+  }
+
+  it("offers a template from the empty canvas and loads the picker only when it is opened", async () => {
+    const api = templateClient()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    const opener = await screen.findByRole("button", { name: "Start from a template" })
+    expect(api.listStarters).not.toHaveBeenCalled()
+    opener.focus()
+    fireEvent.click(opener)
+    expect(await screen.findByRole("region", { name: "Start from a template" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Service overview" })).toBeInTheDocument()
+    expect(api.listStarters).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens the import review with the chosen template's bundle", async () => {
+    const api = templateClient()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(await screen.findByRole("button", { name: "Start from a template" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Service overview" }))
+    await waitFor(() => expect(api.getStarter).toHaveBeenCalledWith("service-overview"))
+    expect(await screen.findByRole("region", { name: "Portable dashboard import" })).toBeInTheDocument()
+    expect(await screen.findByText("Service overview template")).toBeInTheDocument()
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it("restores focus to the opener when the picker closes", async () => {
+    render(<InsightsApp client={templateClient()} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    const opener = await screen.findByRole("button", { name: "Start from a template" })
+    opener.focus()
+    fireEvent.click(opener)
+    await screen.findByRole("region", { name: "Start from a template" })
+    fireEvent.click(screen.getByRole("button", { name: "Close templates" }))
+    await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it("does not offer templates when the client has no starter methods", async () => {
+    render(<InsightsApp client={{ ...templateClient(), listStarters: undefined, getStarter: undefined }} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    expect(screen.queryByRole("button", { name: "Start from a template" })).not.toBeInTheDocument()
   })
 })

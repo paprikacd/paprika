@@ -3,7 +3,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { portal } from "@tanstack/charts/tooltip/portal";
 import { widgetTextColor } from "./appearance";
-import { formatMetric } from "./chart-data";
+import { SERIES_PALETTE } from "./series-palette";
+import { autoAxisDomain, axisScale } from "./units";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
 import type { QueryResult, Threshold, WidgetOptions } from "./schema";
 import { validTimestamp } from "./widget-context";
@@ -11,16 +12,8 @@ import { validTimestamp } from "./widget-context";
 export type Series = NonNullable<QueryResult["series"]>[number];
 export type Point = Series["points"][number];
 
-export const PALETTE = [
-  "var(--gamma-chart-1, #c46146)",
-  "var(--gamma-chart-2, #6e947a)",
-  "var(--gamma-chart-3, #6a8a9c)",
-  "var(--gamma-chart-4, #b29658)",
-  "var(--gamma-chart-5, #9c82a1)",
-  "var(--gamma-chart-6, #7d9690)",
-  "var(--gamma-chart-7, #ac805f)",
-  "var(--gamma-chart-8, #969f5c)",
-];
+// The shared categorical slots (series-palette.ts). Renderers pick by index; a series colour rule overrides the slot.
+export const PALETTE = SERIES_PALETTE;
 export const MAX_SERIES = 12;
 
 export const themedPortal: typeof portal = {
@@ -144,16 +137,17 @@ export function axisUnitIsCaption(unit: string, mode: WidgetOptions["axisUnit"] 
   return mode === "caption" || (mode !== "ticks" && unit.length > 3);
 }
 
-/** Reserve enough space for formatted numeric ticks, including custom precision.
- * Keep longer units above the plot so they don't repeat on every tick. */
-export function chartYAxisLayout(values: number[], unit: string, decimals?: number, axisLabel?: string, axisUnit?: WidgetOptions["axisUnit"]) {
-  const separateUnit = axisUnitIsCaption(unit, axisUnit);
-  let min = 0, max = 0;
-  for (const value of values) if (Number.isFinite(value)) {
-    min = Math.min(min, value);
-    max = Math.max(max, value);
-  }
-  const labels = [min, max, min * 1.1, max * 1.1].map(value => formatMetric(value, separateUnit ? "" : unit, true, decimals));
+/**
+ * Reserve enough space for the formatted value-axis labels, and resolve the one unit and precision they share.
+ * `domain` is the axis domain the chart actually draws; without it the values set the domain as the chart does.
+ * Longer units go above the plot so they don't repeat on every tick.
+ */
+export function chartYAxisLayout(values: number[], unit: string, decimals?: number, axisLabel?: string, axisUnit?: WidgetOptions["axisUnit"], domain?: readonly [number, number], count = 4) {
+  const axis = domain ?? autoAxisDomain(values, count, true);
+  // The caller passes the domain the chart draws, already rounded once: the scale must not round it again.
+  const scale = axisScale(axis, unit, { decimals, count, compact: true, fixedDomain: true });
+  const separateUnit = axisUnitIsCaption(scale.unit, axisUnit);
+  const labels = [...scale.ticks, axis[0], axis[1]].map(value => scale.label(value, !separateUnit));
   const width = Math.max(...labels.map(label => label.length)) * 7 + 12;
-  return { separateUnit, left: Math.max(54, width) + (axisLabel ? 20 : 0) };
+  return { separateUnit, scale, left: Math.max(54, width) + (axisLabel ? 20 : 0) };
 }

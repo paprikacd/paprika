@@ -875,6 +875,16 @@
                     "value": {
                       "type": "number"
                     },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "info",
+                        "warning",
+                        "critical",
+                        "unknown"
+                      ]
+                    },
                     "color": {
                       "type": "string",
                       "pattern": "^#[0-9a-fA-F]{6}$"
@@ -885,10 +895,21 @@
                     }
                   },
                   "required": [
-                    "value",
-                    "color"
+                    "value"
                   ],
-                  "additionalProperties": false
+                  "additionalProperties": false,
+                  "anyOf": [
+                    {
+                      "required": [
+                        "status"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "color"
+                      ]
+                    }
+                  ]
                 }
               },
               "seriesColors": {
@@ -910,15 +931,45 @@
                     "color": {
                       "type": "string",
                       "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "traffic",
+                        "success",
+                        "client-error",
+                        "server-error",
+                        "p50",
+                        "p95",
+                        "p99"
+                      ]
                     }
                   },
                   "required": [
                     "label",
-                    "value",
-                    "color"
+                    "value"
+                  ],
+                  "oneOf": [
+                    {
+                      "required": [
+                        "color"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "role"
+                      ]
+                    }
                   ],
                   "additionalProperties": false
                 }
+              },
+              "seriesColorMode": {
+                "type": "string",
+                "enum": [
+                  "name",
+                  "index"
+                ]
               },
               "gridX": {
                 "type": "boolean"

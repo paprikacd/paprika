@@ -3,8 +3,68 @@ import type { Widget } from "./schema"
 
 export type CanvasMode = "wide" | "compact" | "stacked"
 
-export function canvasMode(width: number): CanvasMode {
-  return width >= 960 ? "wide" : width >= 600 ? "compact" : "stacked"
+/** A canvas enters the wide grid at 960px and keeps it down to 880px. The gap stops a panel or a scrollbar that
+ * narrows the canvas by a few pixels from flipping the projection back and forth. */
+export const WIDE_RETURN_WIDTH = 960
+export const WIDE_LEAVE_WIDTH = 880
+
+/** Side panels as laid out at widths above 1200px: the standard builder panel and the wide Code or Examples panel. */
+export const STANDARD_PANEL_WIDTH = 342
+export const WIDE_PANEL_WIDTH = 440
+
+/** `previous` is the mode the canvas already shows. Without it, the wide grid starts at the return threshold. */
+export function canvasMode(width: number, previous?: CanvasMode): CanvasMode {
+  const wide = previous === "wide" ? width >= WIDE_LEAVE_WIDTH : width >= WIDE_RETURN_WIDTH
+  return wide ? "wide" : width >= 600 ? "compact" : "stacked"
+}
+
+export interface BuilderPanelMeasure {
+  /** The canvas as it is now, with the sidebar and any open panel as currently rendered. */
+  canvasWidth: number
+  /** The rendered panel, or 0 when none is open. */
+  panelWidth: number
+  /** The rendered sidebar, or 0 when it is hidden. */
+  sidebarWidth: number
+  /** The width the sidebar takes when it is open, for a sidebar that is hidden now. */
+  openSidebarWidth: number
+}
+
+export interface BuilderPanelRequest {
+  /** The panel wants the wide variant (Code and Examples). */
+  wide: boolean
+  /** Whether the sidebar can collapse. The mobile drawer and the compact rail cannot. */
+  sidebarCollapsible: boolean
+  /** The user's sidebar preference. A hidden sidebar is restored only when this is true. */
+  sidebarPreferred: boolean
+}
+
+export interface BuilderPanelPlan {
+  /** The sidebar is hidden for this panel only, and comes back when the panel closes. */
+  collapsed: boolean
+  /** Use the wide Code or Examples width. */
+  widePanel: boolean
+}
+
+/**
+ * Chooses the sidebar and panel width that keep the canvas wide, if any combination does. The space the canvas and
+ * its neighbours share is measured, so the gutters need no constants. Candidates are tried widest panel first, and
+ * an open sidebar is kept before it is collapsed. When nothing keeps the wide grid, the sidebar keeps the user's
+ * preference and the standard panel gives the canvas the most room; collapsing for a compact canvas is not needed.
+ */
+export function builderPanelPlan(measure: BuilderPanelMeasure, request: BuilderPanelRequest): BuilderPanelPlan {
+  const room = measure.canvasWidth + measure.panelWidth + measure.sidebarWidth
+  const sidebar: Array<{ collapsed: boolean; width: number }> = !request.sidebarCollapsible
+    ? [{ collapsed: false, width: measure.sidebarWidth }]
+    : request.sidebarPreferred
+      ? [{ collapsed: false, width: measure.sidebarWidth || measure.openSidebarWidth }, { collapsed: true, width: 0 }]
+      : [{ collapsed: true, width: 0 }]
+  const panels = request.wide ? [WIDE_PANEL_WIDTH, STANDARD_PANEL_WIDTH] : [STANDARD_PANEL_WIDTH]
+  for (const panel of panels) {
+    for (const option of sidebar) {
+      if (room - option.width - panel >= WIDE_LEAVE_WIDTH) return { collapsed: option.collapsed && request.sidebarPreferred, widePanel: panel === WIDE_PANEL_WIDTH }
+    }
+  }
+  return { collapsed: false, widePanel: false }
 }
 
 /** Only ordinary short statistics use intrinsic reading height on phones.

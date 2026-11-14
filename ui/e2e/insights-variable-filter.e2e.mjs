@@ -204,7 +204,12 @@ try {
         await expectNoOverflow()
         const filterBounds = await serviceSelect().boundingBox(), timeBounds = await page.getByRole("combobox", { name: "Time range", exact: true }).boundingBox(), cardBounds = await tile().boundingBox()
         if (width >= 1000) {
-          assert.ok(cardBounds.y <= 230, `The compact dashboard must bring data into its top 230px: ${JSON.stringify(cardBounds)}`)
+          // The attention strip is the first dashboard reading below the toolbar; the canvas follows it directly.
+          const stripBounds = await page.locator("[data-attention-strip]").boundingBox()
+          assert.ok(stripBounds, `The attention strip must render at ${width}px before the canvas`)
+          assert.ok(stripBounds.y <= 230, `Header budget: the attention strip top must be within 230px, got ${stripBounds.y}: ${JSON.stringify({ stripBounds, cardBounds })}`)
+          assert.ok(stripBounds.height <= 40, `Attention strip must be one line at ${width}px, got height ${stripBounds.height}: ${JSON.stringify(stripBounds)}`)
+          assert.ok(cardBounds.y <= stripBounds.y + stripBounds.height + 16, `Canvas must follow the attention strip within 16px, card top ${cardBounds.y} vs strip bottom ${stripBounds.y + stripBounds.height}`)
           assert.ok(filterBounds.y < timeBounds.y + timeBounds.height && timeBounds.y < filterBounds.y + filterBounds.height, "Service and time controls must share the compact toolbar")
         }
         await screenshot(`filter-${theme.toLowerCase()}-${width}.png`)
@@ -222,6 +227,15 @@ try {
         return { before, after, exactProviderQuery: exactQuery(services[1]), valueContrast, fieldContrast, optionContrast, viewport: bounds, compactGeometry: { filter: filterBounds, time: timeBounds, card: cardBounds }, persistedDefaultUnchanged: true }
       })
     }
+    await check(`Back steps to the previous filter value at ${width}px`, async () => {
+      // Each dropdown change is a history step: Back from B returns to A, not to the previous page.
+      await selectGammaOption(page, serviceSelect(), services[2]); await expectService(services[2])
+      await selectGammaOption(page, serviceSelect(), services[3]); await expectService(services[3])
+      await page.goBack({ waitUntil: "networkidle" })
+      await expectService(services[2])
+      assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get("vars")), { service: services[2] })
+      return { backTo: services[2] }
+    })
     await check(`Filter values, precision and theme survive reload and navigation at ${width}px`, async () => {
       await selectGammaOption(page, serviceSelect(), services[4]); await expectService(services[4])
       await page.reload({ waitUntil: "networkidle" }); await expectService(services[4])

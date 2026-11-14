@@ -23,14 +23,18 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/version"
 )
@@ -508,6 +512,9 @@ func serverDescriptionAndInstructions(disableConsoleResources bool, supportedSco
 			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
 			instructions = "Prefer query_dashboard when a saved dashboard covers the question. Discover its ID with list_dashboards, inspect its variables with get_dashboard when needed, and pass a variables map to query_dashboard for shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing/error/truncation states and document versions; text is a compact synopsis. This read requires paprika:observe and existing Insights/provider read permission, not authoring consent. For standalone provider queries: " + instructions
 			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and get_insights_schema for canonical dashboard, widget and saved-query schemas. Read current documents first. Create with a new ID; prefer patch_saved_query or patch_dashboard for targeted edits, with widget_edits addressed by widget ID. Every update requires the exact ETag just read; reread and review conflicts. Changes appear in the Insights UI while unsaved drafts remain protected. This scope grants no provider configuration or fleet delivery writes."
+			// Clients such as ChatGPT receive no skill text, so the shared dashboard
+			// rules travel with every authoring surface's initialize response.
+			instructions += " Dashboard composition rules: " + strings.Join(guidance.DashboardComposition(), " ") + " MCP dashboard workflow: " + strings.Join(guidance.DashboardWorkflow(), " ")
 		}
 	}
 	return description, instructions
@@ -940,6 +947,8 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 // toolErrorResult preserves human-readable domain errors for MCP clients and
 // adds only a fixed machine code for data consumers. Operational errors carry
 // fixed text too: upstream endpoints, credentials and diagnostics stay private.
+// A failed dashboard call also lists its issues and any retry delay, all bounded
+// and printed in the same wire form the HTTP API uses.
 func toolErrorResult(err error) *sdkmcp.CallToolResult {
 	ce := toolConnectError(err)
 	if ce == nil {
@@ -947,18 +956,154 @@ func toolErrorResult(err error) *sdkmcp.CallToolResult {
 	}
 	text, operational := operationalToolErrorText[ce.Code()]
 	if toolActionableCode(ce.Code()) {
+		// The headline can echo upstream text, so it is escaped like every other
+		// producer string: a newline or a bidirectional override cannot reach the agent.
 		text = ce.Error()
 		if inner := ce.Unwrap(); inner != nil {
 			text = inner.Error()
 		}
+		text = checkwire.Printable(text)
 	} else if !operational {
 		return nil
 	}
+	errorBody := map[string]any{"code": ce.Code().String()}
+	lines := []string{text}
+	report, retryAfter := connectErrorDetails(ce)
+	if report != nil {
+		list, listErr := newIssueList(report)
+		if listErr == nil {
+			lines = append(lines, list.lines...)
+			errorBody["issues"] = list.structured
+			errorBody["total"] = list.total
+			errorBody["truncated"] = list.truncated
+		}
+	}
+	if retryAfter > 0 {
+		seconds := int64(retryAfter / time.Second)
+		lines = append(lines, fmt.Sprintf("Retry after %d seconds.", seconds))
+		errorBody["retryAfterSeconds"] = seconds
+	}
 	return &sdkmcp.CallToolResult{
 		IsError:           true,
-		StructuredContent: map[string]any{"error": map[string]string{"code": ce.Code().String()}},
-		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: text}},
+		StructuredContent: map[string]any{"error": errorBody},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: strings.Join(lines, "\n")}},
 	}
+}
+
+// connectErrorDetails reads the details an upstream attached to a Connect error:
+// a dashboard CheckReport and a RetryInfo delay. Other details are ignored, so
+// nothing else reaches the tool result.
+func connectErrorDetails(ce *connect.Error) (*insightsv1.CheckReport, time.Duration) {
+	var report *insightsv1.CheckReport
+	var retryAfter time.Duration
+	for _, detail := range ce.Details() {
+		message, err := detail.Value()
+		if err != nil {
+			continue
+		}
+		switch value := message.(type) {
+		case *insightsv1.CheckReport:
+			if report == nil {
+				report = value
+			}
+		case *errdetails.RetryInfo:
+			retryAfter = value.GetRetryDelay().AsDuration()
+		}
+	}
+	return report, retryAfter
+}
+
+// issueList is the agent-facing rendering of a CheckReport: text lines that
+// name each issue's severity, widget and pointer, and the same issues as
+// structured JSON. Producer text is bounded and printed with control characters
+// escaped, so a submitted key cannot add lines or hide text.
+type issueList struct {
+	lines      []string
+	structured []json.RawMessage
+	total      uint32
+	truncated  bool
+}
+
+func newIssueList(report *insightsv1.CheckReport) (issueList, error) {
+	var shown []*insightsv1.CheckFinding
+	for _, finding := range report.GetIssues() {
+		if len(shown) == checkwire.MaxIssues {
+			break
+		}
+		shown = append(shown, checkwire.Bound(finding))
+	}
+	total := max(report.GetTotal(), checkwire.Count(len(report.GetIssues())))
+	list := issueList{total: total, truncated: total > checkwire.Count(len(shown))}
+	list.lines = append(list.lines, fmt.Sprintf("Issues (%d of %d shown):", len(shown), total))
+	sharedFixText, sharedOK := sharedFix(shown)
+	printed := make(map[string]bool)
+	for _, finding := range shown {
+		list.lines = append(list.lines, issueLine(finding))
+		raw, err := checkwire.Marshal(finding)
+		if err != nil {
+			return issueList{}, fmt.Errorf("mcp: marshal issue: %w", err)
+		}
+		list.structured = append(list.structured, raw)
+		if sharedOK || finding.GetFix() == "" {
+			continue
+		}
+		// A fix sits directly under the first issue that carries it, so it reads as
+		// that issue's fix. A later issue with the same rule and fix adds nothing;
+		// the same rule with a different fix still prints.
+		key := finding.GetRuleId() + "\x00" + finding.GetFix()
+		if printed[key] {
+			continue
+		}
+		printed[key] = true
+		list.lines = append(list.lines, fmt.Sprintf("  Fix (%s): %s", checkwire.Printable(finding.GetRuleId()), checkwire.Printable(finding.GetFix())))
+	}
+	if sharedOK {
+		list.lines = append(list.lines, "Fix for all shown issues: "+checkwire.Printable(sharedFixText))
+	}
+	return list, nil
+}
+
+// issueLine renders one issue as "- error /widgets/0/layout (widget w): message".
+// The severity word is prose, so it is lowercase; the wire form stays
+// SEVERITY_ERROR.
+func issueLine(finding *insightsv1.CheckFinding) string {
+	location := checkwire.Printable(finding.GetPointer())
+	if location == "" {
+		location = "document"
+	}
+	line := fmt.Sprintf("- %s %s", severityWord(finding.GetSeverity()), location)
+	if finding.GetWidgetId() != "" {
+		line += fmt.Sprintf(" (widget %s)", checkwire.Printable(finding.GetWidgetId()))
+	}
+	return line + ": " + checkwire.Printable(finding.GetMessage())
+}
+
+func severityWord(severity insightsv1.Severity) string {
+	switch severity {
+	case insightsv1.Severity_SEVERITY_ERROR:
+		return "error"
+	case insightsv1.Severity_SEVERITY_WARNING:
+		return "warning"
+	case insightsv1.Severity_SEVERITY_INFO:
+		return "info"
+	case insightsv1.Severity_SEVERITY_UNSPECIFIED:
+		return "issue"
+	default:
+		return "issue"
+	}
+}
+
+// sharedFix returns the fix text when every shown issue repeats the same one.
+func sharedFix(findings []*insightsv1.CheckFinding) (string, bool) {
+	if len(findings) == 0 || findings[0].GetFix() == "" {
+		return "", false
+	}
+	for _, finding := range findings[1:] {
+		if finding.GetFix() != findings[0].GetFix() {
+			return "", false
+		}
+	}
+	return findings[0].GetFix(), true
 }
 
 func toolConnectError(err error) *connect.Error {
@@ -977,7 +1122,7 @@ func toolConnectError(err error) *connect.Error {
 }
 
 var operationalToolErrorText = map[connect.Code]string{
-	connect.CodeResourceExhausted: "tool execution capacity is exhausted; retry later",
+	connect.CodeResourceExhausted: "tool execution capacity is exhausted; retry later.",
 	connect.CodeDeadlineExceeded:  "tool execution timed out",
 	connect.CodeCanceled:          "tool execution was canceled",
 	connect.CodeUnauthenticated:   "tool authentication is required",
@@ -1053,6 +1198,119 @@ func toolResult(v any) (*sdkmcp.CallToolResult, error) {
 		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: string(data)}},
 		StructuredContent: json.RawMessage(data),
 	}, nil
+}
+
+// CheckedResult renders a successful dashboard write or check. structuredContent
+// is the payload with a checks member holding the report, and content[0] is that
+// same JSON, as the MCP spec expects, so a client that drops structuredContent
+// can still parse content[0]. content[1] is the checks verdict and the bounded
+// issue list as text. A nil payload makes the checks object the whole result
+// (validate_dashboard). A nil report on a write leaves the payload as toolResult
+// renders it, for a service that does not send checks.
+func CheckedResult(payload any, report *insightsv1.CheckReport) (*sdkmcp.CallToolResult, error) {
+	if report == nil && payload != nil {
+		return toolResult(payload)
+	}
+	if report == nil {
+		report = &insightsv1.CheckReport{}
+	}
+	section, structured, err := renderCheckSection(report)
+	if err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return checksOnlyResult(section, structured)
+	}
+	return checkedWriteResult(payload, section, structured)
+}
+
+// checksOnlyResult is the validate_dashboard result: the report as structured
+// content and as its JSON text, then the verdict and issue lines.
+func checksOnlyResult(section string, structured map[string]any) (*sdkmcp.CallToolResult, error) {
+	data, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checks: %w", err)
+	}
+	return checkedContent(data, section), nil
+}
+
+// checkedWriteResult is a successful write: the payload object with a checks
+// member, as structured content and as its JSON text, then the verdict and
+// issue lines. checks sits beside the document and never inside it.
+func checkedWriteResult(payload any, section string, structured map[string]any) (*sdkmcp.CallToolResult, error) {
+	data, err := marshalToolResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || fields == nil {
+		return nil, errors.New("mcp: checked result payload must be a JSON object")
+	}
+	checks, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checks: %w", err)
+	}
+	fields["checks"] = checks
+	withChecks, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checked result: %w", err)
+	}
+	return checkedContent(withChecks, section), nil
+}
+
+// checkedContent pairs the structured JSON, repeated as the first text block,
+// with the checks section as the second.
+func checkedContent(structuredJSON []byte, section string) *sdkmcp.CallToolResult {
+	return &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: string(structuredJSON)},
+			&sdkmcp.TextContent{Text: section},
+		},
+		StructuredContent: json.RawMessage(structuredJSON),
+	}
+}
+
+// renderCheckSection is the agent-facing checks section: a verdict line, then
+// the same bounded, escaped issue list a failed save renders. The verdict counts
+// come from the report's severity counts, which cover findings past the cap.
+func renderCheckSection(report *insightsv1.CheckReport) (section string, structured map[string]any, err error) {
+	list, err := newIssueList(report)
+	if err != nil {
+		return "", nil, err
+	}
+	errorsCount, warnings, infos := report.GetErrorCount(), report.GetWarningCount(), report.GetInfoCount()
+	verdict := fmt.Sprintf("Checks: %s, %s", countWord(errorsCount, "error"), countWord(warnings, "warning"))
+	if errorsCount == 0 && warnings == 0 {
+		verdict = "Checks passed"
+	}
+	if infos > 0 {
+		verdict += " (" + countWord(infos, "info note") + ")"
+	}
+	lines := []string{verdict}
+	if len(list.structured) > 0 {
+		lines = append(lines, list.lines...)
+	}
+	issues := list.structured
+	if issues == nil {
+		issues = []json.RawMessage{}
+	}
+	structured = map[string]any{
+		"errorCount":   errorsCount,
+		"warningCount": warnings,
+		"infoCount":    infos,
+		"total":        list.total,
+		"truncated":    list.truncated,
+		"issues":       issues,
+	}
+	return strings.Join(lines, "\n"), structured, nil
+}
+
+// countWord writes a count with its word, pluralised for anything but one.
+func countWord(n uint32, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // PreviewToolResult is toolResult for tools whose payload can be large (the

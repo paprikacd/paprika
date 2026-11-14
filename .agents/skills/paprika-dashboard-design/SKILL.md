@@ -76,7 +76,7 @@ Record the following before writing mark geometry:
 | Contract | Required decision |
 | --- | --- |
 | Metric meaning | Gauge, counter, rate, ratio, distribution, state, event, trace, or record; valid population and aggregation. |
-| Units | Base unit, displayed unit, actual conversion, denominator, precision, and threshold units. A suffix alone does not convert a value. |
+| Units | Base unit, displayed unit, actual conversion, denominator, precision, and threshold units. A suffix alone does not convert a value. Readings choose the display unit per value (`1 s` for 999.5 ms); set `decimals` to keep one authored unit and fixed precision. |
 | Time | Authoritative bounds/timezone, sample timestamps, gaps, query step, and any visible panel override. |
 | Encoding | Position/length/area/color meaning; domain; baseline; linear/log scale; stacking and interpolation policy. |
 | Summary | What the large value and delta mean; original semantic result; comparison window; zero-denominator and stale-tail behavior. |
@@ -157,11 +157,50 @@ Record each gate as **pass**, **fail**, **unverified**, or **not applicable with
 
 Never average a failed gate into a high beauty score. Never claim runtime verification from a manifest, source scan, screenshot alone, or an unexecuted test command.
 
+## Status and colour vocabulary
+
+Use these terms exactly; the contracts are in `DESIGN.md` and `docs/design/insights/UX-CONTRACT.md`.
+
+- **Statuses:** `ok`, `info`, `warning`, `critical`, `unknown`. A threshold names a status, a hex colour, or both; a hex colour only overrides the hue of its band. Start with the lowest meaningful value and the status that applies there, since a reading below the first threshold takes that threshold's status.
+- **Status words never decorate.** A status word, glyph or frame appears only where an author-set threshold, status mapping or attention count sets it. Pair every status colour with a glyph and a word.
+- **Series roles:** `traffic`, `success`, `client-error`, `server-error`, `p50`, `p95`, `p99`. A series colour comes from an authored rule, then a well-known label, then the widget colour (single series), then a hashed slot.
+- **`seriesColorMode`:** `name` (default) keys colour to series identity; `index` keeps position-based slots.
+- **Hatching** marks missing data. Invalid source data uses a second, warning-toned hatch. Status colour never uses hatching.
+
+## Repair a live dashboard
+
+Before writing new queries for a dashboard whose data has drifted, use the tested repair
+toolkit. These are local repository tools for the named deployments, not MCP tools; run
+them from a checkout with access to the target.
+
+- `hack/dashboard-presentation/patches.json`: reviewed widget edits for three operational
+  dashboards, applied with `patch_dashboard` after the matching UI release is deployed.
+  Use each document's exact ETag and read its README first.
+- `hack/service-overview/`: exact-ETag patches for the six HTTP saved queries of
+  `service-overview`. `queries.json` holds the patches; `migrate.mjs` exports
+  `migrate(call, {expectedProviderId})`, which previews first and writes only with
+  `{apply: true}`, through an authenticated Observe MCP client.
+- `hack/shorted-queries/`: the Shorted query fixtures and their promtool tests, run by the
+  same CI step.
+- `ui/e2e/service-overview-coverage.mjs`: the coverage gate CI runs with the hack tests.
+  Missing telemetry stays empty. An absent error-class series may become zero only against
+  observed request traffic, and zero-traffic ratios and quantiles stay undefined.
+- Promtool: the PromQL fixtures run `promtool test rules` in a pinned Prometheus image with
+  networking disabled, or in a local binary named by `PROMTOOL`. Follow
+  `hack/service-overview/promql.test.mjs` for the pattern.
+
+After a change, run `node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs`,
+which is the command CI runs.
+Source requirements and the reasoning behind them are in
+[dashboard data coverage](../../../docs/guides/dashboard-data-coverage.md).
+
 ## Finish with evidence
 
 Use [the review report template](assets/review-report.template.md) for substantial work. Report the concrete outcome, the analytical/design decisions that matter, checks actually run, and any remaining limitation. Identify whether evidence came from static source, fixtures, measured browser behavior, or live data. Keep the final answer proportional to the request.
 
 For an audit, lead with material findings, exact affected owner, user consequence, and remedy. For implementation, include a rendered result when available and the commands/results needed to assess it. Describe unimplemented capabilities as proposals.
+
+When tool calls fail while you gather evidence, respond by error type. An HTTP 429 on the transport means stop parallel calls, honour `Retry-After`, and retry later. A `resource_exhausted` tool error is a capacity or queue limit: wait the `retryAfterSeconds` the result carries (its text reads "Retry after N seconds.") and retry serially. A message that a request exceeds its size limit will not succeed unchanged.
 
 ## Reference routing
 
@@ -186,3 +225,4 @@ For an audit, lead with material findings, exact affected owner, user consequenc
 | [Validation](references/validation.md) | Planning acceptance checks and reporting evidence. |
 | [Contract format](references/contract-format.md) | Using the optional declared-contract checker. |
 | [Research sources](references/research-sources.md) | Checking rationale, external standards, provenance, or new architecture decisions. |
+| [Paprika platform signals](references/paprika-signals.md) | Dashboards about Paprika's own health: `paprika_*` metric names, labels, documented healthy ranges and PromQL. |

@@ -58,7 +58,7 @@ it.each(["background", "side"] as const)("gives short %s sparkline stats natural
   expect(tall).not.toHaveAttribute("data-intrinsic-stat");
   expect(tall.parentElement?.style.height).toBe("206px");
   expect(within(short).getByText(/Latest valid sample/)).toBeVisible();
-  expect(within(short).getByText("Last valid · latest missing")).toBeVisible();
+  expect(within(short).getByText(/Latest missing · last valid \d\d:\d\d \S+/)).toBeVisible();
   expect(within(short).getByText(/before range end/)).toBeVisible();
   expect(within(short).getByText("secondary")).toBeVisible();
   expect(within(short).getAllByText("requests per second per active worker").length).toBeGreaterThan(0);

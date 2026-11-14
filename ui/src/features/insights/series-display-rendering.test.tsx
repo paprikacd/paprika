@@ -67,4 +67,44 @@ describe("compact series names in chart components", () => {
     expect(row).toHaveTextContent(first);
     expect(within(row).getByLabelText(new RegExp("latest valid sample"))).toHaveAttribute("data-legend-value", "2");
   });
+  it("identifies a lone generic series by the authored widget title without restating it as a visible name", () => {
+    const lone: QueryResult = { series: [{ name: "Value", labels: {}, points: [{ timestamp: 1000, value: 1.61 }, { timestamp: 2000, value: 1.61 }] }] };
+    render(<WidgetVisualization widget={{ ...widget, id: "error-history", title: "Error budget burn rate · 1h", type: "timeseries", options: { showLegend: true }, config: undefined }} result={lone} />);
+    const legend = screen.getByRole("list", { name: "Latest values by series" });
+    const row = within(legend).getByRole("listitem", { name: /Error budget burn rate · 1h, latest valid sample/ });
+    expect(row).toHaveAttribute("title", "Error budget burn rate · 1h · Value");
+    expect(row).toHaveTextContent("1.61");
+    expect(legend.textContent).not.toMatch(/Value/);
+  });
+  it("keeps an explorer preview's selector as its visible identity", () => {
+    const selector = 'up{instance="api-1:9090", job="api"}';
+    const one: QueryResult = { series: [{ name: selector, labels: { __name__: "up", instance: "api-1:9090", job: "api" }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 1 }] }] };
+    render(<WidgetVisualization widget={{ ...widget, id: "explore-preview", title: "Query results", type: "timeseries", options: { showLegend: true }, config: undefined }} result={one} />);
+    const legend = screen.getByRole("list", { name: "Latest values by series" });
+    expect(within(legend).getByRole("listitem")).toHaveAttribute("title", selector);
+    expect(legend).toHaveTextContent("up{instance");
+  });
+});
+
+describe("compact series names in metric tables", () => {
+  const canonical = (labels: Record<string, string>) => `{${Object.keys(labels).sort().map(key => `${key}=${JSON.stringify(labels[key])}`).join(", ")}}`;
+  const applications = ["api-gateway", "catalog", "checkout"].map(application => {
+    const labels = { application, namespace: "prod" };
+    return { name: canonical(labels), labels, points: [{ timestamp: 1000, value: 0 }, { timestamp: 2000, value: application === "catalog" ? 2 : 0 }] };
+  });
+
+  it("names rows with the chart's compacted labels and keeps the full identity in the row title", () => {
+    render(<WidgetVisualization widget={{ ...widget, type: "table", unit: "" }} result={{ series: applications }} />);
+    for (const application of ["api-gateway", "catalog", "checkout"]) {
+      const cell = screen.getByText(application);
+      expect(cell.tagName).toBe("SPAN");
+      expect(cell).toHaveAttribute("title", canonical({ application, namespace: "prod" }));
+    }
+    expect(screen.queryByText(/namespace=/)).toBeNull();
+  });
+
+  it("keeps the full series name in the inspect label of each row", () => {
+    render(<WidgetVisualization widget={{ ...widget, type: "table", unit: "" }} result={{ series: applications }} />);
+    expect(screen.getByRole("button", { name: `Inspect series ${canonical({ application: "catalog", namespace: "prod" })}` })).toBeInTheDocument();
+  });
 });

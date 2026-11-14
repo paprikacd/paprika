@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "id": "service-overview",
+  "title": "Service overview",
+  "description": "The RED signals for one service: request rate, error ratio and latency. Assumes the common client-library metrics http_requests_total (with service, namespace and code labels, where code is the HTTP status) and http_request_duration_seconds_bucket (with service and namespace labels). The service variable defaults to .* (every service in the namespace); set it to one service name, or to a regex such as checkout|payments.",
+  "timeRange": "1h",
+  "refreshInterval": 30,
+  "variables": [
+    { "name": "service", "label": "Service", "defaultValue": ".*" },
+    { "name": "namespace", "label": "Namespace", "defaultValue": "default" }
+  ],
+  "widgets": [
+    {
+      "id": "request-rate",
+      "title": "Request rate",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}}}[5m]))",
+      "unit": "req/s",
+      "options": {
+        "decimals": 2,
+        "showSparkline": true
+      },
+      "layout": { "x": 0, "y": 0, "w": 6, "h": 2 }
+    },
+    {
+      "id": "error-ratio-now",
+      "title": "Error ratio",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "100 * sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}}}[5m]))",
+      "unit": "%",
+      "options": {
+        "decimals": 2,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning" },
+          { "value": 5, "status": "critical" }
+        ]
+      },
+      "layout": { "x": 6, "y": 0, "w": 6, "h": 2 }
+    },
+    {
+      "id": "requests-by-status",
+      "title": "Requests by status class",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "sum by (status) (label_replace(rate(http_requests_total{service=~{{service}},namespace={{namespace}}}[5m]), \"status\", \"${1}xx\", \"code\", \"([0-9])..\"))",
+      "unit": "req/s",
+      "options": {
+        "min": 0,
+        "decimals": 2,
+        "seriesColors": [
+          { "label": "status", "value": "2xx", "role": "success" },
+          { "label": "status", "value": "4xx", "role": "client-error" },
+          { "label": "status", "value": "5xx", "role": "server-error" }
+        ]
+      },
+      "layout": { "x": 0, "y": 2, "w": 6, "h": 4 }
+    },
+    {
+      "id": "error-ratio",
+      "title": "Error ratio over time",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "100 * sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}}}[5m]))",
+      "unit": "%",
+      "description": "Share of requests answered with a 5xx status. Shading starts at 1% (warning) and 5% (critical).",
+      "options": {
+        "min": 0,
+        "decimals": 2,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning", "label": "1%" },
+          { "value": 5, "status": "critical", "label": "5%" }
+        ]
+      },
+      "layout": { "x": 6, "y": 2, "w": 6, "h": 4 }
+    },
+    {
+      "id": "latency",
+      "title": "Request latency",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{service=~{{service}},namespace={{namespace}}}[5m]))), \"quantile\", \"p50\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=~{{service}},namespace={{namespace}}}[5m]))), \"quantile\", \"p95\", \"\", \"\") or label_replace(histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=~{{service}},namespace={{namespace}}}[5m]))), \"quantile\", \"p99\", \"\", \"\")",
+      "unit": "s",
+      "description": "Median, 95th and 99th percentile request duration, estimated from the latency histogram buckets.",
+      "options": {
+        "min": 0,
+        "decimals": 3,
+        "seriesColors": [
+          { "label": "quantile", "value": "p50", "role": "p50" },
+          { "label": "quantile", "value": "p95", "role": "p95" },
+          { "label": "quantile", "value": "p99", "role": "p99" }
+        ]
+      },
+      "layout": { "x": 0, "y": 6, "w": 12, "h": 4 }
+    }
+  ]
+}

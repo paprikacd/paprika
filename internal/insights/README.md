@@ -63,11 +63,58 @@ uses that token only as the gateway bearer token, independently of its own
 service authentication. Missing delegation is denied, including in development
 mode. Provider discovery, queries, connection tests, metadata and saved-query
 validation all resolve the current caller's authorized catalog through
-request-local MCP sessions on the configured origin's `/observe/mcp`. The
-adapter discovers read-only tools, calls provider/query/exploration tools and
-requires structured results; it never parses the truncated text preview or
-falls back to REST. Removing access takes effect on the next request. Sessions
-have a 20-second deadline, bounded responses and no redirect or retry behavior.
+request-local MCP sessions on the configured origin's `/observe/mcp`. One HTTP
+request shares a single session and a single catalog listing across all of its
+operations (a widget query needs one session, not two), and that session closes
+when the response is written. A failed operation discards the session. No
+catalog or session is retained across requests, so removing access takes effect
+on the next request. The adapter discovers read-only tools, calls
+provider/query/exploration tools and requires structured results; it never
+parses the truncated text preview or falls back to REST. Each shared gateway
+operation (session setup, discovery, each tool call) is
+capped at 20 seconds and at the time left on its request's own deadline, so a
+dashboard keeps its 22-second budget. `/providers` has a 20-second budget end to
+end, inside the API proxy's 25-second response-header timeout.
+
+A `/query` has one 22-second budget that every phase draws on, in order:
+
+- waiting for one of four catalog phases, up to 5 seconds, at most 16 waiters,
+  and only when the query is shared; no admission slot is held while waiting;
+- waiting for an admission slot, up to 2 seconds;
+- the catalog listing, capped at 10 seconds;
+- the data call, capped at 20 seconds.
+
+Each phase is capped by what remains of the budget. A phase that runs out returns
+504 `query exceeded its time budget`. A full waiter queue, or a catalog wait that
+times out, returns 429 with `Retry-After: 1` before any listing. Local queries
+never wait for a catalog phase.
+
+A busy shared catalog is answered 200 with `sharedCatalog.status: "busy"` and
+`retryAfter` in seconds (the gateway's Retry-After, or 1). That is the only
+retry layer for a busy listing. The page client replays it at most three times,
+each after `retryAfter` capped at 10 seconds and spread by +-30%, and stops when
+its caller goes away. The render worker does not replay: it waits on the page's
+aria-busy tiles under its own readiness and deadline, so a persistent busy spell
+costs one client replay cycle and ends in the worker's normal failure, not a
+stacked replay. A listing still busy after the client's replays shows the banner
+with a manual retry.
+
+A `/query` 429 from the gateway forwards its Retry-After, bounded to 60 seconds
+and defaulting to 1 second. A deadline reads as "query exceeded its time budget"
+on the query path and as "request exceeded its time budget" elsewhere.
+
+Measured at the default timeouts against a gateway that never answers or stalls:
+
+- `/providers`: 200 after 20 seconds, with the local providers and
+  `sharedCatalog: {status: "unavailable", code: 504}`. A silent gateway does not
+  fail the listing, because a 504 there would blank local tiles.
+- `/query`, catalog never answers: 504 after 10 seconds (the catalog phase cap).
+- `/query`, catalog answers, data call stalls: 504 after 15 seconds. The
+  gateway transport's response-header timeout ends a silent response first.
+- `/query`, catalog takes 9 seconds, then data stalls: 504 after 22 seconds (the
+  overall budget; before this change it was 24 seconds).
+
+Bounded responses, no redirects and no retries.
 
 Shared provider IDs are `observe-` plus the full SHA-256 of their canonical
 `namespace/name`, preserving namespace identity within the existing dashboard
@@ -130,8 +177,9 @@ through Paprika. All service API routes require `Authorization: Bearer <token>`.
 | DELETE | `/api/saved-queries/{id}` | 204; `If-Match` required |
 | GET | `/api/dashboards` | `{dashboards:[Dashboard]}` |
 | GET | `/api/dashboards/{id}` | Dashboard and `ETag` |
-| PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag` |
+| PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag`; `?checks=true` adds `checks` (see below) |
 | DELETE | `/api/dashboards/{id}` | 204 |
+| POST | `/api/dashboards/validate` | Dry run: `{document, execute?, variables?}` in. Without `execute`: `{issues,total,truncated,errorCount,warningCount,infoCount}` out, a schema and lint dry run that never writes. With `execute: true`: the same members plus `widgets`, one `WidgetDataState` per widget in document order (`widgetId`, `pointer`, `state`, `seriesReturned`, `errorCode`). Execute runs each distinct widget query once, read-only, over the dashboard default range (or its custom range) with the given variables (at most 20 string values, each at most 1024 UTF-16 units). A document with a schema or error-severity finding is not executed, and each widget reports `DATA_STATE_NOT_RUN`. `variables` without `execute` is a 400. The MCP gateway runs an executing dry run under its orchestration admission, and refuses it with `resource_exhausted` when that admission is unavailable. `state` is one of `OK`, `EMPTY`, `PARTIAL`, `STALE`, `ERROR`, `UNAVAILABLE` (capacity, timeout or cancellation, a retry clears it) or `NOT_RUN`. |
 
 Query request:
 
@@ -159,7 +207,7 @@ A stale edit returns 412. Clients that omit preconditions choose last-write-wins
 
 Query limits: 31 days; at least 1-second step; at most 5,000 points per series,
 100 series, 100,000 total points, 100 traces, 8 MiB upstream response, 20-second
-timeout, 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
+data timeout (10 seconds for the shared catalog phase), 16 simultaneous query executions and a bounded 64-request queue with up to 2 seconds of cancellable waiting. Overflow still returns 429 with Retry-After; the gateway separately limits concurrent queries globally and per provider. Provider results exceeding count limits
 set `truncated:true`; invalid requests fail before contacting a provider.
 Client cancellation propagates to providers.
 Native warnings and explicit partial-result markers also set `truncated:true`
@@ -283,6 +331,141 @@ bounded per-provider cache. Editing a provider invalidates its cache. Connection
 tests use Prometheus `vector(1)` or Tempo's `/api/echo` endpoint. Tests and discovery
 share the query concurrency and timeout limits, and sanitize upstream failures.
 
+## Dashboard checks and layout rules
+
+Every dashboard write (`PUT /api/dashboards/{id}`, including MCP create, update
+and patch and the portable import) runs the schema checks and then the lint
+rules. A save is rejected with `400 {error,issues,total,truncated}` when a schema
+check fails or a lint rule of error severity fires. Today the only error-severity
+rule is `layout.overlap`: two widgets whose grid rectangles share a cell. An
+overlap is an error when the save creates the dashboard or when it makes a pair
+overlap that did not overlap in the stored version. A pair that already overlapped
+in the stored dashboard is a warning, so an edit that leaves it in place (a rename,
+or a change to another widget) is saved. `error` is the first finding's message,
+and `issues` holds the findings, errors first, as a CheckReport (at most 32, with
+`total` counting all of them).
+
+Other lint rules are warnings. They never block a save. A successful save returns
+them in a `checks` field, but only when the request asks with `?checks=true`:
+`PUT /api/dashboards/{id}?checks=true` returns the stored document with `checks`
+added after its members. The default body is the document exactly as before, so a
+client that stores it never sends back an unknown member. The dry run lists every
+finding, warnings included, without writing, and reads the stored dashboard at the
+same id so it reports the same overlap warnings a save would.
+
+A dry run or save reads its body before it takes a slot, so a slow upload holds
+none. Dry runs and saves with `?checks=true` then share four concurrent slots: a
+dry run holds one while it decodes its request and builds its report, and a checked
+save holds one through its lock wait, its check, its write and its response. A
+request that finds them all taken gets `429` with `Retry-After: 1`, and a refused
+dry run decodes nothing. A dry run with `execute` releases its slot before its
+queries run and holds one of four dry-run query slots instead, so a slow provider
+never refuses a checked save. A full pool gets the same `429`. The schema check
+runs on a bounded part of a document: a widgets array longer than 48 gets its
+count error and shape checks on its first 48 widgets only, the variables array
+and widget drilldowns are read up to one past their limits, and the report counts
+every finding it makes.
+
+Stored documents are read without linting, so a dashboard saved before a rule
+existed still loads and renders. Saving it again runs the rules.
+
+Each finding names its rule (`ruleId`), its severity, its source (schema or
+lint), its widget, and the exact JSON Pointer of the member at fault. Messages
+name widgets by title and id.
+
+The canvas settles every render with react-grid-layout's vertical compactor:
+items rise into empty space and an overlap is pushed apart. The UI saves the
+layout as the canvas draws it, so a stored overlap is corrected by the next UI
+save. The `layout.hole` rule reads the same drawn layout: an empty cell above a
+widget, which the canvas would not close, is a hole. The Go port of the compactor
+and the TypeScript compactor share the parity fixtures in
+[layout-compaction.json](../../docs/design/insights/conformance/layout-compaction.json).
+
+The built-in plugin ids that `plugin.unknown` accepts are listed in
+[widget-plugins.json](../../docs/design/insights/widget-plugins.json), regenerated
+from the UI registry. A host can register more plugins, which the rule reports as
+not built in.
+
+### Data rules (dry run with execute)
+
+A dry run with `execute: true` runs the document's queries and reports what they
+returned. The `data.*` findings carry source `SOURCE_DATA`; they never block a save,
+because a save executes nothing. Each rule's default severity is in brackets.
+
+- `data.query-error` [warning]: a widget or event query the provider rejected or
+  could not resolve. Points at `query`, `queryRef`, `annotationSource`, or
+  `providerId` for a provider-setting failure. Capacity, timeout, cancellation,
+  and direct-provider 408, 429, 502, 503 and 504 responses are transient: they produce
+  no finding and report `UNAVAILABLE`. Upstream response text is never copied.
+- `data.no-series` [warning; info for an alert (`ALERTS`) or a comparison filter
+  such as `> 0`, whose empty result can be expected]: a metrics query returned no
+  series with a value. A partial response is left to `data.series-cap`.
+- `data.unit-mismatch` [info]: a value outside the declared `options.min` or
+  `options.max`, or a `%` unit whose values all lie in [0, 1] under a declared
+  max or threshold of 10 or more (a ratio shown as a percent). Nothing else is
+  judged: a percent above 100 with no declared scale is a legitimate multi-core
+  reading, and a negative value is a legitimate change.
+- `data.stale` [warning]: the newest valid sample is older than
+  `options.staleAfterSeconds` when the range ends. Applies to `stat`,
+  `timeseries` and the `rich-metrics` plugin over metrics. A stat judges its
+  primary series; the others the newest sample of any series. A bar chart
+  does not honour the option and is not judged.
+- `data.series-cap` [warning]: the provider truncated its response by a row or
+  series cap or an incomplete search, so values may miss data.
+- `data.many-series` [info]: more than eight series with no
+  `options.seriesColors` rules.
+- `data.constant-sparkline` [info]: a stat with a sparkline whose primary series
+  holds at least two valid samples, all equal.
+
+A widget whose event query failed reports `PARTIAL`, and keeps its finding.
+
+Lint and data rules are listed in one catalogue (rule id, source, severity,
+summary). Each rule keeps its own check input, so a lint rule never reads query
+results and a data rule never runs on a save. Findings keep the source of the
+rule that produced them.
+
+Not implemented: the unnamed-series advisory (series are named by R14, so the
+plan dropped it), and the `%` bar and `max` under 10 advisories, which are
+deferred. Neither is reported by a dry run.
+
+### Lint CLI
+
+`paprika-insights lint` checks dashboard documents offline with the same findings a
+save reports:
+
+```sh
+paprika-insights lint [--served-schema-examples] PATH...
+```
+
+Each path is a JSON file or a directory of them. A file holds one document, an
+array of documents, or a repository-examples catalog, whose sample and live
+dashboards are checked. `--served-schema-examples` adds the dashboard and widget
+examples that the schema endpoint serves. The exit code is 0 when no finding is
+an error, 1 when one is, and 2 for unreadable input or usage. Each finding prints
+on one line, followed by a summary. The CI step runs the command over the
+repository catalog, the served examples and the gallery export.
+
+## Starter dashboards
+
+`internal/insights/starters/*.json` holds first-party dashboard documents that
+an operator can start from. `Starters()` returns them embedded in the binary, in
+file-name order; each file's `id` matches its name. `starters_test.go` runs every
+starter through the save-time schema and the lint registry, requires zero
+findings, and checks that each metric it queries is in the
+[metric reference](../../.agents/skills/paprika-dashboard-design/references/paprika-signals.md)
+with its type and labels. The starters use the placeholder provider id
+`metrics-provider-id`; an import maps it to a real provider.
+
+`paprika-control-plane` shows whether Paprika is keeping up. Its count tiles
+read the same gauges as the PrometheusRule alerts, with `max()` over each.
+Exhausted release retries turn critical above zero, as their alert does. Stuck
+releases and a degraded fleet index turn warning above zero, as their alerts do.
+Stale applications turns warning above zero; no alert covers it. Controller liveness is the age of
+the slowest controller's last successful reconcile and turns warning after five
+minutes, as in [metrics.md](../../docs/guides/metrics.md). The remaining panels
+show reconcile lag, reconcile throughput by outcome, and the applications and
+releases in each phase as current state.
+
 ## Dashboard extensions
 
 Dashboard documents support optional `folder` paths (160 characters, nonempty
@@ -387,3 +570,15 @@ missing reverse proxy in the static Next development server; Go integration
 tests independently exercise the production proxy's authentication and RBAC.
 The script cleans up its service, providers, and temporary files and saves its
 report and screenshots in `artifacts/insights/`.
+
+## Capacity
+
+Insights admits up to 16 query executions at once and holds up to 64 more for
+at most 2 seconds (set in `NewServer`, `internal/insights/server.go`). A query to an
+Observe-backed provider then passes the gateway's HTTP pools and its execution
+budget, so the gateway's own limits, not Insights' 16, usually bind first. At
+defaults a single provider runs 2 queries at once. The full chain, with each
+hop's default, configuration and what a caller sees when it is full, is in
+[docs/guides/observability-gateway.md](../../docs/guides/observability-gateway.md#end-to-end-capacity).
+Insights' own admission is not yet configurable; the gateway's limits are
+(`--observability-query-*` and `--observability-http-*` flags).

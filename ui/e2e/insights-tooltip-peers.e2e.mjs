@@ -91,11 +91,12 @@ try {
       await tip.waitFor({ state: "hidden" })
       // Scroll can move a different widget beneath a stationary pointer while
       // a chart retains keyboard focus. Only the new transient preview remains.
-      const stat = page.locator('[data-widget-id="pressure"]')
+      // A stat whose samples vary keeps its sparkline; a constant one shows "Steady" instead, with no history to hover.
+      const stat = page.locator('[data-widget-id="memory"]')
       await stat.scrollIntoViewIfNeeded()
-      await stat.getByRole("img", { name: "History for Nodes under pressure" }).hover()
+      await stat.getByRole("img", { name: "History for Memory used" }).hover()
       await page.waitForFunction(() => document.querySelectorAll('[role="tooltip"]').length === 1 &&
-        [...document.querySelectorAll('[role="tooltip"]')].some(node => node.textContent.includes("Nodes under disk pressure")))
+        [...document.querySelectorAll('[role="tooltip"]')].some(node => node.textContent.includes("Cluster memory utilization")))
       await page.getByRole("tooltip").waitFor()
       assert.equal(await page.getByRole("tooltip").count(), 1)
       await plot.press("Escape")

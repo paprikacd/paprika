@@ -34,17 +34,17 @@ describe("optional single-value history", () => {
   it("warns when the newest returned observation is missing while preserving the last valid zero", () => {
     const { rerender, container } = render(<WidgetVisualization widget={{ ...widget, options: { showSparkline: true, sparklinePlacement: "side" } }} result={{ series: [series] }} />);
     expect(container.querySelector('[data-metric-value="0"]')).toHaveTextContent("0req/s");
-    expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+    expect(screen.getByRole("status")).toHaveTextContent(/Latest missing · last valid \d\d:\d\d \S+/);
     rerender(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points: [...series.points, { timestamp: 6000, value: 4 }] }] }} />);
-    expect(screen.queryByText(/Last valid · latest missing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Latest missing · last valid \d\d:\d\d \S+/)).not.toBeInTheDocument();
   });
 
   it("uses the last observation at a duplicate latest timestamp, without treating zero as missing", () => {
     const points = [{ timestamp: 1000, value: 2 }, { timestamp: 3000, value: null }, { timestamp: 3000, value: 0 }];
     const { rerender } = render(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points }] }} />);
-    expect(screen.queryByText(/Last valid · latest missing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Latest missing · last valid \d\d:\d\d \S+/)).not.toBeInTheDocument();
     rerender(<WidgetVisualization widget={widget} result={{ series: [{ ...series, points: [...points, { timestamp: 3000, value: null }] }] }} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+    expect(screen.getByRole("status")).toHaveTextContent(/Latest missing · last valid \d\d:\d\d \S+/);
   });
   it("keeps the original stat unchanged unless its sparkline is explicitly enabled", () => {
     const { rerender, container } = render(
@@ -243,10 +243,9 @@ describe("optional single-value history", () => {
         }}
       />,
     );
-    expect(screen.getByRole("img").querySelector("path[data-stat-trend]")).toHaveAttribute(
-      "d",
-      "M1,32L239,32",
-    );
+    // A constant history has no trend to draw: the label says so in the trend's place.
+    expect(screen.getByText("Steady")).toHaveAttribute("data-stat-steady");
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
     rerender(
       <WidgetVisualization
         widget={{ ...widget, options: { showSparkline: true } }}
@@ -355,7 +354,7 @@ it("keeps a one-track background stat's saved geometry, precise value, unit and 
   // The reading is plain text; the history is the one keyboard-focusable inspector.
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.getByRole("img", { name: "History for Requests" })).toHaveAttribute("tabindex", "0");
-  expect(screen.getByRole("status")).toHaveTextContent("Last valid · latest missing");
+  expect(screen.getByRole("status")).toHaveTextContent(/Latest missing · last valid \d\d:\d\d \S+/);
   expect(screen.getByRole("img")).toHaveAccessibleDescription(/1970-01-01T00:00:04.000Z/);
   rerender(<WidgetVisualization widget={compact} result={{ series: [{ ...series, points: [{ timestamp: 5000, value: null }] }] }} />);
   expect(container.querySelector("[data-metric-value]")).toBeNull();

@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { lineY } from "@tanstack/charts/line";
+import { autoAxisDomain, axisScale } from "./units";
 import { Chart } from "@tanstack/charts/react";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { defineChart } from "@tanstack/charts/scene";
@@ -29,13 +30,13 @@ import {
   boundHistoryPoints,
   formatMetricDetails,
   latestPoint,
-  formatMetric,
   formatTimeTick,
   seriesName,
   type Point,
   type Series,
 } from "./chart-data";
 import { validTimestamp } from "./widget-context";
+import { SERIES_ROLES, seriesSlot } from "./series-palette";
 import styles from "./tooltip-widgets.module.css";
 
 export const MAX_TOOLTIP_POINTS = 240;
@@ -79,10 +80,10 @@ export interface TooltipRendererDefinition {
   render: ComponentType<TooltipRendererProps>;
 }
 
-const DEFAULT_TOOLTIP_COLOR = "var(--gamma-chart-1, #b65332)";
-// Only host-owned chart tokens may pass through the renderer boundary. Keep
-// arbitrary CSS out while preserving series identity across themed portals.
-const chartTokenColor = /^var\(--gamma-chart-[1-8](?:,\s*#[0-9a-f]{6})?\)$/i;
+const DEFAULT_TOOLTIP_COLOR = seriesSlot(0);
+// Only host-owned palette tokens may pass through the renderer boundary: the series slots, the named series roles and
+// the legacy chart tokens they alias. Keep arbitrary CSS out while preserving series identity across themed portals.
+const paletteTokenColor = new RegExp(`^var\\(--gamma-(?:chart-[1-8]|series-(?:[1-8]|${SERIES_ROLES.join("|")}))(?:,\\s*#[0-9a-f]{6})?\\)$`, "i");
 
 /** Normalize once per active series. No provider, widget or query API is exposed. */
 export function buildTooltipContext(
@@ -168,7 +169,7 @@ export function buildTooltipContext(
           entry.points.length > (bounded.series?.[index]?.points.length ?? 0),
       ),
     unit: view.unit ?? unit,
-    color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || chartTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
+    color: view.color ?? (/^#[0-9a-f]{6}$/i.test(color) || paletteTokenColor.test(color) ? color : DEFAULT_TOOLTIP_COLOR),
     height: [80, 120, 160, 200, 320].includes(view.height ?? 160)
       ? (view.height ?? 160)
       : 160,
@@ -530,6 +531,11 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
   const { points, summary, height, showAxis, showGrid, unit, color, name } =
     context;
   const span = (summary.end ?? 0) - (summary.start ?? 0);
+  // One domain and one label scale for this chart's Y ticks, so the labels describe the ticks the chart draws.
+  const yTickCount = height <= 120 ? 2 : 3;
+  const yValues = useMemo(() => points.flatMap(point => typeof point.value === "number" && Number.isFinite(point.value) ? [point.value] : []), [points]);
+  const yLabels = useMemo(() => axisScale(autoAxisDomain(yValues, yTickCount, false), unit, { compact: true, decimals: context.view.decimals, count: yTickCount, fixedDomain: true }), [yValues, unit, context.view.decimals, yTickCount]);
+  const yDomain = yLabels.domain;
   const definition = useMemo(
     () =>
       defineChart({
@@ -577,8 +583,8 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
               : false,
           },
           y: {
-            scale: scaleLinear,
-            nice: true,
+            scale: scaleLinear().domain(yDomain),
+            nice: false,
             grid: showGrid
               ? {
                   stroke: "var(--gamma-border,#dfe4db)",
@@ -589,10 +595,9 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
               ? {
                   line: false,
                   ticks: {
-                    count: height <= 120 ? 2 : 3,
+                    values: yLabels.ticks,
                     line: false,
-                    format: (value: number) =>
-                      formatMetric(value, unit, true, context.view.decimals),
+                    format: (value: number) => yLabels.label(value),
                   },
                   tickLabels: {
                     fontSize: 10,
@@ -621,14 +626,13 @@ function MiniTimeSeries({ context }: TooltipRendererProps) {
       points,
       summary.start,
       summary.end,
-      height,
       showAxis,
       showGrid,
-      unit,
+      yDomain,
+      yLabels,
       color,
       width,
       span,
-      context.view.decimals,
     ],
   );
   const missing = summary.missingCount

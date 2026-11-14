@@ -38,7 +38,12 @@ Browser screenshots are capped at 4 MiB, 20 seconds and two simultaneous jobs.
 Timeouts and client disconnects release capacity, including requests with a
 stalled body or browser startup. Deferred widgets must finish loading before
 capture; a loading skeleton is not accepted as a completed screenshot.
-Visible widget errors and provider query error envelopes also fail the capture.
+Every capture also runs the visual checks: DOM heuristics for clipped text,
+internal scroll, empty plots, widget errors and page overflow. A widget error or
+a failed query is a finding on its own widget, and the capture still returns
+with a `failed` visualStatus. A failed document or listing read, a deadline or a
+revision change still fails the capture. `checks_only` returns the findings and
+timings without an image.
 With `focus_widget`, the worker selects a recorded observation in an interactive
 chart and pins its inspector before capture. A widget without available chart
 inspection returns an error instead of an ordinary unfocused screenshot.

@@ -7,7 +7,11 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PortableImportPanel } from "./portable-import-panel";
+import { parseCheckReport } from "./client";
+import { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
 import { SavedQueryLibraryProvider } from "./saved-query-context";
 import {
   serializeDashboardBundle,
@@ -665,5 +669,107 @@ describe("reviewed import decisions", () => {
         name: /Compare changes for Imported dashboard/,
       }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// The live bodies from internal/insights TestCheckWireGolden.
+const checkGolden = JSON.parse(
+  readFileSync(join(process.cwd(), "src/features/insights/testdata/checks-contract.golden.json"), "utf8"),
+) as { lintDryRun: Record<string, unknown>; checkedSave: Record<string, unknown> & { checks: Record<string, unknown> } };
+
+describe("import review with dashboard checks", () => {
+  function renderWithChecks(validateDocument: (document: Dashboard, signal?: AbortSignal) => Promise<ReturnType<typeof parseCheckReport>>, source: DashboardBundle = bundle) {
+    const onImportBundle = vi
+      .fn<(request: BundleImportRequest) => Promise<BundleImportResult>>()
+      .mockResolvedValue(complete);
+    render(
+      <SavedQueryLibraryProvider queries={[]} variables={[]} values={{}}>
+        <PortableImportPanel
+          providers={providers}
+          initialDocument={{ source: serializeDashboardBundle(source, "yaml"), format: "yaml" }}
+          onImportBundle={onImportBundle}
+          validateDocument={(document, signal) => validateDocument(document, signal)}
+        />
+      </SavedQueryLibraryProvider>,
+    );
+    return { onImportBundle };
+  }
+  const importButton = () => screen.getByRole("button", { name: /^Import \d+ as new$/ });
+
+  it("checks each incoming dashboard and blocks a copy the server would reject", async () => {
+    const validate = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.lintDryRun));
+    renderWithChecks(validate);
+    connect();
+    const region = await screen.findByRole("region", { name: "Checks for Imported dashboard" });
+    expect(within(region).getByText("1 error")).toBeInTheDocument();
+    expect(within(region).getByText("layout.overlap")).toBeInTheDocument();
+    expect(validate).toHaveBeenCalledWith(expect.objectContaining({ id: "imported" }), expect.any(AbortSignal));
+    expect(
+      screen.getByText(/Saving this dashboard would be rejected while its checks list errors/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Keep existing/)).not.toBeInTheDocument();
+    expect(importButton()).toBeDisabled();
+  });
+
+  it("does not import while a check is still pending, even when the source is connected", async () => {
+    const { onImportBundle } = renderWithChecks(() => new Promise<CheckReport>(() => {}));
+    connect();
+    expect(await screen.findByText("Checking this dashboard…")).toBeInTheDocument();
+    expect(importButton()).toBeDisabled();
+    expect(onImportBundle).not.toHaveBeenCalled();
+  });
+
+  it("checks at most four dashboards at once, and does not send them again when the source mapping changes", async () => {
+    const many: DashboardBundle = {
+      dashboards: Array.from({ length: 6 }, (_, index) => ({ ...document, id: `doc-${index}`, title: `Doc ${index}` })),
+      savedQueries: [query],
+    };
+    const resolvers: (() => void)[] = [];
+    const validate = vi.fn(() => new Promise<CheckReport>((done) => {
+      resolvers.push(() => done(new CheckReport({ total: 0 })));
+    }));
+    renderWithChecks(validate, many);
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(4));
+    expect(validate).toHaveBeenCalledTimes(4);
+    await act(async () => { resolvers.shift()!(); });
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(5));
+    await act(async () => { resolvers.splice(0).forEach((resolve) => resolve()); });
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(6));
+    connect();
+    await act(async () => {});
+    expect(validate).toHaveBeenCalledTimes(6);
+  });
+
+  it("lets an import with only warnings proceed after they are shown", async () => {
+    const { onImportBundle } = renderWithChecks(vi.fn().mockResolvedValue(parseCheckReport(checkGolden.checkedSave.checks)));
+    connect();
+    expect(await screen.findByText("1 warning")).toBeInTheDocument();
+    await waitFor(() => expect(importButton()).toBeEnabled());
+    fireEvent.click(importButton());
+    await waitFor(() => expect(onImportBundle).toHaveBeenCalledTimes(1));
+  });
+
+  it("says when a check could not run and does not block the import on it", async () => {
+    renderWithChecks(vi.fn().mockRejectedValue(new Error("gateway busy")));
+    connect();
+    expect(await screen.findByText("Could not check this dashboard: gateway busy. Saving still validates it on the server.")).toBeInTheDocument();
+    await waitFor(() => expect(importButton()).toBeEnabled());
+  });
+
+  it("explains that a source with overlapping widgets is stored at the positions the canvas draws", async () => {
+    const overlapping: DashboardBundle = {
+      dashboards: [{
+        ...document,
+        widgets: [
+          { ...document.widgets[0], id: "first", layout: { x: 0, y: 0, w: 6, h: 3 } },
+          { ...document.widgets[0], id: "second", layout: { x: 0, y: 1, w: 6, h: 3 } },
+        ],
+      }],
+      savedQueries: [query],
+    };
+    renderWithChecks(vi.fn().mockResolvedValue(parseCheckReport({})), overlapping);
+    expect(
+      await screen.findByText(/1 widget in this source is stored at a different position: the canvas closes an overlap or gap when it saves\./),
+    ).toBeInTheDocument();
   });
 });

@@ -25,7 +25,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/mcp"
 )
 
-const dashboardQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-overview","title":"Service overview","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{"service":"api"},"widgets":[{"id":"rate","title":"Request rate","type":"stat","unit":"req/s","signalId":"s1"},{"id":"trace","title":"Matching traces","type":"traces","unit":"ms","signalId":"s2"}],"savedQueries":[{"id":"requests","etag":"q1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"samples":300,"valid":299,"missing":1,"last":{"timestamp":1793008800000,"value":1.234567890123}}]},{"id":"s2","state":"partial","traces":{"returned":100,"statusCounts":{"unknown":100},"examples":[],"examplesTruncated":true}}],"queryCount":{"planned":2,"executed":2,"deduplicated":0},"state":"partial"}`
+const dashboardQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-overview","title":"Service overview","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{"service":"api"},"widgets":[{"id":"rate","title":"Request rate","type":"stat","unit":"req/s","signalId":"s1"},{"id":"trace","title":"Matching traces","type":"traces","unit":"ms","signalId":"s2"}],"savedQueries":[{"id":"requests","etag":"q1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"samples":300,"valid":299,"missing":1,"last":{"timestamp":1793008800000,"value":1.234567890123}}]},{"id":"s2","state":"partial","traces":{"returned":100,"statusCounts":{"unknown":100},"examples":[],"examplesTruncated":true}}],"queryCount":{"planned":2,"executed":2,"deduplicated":0},"state":"partial","attention":{"basis":"author-declared warning and critical statuses, query failures and staleness only; not a health verdict","widgets":2,"checked":1,"critical":0,"warning":0,"failed":0,"stale":0}}`
 
 func TestDashboardQueryCompactTextIncludesSampleMeans(t *testing.T) {
 	fixture := `{"schemaVersion":1,"dashboard":{"id":"test"},"widgets":[{"id":"rate","title":"Rate","type":"timeseries","unit":"req/s","signalId":"s1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"name":"api","mean":0,"last":{"timestamp":1000,"value":2}},{"index":1,"name":"worker","mean":4.25,"last":{"timestamp":1000,"value":6}}]}]}`
@@ -73,7 +73,7 @@ func TestDashboardTraceTextBoundsUntrustedDetails(t *testing.T) {
 	require.True(t, utf8.ValidString(text))
 }
 
-const dashboardRecordsQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-records","title":"Service records","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{},"widgets":[{"id":"services","title":"Service records","type":"plugin","unit":"","signalId":"q1"}],"savedQueries":[],"signals":[{"id":"q1","state":"ok","truncated":true,"providerTruncated":true,"records":{"returned":7,"columns":[{"key":"service","type":"string"},{"key":"requests","label":"Requests","type":"number","unit":"req/s"},{"key":"active","type":"boolean"}],"rows":[["api",0,false],["worker",null,true]],"rowsTruncated":true,"columnsOmitted":1,"metadataTruncated":true}}],"queryCount":{"planned":1,"executed":1,"deduplicated":0},"state":"ok"}`
+const dashboardRecordsQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-records","title":"Service records","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{},"widgets":[{"id":"services","title":"Service records","type":"plugin","unit":"","signalId":"q1"}],"savedQueries":[],"signals":[{"id":"q1","state":"ok","truncated":true,"providerTruncated":true,"records":{"returned":7,"columns":[{"key":"service","type":"string"},{"key":"requests","label":"Requests","type":"number","unit":"req/s"},{"key":"active","type":"boolean"}],"rows":[["api",0,false],["worker",null,true]],"rowsTruncated":true,"columnsOmitted":1,"metadataTruncated":true}}],"queryCount":{"planned":1,"executed":1,"deduplicated":0},"state":"ok","attention":{"basis":"author-declared warning and critical statuses, query failures and staleness only; not a health verdict","widgets":1,"checked":1,"critical":0,"warning":0,"failed":0,"stale":0}}`
 
 func TestDashboardQueryCompactTextIncludesSnapshotContext(t *testing.T) {
 	text, err := dashboardQueryText(json.RawMessage(dashboardQueryFixture))
@@ -631,7 +631,7 @@ func TestDashboardQueryRequiresItsHTTPOrchestrationAdmission(t *testing.T) {
 			before := calls.Load()
 			_, err := insightsQueryDashboardTool(c).Invoke(tc.ctx, nil, json.RawMessage(`{"id":"demo"}`))
 			if tc.deny {
-				require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+				require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), "a refusal is never a capacity code")
 				require.Equal(t, before, calls.Load(), "misclassified request must never reach dashboard execution")
 			} else {
 				require.NoError(t, err)
@@ -706,4 +706,43 @@ func requireDashboardTextSlice(t *testing.T, value any) []any {
 	result, ok := value.([]any)
 	require.True(t, ok, "expected a JSON array")
 	return result
+}
+
+// A matched band names a status, a colour or both. Each shape must validate against the published output schema,
+// and its compact text must name only the fields the band has.
+func TestDashboardQueryStatusBandsValidateAndDescribeInText(t *testing.T) {
+	var fixture map[string]any
+	require.NoError(t, json.Unmarshal([]byte(dashboardQueryFixture), &fixture))
+	widgets := requireDashboardTextSlice(t, fixture["widgets"])
+	var schema jsonschema.Schema
+	require.NoError(t, json.Unmarshal(insightsQueryDashboardTool(nil).OutputSchema, &schema))
+	resolved, err := schema.Resolve(nil)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, text string
+		band       map[string]any
+	}{
+		{"status only", `widget "rate": configured visual band="matched"; boundary=50; status="critical"`, map[string]any{"state": "matched", "boundary": 50, "status": "critical"}},
+		{"colour only", `widget "rate": configured visual band="matched"; boundary=50; color="#ff0000"`, map[string]any{"state": "matched", "boundary": 50, "color": "#ff0000"}},
+		{"status and colour", `widget "rate": configured visual band="matched"; boundary=50; status="ok"; color="#20cba3"; label="Healthy"`, map[string]any{"state": "matched", "boundary": 50, "status": "ok", "color": "#20cba3", "label": "Healthy"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requireDashboardTextMap(t, widgets[0])["threshold"] = tc.band
+			require.NoError(t, resolved.Validate(fixture), "the published output schema must accept the band")
+			encoded, err := json.Marshal(fixture)
+			require.NoError(t, err)
+			text, err := dashboardQueryText(encoded)
+			require.NoError(t, err)
+			require.Contains(t, text, tc.text)
+			if _, hasColor := tc.band["color"]; !hasColor {
+				require.NotContains(t, text, `color=""`, "a status-only band must not print an empty colour")
+			}
+		})
+	}
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched", "boundary": 50}
+	require.Error(t, resolved.Validate(fixture), "a matched band must name a status or a colour")
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched", "boundary": 50, "status": "success"}
+	require.Error(t, resolved.Validate(fixture), "only the published statuses are accepted")
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "unknown", "status": "ok"}
+	require.Error(t, resolved.Validate(fixture), "an unknown band cannot claim a status")
 }

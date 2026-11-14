@@ -10,14 +10,20 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
 var insightsDocumentID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$`)
@@ -56,6 +62,11 @@ type insightsDocumentResult struct {
 	Document json.RawMessage `json:"document"`
 	ETag     string          `json:"etag"`
 	UIURL    string          `json:"uiUrl"`
+	// Checks is the warnings report of a successful save. It is returned beside
+	// the document, never inside it, so an agent cannot re-PUT it.
+	Checks *insightsv1.CheckReport `json:"-"`
+	// Placements reports where each widget_edits add landed on the saved grid. Only a patch sets it.
+	Placements []insightsPlacement `json:"placements,omitempty"`
 }
 
 type insightsAuthoringArgs struct {
@@ -144,7 +155,7 @@ func readInsightsResponseLimit(resp *http.Response, limit int64) (payload json.R
 		return nil, "", connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds its size limit"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", insightsStatusError(resp.StatusCode, body)
+		return nil, "", insightsStatusError(resp.StatusCode, body, resp.Header)
 	}
 	if !json.Valid(body) {
 		return nil, "", connect.NewError(connect.CodeInternal, errors.New("insights returned invalid JSON"))
@@ -183,11 +194,17 @@ var insightsHTTPFailures = map[int]insightsHTTPFailure{
 	http.StatusGatewayTimeout:        {connect.CodeUnavailable, "insights service is unavailable"},
 }
 
-func insightsStatusError(status int, body []byte) error {
+// insightsStatusError maps a failed Insights response to a Connect error. The
+// message is fixed text, or the service's own short validation message. A 400
+// also carries the bounded finding list as a CheckReport detail, and a capacity
+// response that names a Retry-After carries a RetryInfo detail. Upstream bodies
+// are never copied beyond those two fields.
+func insightsStatusError(status int, body []byte, header http.Header) *connect.Error {
 	failure, ok := insightsHTTPFailures[status]
 	if !ok {
 		failure = insightsHTTPFailure{connect.CodeInternal, "insights request failed"}
 	}
+	var report *insightsv1.CheckReport
 	if status == http.StatusBadRequest {
 		var response struct {
 			Error string `json:"error"`
@@ -195,8 +212,103 @@ func insightsStatusError(status int, body []byte) error {
 		if json.Unmarshal(body, &response) == nil && len(response.Error) <= 512 && response.Error != "" {
 			failure.message = response.Error
 		}
+		report = insightsCheckReport(body)
 	}
-	return connect.NewError(failure.code, errors.New(failure.message))
+	err := connect.NewError(failure.code, errors.New(failure.message))
+	if report != nil {
+		if detail, detailErr := connect.NewErrorDetail(report); detailErr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	if delay, ok := insightsRetryDelay(status, header); ok {
+		if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(delay)}); detailErr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	return err
+}
+
+// insightsValidationBody is the 400 body of a rejected save: Error keeps the
+// single historical message, and the rest is the CheckReport list shape.
+type insightsValidationBody struct {
+	Error     string            `json:"error"`
+	Issues    []json.RawMessage `json:"issues"`
+	Total     uint32            `json:"total"`
+	Truncated bool              `json:"truncated"`
+	// Severity counts cover every finding the service found, not only the
+	// issues it returned. Older services omit them.
+	ErrorCount   *uint32 `json:"errorCount"`
+	WarningCount *uint32 `json:"warningCount"`
+	InfoCount    *uint32 `json:"infoCount"`
+}
+
+// insightsCheckReport decodes the issue list of a 400 and bounds every finding,
+// so a changed or misbehaving service cannot widen what an agent receives.
+func insightsCheckReport(body []byte) *insightsv1.CheckReport {
+	var response insightsValidationBody
+	if json.Unmarshal(body, &response) != nil || len(response.Issues) == 0 {
+		return nil
+	}
+	return boundCheckReport(response)
+}
+
+// insightsChecksReport decodes a CheckReport that a successful response or the
+// dry run carries. Unlike insightsCheckReport it keeps an empty report, so a
+// clean document still gets its "Checks passed" verdict.
+func insightsChecksReport(raw []byte) (*insightsv1.CheckReport, error) {
+	var response insightsValidationBody
+	if json.Unmarshal(raw, &response) != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid check report"))
+	}
+	return boundCheckReport(response), nil
+}
+
+func boundCheckReport(response insightsValidationBody) *insightsv1.CheckReport {
+	report := &insightsv1.CheckReport{}
+	for _, raw := range response.Issues {
+		if len(report.GetIssues()) == checkwire.MaxIssues {
+			break
+		}
+		var finding insightsv1.CheckFinding
+		if checkwire.Unmarshal(raw, &finding) != nil {
+			continue
+		}
+		report.Issues = append(report.Issues, checkwire.Bound(&finding))
+	}
+	decoded := checkwire.CountSeverities(report.GetIssues())
+	report.ErrorCount = serviceCount(response.ErrorCount, decoded.Errors)
+	report.WarningCount = serviceCount(response.WarningCount, decoded.Warnings)
+	report.InfoCount = serviceCount(response.InfoCount, decoded.Infos)
+	report.Total = max(response.Total, checkwire.Count(len(response.Issues)), report.GetErrorCount()+report.GetWarningCount()+report.GetInfoCount())
+	report.Truncated = response.Truncated || report.GetTotal() > checkwire.Count(len(report.GetIssues()))
+	return report
+}
+
+// serviceCount prefers the service's own severity count, which covers findings
+// past the issue cap, and never reports fewer than the issues decoded here.
+func serviceCount(reported *uint32, decoded uint32) uint32 {
+	if reported == nil {
+		return decoded
+	}
+	return max(min(*reported, 1<<16), decoded)
+}
+
+// maxInsightsRetryAfterSecs bounds the delay a Retry-After may ask an agent to wait.
+const maxInsightsRetryAfterSecs = 300
+
+// insightsRetryDelay reads a Retry-After in seconds from a throttling response.
+// Only 429 carries it: it maps to ResourceExhausted, the code agents receive
+// with their retry delay. Unavailable is reported without one, as every other
+// unavailable upstream is. A date-form or out-of-range value is ignored.
+func insightsRetryDelay(status int, header http.Header) (time.Duration, bool) {
+	if status != http.StatusTooManyRequests {
+		return 0, false
+	}
+	seconds, err := strconv.Atoi(strings.TrimSpace(header.Get("Retry-After")))
+	if err != nil || seconds < 1 || seconds > maxInsightsRetryAfterSecs {
+		return 0, false
+	}
+	return time.Duration(seconds) * time.Second, true
 }
 
 func (c *InsightsAuthoringClient) get(ctx context.Context, collection, id string) (*insightsDocumentResult, error) {
@@ -208,6 +320,40 @@ func (c *InsightsAuthoringClient) get(ctx context.Context, collection, id string
 		return nil, err
 	}
 	return c.documentResult(collection, id, body, etag)
+}
+
+// checksMemberPrefix introduces the checks member that a checks=true dashboard
+// save appends. The service writes that member last, compact, after the saved
+// document. A quote inside a JSON string is always escaped, so the last
+// occurrence of this prefix is the service's own member.
+var checksMemberPrefix = []byte(`,"checks":`)
+
+// splitInsightsChecks removes the checks member a checks=true save appends and
+// decodes it. Only the trailing member is cut: the document bytes keep their
+// saved order and spelling. A body without the member (an older service) is
+// returned unchanged.
+func splitInsightsChecks(body json.RawMessage) (json.RawMessage, *insightsv1.CheckReport, error) {
+	trimmed := bytes.TrimRight(body, " \t\r\n")
+	at := bytes.LastIndex(trimmed, checksMemberPrefix)
+	if at < 0 {
+		return body, nil, nil
+	}
+	// The member is "<report>}" where the final brace closes the document.
+	members := trimmed[at+len(checksMemberPrefix):]
+	if len(members) == 0 || members[len(members)-1] != '}' {
+		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
+	}
+	report, err := insightsChecksReport(members[:len(members)-1])
+	if err != nil {
+		return nil, nil, err
+	}
+	document := make([]byte, 0, at+1)
+	document = append(document, trimmed[:at]...)
+	document = append(document, '}')
+	if !json.Valid(document) {
+		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned an invalid document"))
+	}
+	return document, report, nil
 }
 
 func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, args insightsAuthoringArgs, create bool) (result *insightsDocumentResult, err error) {
@@ -227,11 +373,28 @@ func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, ar
 		}
 		headers.Set("If-Match", args.ETag)
 	}
-	body, etag, err := c.request(ctx, http.MethodPut, collection+"/"+identity.ID, args.Document, headers)
+	// Dashboard saves ask for their warnings beside the saved document. The
+	// document itself is returned without them. Saved queries have no checks.
+	path := collection + "/" + identity.ID
+	if collection == "dashboards" {
+		path += "?checks=true"
+	}
+	body, etag, err := c.request(ctx, http.MethodPut, path, args.Document, headers)
 	if err != nil {
 		return nil, err
 	}
-	return c.documentResult(collection, identity.ID, body, etag)
+	var report *insightsv1.CheckReport
+	if collection == "dashboards" {
+		if body, report, err = splitInsightsChecks(body); err != nil {
+			return nil, err
+		}
+	}
+	result, err = c.documentResult(collection, identity.ID, body, etag)
+	if err != nil {
+		return nil, err
+	}
+	result.Checks = report
+	return result, nil
 }
 
 func (c *InsightsAuthoringClient) documentResult(collection, id string, body json.RawMessage, etag string) (*insightsDocumentResult, error) {
@@ -278,4 +441,88 @@ func (c *InsightsAuthoringClient) list(ctx context.Context, collection, provider
 		return nil, fmt.Errorf("list Insights documents: %w", err)
 	}
 	return body, nil
+}
+
+// sharedCatalogListing is the part of an Insights providers listing that
+// reports a degraded shared catalog. Insights answers 200 for that case so the
+// UI keeps its local tiles; an agent needs the failure as a tool error, or as a
+// note beside the providers it can still use.
+type sharedCatalogListing struct {
+	Providers     []json.RawMessage `json:"providers"`
+	SharedCatalog *struct {
+		Status     string `json:"status"`
+		RetryAfter int    `json:"retryAfter"`
+	} `json:"sharedCatalog"`
+}
+
+// listProviders serves list_insights_providers. A healthy listing passes
+// through unchanged. A degraded shared catalog with no providers at all becomes
+// the error the gateway returned before the catalog was reported in the body,
+// so an agent never reads an empty list as "no data sources". With providers
+// alongside it, the listing succeeds and a one-line note names the degradation.
+// The listing takes no provider filter, so a provider ID is rejected the way
+// the other list calls reject a malformed one.
+func (c *InsightsAuthoringClient) listProviders(ctx context.Context, providerID string) (any, error) {
+	if providerID != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid provider ID"))
+	}
+	body, err := c.list(ctx, "providers", "")
+	if err != nil {
+		return nil, err
+	}
+	var listing sharedCatalogListing
+	if json.Unmarshal(body, &listing) != nil || listing.SharedCatalog == nil {
+		return body, nil
+	}
+	status := listing.SharedCatalog.Status
+	retry := retryAfterSeconds(listing.SharedCatalog.RetryAfter)
+	if len(listing.Providers) > 0 {
+		return &sdkmcp.CallToolResult{
+			StructuredContent: body,
+			Content: []sdkmcp.Content{
+				&sdkmcp.TextContent{Text: string(body)},
+				&sdkmcp.TextContent{Text: sharedCatalogNote(status, retry)},
+			},
+		}, nil
+	}
+	switch status {
+	case "busy":
+		err := connect.NewError(connect.CodeResourceExhausted, errors.New("observability provider catalog is busy"))
+		if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(time.Duration(retry) * time.Second)}); detailErr == nil {
+			err.AddDetail(detail)
+		}
+		return nil, err
+	case "forbidden":
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("shared observability provider access denied"))
+	default:
+		return unavailableProvidersResult(), nil
+	}
+}
+
+// unavailableProvidersResult is the tool error for an unavailable or failed
+// shared catalog. It is an MCP tool error rather than a protocol error, so the
+// agent receives the text and the client can pass it to the model.
+func unavailableProvidersResult() *sdkmcp.CallToolResult {
+	return &sdkmcp.CallToolResult{
+		IsError:           true,
+		StructuredContent: map[string]any{"error": map[string]any{"code": connect.CodeUnavailable.String()}},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: "The shared observability provider catalog is unavailable; retry later."}},
+	}
+}
+
+// retryAfterSeconds keeps a catalog's retry delay in the range an agent is told
+// to wait: at least one second, and at most the gateway's own 60 second bound.
+func retryAfterSeconds(seconds int) int {
+	return min(max(seconds, 1), 60)
+}
+
+func sharedCatalogNote(status string, retryAfter int) string {
+	switch status {
+	case "busy":
+		return fmt.Sprintf("Note: the shared observability catalog is busy, so shared providers are missing from this list. Retry after %d seconds.", retryAfterSeconds(retryAfter))
+	case "forbidden":
+		return "Note: shared observability providers are not available to this caller, so they are missing from this list."
+	default:
+		return "Note: the shared observability catalog is unavailable, so shared providers are missing from this list."
+	}
 }

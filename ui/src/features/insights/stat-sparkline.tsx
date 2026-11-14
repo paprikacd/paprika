@@ -20,6 +20,23 @@ import styles from "./stat-sparkline.module.css";
 
 export const MAX_SPARKLINE_POINTS = 240;
 
+/**
+ * Whether a history is one value throughout: every sample is observed and shares that value. A missing sample is a gap,
+ * so it is never steady, and neither is a single sample, which is a point rather than a trend. A steady history is shown
+ * as "Steady" in place of a flat line.
+ */
+export function isSteadySeries(series: Series): boolean {
+  let count = 0;
+  let first: number | undefined;
+  for (const point of series.points) {
+    if (typeof point.value !== "number" || !Number.isFinite(point.value)) return false;
+    if (first === undefined) first = point.value;
+    else if (point.value !== first) return false;
+    count++;
+  }
+  return count >= 2;
+}
+
 /** The trend uses the same series and range as the displayed latest-valid stat. */
 export function StatSparkline({
   series,

@@ -209,6 +209,18 @@
   align-items: end;
   flex-wrap: wrap;
 }
+.row > .boundField {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.boundHint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--gamma-danger);
+}
 .row > .field {
   flex: 1;
   min-width: 85px;
@@ -386,14 +398,20 @@
   padding: 0 6px;
   font-weight: 600;
 }
+/* The value sizes to its digits; the status and colour row takes the rest and wraps rather than truncating. */
 .threshold {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 65px 44px;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: end;
 }
+/* Value and delete share the first line; the status and colour controls take the full second line. */
+.threshold > label:first-child { flex: 0 0 auto; }
+.threshold > label:first-child input { width: 11ch; }
+.threshold > button { flex: 0 0 auto; margin-left: auto; }
+.threshold > [data-status-mark-fields] { flex: 1 1 100%; min-width: 0; }
 .thresholdLabel {
-  grid-column: 1/-1;
+  flex-basis: 100%;
   display: flex;
   align-items: center;
   gap: 10px;

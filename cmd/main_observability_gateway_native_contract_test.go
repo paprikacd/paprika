@@ -24,6 +24,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 const (
@@ -66,7 +67,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "paprika", Name: "sessions"}, Data: map[string][]byte{"resource": []byte(resource)}},
 	).Build()
 	srv, authenticator, usage, backend, err := buildObservabilityServer(t.Context(), cfg,
-		auth.Config{Enabled: true, TokenSecret: secret}, kube, store)
+		auth.Config{Enabled: true, TokenSecret: secret}, kube, store, observabilitygateway.DefaultBudgetConfig())
 	require.NoError(t, err)
 	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
 
@@ -79,7 +80,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	var releaseOnce sync.Once
 	releaseWriters := func() { releaseOnce.Do(func() { close(release) }) }
 	defer releaseWriters()
-	handler := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/observe/mcp" && holdProtocolWrites.Load() {
 			w = &nativeGatewayContractBlockedWriter{ResponseWriter: w, entered: entered, release: release}
 		}
@@ -214,7 +215,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 		// state; both the registered client and refresh grant must come from
 		// their separate persistent stores.
 		replacement, replacementAuth, replacementUsage, replacementBackend, buildErr := buildObservabilityServer(t.Context(), cfg,
-			auth.Config{Enabled: true, TokenSecret: secret}, kube, store)
+			auth.Config{Enabled: true, TokenSecret: secret}, kube, store, observabilitygateway.DefaultBudgetConfig())
 		require.NoError(t, buildErr)
 		replacementHTTP := httptest.NewServer(buildObservabilityMux(replacement, replacementAuth, cfg.MCPPublicURL, replacementUsage, replacementBackend))
 		t.Cleanup(replacementHTTP.Close)

@@ -89,11 +89,16 @@ func insightsRequestPermission(r *http.Request) (auth.Action, auth.Resource) {
 	if r.URL.Path == InsightsPrefix+"/provider-configs" || strings.HasPrefix(r.URL.Path, InsightsPrefix+"/provider-configs/") {
 		return auth.ActionAdmin, auth.ResourceInsights
 	}
-	readPost := r.Method == http.MethodPost && (r.URL.Path == InsightsPrefix+"/query" || r.URL.Path == InsightsPrefix+"/query-dashboard" || (strings.HasPrefix(r.URL.Path, InsightsPrefix+"/providers/") && strings.HasSuffix(r.URL.Path, "/test")))
-	if r.Method == http.MethodGet || r.Method == http.MethodHead || readPost {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || (r.Method == http.MethodPost && insightsReadPost(r.URL.Path)) {
 		return auth.ActionRead, auth.ResourceInsights
 	}
 	return auth.ActionWrite, auth.ResourceInsights
+}
+
+// insightsReadPost lists the POST routes that read or probe without writing.
+// The dry run validates a document and stores nothing, so it takes the read permission.
+func insightsReadPost(path string) bool {
+	return path == InsightsPrefix+"/query" || path == InsightsPrefix+"/query-dashboard" || path == InsightsPrefix+"/dashboards/validate" || (strings.HasPrefix(path, InsightsPrefix+"/providers/") && strings.HasSuffix(path, "/test"))
 }
 
 func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, error) {

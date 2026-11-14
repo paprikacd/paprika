@@ -61,13 +61,16 @@ describe("moving a widget within its column flow", () => {
     expect(boxes(settled(moveLayout([item("a", 6, 0, 6, 4)], "a", "left")))).toEqual({ a: [5, 0, 6, 4] });
   });
 
-  it("explains every Layout-tab move on the narrow canvas and only the real blockers on the wide one", () => {
+  it("offers the Layout-tab moves at every canvas width, because they edit the saved grid", () => {
     const widgets = stacked.map(({ i, x, y, w, h }) => ({ id: i, layout: { x, y, w, h } }));
-    const reason = "Layout moves need the wide canvas, where the saved grid is shown";
-    expect(layoutMoveBlockers(widgets, "a", "compact")).toEqual({ left: reason, right: reason, up: reason, down: reason });
-    expect(layoutMoveBlockers(widgets, "a", "wide")).toEqual({
+    expect(layoutMoveBlockers(widgets, "a")).toEqual({
       left: "Already at the left edge of the canvas",
       up: "Nothing above this widget in its columns",
+    });
+    expect(layoutMoveBlockers(widgets, "c")).toEqual({
+      right: "Already at the right edge of the canvas",
+      up: "Nothing above this widget in its columns",
+      down: "Nothing below this widget in its columns",
     });
   });
 });

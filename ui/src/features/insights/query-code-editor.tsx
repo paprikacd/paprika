@@ -19,14 +19,15 @@ import styles from "./query-code-editor.module.css"
 
 const externalUpdate = Annotation.define<boolean>()
 const noParameters: readonly QueryEditorParameter[] = []
+// Syntax tokens are the editor's own (gamma-theme.module.css), not series or status colours.
 const syntaxColors = HighlightStyle.define([
-  { tag: tags.keyword, color: "var(--gamma-accent)" },
-  { tag: [tags.function(tags.variableName), tags.operatorKeyword], color: "var(--gamma-chart-2, #587caf)" },
-  { tag: [tags.string, tags.regexp], color: "var(--gamma-success, #448362)" },
-  { tag: [tags.number, tags.bool], color: "var(--gamma-chart-4, #a87540)" },
-  { tag: [tags.propertyName, tags.attributeName], color: "var(--gamma-chart-2, #587caf)" },
+  { tag: tags.keyword, color: "var(--gamma-syntax-keyword, #a24628)" },
+  { tag: [tags.function(tags.variableName), tags.operatorKeyword], color: "var(--gamma-syntax-function, #245a94)" },
+  { tag: [tags.string, tags.regexp], color: "var(--gamma-syntax-string, #2a6a43)" },
+  { tag: [tags.number, tags.bool], color: "var(--gamma-syntax-number, #7a5210)" },
+  { tag: [tags.propertyName, tags.attributeName], color: "var(--gamma-syntax-function, #245a94)" },
   { tag: tags.comment, color: "var(--gamma-muted)", fontStyle: "italic" },
-  { tag: tags.special(tags.variableName), color: "var(--gamma-accent)" },
+  { tag: tags.special(tags.variableName), color: "var(--gamma-syntax-keyword, #a24628)" },
 ])
 
 function inheritedDisabled(element: HTMLElement): boolean {

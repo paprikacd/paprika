@@ -1,7 +1,9 @@
 "use client";
 
+import { axisScale, formatRange, ticksWithin } from "../units";
 import type { Widget } from "../schema";
-import { resolveSeriesColor } from "../series-colors";
+import { widgetSeriesColors } from "../series-colors";
+import { SERIES_PALETTE } from "../series-palette";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
@@ -39,7 +41,6 @@ import tooltipStyles from "../chart-styles.module.css";
 import { useChartEntrance } from "../chart-entrance";
 import chartEntrance from "../chart-entrance.module.css";
 
-const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 // The 24-step heat ramp, lowest density first. Fallbacks are the light-theme values.
 import { densityPalette } from "../density-palette";
 /** Histogram rows with at most this many buckets are shown while hovering; pinned rows always show them. */
@@ -235,7 +236,7 @@ function coordinates(event: PointerEvent<SVGSVGElement>, width: number, height: 
 function cellLabel(lower: number, upper: number, unit: string) {
   if (!Number.isFinite(lower)) return `≤ ${formatMetric(upper, unit)}`;
   if (!Number.isFinite(upper)) return `> ${formatMetric(lower, unit)}`;
-  return `${formatMetric(lower, "")}–${formatMetric(upper, unit)}`;
+  return formatRange(lower, upper, unit);
 }
 
 /** A nonzero color domain should not be labeled as zero solely because the
@@ -329,7 +330,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
       : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
       : "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit.";
-    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: palette[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
+    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: SERIES_PALETTE[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
   };
   // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
   // An overflow window has no finite estimate, so `quantile` is the whole line and `finite` is its solid part.
@@ -448,6 +449,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const config = useMemo(() => directional ? directionalConfigSchema.parse(widget.config ?? {}) : stackedConfigSchema.parse(widget.config ?? {}), [directional, widget.config]);
   const signature = JSON.stringify([widget.id, config, widget.unit, widget.options, directional]);
   const fullSeries = useMemo(() => (result.series ?? []).slice(0, config.maxSeries ?? 8), [result.series, config.maxSeries]);
+  const seriesColors = useMemo(() => widgetSeriesColors(result.series ?? [], widget, config.seriesColors), [result.series, widget, config.seriesColors]);
   const [selection, setSelection] = useState<{ source: QueryResult; window: ObservationWindow; previous?: QueryResult }>();
   const zoom = selection?.source === result ? selection.window : undefined;
   const selectedSeries = useMemo(() => zoom ? seriesInWindow(fullSeries, zoom) : fullSeries, [fullSeries, zoom]);
@@ -479,12 +481,10 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const overlayDomain = previousPlot && (bars ? previousPlot.completeDomain : previousPlot.domain);
   const domain: [number, number] = overlayDomain ? [Math.min(data.domain[0], overlayDomain[0]), Math.max(data.domain[1], overlayDomain[1])] : data.domain;
   const minTime = zoom?.start ?? displayTimes[0] ?? 0, span = zoom ? zoom.end - zoom.start : (displayTimes.at(-1) ?? minTime) - minTime;
-  const ticks = Array.from({ length: height < 150 ? 3 : 5 }, (_, index) => {
-    const fraction = index / (height < 150 ? 2 : 4);
-    // Weighted endpoints remain finite when max - min overflows.
-    return domain[0] * (1 - fraction) + domain[1] * fraction;
-  });
-  const tickLabels = ticks.map(value => formatMetric(value, widget.unit, true, widget.options?.decimals));
+  // Nice ticks for the requested count, so gridlines fall on readable values (never 37.5 between 0 and 150).
+  const ticks = ticksWithin(domain, height < 150 ? 3 : 5);
+  const tickAxis = axisScale(domain, widget.unit, { compact: true, decimals: widget.options?.decimals, ticks });
+  const tickLabels = ticks.map(value => tickAxis.label(value));
   const gutter = useAxisGutter(tickLabels, ref, width);
   const left = showAxis ? gutter : 4, right = 12, top = showAxis ? 14 : 4, bottom = showAxis ? 29 : 4;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);
@@ -500,12 +500,9 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     const fraction = Number.isFinite(span) ? (value - domain[0]) / span : (value / 2 - domain[0] / 2) / (domain[1] / 2 - domain[0] / 2);
     return scaleTop + (1 - fraction) * scaleHeight;
   };
-  // Resolve by exact provider label, so changing series order or a shared
-  // dashboard filter cannot silently assign a different semantic color.
-  const color = (index: number) => {
-    const labels = data.tracks[index]?.series.labels ?? {};
-    return resolveSeriesColor(labels, config.seriesColors, index === 0 && widget.color ? widget.color : palette[index % palette.length]);
-  };
+  // A track's colour is its series' colour in the whole result (tracks follow result order), so the colour holds across
+  // order changes, filters and widgets. Authored rules and well-known labels are applied first; see series-colors.ts.
+  const color = (index: number) => seriesColors[index]?.color ?? SERIES_PALETTE[0];
   // Bar geometry is shared by complete bars, partial stacks, caps and hover, so they stay aligned.
   const barAt = (column: number) => {
     const time = data.timestamps;

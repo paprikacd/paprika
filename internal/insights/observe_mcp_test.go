@@ -61,6 +61,10 @@ func observeMCPTestGateway(t *testing.T, handler http.Handler) *httptest.Server 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, toolRequest)
 			if recorder.Code != http.StatusOK {
+				// The gateway's Retry-After reaches the client transport, as in production.
+				if retryAfter := recorder.Header().Get("Retry-After"); retryAfter != "" {
+					w.Header().Set("Retry-After", retryAfter)
+				}
 				w.WriteHeader(recorder.Code)
 				_, _ = w.Write(recorder.Body.Bytes())
 				return

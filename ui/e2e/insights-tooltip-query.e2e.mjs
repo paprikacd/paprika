@@ -173,7 +173,7 @@ async function renderedVisualization(type, visualization) {
   else if (type === "traces") {
     assert.equal(await visualization.locator("tbody tr").count(), 1)
     await visualization.getByText("GET /queried-tooltip", { exact: true }).waitFor()
-    await visualization.getByText("72.25 ms", { exact: true }).waitFor()
+    await visualization.getByText("72.3 ms", { exact: true }).waitFor()
     const status = visualization.locator("tbody").getByText(/^unknown$/i)
     await status.waitFor()
     const statusLayout = await status.evaluate(element => {
@@ -315,7 +315,7 @@ async function historicalTraceHost(width) {
   await until(() => childQueries().at(-1)?.params.q === exactQuery, "Tempo did not receive the historical point's exact typed context")
   const result = tooltip().locator('[data-tooltip-widget="traces"]')
   await result.getByText("GET /queried-tooltip", { exact: true }).waitFor()
-  await result.getByText("72.25 ms", { exact: true }).waitFor()
+  await result.getByText("72.3 ms", { exact: true }).waitFor()
   await result.getByText("GET /queried-tooltip", { exact: true }).scrollIntoViewIfNeeded()
   await contained(tooltip()); await screenshot(`host-historical-traces-${width}.png`)
   return { provider: "tempo", historicalValue: -7.25, fractionalUnixSeconds: true, exactProviderQuery: exactQuery, traceOperation: "GET /queried-tooltip" }

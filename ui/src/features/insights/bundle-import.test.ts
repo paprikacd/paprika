@@ -3,6 +3,8 @@ import { createBundleImporter, type BundleImportEnvironment, type BundleImportRe
 import { buildDashboardBundle, savedQueryFingerprint } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
 import type { Dashboard, Provider, SavedQuery } from "./schema"
+import { InsightsHTTPError } from "./client"
+import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
 
 const providers: Provider[] = [
   { id: "prom", name: "Metrics", type: "prometheus", capabilities: ["metrics"] },
@@ -151,6 +153,19 @@ describe("portable bundle persistence", () => {
     vi.mocked(f.client.saveSavedQuery).mockRejectedValueOnce(new Error("Query denied"))
     expect(await f.run(request([dashboard, otherDashboard], [query, otherQuery]), f.environment)).toMatchObject({ complete: false, added: 1, failed: [dashboard] })
     expect([...f.dashboards.values()][0].widgets[0].queryRef?.id).toBe(otherQuery.id)
+  })
+
+  it("keeps a rejected save's findings beside its error text, for a caller that shows them", async () => {
+    const f = fixture()
+    const checks = new CheckReport({
+      issues: [new CheckFinding({ ruleId: "schema.widget.layout", severity: Severity.ERROR, source: Source.SCHEMA, widgetId: "requests", pointer: "/widgets/0/layout/w", message: "outside", fix: "" })],
+      total: 1,
+      errorCount: 1,
+    })
+    vi.mocked(f.client.save).mockRejectedValueOnce(new InsightsHTTPError("outside", 400, null, checks))
+    const result = await f.run(request(), f.environment)
+    expect(result.errors).toEqual(["Overview: outside"])
+    expect(result.errorDetails).toEqual([{ dashboardId: "overview", message: "outside", checks }])
   })
 
   it("allows remapping a remaining copied dependency without changing a previously created query", async () => {

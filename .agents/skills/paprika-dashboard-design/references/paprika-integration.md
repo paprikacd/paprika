@@ -12,7 +12,7 @@
 
 ## Refresh the baseline
 
-This map was inspected on 2026-10-30 at Paprika `master` commit `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8` (committed 2026-10-29). It is a source snapshot, not a claim of rendered verification. Re-read the current repository's `AGENTS.md`, root `DESIGN.md`, `docs/design/insights/UX-CONTRACT.md`, relevant runtime contracts and package scripts before implementation. Inspect relevant active work before editing shared owners. Prefer current verified code over stale examples; surface contradictions with maintained product contracts.
+This map was inspected on 2026-10-30 against Paprika `master`. It is a source snapshot, not a claim of rendered verification. Re-read the current repository's `AGENTS.md`, root `DESIGN.md`, `docs/design/insights/UX-CONTRACT.md`, relevant runtime contracts and package scripts before implementation. Inspect relevant active work before editing shared owners. Prefer current verified code over stale examples; surface contradictions with maintained product contracts.
 
 Target `/dashboard/insights` unless the request identifies another surface. Root `DESIGN.md` covers this independently themed Gamma workspace; `.impeccable.md` describes a separate main-app direction. Do not spread an Insights palette change across the main shell. The audience is DevOps/platform engineers performing operational work. Reference screenshots and generated artboards inform hierarchy and craft; they do not establish data, available features or permission to invent observations.
 
@@ -74,7 +74,7 @@ Discover the complete current registry; this table is not an exhaustive permanen
 - Embedded widgets are bounded and readonly, without nested tooltip, inspector or drilldown actions. Preserve scoped theme inheritance for portalled content.
 - Keep source identity and configuration in authoring/inspection or actionable failure UI. Ordinary widget chrome prioritizes title, data and meaningful actions.
 
-Compose with the existing `paprika-observe` skill for live discovery, provider-specific querying and authorized document operations. It lives at `plugins/paprika/skills/paprika-observe/SKILL.md` and in the standalone Observe plugin. Discover real provider capabilities, metric metadata, labels and returned samples before designing queries. Observe read access and Insights write access are distinct. Do not infer dashboard visualization support from gateway query support.
+Compose with the existing `paprika-observe` skill for live discovery, provider-specific querying and authorized document operations. It lives at `plugins/paprika-observe/skills/paprika-observe/SKILL.md`, in the standalone Observe plugin. Discover real provider capabilities, metric metadata, labels and returned samples before designing queries. Observe read access (`paprika:observe`) and Insights authoring (`paprika:insights:write`) are distinct scopes. Do not infer dashboard visualization support from gateway query support.
 
 ## Check implementation hazards
 
@@ -119,11 +119,11 @@ Keep numerical fixtures, interaction checks and visual evidence distinct. Existi
 
 ## Primary sources
 
-All links below are pinned to the inspected commit; revisit the current equivalents before use.
+The links below point at `master`, so re-check them before relying on a line number. The Observe skill link is relative to the current tree.
 
-- [Design scope and visual contract](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/DESIGN.md) and [observable UX contract](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/docs/design/insights/UX-CONTRACT.md).
-- [Runtime schema](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/schema.ts) and [trusted widget registry](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/widget-registry.tsx).
-- [Chart transforms](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/chart-data.ts), [built-in renderers](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/chart-renderers.tsx) and [rich metric fixtures](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/plugins/rich-metrics-data.test.ts).
-- [Theme adapter](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/gamma/gamma-theme.module.css) and [query scheduler](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/src/features/insights/query.ts).
-- [Observe skill](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/plugins/paprika/skills/paprika-observe/SKILL.md).
-- [Maintained verification configuration](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/docs/design/insights/premium-ui.json), [E2E runner](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/ui/e2e/run-insights.mjs) and [reference dashboard acceptance](https://github.com/paprikacd/paprika/blob/bb52aed8ded8beb08534f6b190a3e7f37c1b19d8/docs/design/insights/reference-dashboard-acceptance.md).
+- [Design scope and visual contract](https://github.com/paprikacd/paprika/blob/master/DESIGN.md) and [observable UX contract](https://github.com/paprikacd/paprika/blob/master/docs/design/insights/UX-CONTRACT.md).
+- [Runtime schema](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/schema.ts) and [trusted widget registry](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/widget-registry.tsx).
+- [Chart transforms](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/chart-data.ts), [built-in renderers](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/chart-renderers.tsx) and [rich metric fixtures](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/plugins/rich-metrics-data.test.ts).
+- [Theme adapter](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/gamma/gamma-theme.module.css) and [query scheduler](https://github.com/paprikacd/paprika/blob/master/ui/src/features/insights/query.ts).
+- [Observe skill](../../../../plugins/paprika-observe/skills/paprika-observe/SKILL.md).
+- [Maintained verification configuration](https://github.com/paprikacd/paprika/blob/master/docs/design/insights/premium-ui.json), [E2E runner](https://github.com/paprikacd/paprika/blob/master/ui/e2e/run-insights.mjs) and [reference dashboard acceptance](https://github.com/paprikacd/paprika/blob/master/docs/design/insights/reference-dashboard-acceptance.md).

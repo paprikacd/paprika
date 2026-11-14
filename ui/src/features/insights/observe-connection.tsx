@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { CheckCircle2, Network, RefreshCw } from "lucide-react"
-import type { InsightsClient, ObserveConnection } from "./client"
-import type { Provider } from "./schema"
+import { loadProviderCatalog, type InsightsClient, type ObserveConnection, type ProviderCatalog } from "./client"
 import { GammaButton } from "./gamma/button"
 import { GammaDisclosure } from "./gamma/disclosure"
 import styles from "./observe-connection.module.css"
 
 const failure = (error: unknown) => error instanceof Error ? error.message : "Paprika Observe is unavailable. Try refreshing the connection."
 
-export function ObserveConnectionCard({ client, onProvidersChange }: {
+export function ObserveConnectionCard({ client, onProvidersChange, loadCatalog = (signal) => loadProviderCatalog(client, signal) }: {
   client: InsightsClient
-  onProvidersChange: (providers: Provider[]) => void
+  onProvidersChange: (catalog: ProviderCatalog) => void
+  loadCatalog?: (signal?: AbortSignal) => Promise<ProviderCatalog>
 }) {
   const [state, setState] = useState<{ connection?: ObserveConnection; error?: string; providerError?: string; loading: boolean }>({ loading: true })
   const request = useRef<AbortController | null>(null)
@@ -34,7 +34,7 @@ export function ObserveConnectionCard({ client, onProvidersChange }: {
     request.current = controller
     setState(previous => ({ ...previous, error: undefined, providerError: undefined, loading: true }))
     const [connection, providers] = await Promise.allSettled([
-      client.observeConnection(controller.signal), client.providers(controller.signal),
+      client.observeConnection(controller.signal), loadCatalog(controller.signal),
     ])
     if (controller.signal.aborted) return
     setState({

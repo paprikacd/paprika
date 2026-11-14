@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { useDraftHistory } from "./history";
 import { ChartAppearancePresets } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
@@ -23,6 +23,7 @@ import {
   supportsAnnotationSource,
   type Dashboard,
   type Provider,
+  type Threshold,
   type Widget,
   type QueryResult,
   type WidgetOptions,
@@ -48,7 +49,28 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
+import { thresholdHex, type StatusMark, type StatusTheme } from "./status";
+import { StatusMarkFields } from "./status-mark-fields";
+import { useInsightsTheme } from "./insights-theme";
+import { seriesHex, type SeriesTheme } from "./series-palette";
+import { widgetColorSeriesIndex, widgetSeriesColors, type SeriesColorRule } from "./series-colors";
+import { useCanvasDensity } from "./canvas-density";
+
+const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
+
+/** New bands start with the healthy band, then escalate: ok, warning, then critical for every later band. */
+const NEW_BAND_STATUSES = ["ok", "warning", "critical"] as const;
+
+/** Replaces a band's status and hue, keeping its value and label and omitting absent keys. */
+function withStatusMark(threshold: Threshold, mark: StatusMark): Threshold {
+  const next: Threshold = { value: threshold.value };
+  if (mark.status !== undefined) next.status = mark.status;
+  if (mark.color !== undefined) next.color = mark.color;
+  if (threshold.label !== undefined) next.label = threshold.label;
+  return next;
+}
 import { TooltipEditor } from "./tooltip-editor";
+import { useSourceStatus } from "./source-status";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
 import { useSavedQueryLibrary } from "./saved-query-context";
 import { AnnotationSourceEditor } from "./annotation-source-editor";
@@ -60,7 +82,6 @@ import {
 import { validateLinkedTooltip } from "./saved-query-editor";
 import { gridPlacement, layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit";
 import type { Layout } from "react-grid-layout";
-import type { CanvasMode } from "./responsive-layout";
 
 export const widgetLabels = {
   timeseries: "Time series",
@@ -184,18 +205,80 @@ function TooltipPresentationEditor({ options, onChange }: {
   </fieldset>;
 }
 
+/** Plugins that colour their series by identity, and therefore take the series colour mode. */
+const SERIES_COLOR_PLUGINS = new Set(["small-multiples", "stacked-timeseries", "directional-traffic", "records-line", "records-bar"]);
+/** Plugins whose own fallback is the second palette slot (--gamma-chart-2). */
+const CHART2_PLUGINS = new Set(["threshold-gauge", "status-grid"]);
+
+/**
+ * What the widget draws without its own colour: "series" when its series take identity colours, "chart2" when it draws
+ * the second slot, and "none" when no palette slot applies (record tables, connection maps and other plugins that
+ * colour cells or nodes by their own rules).
+ */
+function paletteDrawing(widget: Widget): "series" | "chart2" | "none" {
+  if (widget.type === "stat" || widget.type === "timeseries" || widget.type === "bar") return "series";
+  if (widget.type !== "plugin") return "none";
+  if (SERIES_COLOR_PLUGINS.has(widget.pluginId ?? "")) return "series";
+  return CHART2_PLUGINS.has(widget.pluginId ?? "") ? "chart2" : "none";
+}
+
+/** Rich metrics reads its colour rules from its plugin configuration, and the other series widgets from their options. */
+function pluginSeriesRules(widget: Widget): SeriesColorRule[] | undefined {
+  const config = widget.config as { seriesColors?: unknown } | undefined;
+  return widget.type === "plugin" && Array.isArray(config?.seriesColors) ? (config.seriesColors as SeriesColorRule[]) : undefined;
+}
+
+/** The compact-dark appearance is dark, dense, and at least 1024px wide, as the Insights theme stylesheet decides. */
+function seriesTheme(resolvedTheme: string, dense: boolean): SeriesTheme {
+  if (resolvedTheme !== "dark") return "light";
+  const wide = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1024px)").matches;
+  return dense && wide ? "compact" : "dark";
+}
+
+/**
+ * The colour the widget draws without an authored colour, in one appearance, or undefined when no palette slot applies.
+ * Series charts show the series the widget colour would replace; stat sparklines and series plugins use the same rule.
+ */
+function paletteSwatch(widget: Widget, result: QueryResult | undefined, theme: SeriesTheme): string | undefined {
+  const drawing = paletteDrawing(widget);
+  if (drawing === "none") return undefined;
+  if (drawing === "chart2") return seriesHex(1, theme);
+  const series = result?.series ?? [];
+  const index = widgetColorSeriesIndex(series, widget.options?.seriesColorMode);
+  const choice = index >= 0 ? widgetSeriesColors(series, { options: widget.options }, pluginSeriesRules(widget))[index] : undefined;
+  if (choice?.slot !== undefined) return seriesHex(choice.slot, theme);
+  return choice?.color ?? seriesHex(0, theme);
+}
+
 function StyleEditor({
   widget,
   onChange,
   onConfigureTooltips,
+  result,
 }: {
   widget: Widget;
   onChange: (widget: Widget) => void;
   onConfigureTooltips: () => void;
+  result?: QueryResult;
 }) {
+  // The swatch shows the appearance the author is viewing.
+  const { resolvedTheme } = useInsightsTheme();
+  const { dense } = useCanvasDensity();
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
+  // Turning on the value bar does not invent bounds. Focus the minimum field
+  // once it renders; the existing draft alert explains what is missing.
+  const barHintId = useId();
+  const barMinimumRef = useRef<HTMLInputElement>(null);
+  const barMaximumRef = useRef<HTMLInputElement>(null);
+  const focusBarBound = useRef<"min" | "max" | null>(null);
+  useEffect(() => {
+    const target = focusBarBound.current;
+    if (!target) return;
+    focusBarBound.current = null;
+    (target === "min" ? barMinimumRef : barMaximumRef).current?.focus();
+  });
   const numeric = (
     label: string,
     field: "min" | "max" | "decimals" | "lineWidth" | "fillOpacity" | "staleAfterSeconds" | "plotInsetLeft" | "plotInsetRight" | "tooltipOffset" | "tooltipMaxWidth" | "tooltipMaxHeight",
@@ -223,6 +306,39 @@ function StyleEditor({
       />
     </label>
   );
+  // A value bar has no default scale. A missing bound stays empty, says what is
+  // missing next to the input, and is wired to it for assistive technology.
+  const barBound = (label: string, field: "min" | "max", inputRef: Ref<HTMLInputElement>) => {
+    const missing = options[field] === undefined;
+    const hintId = `${barHintId}-${field}`;
+    return (
+      <div className={styles.boundField}>
+        <label className={styles.field}>
+          {label}
+          <GammaInput
+            ref={inputRef}
+            type="number"
+            value={options[field] ?? ""}
+            placeholder="Required"
+            step="any"
+            required={missing}
+            aria-invalid={missing || undefined}
+            aria-describedby={missing ? hintId : undefined}
+            onChange={(event) =>
+              update({
+                [field]: event.target.value === "" ? undefined : Number(event.target.value),
+              })
+            }
+          />
+        </label>
+        {missing && (
+          <small id={hintId} className={styles.boundHint}>
+            {field === "min" ? "Enter the minimum for the bar." : "Enter the maximum for the bar."}
+          </small>
+        )}
+      </div>
+    );
+  };
   const chart = widget.type === "timeseries" || widget.type === "bar";
   const gauge =
     widget.type === "plugin" && widget.pluginId === "threshold-gauge";
@@ -241,14 +357,21 @@ function StyleEditor({
     (options.thresholds?.length
       ? options.thresholds
       : DEFAULT_HEATMAP_THRESHOLDS
-    ).some(
-      (threshold) => contrastRatio(options.textColor!, threshold.color) < 4.5,
+    ).some((threshold) =>
+      // A status resolves to a different mark in each appearance, so every block is checked, not only the active one.
+      THEME_BLOCKS.some((theme) => {
+        const hex = thresholdHex(threshold, theme);
+        return hex !== undefined && contrastRatio(options.textColor!, hex) < 4.5;
+      }),
     );
-  const defaultColor = gauge
-    ? "#53876a"
-    : widget.type === "stat"
-      ? "#27332e"
-      : "#c46146";
+  // The swatch shows the colour the chart actually draws, in this appearance, unless the author chose a colour.
+  const palette = paletteDrawing(widget);
+  const paletteColor = paletteSwatch(widget, result, seriesTheme(resolvedTheme, dense));
+  const seriesCount = result?.series?.length ?? 0;
+  // A chosen colour draws only on a single-series widget, or on any widget in index mode (where it applies to position 0).
+  const colourApplies = widget.options?.seriesColorMode === "index" || palette !== "series" || seriesCount <= 1;
+  const customColor = widget.color !== undefined && colourApplies;
+  const seriesModeRow = palette === "series" && widget.type !== "stat";
   return (
     <div className={styles.stack}>
       {widget.type === "timeseries" && <ChartAppearancePresets options={options} onChange={update} />}
@@ -301,19 +424,61 @@ function StyleEditor({
             Series color
             <GammaInput
               type="color"
-              value={widget.color ?? defaultColor}
+              value={widget.color ?? paletteColor ?? "#000000"}
               onChange={(event) =>
                 onChange({ ...widget, color: event.target.value })
               }
             />
           </label>
+          {palette !== "none" && (
+            <div role="group" aria-label="Series color source" className={styles.row}>
+              <GammaButton
+                type="button"
+                variant="secondary"
+                aria-pressed={!customColor}
+                onClick={() => onChange({ ...widget, color: undefined })}
+              >
+                Palette
+              </GammaButton>
+              <GammaButton
+                type="button"
+                variant="secondary"
+                aria-pressed={customColor}
+                disabled={!seriesCount && palette === "series"}
+                onClick={() => onChange({ ...widget, color: widget.color ?? paletteColor })}
+              >
+                Custom
+              </GammaButton>
+            </div>
+          )}
+          {palette === "none" && <p className={styles.hint}>No palette colour applies to this widget. Choose a colour to set one.</p>}
+          {palette === "series" && !seriesCount && (
+            <p className={styles.hint}>Palette shows the colour the first series draws. Custom becomes available once data loads.</p>
+          )}
+          {palette === "series" && seriesCount > 1 && widget.options?.seriesColorMode !== "index" && widget.color !== undefined && (
+            <p className={styles.hint}>A chosen colour applies only when this widget draws one series. These series keep their identity colours.</p>
+          )}
+        </div>
+      )}
+      {seriesModeRow && (
+        <div role="group" aria-label="Series color by" className={styles.row}>
           <GammaButton
             type="button"
-            variant="quiet"
-            onClick={() => onChange({ ...widget, color: undefined })}
+            variant="secondary"
+            aria-pressed={options.seriesColorMode !== "index"}
+            onClick={() => update({ seriesColorMode: undefined })}
           >
-            Use palette
+            By name
           </GammaButton>
+          <GammaButton
+            type="button"
+            variant="secondary"
+            aria-pressed={options.seriesColorMode === "index"}
+            onClick={() => update({ seriesColorMode: "index" })}
+          >
+            By position
+          </GammaButton>
+          <p className={styles.hint}>By name keeps a series’ colour across widgets and refreshes. By position follows result order.</p>
         </div>
       )}
       <div className={styles.row}>
@@ -476,13 +641,18 @@ function StyleEditor({
         <>
           <GammaSwitch
             label="Show value bar"
-            description="Shows the current value on an explicit scale. Threshold colors apply to the observed value."
+            description="Shows the current value on an explicit scale. Enter both bounds; threshold colors apply to the observed value."
             checked={options.showStatBar === true}
-            onChange={(showStatBar) => update(showStatBar ? { showStatBar, min: options.min ?? 0, max: options.max ?? 100 } : { showStatBar })}
+            onChange={(showStatBar) => {
+              focusBarBound.current = showStatBar
+                ? options.min === undefined ? "min" : options.max === undefined ? "max" : null
+                : null;
+              update({ showStatBar });
+            }}
           />
           {options.showStatBar && <div className={styles.row}>
-            {numeric("Bar minimum", "min", undefined, undefined, "any")}
-            {numeric("Bar maximum", "max", undefined, undefined, "any")}
+            {barBound("Bar minimum", "min", barMinimumRef)}
+            {barBound("Bar maximum", "max", barMaximumRef)}
           </div>}
           <GammaSwitch
             label="Show sparkline"
@@ -536,9 +706,9 @@ function StyleEditor({
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
           <p className={styles.hint}>
-            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its color still applies."}
+            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its status or colour still applies."}
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
-              " Without custom thresholds, heatmaps are red below 1 and green from 1."}
+              " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
           {(options.thresholds ?? []).map((threshold, index) => (
             <div className={styles.threshold} key={index}>
@@ -554,23 +724,6 @@ function StyleEditor({
                       thresholds: options.thresholds!.map((item, i) =>
                         i === index
                           ? { ...item, value: Number(event.target.value) }
-                          : item,
-                      ),
-                    })
-                  }
-                />
-              </label>
-              <label className={styles.field}>
-                Color
-                <GammaInput
-                  aria-label={`Threshold ${index + 1} color`}
-                  type="color"
-                  value={threshold.color}
-                  onChange={(event) =>
-                    update({
-                      thresholds: options.thresholds!.map((item, i) =>
-                        i === index
-                          ? { ...item, color: event.target.value }
                           : item,
                       ),
                     })
@@ -593,6 +746,18 @@ function StyleEditor({
               >
                 <Trash2 size={14} />
               </GammaButton>
+              <StatusMarkFields
+                name={`Threshold ${index + 1}`}
+                mark={threshold}
+                theme={resolvedTheme}
+                onChange={(mark) =>
+                  update({
+                    thresholds: options.thresholds!.map((item, i) =>
+                      i === index ? withStatusMark(item, mark) : item,
+                    ),
+                  })
+                }
+              />
               <label className={styles.thresholdLabel}>
                 Label
                 <GammaInput
@@ -604,7 +769,7 @@ function StyleEditor({
                     update({
                       thresholds: options.thresholds!.map((item, i) =>
                         i === index
-                          ? { ...item, label: event.target.value }
+                          ? { ...item, label: event.target.value || undefined }
                           : item,
                       ),
                     })
@@ -623,10 +788,9 @@ function StyleEditor({
                   ...(options.thresholds ?? []),
                   {
                     value: options.thresholds?.length
-                      ? options.thresholds[options.thresholds.length - 1]
-                          .value + 1
+                      ? options.thresholds[options.thresholds.length - 1].value + 1
                       : 0,
-                    color: options.thresholds?.length ? "#6e947a" : "#c46146",
+                    status: NEW_BAND_STATUSES[Math.min(options.thresholds?.length ?? 0, NEW_BAND_STATUSES.length - 1)],
                   },
                 ],
               })
@@ -687,7 +851,7 @@ export function WidgetEditor({
   onApply: (widget: Widget, layout?: Layout) => void;
   onPreview?: (widget: Widget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[]; canvasMode?: CanvasMode };
+  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[] };
   onDraftValidityChange?: (valid: boolean) => void;
   onClose: () => void;
   onDuplicate: () => void;
@@ -749,7 +913,7 @@ export function WidgetEditor({
     const placed = stagedLayout?.find(box => box.i === item.id);
     return { ...item, layout: { ...item.layout, ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h } : {}), ...(item.id === widget.id ? dimensions : {}) } };
   });
-  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id, workspace?.canvasMode ?? "wide") : moveBlocked;
+  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id) : moveBlocked;
   function move(dx: number, dy: number) {
     if (!layoutWidgets) { onMove(dx, dy); return; }
     const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right";
@@ -762,6 +926,7 @@ export function WidgetEditor({
   const pendingQueryLoss = !!pendingDefinition && pendingDefinition.dataKind !== widgetKind(draft);
   const pendingEventLoss = !!pendingDefinition && !!draft.annotationSource &&
     !supportsAnnotationSource(pendingDefinition.type, pendingDefinition.id);
+  const sourceStatus = useSourceStatus();
   const compatible = providers.filter((provider) =>
     provider.capabilities.includes(widgetKind(draft)),
   );
@@ -821,7 +986,7 @@ export function WidgetEditor({
     if (!parsed.success) {
       throw new Error(
         parsed.error.issues
-          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+          .map((issue) => issue.path.at(-1) === "showStatBar" ? issue.message : `${issue.path.join(".")}: ${issue.message}`)
           .join("\n"),
       );
     }
@@ -859,7 +1024,11 @@ export function WidgetEditor({
       !draft.queryRef &&
       !compatible.some((provider) => provider.id === draft.providerId)
     ) {
-      throw new Error("Choose a provider compatible with this visualization.");
+      throw new Error(
+        sourceStatus === "pending"
+          ? "Data sources are loading. Apply this visualization again when they finish."
+          : "Choose a provider compatible with this visualization.",
+      );
     }
     const tooltip = parsed.data.options?.tooltipView;
     if (tooltip?.source?.type === "query") {
@@ -1184,7 +1353,7 @@ export function WidgetEditor({
                             ? [
                                 {
                                   value: draft.providerId,
-                                  label: "Choose a compatible provider",
+                                  label: sourceStatus === "pending" ? "Data sources are loading" : "Choose a compatible provider",
                                 },
                               ]
                             : []),
@@ -1222,6 +1391,7 @@ export function WidgetEditor({
             content: (
               <StyleEditor
                 widget={draft}
+                result={result}
                 onChange={setDraft}
                 onConfigureTooltips={() => {
                   setTab("tooltips");

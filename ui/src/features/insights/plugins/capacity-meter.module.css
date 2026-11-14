@@ -3,7 +3,7 @@
 /* Resolve the ch-based reading column at the value's font size and weight.
    Linux font hinting gives semibold digits wider advances than regular text. */
 .body { display: grid; grid-template-columns: minmax(0, min(28%, 160px)) minmax(24px, 1fr) minmax(0, min(34%, var(--gauge-reading-width, 9ch))); align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 550; }
-.body[data-gauge-show-status] { grid-template-columns: minmax(0, min(25%, 130px)) minmax(24px, 1fr) minmax(0, min(26%, var(--gauge-reading-width, 9ch))) minmax(0, min(22%, 76px)); }
+.body[data-gauge-show-status] { grid-template-columns: minmax(0, min(25%, 130px)) minmax(24px, 1fr) minmax(0, min(26%, var(--gauge-reading-width, 9ch))) minmax(min-content, min(30%, 120px)); }
 .status { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; color: var(--gamma-ink); color: color-mix(in srgb, var(--gauge-status-color) 32%, var(--widget-text, var(--gamma-ink))); font-size: 11px; font-weight: 400; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .status i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--gauge-status-color); }
 .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--widget-text, var(--gamma-muted)); font-size: 11px; font-weight: 400; line-height: 1.4; }
@@ -49,7 +49,7 @@
 .bounds { display: flex; justify-content: space-between; gap: 8px; }
 .bounds > span { min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thresholds { display: flex; flex-wrap: wrap; gap: 3px 12px; }
-.thresholds span { display: inline-flex; align-items: center; gap: 5px; }
+.thresholds > span { display: inline-flex; align-items: center; gap: 5px; }
 .thresholds i { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .bankContainer { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .bank { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(116px, calc((100% - (var(--gauge-columns) - 1) * 12px) / var(--gauge-columns)))), 1fr)); align-content: start; gap: 12px; min-width: 0; min-height: 0; overflow: auto; padding: 4px; scrollbar-width: thin; }
@@ -94,7 +94,7 @@
 .legend[data-gauge-legend-layout="rows"] .bounds > span { max-width: none; overflow: visible; white-space: normal; }
 @container insight-widget (max-width: 420px) {
   .bank[data-gauge-bank-orientation="horizontal"] .body { grid-template-columns: minmax(24px, 1fr) minmax(0, min(40%, var(--gauge-reading-width, 9ch))); row-gap: 4px; }
-  .bank[data-gauge-bank-orientation="horizontal"] .body[data-gauge-show-status] { grid-template-columns: minmax(24px, 1fr) minmax(0, min(32%, var(--gauge-reading-width, 9ch))) minmax(0, 72px); }
+  .bank[data-gauge-bank-orientation="horizontal"] .body[data-gauge-show-status] { grid-template-columns: minmax(24px, 1fr) minmax(0, min(32%, var(--gauge-reading-width, 9ch))) minmax(min-content, 120px); }
   .bank[data-gauge-bank-orientation="horizontal"] .label { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
 }
 .bank[data-gauge-bank-orientation="vertical"] { flex: 1; grid-template-columns: repeat(auto-fit, minmax(min(100%, max(24px, calc((100% - (var(--gauge-columns) - 1) * 8px) / var(--gauge-columns)))), 1fr)); gap: 8px; grid-auto-rows: minmax(120px, 1fr); align-content: stretch; }

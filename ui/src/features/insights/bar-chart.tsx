@@ -14,10 +14,10 @@ import { dateTimeFormat, formatMetric, formatMetricDetails, latestPoint, seriesN
 import { useChartEntrance } from "./chart-entrance";
 import chartEntrance from "./chart-entrance.module.css";
 import { ChartDataInspector } from "./chart-data-inspector";
+import { widgetSeriesColors } from "./series-colors";
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
-  PALETTE,
   chartYAxisLayout,
   configuredTheme,
   resolveChartDomain,
@@ -32,6 +32,7 @@ import { PlotHatchSvg, plotHatchFill } from "./plot-hatch";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import type { Widget } from "./schema";
+import { thresholdPaint } from "./status";
 import { compactSeriesLabels } from "./series-display";
 import { useWidgetPresentation } from "./widget-presentation";
 
@@ -77,6 +78,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
     !embedded && options.showTooltip !== false;
   const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
   const displayLabels = useMemo(() => compactSeriesLabels(series.slice(0, MAX_SERIES)), [series]);
+  // Colours come from the whole result, so the bar of one service keeps its colour in every widget.
+  const seriesColors = useMemo(() => widgetSeriesColors(series, widget), [series, widget]);
   const rows = useMemo(
     () =>
       series.slice(0, MAX_SERIES).map((entry, index): BarRow => {
@@ -95,13 +98,11 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
           value: point.value,
           timestamp: point.timestamp,
           color:
-            thresholdForValue(point.value, options.thresholds)?.color ??
-            (index === 0 && widget.color
-              ? widget.color
-              : PALETTE[index % PALETTE.length]),
+            thresholdPaint(thresholdForValue(point.value, options.thresholds)) ??
+            seriesColors[index].color,
         };
       }),
-    [series, widget.color, options.thresholds, displayLabels],
+    [series, seriesColors, options.thresholds, displayLabels],
   );
   const noDataRows = useMemo(() => rows.filter((row) => row.noData), [rows]);
   const values = useMemo(() => rows.flatMap((row) => (row.noData ? [] : [row.value])), [rows]);
@@ -117,16 +118,17 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       ),
     [rows, options],
   );
-  // With no-data rows the y domain is fixed here rather than left to TanStack, so the placeholder can span its exact ends.
-  const yDomain = useMemo(
-    () =>
-      domain ??
-      (noDataRows.length
-        ? barDomain(values, barNiceCount(showAxis, ticks.y, height))
-        : undefined),
-    [domain, noDataRows.length, values, showAxis, ticks.y, height],
+  // The chart draws exactly the domain and ticks its labels were computed for, so each gridline shows its own value.
+  const baseDomain = useMemo<[number, number]>(
+    () => domain ?? barDomain(values, barNiceCount(showAxis, ticks.y, height)),
+    [domain, values, showAxis, ticks.y, height],
   );
-  const { left: axisLeft, separateUnit } = chartYAxisLayout(values.concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
+  const yAxis = useMemo(
+    () => chartYAxisLayout(values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, baseDomain, ticks.y),
+    [values, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, baseDomain, ticks.y],
+  );
+  const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
+  const yDomain = yScale.domain;
   const definition = useMemo(
     () =>
       defineChart({
@@ -194,8 +196,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                 },
           },
           y: {
-            scale: yDomain ? scaleLinear().domain(yDomain) : scaleLinear,
-            nice: !yDomain,
+            scale: scaleLinear().domain(yDomain),
+            nice: false,
             grid:
               options.showGrid === false
                 ? false
@@ -210,10 +212,10 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
                     : undefined,
                   line: false,
                   ticks: {
-                    count: ticks.y,
+                    values: yScale.ticks,
                     line: false,
                     format: (value: number) =>
-                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
+                      yScale.label(value, !separateUnit),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -259,8 +261,8 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       widget.unit,
       axisLeft,
       separateUnit,
+      yScale,
       options,
-      ticks.y,
       width,
       height,
       showAxis,
@@ -292,7 +294,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
     [descriptionId, emptyNoticeId, noDataRows.length],
   );
   return (
-    <div className={styles.chart}>
+    <div className={styles.chart} data-series-count={rows.length}>
       <div
         className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}
@@ -307,7 +309,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
         <Chart
           definition={definition}
           height={height}

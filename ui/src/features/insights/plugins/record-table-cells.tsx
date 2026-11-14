@@ -1,18 +1,29 @@
 import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
-import { exactMetric, formatMetric } from "../chart-data"
+import { exactMetric } from "../chart-data"
+import { formatRecordValue } from "../units"
 import { thresholdForValue } from "../chart-renderers"
+import { statusHex, statusLevels, statusToken, thresholdInk, thresholdPaint } from "../status"
+import { StatusChip } from "../status-chip"
 import { contrastRatio, readableTextColor } from "../appearance"
+import { seriesHex } from "../series-palette"
 import type { RecordFrame, Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
 import styles from "./records.module.css"
+
+/** A mapping names a status, a hex hue override, or both. Hex-only mappings render as before; a status renders as a glyph chip. */
+const mappingSchema = z.strictObject({
+  value: z.string().min(1).max(128),
+  status: z.enum(statusLevels).optional(),
+  color: z.string().regex(/^#[\da-f]{6}$/i).optional(),
+}).refine(mapping => mapping.status !== undefined || mapping.color !== undefined, "Name a status or a hex colour")
 
 const cellStyle = z.strictObject({
   column: z.string().min(1).max(128),
   display: z.enum(["bar", "bar-segments", "color-text", "color-background", "sparkline", "status-badge"]),
   barColorMode: z.enum(["gradient", "value"]).optional(),
   thresholdColumn: z.string().min(1).max(128).optional(),
-  mappings: z.array(z.strictObject({ value: z.string().min(1).max(128), color: z.string().regex(/^#[\da-f]{6}$/i) })).max(16).optional(),
+  mappings: z.array(mappingSchema).max(16).optional(),
   min: z.number().finite().optional(),
   max: z.number().finite().optional(),
   unit: z.string().max(24).optional(),
@@ -47,10 +58,10 @@ export const tableCellStylesSchema = z.array(cellStyle).max(16).superRefine((ent
 })
 export type TableCellStyle = z.infer<typeof cellStyle>
 
-// Match the scoped Gamma panel/chart tokens (guarded by the palette test).
+// Match the scoped Gamma panel and series tokens (guarded by the palette test). Series slot 3 is the default record colour.
 const tableThemes = {
-  light: { background: "#ffffff", color: "#bb5037" },
-  dark: { background: "#182127", color: "#ed8d70" },
+  light: { background: "#ffffff", color: seriesHex(2, "light") },
+  dark: { background: "#182127", color: seriesHex(2, "dark") },
 }
 
 /** Retain an authored hue, changing only its rendered text tone when needed. */
@@ -72,7 +83,16 @@ export function tableTextColor(color: string, background: string) {
 /** One small palette per table/theme, rather than observing each rendered cell. */
 export function tableTextPalette(theme: "light" | "dark", background?: string, thresholds?: readonly Threshold[], color?: string) {
   const surface = background ?? tableThemes[theme].background
-  const colors = new Map((thresholds ?? []).map(threshold => [threshold.color, tableTextColor(threshold.color, surface)]))
+  const colors = new Map<string, string>()
+  for (const threshold of thresholds ?? []) {
+    const paint = thresholdPaint(threshold)
+    if (paint === undefined) continue
+    // A hex override keeps its contrast-adjusted hue. A status uses its text token on the theme surface. On a widget
+    // background the concrete token hex is adjusted instead, as hex text is, so the result meets 4.5:1 there.
+    if (threshold.color !== undefined) colors.set(paint, tableTextColor(threshold.color, surface))
+    else if (background === undefined) colors.set(paint, statusToken(threshold.status!, "-text"))
+    else colors.set(paint, tableTextColor(statusHex(theme, threshold.status!, "-text"), surface))
+  }
   colors.set(color ?? "var(--gamma-chart-3)", tableTextColor(color ?? tableThemes[theme].color, surface))
   return colors
 }
@@ -95,15 +115,27 @@ export function tableBarGeometry(value: number, min: number, max: number) {
   return { baseline, start: Math.min(baseline, end), end: Math.max(baseline, end), outside: value < min || value > max }
 }
 
+/**
+ * A threshold band is a solid fill, as a hex band always was, and carries its on-fill ink. Other colours keep the
+ * 18 % tint. Exported so the decision is testable where the DOM cannot show a var() background.
+ */
+export function colorBackgroundFill(fill: string, banded: boolean) {
+  return banded || /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
+}
+
+function paintOf(threshold: Threshold) {
+  return thresholdPaint(threshold) ?? "var(--gamma-muted)"
+}
+
 function barGradient(min: number, max: number, thresholds: readonly Threshold[] | undefined, color: string) {
   if (!thresholds?.length) return color
-  let previous = thresholdForValue(min, thresholds)!.color
+  let previous = paintOf(thresholdForValue(min, thresholds)!)
   const stops = [`${previous} 0%`]
   for (const threshold of thresholds) {
     if (threshold.value > min && threshold.value < max) {
       const stop = positionOnScale(threshold.value, min, max) * 100
-      stops.push(`${previous} ${stop}%`, `${threshold.color} ${stop}%`)
-      previous = threshold.color
+      stops.push(`${previous} ${stop}%`, `${paintOf(threshold)} ${stop}%`)
+      previous = paintOf(threshold)
     }
   }
   stops.push(`${previous} 100%`)
@@ -155,7 +187,7 @@ function RecordHistoryCell({ value, column, color, decimals, unit: authoredUnit,
   const latest = history.points[history.points.length - 1]
   return <span className={styles.cellHistory} data-cell-display="sparkline" data-history-state="valid" title={nativeTitle ? colorMeaning : undefined}>
     <span className={styles.cellHistoryPlot}><StatSparkline series={{ name, labels: {}, points: history.points }} name={name} unit={unit} color={color ?? "var(--gamma-chart-1)"} latestLabel="Latest valid sample in history" /></span>
-    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : formatMetric(latest.value, unit, false, decimals)}</span>
+    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : formatRecordValue(latest.value, unit, decimals)}</span>
     {colorMeaning && <span className={styles.cellHistoryMeaning} data-history-color-meaning>{colorMeaning}</span>}
   </span>
 }
@@ -175,6 +207,11 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   if (style.display === "status-badge") {
     const missing = value === null || value === undefined || value === ""
     const mapping = typeof value === "string" ? style.mappings?.find(entry => entry.value === value) : undefined
+    // The chip is the badge: no second pill around it. Hex-only mappings keep the dot and text below.
+    if (mapping?.status) return <span className={styles.statusChipCell} data-cell-display="status-badge" data-status-state="mapped"
+      title={nativeTitle ? `${column.label ?? column.key}: ${String(value)}` : undefined}>
+      <StatusChip status={mapping.status} color={mapping.color} label={String(value)} />
+    </span>
     return <span className={styles.statusBadge} data-cell-display="status-badge" data-status-state={missing ? "missing" : mapping ? "mapped" : "unmapped"}
       title={nativeTitle ? `${column.label ?? column.key}: ${missing ? "No data" : String(value)}` : undefined}>
       <span className={styles.statusDot} aria-hidden="true" style={mapping ? { backgroundColor: mapping.color } : undefined} />
@@ -189,22 +226,21 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
       : threshold ? `Color by ${style.thresholdColumn}: ${sourceValue}${threshold.label ? ` · ${threshold.label}` : ""}`
         : `Color by ${style.thresholdColumn}: ${sourceValue} · no thresholds configured`
       : undefined
-    return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? threshold?.color ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
+    return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? thresholdPaint(threshold) ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
   }
   const finite = typeof value === "number" && Number.isFinite(value)
   const unit = style.unit ?? (column.unit === "percent" ? "%" : column.unit ?? "")
   const threshold = finite ? thresholdForValue(value, thresholds) : undefined
-  const fill = threshold?.color ?? color ?? "var(--gamma-chart-3)"
+  const fill = thresholdPaint(threshold) ?? color ?? "var(--gamma-chart-3)"
   const isBar = style.display === "bar" || style.display === "bar-segments"
   const geometry = finite && isBar ? tableBarGeometry(value, style.min!, style.max!) : undefined
   const exact = finite ? exactMetric(value, unit) : "No data"
   const scale = isBar ? ` · Scale ${exactMetric(style.min!, unit)} to ${exactMetric(style.max!, unit)}${geometry?.outside ? " · Outside scale" : ""}` : ""
   const label = `${column.label ?? column.key}: ${exact}${threshold?.label ? ` · ${threshold.label}` : ""}${scale}`
-  const background = finite && style.display === "color-background"
-    ? /^#[\da-f]{6}$/i.test(fill) ? fill : `color-mix(in srgb, ${fill} 18%, var(--widget-background, var(--gamma-bg)))`
-    : undefined
+  const background = finite && style.display === "color-background" ? colorBackgroundFill(fill, threshold !== undefined) : undefined
   const foreground = finite && style.display === "color-text" ? textColors.get(fill)
-    : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background) : undefined
+    : background && /^#[\da-f]{6}$/i.test(background) ? readableTextColor(background)
+      : background && threshold ? thresholdInk(threshold) : undefined
   return <span className={styles.visualCell} data-cell-display={style.display} data-cell-missing={!finite || undefined}
     role="img" aria-label={label} title={nativeTitle ? label : undefined}
     style={{ "--cell-color": fill, background, color: foreground } as CSSProperties}>
@@ -215,6 +251,6 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
         {geometry.baseline > 0 && geometry.baseline < 1 && <span className={styles.cellBarZero} style={{ left: `${geometry.baseline * 100}%` }} />}
       </>}
     </span>}
-    <span className={styles.cellReading} aria-hidden="true">{finite && style.unit !== undefined ? formatMetric(value, unit, false, decimals) : formatted}{geometry?.outside && <span className={styles.cellOverflow}>{(value as number) < style.min! ? " ↙" : " ↗"}</span>}</span>
+    <span className={styles.cellReading} aria-hidden="true">{finite && style.unit !== undefined ? formatRecordValue(value, unit, decimals) : formatted}{geometry?.outside && <span className={styles.cellOverflow}>{(value as number) < style.min! ? " ↙" : " ↗"}</span>}</span>
   </span>
 }

@@ -2,6 +2,7 @@ package insights
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -25,5 +26,40 @@ func TestTimeSeriesColorRulesValidation(t *testing.T) {
 				t.Fatalf("valid=%v; error=%v", tc.valid, err)
 			}
 		})
+	}
+}
+
+func TestSeriesColorRoleRules(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		raw   string
+		valid bool
+	}{
+		{"role", `{"seriesColors":[{"label":"quantile","value":"p95","role":"p95"}]}`, true},
+		{"color and role", `{"seriesColors":[{"label":"quantile","value":"p95","color":"#348cf0","role":"p95"}]}`, false},
+		{"neither", `{"seriesColors":[{"label":"quantile","value":"p95"}]}`, false},
+		{"unknown role", `{"seriesColors":[{"label":"code","value":"500","role":"error-5xx"}]}`, false},
+		{"status is not a role", `{"seriesColors":[{"label":"code","value":"500","role":"critical"}]}`, false},
+		{"null role", `{"seriesColors":[{"label":"quantile","value":"p95","role":null}]}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateWidgetOptions(json.RawMessage(tc.raw))
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v; error=%v", tc.valid, err)
+			}
+		})
+	}
+}
+
+// A role that is not a known name must say which roles are allowed, never demand a hex colour.
+func TestSeriesColorRoleErrorsNameTheRoles(t *testing.T) {
+	for _, raw := range []string{
+		`{"seriesColors":[{"label":"quantile","value":"p95","role":5}]}`,
+		`{"seriesColors":[{"label":"quantile","value":"p95","role":"error-5xx"}]}`,
+	} {
+		err := validateWidgetOptions(json.RawMessage(raw))
+		if err == nil || !strings.Contains(err.Error(), "series color role must be one of traffic, success, client-error, server-error, p50, p95, p99") {
+			t.Fatalf("%s: error %v", raw, err)
+		}
 	}
 }

@@ -14,7 +14,9 @@ import (
 // These limits apply before Kubernetes reads or provider I/O. A rate limit
 // alone does not bound memory when a backend accepts requests but never replies.
 const (
-	queryTimeout       = 30 * time.Second
+	queryTimeout = 30 * time.Second
+	// The execution-budget defaults. DefaultBudgetConfig returns them, and the
+	// gateway's flags default to the same values (cmd/main_observability_gateway.go).
 	maxConcurrentQuery = 4
 	queryQueueWait     = 5 * time.Second
 	maxConcurrentQueue = 32
@@ -23,6 +25,40 @@ const (
 	maxQueryResults    = 1000
 	maxQueryBytes      = 32 << 10
 )
+
+// RequestTimeout is the execution budget a query gets once it is admitted: the
+// timer in executionBudget.begin starts after the queue wait. A query's worst
+// case through this budget is QueueWait + RequestTimeout. The REST dashboard
+// handler applies RequestTimeout to the whole request, queue wait included
+// (dashboard_api.go, dashboardHandler), so its worst case is RequestTimeout.
+const RequestTimeout = queryTimeout
+
+// BudgetConfig sizes the execution budget that bounds all provider I/O. When a
+// zero field is built into a budget, Concurrency, ProviderConcurrency and
+// QueueWait fall back to their defaults, because zero is never a usable value
+// for them. Queue and ProviderQueue are taken as given: zero means no waiters.
+// The gateway's startup validation (cmd/main_observability_gateway.go) checks
+// flag values with their flag names in the errors, and starts from
+// DefaultBudgetConfig, so a flag-built config is always complete.
+type BudgetConfig struct {
+	Concurrency         int           // queries executing at once, across all providers
+	ProviderConcurrency int           // queries executing at once per provider
+	Queue               int           // waiters across all providers
+	ProviderQueue       int           // waiters per provider
+	QueueWait           time.Duration // longest a waiter holds its place before a deadline error
+}
+
+// DefaultBudgetConfig returns the gateway's built-in budget. Per-provider
+// concurrency is min(2, Concurrency), so it is 2 at the default of 4.
+func DefaultBudgetConfig() BudgetConfig {
+	return BudgetConfig{
+		Concurrency:         maxConcurrentQuery,
+		ProviderConcurrency: min(2, maxConcurrentQuery),
+		Queue:               maxConcurrentQueue,
+		ProviderQueue:       maxProviderQueue,
+		QueueWait:           queryQueueWait,
+	}
+}
 
 type providerWorkSlots struct {
 	active  chan struct{}
@@ -47,17 +83,36 @@ type executionBudget struct {
 }
 
 func newExecutionBudget(concurrency int, timeout time.Duration) *executionBudget {
-	if concurrency < 1 {
-		concurrency = 1
+	cfg := DefaultBudgetConfig()
+	cfg.Concurrency = max(1, concurrency)
+	cfg.ProviderConcurrency = min(2, cfg.Concurrency)
+	return newExecutionBudgetFromConfig(cfg, timeout)
+}
+
+// newExecutionBudgetFromConfig builds the budget from a validated config. A
+// nonpositive concurrency is clamped to one, so a bad caller cannot build a
+// budget that admits nothing.
+func newExecutionBudgetFromConfig(cfg BudgetConfig, timeout time.Duration) *executionBudget {
+	defaults := DefaultBudgetConfig()
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = defaults.Concurrency
 	}
+	if cfg.ProviderConcurrency <= 0 {
+		cfg.ProviderConcurrency = min(2, cfg.Concurrency)
+	}
+	if cfg.QueueWait <= 0 {
+		cfg.QueueWait = defaults.QueueWait
+	}
+	concurrency := cfg.Concurrency
+	providerConcurrency := max(1, min(cfg.ProviderConcurrency, concurrency))
 	return &executionBudget{
 		active:             make(chan struct{}, concurrency),
-		waiting:            make(chan struct{}, maxConcurrentQueue),
-		admitted:           make(chan struct{}, concurrency+maxConcurrentQueue),
+		waiting:            make(chan struct{}, max(0, cfg.Queue)),
+		admitted:           make(chan struct{}, concurrency+max(0, cfg.Queue)),
 		timeout:            timeout,
-		queueTimeout:       queryQueueWait,
-		perProvider:        min(2, concurrency),
-		perProviderWaiting: maxProviderQueue,
+		queueTimeout:       cfg.QueueWait,
+		perProvider:        providerConcurrency,
+		perProviderWaiting: max(0, cfg.ProviderQueue),
 		providers:          make(map[string]*providerWorkSlots),
 	}
 }

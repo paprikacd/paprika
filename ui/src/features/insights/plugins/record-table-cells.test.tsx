@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, registerRecordWidgetPlugins } from "./records"
-import { tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
+import { StyledRecordCell, colorBackgroundFill, tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
 import { PluginConfigEditor } from "../plugin-config-editor"
 import { getWidgetDefinition } from "../widget-registry"
 import { contrastRatio } from "../appearance"
@@ -127,6 +127,30 @@ describe("table visual cells", () => {
     expect(parseOpenUIDashboard(dashboardToOpenUI(dashboard)).widgets[0].config).toEqual(configured.config)
   })
 
+  it("renders status mappings as glyph chips with an optional hue, and keeps hex-only mappings as dots", () => {
+    const statusResult: QueryResult = { records: { columns: [{ key: "host", type: "string" }, { key: "status", label: "State", type: "string" }], rows: [["a", "At risk"], ["b", "Healthy"], ["c", "Warm"]] } }
+    const mappings: { value: string; status?: "critical" | "ok"; color?: string }[] = [{ value: "At risk", status: "critical" }, { value: "Healthy", status: "ok", color: "#20cba3" }, { value: "Warm", color: "#e6504d" }]
+    const cellStyle = { column: "status", display: "status-badge" as const, mappings }
+    render(<RecordTable widget={{ ...widget, config: { cellStyles: [cellStyle] } }} result={statusResult} />)
+    const risk = screen.getByText("At risk").closest('[data-cell-display="status-badge"]')!
+    expect(risk).toHaveAttribute("data-status-state", "mapped")
+    const riskChip = risk.querySelector<HTMLElement>("[data-status]")!
+    expect(riskChip).toHaveAttribute("data-status", "critical")
+    expect(risk.querySelector("[data-status]")!.parentElement).toBe(risk)
+    expect(riskChip.querySelector('[aria-hidden="true"]')).toHaveTextContent("×")
+    expect(riskChip).toHaveTextContent("Critical: At risk")
+    const healthy = screen.getByText("Healthy").closest<HTMLElement>('[data-cell-display="status-badge"]')!
+    const healthyChip = healthy.querySelector<HTMLElement>("[data-status]")!
+    expect(healthyChip.style.getPropertyValue("--chip-mark")).toBe("#20cba3")
+    expect(healthyChip).not.toHaveAttribute("data-status-stroke")
+    const warm = screen.getByText("Warm").closest('[data-cell-display="status-badge"]')!
+    expect(warm.querySelector("[data-status]")).toBeNull()
+    expect(warm.querySelector('[aria-hidden="true"]')).toHaveStyle({ backgroundColor: "#e6504d" })
+    expect(tableCellStylesSchema.parse([cellStyle])).toHaveLength(1)
+    expect(() => tableCellStylesSchema.parse([{ ...cellStyle, mappings: [{ value: "At risk" }] }])).toThrow()
+    expect(() => tableCellStylesSchema.parse([{ ...cellStyle, mappings: [{ value: "At risk", status: "bad" }] }])).toThrow()
+  })
+
   it("colors a whole gauge by the observed value when configured", () => {
     const rule = { column: "usage", display: "bar-segments", min: 0, max: 100, segments: 6, barColorMode: "value" }
     render(<RecordTable widget={{ ...widget, config: { cellStyles: [rule] } }} result={result} />)
@@ -241,11 +265,12 @@ describe("table visual cells", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Column 1 name" }), { target: { value: "host" } })
     fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
     fireEvent.click(screen.getByRole("option", { name: "Status badge" }))
-    fireEvent.click(screen.getByRole("button", { name: "Add status" }))
-    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 status 1 value" }), { target: { value: "At risk" } })
-    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 status 1 color" }), { target: { value: "#e6504d" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add mapping" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 mapping 1 value" }), { target: { value: "At risk" } })
     const json = () => JSON.parse((screen.getByRole("textbox", { name: "Plugin configuration", hidden: true }) as HTMLTextAreaElement).value)
-    expect(json().cellStyles).toEqual([{ column: "host", display: "status-badge", mappings: [{ value: "At risk", color: "#e6504d" }] }])
+    expect(json().cellStyles).toEqual([{ column: "host", display: "status-badge", mappings: [{ value: "At risk", status: "ok" }] }])
+    fireEvent.change(screen.getByLabelText("Column 1 mapping 1 colour"), { target: { value: "#e6504d" } })
+    expect(json().cellStyles).toEqual([{ column: "host", display: "status-badge", mappings: [{ value: "At risk", status: "ok", color: "#e6504d" }] }])
     fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
     fireEvent.click(screen.getByRole("option", { name: "Segmented gauge" }))
     fireEvent.click(screen.getByRole("combobox", { name: "Column 1 gauge colors" }))
@@ -284,3 +309,44 @@ describe("table visual cells", () => {
     expect(json()).toEqual({ columns: ["host", "usage"], pageSize: 5 })
   })
 })
+
+describe("status threshold cell paint", () => {
+  it("keeps status text readable on a custom background by adjusting its concrete token hex", () => {
+    const thresholds = [{ value: 0, status: "critical" as const }];
+    const custom = "#1f2a30";
+    const adjusted = tableTextPalette("light", custom, thresholds).get("var(--gamma-status-critical, #7f0a12)");
+    expect(adjusted).toMatch(/^#[\da-f]{6}$/i);
+    expect(contrastRatio(adjusted!, custom)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("uses the theme text token on the theme surface when no custom background is set", () => {
+    const palette = tableTextPalette("dark", undefined, [{ value: 0, status: "critical" }]);
+    expect(palette.get("var(--gamma-status-critical, #7f0a12)")).toBe("var(--gamma-status-critical-text)");
+  });
+});
+
+describe("status band cell fill", () => {
+  it("makes a banded colour-background cell solid and keeps the tint for a plain colour", () => {
+    expect(colorBackgroundFill("var(--gamma-status-critical, #7f0a12)", true)).toBe("var(--gamma-status-critical, #7f0a12)");
+    expect(colorBackgroundFill("#20cba3", false)).toBe("#20cba3");
+    expect(colorBackgroundFill("var(--gamma-chart-3)", false)).toBe("color-mix(in srgb, var(--gamma-chart-3) 18%, var(--widget-background, var(--gamma-bg)))");
+  });
+
+  it("renders a status band with its on-fill ink and the solid mark as the cell colour", () => {
+    const column = { key: "usage", label: "Usage", type: "number" as const };
+    const { container } = render(
+      <StyledRecordCell
+        value={92}
+        formatted="92"
+        column={column}
+        style={{ column: "usage", display: "color-background" }}
+        thresholds={[{ value: 0, status: "ok" }, { value: 90, status: "critical" }]}
+        textColors={new Map()}
+      />,
+    );
+    const cell = container.querySelector("[data-cell-display='color-background']") as HTMLElement;
+    // jsdom does not keep a var() background, so the fill is asserted through its custom property and ink.
+    expect(cell.style.getPropertyValue("--cell-color")).toBe("var(--gamma-status-critical, #7f0a12)");
+    expect(cell.getAttribute("style")).toContain("color: var(--gamma-status-critical-on)");
+  });
+});

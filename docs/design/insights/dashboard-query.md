@@ -33,11 +33,45 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
 | `variables` | Saved defaults with this call's declared overrides applied |
-| `widgets` | ID, title, type, unit, optional decimals, configured Single value threshold band and signal reference or resolution error; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
+| `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the first-contract `freshness` where an explicit option judges it, breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
 | `signals` | Deduplicated query results, indexed by `q1`, `q2`, …; each identifies the query kind and, when provider lookup is authorized, its resolved provider ID |
 | `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided |
 | `state` | `ok`, `empty` or `partial`; availability, not service health |
+| `attention` | Dashboard-level count of widgets that need attention, with `checked` and the `basis` it counts; see below. Not a health verdict. Optional on the wire, so an older client's schema still accepts the result |
+
+### Compatibility
+
+Insights and the observability gateway deploy separately, and MCP clients validate
+`structuredContent` against the schema the gateway advertises. The wire change is
+therefore additive in both directions. `attention` is not required. The first
+contract's `freshness.state` values (`fresh`, `stale`, `unknown`) and its required
+`thresholdSeconds` are unchanged, and `freshness` appears only where an explicit
+`staleAfterSeconds` judges the widget. The judgement for every metric widget is in
+`sample`, whose states (`fresh`, `stale`, `unknown`, `no_threshold`) live in a new
+field. A band's series index sits in `bandSeries`, beside `threshold`, which keeps
+the first-contract shape with `additionalProperties: false`. The tests validate
+the first contract's output against the new schema and the new output against the
+first schema (`dashboard_query_schema_dfad989c.json`, `TestDashboardQuerySchemaIsSkewSafeWithTheFirstContract`).
+
+### Attention summary
+
+`attention` counts widgets, each under its single most severe reason, in this
+order: `critical` and `warning` (an author-declared status that currently applies
+to a stat, gauge, status view or heatmap, or, for a time series, a breach at that
+level inside the returned window; the text says "in window" for a time-series
+breach that is not the newest sample), `failed` (the widget's query or planning
+failed), and `stale` (its sample is older than the limit in effect; see `sample`). Counts are `critical`, `warning`, `failed`, `stale`, the
+number of `widgets` selected and `checked`, the widgets whose query returned
+usable data (`state` `ok`). Empty, partial and failed widgets are unchecked but
+only failures are counted as failed. An undeclared, `info`, `unknown` or
+colour-only band never counts. The text fallback begins with the same counts,
+for example `Attention: 2 critical, 1 warning, 1 failed, 1 stale; 9 of 13 widgets
+checked.`, or `Attention: none; 9 of 13 widgets checked.` when nothing is counted,
+and names the widgets with their reasons. It is a count of declared
+statuses, failures and staleness, not a health verdict: a widget absent from the
+attention count may still be unhealthy, and a counted widget may be a stale value
+the author chose to alarm on. The rules are shared with `conformance/attention.json`.
 
 Plugin visualization identity is attached to each widget even when its query is
 deduplicated with other widgets. The bounded text fallback identifies the first
@@ -72,15 +106,82 @@ the summarized series, so check `seriesOmitted` before assuming full coverage.
 observation, matching the UI single-value card. The latest finite value retains
 its full numeric precision; widget `decimals` only describes display formatting.
 `tailMissing` explicitly marks missing values after that last finite observation.
-When a Single value has configured thresholds, widget `threshold` reports the
-matched visual band (`boundary`, `color`, optional `label`) or `unknown` when no
-valid observation is available. It uses that same last valid value, including
-zero; the first threshold is the fallback below its boundary, matching the UI.
-An explicit text color can override the visible text color. The band is an
-author-configured visualization, not an alert or a service-health verdict;
-check `tailMissing` and freshness before treating its observation as current.
-Do not describe an old reading as current just because it is the latest finite
-point.
+Declared bands (`threshold`) report the author's band that the displayed value
+falls in: `boundary`, the band's `status` (`ok`, `info`, `warning`, `critical` or
+`unknown`) and/or hex `color`, each present only when the threshold names it, and
+an optional `label`. The first threshold is the fallback below its boundary,
+matching the UI. An explicit text color can override the visible text color. A
+colour-only threshold names no status and declares no band.
+
+- A **stat** evaluates the last valid value it displays, including zero, and
+  reports `unknown` when there is none. Its band exists whenever thresholds do.
+- A **gauge** (`threshold-gauge`), **status grid**, **status history** or
+  **heatmap** evaluates the series the visualization draws, each on its latest
+  recorded sample. A missing latest sample is `unknown` and sets no band. The
+  widget reports the most severe declared band among them (critical, then
+  warning, unknown, info, ok, with the lowest series position winning a tie).
+  `bandSeries` reports `evaluated` (the drawn series), `omitted` (returned series
+  the visualization does not draw) and, when a band matched, the `series` index
+  and a bounded `name` for the series that set it. A band is reported only when
+  the thresholds name a status.
+
+The drawn series follow the UI's caps, pinned to its source by
+`TestPluginSeriesCapsMatchTheUI`: a gauge in `first` mode draws one series, and in
+`all` mode `config.maxSeries ?? 6`; a status history draws `maxSeries ?? 12`; a
+status grid draws `maxSeries ?? 512`; a heatmap draws its first 100 rows. A
+returned series beyond those caps never sets a band, so a tile that shows green
+is not reported critical.
+
+Bands are author-configured visualizations, not alerts or health verdicts. Check
+`tailMissing`, `freshness` and the signal state before treating a band as current,
+and do not describe an old reading as current just because it is the latest
+finite point.
+
+### Breaches and samples
+
+A **time series** whose thresholds name a `warning` or `critical` status reports
+`breaches`: the stretches of the returned window where a sample sits in such a
+band. It follows the UI's time-series breach rules, which are shared with the
+browser through `conformance/breaches.json`. A run ends at the first sample that
+does not continue it, extends to that sample or one observed cadence past its last
+breaching sample (only when that sample is observed and not separated by a gap of
+more than 1.5 cadences), and otherwise ends at its last breaching sample. Cadence
+is the lower median of the positive steps between observed samples, and needs
+three observed samples; without it nothing extends past the last breaching sample.
+Up to 12 series are evaluated; `seriesEvaluated` and `seriesOmitted` say which.
+
+`intervals` lists the most recent intervals of each level, up to 12 per level per
+widget. The caps are per level, so one critical interval is never crowded out by
+later warning flaps. A dashboard-wide budget (96 listed intervals) lowers the
+per-widget count when many widgets are selected, so the structured result stays
+well under its 128 KiB cap; `intervalsOmitted` counts every interval not listed.
+Each interval gives `series`, a bounded `name`, `level`, `start`, `end` and
+`durationMs` (Unix milliseconds, except the duration). `latestLevel` names the band
+of the newest sample, and it is absent when that sample is not breaching.
+`summary` merges intervals across series: `intervals` counts merged spans with
+positive duration, `samples` counts single breaching samples outside them, and
+`durationMs` is the merged time. Every breach figure is a count inside the returned
+window. Only `latestLevel` describes the current sample. A failed signal reports no
+`breaches`, so an absent object is not an empty result. A time series with no
+warning or critical status reports no `breaches`.
+
+Every metric widget reports `sample`: the age of its latest valid returned sample
+relative to the range end, and the limit that judges it. A stat measures its
+displayed primary series. A time series measures the newest sample of any of its
+series, as the UI's stale tail does. The limit is the widget's `staleAfterSeconds`
+where it is set, for stat and time-series widgets. A time series without that
+option uses the UI's fallback: twice the longest cadence among the series that
+reported the newest sample (`basis: cadence`). A time series whose result is
+truncated is not judged, because the UI draws no stale tail for a truncated result.
+Otherwise the state is `no_threshold`: the age is reported without a judgement.
+Other metric types, such as bars, heatmaps, tables and rich-metrics plugins, have
+no limit. Rich metrics read `staleAfterSeconds` only as a track-end grace, not a
+stale mark. `unknown` means no usable returned sample.
+
+`freshness`, the first contract's object, is present only where an explicit
+`staleAfterSeconds` judges the widget. It carries the same judgement in the same
+three states, with `thresholdSeconds`. `thresholdSeconds` is an integer, so the
+cadence-derived limit appears only in `sample`. Text describes only judged samples.
 
 Trace results include `returned`, `statusCounts` and a few examples with IDs,
 service, operation, duration in milliseconds and start time in Unix milliseconds. Counts describe the
@@ -155,9 +256,11 @@ numeric fields. Use structured content for the authoritative included examples.
 | History | 0 by default, or 2–32 points per included series |
 | Series | 3 by default, 1–8 supported |
 | Trace examples | 3 by default, 1–10 supported |
+| Breaches | 12 series evaluated, 12 most recent intervals listed per widget, two levels in the summary |
 | Structured result | 128 KiB; narrow widget/series/history selection if exceeded |
 | Text synopsis | At most 8 KiB |
-| Execution | 22-second shared budget, partial timeout results when possible |
+| Execution | 22-second budget for the whole read; shared-catalog calls draw on it, each capped at 20 seconds, with partial timeout results when possible |
+| Shared catalog | 4 concurrent catalog phases; a waiting query gets one within 5 seconds (16 waiters), else 429 with `Retry-After: 1`; a listing's own cap is 10 seconds. A `/query` has one 22-second budget covering the wait, the admission wait, the listing and the data call |
 
 Repeated identical queries execute once within a call. Results are not cached
 across callers. All widgets use one resolved range; the dashboard and saved
@@ -189,6 +292,19 @@ ordinary work slots; larger existing authoring requests remain supported.
 Focused Go tests exercise substitution parity, missing references, document
 snapshots, query deduplication, range limits, partial failure, summary bounds,
 read-only proxy authorization and nested admission under concurrent dashboards.
+The breach rules are pinned by `conformance/breaches.json`. The Go breach port and
+the UI's `breaches.test.ts` both run it, so the two cannot diverge.
+`conformance/attention.json` (widget facts to attention counts) is run by the Go
+tests only. No UI port exists yet, so a later UI slice that computes attention
+must run it too. Characterisation tests pin the output of a document without status
+thresholds. Its structured values are unchanged, and its text synopsis is unchanged
+except for the leading attention line, which is the only added line. The additive
+fields (`attention`, `sample`, `breaches`, `bandSeries`) are stripped before the
+structured comparison.
+
+The UI's series caps (`TestPluginSeriesCapsMatchTheUI`) and the stale set
+(`TestStaleJudgementSetMatchesTheUI`) are pinned by reading the UI sources, so a UI
+change that moves either fails the Go tests.
 
 The browser integration test runs the actual MCP server, API proxy, Insights
 stores, provider adapters and UI renderer against native Prometheus/Tempo test

@@ -3,7 +3,7 @@ import Link from "next/link"
 import { CheckCircle2, Compass, Plus, Trash2, X } from "lucide-react"
 import { ProviderIcon } from "./source-identity"
 import { ObserveConnectionCard } from "./observe-connection"
-import type { InsightsClient, ProviderConfig } from "./client"
+import { loadProviderCatalog, type InsightsClient, type ProviderCatalog, type ProviderConfig } from "./client"
 import type { Provider } from "./schema"
 import { GammaButton } from "./gamma/button"
 import { GammaInput, GammaTextarea } from "./gamma/input"
@@ -69,13 +69,16 @@ export function ProviderManager({
   client,
   providers,
   onChange,
+  loadCatalog = (signal) => loadProviderCatalog(client, signal),
   example = false,
   onClose,
   onExplore,
 }: {
   client: InsightsClient
   providers: Provider[]
-  onChange: (providers: Provider[]) => void
+  onChange: (catalog: ProviderCatalog) => void
+  /** Loads the listing for a refresh. The workspace supplies its own, so a refresh marks its sources pending. */
+  loadCatalog?: (signal?: AbortSignal) => Promise<ProviderCatalog>
   example?: boolean
   onClose?: () => void
   onExplore?: (provider: Provider) => void
@@ -118,13 +121,13 @@ export function ProviderManager({
     setRemove(null)
   }
   async function refresh() {
-    const [next, publicProviders] = await Promise.all([
+    const [next, catalog] = await Promise.all([
       client.providerConfigs(),
-      client.providers(),
+      loadCatalog(),
     ])
     if (alive.current) {
       setConfigs(next)
-      onChange(publicProviders)
+      onChange(catalog)
     }
   }
   async function save() {
@@ -223,7 +226,7 @@ export function ProviderManager({
       <p className={styles.hint}>
         Explore shared Observe providers or connect a standalone metrics or trace backend.
       </p>
-      {!example && <ObserveConnectionCard client={client} onProvidersChange={onChange} />}
+      {!example && <ObserveConnectionCard client={client} onProvidersChange={onChange} loadCatalog={loadCatalog} />}
       {example && (
         <p className={styles.notice}>
           Example data is local. Switch to connected mode to manage real

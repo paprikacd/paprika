@@ -19,6 +19,7 @@ import ReactGridLayout, {
 } from "react-grid-layout";
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
+import { sourceWaitMessage, useSourceStatus } from "./source-status";
 import { useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
@@ -27,7 +28,7 @@ import { TooltipQueryProvider } from "./tooltip-query";
 import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
 import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
-import { fullDateTimeOptions } from "./chart-data";
+import { fullDateTimeOptions, latestPoint } from "./chart-data";
 import type { ObservationWindow } from "./time-window";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
@@ -68,6 +69,10 @@ import { GammaActionMenu } from "./gamma/action-menu";
 import contextStyles from "./widget-context.module.css";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
+import { AttentionStoreProvider, SampleAsOfProvider, settledRequestEnd, useAttentionPublisher, useSampleAsOf } from "./attention-store";
+import { AttentionStrip, type AutoRefresh } from "./attention-strip";
+import { isAttentionLevel, widgetAttention, WidgetAttentionContext, type AttentionFailure } from "./widget-attention";
+import { statusToken, thresholdPaint } from "./status";
 
 const STAT_ICONS = {
   "arrow-down": ArrowDown,
@@ -114,6 +119,14 @@ function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention:
 function sameFields(previous: object, next: object) {
   const entries = Object.entries(previous);
   return entries.length === Object.keys(next).length && entries.every(([key, value]) => Object.is(value, Reflect.get(next, key)));
+}
+/** The time of the sample a stat displays: the latest valid point of the first series that has one. */
+function displayedSampleAt(result: QueryResult | undefined): number | undefined {
+  for (const series of result?.series ?? []) {
+    const point = latestPoint(series);
+    if (point) return point.timestamp;
+  }
+  return undefined;
 }
 const Tile = memo(function Tile({
   widget,
@@ -190,12 +203,20 @@ const Tile = memo(function Tile({
   // A focused editor stays engaged while its author scrolls down to query controls.
   const engaged = visible || focused;
   const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
+  // A tile whose source is not in the loaded list waits while the list is pending or
+  // unavailable. A loaded source queries even when the shared catalog failed, so local
+  // tiles keep working beside the banner.
+  const sourceStatus = useSourceStatus();
+  const waitingOn = sourceStatus !== "ready" && !provider ? sourceStatus : null;
+  const awaitingSources = waitingOn !== null;
+  // A shared tile stays busy while the shared catalog reloads, even though it still queries.
+  const busyOnSources = waitingOn === "pending" || (sourceStatus === "pending" && provider?.source === "observability");
   const { data, loading, error, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
     end,
     step: Math.max(1, Math.ceil((end - start) / 300)),
-    enabled: active && engaged && !savedQueryLoading && (!!widget.queryRef || !!provider),
+    enabled: active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
     retention: memoryOf.retention,
   });
@@ -263,6 +284,39 @@ const Tile = memo(function Tile({
       : (widget.type === "timeseries" && currentSelection?.result === data && selectedContext && currentSelection.context.timestamp !== undefined
         ? currentSelection.context
         : (selectedContext ?? (contexts.length === 1 ? contexts[0] : {})));
+  // The error a tile shows: a failed query, or a provider the dashboard does not configure.
+  const visibleError = savedQueryLoading ? null : error ?? (!provider && !widget.queryRef && sourceStatus === "ready"
+    ? `Provider “${widget.providerId}” is not configured.`
+    : null);
+  // One verdict per tile: the renderer reads it through WidgetAttentionContext, and the dashboard publishes it for an attention strip.
+  // The source outcome decides the verdict's failure: a source that cannot load or a provider that is not configured is
+  // final, so the tile reports it rather than pending. A failed read has no band, so a retained breach is not reported.
+  const sourceFailure: Exclude<AttentionFailure, "none"> | undefined = !savedQueryLoading && (waitingOn === "unavailable" || waitingOn === "signin") ? "provider"
+    : !savedQueryLoading && !provider && !widget.queryRef && sourceStatus === "ready" ? "planning"
+    : !savedQueryLoading && error ? "provider" : undefined;
+  // The retained record holds the settle time and the range end of the request that produced the shown result. It is read
+  // on each render: a settle writes the record and then re-renders the tile, and a remount restores the same record. A
+  // tile that was not re-queried keeps its own range end, so a refresh of the dashboard does not age its data.
+  const retained = memoryOf.retention.read();
+  const completedAt = retained?.request?.settledAt;
+  const resultRangeEnd = settledRequestEnd(retained?.request?.key) ?? end;
+  const attention = useMemo(
+    () => widgetAttention(widget, { result: savedQueryLoading ? undefined : data, failure: sourceFailure, rangeEnd: resultRangeEnd * 1000 }),
+    [widget, savedQueryLoading, data, sourceFailure, resultRangeEnd],
+  );
+  // The strip counts the same facts query_dashboard does. An unmounted tile keeps its last facts, released not dropped.
+  const attentionPublisher = useAttentionPublisher();
+  const facts = attention.facts;
+  const sampleAt = widget.type === "stat" ? displayedSampleAt(savedQueryLoading ? undefined : data) : undefined;
+  useEffect(() => {
+    attentionPublisher.publish({ widgetId: widget.id, title: widget.title, facts, completedAt, sampleAt });
+  }, [attentionPublisher, widget.id, widget.title, facts, completedAt, sampleAt]);
+  useEffect(() => () => attentionPublisher.release(widget.id), [attentionPublisher, widget.id]);
+  // A stat whose sample is the dashboard's newest drops its repeated time; the strip states it once. The editor's preview has
+  // no strip, so it keeps its own caption.
+  const newestSample = useSampleAsOf();
+  const sharesSample = !focused && sampleAt !== undefined && newestSample !== undefined && Math.floor(sampleAt / 60_000) === Math.floor(newestSample / 60_000);
+  const attentionMark = isAttentionLevel(attention.state) ? (thresholdPaint(attention.band) ?? statusToken(attention.state)) : undefined;
   const textColor = widgetTextColor(widget.options);
   const StatIcon = widget.type === "stat" && widget.options?.statIcon ? STAT_ICONS[widget.options.statIcon] : undefined;
   const links = widget.drilldowns ?? [];
@@ -310,6 +364,8 @@ const Tile = memo(function Tile({
       data-widget-sparkline={widget.type === "stat" && widget.options?.showSparkline || undefined}
       data-sparkline-placement={widget.type === "stat" ? widget.options?.sparklinePlacement : undefined}
       data-stat-icon={StatIcon ? "true" : undefined}
+      data-attention={attention.state}
+      data-shared-sample={sharesSample || undefined}
       data-compact-stat={widget.type === "stat" && widget.layout.h === 1 ? "true" : undefined}
       aria-label={widget.title}
       style={
@@ -318,6 +374,7 @@ const Tile = memo(function Tile({
           color: textColor,
           "--widget-text": textColor,
           "--stat-icon-color": widget.color,
+          "--attention-mark": attentionMark,
         } as CSSProperties
       }
     >
@@ -333,7 +390,7 @@ const Tile = memo(function Tile({
           </span>
         )}
         <div className={`${styles.tileTitle}${compactRecordDescription ? ` ${recordStyles.compactRecordTitle}` : ""}`}>
-          <h3 style={{ color: textColor }}>{widget.title}</h3>
+          <h3 style={{ color: textColor }} title={editing && widget.type === "stat" ? widget.title : undefined}>{widget.title}</h3>
           {widget.description && (compactRecordDescription ? (
             <details className={recordStyles.compactRecordDescription}>
               <summary aria-label={`Details for ${widget.title}`}>Details</summary>
@@ -365,7 +422,7 @@ const Tile = memo(function Tile({
             iconOnly
             size="sm"
             variant="quiet"
-            className={styles.iconButton}
+            className={`${styles.iconButton} ${styles.editChip}`}
             aria-label={`Edit ${widget.title}`}
             data-widget-edit={widget.id}
             onClick={() => onSelect(widget.id)}
@@ -410,25 +467,22 @@ const Tile = memo(function Tile({
       {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.sampleSelection} role="status">
         Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time>
       </div>}
-      <div className={styles.visualization}>
+      {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
+      <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
-          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetVisualization
+          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetAttentionContext.Provider value={attention}><WidgetVisualization
             widget={widget}
             naturalHeight={naturalHeight}
             result={savedQueryLoading ? undefined : data}
             loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
             deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
-            error={
-              savedQueryLoading ? null : error ??
-              (!provider && !widget.queryRef
-                ? `Provider “${widget.providerId}” is not configured.`
-                : null)
-            }
+            sourceState={!savedQueryLoading && waitingOn ? { status: waitingOn, label: waitingOn === "pending" ? "Waiting for data sources…" : sourceWaitMessage(waitingOn) } : undefined}
+            error={visibleError}
             onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
             onContextChange={
               (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
             }
-          /></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
+          /></WidgetAttentionContext.Provider></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
         )}
       </div>
     </article>
@@ -500,7 +554,12 @@ export function DashboardCanvas({
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 1100,
   });
-  const mode = canvasMode(width);
+  // The hysteresis needs the mode already on screen. Until the first real measurement there is none, and a hidden canvas
+  // (Explore hides the workspace, so it measures 0) must not overwrite the mode it had.
+  const [shownMode, setShownMode] = useState<CanvasMode>();
+  const measured = mounted && width > 0;
+  const mode = measured || shownMode === undefined ? canvasMode(width, shownMode) : shownMode;
+  if (measured && mode !== shownMode) setShownMode(mode);
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide" && !focus;
   const definitions = useWidgetDefinitions();
@@ -588,6 +647,8 @@ export function DashboardCanvas({
     }
     return layout.map((item) => byId.get(item.i)!);
   }, [dashboard.id, dashboard.widgets, layout, draggable, editingOrder]);
+  // Chips step through widgets in the order they are now laid out, so a drag in edit mode changes the order they follow.
+  const attentionOrder = useMemo(() => [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => ({ id: item.i })), [layout]);
   const range = dashboardRange(dashboard, end);
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
@@ -629,8 +690,13 @@ export function DashboardCanvas({
                 />
               </div>
             ));
+  const autoRefresh: AutoRefresh = dashboard.customTimeRange
+    ? { mode: "fixed" }
+    : dashboard.refreshInterval ? { mode: "every", seconds: dashboard.refreshInterval } : { mode: "off" };
   return (
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
+    <AttentionStoreProvider>
+    <SampleAsOfProvider>
     <TooltipQueryProvider
       fetcher={tooltipFetcher}
       providers={providers}
@@ -638,6 +704,9 @@ export function DashboardCanvas({
       end={range.end}
       step={Math.max(1, Math.ceil((range.end - range.start) / 300))}
     >
+      {/* Above the measured canvas, so tile geometry stays relative to the anchor and the strip reserves its own height. */}
+      {/* Not in focus mode: the workbench owns the top of the page, and the tiles it hides keep their last known state in the store. */}
+      {!!dashboard.widgets.length && !focus && <AttentionStrip widgets={attentionOrder} scopeRef={containerRef} autoRefresh={autoRefresh} />}
       <div
         ref={containerRef}
         className={`${styles.canvas} ${editing && !focus ? styles.editingCanvas : ""}`}
@@ -696,6 +765,8 @@ export function DashboardCanvas({
         </ChartCursorProvider>
       </div>
     </TooltipQueryProvider>
+    </SampleAsOfProvider>
+    </AttentionStoreProvider>
     </DashboardTimeZoneProvider>
   );
 }

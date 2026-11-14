@@ -44,7 +44,8 @@ function stackedDashboard(): Dashboard {
   });
 }
 const positions = (layout: Layout) => Object.fromEntries(layout.map(({ i, x, y, w, h }) => [i, [x, y, w, h]]));
-const liveText = () => document.querySelector('[aria-live="polite"]')?.textContent;
+// Scoped to the canvas: the attention strip above it also has a polite region.
+const liveText = () => document.querySelector('[data-testid="dashboard-canvas"] [aria-live="polite"]')?.textContent;
 const fetcher = () => vi.fn().mockResolvedValue({ series: [{ name: "primary", labels: {}, points: [{ timestamp: 3500000, value: 42 }] }] });
 
 function renderCanvas(dashboard: Dashboard) {

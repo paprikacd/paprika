@@ -249,6 +249,7 @@ export function DashboardManager({
   onImportBundle,
   onRefreshQueries,
   onReviewBundle,
+  validateDocument,
   onClose,
   busy,
 }: {
@@ -265,6 +266,7 @@ export function DashboardManager({
   onImportBundle?: PortableImportProps["onImportBundle"];
   onRefreshQueries?: PortableImportProps["onRefreshQueries"];
   onReviewBundle?: PortableImportProps["onReviewBundle"];
+  validateDocument?: PortableImportProps["validateDocument"];
   onClose: () => void;
 }) {
   const library = useSavedQueryLibrary();
@@ -504,6 +506,7 @@ export function DashboardManager({
       </section>
       <PortableImportPanel
         providers={providers}
+        validateDocument={validateDocument}
         onBusyChange={setImporting}
         onRefreshQueries={onRefreshQueries}
         onReviewBundle={onReviewBundle}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { niceDomain, symmetricDomain } from "../units";
 import type { QueryResult } from "../schema";
 import { sampleCadence, seriesName } from "../chart-data";
 import { validTimestamp } from "../widget-context";
@@ -346,10 +347,8 @@ export function buildMetricPlot(series: MetricSeries[], config: StackedConfig | 
     }
   }
   if (low === high) { low = Math.min(0, low); high = Math.max(1, high); }
-  if (directional && direction.symmetricAxis) {
-    const extent = Math.max(Math.abs(low), Math.abs(high));
-    low = -extent; high = extent;
-  }
+  // Bounds round to readable ticks. A symmetric directional axis is centred on zero.
+  [low, high] = directional && direction.symmetricAxis ? symmetricDomain(low, high, 4) : niceDomain([low, high], 4);
   return {
     tracks: selected.map((entry, index) => ({ series: entry, name: seriesName(entry, index), index, cells: indices.map(i => cells[index][i]), statistics: metricStatistics(maps[index]), lastFinite: Number.isFinite(lastFinite[index]) ? lastFinite[index] : null })),
     timestamps: indices.map(i => timestamps[i]), columns: indices.map(i => columns[i]), totals, domain: [low, high], completeDomain: [completeLow, completeHigh], sampled: indices.length < timestamps.length,

@@ -35,6 +35,7 @@ import { QueryBuilder } from "./query-builder";
 import { summarizeExplorerResult } from "./explorer-result-summary";
 import { assertProviderQueryTemplate } from "./provider-query-template";
 import { WidgetVisualization } from "./charts";
+import { EXPLORER_PREVIEW_WIDGET_ID } from "./series-display";
 import { dashboardRange, TimeRangeControl } from "./time-range";
 import { GammaButton } from "./gamma/button";
 import { GammaInput, GammaTextarea } from "./gamma/input";
@@ -140,7 +141,7 @@ function recordPreviewFields(type: string): { key: string; label: string; numeri
 function isRecordView(type: string) { return /^(record-|records-)/.test(type); }
 function resultWidget(query: SavedQuery, type: string, config?: Widget["config"]): Widget {
   return {
-    id: "explore-preview",
+    id: EXPLORER_PREVIEW_WIDGET_ID,
     title: query.name || "Query results",
     providerId: query.providerId,
     query: query.query,

@@ -1,0 +1,81 @@
+{
+  "description": "Series colour mode conformance cases. Each case is a widgets[].options object run through the Zod widget schema (ui colors-conformance.test.ts), the Go validateDashboard path and the embedded dashboard JSON Schema (internal/insights/series_conformance_test.go). All three must agree with valid on every case. modes lists the seriesColorMode vocabulary. A document without seriesColorMode behaves as name. statusLabels and percentileLabels are the well-known labels the UI maps to roles when no rule matches; Go and the JSON Schema do not colour series, so they only check the mode.",
+  "modes": [
+    "name",
+    "index"
+  ],
+  "statusLabels": [
+    "status",
+    "status_code",
+    "http_status",
+    "http_status_code",
+    "response_code"
+  ],
+  "percentileLabels": [
+    "quantile",
+    "percentile"
+  ],
+  "cases": [
+    {
+      "name": "mode absent (documents written before the option)",
+      "valid": true,
+      "options": {}
+    },
+    {
+      "name": "name mode",
+      "valid": true,
+      "options": {
+        "seriesColorMode": "name"
+      }
+    },
+    {
+      "name": "index mode",
+      "valid": true,
+      "options": {
+        "seriesColorMode": "index"
+      }
+    },
+    {
+      "name": "index mode alongside an authored rule",
+      "valid": true,
+      "options": {
+        "seriesColorMode": "index",
+        "seriesColors": [
+          {
+            "label": "window",
+            "value": "1h",
+            "color": "#348cf0"
+          }
+        ]
+      }
+    },
+    {
+      "name": "mode name outside the vocabulary",
+      "valid": false,
+      "options": {
+        "seriesColorMode": "hash"
+      }
+    },
+    {
+      "name": "mode is case sensitive",
+      "valid": false,
+      "options": {
+        "seriesColorMode": "Index"
+      }
+    },
+    {
+      "name": "null mode",
+      "valid": false,
+      "options": {
+        "seriesColorMode": null
+      }
+    },
+    {
+      "name": "numeric mode",
+      "valid": false,
+      "options": {
+        "seriesColorMode": 1
+      }
+    }
+  ]
+}

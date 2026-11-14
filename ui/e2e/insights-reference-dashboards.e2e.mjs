@@ -9,6 +9,7 @@ import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
 import { until } from "./insights-portable-fixture.mjs"
 import { createReferenceDashboardEnvironment } from "./fixtures/reference-dashboard-environment.mjs"
+import { textContrast } from "./fixtures/color-composite.mjs"
 import { referenceDashboards, resultForReferenceQuery } from "./fixtures/reference-dashboard-data.ts"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -159,6 +160,8 @@ async function renderEveryPanel(board) {
       for(let index=1;index<ticks.length;index++)assert.ok(ticks[index].top>=ticks[index-1].bottom,"Heatmap bucket labels must not overlap")
     }
     if(widget.pluginId==="connection-map") {
+      // The land outline is a lazy chunk; wait for it instead of counting before it arrives.
+      await until(async()=>await element.locator("[data-geographic-land]").count()===1,`${widget.title}: map land outline did not load`,20000)
       assert.equal(await element.locator("[data-geographic-land]").count(),1,"Map needs geographic context, not only coordinates")
       const plane=await element.locator('[data-map-plane]').evaluate(node=>{const r=node.getBoundingClientRect(),matrix=node.querySelector('svg').getScreenCTM();return{ratio:r.width/r.height,height:r.height,scaleX:matrix.a,scaleY:matrix.d}})
       assert.ok(Math.abs(plane.ratio-2)<.01 && Math.abs(plane.scaleX-plane.scaleY)<.001,`Map must preserve geographic proportions: ${JSON.stringify(plane)}`)
@@ -173,15 +176,18 @@ async function renderEveryPanel(board) {
           const bars=await cells.locator('[data-bar-start]').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{width:r.width,height:r.height,start:Number(node.dataset.barStart),end:Number(node.dataset.barEnd)}}))
           assert.ok(bars.every(bar=>bar.width>bar.height*2 && bar.start>=0 && bar.end<=1 && bar.end>=bar.start),`${widget.title}: in-cell bars have bounded horizontal geometry`)
         } else {
-          const contrasts=await cells.evaluateAll(nodes=>{
-            const channels=color=>{const values=color.match(/[\d.]+/g)?.map(Number)??[];return color.startsWith("color(srgb")?values.slice(0,3).map(value=>value*255):values.slice(0,3)}
-            const luminance=color=>channels(color).map(value=>{const channel=value/255;return channel<=.04045?channel/12.92:((channel+.055)/1.055)**2.4}).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0)
-            return nodes.map(node=>{
-              let parent=node,background=""
-              while(parent){background=getComputedStyle(parent).backgroundColor;if(background!=="transparent"&&background!=="rgba(0, 0, 0, 0)")break;parent=parent.parentElement}
-              const foreground=getComputedStyle(node).color,a=luminance(foreground),b=luminance(background)
-              return{foreground,background,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
-            })
+          // Hover tints on table rows are translucent: collect every layer up to the first opaque one and
+          // composite them in Node (see fixtures/color-composite.mjs) instead of treating the first
+          // non-transparent colour as opaque.
+          await page.mouse.move(0, 0)
+          const samples=await cells.evaluateAll(nodes=>nodes.map(node=>{
+            const layers=[];for(let parent=node;parent;parent=parent.parentElement)layers.push(getComputedStyle(parent).backgroundColor)
+            const pageBackground=getComputedStyle(document.body).backgroundColor!=="rgba(0, 0, 0, 0)"?getComputedStyle(document.body).backgroundColor:getComputedStyle(document.documentElement).backgroundColor
+            return{foreground:getComputedStyle(node).color,layers,pageBackground}
+          }))
+          const contrasts=samples.map(sample=>{
+            const reading=textContrast({foreground:sample.foreground,layers:sample.layers,pageBackground:sample.pageBackground})
+            return{foreground:sample.foreground,background:sample.layers.join(" > "),ratio:reading.ratio}
           })
           assert.ok(contrasts.every(entry=>entry.ratio>=4.5),`${widget.title}: colored numeric text remains readable in this theme: ${JSON.stringify(contrasts)}`)
         }

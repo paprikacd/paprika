@@ -1,7 +1,7 @@
 "use client";
 
 // The time-series renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { areaY } from "@tanstack/charts/area";
 import { crosshair } from "@tanstack/charts/crosshair";
 import { d3Curve } from "@tanstack/charts/d3/shape";
@@ -41,7 +41,6 @@ import { calendarTickLabel, calendarTicks, DEFAULT_AREA_OPACITY, horizontalPlotB
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
-  PALETTE,
   chartYAxisLayout,
   configuredTheme,
   resolveChartDomain,
@@ -60,13 +59,18 @@ import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
-import { resolveSeriesColor } from "./series-colors";
-import { compactSeriesLabels } from "./series-display";
+import { widgetSeriesColors } from "./series-colors";
+import { displaySeriesNames, fallbackIdentityTitle } from "./series-display";
 import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTimeWindow, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
 import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
 import { TimeWindowLens } from "./time-window-lens";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
+import { autoAxisDomain, niceDomain } from "./units";
 import { validTimestamp } from "./widget-context";
+import { thresholdPaint } from "./status";
+import { breachBands, breachEmphasisPoints, breachSummary, clampBreaches, timeSeriesBreaches, type BreachLevel, type SeriesBreachInterval } from "./breaches";
+import { BreachSummary } from "./breach-summary";
+import breachStyles from "./breach.module.css";
 import { useWidgetPresentation } from "./widget-presentation";
 
 const CURVES = {
@@ -77,11 +81,17 @@ const CURVES = {
 
 /**
  * Guides participate in autoscaling, but explicit axis bounds win: thresholds, reference lines and the zero line all
- * join the domain, so none of them is clipped.
+ * join the domain, so none of them is clipped. An ok base band (a first threshold with status ok, at or below the lowest
+ * observed value) is the healthy floor, not a level the data must reach, so it does not widen the axis down to it: an
+ * availability base at 0 would otherwise squash the plot. Its guide is not drawn either (see the guide filter below).
  */
-export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions): [number, number] | undefined {
+export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions, count = 5): [number, number] | undefined {
+  let dataMin = Infinity;
+  for (const entry of series) for (const point of entry.points) if (validTimestamp(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)) dataMin = Math.min(dataMin, point.value);
+  const thresholds = options.thresholds ?? [];
+  const baseBand = thresholds.length && thresholds[0].status === "ok" && Number.isFinite(dataMin) && thresholds[0].value <= dataMin ? thresholds[0] : undefined;
   const guides = [
-    ...(options.thresholds ?? []).map(threshold => threshold.value),
+    ...thresholds.filter(threshold => threshold !== baseBand).map(threshold => threshold.value),
     ...(options.referenceLines ?? []).map(reference => reference.value),
     ...(options.showZeroLine ? [0] : []),
   ].filter(value => Number.isFinite(value));
@@ -89,8 +99,15 @@ export function resolveTimeSeriesDomain(series: Series[], options: WidgetOptions
   let observedMin = Infinity, observedMax = -Infinity;
   for (const value of guides) { observedMin = Math.min(observedMin, value); observedMax = Math.max(observedMax, value); }
   for (const entry of series) for (const point of entry.points) if (validTimestamp(point.timestamp) && typeof point.value === "number" && Number.isFinite(point.value)) { observedMin = Math.min(observedMin, point.value); observedMax = Math.max(observedMax, point.value); }
-  const padding = Math.max((observedMax - observedMin) * .05, observedMin === observedMax ? Math.max(1, Math.abs(observedMin) * .1) : 0);
-  let min = options.min ?? observedMin - padding, max = options.max ?? observedMax + padding;
+  // The unpadded extent rounds outwards to readable ticks first; the padding then sits outside those ticks.
+  const flatPadding = observedMin === observedMax ? Math.max(Math.abs(observedMin) * .05, observedMin === 0 ? .5 : 0) : 0;
+  const [roundedLow, roundedHigh] = niceDomain([observedMin - flatPadding, observedMax + flatPadding], count);
+  const padding = (roundedHigh - roundedLow) * .05;
+  // Data and guides that are all non-negative keep a zero floor rather than a padded negative axis.
+  let min = observedMin >= 0 ? Math.max(0, roundedLow - padding) : roundedLow - padding;
+  let max = roundedHigh + padding;
+  if (options.min !== undefined) min = options.min;
+  if (options.max !== undefined) max = options.max;
   if (min >= max) {
     if (options.min !== undefined && options.max === undefined) max = min + Math.max(1, Math.abs(min) * .1);
     else if (options.max !== undefined && options.min === undefined) min = max - Math.max(1, Math.abs(max) * .1);
@@ -136,6 +153,32 @@ function TimeBrushOverlay({ preview, top, bottom }: { preview: TimeBrushPreview 
   return <div className={chartStyles.brush} style={{ left, width: selected, top, bottom }} data-time-brush-selection aria-hidden="true"><span>{formatWindowDuration(Math.abs(preview.end - preview.start))}</span></div>;
 }
 
+/**
+ * Breach bands per level are capped, so a long, noisy series cannot add thousands of plot nodes. Each level keeps its most
+ * recent bands, and the footer says how many are not shaded.
+ */
+const BREACH_BAND_LIMIT = 200;
+
+/**
+ * The breach shading: one low-opacity band per breaching stretch, behind the plot. It is memoised on its own props, so a
+ * cursor moving over another chart never reaches it.
+ */
+const BreachBands = memo(function BreachBands({ spans, timeDomain, left, width, top, bottom }: {
+  spans: readonly { start: number; end: number; level: BreachLevel }[];
+  timeDomain: [number, number];
+  left: number;
+  width: number;
+  top: number;
+  bottom: number;
+}) {
+  return <>{spans.map((span) => {
+    const from = temporalPosition(span.start, timeDomain[0], timeDomain[1], left, left + width);
+    const to = temporalPosition(span.end, timeDomain[0], timeDomain[1], left, left + width);
+    return <span key={`${span.level}-${span.start}`} aria-hidden="true" className={breachStyles.band} data-breach-band data-level={span.level} data-from={span.start} data-to={span.end}
+      style={{ left: from, width: Math.max(1.5, to - from), top, bottom }} />;
+  })}</>;
+});
+
 export function TimeSeriesChart({
   widget,
   series,
@@ -179,16 +222,23 @@ export function TimeSeriesChart({
     [descriptionId],
   );
   const ticks = responsiveChartTicks(width, height);
+  // Without an axis the height sets the count, as the chart always has, so the domain keeps its tick density.
+  const yCount = showAxis ? ticks.y : Math.max(2, Math.min(7, Math.floor((height - 16) / 48)));
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
-  const displayLabels = useMemo(() => compactSeriesLabels(visibleSeries.slice(0, MAX_SERIES)), [visibleSeries]);
+  const displayLabels = useMemo(() => displaySeriesNames(visibleSeries.slice(0, MAX_SERIES)), [visibleSeries]);
+  // A lone generic series is identified by the widget's authored title; see fallbackIdentityTitle.
+  const identityTitle = useMemo(() => fallbackIdentityTitle(widget, visibleSeries), [widget, visibleSeries]);
+  const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
+  // Colours are assigned over the whole result, so zooming, hiding and the series cut never recolour a series.
+  const seriesColors = useMemo(() => widgetSeriesColors(series, widget), [series, widget]);
   const domain = useMemo(
-    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options),
-    [visibleSeries, prior, options],
+    () => resolveTimeSeriesDomain([...visibleSeries.slice(0, MAX_SERIES), ...prior.map(entry => entry.shifted)], options, yCount),
+    [visibleSeries, prior, options, yCount],
   );
-  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: resolveSeriesColor(entry.original.labels, options.seriesColors, entry.index === 0 && widget.color ? widget.color : PALETTE[entry.index % PALETTE.length]), points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, widget.color, options.seriesColors]);
+  const previousData = useMemo(() => prior.map(entry => ({ ...entry, color: seriesColors[entry.index].color, points: downsamplePoints(entry.shifted.points), plotPoints: downsamplePoints(withGapBreaks(entry.shifted.points, sampleCadence(entry.shifted.points))) })), [prior, seriesColors]);
   const data = useMemo(
     () =>
       visibleSeries.slice(0, MAX_SERIES).map((entry, index) => {
@@ -199,15 +249,14 @@ export function TimeSeriesChart({
         return {
           name: seriesName(entry, index),
           latest: latestPoint(entry),
-          color: resolveSeriesColor(entry.labels, options.seriesColors,
-            index === 0 && widget.color ? widget.color : PALETTE[index % PALETTE.length]),
+          color: seriesColors[index].color,
           points: downsamplePoints(entry.points).map(tag),
           plotPoints,
           // Observations that no line segment reaches. They get dots of their own.
           dotPoints: isolatedPlotPoints(plotPoints),
         };
       }),
-    [visibleSeries, widget.color, options.seriesColors],
+    [visibleSeries, seriesColors],
   );
   // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
   // Each fade meets the visible zero line, which is the plot edge nearest zero when the domain excludes zero.
@@ -263,7 +312,14 @@ export function TimeSeriesChart({
   // Calendar ticks sit on the dashboard zone's own boundaries and are placed by true instant. Only the calendar axis reads them.
   const calendarTickList = useMemo(() => options.timeAxis === "calendar" && timeDomain ? calendarTicks(timeDomain[0], timeDomain[1], ticks.x, timeZone) : undefined, [options.timeAxis, timeDomain, ticks.x, timeZone]);
   const calendarLabels = useMemo(() => new Map((calendarTickList ?? []).map(tick => [tick.value, calendarTickLabel(tick, timeZone)] as const)), [calendarTickList, timeZone]);
-  const { left: axisLeft, separateUnit } = chartYAxisLayout([...data, ...previousData].flatMap(entry => entry.points.map(point => point.value ?? 0)).concat(domain ?? []), widget.unit, options.decimals, options.yAxisLabel, options.axisUnit);
+  // The axis labels follow the domain the chart draws: the resolved one, or the nice extent of the plotted values.
+  const plottedValues = useMemo(() => [...data, ...previousData].flatMap(entry => entry.points.flatMap(point => typeof point.value === "number" ? [point.value] : [])), [data, previousData]);
+  // The chart draws exactly this domain, so its ticks and labels cannot diverge (flat series included).
+  const axisDomain = useMemo<[number, number]>(() => domain ?? autoAxisDomain(plottedValues, yCount, options.display === "area"), [domain, plottedValues, yCount, options.display]);
+  const yAxis = useMemo(() => chartYAxisLayout(plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, yCount), [plottedValues, widget.unit, options.decimals, options.yAxisLabel, options.axisUnit, axisDomain, yCount]);
+  const { left: axisLeft, separateUnit, scale: yScale } = yAxis;
+  // The chart draws the domain the labels were computed for, and gridlines at exactly the labelled ticks.
+  const plotDomain = yScale.domain;
   // Plot insets: the TanStack margins and every overlay (cursor, bands, events, brush) map time through these bounds.
   const { left: plotLeft, right: plotRight, plotWidth } = horizontalPlotBounds(width, !showAxis ? 8 : options.plotInsetLeft ?? axisLeft, !showAxis ? 8 : options.plotInsetRight ?? 12);
   const xAt = (time: number) => timeDomain ? temporalPosition(time, timeDomain[0], timeDomain[1], plotLeft, plotLeft + plotWidth) : 0;
@@ -310,6 +366,28 @@ export function TimeSeriesChart({
       : holes;
   }, [coverage, embedded, truncated, dataStart, dataEnd, staleTail]);
   const visibleBands = embedded || emptyZoom ? [] : bands;
+  // Breaches are a function of the visible samples and the thresholds alone. Cursor moves and resizes never recompute them,
+  // and each series keeps its own step (null when unknown).
+  const breaches = useMemo<SeriesBreachInterval[]>(
+    () => embedded ? [] : timeSeriesBreaches(visibleSeries.slice(0, MAX_SERIES).map(entry => ({ points: entry.points, step: sampleCadence(entry.points) })), options.thresholds),
+    [embedded, visibleSeries, options.thresholds],
+  );
+  // Intervals are clipped to the plotted window, so the footer never counts time the plot does not show.
+  const windowBreaches = useMemo(() => timeDomain ? clampBreaches(breaches, timeDomain) : breaches, [breaches, timeDomain]);
+  const breachLevels = useMemo(() => breachSummary(windowBreaches), [windowBreaches]);
+  // A widget with a warning or critical status always reserves its breach line, so the plot's height is a function of the
+  // configuration alone. Whether a breach is active only changes the words on that line, never the layout.
+  const reservesBreachLine = !embedded && (options.thresholds ?? []).some(threshold => threshold.status === "warning" || threshold.status === "critical");
+  // Bands: one per merged span with time in it, so instants (single samples) get no zero-width band. Spans closer than one
+  // pixel merge into one band. Each level keeps its most recent bands, and warning is drawn before critical so that critical
+  // paints over any overlap.
+  const bandPlan = useMemo(() => {
+    const msPerPixel = timeDomain && plotWidth > 0 ? (timeDomain[1] - timeDomain[0]) / plotWidth : 0;
+    return breachBands(windowBreaches, msPerPixel, BREACH_BAND_LIMIT);
+  }, [windowBreaches, timeDomain, plotWidth]);
+  // The stroke is derived from each series' plotted points, so it sits on the drawn line. Threshold crossings are
+  // interpolated, which makes entry and exit symmetric. Nothing here depends on the cursor.
+  const breachEmphasis = useMemo(() => embedded ? [] : data.map((entry, index) => breachEmphasisPoints(entry.plotPoints, options.thresholds).map(point => ({ ...point, seriesIndex: index }))), [embedded, data, options.thresholds]);
   const intervalCount = visibleBands.length + (staleTail ? 1 : 0);
   const gapsHidden = !embedded && !!truncated && dataStart !== undefined;
   const tailBox = staleTail ? bandBox(staleTail.from, staleTail.to) : undefined;
@@ -355,6 +433,17 @@ export function TimeSeriesChart({
             points: true,
           }))] : []),
           ]),
+          // The breaching stretch of each series, drawn heavier over its line. Decorative, so the line keeps focus and hover.
+          ...breachEmphasis.flatMap((points, index) => points.length && data[index] ? [decorative(lineY(points, {
+            id: `breach-${index}`,
+            x: "timestamp",
+            y: "value",
+            // Grouped by series, like the line it sits on, so the marks keep a stable identity across updates.
+            z: "seriesIndex",
+            stroke: data[index].color,
+            strokeWidth: (options.lineWidth ?? 1.8) + 1.5,
+            curve: CURVES[options.curve ?? "linear"],
+          }))] : []),
           // The focus guide: a dashed rule at the focused x. It reads focus state only, so it adds no scale input.
           ...(embedded ? [] : [crosshair({ x: { stroke: "var(--gamma-chart-axis, var(--gamma-muted, #52636f))", strokeOpacity: .7, strokeWidth: 1, strokeDasharray: "3 3" }, y: false })]),
         ],
@@ -381,8 +470,8 @@ export function TimeSeriesChart({
                 },
           },
           y: {
-            scale: domain ? scaleLinear().domain(domain) : scaleLinear,
-            nice: !domain,
+            scale: scaleLinear().domain(plotDomain),
+            nice: false,
             grid:
               options.showGrid === false
                 ? false
@@ -397,10 +486,9 @@ export function TimeSeriesChart({
                     : undefined,
                   line: false,
                   ticks: {
-                    count: ticks.y,
+                    values: yScale.ticks,
                     line: false,
-                    format: (value: number) =>
-                      formatMetric(value, separateUnit ? "" : widget.unit, true, options.decimals),
+                    format: (value: number) => yScale.label(value, !separateUnit),
                   },
                   tickLabels: {
                     opacity: 1,
@@ -442,10 +530,10 @@ export function TimeSeriesChart({
       previousData,
       widget.unit,
       separateUnit,
+      yScale,
+      plotDomain,
       options,
-      domain,
       ticks.x,
-      ticks.y,
       height,
       timeSpan,
       timeDomain,
@@ -456,6 +544,7 @@ export function TimeSeriesChart({
       plotLeft,
       plotRight,
       areaFills,
+      breachEmphasis,
       calendarTickList,
       calendarLabels,
       timeZone,
@@ -464,7 +553,7 @@ export function TimeSeriesChart({
   );
 
   return (
-    <div className={styles.chart} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
+    <div className={styles.chart} data-series-count={data.length} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
       <div
         className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}
@@ -477,7 +566,9 @@ export function TimeSeriesChart({
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
       >
-        {showAxis && separateUnit && <span className={styles.axisUnit} title={widget.unit} data-chart-axis-unit>{widget.unit}</span>}
+        {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
+        {/* Breach bands come before the no-sample hatches, so a hatch paints over any band it touches. */}
+        {!embedded && !emptyZoom && timeDomain && bandPlan.spans.length > 0 && <BreachBands spans={bandPlan.spans} timeDomain={timeDomain} left={plotLeft} width={plotWidth} top={eventTop} bottom={eventBottom} />}
         {visibleBands.map((band) => {
           const box = bandBox(band.from, band.to);
           // A label is drawn only when its band can hold it, so it is never clipped. The aria-label keeps the times.
@@ -507,17 +598,17 @@ export function TimeSeriesChart({
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value >= domain[0] && threshold.value <= domain[1]).map((threshold, index) => {
-          const top = eventTop + (domain[1] - threshold.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && (options.thresholds ?? []).filter(threshold => threshold.value > plotDomain[0] && threshold.value <= plotDomain[1]).map((threshold, index) => {
+          const top = eventTop + (plotDomain[1] - threshold.value) / (plotDomain[1] - plotDomain[0]) * Math.max(0, height - eventTop - eventBottom);
           // The label sits above its line at the left end, where the newest data on the right is never covered.
           // It moves below the line when there is less than 16px above it inside the plot.
-          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: threshold.color }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
+          return <span key={`${threshold.value}-${index}`} role="img" aria-label={`${threshold.label ? `${threshold.label}: ` : "Threshold: "}${formatMetric(threshold.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-threshold-value={threshold.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: thresholdPaint(threshold) }}><span aria-hidden="true">{threshold.label || formatMetric(threshold.value, widget.unit, false, options.decimals)}</span></span>;
         })}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && (options.referenceLines ?? []).filter(reference => reference.value >= domain[0] && reference.value <= domain[1]).map((reference, index) => {
-          const top = eventTop + (domain[1] - reference.value) / (domain[1] - domain[0]) * Math.max(0, height - eventTop - eventBottom);
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && (options.referenceLines ?? []).filter(reference => reference.value >= plotDomain[0] && reference.value <= plotDomain[1]).map((reference, index) => {
+          const top = eventTop + (plotDomain[1] - reference.value) / (plotDomain[1] - plotDomain[0]) * Math.max(0, height - eventTop - eventBottom);
           return <span key={`reference-${index}`} role="img" aria-label={`${reference.label ?? "Reference"}: ${formatMetric(reference.value, widget.unit, false, options.decimals)}`} className={styles.thresholdGuide} data-reference-value={reference.value} data-label-placement={top - eventTop < 16 ? "below" : "above"} style={{ left: plotLeft, right: plotRight, top, borderColor: reference.color ?? "var(--gamma-warning)" }}><span aria-hidden="true">{reference.label ?? formatMetric(reference.value, widget.unit, false, options.decimals)}</span></span>;
         })}
-        {!embedded && domain && domain[1] > domain[0] && !emptyZoom && options.showZeroLine && domain[0] <= 0 && domain[1] >= 0 && <span aria-hidden="true" className={chartStyles.zeroLine} data-zero-line="" style={{ left: plotLeft, right: plotRight, top: eventTop + (domain[1] / (domain[1] - domain[0])) * Math.max(0, height - eventTop - eventBottom) }} />}
+        {!embedded && plotDomain[1] > plotDomain[0] && !emptyZoom && options.showZeroLine && plotDomain[0] <= 0 && plotDomain[1] >= 0 && <span aria-hidden="true" className={chartStyles.zeroLine} data-zero-line="" style={{ left: plotLeft, right: plotRight, top: eventTop + (plotDomain[1] / (plotDomain[1] - plotDomain[0])) * Math.max(0, height - eventTop - eventBottom) }} />}
         {eventEnd > eventStart && visibleEvents.map((event, index) => {
           const at = Date.parse(event.timestamp), finish = event.endTimestamp ? Date.parse(event.endTimestamp) : at;
           const position = xAt;
@@ -543,44 +634,55 @@ export function TimeSeriesChart({
         </ul>
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
+      {reservesBreachLine && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
-          {data.map((entry, index) => (
-            <span
-              className={styles.legendItem}
-              role="listitem"
-              key={`${entry.name}-${index}`}
-              title={options.showTooltip === false ? undefined : entry.name}
-            >
+          {data.map((entry, index) => {
+            // Deliberately not hidden for one series: DESIGN.md keeps identity footer rows, and this footer
+            // carries the latest reading and its aria labels. A lone generic series shows only its swatch and
+            // reading; the widget title is its accessible name, and the full identity stays in the title.
+            const titled = identityTitle !== undefined;
+            const reading = entry.latest
+              ? `${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
+              : undefined;
+            return (
               <span
-                className={styles.swatch}
-                aria-hidden="true"
-                style={{ background: entry.color }}
-              />
-              <span className={styles.legendName}>{displayLabels[index] === entry.name ? entry.name : <><span aria-hidden="true">{displayLabels[index]}</span><span className={styles.srOnly}>{entry.name}</span></>}</span>
-              <span
-                className={styles.legendValue}
-                title={options.showTooltip === false ? undefined : entry.latest
-                  ? `Latest valid sample · ${timestampFormat.format(new Date(entry.latest.timestamp))}`
-                  : "No valid sample"}
-                aria-label={entry.latest
-                  ? `${entry.name}, latest valid sample: ${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
-                  : `${entry.name}: no valid sample`}
-                data-legend-value={entry.latest?.value}
-                data-legend-timestamp={entry.latest?.timestamp}
+                className={styles.legendItem}
+                role="listitem"
+                key={`${entry.name}-${index}`}
+                title={options.showTooltip === false ? undefined : titled ? `${identityTitle} · ${entry.name}` : entry.name}
+                aria-label={titled ? (reading ? `${identityTitle}, latest valid sample: ${reading}` : `${identityTitle}: no valid sample`) : undefined}
               >
-                {entry.latest
-                  ? formatMetric(entry.latest.value, widget.unit, false, options.decimals)
-                  : "—"}
+                <span
+                  className={styles.swatch}
+                  aria-hidden="true"
+                  style={{ background: entry.color }}
+                />
+                {!titled && <span className={styles.legendName}>{displayLabels[index] === entry.name ? entry.name : <><span aria-hidden="true">{displayLabels[index]}</span><span className={styles.srOnly}>{entry.name}</span></>}</span>}
+                <span
+                  className={styles.legendValue}
+                  title={options.showTooltip === false ? undefined : entry.latest
+                    ? `Latest valid sample · ${timestampFormat.format(new Date(entry.latest.timestamp))}`
+                    : "No valid sample"}
+                  aria-label={titled ? undefined : entry.latest
+                    ? `${entry.name}, latest valid sample: ${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
+                    : `${entry.name}: no valid sample`}
+                  data-legend-value={entry.latest?.value}
+                  data-legend-timestamp={entry.latest?.timestamp}
+                >
+                  {entry.latest
+                    ? formatMetric(entry.latest.value, widget.unit, false, options.decimals)
+                    : "—"}
+                </span>
               </span>
-            </span>
-          ))}
+            );
+          })}
         </div>
       )}
       {previousData.length > 0 && zoom && <div className={styles.priorLegend} role="group" aria-label="Previous period overlay" tabIndex={0}>
         <span>Previous period · dashed · aligned to selected window</span>
         {previousData.map(entry => { const last = latestPoint(entry.original); const first = entry.original.points[0]; return <span key={entry.index} data-prior-series={entry.index} data-prior-original-first={first?.timestamp} data-prior-aligned-first={entry.points[0]?.timestamp} title={last ? `Previous sample: ${formatMetricDetails(last.value, widget.unit)} at ${new Date(last.timestamp).toISOString()}` : "No prior sample"}>
-          <i aria-hidden="true" style={{ borderColor: entry.color }} />{seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
+          <i aria-hidden="true" style={{ borderColor: entry.color }} />{previousIdentityTitle ?? seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}

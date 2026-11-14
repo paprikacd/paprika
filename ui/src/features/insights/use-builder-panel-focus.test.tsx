@@ -112,3 +112,52 @@ describe("builder panel focus", () => {
   })
 
 })
+
+describe("builder panel focus waits for lazy content", () => {
+  function Lazy({ identity, ready }: { identity: string | null; ready: boolean }) {
+    const panel = useBuilderPanelFocus(identity, undefined, ready)
+    return (
+      <>
+        <button>Opener</button>
+        <label>Search dashboards <input /></label>
+        {identity && (
+          <section ref={panel} tabIndex={-1} aria-label="Lazy panel">
+            {ready ? <h2>Real heading</h2> : <p>Loading panel…</p>}
+          </section>
+        )}
+      </>
+    )
+  }
+
+  it("keeps focus off the fallback and moves it to the real heading once the content mounts", () => {
+    const { rerender } = render(<Lazy identity={null} ready={false} />)
+    const opener = screen.getByRole("button", { name: "Opener" })
+    opener.focus()
+    rerender(<Lazy identity="examples" ready={false} />)
+    expect(opener).toHaveFocus()
+    rerender(<Lazy identity="examples" ready />)
+    expect(screen.getByRole("heading", { name: "Real heading" })).toHaveFocus()
+  })
+
+  it("keeps keystrokes when the user moves to another control before the content mounts", () => {
+    const { rerender } = render(<Lazy identity={null} ready={false} />)
+    screen.getByRole("button", { name: "Opener" }).focus()
+    rerender(<Lazy identity="examples" ready={false} />)
+    const search = screen.getByRole("textbox", { name: "Search dashboards" })
+    search.focus()
+    fireEvent.change(search, { target: { value: "cpu" } })
+    rerender(<Lazy identity="examples" ready />)
+    expect(search).toHaveFocus()
+    expect(search).toHaveValue("cpu")
+  })
+
+  it("restores the opener when the lazy panel closes before its content mounts", () => {
+    const { rerender } = render(<Lazy identity={null} ready={false} />)
+    const opener = screen.getByRole("button", { name: "Opener" })
+    opener.focus()
+    rerender(<Lazy identity="examples" ready={false} />)
+    rerender(<Lazy identity={null} ready={false} />)
+    expect(opener).toHaveFocus()
+  })
+})
+

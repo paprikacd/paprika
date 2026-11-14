@@ -691,3 +691,49 @@ func TestDashboardPrimaryObservationDistinguishesFreshnessFromThreshold(t *testi
 		t.Fatalf("provider errors must not imply fresh data: %+v", got)
 	}
 }
+
+// A stat band names a status, a colour or both. The query result carries each field the band names and nothing else,
+// so a status-only band has no empty colour in its JSON.
+func TestDashboardQueryStatThresholdKeepsStatusColourOrBoth(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1792972800,"-2"],[1792972812,"0"]]}]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	statusOnly, colourOnly, both := queryReadWidget("status-only", "up"), queryReadWidget("colour-only", "up"), queryReadWidget("both", "up")
+	statusOnly["options"] = map[string]any{"thresholds": []any{map[string]any{"value": -1, "status": "critical"}, map[string]any{"value": 0, "status": "ok"}}}
+	colourOnly["options"] = map[string]any{"thresholds": []any{map[string]any{"value": -1, "color": "#10aa10"}, map[string]any{"value": 0, "color": "#ff0000"}}}
+	both["options"] = map[string]any{"thresholds": []any{map[string]any{"value": -1, "status": "warning", "color": "#20cba3"}, map[string]any{"value": 0, "status": "critical", "color": "#ff0000", "label": "High"}}}
+	putReadDashboard(t, s, statusOnly, colourOnly, both)
+	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	if len(result.Widgets) != 3 {
+		t.Fatalf("widgets: %+v", result.Widgets)
+	}
+	for _, check := range []struct {
+		index                  int
+		status, colour         string
+		wantStatus, wantColour bool
+	}{
+		{0, "ok", "", true, false},
+		{1, "", "#ff0000", false, true},
+		{2, "critical", "#ff0000", true, true},
+	} {
+		band := result.Widgets[check.index].Threshold
+		if band == nil || band.State != "matched" || band.Boundary == nil || *band.Boundary != 0 || band.Status != check.status || band.Color != check.colour {
+			t.Fatalf("band %d: %+v", check.index, band)
+		}
+		encoded, err := json.Marshal(band)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			t.Fatal(err)
+		}
+		_, hasStatus := fields["status"]
+		_, hasColour := fields["color"]
+		if hasStatus != check.wantStatus || hasColour != check.wantColour {
+			t.Fatalf("band %d JSON %s: status %t colour %t", check.index, encoded, hasStatus, hasColour)
+		}
+	}
+}

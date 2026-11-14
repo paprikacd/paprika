@@ -8,6 +8,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,6 +18,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -53,6 +57,13 @@ func main() {
 
 const fixtureIssuer = "https://observe-e2e.example.test"
 
+func requireRunPaths(ready, dataDir string) error {
+	if ready == "" || dataDir == "" {
+		return errors.New("ready-file and data-dir are required")
+	}
+	return nil
+}
+
 func run() error {
 	ready := flag.String("ready-file", "", "Private JSON connection file")
 	uiURL := flag.String("ui-url", "", "Optional local frontend server")
@@ -62,14 +73,18 @@ func run() error {
 	applicationFixtures := flag.Bool("application-fixtures", false, "Include deterministic Shorted and Uptime source APIs")
 	applicationProviders := flag.String("application-providers", "", "Private optional application provider fixture file")
 	applicationProvidersStdin := flag.Bool("application-providers-stdin", false, "Read private optional provider fixtures from stdin without persisting credentials")
+	queryFixtureURL := flag.String("query-fixture-url", "", "Optional loopback server that supplies Prometheus range data; the Insights service, Observe gateway and authorization stay real")
+	labEntryFlag := flag.Bool("lab-entry", false, "Write a one-time loopback /__lab/enter ticket to the ready file for a browser session")
 	flag.Parse()
-	if *ready == "" || *dataDir == "" {
-		return errors.New("ready-file and data-dir are required")
+	if err := requireRunPaths(*ready, *dataDir); err != nil {
+		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	fixture := &telemetryFixture{}
-	upstream := httptest.NewServer(fixture)
+	upstream, fixture, err := newTelemetryUpstream(*queryFixtureURL)
+	if err != nil {
+		return err
+	}
 	defer upstream.Close()
 	k8s, err := newFixtureClient(upstream.URL, *applicationFixtures, *applicationProviders, *applicationProvidersStdin)
 	if err != nil {
@@ -105,12 +120,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	appHandler, lab := withLabEntry(appHandler, *labEntryFlag)
 	app := httptest.NewServer(appHandler)
 	defer app.Close()
 	if err = registerFixtureGateway(gatewayMux, proxy, backend, storeCache, secret, app.URL); err != nil {
 		return err
 	}
-	if err = writeReadyFile(*ready, app.URL, gateway.URL, secret, *tokenTTL); err != nil {
+	if err = writeReadyFile(*ready, app.URL, gateway.URL, secret, *tokenTTL, lab); err != nil {
 		return err
 	}
 	fmt.Println("Observe/Insights E2E fixture ready")
@@ -207,6 +223,20 @@ func newInsightsFixture(dataDir, gatewayURL, token string) (*httptest.Server, er
 	return httptest.NewServer(service.Handler()), nil
 }
 
+// parseLoopbackURL accepts only an HTTP(S) URL whose host is loopback. Local
+// fixture servers must never be reachable through a configured non-loopback host.
+func parseLoopbackURL(raw, flagName string) (*url.URL, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !isLoopbackHostname(parsed.Hostname()) {
+		return nil, fmt.Errorf("%s must be a loopback HTTP(S) server", flagName)
+	}
+	return parsed, nil
+}
+
+func isLoopbackHostname(hostname string) bool {
+	return hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
+}
+
 func newAppHandler(proxy http.Handler, fixture *telemetryFixture, uiURL, uiDir string) (http.Handler, error) {
 	frontend, err := frontendHandler(uiURL, uiDir)
 	if err != nil {
@@ -230,9 +260,9 @@ func frontendHandler(uiURL, uiDir string) (http.Handler, error) {
 	if uiURL == "" {
 		return http.FileServer(http.Dir(uiDir)), nil
 	}
-	frontend, err := url.Parse(uiURL)
-	if err != nil || (frontend.Scheme != "http" && frontend.Scheme != "https") || (frontend.Hostname() != "localhost" && frontend.Hostname() != "127.0.0.1" && frontend.Hostname() != "::1") {
-		return nil, errors.New("ui-url must be a loopback HTTP(S) server")
+	frontend, err := parseLoopbackURL(uiURL, "ui-url")
+	if err != nil {
+		return nil, err
 	}
 	return httputil.NewSingleHostReverseProxy(frontend), nil
 }
@@ -253,7 +283,7 @@ func mintFixtureToken(secret []byte, subject, audience string, groups []string, 
 	return token, nil
 }
 
-func writeReadyFile(path, appURL, gatewayURL string, secret []byte, ttl time.Duration) error {
+func writeReadyFile(path, appURL, gatewayURL string, secret []byte, ttl time.Duration, lab *labEntry) error {
 	ready := map[string]string{"baseURL": appURL, "mcpURL": gatewayURL + "/observe/mcp", "providerRef": "observability/prometheus", "traceProviderRef": "observability/tempo"}
 	credentials := []struct {
 		key, subject, audience string
@@ -281,6 +311,13 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte, ttl time.Dur
 		}
 		ready[credential.key] = token
 	}
+	if lab != nil {
+		ticket, err := lab.issue(ready["token"])
+		if err != nil {
+			return err
+		}
+		ready["labEnterTicket"] = ticket
+	}
 	readyJSON, err := json.Marshal(ready)
 	if err != nil {
 		return fmt.Errorf("encode fixture connection file: %w", err)
@@ -291,10 +328,261 @@ func writeReadyFile(path, appURL, gatewayURL string, secret []byte, ttl time.Dur
 	return nil
 }
 
+// labEntryTicketTTL bounds how long a printed playground link can be redeemed.
+const labEntryTicketTTL = 15 * time.Minute
+
+// withLabEntry adds the one-time entry route when the lab is enabled.
+func withLabEntry(next http.Handler, enabled bool) (http.Handler, *labEntry) {
+	if !enabled {
+		return next, nil
+	}
+	lab := newLabEntry(time.Now, labEntryTicketTTL)
+	return lab.wrap(next), lab
+}
+
+// labDefaultPath is the only destination a lab link may open.
+const labDefaultPath = "/dashboard/insights/"
+
+// labEntry turns one printed ticket into a browser session. The ticket is
+// random, stored only as a digest, valid once and valid until its expiry. It
+// is redeemable only from loopback, so it cannot be used from another host.
+// The bearer it returns is written into the page for localStorage and is never
+// printed or written to an environment file.
+type labEntry struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	ttl     time.Duration
+	issued  bool
+	used    bool
+	digest  [sha256.Size]byte
+	expires time.Time
+	bearer  string
+}
+
+var errLabTicket = errors.New("lab entry ticket is invalid, already used or expired")
+
+func newLabEntry(now func() time.Time, ttl time.Duration) *labEntry {
+	return &labEntry{now: now, ttl: ttl}
+}
+
+// issue replaces any earlier ticket. Restarting the lab issues a new one.
+func (l *labEntry) issue(bearer string) (string, error) {
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("create lab entry ticket: %w", err)
+	}
+	ticket := base64.RawURLEncoding.EncodeToString(raw[:])
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.issued = true
+	l.used = false
+	l.digest = sha256.Sum256([]byte(ticket))
+	l.expires = l.now().Add(l.ttl)
+	l.bearer = bearer
+	return ticket, nil
+}
+
+// redeem consumes the ticket. A wrong guess does not consume the live ticket.
+func (l *labEntry) redeem(ticket string) (string, error) {
+	digest := sha256.Sum256([]byte(ticket))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.issued || l.used || !l.now().Before(l.expires) || subtle.ConstantTimeCompare(digest[:], l.digest[:]) != 1 {
+		return "", errLabTicket
+	}
+	l.used = true
+	return l.bearer, nil
+}
+
+func (l *labEntry) wrap(next http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /__lab/enter", l.serveEnter)
+	mux.Handle("/", next)
+	return mux
+}
+
+func (l *labEntry) serveEnter(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// The Go router matches GET patterns for HEAD too. Only GET may spend the ticket.
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "The lab entry page accepts GET only.", http.StatusMethodNotAllowed)
+		return
+	}
+	if !isLoopbackRequest(r) {
+		http.Error(w, "The lab entry page is available only on loopback.", http.StatusForbidden)
+		return
+	}
+	destination := r.URL.Query().Get("next")
+	if destination == "" {
+		destination = labDefaultPath
+	}
+	if !validLabDestination(destination) {
+		http.Error(w, "The lab destination is not allowed.", http.StatusBadRequest)
+		return
+	}
+	bearer, err := l.redeem(r.URL.Query().Get("ticket"))
+	if err != nil {
+		http.Error(w, "This lab link is invalid, already used or expired. Restart the lab for a new link.", http.StatusNotFound)
+		return
+	}
+	// encoding/json escapes <, > and & inside strings, so the values cannot
+	// close the script element.
+	destinationJSON, err := json.Marshal(destination)
+	if err != nil {
+		http.Error(w, "The lab destination is not allowed.", http.StatusBadRequest)
+		return
+	}
+	bearerJSON, err := json.Marshal(bearer)
+	if err != nil {
+		http.Error(w, "The lab session could not be created.", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, err := fmt.Fprintf(w, labEnterPage, bearerJSON, destinationJSON); err != nil {
+		slog.Warn("write lab entry page", "error", err)
+	}
+}
+
+const labEnterPage = `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paprika Insights playground</title>
+<p>Opening the Insights playground&hellip;</p>
+<script>
+(function () {
+  var token = %s, destination = %s;
+  try {
+    localStorage.setItem("paprika_id_token", token);
+  } catch (error) {
+    document.body.textContent = "This browser blocked local storage, so the playground cannot start a session.";
+    return;
+  }
+  location.replace(destination);
+})();
+</script>
+`
+
+// validLabDestination admits only same-origin paths inside the Insights app.
+func validLabDestination(destination string) bool {
+	return strings.HasPrefix(destination, labDefaultPath) && !strings.HasPrefix(destination, "//") && !strings.ContainsAny(destination, "\\\r\n\t\x00")
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return false
+	}
+	hostname, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		hostname = r.Host
+	}
+	// A loopback Host header blocks DNS rebinding of a remote name to this port.
+	return isLoopbackHostname(hostname)
+}
+
 type telemetryFixture struct {
 	mu              sync.Mutex
 	requests        []map[string]string
 	gatewayRequests []gatewayRequest
+	// queryFixture, when set, supplies Prometheus range data from the JavaScript
+	// resolvers. Only the provider's HTTP response is replaced: the Insights
+	// service, Observe gateway, authorization and normalization stay real.
+	queryFixture *url.URL
+	client       *http.Client
+}
+
+// newTelemetryUpstream serves the fake provider endpoint that the Kubernetes
+// fixture points at.
+func newTelemetryUpstream(queryFixtureURL string) (*httptest.Server, *telemetryFixture, error) {
+	fixture, err := newTelemetryFixture(queryFixtureURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	return httptest.NewServer(fixture), fixture, nil
+}
+
+func newTelemetryFixture(queryFixtureURL string) (*telemetryFixture, error) {
+	fixture := &telemetryFixture{}
+	if queryFixtureURL == "" {
+		return fixture, nil
+	}
+	target, err := parseLoopbackURL(queryFixtureURL, "query-fixture-url")
+	if err != nil {
+		return nil, err
+	}
+	fixture.queryFixture = target
+	// A fixture response is data, never a redirect to follow.
+	fixture.client = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return fixture, nil
+}
+
+// serveFixtureRange asks the JavaScript resolver for the query and returns it in
+// the Prometheus matrix shape the gateway already decodes.
+func (f *telemetryFixture) serveFixtureRange(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	body, err := json.Marshal(map[string]any{"providerId": "fixture-prometheus", "kind": "metrics", "query": q.Get("query"), "start": q.Get("start"), "end": q.Get("end"), "step": q.Get("step")})
+	if err != nil {
+		http.Error(w, "invalid fixture query", http.StatusInternalServerError)
+		return
+	}
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, f.queryFixture.JoinPath("query").String(), bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, "query fixture unavailable", http.StatusBadGateway)
+		return
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := f.client.Do(request)
+	if err != nil {
+		http.Error(w, "query fixture unavailable", http.StatusBadGateway)
+		return
+	}
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			slog.Warn("close fixture query response", "error", err)
+		}
+	}()
+	if response.StatusCode != http.StatusOK {
+		// The resolver rejects unknown or unresolved queries; the gateway sees a provider error.
+		http.Error(w, "query fixture rejected the query", http.StatusBadGateway)
+		return
+	}
+	var result struct {
+		Series []struct {
+			Labels map[string]string `json:"labels"`
+			Points []struct {
+				Timestamp float64  `json:"timestamp"`
+				Value     *float64 `json:"value"`
+			} `json:"points"`
+		} `json:"series"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&result); err != nil {
+		http.Error(w, "invalid query fixture response", http.StatusBadGateway)
+		return
+	}
+	matrix := make([]any, 0, len(result.Series))
+	for _, series := range result.Series {
+		values := make([]any, 0, len(series.Points))
+		for _, point := range series.Points {
+			// A null observation becomes NaN, which the normaliser reports as a
+			// missing value (the Playwright fixture's null). Dropping it would
+			// instead show the previous sample as the latest reading.
+			if point.Value == nil {
+				values = append(values, []any{point.Timestamp / 1000, "NaN"})
+				continue
+			}
+			values = append(values, []any{point.Timestamp / 1000, strconv.FormatFloat(*point.Value, 'f', -1, 64)})
+		}
+		matrix = append(matrix, map[string]any{"metric": series.Labels, "values": values})
+	}
+	jsonResponse(w, map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": matrix}})
 }
 
 // Capture the protocol boundary without retaining authorization headers or
@@ -350,6 +638,10 @@ func (f *telemetryFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.requests = append(f.requests, map[string]string{"path": r.URL.Path, "query": q.Get("query"), "traceQuery": q.Get("q"), "start": q.Get("start"), "end": q.Get("end"), "step": q.Get("step")})
 	f.mu.Unlock()
 	if f.serveApplicationFixture(w, r) {
+		return
+	}
+	if f.queryFixture != nil && r.URL.Path == "/api/v1/query_range" {
+		f.serveFixtureRange(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/") {

@@ -15,7 +15,7 @@
 .cells {
   position: relative;
   height: 100%;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 2px;
   background: var(--gamma-surface-2);
 }
@@ -27,13 +27,18 @@
 .mark[data-history-edge="end"] { transform: translateX(-100%); min-width: 2px; z-index: 1; }
 .cells[data-segmented="true"] > .mark { box-shadow: inset -1px 0 var(--gamma-surface-2); }
 .band { pointer-events: none; }
-.cells > button:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; z-index: 2; }
+/* One frame per contiguous warning or critical run: it sits over the marks and never takes pointer events. */
+/* z-index 3 keeps the frame above the marks, including a focused mark (z-index 2), so the frame is never covered. */
+.run { position: absolute; top: 0; bottom: 0; min-width: 2px; z-index: 3; pointer-events: none; border-radius: 1px; box-shadow: var(--status-inset, 0 0 #0000); }
+/* The mark draws no outline of its own; the focus ring is a separate element above the run frame. */
+.cells > button.mark:focus-visible { outline: none; z-index: 2; }
+.focusRing { position: absolute; top: 0; bottom: 0; min-width: 2px; z-index: 4; pointer-events: none; border-radius: 2px; box-shadow: 0 0 0 1px var(--widget-background, var(--gamma-bg, #ffffff)), 0 0 0 3px var(--widget-text, var(--gamma-ink)); }
 .unknown { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }
 .cells > button.unknown, .cells > button.unknown:hover:not(:disabled) { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 4px, var(--gamma-border) 4px 5px); }
 .mixed { background: repeating-linear-gradient(135deg, var(--gamma-surface-2) 0 3px, var(--gamma-muted) 3px 4px); }
 .legend { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; color: var(--widget-text, var(--gamma-muted)); font-size: 10px; line-height: 1.4; }
 .footer.footer { justify-content: flex-start; gap: 4px 12px; font-size: 10px; }
-.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend > span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 10px; height: 8px; border-radius: 1px; flex-shrink: 0; }
 .legend :is(.unknown, .mixed) { border: 1px solid var(--gamma-border); }
 

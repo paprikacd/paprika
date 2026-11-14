@@ -13,6 +13,8 @@ import {
 } from "./repository-examples"
 import type { InsightsClient } from "./client"
 
+export { repositoryExamples }
+
 const catalog = createExampleCatalogQuery(repositoryExampleFixtures)
 export const repositoryWorkspaceProviders = [
   ...new Map(

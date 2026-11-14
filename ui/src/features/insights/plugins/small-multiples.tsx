@@ -3,16 +3,17 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
+import { formatSharedScale } from "../units";
 import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName, type Point, type Series } from "../chart-data";
 import { validTimestamp } from "../widget-context";
 import { compactSeriesLabels } from "../series-display";
+import { widgetSeriesColors } from "../series-colors";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import type { QueryResult, Widget } from "../schema";
 import styles from "./small-multiples.module.css";
 
 const configSchema = z.strictObject({ maxSeries: z.number().int().min(1).max(12).optional(), columns: z.number().int().min(1).max(6).optional(), maxPoints: z.number().int().min(8).max(240).optional() });
-const palette = ["var(--gamma-chart-1, #2867b9)", "var(--gamma-chart-2, #087f7a)", "var(--gamma-chart-3, #bb5037)", "var(--gamma-chart-4, #977017)", "var(--gamma-chart-5, #7c58ad)", "var(--gamma-chart-6, #427449)"];
 const left = 2, right = 598, top = 8, bottom = 92;
 type Domains = { start: number; end: number; min: number; max: number };
 
@@ -46,9 +47,9 @@ export function smallMultiplesPath(points: readonly Point[], domain: Domains) {
   }).filter(Boolean).join(" ");
 }
 
-function SmallMultiple({ entry, index, displayName, domain, widget, result, maxPoints, interactive, detailsEnabled, onContextChange }: { entry: Series; index: number; displayName: string; domain: Domains; widget: Widget; result: QueryResult; maxPoints: number; interactive: boolean; detailsEnabled: boolean; onContextChange: WidgetRendererProps["onContextChange"] }) {
+function SmallMultiple({ entry, index, color, displayName, domain, widget, result, maxPoints, interactive, detailsEnabled, onContextChange }: { entry: Series; index: number; color: string; displayName: string; domain: Domains; widget: Widget; result: QueryResult; maxPoints: number; interactive: boolean; detailsEnabled: boolean; onContextChange: WidgetRendererProps["onContextChange"] }) {
   const points = useMemo(() => downsamplePoints(entry.points, maxPoints), [entry.points, maxPoints]);
-  const name = seriesName(entry, index), latest = latestPoint(entry), color = index === 0 && widget.color ? widget.color : palette[index % palette.length];
+  const name = seriesName(entry, index), latest = latestPoint(entry);
   const id = useId(), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), interaction = useRef({ hovered: false, focused: false, panel: false });
   const [active, setActive] = useState<{ index: number; anchor: SVGSVGElement; pinned: boolean; revision: QueryResult }>();
   const current = active?.revision === result ? active : undefined;
@@ -90,9 +91,13 @@ function SmallMultiple({ entry, index, displayName, domain, widget, result, maxP
     const hasValue = (other: Point | undefined) => typeof other?.value === "number" && Number.isFinite(other.value);
     return !hasValue(points[pointIndex - 1]) && !hasValue(points[pointIndex + 1]) ? [coordinates(point, domain)] : [];
   });
+  // Both extremes share one scale and reading precision, so the pair compares in one unit. Authored decimals stay exact.
+  const [topLabel, bottomLabel] = widget.options?.decimals === undefined
+    ? formatSharedScale([domain.max, domain.min], widget.unit)
+    : [formatMetric(domain.max, widget.unit, false, widget.options.decimals), formatMetric(domain.min, widget.unit, false, widget.options.decimals)];
   return <section className={styles.panel} data-multiple-series={name}>
     <div className={styles.heading}><span className={styles.name} title={name} aria-label={name}>{displayName}</span><span className={styles.value}>{latest ? formatMetric(latest.value, widget.unit, false, widget.options?.decimals) : "No data"}</span></div>
-    <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{formatMetric(domain.max, widget.unit, false, widget.options?.decimals)}</span><span>{formatMetric(domain.min, widget.unit, false, widget.options?.decimals)}</span></div>
+    <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{topLabel}</span><span>{bottomLabel}</span></div>
     <svg className={styles.plot} viewBox="0 0 600 100" preserveAspectRatio="none" role="group" aria-label={`${name} trend. Shared scales.${interactive && points.length ? " Arrow keys inspect samples; Enter pins." : ""}`} aria-describedby={detailsEnabled && selected ? id : undefined} tabIndex={interactive && points.length ? 0 : undefined}
       data-domain-start={domain.start} data-domain-end={domain.end} data-domain-min={domain.min} data-domain-max={domain.max}
       onFocus={event => { interaction.current.focused = true; show(points.length - 1, event.currentTarget); }}
@@ -116,6 +121,8 @@ function SmallMultiple({ entry, index, displayName, domain, widget, result, maxP
 export function SmallMultiples({ widget, result, embedded, onContextChange }: WidgetRendererProps) {
   const config = configSchema.parse(widget.config ?? {}), parentEmbedded = useEmbeddedWidget();
   const series = useMemo(() => (result.series ?? []).slice(0, config.maxSeries ?? 6), [result.series, config.maxSeries]);
+  // Colours come from every returned series, so a panel keeps its colour whatever maxSeries shows.
+  const colors = useMemo(() => widgetSeriesColors(result.series ?? [], widget), [result.series, widget]);
   // Resolve names against all returned peers, not just visible panels, so an
   // omitted series cannot make a shortened identity ambiguous.
   const displayNames = useMemo(() => compactSeriesLabels(result.series ?? []), [result.series]);
@@ -146,7 +153,7 @@ export function SmallMultiples({ widget, result, embedded, onContextChange }: Wi
   };
   return <div className={styles.root}><div className={styles.scroll} ref={scroll} role="region" aria-label={`${widget.title} trends`} aria-describedby={overflow ? overflowId : undefined} tabIndex={overflow && !embedded && !parentEmbedded ? 0 : undefined} onKeyDown={scrollKeys}>
     <div className={styles.grid} ref={grid} style={{ "--multiple-columns": config.columns ?? 3 } as CSSProperties}>
-      {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
+      {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} color={colors[index].color} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
     </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{result.truncated && <span>Partial source response</span>}</div></div>;
 }
 export function registerSmallMultiplesPlugin() {

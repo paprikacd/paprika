@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 )
 
 func TestInsightsScopeIsExplicitAndIndependent(t *testing.T) {
@@ -57,6 +58,18 @@ func TestInsightsInitializeGuidesReadOnlyClientsToDashboardBundles(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestAuthoringInstructionsCarryDashboardRulesOnlyForInsightsAuthoring(t *testing.T) {
+	_, authoring := serverDescriptionAndInstructions(true, []Scope{ScopeObserve, ScopeInsightsWrite})
+	assert.True(t, strings.HasPrefix(authoring, "Prefer query_dashboard"), "the authoring instructions keep their existing opening")
+	for _, rule := range append(guidance.DashboardComposition(), guidance.DashboardWorkflow()...) {
+		assert.Contains(t, authoring, rule, "an authoring surface must advertise every dashboard rule to every client")
+	}
+	_, withoutInsights := serverDescriptionAndInstructions(true, []Scope{ScopeObserve})
+	assert.NotContains(t, withoutInsights, guidance.DashboardComposition()[0], "a server without Insights authoring does not advertise dashboard rules")
+	_, fleet := serverDescriptionAndInstructions(false, []Scope{ScopeRead, ScopeWrite})
+	assert.NotContains(t, fleet, guidance.DashboardComposition()[0], "the fleet surface never receives Insights rules")
 }
 
 func TestInsightsAuthoringScopeConsentAndRefreshPreserveExplicitGrant(t *testing.T) {

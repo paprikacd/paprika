@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import { useTraceFetcher } from "./trace-waterfall";
 import { TraceDialog } from "./trace-dialog";
@@ -19,6 +20,7 @@ export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
+import { formatReading, formatSharedScale, joinReading } from "./units";
 export {
   downsamplePoints,
   latestPoint,
@@ -29,7 +31,7 @@ export {
 } from "./chart-data";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { TooltipSubWidget } from "./tooltip-widgets";
-import { StatSparkline } from "./stat-sparkline";
+import { StatSparkline, isSteadySeries } from "./stat-sparkline";
 import sparklineStyles from "./stat-sparkline.module.css";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { ObservationTooltip, ObservationDetails } from "./observation-tooltip";
@@ -47,8 +49,13 @@ import {
 } from "./widget-context";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { EMPTY_OPTIONS, PALETTE, thresholdForValue, usePlotSize, type Point, type Series } from "./chart-renderer-shared";
+import { widgetSeriesColors } from "./series-colors";
+import { thresholdInk, thresholdPaint } from "./status";
+import { StatusChip } from "./status-chip";
+import { widgetAttention, useWidgetAttentionContext } from "./widget-attention";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
+import { displaySeriesNames } from "./series-display";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
 export { BarChart } from "./bar-chart";
 export { ChartDataInspector } from "./chart-data-inspector";
@@ -63,24 +70,46 @@ type Trace = NonNullable<QueryResult["traces"]>[number];
 
 const MAX_ROWS = 100;
 
+/** Heatmap cells take the critical frame only; warning cells keep their fill and label. */
+function critical(threshold: Threshold | undefined) {
+  return threshold?.status === "critical" ? "critical" : undefined;
+}
+/**
+ * The frame is drawn in the cell's own text colour, which is the ink that reads on its fill. Page ink has only about
+ * 1.2 to 1.3:1 against the critical fill, so it would not be visible.
+ */
+function criticalStroke(threshold: Threshold | undefined): CSSProperties {
+  return critical(threshold) ? ({ "--status-stroke-color": "currentColor" } as CSSProperties) : {};
+}
+
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
-  { value: 0, color: "#b64a3a", label: "Unhealthy" },
-  { value: 1, color: "#53876a", label: "Healthy" },
+  { value: 0, status: "critical", label: "Unhealthy" },
+  { value: 1, status: "ok", label: "Healthy" },
 ];
 
 function Stat({
   widget,
   series,
+  result,
   onContextChange,
 }: {
   widget: Widget;
   series: Series[];
+  /** The whole result, so a truncated response is seen as well as the series. */
+  result?: QueryResult;
   onContextChange?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
   const timeZone = useDashboardTimeZone();
   const sampleTime = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }), [timeZone]);
   const { rangeEnd } = useDashboardWindow();
+  // The tile evaluates its widget once and passes the verdict down. An embedded renderer shows another widget, so it evaluates its own.
+  // Outside a tile, the renderer evaluates once itself; a tile's verdict is never recomputed here.
+  const tileAttention = useWidgetAttentionContext();
+  const attention = useMemo(
+    () => !embedded && tileAttention ? tileAttention : widgetAttention(widget, { result: result ?? { series }, rangeEnd }),
+    [embedded, tileAttention, widget, series, result, rangeEnd],
+  );
   const entries = series
     .map((entry, index) => ({
       entry,
@@ -90,7 +119,7 @@ function Stat({
     }))
     .filter((entry) => entry.point);
   const first = entries[0];
-  if (!first?.point) return <EmptyState />;
+  if (!first?.point) return <EmptyState partial={attention.partial} />;
   // A Single value intentionally displays the last valid observation. A
   // newer missing observation must still be disclosed: otherwise an older
   // healthy value can be mistaken for a current reading. Match the dashboard
@@ -100,65 +129,88 @@ function Stat({
     if (validTimestamp(point.timestamp) && (!latestObservation || point.timestamp >= latestObservation.timestamp)) latestObservation = point;
   }
   const latestMissing = latestObservation !== undefined && (typeof latestObservation.value !== "number" || !Number.isFinite(latestObservation.value));
-  const ageSeconds = rangeEnd !== undefined && Number.isFinite(rangeEnd)
-    ? Math.max(0, (rangeEnd - first.point.timestamp) / 1000)
-    : undefined;
-  const stale = ageSeconds !== undefined && widget.options?.staleAfterSeconds !== undefined && ageSeconds > widget.options.staleAfterSeconds;
-  const color =
-    widgetTextColor(widget.options) ??
-    thresholdForValue(first.point.value, widget.options?.thresholds)?.color ??
-    widget.color;
+  // Under the reading the card holds three lines: the extra rows and, when more than three series are left over, the note
+  // that counts the rest. The latest-missing notice takes the caption's place rather than adding a line, so it needs no
+  // room of its own. Measured at 74 px and 148 px (1, 3, 4, 5 and 120 series, shared and older captions, with and
+  // without the missing line, at 390, 768 and 1512 px) every combination fits without scrolling.
+  const extraSeries = entries.length - 1;
+  const noteNeeded = extraSeries > 3;
+  const extraRows = noteNeeded ? 2 : extraSeries;
+  const shownSeries = extraRows + 1;
+  const { ageSeconds, stale, band } = attention;
+  const thresholds = widget.options?.thresholds;
+  // Colour names the threshold's hue on the trend and the bar; the reading stays in ink (or an author's text colour).
+  const textColor = widgetTextColor(widget.options);
+  const color = textColor ?? thresholdPaint(band) ?? widget.color;
+  const steady = !!widget.options?.showSparkline && isSteadySeries(first.entry);
   const minimum = widget.options?.min, maximum = widget.options?.max;
   const showBar = widget.options?.showStatBar === true && minimum !== undefined && maximum !== undefined && Number.isFinite(minimum) && Number.isFinite(maximum) && minimum < maximum;
   const boundedValue = showBar ? Math.max(minimum, Math.min(maximum, first.point.value)) : 0;
   const span = showBar ? maximum - minimum : 1;
   const magnitude = showBar ? Math.max(Math.abs(minimum), Math.abs(maximum), 1) : 1;
   const fraction = showBar ? Math.max(0, Math.min(1, Number.isFinite(span) ? (boundedValue - minimum) / span : (boundedValue / magnitude - minimum / magnitude) / (maximum / magnitude - minimum / magnitude))) : 0;
-  const barColor = thresholdForValue(first.point.value, widget.options?.thresholds)?.color ?? widget.color ?? "var(--gamma-chart-1)";
+  // The reading may rescale its unit (ms to s, bytes to MiB), so the unit span shows the reading's unit, not the authored one.
+  // Thresholds stay on their side of the rounded reading: 99.86 never reads 99.9 against a 99.9 threshold.
+  const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) });
+  const barColor = thresholdPaint(band) ?? widget.color ?? "var(--gamma-chart-1)";
+  // The status chip names a warning or critical band with its glyph and label. A colour-only band above the first one
+  // gets a dot and its label; the first band is the normal state and stays unlabelled.
+  // A stale sample is a notice, not a breach: it takes the chip slot, so it never pushes the reading out of a one-row card.
+  const sampleAge = ageSeconds === undefined ? "" : Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`;
+  const chip = <>
+    {band?.status === "warning" || band?.status === "critical"
+      ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
+      : band && band.status === undefined && band.color !== undefined && band.label?.trim()
+        ? <StatBandChip color={band.color} label={band.label.trim()} />
+        : null}
+    {stale && <StatNoticeChip visible={`Stale · ${sampleAge}`} full={`Last valid sample: ${sampleAge} before range end.`} dataAttribute="data-stale-observation" />}
+    {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}
+  </>;
   return (
-    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined}>
-      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Last valid · latest missing</div>}
-      {stale && <div className={styles.staleObservation} role="status" data-stale-observation="">
-        Last valid sample: {Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`} before range end.
-      </div>}
+    // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
+    // hidden (kept for assistive technology) exactly as for a shared sample.
+    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined} data-caption-merged={latestMissing || undefined}>
+      {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Latest missing · last valid {sampleTime.format(new Date(first.point.timestamp))}</div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
         data-stat-summary=""
         data-sparkline-placement={widget.options?.sparklinePlacement ?? "background"}
       >
+        {/* Anatomy, in order: reading and unit, status chip beside it, the latest valid sample's time, then the trend. */}
         <div className={sparklineStyles.value} data-stat-reading="">
-          {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
-          <span
-            className={styles.statValue}
-            data-metric-value={String(first.point.value)}
-            style={{ color: showBar ? widgetTextColor(widget.options) : widget.options?.sparklinePlacement === "side" ? widgetTextColor(widget.options) ?? thresholdForValue(first.point.value, widget.options?.thresholds)?.color : color }}
-          >
-            {formatMetric(
-              first.point.value,
-              "",
-              false,
-              widget.options?.decimals,
-            )}
-            <span className={styles.statUnit}>{widget.unit}</span>
-          </span>
+          <div className={styles.statFigure} data-stat-figure="">
+            {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
+            <span
+              className={styles.statValue}
+              data-metric-value={String(first.point.value)}
+              title={exactMetric(first.point.value, widget.unit)}
+              style={{ color: textColor }}
+            >
+              {statReading.value}
+              <span className={styles.statUnit}>{statReading.unit}</span>
+            </span>
+            {chip}
+          </div>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}
             <time dateTime={new Date(first.point.timestamp).toISOString()}>{sampleTime.format(new Date(first.point.timestamp))}</time>
           </div>
         </div>
-        {widget.options?.showSparkline && (
+        {widget.options?.showSparkline && (steady ? (
+          <span className={sparklineStyles.steady} data-stat-steady="" title="Every valid sample in this range has the same value.">Steady</span>
+        ) : (
           <StatSparkline widget={embedded ? undefined : widget}
             series={first.entry}
             name={first.name}
             unit={widget.unit}
-            color={color ?? PALETTE[0]}
+            color={color ?? widgetSeriesColors(series, widget)[first.index]?.color ?? PALETTE[0]}
             onSelect={
               onContextChange
                 ? () => onContextChange(metricContext(first.entry, first.index))
                 : undefined
             }
           />
-        )}
+        ))}
       </div>
       {showBar && <div className={styles.statBar} role="meter" aria-label={`${widget.title} value on configured scale`}
         aria-valuemin={minimum} aria-valuemax={maximum} aria-valuenow={boundedValue}
@@ -166,25 +218,56 @@ function Stat({
         data-stat-bar="" data-stat-bar-value={first.point.value} data-stat-bar-fraction={fraction}>
         <span className={styles.statBarFill} style={{ width: `${fraction * 100}%`, backgroundColor: barColor }} />
       </div>}
-      {entries.slice(1, 4).map((entry) => (
-        <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
-          <span>{entry.name}</span>
-          <strong>
-            {formatMetric(
-              entry.point!.value,
-              widget.unit,
-              false,
-              widget.options?.decimals,
-            )}
-          </strong>
+      {entries.length > 1 && (
+        // With more than four series the reading and two rows fill the card, so the note takes the third row; the
+        // rest are counted in the note. One section for the extra rows and their note, so the card's gap separates the reading from the list once.
+        <div className={styles.statExtras} data-stat-extras="">
+          {entries.slice(1, extraRows + 1).map((entry) => (
+            <div className={styles.statExtra} key={`${entry.name}-${entry.index}`}>
+              <span>{entry.name}</span>
+              <strong>
+                {joinReading(formatReading(entry.point!.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) }))}
+              </strong>
+            </div>
+          ))}
+          {entries.length > shownSeries && (
+            <span className={styles.notice} role="status">
+              +{entries.length - shownSeries} more series. Switch to table to inspect.
+            </span>
+          )}
         </div>
-      ))}
-      {entries.length > 4 && (
-        <span className={styles.notice} role="status">
-          +{entries.length - 4} more series. Switch to table to inspect.
+      )}
+      {/* In short cards the rows above are hidden and this one-line note stands in for them. It counts every extra series. */}
+      {entries.length > 1 && (
+        <span className={styles.statCompactNote} data-stat-compact-note="">
+          {entries.length - 1} more series · Switch to table to inspect
         </span>
       )}
     </div>
+  );
+}
+
+/** A colour-only band's label: a dot in the band's hue, then the label. Non-interactive, like the status chip. */
+function StatBandChip({ color, label }: { color: string; label: string }) {
+  return (
+    <span className={styles.statBandChip} data-stat-chip="band">
+      <span className={styles.statBandDot} aria-hidden="true" style={{ background: color }} />
+      <span className={styles.statBandText}>{label}</span>
+    </span>
+  );
+}
+
+/**
+ * A neutral notice chip for a stat: a stale value is old, not bad, and a partial response is incomplete, not breached.
+ * The visible text is short; screen readers hear the full sentence.
+ */
+function StatNoticeChip({ visible, full, dataAttribute }: { visible: string; full: string; dataAttribute: string }) {
+  return (
+    <span className={styles.statNoticeChip} role="status" {...{ [dataAttribute]: "" }}>
+      <span className={styles.statBandDot} aria-hidden="true" />
+      <span className={styles.statBandText}>{visible}</span>
+      <span className={styles.statSrOnly}>{full}</span>
+    </span>
   );
 }
 
@@ -208,6 +291,26 @@ function MetricTable({
     setSelected(contextKey(context));
     onContextChange?.(context);
   };
+  // Each row's extremes, and one display scale per column, so a column compares in one unit ("1.03 s" beside "1.21 s").
+  const tableRows = series.slice(0, MAX_ROWS).map(entry => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const point of entry.points)
+      if (typeof point.value === "number" && Number.isFinite(point.value) && validTimestamp(point.timestamp)) {
+        min = Math.min(min, point.value);
+        max = Math.max(max, point.value);
+      }
+    return { entry, latest: latestPoint(entry), min, max };
+  });
+  const columnLabels = (values: number[]) =>
+    widget.options?.decimals === undefined
+      ? formatSharedScale(values, widget.unit)
+      : values.map(value => formatMetric(value, widget.unit, false, widget.options?.decimals));
+  // Rows name themselves with the same compacted labels as the charts; the full identity stays in each row's title.
+  const displayNames = displaySeriesNames(series.slice(0, MAX_ROWS));
+  const latestLabels = columnLabels(tableRows.map(row => row.latest?.value ?? NaN));
+  const minLabels = columnLabels(tableRows.map(row => row.min));
+  const maxLabels = columnLabels(tableRows.map(row => row.max));
   return (
     <div
       className={styles.tableWrap}
@@ -231,23 +334,12 @@ function MetricTable({
           </tr>
         </thead>
         <tbody>
-          {series.slice(0, MAX_ROWS).map((entry, index) => {
-            const latest = latestPoint(entry);
-            let min = Infinity;
-            let max = -Infinity;
-            for (const point of entry.points)
-              if (
-                typeof point.value === "number" &&
-                Number.isFinite(point.value) &&
-                validTimestamp(point.timestamp)
-              ) {
-                min = Math.min(min, point.value);
-                max = Math.max(max, point.value);
-              }
-            const name = seriesName(entry, index);
+          {tableRows.map(({ entry, latest, min, max }, index) => {
+            const name = displayNames[index];
+            const fullName = seriesName(entry, index);
             return (
               <tr
-                key={`${name}-${index}`}
+                key={`${fullName}-${index}`}
                 onPointerEnter={(event) => {
                   if (
                     event.pointerType !== "touch" &&
@@ -285,7 +377,7 @@ function MetricTable({
               >
                 <td>
                   <ObservationDetails
-                    label={`Inspect series ${name}`}
+                    label={`Inspect series ${fullName}`}
                     enabled={widget.options?.showTooltip !== false}
                     revision={entry}
                     externalAnchor={
@@ -326,32 +418,17 @@ function MetricTable({
                       </>
                     }
                   >
-                    <span>{name}</span>
+                    <span title={fullName}>{name}</span>
                   </ObservationDetails>
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    latest?.value ?? NaN,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {latestLabels[index]}
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    min,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {minLabels[index]}
                 </td>
                 <td className={styles.numeric}>
-                  {formatMetric(
-                    max,
-                    widget.unit,
-                    false,
-                    widget.options?.decimals,
-                  )}
+                  {maxLabels[index]}
                 </td>
               </tr>
             );
@@ -619,7 +696,7 @@ export function EmptyState({ partial = false }: { partial?: boolean }) {
   const contextualPartial = !!(source?.result.truncated || source?.result.records?.truncated);
   const incomplete = partial || contextualPartial;
   return (
-    <div className={styles.state}>
+    <div className={styles.state} data-widget-state="empty">
       <strong>{incomplete ? "No observations returned" : "No data in this time range"}</strong>
       <p>{partial ? "The provider response may be incomplete. Narrow the query or check the data source." : contextualPartial ? "No observations were included in this incomplete response." : "Try a wider time range or adjust this widget’s query."}</p>
     </div>
@@ -771,11 +848,14 @@ export function Heatmap({
                 role="img"
                 aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
                 className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
+                data-heatmap-cell=""
+                data-status-stroke={critical(threshold)}
                 style={{
-                  background: threshold?.color ?? "#e6e9e0",
+                  background: thresholdPaint(threshold) ?? "#e6e9e0",
                   color:
                     options.textColor ??
-                    (threshold ? contrastText(threshold.color) : "#69725f"),
+                    (thresholdInk(threshold) ?? "#69725f"),
+                  ...criticalStroke(threshold),
                 }}
               >
                 {options.showLabels !== false && (
@@ -800,11 +880,14 @@ export function Heatmap({
               key={`${cell.name}-${index}`}
               type="button"
               className={`${configStyles.cell} ${hasText ? "" : configStyles.colorOnlyCell}`}
+              data-heatmap-cell=""
+              data-status-stroke={critical(threshold)}
               style={{
-                background: threshold?.color ?? "#e6e9e0",
+                background: thresholdPaint(threshold) ?? "#e6e9e0",
                 color:
                   options.textColor ??
-                  (threshold ? contrastText(threshold.color) : "#69725f"),
+                  (thresholdInk(threshold) ?? "#69725f"),
+                ...criticalStroke(threshold),
               }}
               aria-label={`${cell.name}: ${cell.value === undefined ? "No data" : formatMetric(cell.value, widget.unit, false, options.decimals)}${threshold?.label ? ` · ${threshold.label}` : ""}`}
               aria-describedby={
@@ -931,7 +1014,7 @@ export function Heatmap({
             </strong>
             <span className={configStyles.tooltipStatus}>
               <i
-                style={{ background: selectedThreshold?.color ?? "#a5ad9b" }}
+                style={{ background: thresholdPaint(selectedThreshold) ?? "#a5ad9b" }}
               />
               {selectedThreshold?.label ??
                 (selectedThreshold ? "Threshold matched" : "Unknown")}
@@ -995,7 +1078,7 @@ export function Heatmap({
         >
           {thresholds.map((threshold, index) => (
             <span key={threshold.value}>
-              <i style={{ background: threshold.color }} />
+              <i style={{ background: thresholdPaint(threshold) }} />
               <span>
                 {threshold.label ||
                   formatMetric(
@@ -1044,6 +1127,7 @@ export function BuiltinWidgetRenderer({
         <Stat
           widget={widget}
           series={series}
+          result={result}
           onContextChange={onContextChange}
         />
       );

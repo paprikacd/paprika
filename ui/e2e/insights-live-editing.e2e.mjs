@@ -253,6 +253,8 @@ try {
     await openScenario(width); await edit()
     await selectGammaOption(page, panel().getByRole("combobox", { name: "Visualization", exact: true }), /^Status heatmap/)
     const tabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
+    // The editor is lazy-loaded; wait for all tabs before reading their geometry.
+    await tabs.getByRole("tab").nth(3).waitFor()
     const geometry = await tabs.evaluate(list => {
       const bounds = list.getBoundingClientRect()
       return { width: bounds.width, height: bounds.height, tabs: [...list.querySelectorAll('[role="tab"]')].map(tab => { const rect = tab.getBoundingClientRect(); return { name: tab.textContent, top: rect.top, complete: tab.scrollWidth <= tab.clientWidth } }), pageOverflow: document.documentElement.scrollWidth - innerWidth }

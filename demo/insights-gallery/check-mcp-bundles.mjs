@@ -142,8 +142,10 @@ for (const id of Object.keys(selected)) {
         if (threshold.value > last.value) break;
         selected = threshold;
       }
-      assert.deepEqual(widget.threshold, { state: "matched", boundary: selected.value, color: selected.color, ...(selected.label ? { label: selected.label } : {}) }, "MCP band must match the displayed primary value and widget's own thresholds");
-      assert.ok(contextText.includes(`widget "budget": configured visual band="matched"; boundary=${selected.value}; color=${JSON.stringify(selected.color)}`), "Compact text must identify the configured budget band");
+      const band = { state: "matched", boundary: selected.value, ...(selected.status ? { status: selected.status } : {}), ...(selected.color ? { color: selected.color } : {}), ...(selected.label ? { label: selected.label } : {}) };
+      assert.deepEqual(widget.threshold, band, "MCP band must match the displayed primary value and widget's own thresholds");
+      const bandText = `widget "budget": configured visual band="matched"; boundary=${selected.value}${selected.status ? `; status=${JSON.stringify(selected.status)}` : ""}${selected.color ? `; color=${JSON.stringify(selected.color)}` : ""}`;
+      assert.ok(contextText.includes(bandText), "Compact text must identify the configured budget band");
     }
     if (id === "local-gallery-market-lens") {
       for (const widgetID of ["history", "selected-company-history"]) {

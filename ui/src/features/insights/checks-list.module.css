@@ -1,0 +1,114 @@
+.checks {
+  min-width: 0;
+  color: var(--gamma-ink);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.counts {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 600;
+}
+.counts:focus-visible {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.notice {
+  margin: 0 0 10px;
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.group {
+  margin: 12px 0 0;
+}
+.groupHeading {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gamma-muted);
+}
+.groupCount {
+  font-weight: 400;
+}
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.item {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--gamma-border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--gamma-surface);
+}
+.item[data-severity="error"] {
+  border-left-color: var(--gamma-danger);
+}
+.item[data-severity="warning"] {
+  border-left-color: var(--gamma-warning);
+}
+.item[data-severity="info"] {
+  border-left-color: var(--gamma-muted);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.item[data-severity="error"] .severity {
+  color: var(--gamma-danger);
+}
+.item[data-severity="warning"] .severity {
+  color: var(--gamma-warning);
+}
+.item[data-severity="info"] .severity {
+  color: var(--gamma-muted);
+}
+.rule {
+  font-family: var(--gamma-font-code);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.target {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  color: var(--gamma-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pointer {
+  font-family: var(--gamma-font-code);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.message {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+.fix {
+  margin: 4px 0 0;
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.fixLabel {
+  font-weight: 600;
+  color: var(--gamma-ink);
+}
+.action {
+  margin-top: 6px;
+}

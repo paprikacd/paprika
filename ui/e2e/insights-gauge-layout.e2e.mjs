@@ -16,7 +16,7 @@ await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true })
 let currentPage
 try {
-  for (const { width, wideReading = false, sidebarClosed = false } of [{ width: 1600, sidebarClosed: true }, { width: 1440 }, { width: 1280 }, { width: 390 }, { width: 320 }, { width: 390, wideReading: true }]) for (const theme of ["Light", "Dark"]) {
+  for (const { width, wideReading = false, sidebarClosed = false, statusBank = false } of [{ width: 1600, sidebarClosed: true }, { width: 1440 }, { width: 1280 }, { width: 390 }, { width: 320 }, { width: 390, wideReading: true }, { width: 390, statusBank: true }]) for (const theme of ["Light", "Dark"]) {
     const context = await browser.newContext({ viewport: { width, height: width >= 1440 ? 1100 : 844 }, colorScheme: theme.toLowerCase(), reducedMotion: "reduce" })
     const page = await context.newPage()
     currentPage = page
@@ -27,6 +27,12 @@ try {
     if (wideReading) {
       const widget = board.widgets.find(item => item.id === "reference-service-overview-disk-gauges")
       widget.unit = "MB/s"; widget.options.decimals = 2
+    }
+    if (statusBank) {
+      // A horizontal bank with a status column: the reading names its band, and the column must not truncate it.
+      const widget = board.widgets.find(item => item.id === "reference-service-overview-disk-gauges")
+      widget.config = { ...widget.config, display: "linear", orientation: "horizontal", seriesMode: "all", showStatus: true }
+      widget.options.thresholds = [{ value: 0, status: "critical", label: "Degraded" }, { value: 50, status: "warning", label: "Elevated" }, { value: 80, status: "ok", label: "Healthy" }]
     }
     api.documents.set(board.id, board)
     for (const query of reference.bundle.savedQueries) api.savedQueries.set(query.id, structuredClone(query))
@@ -47,6 +53,20 @@ try {
     }
     const tile = page.locator('[data-widget-id="reference-service-overview-disk-gauges"]')
     await tile.scrollIntoViewIfNeeded()
+    if (statusBank) {
+      const chips = tile.locator("[data-gauge-status] [data-status]")
+      await chips.first().waitFor({ state: "attached" })
+      const clipped = await chips.evaluateAll(nodes => nodes.filter(node => {
+        const text = node.querySelector(":scope > span:last-child"), column = node.closest("[data-gauge-status]").getBoundingClientRect()
+        return text.scrollWidth > text.clientWidth + 1 || node.getBoundingClientRect().right > column.right + 1
+      }).map(node => node.textContent))
+      assert.deepEqual(clipped, [], `${width}px ${theme}: status readings are not truncated`)
+      const readings = await chips.count()
+      assert.ok(readings > 0, "The horizontal bank shows status readings")
+      await context.close()
+      console.log(`PASS status bank ${theme} ${width}px, ${readings} readings`)
+      continue
+    }
     const bank = tile.getByRole("region", { name: "Free disk space · volumes gauges", exact: true })
     await bank.locator('[data-gauge-series]').nth(5).waitFor()
     await page.evaluate(() => document.fonts.ready)
