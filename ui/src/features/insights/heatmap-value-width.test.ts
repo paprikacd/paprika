@@ -36,12 +36,17 @@ describe("heatmapValueEm", () => {
     expect(heatmapValueEm("1 mm")).toBeGreaterThan(heatmapValueEm("1 ms"));
   });
 
-  it("charges an unknown character 1.35em, so authored CJK and emoji units fit the browser's width", () => {
+  it("charges an unknown character 1.35em, so authored emoji units fit the browser's width", () => {
     // "-12.5 🚀" measured 59.9px at 16.03px in Chromium on macOS, which is 3.74em.
     expect(heatmapValueEm("-12.5 🚀")).toBeGreaterThanOrEqual(3.74);
-    // A CJK unit is about 1em in the fallback font.
-    expect(heatmapValueEm("12 件/秒")).toBeGreaterThanOrEqual(heatmapValueEm("12 ") + 2 * 1);
     expect(heatmapValueEm("")).toBe(1);
+  });
+
+  it("gives a CJK unit its fallback-font width, which the old 0.9669em charge did not cover", () => {
+    // Chromium 149 on macOS draws 件 and 秒 at 1.004em each in the fallback CJK face, with Barlow for the rest:
+    // "12 件/秒" is 1.2762 (digits and space) + 0.447 (slash) + 2 x 1.004 = 3.731em. The old charge gave 3.694 (3.66 x 1.01).
+    expect(heatmapValueEm("件")).toBeGreaterThanOrEqual(1.004);
+    expect(heatmapValueEm("12 件/秒")).toBeGreaterThanOrEqual(3.73);
   });
 });
 

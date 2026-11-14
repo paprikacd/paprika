@@ -833,14 +833,16 @@ export function Heatmap({
   const hasText = options.showLabels !== false || options.showValues !== false;
   // One value text per cell feeds the visible text, its width and both accessible names, so they cannot drift apart.
   const valueTexts = cells.map((cell) => heatmapValueText(cell.value, widget.unit, options.decimals));
-  useHeatmapValueFit(cellsRef, valueTexts.join("\u0000"));
+  // The fit re-runs when the column count changes: the cells re-render after the ResizeObserver has already measured the old layout.
+  const columns = balancedHeatmapColumns(cells.length, cellsWidth, hasText);
+  useHeatmapValueFit(cellsRef, [columns, options.showValues !== false, ...valueTexts].join("\u0000"));
   return (
     <div className={configStyles.heatmap}>
       <div
         ref={cellsRef}
         className={`${configStyles.cells} ${hasText ? "" : configStyles.colorOnlyCells}`}
         style={{
-          gridTemplateColumns: `repeat(${balancedHeatmapColumns(cells.length, cellsWidth, hasText)}, minmax(0, 1fr))`,
+          gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
         }}
         role="group"
         aria-label={`${widget.title} heatmap`}

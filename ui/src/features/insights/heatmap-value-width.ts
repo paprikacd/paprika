@@ -51,44 +51,49 @@ const MIN_VALUE_PX = 10
 
 /** The width of a value's text in fractional pixels, which scrollWidth cannot report. Zero where ranges have no layout. */
 function textWidth(value: HTMLElement): number {
-  const range = document.createRange()
-  range.selectNodeContents(value)
-  return typeof range.getBoundingClientRect === "function" ? range.getBoundingClientRect().width : 0
+  const range = document.createRange();
+  range.selectNodeContents(value);
+  return typeof range.getBoundingClientRect === "function" ? range.getBoundingClientRect().width : 0;
 }
 
 /**
- * Shrinks one value until its measured text fits its box, or it reaches the 10px floor. The CSS estimate is the first
+ * Shrinks every value until its measured text fits its box, or it reaches the 10px floor. The CSS estimate is the first
  * guess. Browsers hint and round glyph advances differently at each size (Linux at DPR 1 can be wider than the
- * fractional sum by more than half a pixel per glyph), so the estimate can still overflow. The loop only ever shrinks
- * a value, and the ellipsis stays as the last resort.
+ * fractional sum by more than half a pixel per glyph), so the estimate can still overflow. Each pass reads every width
+ * before it writes any size, so a pass costs one layout however many values there are. The loop only ever shrinks a
+ * value, and the ellipsis stays as the last resort.
  */
-function fitValue(value: HTMLElement): void {
-  value.style.removeProperty("font-size")
-  const box = value.getBoundingClientRect().width
-  if (box <= 0) return
-  let size = parseFloat(getComputedStyle(value).fontSize)
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const natural = textWidth(value)
-    if (natural <= box + 0.01 || size <= MIN_VALUE_PX) return
-    size = Math.max(MIN_VALUE_PX, size * (box / natural) * 0.998)
-    value.style.fontSize = `${size}px`
+function fitValues(values: readonly HTMLElement[]): void {
+  for (const value of values) value.style.removeProperty("font-size");
+  const boxes = values.map((value) => value.getBoundingClientRect().width);
+  const sizes = values.map((value) => parseFloat(getComputedStyle(value).fontSize));
+  for (let pass = 0; pass < 10; pass++) {
+    const naturals = values.map(textWidth);
+    const changed: number[] = [];
+    for (let index = 0; index < values.length; index++) {
+      const box = boxes[index];
+      if (box <= 0 || naturals[index] <= box + 0.01 || sizes[index] <= MIN_VALUE_PX) continue;
+      sizes[index] = Math.max(MIN_VALUE_PX, sizes[index] * (box / naturals[index]) * 0.998);
+      changed.push(index);
+    }
+    if (changed.length === 0) return;
+    for (const index of changed) values[index].style.fontSize = `${sizes[index]}px`;
   }
 }
 
 /**
- * Fits every heatmap value under the container to its cell. It runs before paint whenever the value texts change
- * (key) and when the container resizes, so a value never shows at a size its measured text overflows.
+ * Fits every heatmap value under the container to its cell. It runs before paint whenever the value texts, the visible
+ * values or the column count change (key), and when the container resizes. A column change re-renders the cells before
+ * this layout effect runs, so the fit measures the final layout.
  */
 export function useHeatmapValueFit(container: RefObject<HTMLElement | null>, key: string): void {
   useLayoutEffect(() => {
-    const root = container.current
-    if (!root) return
-    const fit = () => {
-      for (const value of root.querySelectorAll<HTMLElement>("[data-heatmap-value]")) fitValue(value)
-    }
-    fit()
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fit)
-    observer?.observe(root)
-    return () => observer?.disconnect()
-  }, [container, key])
+    const root = container.current;
+    if (!root) return;
+    const fit = () => fitValues([...root.querySelectorAll<HTMLElement>("[data-heatmap-value]")]);
+    fit();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fit);
+    observer?.observe(root);
+    return () => observer?.disconnect();
+  }, [container, key]);
 }
