@@ -629,7 +629,7 @@ func TestDashboardQueryTempoSavedQueryAndOptInHistory(t *testing.T) {
 
 func TestDashboardQueryResponseBudget(t *testing.T) {
 	w := httptest.NewRecorder()
-	result := DashboardQueryResult{Dashboard: DashboardQueryDocument{Title: strings.Repeat("x", 128<<10)}}
+	result := DashboardQueryResult{Dashboard: DashboardQueryDocument{Title: strings.Repeat("x", DashboardQueryResponseBytes)}}
 	writeDashboardQueryResult(w, &result)
 	if w.Code != 413 || w.Body.Len() > 1024 {
 		t.Fatalf("oversized response was not bounded: status=%d bytes=%d", w.Code, w.Body.Len())

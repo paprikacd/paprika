@@ -193,7 +193,7 @@ func TestBreachBudgetKeepsTheWorstCaseWellUnderTheResponseCap(t *testing.T) {
 	putReadDashboard(t, s, widgets...)
 	w := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil)
 	require.Equal(t, http.StatusOK, w.Code, "the worst case must not exceed the response cap: %s", w.Body.String()[:min(w.Body.Len(), 200)])
-	require.Less(t, w.Body.Len(), 96<<10, "the structured result stays well under its 128 KiB cap")
+	require.Less(t, w.Body.Len(), 96<<10, "the structured result stays well under its 130 KiB cap")
 	result := readDashboardResult(t, w)
 	listed := 0
 	for _, widget := range result.Widgets {
