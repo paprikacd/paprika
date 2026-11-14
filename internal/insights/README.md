@@ -549,42 +549,74 @@ No provider credentials, queries, or user IDs are metric labels.
 ## Startup quarantine and downgrades
 
 When the store opens, a dashboard or saved query that fails validation no longer
-stops Insights. The file moves to `<data-dir>/quarantine/<kind>/<id>.<unix-nanos>.json`,
-where `<kind>` is `dashboard` or `saved_query`. Startup logs a warning with the kind,
-id and reason, increments `paprika_insights_store_quarantined_total{kind}`, and opens
-the store with the valid documents. The quarantine tree is never read as store
-entries. A second start does not quarantine anything again, because the invalid file
-has already left the store directory. A create with a quarantined id is a new
-document; the quarantined copy is kept and never overwritten.
+stops Insights. Startup moves the file to `<data-dir>/quarantine/<kind>/<id>.<unix-nanos>.json`,
+where `<kind>` is `dashboard` or `saved_query`, logs a warning with the kind, id and
+reason, increments `paprika_insights_store_quarantined_total{kind}`, and serves the
+valid documents. The quarantine tree is never read as store entries. A second start
+does not quarantine anything again, because the invalid file has already left the
+store directory. A create with a quarantined id is a new document; the quarantined
+copy is kept and never overwritten.
+
+Startup is two-phase. The loaders only find invalid documents. They move them when
+`NewServer` has finished the whole startup (the dashboard and saved-query stores, and
+the managed provider configs), just before Insights serves. A fatal error anywhere
+earlier leaves every document where it was, so the build that can still read them
+finds them on the next start. Documents quarantined by a startup that succeeded stay
+moved. Rolling forward again does not restore them; this build no longer serves them
+and does not move them back.
 
 Anything that fails validation as this build reads it is quarantined. That includes a
 document a newer build wrote (a newer `schemaVersion`, or a field this build does not
-know) and a document over its size limit. These stay fatal: a symlink or other
-non-regular entry in a store directory, an invalid file name, a store over its
-capacity (100 dashboards, 32 MiB of documents, 256 saved queries), and I/O errors
-reading a file.
+know) and a document over its size limit. These stay fatal, and nothing moves when
+they occur: a symlink or other non-regular entry in a store directory, an invalid
+file name, a store over its capacity (100 dashboards, 32 MiB of documents, 256 saved
+queries), an I/O error reading a file, a managed provider config this build cannot
+decode (an unknown field or provider type), and a quarantine move that fails (for
+example a file where the `quarantine` directory belongs).
 
-To restore a quarantined document, stop the Insights process (or scale its single
-replica to zero), confirm no current document has the same id, and move the copy back:
+Quarantine is an operator signal. The counter exists only in the process that
+quarantined the documents, so it is visible on `/metrics` until that process restarts.
+Check the quarantine tree after every deploy and after every rollback:
 
 ```sh
-# dashboard
-mv <data-dir>/quarantine/dashboard/<id>.<unix-nanos>.json <data-dir>/<id>.json
-# saved query
-mv <data-dir>/quarantine/saved_query/<id>.<unix-nanos>.json <data-dir>/saved-queries/<id>.json
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  find /var/lib/paprika-insights/quarantine -name '*.json'
 ```
 
-Moving onto an existing id replaces the current document, so check first. Start the
-service again. If this build still rejects the file, it is quarantined again and the
-log gives the reason; correct the JSON by hand or run a build that accepts it.
-Quarantined copies are never pruned automatically. Delete them yourself once they are
-recovered or no longer needed.
+To restore a quarantined document, first confirm no current document has the same id.
+Then move the copy back inside the running container, which runs as uid 65532 and
+keeps the file's ownership. A `cp` run as root would leave a file the process cannot
+read. Then restart so the store reloads:
+
+```sh
+# list the copies, then pick one and check the id is free
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  ls /var/lib/paprika-insights /var/lib/paprika-insights/saved-queries
+
+# dashboard
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  mv /var/lib/paprika-insights/quarantine/dashboard/<id>.<unix-nanos>.json /var/lib/paprika-insights/<id>.json
+# saved query
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  mv /var/lib/paprika-insights/quarantine/saved_query/<id>.<unix-nanos>.json /var/lib/paprika-insights/saved-queries/<id>.json
+
+kubectl -n paprika-e2e rollout restart deploy/paprika-e2e-insights
+```
+
+Do not scale the deployment to zero to restore a file. The volume is ReadWriteOnce
+and no container exists to run `mv` at zero replicas. Moving onto an existing id
+replaces the current document, so check first. If this build still rejects the file,
+it is quarantined again and the log gives the reason; correct the JSON by hand or run
+a build that accepts it. Quarantined copies are never pruned automatically. Delete
+them yourself once they are recovered or no longer needed.
 
 Downgrades: quarantine applies only to builds that include this section. Released
 builds that predate it still refuse to open a store that holds any document they
-cannot validate, and exit with `invalid saved dashboard <id>`. Before rolling back to
-such a build, restore a snapshot of the data directory taken before the upgrade, or
-remove the newer fields from the stored documents.
+cannot validate. A dashboard refusal exits with `open Insights store: invalid saved
+dashboard <id>: ...`, and a saved query refusal with `configure Insights server:
+invalid saved query <id>: ...`. Before rolling back to such a build, restore a
+snapshot of the data directory taken before the upgrade, or remove the newer fields
+from the stored documents.
 
 ## Verification
 
