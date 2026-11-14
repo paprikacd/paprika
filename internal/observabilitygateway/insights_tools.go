@@ -41,10 +41,17 @@ func insightsListTool(c *InsightsAuthoringClient, name, collection string) mcp.T
 	if collection == "saved-queries" {
 		properties = `{"provider_id":` + insightsIDSchema + `}`
 	}
-	return mcp.Tool{Name: name, Description: "List authorized Insights " + collection + " in the same workspace as the dashboard UI. Lists contain summaries; get a document and its ETag before updating. Provider IDs are the exact IDs required by saved queries and dashboard widgets.", Scope: mcp.ScopeObserve, InputSchema: json.RawMessage(`{"type":"object","properties":` + properties + `,"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
+	description := "List authorized Insights " + collection + " in the same workspace as the dashboard UI. Lists contain summaries; get a document and its ETag before updating. Provider IDs are the exact IDs required by saved queries and dashboard widgets."
+	if collection == "providers" {
+		description += " Shared providers come from a shared catalog. If that catalog is busy, denied or unavailable and no providers are listed, the call fails instead of returning an empty list (busy carries a retry delay), so a successful empty list means no providers are available to this caller. If some providers are listed, the result also carries sharedCatalog with the failure status and a note says shared providers are missing."
+	}
+	return mcp.Tool{Name: name, Description: description, Scope: mcp.ScopeObserve, InputSchema: json.RawMessage(`{"type":"object","properties":` + properties + `,"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 		args, err := decodeInsightsAuthoringArgs(raw)
 		if err != nil {
 			return nil, err
+		}
+		if collection == "providers" {
+			return c.listProviders(ctx, args.ProviderID)
 		}
 		return c.list(ctx, collection, args.ProviderID)
 	}}

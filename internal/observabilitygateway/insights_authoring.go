@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -440,4 +441,88 @@ func (c *InsightsAuthoringClient) list(ctx context.Context, collection, provider
 		return nil, fmt.Errorf("list Insights documents: %w", err)
 	}
 	return body, nil
+}
+
+// sharedCatalogListing is the part of an Insights providers listing that
+// reports a degraded shared catalog. Insights answers 200 for that case so the
+// UI keeps its local tiles; an agent needs the failure as a tool error, or as a
+// note beside the providers it can still use.
+type sharedCatalogListing struct {
+	Providers     []json.RawMessage `json:"providers"`
+	SharedCatalog *struct {
+		Status     string `json:"status"`
+		RetryAfter int    `json:"retryAfter"`
+	} `json:"sharedCatalog"`
+}
+
+// listProviders serves list_insights_providers. A healthy listing passes
+// through unchanged. A degraded shared catalog with no providers at all becomes
+// the error the gateway returned before the catalog was reported in the body,
+// so an agent never reads an empty list as "no data sources". With providers
+// alongside it, the listing succeeds and a one-line note names the degradation.
+// The listing takes no provider filter, so a provider ID is rejected the way
+// the other list calls reject a malformed one.
+func (c *InsightsAuthoringClient) listProviders(ctx context.Context, providerID string) (any, error) {
+	if providerID != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid provider ID"))
+	}
+	body, err := c.list(ctx, "providers", "")
+	if err != nil {
+		return nil, err
+	}
+	var listing sharedCatalogListing
+	if json.Unmarshal(body, &listing) != nil || listing.SharedCatalog == nil {
+		return body, nil
+	}
+	status := listing.SharedCatalog.Status
+	retry := retryAfterSeconds(listing.SharedCatalog.RetryAfter)
+	if len(listing.Providers) > 0 {
+		return &sdkmcp.CallToolResult{
+			StructuredContent: body,
+			Content: []sdkmcp.Content{
+				&sdkmcp.TextContent{Text: string(body)},
+				&sdkmcp.TextContent{Text: sharedCatalogNote(status, retry)},
+			},
+		}, nil
+	}
+	switch status {
+	case "busy":
+		err := connect.NewError(connect.CodeResourceExhausted, errors.New("observability provider catalog is busy"))
+		if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(time.Duration(retry) * time.Second)}); detailErr == nil {
+			err.AddDetail(detail)
+		}
+		return nil, err
+	case "forbidden":
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("shared observability provider access denied"))
+	default:
+		return unavailableProvidersResult(), nil
+	}
+}
+
+// unavailableProvidersResult is the tool error for an unavailable or failed
+// shared catalog. It is an MCP tool error rather than a protocol error, so the
+// agent receives the text and the client can pass it to the model.
+func unavailableProvidersResult() *sdkmcp.CallToolResult {
+	return &sdkmcp.CallToolResult{
+		IsError:           true,
+		StructuredContent: map[string]any{"error": map[string]any{"code": connect.CodeUnavailable.String()}},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: "The shared observability provider catalog is unavailable; retry later."}},
+	}
+}
+
+// retryAfterSeconds keeps a catalog's retry delay in the range an agent is told
+// to wait: at least one second, and at most the gateway's own 60 second bound.
+func retryAfterSeconds(seconds int) int {
+	return min(max(seconds, 1), 60)
+}
+
+func sharedCatalogNote(status string, retryAfter int) string {
+	switch status {
+	case "busy":
+		return fmt.Sprintf("Note: the shared observability catalog is busy, so shared providers are missing from this list. Retry after %d seconds.", retryAfterSeconds(retryAfter))
+	case "forbidden":
+		return "Note: shared observability providers are not available to this caller, so they are missing from this list."
+	default:
+		return "Note: the shared observability catalog is unavailable, so shared providers are missing from this list."
+	}
 }
