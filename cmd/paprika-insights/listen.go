@@ -14,8 +14,9 @@ import (
 // autotunes each buffer up to several MiB, and a refused request's connection then
 // lingers for Go's half-second close delay with its buffer full. At 8 KiB a connection
 // holds about 16 KiB (Linux doubles the value), and a proxy in the same cluster still
-// delivers a dashboard body in a few dozen round trips at sub-millisecond latency. The
-// README has the flood measurements.
+// delivers a dashboard body in a few dozen round trips. The bound costs latency when the
+// path has a round trip: a 397 KB dry run's p50 rises from 21 to 69 ms at +1 ms of
+// client-side delay. The README has the flood and latency measurements.
 const insightsReceiveBuffer = 8 << 10
 
 // listenInsights listens on addr and bounds the receive buffer of every connection it
@@ -61,24 +62,11 @@ func (l boundedReceiveListener) Accept() (net.Conn, error) {
 	}
 }
 
+// setReceiveBuffer sets the receive buffer of an accepted connection. SetReadBuffer is
+// the portable form of the socket option, so this works on every system.
 func setReceiveBuffer(conn *net.TCPConn, size int) error {
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return fmt.Errorf("reach connection socket: %w", err)
-	}
-	return controlReceiveBuffer(raw, size)
-}
-
-// controlReceiveBuffer sets the receive buffer of the socket behind raw to size.
-func controlReceiveBuffer(raw syscall.RawConn, size int) error {
-	var sockErr error
-	if err := raw.Control(func(fd uintptr) {
-		sockErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, size)
-	}); err != nil {
-		return fmt.Errorf("control socket: %w", err)
-	}
-	if sockErr != nil {
-		return fmt.Errorf("set receive buffer: %w", sockErr)
+	if err := conn.SetReadBuffer(size); err != nil {
+		return fmt.Errorf("set receive buffer: %w", err)
 	}
 	return nil
 }
