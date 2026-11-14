@@ -80,8 +80,13 @@ function fixture(state = "normal", links = false) {
     })),
   }
 }
+// Readings across the formatter's scales, one heatmap cell each: the fit audit sizes every one into a narrow tile.
+const fitValues = [0, 0.5, 7.5, 42.56789, -12.5, 99.123, 100, 812, 1234.5678, -9876.54321, 18423.57, 98765.4321, 1234567.891, 0.001234]
 function metricData(state) {
   if (state === "empty") return { series: [] }
+  if (state === "fit") return { series: fitValues.map((value, index) => ({ name: `fit-${index}`, labels: { service: `fit-${index}` }, points: [{ timestamp: stamp - 60000, value: 1 }, { timestamp: stamp, value }] })) }
+  // Realistic long service names, enough cells to fill a short tile.
+  if (state === "dense") return { series: Array.from({ length: 120 }, (_, index) => ({ name: `checkout-api-production-eu-west-${index + 1}`, labels: { service: `checkout-api-production-eu-west-${index + 1}` }, points: [{ timestamp: stamp, value: [42.56789, -12.5, 0][index % 3] }] })) }
   const count = state === "bounded" ? 120 : 3
   return { ...(state === "bounded" ? { truncated: true } : {}), series: Array.from({ length: count }, (_, index) => {
     const name = state === "long" ? `${longName}-${index + 1}` : ["api-east", "worker-west", "queue-zero"][index] ?? `service-${index}`
@@ -283,6 +288,27 @@ async function geometry(page, width) {
   for (const provider of providers) assert.ok(!canvas.includes(provider.name) && !canvas.includes(provider.id), "Connection metadata leaked onto canvas")
   return result
 }
+// A value never wraps or overflows its cell: every child box sits inside the cell box, and a value box is at least one
+// line tall, so a flex shrink cannot clip it inside a cell that still contains it.
+async function assertHeatmapCellsContained(cells, where) {
+  const overflows = await cells.evaluateAll(elements => elements.flatMap((cell, index) => {
+    const box = cell.getBoundingClientRect()
+    return [...cell.children].flatMap(child => {
+      const rect = child.getBoundingClientRect()
+      const outside = rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5
+      return outside ? [{ index, text: child.textContent, cell: [box.top, box.bottom].map(Math.round), box: [rect.top, rect.bottom].map(Math.round) }] : []
+    })
+  }))
+  assert.deepEqual(overflows, [], `Heatmap cell children must stay inside their cell at ${where}`)
+  const clipped = await cells.evaluateAll(elements => elements.flatMap((cell, index) => {
+    const value = cell.querySelector("strong")
+    if (!value) return []
+    const line = parseFloat(getComputedStyle(value).lineHeight)
+    const height = value.getBoundingClientRect().height
+    return height < line - 0.5 ? [{ index, text: value.textContent, height: Math.round(height), line: Math.round(line) }] : []
+  }))
+  assert.deepEqual(clipped, [], `Heatmap values must be at least one line tall at ${where}`)
+}
 async function stateAssertions(page, state) {
   for (const kind of kinds) {
     const tile = page.locator(`[data-widget-id="${kind}"]`)
@@ -368,25 +394,7 @@ async function stateAssertions(page, state) {
           const colors = await cells.evaluateAll(elements => elements.map(element => ({ foreground: getComputedStyle(element).color, background: getComputedStyle(element).backgroundColor })))
           for (const colorset of colors) assert.ok(colorContrast(colorset.foreground, colorset.background) >= 4.5, `Automatic heatmap label color must meet 4.5:1 contrast: ${JSON.stringify(colorset)}`)
         }
-        // A value never wraps or overflows its cell: every child box must sit inside the cell box, in every state.
-        const overflows = await cells.evaluateAll(elements => elements.flatMap((cell, index) => {
-          const box = cell.getBoundingClientRect()
-          return [...cell.children].flatMap(child => {
-            const rect = child.getBoundingClientRect()
-            const outside = rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5
-            return outside ? [{ index, text: child.textContent, cell: [box.top, box.bottom].map(Math.round), box: [rect.top, rect.bottom].map(Math.round) }] : []
-          })
-        }))
-        assert.deepEqual(overflows, [], `Heatmap cell children must stay inside their cell at ${page.viewportSize().width}px (${state})`)
-        // A value box must also be at least one line tall, so a flex shrink cannot clip it inside a cell that still contains it.
-        const clipped = await cells.evaluateAll(elements => elements.flatMap((cell, index) => {
-          const value = cell.querySelector("strong")
-          if (!value) return []
-          const line = parseFloat(getComputedStyle(value).lineHeight)
-          const height = value.getBoundingClientRect().height
-          return height < line - 0.5 ? [{ index, text: value.textContent, height: Math.round(height), line: Math.round(line) }] : []
-        }))
-        assert.deepEqual(clipped, [], `Heatmap values must be at least one line tall at ${page.viewportSize().width}px (${state})`)
+        await assertHeatmapCellsContained(cells, `${page.viewportSize().width}px (${state})`)
         if (["null", "tail-null"].includes(state)) assert.match(await cells.first().getAttribute("aria-label"), /No data/)
         if (state === "zero") assert.match(await cells.first().getAttribute("aria-label"), /0\.00 req\/s.*At zero/)
         if (state === "negative") assert.match(await cells.first().getAttribute("aria-label"), /-12\.50 req\/s.*Below target/)
@@ -749,6 +757,59 @@ async function chartInspectorAudit(width, height = width < 600 ? 844 : 1050) {
   await context.close()
 }
 
+// Every value in the fit tiles is measured in its own cell: one that ellipsizes must not fit at the 10px floor.
+async function heatmapFitAudit(width) {
+  const units = ["", "%", "ms", "s", "ns", "bytes", "B", "B/s", "bps", "req/s", "ops", "errors", "°C", "W", "kWh", "MB", "GB", "rpm", "Hz", "dBm", "$", "USD", "items", "connections", "msgs/s", "IOPS", "cores", "pods", "watts", "mm"]
+  const fitWidgets = units.map((unit, index) => ({ id: `fit-${index}`, title: `Fit ${index}`, type: "heatmap", providerId: "audit-metrics", query: `audit_fit_${index}`, unit, layout: { x: 0, y: 12 + index * 5, w: 1, h: 5 }, options: index % 2 ? {} : { decimals: 2 } }))
+  const { page } = await openFixture("fit", width, false, {}, document => ({ ...document, widgets: [...document.widgets, ...fitWidgets] }))
+  await check(`heatmap values: none ellipsize while 10px would fit in a ${width}px narrow cell`, async () => {
+    const counts = { values: 0, ellipsized: 0 }
+    for (const widget of fitWidgets) {
+      // Tiles below the fold render when scrolled to, as openFixture does for the default widgets.
+      await page.locator(`[data-widget-id="${widget.id}"]`).scrollIntoViewIfNeeded()
+      await page.locator(`[data-widget-id="${widget.id}"] [data-heatmap-cell] strong`).first().waitFor()
+      const values = await page.locator(`[data-widget-id="${widget.id}"] [data-heatmap-cell] strong`).evaluateAll(strongs => strongs.map(strong => {
+        const ellipsized = strong.scrollWidth > strong.clientWidth + 0.5
+        // Fractional widths: scrollWidth and clientWidth are whole pixels, so a value that is 0.4px too wide at 10px would
+        // otherwise pass as fitting.
+        let fitsAt10 = null
+        const box = strong.getBoundingClientRect().width
+        if (ellipsized) {
+          const probe = strong.cloneNode(false)
+          probe.removeAttribute("style")
+          probe.textContent = strong.textContent
+          Object.assign(probe.style, { position: "absolute", visibility: "hidden", fontSize: "10px", maxWidth: "none", width: "auto", display: "inline-block", overflow: "visible" })
+          strong.parentElement.appendChild(probe)
+          const natural = probe.getBoundingClientRect().width
+          probe.remove()
+          fitsAt10 = natural > 0 && natural <= box + 0.05
+        }
+        return { text: strong.textContent, width: box, size: parseFloat(getComputedStyle(strong).fontSize), ellipsized, fitsAt10 }
+      }))
+      counts.values += values.length
+      counts.ellipsized += values.filter(value => value.ellipsized).length
+      const regressions = values.filter(value => value.ellipsized && value.fitsAt10)
+      assert.deepEqual(regressions, [], `Heatmap values ellipsize although 10px fits (${widget.unit || "no unit"}, ${width}px)`)
+      assert.ok(values.every(value => value.size >= 10 - 0.01), `Heatmap values must not size below 10px: ${JSON.stringify(values)}`)
+    }
+    assert.ok(counts.values >= 400, `The fit audit must measure the formatter sample: ${JSON.stringify(counts)}`)
+    return { ...counts, unitsMeasured: units.length, widget: "heatmap", state: "fit", viewport: width, category: "value-fit" }
+  }, { widget: "heatmap", state: "fit", viewport: width, category: "value-fit" })
+  await active?.context.close()
+}
+
+// A short tile of long names: rows must grow to their content. Without grid-auto-rows the rows clip these cells.
+async function denseHeatmapAudit(width) {
+  const { page } = await openFixture("dense", width, false, {}, document => ({ ...document, widgets: document.widgets.map(widget => widget.id === "heatmap" ? { ...widget, layout: { ...widget.layout, h: 2 } } : widget) }))
+  await check(`dense heatmap: rows grow to long names in a short tile at ${width}px`, async () => {
+    const cells = page.locator('[data-widget-id="heatmap"]').getByRole("group").getByRole("button")
+    assert.equal(await cells.count(), 100)
+    await assertHeatmapCellsContained(cells, `${width}px (dense)`)
+    return { state: "dense", widget: "heatmap", viewport: width, category: "row-growth" }
+  }, { widget: "heatmap", state: "dense", viewport: width, category: "row-growth" })
+  await active?.context.close()
+}
+
 async function missingObservationAudit() {
   const { page, context } = await openFixture("tail-null", 390, true)
   for (const kind of ["heatmap", "gauge"]) await check(`${kind}: a missing latest observation cannot drill down using an older healthy value`, async () => {
@@ -798,6 +859,8 @@ try {
     for (const width of [1512, 390]) await sharedCaptionAudit(width)
     for (const width of [1512, 768, 390]) await twoRowStatAudit(width)
     for (const width of [1512, 390]) await confirmationAudit(width)
+    for (const width of [1512, 390]) await denseHeatmapAudit(width)
+    await heatmapFitAudit(1512)
   }
 } finally {
   await active?.context.close().catch(() => {})
