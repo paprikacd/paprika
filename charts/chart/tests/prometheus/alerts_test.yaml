@@ -405,6 +405,74 @@ tests:
         alertname: PaprikaReleaseFailed
         exp_alerts: []
 
+  # A 30-minute gap with no staleness marker: the last sample is at 10m and 59
+  # scrapes are missing (10m30s to 39m30s). The series resumes at 40m with the same
+  # counter. The 1h lookback still holds the sample at 10m when the offset window is
+  # checked at 41m30s and 44m, so both alerts stay silent. A lookback shorter than
+  # the gap would re-fire the old failure here.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_release_phase_total{release="long-r13",namespace="apps",phase="Failed"}'
+        values: '1x20 _x59 1x40'
+      - series: 'paprika_application_phase_total{application="long-a13",namespace="apps",phase="RolledBack"}'
+        values: '1x20 _x59 1x40'
+    alert_rule_test:
+      - eval_time: 41m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 44m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 41m30s
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+      - eval_time: 44m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+
+  # An increment hidden by a 20-minute outage. Prometheus is down from 10m30s to
+  # 29m30s (39 missed scrapes). The counter goes from 1 to 2 while it is down, and
+  # scraping resumes at 30m with 2. The value is above the sample from before the
+  # lookback, so the rise branch makes it pending at 30m and firing from 31m, and it
+  # is firing at 32m. The rise is no longer above that sample from 35m, and the
+  # alert is silent at 36m. An instant comparison
+  # (X > X offset 5m) would miss this outage, because nothing is sampled at 27m.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_release_phase_total{release="outage-r14",namespace="apps",phase="Failed"}'
+        values: '1x20 _x39 2x40'
+      - series: 'paprika_application_phase_total{application="outage-a14",namespace="apps",phase="RolledBack"}'
+        values: '1x20 _x39 2x40'
+    alert_rule_test:
+      - eval_time: 32m
+        alertname: PaprikaReleaseFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              release: outage-r14
+              namespace: apps
+              phase: Failed
+            exp_annotations:
+              summary: Paprika release failed
+              description: Release outage-r14 in namespace apps failed.
+      - eval_time: 36m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 32m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              application: outage-a14
+              namespace: apps
+              phase: RolledBack
+            exp_annotations:
+              summary: Paprika application rolled back
+              description: Application outage-a14 in namespace apps was rolled back.
+      - eval_time: 36m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+
   # Degraded is current state from the phase gauge. Two replicas report the same
   # cluster-wide value; max() collapses them, so the alert has no labels and
   # reports one application, not two. It needs five minutes to fire.
