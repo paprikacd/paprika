@@ -50,25 +50,43 @@ func run() error {
 			return configErr
 		}
 	}
-	store, err := insights.OpenStore(*dataDir)
-	if err != nil {
-		return fmt.Errorf("open Insights store: %w", err)
-	}
 	telemetryConfig := observability.ConfigFromEnv()
 	if os.Getenv("OTEL_SERVICE_NAME") == "" {
 		telemetryConfig.ServiceName = "paprika-insights"
 	}
 	telemetry := observability.NewTelemetry(context.Background(), telemetryConfig)
 	defer shutdownTelemetry(telemetry)
-	service, err := insights.NewServer(cfg, store)
+	// Telemetry starts before the store opens so that the quarantine counter, which NewServer increments when startup
+	// commits the quarantine, reaches the configured providers.
+	service, listener, err := openService(*listen, *dataDir, cfg)
 	if err != nil {
-		return fmt.Errorf("configure Insights server: %w", err)
+		return err
 	}
 	server := &http.Server{Addr: *listen, Handler: service.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	slog.Info("Paprika Insights listening", "address", *listen, "providers", len(cfg.Providers), "development", *dev)
-	return serve(ctx, server)
+	slog.Info("Paprika Insights listening", "address", listener.Addr().String(), "providers", len(cfg.Providers), "development", *dev)
+	return serve(ctx, server, listener)
+}
+
+// openService binds the listener before the store is read. A taken or invalid address therefore stops startup while
+// every stored document is still in place. The store then opens, and NewServer commits the quarantine moves only once
+// the whole startup has succeeded. The caller serves on the returned listener.
+func openService(listen, dataDir string, cfg insights.Config) (*insights.Server, net.Listener, error) {
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", listen)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listen Insights: %w", err)
+	}
+	store, err := insights.OpenStore(dataDir)
+	if err != nil {
+		return nil, nil, errors.Join(fmt.Errorf("open Insights store: %w", err), listener.Close())
+	}
+	service, err := insights.NewServer(cfg, store)
+	if err != nil {
+		return nil, nil, errors.Join(fmt.Errorf("configure Insights server: %w", err), listener.Close())
+	}
+	return service, listener, nil
 }
 
 func loadProvidersConfig(path string, cfg *insights.Config) error {
@@ -100,9 +118,9 @@ func shutdownTelemetry(telemetry *observability.Telemetry) {
 	}
 }
 
-func serve(ctx context.Context, server *http.Server) error {
+func serve(ctx context.Context, server *http.Server, listener net.Listener) error {
 	errCh := make(chan error, 1)
-	go func() { errCh <- server.ListenAndServe() }()
+	go func() { errCh <- server.Serve(listener) }()
 	select {
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

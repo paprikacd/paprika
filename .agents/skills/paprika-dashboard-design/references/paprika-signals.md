@@ -120,6 +120,7 @@ is in the block below the table.
 | `paprika_healthcheck_up_ratio` | `paprika.healthcheck.up` | Gauge | `namespace`, `application`, `check` | Latest fresh check: 1 healthy, 0 degraded; absent when stale or unknown | 1 healthy, 0 degraded; absent when stale or unknown (`health.go`) | — |
 | `paprika_insights_queries_total` | `paprika_insights_queries` | Counter | `kind`, `outcome`, `provider` | Provider queries by outcome | — | — |
 | `paprika_insights_query_duration_seconds` | `paprika_insights_query_duration_seconds` | Histogram | `kind`, `outcome`, `provider` | Provider query duration | — | — |
+| `paprika_insights_store_quarantined_total` | `paprika_insights_store_quarantined` | Counter | `kind` | Stored dashboards and saved queries moved to quarantine at startup because they failed validation | — | — |
 | `paprika_mcp_tool_calls_total` | `paprika.mcp.tool.calls` | Counter | `tool`, `outcome` | Number of MCP tool calls by tool and outcome | — | — |
 | `paprika_mcp_tool_duration_milliseconds` | `paprika.mcp.tool.duration` | Histogram | `tool`, `outcome` | Duration of MCP tool invocations by tool and outcome | — | — |
 | `paprika_mcp_tool_response_bytes` | `paprika.mcp.tool.response_bytes` | Histogram | `tool` | Serialized size of MCP tool results by tool | — | — |

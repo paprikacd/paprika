@@ -20,6 +20,8 @@ type savedQueryStore struct {
 	mu        sync.RWMutex
 	dir       string
 	documents map[string]json.RawMessage
+	// quarantine holds the invalid saved queries openSavedQueryStore found. They move only in commitQuarantine.
+	quarantine []pendingQuarantine
 }
 
 func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
@@ -36,15 +38,16 @@ func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
 			continue
 		}
 		id := strings.TrimSuffix(file.Name(), ".json")
-		if !validID.MatchString(id) || !file.Type().IsRegular() {
+		if !validStoreEntry(id, file) {
 			return nil, errors.New("invalid file in saved query store")
 		}
-		document, err := readStoreDocument(s.dir, file.Name(), maxSavedQueryBytes)
-		if err != nil {
-			return nil, fmt.Errorf("read saved query document: %w", err)
+		document, invalid, err := readStoredSavedQuery(s.dir, file.Name(), id)
+		if invalid {
+			s.quarantine = append(s.quarantine, pendingQuarantine{root: dataDir, dir: s.dir, kind: quarantineKindSavedQuery, id: id, reason: err})
+			continue
 		}
-		if _, err := validateSavedQuery(id, document); err != nil {
-			return nil, fmt.Errorf("invalid saved query %s: %w", id, err)
+		if err != nil {
+			return nil, err
 		}
 		if len(s.documents) >= maxSavedQueries {
 			return nil, ErrCapacity
@@ -52,6 +55,30 @@ func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
 		s.documents[id] = document
 	}
 	return s, nil
+}
+
+// commitQuarantine moves the invalid saved queries that openSavedQueryStore found into quarantine. NewServer calls it
+// after the whole startup has succeeded.
+func (s *savedQueryStore) commitQuarantine() error {
+	var err error
+	s.quarantine, err = commitPendingQuarantine(s.quarantine)
+	return err
+}
+
+// readStoredSavedQuery reads and validates one saved query file. invalid reports a document to quarantine, which is one
+// that fails validation or exceeds its size limit. A read failure is an error, not invalid.
+func readStoredSavedQuery(dir, name, id string) (document json.RawMessage, invalid bool, err error) {
+	raw, err := readStoreDocument(dir, name, maxSavedQueryBytes)
+	if errors.Is(err, errDocumentTooLarge) {
+		return nil, true, err
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("read saved query document: %w", err)
+	}
+	if _, err := validateSavedQuery(id, raw); err != nil {
+		return nil, true, err
+	}
+	return raw, false, nil
 }
 
 func (s *savedQueryStore) list(providerID string) []json.RawMessage {

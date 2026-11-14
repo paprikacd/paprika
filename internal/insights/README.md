@@ -546,6 +546,94 @@ on pod replacement.
 controller-runtime registry. Standard OTEL environment configuration is supported.
 No provider credentials, queries, or user IDs are metric labels.
 
+## Startup quarantine and downgrades
+
+When the store opens, a dashboard or saved query that fails validation no longer
+stops Insights. Startup moves the file to `<data-dir>/quarantine/<kind>/<id>.<unix-nanos>.json`,
+where `<kind>` is `dashboard` or `saved_query`, logs a warning with the kind, id and
+reason, increments `paprika_insights_store_quarantined_total{kind}`, and serves the
+valid documents. The quarantine tree is never read as store entries. A second start
+does not quarantine anything again, because the invalid file has already left the
+store directory. A create with a quarantined id is a new document; the quarantined
+copy is kept and never overwritten.
+
+Startup is two-phase. The loaders only find invalid documents. The process binds its
+listen address first, so a taken or invalid address stops startup before the store is
+read. `NewServer` then finishes the whole startup (the dashboard and saved-query stores,
+and the managed provider configs) and only then moves the invalid documents. Insights
+serves on the listener it bound. A fatal error anywhere earlier leaves every document
+where it was, so the build that can still read them finds them on the next start.
+Documents quarantined by a startup that succeeded stay moved. Rolling forward again
+does not restore them; this build no longer serves them and does not move them back.
+
+Anything that fails validation as this build reads it is quarantined. That includes a
+document a newer build wrote (a newer `schemaVersion`, or a field this build does not
+know) and a document over its size limit. These stay fatal, and nothing moves when
+they occur: a symlink or other non-regular entry in a store directory, an invalid
+file name, a store over its capacity (100 dashboards, 32 MiB of documents, 256 saved
+queries), an I/O error reading a file, a managed provider config this build cannot
+decode (an unknown field or provider type), and a listen address that cannot be bound
+(already in use, or not a valid address).
+
+A quarantine move that fails also stops startup, for example when a file sits where the
+`quarantine` directory belongs. The moves are renames, one document at a time. Documents
+moved before the failure stay in quarantine, and the others stay in the store. Once the
+blocker is removed, a restart moves the rest. It never duplicates a document that already
+moved, because a moved file is no longer in the store directory.
+
+Quarantine is an operator signal, and on `paprika-e2e` the logs are the only one. Nothing
+scrapes Insights there, and the `paprika_insights_store_quarantined_total` counter exists
+only in the process that quarantined the documents. Each quarantined document logs a WARN
+line with its kind, id, reason and new path. A startup that moved anything also logs one
+WARN line, `quarantined invalid stored documents at startup`, with `count`, `kinds` and
+`quarantine_path`. Check the Insights logs after every downgrade and every upgrade:
+
+```sh
+kubectl -n paprika-e2e logs deploy/paprika-e2e-insights | grep quarantined
+```
+
+Then check the quarantine tree after every deploy and after every rollback:
+
+```sh
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  find /var/lib/paprika-insights/quarantine -name '*.json'
+```
+
+To restore a quarantined document, first confirm no current document has the same id.
+Then move the copy back inside the running container, which runs as uid 65532 and
+keeps the file's ownership. A `cp` run as root would leave a file the process cannot
+read. Then restart so the store reloads:
+
+```sh
+# list the copies, then pick one and check the id is free
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  ls /var/lib/paprika-insights /var/lib/paprika-insights/saved-queries
+
+# dashboard
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  mv /var/lib/paprika-insights/quarantine/dashboard/<id>.<unix-nanos>.json /var/lib/paprika-insights/<id>.json
+# saved query
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  mv /var/lib/paprika-insights/quarantine/saved_query/<id>.<unix-nanos>.json /var/lib/paprika-insights/saved-queries/<id>.json
+
+kubectl -n paprika-e2e rollout restart deploy/paprika-e2e-insights
+```
+
+Do not scale the deployment to zero to restore a file. The volume is ReadWriteOnce
+and no container exists to run `mv` at zero replicas. Moving onto an existing id
+replaces the current document, so check first. If this build still rejects the file,
+it is quarantined again and the log gives the reason; correct the JSON by hand or run
+a build that accepts it. Quarantined copies are never pruned automatically. Delete
+them yourself once they are recovered or no longer needed.
+
+Downgrades: quarantine applies only to builds that include this section. Released
+builds that predate it still refuse to open a store that holds any document they
+cannot validate. A dashboard refusal exits with `open Insights store: invalid saved
+dashboard <id>: ...`, and a saved query refusal with `configure Insights server:
+invalid saved query <id>: ...`. Before rolling back to such a build, restore a
+snapshot of the data directory taken before the upgrade, or remove the newer fields
+from the stored documents.
+
 ## Verification
 
 ```sh
