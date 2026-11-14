@@ -1,5 +1,6 @@
 import { applyWidgetChanges } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
+import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 import { verifyProviderEditor } from "./query-editor-scenarios.mjs"
 // Real Go storage/adapters + deterministic Prometheus/Tempo providers. The local
@@ -84,6 +85,7 @@ const gateway = createServer((request, response) => {
   response.once("close", () => { if (!response.writableEnded) forward.destroy() })
   request.pipe(forward)
 })
+proxyWebSocketUpgrades(gateway, baseURL)
 async function listen(server) { server.listen(0, "127.0.0.1"); await once(server, "listening"); return server.address().port }
 async function until(predicate, message, timeout = 10_000) {
   const end = Date.now() + timeout
