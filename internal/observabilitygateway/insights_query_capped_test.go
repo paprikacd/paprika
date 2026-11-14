@@ -2,6 +2,8 @@ package observabilitygateway
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -40,51 +42,53 @@ func TestDashboardOmissionNamesMatchTheInsightsSteps(t *testing.T) {
 	require.ElementsMatch(t, steps, phrases, "every Insights step needs a text phrase, and no phrase may name a step Insights does not have")
 }
 
-// applyDashboardOmissionSteps applies the first n omission steps to a structured result the way Insights
-// does: intervals move into intervalsOmitted, breach and bandSeries objects go, the time-series freshness
-// goes, and a sample keeps only a stale state unless attention already reads stale.
-func applyDashboardOmissionSteps(t *testing.T, document map[string]any, n int) {
-	t.Helper()
+// dashboardCappedGoldenPath is the capped wire output the Insights handler writes after n steps of the
+// omission ladder. Insights pins each file in its own golden test, so the schema checked here is the one
+// a real capped result is read against.
+func dashboardCappedGoldenPath(n int) string {
+	return fmt.Sprintf("../insights/testdata/dashboard_query_capped/steps-%d.json", n)
+}
+
+// A capped result from the real handler validates against the advertised MCP output schema after every
+// prefix of the ladder, and its text names what was dropped. The goldens hold breach objects, band series,
+// time-series and stat freshness, and stale samples, so every omission branch is covered.
+func TestDashboardCappedOutputValidatesAgainstTheSchema(t *testing.T) {
+	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
 	steps := insights.DashboardOmissionStepNames()
-	widgets := requireDashboardTextSlice(t, document["widgets"])
-	for step := range n {
-		for _, raw := range widgets {
-			widget := requireDashboardTextMap(t, raw)
-			switch steps[step] {
-			case "breachIntervals":
-				if breaches, ok := widget["breaches"].(map[string]any); ok {
-					listed := requireDashboardTextSlice(t, breaches["intervals"])
-					breaches["intervalsOmitted"] = float64(len(listed)) + numberOrZero(breaches["intervalsOmitted"])
-					breaches["intervals"] = []any{}
-				}
-			case "breaches":
-				delete(widget, "breaches")
-			case "bandSeries":
-				delete(widget, "bandSeries")
-			case "sample":
-				if widget["type"] == "timeseries" {
-					delete(widget, "freshness")
-				}
-				sample, ok := widget["sample"].(map[string]any)
-				if !ok {
-					continue
-				}
-				if sample["state"] != "stale" || widget["attention"] == "stale" {
-					delete(widget, "sample")
-					continue
-				}
-				for _, key := range []string{"basis", "staleAfterSeconds", "lastTimestamp", "ageSeconds"} {
-					delete(sample, key)
-				}
-			}
+	for n := 1; n <= len(steps); n++ {
+		raw, err := os.ReadFile(dashboardCappedGoldenPath(n))
+		require.NoError(t, err)
+		var document map[string]any
+		require.NoError(t, json.Unmarshal(raw, &document))
+		require.Equal(t, toAnySlice(steps[:n]), document["omitted"], "the golden after %d steps names exactly those steps", n)
+		require.NoError(t, resolved.Validate(document), "a result capped after %d steps must validate", n)
+
+		text, err := dashboardQueryText(raw)
+		require.NoError(t, err)
+		require.Contains(t, text, "Omitted from structuredContent to fit the result cap, in this order:")
+		for _, name := range steps[:n] {
+			require.Contains(t, text, dashboardOmissionPhrases[name])
 		}
-		document["omitted"] = toAnySlice(steps[:step+1])
 	}
 }
 
-func numberOrZero(value any) float64 {
-	number, _ := value.(float64)
-	return number
+// A capped result the gateway reads still carries every attention count, which the ladder never changes.
+func TestDashboardCappedOutputKeepsAttentionCounts(t *testing.T) {
+	var uncapped map[string]any
+	raw, err := os.ReadFile(dashboardCappedGoldenPath(1))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &uncapped))
+	before, err := json.Marshal(uncapped["attention"])
+	require.NoError(t, err)
+	for n := 2; n <= len(insights.DashboardOmissionStepNames()); n++ {
+		raw, err := os.ReadFile(dashboardCappedGoldenPath(n))
+		require.NoError(t, err)
+		var capped map[string]any
+		require.NoError(t, json.Unmarshal(raw, &capped))
+		after, err := json.Marshal(capped["attention"])
+		require.NoError(t, err)
+		require.JSONEq(t, string(before), string(after), "attention after %d steps", n)
+	}
 }
 
 func toAnySlice(names []string) []any {
@@ -93,36 +97,4 @@ func toAnySlice(names []string) []any {
 		out = append(out, name)
 	}
 	return out
-}
-
-// A capped result validates against the advertised MCP output schema after every prefix of the ladder,
-// and its text names what was dropped. The fixture is a real runtime capture with breaches, a band series,
-// stat and time-series freshness, and stale samples.
-func TestDashboardCappedOutputValidatesAgainstTheSchema(t *testing.T) {
-	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
-	steps := insights.DashboardOmissionStepNames()
-	for n := 1; n <= len(steps); n++ {
-		var document map[string]any
-		require.NoError(t, json.Unmarshal(mustReadDashboardTestdata(t, "dashboard_query_wire.json"), &document))
-		applyDashboardOmissionSteps(t, document, n)
-		require.NoError(t, resolved.Validate(document), "a result capped after %d steps must validate", n)
-
-		raw, err := json.Marshal(document)
-		require.NoError(t, err)
-		text, err := dashboardQueryText(raw)
-		require.NoError(t, err)
-		require.Contains(t, text, "Omitted from structuredContent to fit the result cap, in this order:")
-	}
-}
-
-// A capped result the gateway reads still carries every attention count, which the ladder never changes.
-func TestDashboardCappedOutputKeepsAttentionCounts(t *testing.T) {
-	var document map[string]any
-	require.NoError(t, json.Unmarshal(mustReadDashboardTestdata(t, "dashboard_query_wire.json"), &document))
-	before, err := json.Marshal(document["attention"])
-	require.NoError(t, err)
-	applyDashboardOmissionSteps(t, document, len(insights.DashboardOmissionStepNames()))
-	after, err := json.Marshal(document["attention"])
-	require.NoError(t, err)
-	require.JSONEq(t, string(before), string(after))
 }
