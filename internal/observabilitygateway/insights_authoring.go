@@ -470,10 +470,34 @@ func (c *InsightsAuthoringClient) listProviders(ctx context.Context, providerID 
 	if err != nil {
 		return nil, err
 	}
-	var listing sharedCatalogListing
-	if json.Unmarshal(body, &listing) != nil || listing.SharedCatalog == nil {
+	if !hasSharedCatalogMember(body) {
 		return body, nil
 	}
+	var listing sharedCatalogListing
+	if json.Unmarshal(body, &listing) != nil || listing.SharedCatalog == nil {
+		// A catalog member that is present but does not decode is never a healthy
+		// listing: treat the catalog as unavailable rather than pass the body on.
+		return unavailableProvidersResult(), nil
+	}
+	return degradedProvidersResult(body, listing)
+}
+
+// hasSharedCatalogMember reports whether a providers body carries a sharedCatalog
+// member, other than an explicit null.
+func hasSharedCatalogMember(body json.RawMessage) bool {
+	var probe struct {
+		SharedCatalog json.RawMessage `json:"sharedCatalog"`
+	}
+	if json.Unmarshal(body, &probe) != nil {
+		return false
+	}
+	return len(probe.SharedCatalog) > 0 && string(probe.SharedCatalog) != "null"
+}
+
+// degradedProvidersResult turns a listing with a degraded shared catalog into
+// its tool result: an error when nothing is listed, otherwise the listing with
+// a note.
+func degradedProvidersResult(body json.RawMessage, listing sharedCatalogListing) (any, error) {
 	status := listing.SharedCatalog.Status
 	retry := retryAfterSeconds(listing.SharedCatalog.RetryAfter)
 	if len(listing.Providers) > 0 {
@@ -503,15 +527,23 @@ func (c *InsightsAuthoringClient) listProviders(ctx context.Context, providerID 
 // shared catalog. It is an MCP tool error rather than a protocol error, so the
 // agent receives the text and the client can pass it to the model.
 func unavailableProvidersResult() *sdkmcp.CallToolResult {
+	return insightsUnavailableResult("The shared observability provider catalog is unavailable; retry later.")
+}
+
+// insightsUnavailableResult is the tool error for an unavailable Insights
+// service. The text is fixed by the caller, so no upstream detail reaches the
+// agent.
+func insightsUnavailableResult(text string) *sdkmcp.CallToolResult {
 	return &sdkmcp.CallToolResult{
 		IsError:           true,
 		StructuredContent: map[string]any{"error": map[string]any{"code": connect.CodeUnavailable.String()}},
-		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: "The shared observability provider catalog is unavailable; retry later."}},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: text}},
 	}
 }
 
 // retryAfterSeconds keeps a catalog's retry delay in the range an agent is told
-// to wait: at least one second, and at most the gateway's own 60 second bound.
+// to wait: at least one second, and at most the 60 second bound Insights applies
+// to the gateway's Retry-After.
 func retryAfterSeconds(seconds int) int {
 	return min(max(seconds, 1), 60)
 }

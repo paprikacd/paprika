@@ -159,3 +159,67 @@ func TestSharedCatalogNoteNamesEachStatus(t *testing.T) {
 	require.Contains(t, sharedCatalogNote("failed", 0), "unavailable")
 	require.Contains(t, sharedCatalogNote("busy", 0), "Retry after 1 seconds.")
 }
+
+func TestListInsightsProvidersUndecodableCatalogIsUnavailable(t *testing.T) {
+	for _, body := range []string{
+		`{"providers":[],"sharedCatalog":{"status":"busy","code":429,"retryAfter":1.5}}`,
+		`{"providers":[{"id":"prometheus","name":"Metrics"}],"sharedCatalog":{"status":"busy","code":429,"retryAfter":"2"}}`,
+		`{"providers":[],"sharedCatalog":"busy"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			tool := providersListingTool(t, http.StatusOK, body)
+			result, err := listProvidersAs(t, tool)
+			require.NoError(t, err, "an undecodable catalog is a tool error, never a passthrough listing")
+			callResult, ok := result.(*sdkmcp.CallToolResult)
+			require.True(t, ok, "got %T", result)
+			require.True(t, callResult.IsError)
+			require.Equal(t, map[string]any{"error": map[string]any{"code": "unavailable"}}, callResult.StructuredContent)
+		})
+	}
+}
+
+func TestListInsightsProvidersNullCatalogIsHealthy(t *testing.T) {
+	body := `{"providers":[{"id":"prometheus","name":"Metrics"}],"sharedCatalog":null}`
+	tool := providersListingTool(t, http.StatusOK, body)
+	result, err := listProvidersAs(t, tool)
+	require.NoError(t, err)
+	raw, ok := result.(json.RawMessage)
+	require.True(t, ok, "a null catalog member is not a degraded catalog, got %T", result)
+	require.JSONEq(t, body, string(raw))
+}
+
+func TestInsightsToolsMapUnavailableInsightsToToolErrors(t *testing.T) {
+	proxy := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"upstream private address 10.0.0.7"}`))
+	})
+	client, err := NewInsightsAuthoringClient(proxy, []byte(rand.Text()), "https://paprika.example.test", nil)
+	require.NoError(t, err)
+	registry := mcp.NewRegistry()
+	require.NoError(t, RegisterInsightsTools(registry, client, nil))
+	p := &auth.Principal{Subject: "human", Scopes: []string{string(mcp.ScopeObserve)}}
+	ctx := auth.WithPrincipal(context.Background(), p)
+	for _, name := range []string{"list_insights_providers", "list_saved_queries", "list_dashboards"} {
+		t.Run(name, func(t *testing.T) {
+			tool, ok := registry.Lookup(name)
+			require.True(t, ok)
+			result, err := tool.Invoke(ctx, nil, json.RawMessage(`{}`))
+			require.NoError(t, err, "an unreachable Insights is a tool error, not a protocol error")
+			callResult, ok := result.(*sdkmcp.CallToolResult)
+			require.True(t, ok, "got %T", result)
+			require.True(t, callResult.IsError)
+			require.Equal(t, map[string]any{"error": map[string]any{"code": "unavailable"}}, callResult.StructuredContent)
+			require.Len(t, callResult.Content, 1)
+			text, ok := callResult.Content[0].(*sdkmcp.TextContent)
+			require.True(t, ok)
+			require.Equal(t, "Insights is unavailable; retry later.", text.Text)
+			require.NotContains(t, text.Text, "10.0.0.7")
+		})
+	}
+}
+
+func TestListInsightsProvidersDescriptionStatesTheEmptyListContract(t *testing.T) {
+	tool := providersListingTool(t, http.StatusOK, `{"providers":[]}`)
+	require.Contains(t, tool.Description, "a successful empty list means no providers are available to this caller")
+	require.Contains(t, tool.Description, "retry delay")
+}
