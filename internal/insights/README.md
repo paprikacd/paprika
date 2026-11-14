@@ -360,7 +360,9 @@ with at most 16 requests queued. Past that it gets `429` with `Retry-After: 1`
 and "too many active dashboard uploads". Dry runs and saves with `?checks=true`
 then share four concurrent slots: a dry run holds one while it decodes its request
 and builds its report, and a checked save holds one through its lock wait, its
-check, its write and its response. A request that finds them all taken gets `429`
+check and the build of its response. The response is written after the lock and
+the slot are released, so a client that stops reading holds neither. A request
+that finds them all taken gets `429`
 with `Retry-After: 1`, and a refused dry run decodes nothing. A dry run with `execute` releases its slot before its
 queries run and holds one of four dry-run query slots instead, so a slow provider
 never refuses a checked save. A full pool gets the same `429`. The schema check

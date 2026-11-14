@@ -61,10 +61,11 @@ type Server struct {
 	queryDuration metric.Float64Histogram
 	// checkSlots caps the dry runs and checked saves in flight. A dry run holds its
 	// slot while it decodes its request and builds its report; a checked save holds
-	// it through its lock wait, its check, its write and its response. Each one
-	// parses a whole document, so a burst of them is refused rather than allowed to
-	// grow the heap of a replica. A request body is read before a slot is taken, so
-	// a slow upload holds none.
+	// it through its lock wait, its check and the build of its response, and frees
+	// it before the response is written. Each one parses a whole document, so a
+	// burst of them is refused rather than allowed to grow the heap of a replica.
+	// A request body is read under a document-read slot before a check slot is
+	// taken, so a slow upload holds none.
 	checkSlots chan struct{}
 	// dryRunSlots caps the dry runs that execute queries. They hold a check slot
 	// only until their report is built, so provider latency never blocks checked
