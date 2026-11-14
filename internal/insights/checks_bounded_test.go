@@ -86,24 +86,35 @@ func TestOversizedArraysStayWithinAllocationBudget(t *testing.T) {
 				return request(t, h, "POST", "/api/dashboards/validate", dryRun, nil)
 			})
 			require.Equal(t, http.StatusOK, w.Code, "dry run body %.200s", w.Body)
-			require.Less(t, allocated, uint64(16<<20), "dry run allocated too much")
+			requireWithinBudget(t, allocated, "dry run")
 			assertRejectedReport(t, w.Body.Bytes(), tc.wantTotal, tc.wantRule)
 
 			w, allocated = measured(t, func() *httptest.ResponseRecorder {
 				return request(t, h, "POST", "/api/dashboards/validate", executed, nil)
 			})
 			require.Equal(t, http.StatusOK, w.Code, "executed dry run body %.200s", w.Body)
-			require.Less(t, allocated, uint64(16<<20), "executed dry run allocated too much")
+			requireWithinBudget(t, allocated, "executed dry run")
 			assertRejectedReport(t, w.Body.Bytes(), tc.wantTotal, tc.wantRule)
 
 			w, allocated = measured(t, func() *httptest.ResponseRecorder {
 				return request(t, h, "PUT", "/api/dashboards/demo?checks=true", saved, map[string]string{"If-None-Match": "*"})
 			})
 			require.Equal(t, http.StatusBadRequest, w.Code, "save body %.200s", w.Body)
-			require.Less(t, allocated, uint64(16<<20), "save allocated too much")
+			requireWithinBudget(t, allocated, "save")
 			assertRejectedReport(t, w.Body.Bytes(), tc.wantTotal, tc.wantRule)
 		})
 	}
+}
+
+// requireWithinBudget checks an allocation count against the 16 MB budget for a
+// bounded request. The race detector inflates allocation counts, so it is only
+// checked in a normal build; the report and status checks still run under it.
+func requireWithinBudget(t *testing.T, allocated uint64, what string) {
+	t.Helper()
+	if raceEnabled {
+		return
+	}
+	require.Less(t, allocated, uint64(16<<20), "%s allocated too much", what)
 }
 
 // measured runs call and returns its response with the bytes the process allocated
