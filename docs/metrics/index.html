@@ -274,8 +274,9 @@ They are exported by the controller-manager and are the raw data behind the
 </table></div>
 <p>Useful queries:</p>
 <div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 3"><code class="language-promql"># Controllers that have not completed a reconcile in five minutes.
+# Controllers record result=&quot;success&quot;, &quot;error&quot;, or &quot;fail&quot; (releases only); only success counts.
 time() - max by (controller) (
-  paprika_controller_last_reconcile_timestamp_seconds{result=~&quot;success|requeue_after&quot;}
+  paprika_controller_last_reconcile_timestamp_seconds{result=&quot;success&quot;}
 ) &gt; 300
 
 # Applications with unreconciled spec changes.
@@ -289,6 +290,9 @@ max by (controller) (workqueue_longest_running_processor_seconds) &gt; 60
 # Releases that have not reached a terminal phase.
 paprika_releases_stuck &gt; 0
 </code></pre></div>
+<p>A ready-made Insights dashboard charts these gauges with the same <code>max()</code>
+semantics as the alert rules: the <code>paprika-control-plane</code> starter in
+<code>internal/insights/starters/</code>.</p>
 <p><code>workqueue_*</code> and <code>controller_runtime_reconcile_*</code> are supplied by
 controller-runtime; the Paprika-specific gauges above add the per-application
 lag and release-liveness view that those generic metrics cannot express.</p>
@@ -442,7 +446,7 @@ not crossed the alert threshold yet; the series is absent when no link exists.</
 <div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">promql</span></div><pre tabindex="0" aria-label="promql code example 4"><code class="language-promql"># A satellite that has not reported in five minutes.
 paprika_satellite_report_age_seconds &gt; 300
 # Link churn: more than three detaches in ten minutes.
-sum by (cluster) (increase(paprika_satellite_link_events_total{event=&quot;detached&quot;}[10m])) &gt; 3
+sum(increase(paprika_satellite_link_events_total{event=&quot;detached&quot;}[10m])) &gt; 3
 # Refused handshakes mean a credential or cluster-identity problem.
 increase(paprika_satellite_link_events_total{event=&quot;refused&quot;}[15m]) &gt; 0
 </code></pre></div>
@@ -521,32 +525,82 @@ filtered to the <code>rest_client_</code> prefix from the component-base legacy 
 <p>All Paprika REST configs are tuned to QPS=50 / Burst=100 (client-go defaults
 are 5/10, which throttles uncached calls under load).</p>
 <h2 id="alerting-rules">Alerting Rules</h2>
+<p>The alerts Paprika ships are in
+<a href="https://github.com/paprikacd/paprika/blob/master/charts/chart/templates/prometheus/prometheusrules.yaml"><code>prometheusrules.yaml</code></a>,
+enabled with <code>prometheus.rules.enabled</code>. That template is the source of truth.
+Its expressions are checked by promtool unit tests in
+<a href="https://github.com/paprikacd/paprika/tree/master/charts/chart/tests/prometheus"><code>charts/chart/tests/prometheus</code></a>, and the
+PromQL in this guide is checked against the Go instrument definitions by
+<code>internal/metrics</code>. The drift, prune, sync, render, git and info examples below
+are illustrations, not shipped rules.</p>
+<p>Counters are created on their first increment, so a bare <code>increase()</code> misses
+that first event. The phase alerts below pair <code>increase()</code> with a check for a
+series with no sample in the hour before the last five minutes, and a rise above
+the value from before the last five minutes. The other <code>increase()</code> examples in
+the Info, Warning and Drift sections do not, and can miss a first error or first
+prune. Current state comes from the <code>*_by_phase_ratio</code> gauges.</p>
+<p>The phase alerts have one known blind spot. After an in-place container restart
+(same pod name and label set), the first failure of a release that the previous
+container exported within the past hour is not reported. The new counter starts
+at 1, which is not above the old value, and the old samples count as history.
+Later failures alert through <code>increase()</code>. Only a drop from a higher value seen
+within about three minutes of the old container's last scrape alerts, briefly.</p>
 <h3 id="critical-alerts">Critical Alerts</h3>
 <div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 5"><code class="language-yaml">groups:
   - name: paprika-critical
     rules:
-      # Application stuck in a failure state
-      - alert: PaprikaApplicationDegraded
-        expr: paprika_application_phase_total{phase=&quot;Degraded&quot;} &gt; 0
+      # A release failed: a transition counter, transition-aware for the first event.
+      - alert: PaprikaReleaseFailed
+        expr: |
+          increase(paprika_release_phase_total{phase=&quot;Failed&quot;}[5m]) &gt; 0
+          or
+          paprika_release_phase_total{phase=&quot;Failed&quot;} unless last_over_time(paprika_release_phase_total{phase=&quot;Failed&quot;}[1h] offset 5m)
+          or
+          paprika_release_phase_total{phase=&quot;Failed&quot;} &gt; last_over_time(paprika_release_phase_total{phase=&quot;Failed&quot;}[1h] offset 5m)
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: &quot;Application {{ $labels.application }} is Degraded&quot;
+          summary: &quot;Release {{ $labels.release }} in namespace {{ $labels.namespace }} failed&quot;
 
-      # Release retries exhausted
+      # Release retries exhausted. The gauge counts applications holding the
+      # condition; it is unlabelled, so the alert cannot name the application.
+      # max() collapses the same value reported by each manager pod.
       - alert: PaprikaReleaseRetriesExhausted
-        expr: paprika_application_phase_total{phase=&quot;RolledBack&quot;} &gt; 0
+        expr: max(paprika_applications_release_retries_exhausted) &gt; 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: &quot;Application {{ $labels.application }} release retries exhausted&quot;
+          summary: &quot;{{ $value }} application(s) hold the ReleaseRetriesExhausted condition&quot;
 </code></pre></div>
 <h3 id="warning-alerts">Warning Alerts</h3>
 <div class="code-block" data-code-block><div class="code-toolbar"><span class="code-language">yaml</span></div><pre tabindex="0" aria-label="yaml code example 6"><code class="language-yaml">groups:
   - name: paprika-warning
     rules:
+      # Current state from the phase gauge, debounced for five minutes.
+      - alert: PaprikaApplicationDegraded
+        expr: max(paprika_applications_by_phase_ratio{phase=&quot;Degraded&quot;}) &gt; 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;{{ $value }} application(s) are Degraded&quot;
+
+      # Rolled back: a transition counter, transition-aware for the first event.
+      - alert: PaprikaApplicationRolledBack
+        expr: |
+          increase(paprika_application_phase_total{phase=&quot;RolledBack&quot;}[5m]) &gt; 0
+          or
+          paprika_application_phase_total{phase=&quot;RolledBack&quot;} unless last_over_time(paprika_application_phase_total{phase=&quot;RolledBack&quot;}[1h] offset 5m)
+          or
+          paprika_application_phase_total{phase=&quot;RolledBack&quot;} &gt; last_over_time(paprika_application_phase_total{phase=&quot;RolledBack&quot;}[1h] offset 5m)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: &quot;Application {{ $labels.application }} in namespace {{ $labels.namespace }} was rolled back&quot;
+
       # Drift detected and persisting
       - alert: PaprikaDriftDetected
         expr: paprika_out_of_sync &gt; 0

@@ -1,1 +1,0 @@
-import{bi as i,j as o,bj as r}from"./index-CFyHjvKc.js";function l({state:s,description:n}){const a=i(s);return o.jsxs("div",{className:"lab-window-controls",children:[o.jsx(r,{state:s,selection:a}),n&&o.jsx("p",{className:"lab-window-scope",children:n})]})}export{l as L};
