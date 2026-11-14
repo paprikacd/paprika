@@ -250,6 +250,9 @@ func (s *Server) admitAndResolveShared(w http.ResponseWriter, r *http.Request, q
 
 var errCatalogBusy = errors.New("shared catalog capacity reached")
 
+// catalogBusyProvider is the provider label of a catalog-busy rejection.
+const catalogBusyProvider = "shared-catalog"
+
 // enterCatalogPhase takes a catalog phase, waiting up to catalogWaitTimeout when
 // all phases are busy. Only catalogWaiting callers may queue; any beyond that
 // fail fast, so a burst of shared work cannot pile up without bound.
@@ -296,7 +299,9 @@ func (s *Server) writeCatalogAdmissionError(w http.ResponseWriter, r *http.Reque
 		writeQueryError(w, err)
 		return
 	}
-	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))
+	// The provider label is fixed: the caller's id is not resolved yet, so it could
+	// otherwise name an unbounded number of series.
+	attributes := metric.WithAttributes(attribute.String("provider", catalogBusyProvider), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))
 	s.queryCount.Add(r.Context(), 1, attributes)
 	w.Header().Set("Retry-After", "1")
 	writeError(w, 429, "too many active shared catalog requests; retry shortly")
