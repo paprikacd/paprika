@@ -13,13 +13,17 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// documentBodyBudget caps the request-body bytes that saves and dry runs hold in
-// memory at once, across every connection. It is 8 MiB, so a flood of full-size
-// bodies admits about 21 reads at once and the check slots refuse the rest. In a
-// 256 MiB container the 32 MiB budget peaked at 266 MiB in one run, and this budget at
-// 157 to 266 MiB across eight runs; the README has the runs. The cost is that about
-// 8 MiB of stalled upload bytes refuses every save and dry run until the server's read
-// timeout ends them.
+// documentBodyBudget caps the request-body bytes that saves and dry runs hold at once,
+// across every connection. It is 8 MiB, which admits about 21 full 397 KB bodies at
+// once; the check slots and this budget together refuse the rest.
+//
+// The budget bounds the body bytes the handlers are reading or holding. It does not
+// bound the kernel memory of the connections that send them: the listener caps each
+// connection's receive buffer (cmd/paprika-insights), but the connections that a refused
+// request leaves closing still hold kernel memory for a while, and the page cache is
+// not counted at all. The README has the measured residual. A principal that holds about
+// the budget's worth of stalled upload bytes refuses every save and dry run until the
+// server's read timeout ends those uploads.
 const documentBodyBudget = 8 << 20
 
 // Refusal routes name the request kinds that take bytes from the budget. Both are
@@ -28,6 +32,16 @@ const (
 	uploadRouteSave   = "save"
 	uploadRouteDryRun = "dry_run"
 )
+
+// newUploadRefusalCounter creates the counter of refused body reads, by route. The
+// exporter publishes it as paprika_insights_dashboard_upload_refusals_total.
+func newUploadRefusalCounter(meter metric.Meter) (metric.Int64Counter, error) {
+	counter, err := meter.Int64Counter("paprika_insights_dashboard_upload_refusals", metric.WithDescription("Dashboard saves and dry runs refused because the request-body budget was full, by route"))
+	if err != nil {
+		return nil, fmt.Errorf("create upload refusal counter: %w", err)
+	}
+	return counter, nil
+}
 
 var errDocumentReadCapacity = errors.New("dashboard document read capacity reached")
 

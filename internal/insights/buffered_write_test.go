@@ -237,3 +237,60 @@ func TestDeleteDashboardWritesAfterUnlocking(t *testing.T) {
 	}
 	require.Equal(t, http.StatusNoContent, slow.status)
 }
+
+// A save that is refused, whether its body is invalid or its check slot is taken,
+// writes its 400 or 429 holding no body bytes. The refusal is small, but a client that
+// stops reading it must not hold the bytes it sent.
+func TestRefusedSaveHoldsNoBodyBytesWhileItsResponseIsWritten(t *testing.T) {
+	cases := map[string]struct {
+		path   string
+		body   []byte
+		fill   func(*Server)
+		status int
+	}{
+		"invalid body": {
+			path:   "/api/dashboards/demo?checks=true",
+			body:   []byte(`{"not":`),
+			fill:   func(*Server) {},
+			status: http.StatusBadRequest,
+		},
+		"check slots taken": {
+			path: "/api/dashboards/demo?checks=true",
+			body: dashboard("demo", "Clean"),
+			fill: func(s *Server) {
+				for range cap(s.checkSlots) {
+					s.checkSlots <- struct{}{}
+				}
+			},
+			status: http.StatusTooManyRequests,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s, _ := testService(t)
+			tc.fill(s)
+			slow := newBlockingWriter()
+			r := httptest.NewRequestWithContext(t.Context(), "PUT", tc.path, bytes.NewReader(tc.body))
+			r.SetPathValue("id", "demo")
+			r.Header.Set("Content-Type", "application/json")
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				s.putDashboard(slow, r)
+			}()
+			select {
+			case <-slow.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the refused save never wrote its response")
+			}
+			require.Zero(t, s.documentBytes.inUse(), "a refused save blocked on its response write still holds its body bytes")
+			close(slow.unblock)
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the refused save did not finish after its reader resumed")
+			}
+			require.Equal(t, tc.status, slow.status)
+		})
+	}
+}

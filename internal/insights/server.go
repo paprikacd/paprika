@@ -71,12 +71,13 @@ type Server struct {
 	// only until their report is built, so provider latency never blocks checked
 	// saves; this pool bounds the executing dry runs on their own.
 	dryRunSlots chan struct{}
-	// documentBytes caps the request-body bytes that saves and dry runs hold at once,
-	// at documentBodyBudget. Each read reserves the bytes it returns, before any check
-	// slot is taken, so a flood of uploads holds no more than documentBodyBudget bytes
-	// before the check slots refuse anything. A stalled upload holds only the bytes it
-	// has sent. A request that cannot reserve waits up to documentWaitTimeout, and at
-	// most cap(documentWaiting) requests may wait at once.
+	// documentBytes caps the request-body bytes that saves and dry runs hold at once, at
+	// documentBodyBudget. Each read reserves the bytes it returns, before any check slot
+	// is taken, so the bytes of body that a flood of uploads holds at once are at most
+	// documentBodyBudget. The budget does not bound kernel socket memory (the listener
+	// bounds each connection's receive buffer). A stalled upload holds only the bytes it
+	// has sent. A request that cannot reserve waits up to documentWaitTimeout, and at most
+	// cap(documentWaiting) requests may wait at once.
 	documentBytes       *byteBudget
 	documentWaiting     chan struct{}
 	documentWaitTimeout time.Duration
@@ -119,9 +120,9 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create query duration histogram: %w", err)
 	}
-	s.uploadRefusals, err = otel.Meter("paprika").Int64Counter("paprika_insights_dashboard_upload_refusals", metric.WithDescription("Dashboard saves and dry runs refused because the request-body budget was full, by route"))
+	s.uploadRefusals, err = newUploadRefusalCounter(otel.Meter("paprika"))
 	if err != nil {
-		return nil, fmt.Errorf("create upload refusal counter: %w", err)
+		return nil, err
 	}
 	return s, nil
 }
@@ -437,21 +438,23 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
-	// The body counts against the body budget while it is read and while the save
-	// needs the document. The budget is freed when the save has released its lock and
-	// check slot, before the response is written. A stalled upload holds only the bytes
-	// it sent, and no check slot, because the slot is taken after the body is read.
+	// The body counts against the body budget while it is read and while an admitted
+	// save needs the document. An admitted save frees the budget after its lock and check
+	// slot are released and before its response is written. A refused save frees it before
+	// its refusal is written. A stalled upload holds only the bytes it has sent, and no
+	// check slot, because the slot is taken after the body is read.
 	body := s.budgetBody(r)
 	defer body.release()
 	var doc json.RawMessage
 	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
+		body.release()
 		s.writeBodyError(w, body, uploadRouteSave, "invalid dashboard document")
 		return
 	}
 	checks := wantsChecks(r)
 	releaseCheck := func() {}
 	if checks {
-		releaseSlot, slotOK := s.admitCheck(w)
+		releaseSlot, slotOK := s.admitCheck(w, body.release)
 		if !slotOK {
 			return
 		}
@@ -471,6 +474,7 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 // time, which bounds their memory. Moving the schema pass out of the lock needs
 // every array a document can make large bounded first, so it stays here until
 // then. A save of a valid dashboard takes well under a millisecond under it.
+//
 // release frees the check slot and the body budget. It runs after the lock is
 // released, and before the caller writes the response.
 func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool, release func()) *bufferedResponse {
@@ -502,23 +506,29 @@ func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool
 }
 
 // admitCheck takes a dry-run or checked-save slot. When every slot is taken it
-// writes the 429 the other Insights endpoints use, with a one-second retry hint.
-func (s *Server) admitCheck(w http.ResponseWriter) (func(), bool) {
-	return admitSlot(s.checkSlots, w, "too many active dashboard checks; retry shortly")
+// calls beforeRefusal, if set, and then writes the 429 the other Insights endpoints
+// use, with a one-second retry hint. A save passes its body's release, so a refused
+// save holds no body bytes while its refusal is written.
+func (s *Server) admitCheck(w http.ResponseWriter, beforeRefusal func()) (func(), bool) {
+	return admitSlot(s.checkSlots, w, "too many active dashboard checks; retry shortly", beforeRefusal)
 }
 
 // admitDryRunQuery takes a slot for a dry run's query phase, with the same refusal as admitCheck.
 func (s *Server) admitDryRunQuery(w http.ResponseWriter) (func(), bool) {
-	return admitSlot(s.dryRunSlots, w, "too many active dashboard dry runs with queries; retry shortly")
+	return admitSlot(s.dryRunSlots, w, "too many active dashboard dry runs with queries; retry shortly", nil)
 }
 
-// admitSlot takes a slot from pool without waiting. A full pool writes the 429 with
-// a one-second retry hint and the message, and reports false.
-func admitSlot(pool chan struct{}, w http.ResponseWriter, message string) (func(), bool) {
+// admitSlot takes a slot from pool without waiting. A full pool calls beforeRefusal,
+// if set, and writes the 429 with a one-second retry hint and the message, and reports
+// false.
+func admitSlot(pool chan struct{}, w http.ResponseWriter, message string, beforeRefusal func()) (func(), bool) {
 	select {
 	case pool <- struct{}{}:
 		return func() { <-pool }, true
 	default:
+		if beforeRefusal != nil {
+			beforeRefusal()
+		}
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, message)
 		return nil, false
@@ -606,7 +616,7 @@ func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequ
 		s.writeBodyError(w, body, uploadRouteDryRun, "invalid dashboard check request")
 		return nil, nil, false
 	}
-	releaseCheck, ok := s.admitCheck(w)
+	releaseCheck, ok := s.admitCheck(w, nil)
 	if !ok {
 		return nil, nil, false
 	}

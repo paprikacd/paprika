@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
@@ -133,4 +134,26 @@ func TestBodyBudgetRefusalsAreCounted(t *testing.T) {
 		}
 	}
 	require.Equal(t, map[string]int64{uploadRouteSave: 1, uploadRouteDryRun: 2}, counts)
+}
+
+// The production refusal counter has the name the README and the dashboards use. The
+// other tests swap in their own counter, so this one reads the instrument NewServer
+// creates through the constructor it calls.
+func TestUploadRefusalCounterHasItsDocumentedName(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	counter, err := newUploadRefusalCounter(provider.Meter("test"))
+	require.NoError(t, err)
+	counter.Add(t.Context(), 1, metric.WithAttributes(attribute.String("route", uploadRouteSave)))
+
+	var collected metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &collected))
+	var names []string
+	for _, scope := range collected.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			names = append(names, m.Name)
+		}
+	}
+	require.Equal(t, []string{"paprika_insights_dashboard_upload_refusals"}, names)
 }
