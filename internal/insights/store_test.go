@@ -74,6 +74,7 @@ func TestOpenStoreStillValidatesOtherFieldsWhenZoneIsStale(t *testing.T) {
 	_ = quarantineMetrics(t)
 	store, err := OpenStore(dir)
 	require.NoError(t, err, "an invalid document is quarantined, not fatal")
+	require.NoError(t, store.commitQuarantine())
 	_, _, err = store.Get("broken")
 	require.ErrorIs(t, err, ErrNotFound)
 	require.Len(t, quarantinedFiles(t, dir, "dashboard", "broken"), 1)

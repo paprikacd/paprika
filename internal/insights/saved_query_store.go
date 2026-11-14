@@ -20,6 +20,8 @@ type savedQueryStore struct {
 	mu        sync.RWMutex
 	dir       string
 	documents map[string]json.RawMessage
+	// quarantine holds the invalid saved queries openSavedQueryStore found. They move only in commitQuarantine.
+	quarantine []pendingQuarantine
 }
 
 func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
@@ -41,9 +43,7 @@ func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
 		}
 		document, invalid, err := readStoredSavedQuery(s.dir, file.Name(), id)
 		if invalid {
-			if qErr := quarantineStoredDocument(dataDir, s.dir, quarantineKindSavedQuery, id, err); qErr != nil {
-				return nil, qErr
-			}
+			s.quarantine = append(s.quarantine, pendingQuarantine{root: dataDir, dir: s.dir, kind: quarantineKindSavedQuery, id: id, reason: err})
 			continue
 		}
 		if err != nil {
@@ -55,6 +55,14 @@ func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
 		s.documents[id] = document
 	}
 	return s, nil
+}
+
+// commitQuarantine moves the invalid saved queries that openSavedQueryStore found into quarantine. NewServer calls it
+// after the whole startup has succeeded.
+func (s *savedQueryStore) commitQuarantine() error {
+	var err error
+	s.quarantine, err = commitPendingQuarantine(s.quarantine)
+	return err
 }
 
 // readStoredSavedQuery reads and validates one saved query file. invalid reports a document to quarantine, which is one

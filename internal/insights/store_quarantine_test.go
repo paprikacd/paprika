@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -117,6 +118,8 @@ func TestOpenStoreQuarantinesInvalidDashboardAndOpens(t *testing.T) {
 	require.NoError(t, err, "one invalid document must not stop the store from opening")
 
 	require.Equal(t, []string{"healthy"}, storedIDs(store))
+	require.FileExists(t, filepath.Join(dir, "broken.json"), "the invalid file stays in place until the startup succeeds")
+	require.NoError(t, store.commitQuarantine())
 	_, _, err = store.Get("broken")
 	require.ErrorIs(t, err, ErrNotFound)
 	require.NoFileExists(t, filepath.Join(dir, "broken.json"))
@@ -141,11 +144,13 @@ func TestQuarantineIsIdempotentAcrossRestarts(t *testing.T) {
 	writeStoredFile(t, filepath.Join(dir, "broken.json"), storedDashboardDocument(t, "broken", map[string]any{"timeRange": "bogus"}))
 	reader := quarantineMetrics(t)
 
-	_, err := OpenStore(dir)
+	first, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, first.commitQuarantine())
 	logs := captureLogs(t)
 	reopened, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, reopened.commitQuarantine())
 
 	require.Equal(t, []string{"healthy"}, storedIDs(reopened))
 	require.Len(t, quarantinedFiles(t, dir, "dashboard", "broken"), 1, "a restart must not quarantine a second copy")
@@ -169,12 +174,14 @@ func TestQuarantineDirectoryIsIgnoredByLoaders(t *testing.T) {
 
 	store, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, store.commitQuarantine())
 	require.Equal(t, []string{"healthy"}, storedIDs(store))
 	_, _, err = store.Get("old")
 	require.ErrorIs(t, err, ErrNotFound)
 
 	saved, err := openSavedQueryStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, saved.commitQuarantine())
 	require.Empty(t, saved.list(""), "quarantined saved queries are not loaded")
 
 	for _, path := range []string{oldCopy, badCopy, savedCopy} {
@@ -193,6 +200,7 @@ func TestCreateAfterQuarantineIsNewDocumentAndCopyStays(t *testing.T) {
 
 	store, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, store.commitQuarantine())
 	fresh := storedDashboardDocument(t, "broken", map[string]any{"title": "Fresh"})
 	_, err = store.Put("broken", fresh, "", "*")
 	require.NoError(t, err, "the id is free again after quarantine")
@@ -205,6 +213,7 @@ func TestCreateAfterQuarantineIsNewDocumentAndCopyStays(t *testing.T) {
 
 	reopened, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, reopened.commitQuarantine())
 	current, _, err := reopened.Get("broken")
 	require.NoError(t, err)
 	require.JSONEq(t, string(fresh), string(current))
@@ -222,24 +231,11 @@ func TestNewerSchemaDocumentIsQuarantinedNotFatal(t *testing.T) {
 
 	store, err := OpenStore(dir)
 	require.NoError(t, err, "a newer document must not stop a downgraded build from opening")
+	require.NoError(t, store.commitQuarantine())
 	require.Equal(t, []string{"healthy"}, storedIDs(store))
 	require.Len(t, quarantinedFiles(t, dir, "dashboard", "future"), 1)
 	require.Equal(t, int64(1), quarantinedTotal(t, reader, "dashboard"))
 	require.Contains(t, logs.String(), "id=future")
-}
-
-// A stored zone the canonical list lacks is still a valid document. Only an invalid document is quarantined, and a
-// stale zone never hides an invalid field.
-func TestStaleZoneWithInvalidFieldIsQuarantined(t *testing.T) {
-	dir := t.TempDir()
-	document := storedDashboardDocument(t, "broken", map[string]any{"timeZone": "Factory", "timeRange": "bogus"})
-	writeStoredFile(t, filepath.Join(dir, "broken.json"), document)
-	_ = quarantineMetrics(t)
-
-	store, err := OpenStore(dir)
-	require.NoError(t, err)
-	require.Empty(t, storedIDs(store))
-	require.Len(t, quarantinedFiles(t, dir, "dashboard", "broken"), 1)
 }
 
 // A document over the size limit is an invalid stored document too, so it is quarantined rather than refused.
@@ -252,6 +248,7 @@ func TestOversizedDashboardIsQuarantined(t *testing.T) {
 
 	store, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, store.commitQuarantine())
 	require.Equal(t, []string{"healthy"}, storedIDs(store))
 	require.Len(t, quarantinedFiles(t, dir, "dashboard", "huge"), 1)
 }
@@ -271,6 +268,8 @@ func TestSavedQueryStoreQuarantinesInvalidDocuments(t *testing.T) {
 
 	reopened, err := openSavedQueryStore(dir)
 	require.NoError(t, err, "one invalid saved query must not stop the store from opening")
+	require.FileExists(t, filepath.Join(s.dir, "broken.json"), "the invalid file stays in place until the startup succeeds")
+	require.NoError(t, reopened.commitQuarantine())
 	require.Len(t, reopened.list(""), 1)
 	require.NoFileExists(t, filepath.Join(s.dir, "broken.json"))
 	require.Len(t, quarantinedFiles(t, dir, "saved_query", "broken"), 1)
@@ -279,6 +278,7 @@ func TestSavedQueryStoreQuarantinesInvalidDocuments(t *testing.T) {
 
 	again, err := openSavedQueryStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, again.commitQuarantine())
 	require.Len(t, again.list(""), 1)
 	require.Len(t, quarantinedFiles(t, dir, "saved_query", "broken"), 1, "a restart must not quarantine again")
 	require.Equal(t, int64(1), quarantinedTotal(t, reader, "saved_query"))
@@ -295,9 +295,88 @@ func TestQuarantineKeepsDashboardsAndSavedQueriesApart(t *testing.T) {
 
 	store, err := OpenStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, store.commitQuarantine())
 	require.Equal(t, []string{"healthy"}, storedIDs(store))
 	require.Empty(t, quarantinedFiles(t, dir, "dashboard", "broken"))
-	_, err = openSavedQueryStore(dir)
+	saved, err := openSavedQueryStore(dir)
 	require.NoError(t, err)
+	require.NoError(t, saved.commitQuarantine())
 	require.Len(t, quarantinedFiles(t, dir, "saved_query", "broken"), 1)
+}
+
+// Nothing moves until the startup succeeds. A symlink after an invalid document makes OpenStore refuse, and the
+// invalid file stays where it was with no copy and no count.
+func TestQuarantineWaitsForStoreToOpen(t *testing.T) {
+	dir := t.TempDir()
+	future := filepath.Join(dir, "a-future.json")
+	writeStoredFile(t, future, storedDashboardDocument(t, "a-future", map[string]any{"schemaVersion": 2}))
+	target := filepath.Join(dir, "target.txt")
+	writeStoredFile(t, target, []byte("not a store entry"))
+	require.NoError(t, os.Symlink(target, filepath.Join(dir, "zz-link.json")))
+	reader := quarantineMetrics(t)
+
+	_, err := OpenStore(dir)
+	require.ErrorContains(t, err, "invalid file in dashboard store")
+	require.FileExists(t, future)
+	require.Empty(t, quarantinedFiles(t, dir, "dashboard", "a-future"))
+	require.Equal(t, int64(0), quarantinedTotal(t, reader, "dashboard"))
+}
+
+// A capacity error after an invalid document is also fatal, and the invalid document stays in place.
+func TestQuarantineWaitsForCapacityCheck(t *testing.T) {
+	dir := t.TempDir()
+	future := filepath.Join(dir, "a-future.json")
+	writeStoredFile(t, future, storedDashboardDocument(t, "a-future", map[string]any{"schemaVersion": 2}))
+	for i := range maxDashboards + 1 {
+		id := fmt.Sprintf("dash-%03d", i)
+		writeStoredFile(t, filepath.Join(dir, id+".json"), storedDashboardDocument(t, id, nil))
+	}
+	reader := quarantineMetrics(t)
+
+	_, err := OpenStore(dir)
+	require.ErrorIs(t, err, ErrCapacity)
+	require.FileExists(t, future)
+	require.Equal(t, int64(0), quarantinedTotal(t, reader, "dashboard"))
+}
+
+// A managed provider config this build cannot decode stops NewServer after the store has opened. The invalid
+// dashboard stays in place, and it moves only once a startup succeeds.
+func TestQuarantineWaitsForServerStartup(t *testing.T) {
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "broken.json")
+	writeStoredFile(t, broken, storedDashboardDocument(t, "broken", map[string]any{"timeRange": "bogus"}))
+	provider := filepath.Join(dir, "providers", "p1.json")
+	writeStoredFile(t, provider, []byte(`{"id":"p1","futureSetting":true}`))
+	_ = quarantineMetrics(t)
+
+	store, err := OpenStore(dir)
+	require.NoError(t, err)
+	_, err = NewServer(Config{InsecureDev: true}, store)
+	require.Error(t, err, "an unreadable provider config is fatal")
+	require.FileExists(t, broken, "a failed startup leaves the invalid document in place")
+	require.Empty(t, quarantinedFiles(t, dir, "dashboard", "broken"))
+
+	require.NoError(t, os.Remove(provider))
+	store, err = OpenStore(dir)
+	require.NoError(t, err)
+	_, err = NewServer(Config{InsecureDev: true}, store)
+	require.NoError(t, err)
+	require.NoFileExists(t, broken, "a successful startup commits the quarantine")
+	require.Len(t, quarantinedFiles(t, dir, "dashboard", "broken"), 1)
+}
+
+// When the move itself fails, commit reports it and the file stays where it was.
+func TestFailedQuarantineMoveLeavesDocumentInPlace(t *testing.T) {
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "broken.json")
+	writeStoredFile(t, broken, storedDashboardDocument(t, "broken", map[string]any{"timeRange": "bogus"}))
+	// A file where the quarantine directory belongs makes the move impossible.
+	writeStoredFile(t, filepath.Join(dir, quarantineDirName), []byte("not a directory"))
+	reader := quarantineMetrics(t)
+
+	store, err := OpenStore(dir)
+	require.NoError(t, err)
+	require.Error(t, store.commitQuarantine())
+	require.FileExists(t, broken)
+	require.Equal(t, int64(0), quarantinedTotal(t, reader, "dashboard"))
 }

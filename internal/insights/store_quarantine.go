@@ -29,6 +29,30 @@ const (
 // document, because a newer build may have written a larger one.
 var errDocumentTooLarge = errors.New("document exceeds its size limit")
 
+// pendingQuarantine is an invalid stored document found while a store opens. It stays where it is until
+// commitPendingQuarantine runs, which NewServer does only once the whole startup has succeeded. A fatal error later in
+// startup therefore leaves every document in place for the build that can still read it.
+type pendingQuarantine struct {
+	root   string // data root that holds the quarantine tree
+	dir    string // store directory that holds the file
+	kind   string
+	id     string
+	reason error
+}
+
+// commitPendingQuarantine moves each pending document in order. It drops each one as it moves, so after a failure the
+// returned list holds only the documents still in place.
+func commitPendingQuarantine(pending []pendingQuarantine) ([]pendingQuarantine, error) {
+	for len(pending) > 0 {
+		next := pending[0]
+		if err := quarantineStoredDocument(next.root, next.dir, next.kind, next.id, next.reason); err != nil {
+			return pending, err
+		}
+		pending = pending[1:]
+	}
+	return pending, nil
+}
+
 // quarantineStoredDocument moves an invalid stored document out of its store so the store can open. The file becomes
 // <root>/quarantine/<kind>/<id>.<unix-nanos>.json, a warning names the kind, id and reason, and the quarantine counter
 // increments. A failed move is returned, so the store refuses to open rather than let a later write replace the copy
@@ -37,6 +61,10 @@ func quarantineStoredDocument(root, dir, kind, id string, reason error) error {
 	target := filepath.Join(root, quarantineDirName, kind)
 	if err := os.MkdirAll(target, 0o700); err != nil {
 		return fmt.Errorf("create quarantine directory: %w", err)
+	}
+	// The directories that MkdirAll may have created must be durable before the file moves into them.
+	if err := errors.Join(syncDirectory(root), syncDirectory(filepath.Join(root, quarantineDirName))); err != nil {
+		return fmt.Errorf("quarantine %s %s: %w", kind, id, err)
 	}
 	destination := uniqueQuarantinePath(target, id, time.Now().UnixNano())
 	if err := os.Rename(filepath.Join(dir, id+".json"), destination); err != nil {

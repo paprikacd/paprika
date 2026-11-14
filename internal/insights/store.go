@@ -34,6 +34,8 @@ type Store struct {
 	mu        sync.RWMutex
 	dir       string
 	documents map[string]Dashboard
+	// quarantine holds the invalid documents OpenStore found. They move only in commitQuarantine.
+	quarantine []pendingQuarantine
 }
 
 // OpenStore uses a single-writer, atomic-file store suitable for a single
@@ -69,10 +71,8 @@ func (s *Store) loadEntries(dir string, entries []os.DirEntry) error {
 		}
 		data, staleZone, invalid, err := readStoredDashboard(dir, entry.Name(), id)
 		if invalid {
-			// An invalid document, such as one a newer build wrote, is moved aside so the store still opens.
-			if qErr := quarantineStoredDocument(dir, dir, quarantineKindDashboard, id, err); qErr != nil {
-				return qErr
-			}
+			// An invalid document, such as one a newer build wrote, is set aside once the startup succeeds.
+			s.quarantine = append(s.quarantine, pendingQuarantine{root: dir, dir: dir, kind: quarantineKindDashboard, id: id, reason: err})
 			continue
 		}
 		if err != nil {
@@ -105,6 +105,14 @@ func readStoredDashboard(dir, name, id string) (data []byte, staleZone, invalid 
 		return nil, false, true, err
 	}
 	return data, staleZone, false, nil
+}
+
+// commitQuarantine moves the invalid documents that OpenStore found into quarantine. NewServer calls it after the whole
+// startup has succeeded, so a store that fails to open leaves every file where it was.
+func (s *Store) commitQuarantine() error {
+	var err error
+	s.quarantine, err = commitPendingQuarantine(s.quarantine)
+	return err
 }
 
 func (s *Store) List() []Dashboard {

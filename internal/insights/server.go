@@ -106,6 +106,13 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create query duration histogram: %w", err)
 	}
+	// Only a startup that has succeeded may move documents out of the stores.
+	if err := store.commitQuarantine(); err != nil {
+		return nil, err
+	}
+	if err := savedQueries.commitQuarantine(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
