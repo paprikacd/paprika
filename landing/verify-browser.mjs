@@ -10,7 +10,7 @@ import { readManifest } from './build-content.mjs';
 
 const BASE = '/paprika/';
 const CANONICAL = 'https://paprikacd.github.io/paprika/';
-const EXPECTED_GUIDES = 16;
+const EXPECTED_GUIDES = readManifest().docs.length;
 const [stagingArgument, artifactArgument, ...extra] = process.argv.slice(2);
 if (!stagingArgument || !artifactArgument || extra.length) {
   console.error('Usage: node landing/verify-browser.mjs <staging-directory> <artifact-directory>');
@@ -270,6 +270,25 @@ async function structuredDataMatchesPage(page, path) {
   }
 }
 
+async function editorialArtwork(page, post) {
+  const cover = page.locator('.editorial-cover img');
+  assert.equal(await cover.count(), 1, `${post.route}: one editorial cover`);
+  assert.equal(await cover.getAttribute('alt'), post.cover.alt, `${post.route}: informative cover alt text`);
+  assert.equal(await cover.getAttribute('width'), '1200');
+  assert.equal(await cover.getAttribute('height'), '675');
+  await cover.scrollIntoViewIfNeeded();
+  await cover.evaluate((img) => img.decode());
+  const actual = await cover.evaluate((img) => ({
+    src: new URL(img.currentSrc).pathname,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+  }));
+  assert(actual.src.endsWith('/' + post.cover.src), `${post.route}: correct cover asset`);
+  assert.equal(actual.width, 1200);
+  assert.equal(actual.height, 675);
+  assert.equal(await page.locator('.footer-brand img').count(), 1, `${post.route}: footer identity`);
+}
+
 async function directory(page) {
   await page.locator('.docs-directory').waitFor({ state: 'visible' });
   assert.equal(await page.locator('.docs-directory .doc-link').count(), EXPECTED_GUIDES);
@@ -341,6 +360,71 @@ async function run() {
       }
     } finally { await context.close(); }
     console.log(`PASS ${device}: five page types, metadata, layout, all four decoded lifecycle diagrams${device === 'mobile' ? ', menu and contents navigation' : ''}`);
+  }
+
+  for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
+    const { page: demoPage, context: demoContext } = await newPage({ viewport });
+    try {
+      // The actual chart gallery is built and tested separately. Keep this smoke
+      // check focused on the on-demand iframe contract, not a second heavy app boot.
+      await demoPage.route('**/paprika/charts/**', (route) => route.fulfill({
+        status: 200, contentType: 'text/html',
+        body: '<!doctype html><html lang="en"><title>Synthetic chart preview test</title><body>Gallery stub</body></html>',
+      }));
+      const demoRoutes = [
+        ['kubernetes-release-dashboard', 'release', 'staging'],
+        ['prometheus-dashboard-query-patterns', 'prometheus', 'histogram'],
+        ['observability-dashboard-layout', 'layout', 'diagnose'],
+        ['visual-testing-observability-dashboards', 'testing', 'mobile'],
+        ['building-dashboards-with-mcp', 'mcp', 'verify'],
+      ];
+      for (const [slug, kind, alternate] of demoRoutes) {
+        await visit(demoPage, 'blog/' + slug + '/');
+        const demo = demoPage.locator('[data-editorial-demo="' + kind + '"]');
+        assert.equal(await demo.count(), 1, slug + ': interactive demo');
+        assert.equal(await demo.locator('.demo-kicker').textContent().then((text) => text.includes('SYNTHETIC')), true);
+        const starting = await demo.locator('[data-demo-value]').textContent();
+        await demo.locator('button[data-demo-choice="' + alternate + '"]').click();
+        assert.equal(await demo.locator('button[data-demo-choice="' + alternate + '"]').getAttribute('aria-pressed'), 'true');
+        assert.notEqual(await demo.locator('[data-demo-value]').textContent(), starting);
+        await demo.locator('[data-demo-theme-toggle]').click();
+        assert.equal(await demo.getAttribute('data-demo-theme'), 'light');
+        await demo.locator('[data-demo-theme-toggle]').click();
+        assert.equal(await demo.getAttribute('data-demo-theme'), 'dark');
+        const figure = demoPage.locator('.prose > p > img[src*="content-assets/landing/editorial/"]');
+        assert.equal(await figure.count(), 1, slug + ': one inline explanatory dashboard image');
+        // Load and check the asset before decoding. In a narrow viewport a
+        // native lazy image may still have an unstarted request immediately
+        // after scrolling, and decode() can reject before it is fetched.
+        await figure.evaluate((img) => { img.loading = 'eager'; });
+        await figure.scrollIntoViewIfNeeded();
+        await demoPage.waitForFunction(() => {
+          const img = document.querySelector('.prose > p > img[src*="content-assets/landing/editorial/"]');
+          return img && img.complete && img.naturalWidth > 0;
+        }, null, { timeout: 10000 });
+        await figure.evaluate((img) => img.decode());
+        if (slug === 'prometheus-dashboard-query-patterns') {
+          assert.equal(await demo.locator('[data-demo-bars] rect').count(), 12, 'Histogram uses bars');
+        }
+        if (slug === 'observability-dashboard-layout') {
+          await demo.locator('button[data-demo-choice="empty"]').click();
+          assert(await demo.locator('[data-demo-empty]').isVisible());
+          assert(await demo.locator('[data-demo-inspect]').isDisabled());
+        }
+        await demo.scrollIntoViewIfNeeded();
+        if (slug === 'observability-dashboard-layout') {
+          await demo.screenshot({ path: resolve(artifacts, device + '-editorial-demo.png'), animations: 'disabled' });
+        }
+      }
+      await visit(demoPage, 'blog/kubernetes-release-dashboard/');
+      const preview = demoPage.locator('[data-editorial-gallery]');
+      assert.equal(await preview.count(), 1, 'Public chart gallery embeds are available');
+      assert.equal(await preview.locator('iframe').getAttribute('src'), null, 'Heavy chart gallery is not fetched before intent');
+      await preview.locator('[data-gallery-launch]').click();
+      assert(await preview.locator('iframe').isVisible(), 'Gallery frame shown on request');
+      assert.match(await preview.locator('iframe').getAttribute('src'), /\/charts\/#kubernetes-fleet$/);
+      console.log('PASS ' + device + ': five synthetic dashboard demos, themed controls, accessible data states, decoded illustrations and on-demand gallery');
+    } finally { await demoContext.close(); }
   }
 
   for (const [device, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]]) {
@@ -527,6 +611,31 @@ async function run() {
     for (const path of schemaRoutes) {
       await visit(noJS.page, path);
       await structuredDataMatchesPage(noJS.page, path);
+      const editorial = manifest.posts.find((post) => post.route === path);
+      if (editorial) {
+        await editorialArtwork(noJS.page, editorial);
+        if (editorial.slug === 'building-dashboards-with-mcp') {
+          await noJS.page.locator('.editorial-cover').screenshot({ path: resolve(artifacts, 'mobile-editorial-cover.png'), animations: 'disabled' });
+        }
+      }
+      const featuredDemo = manifest.posts.find((post) => post.route === path);
+      if (featuredDemo && ['kubernetes-release-dashboard', 'prometheus-dashboard-query-patterns',
+        'observability-dashboard-layout', 'visual-testing-observability-dashboards',
+        'building-dashboards-with-mcp'].includes(featuredDemo.slug)) {
+        assert.equal(await noJS.page.locator('[data-editorial-demo]').count(), 1);
+        assert(await noJS.page.locator('[data-demo-value]').isVisible(), 'Static demo evidence remains visible without JavaScript');
+        assert.equal(await noJS.page.locator('[data-gallery-launch]:visible').count(), 0, 'No nonfunctional launch buttons without JavaScript');
+      }
+      if (path === 'blog/') {
+        assert.equal(await noJS.page.locator('.post-cover img').count(), manifest.posts.length);
+        assert.equal(await noJS.page.locator('.topic-article img').count(),
+          Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+      }
+      if (path === '') {
+        assert.equal(await noJS.page.locator('.reading-thumb img').count(), Math.min(3, manifest.posts.length));
+        assert.equal(await noJS.page.locator('.chart-reading-card img').count(),
+          Math.min(3, manifest.posts.filter((post) => post.category === 'Dashboarding').length));
+      }
       if (['docs/canary/', 'blog/building-dashboards-with-mcp/'].includes(path)) {
         await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
         await noJS.page.screenshot({ path: resolve(artifacts, path.startsWith('docs/') ? 'mobile-canary-figure.png' : 'mobile-dashboard-figure.png'), animations: 'disabled' });
@@ -537,6 +646,12 @@ async function run() {
     for (const item of [...manifest.docs, ...manifest.posts]) {
       await visit(noJS.page, item.route);
       await structuredDataMatchesPage(noJS.page, item.route);
+      if (item.kind === 'blog') {
+        await editorialArtwork(noJS.page, item);
+        if (item.slug === 'building-dashboards-with-mcp') {
+          await noJS.page.locator('.editorial-cover').screenshot({ path: resolve(artifacts, 'desktop-editorial-cover.png'), animations: 'disabled' });
+        }
+      }
       if (['getting-started', 'building-dashboards-with-mcp'].includes(item.slug)) {
         await noJS.page.locator('.article-figure').scrollIntoViewIfNeeded();
         await noJS.page.screenshot({ path: resolve(artifacts, `${item.kind === 'docs' ? 'desktop-guide' : 'desktop-dashboard'}-figure.png`), animations: 'disabled' });

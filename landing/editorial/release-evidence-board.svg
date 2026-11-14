@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+<title id="title">Release dashboard evidence panel</title><desc id="description">Labelled synthetic explanatory dashboard composition for an engineering article; not production telemetry.</desc>
+<defs><linearGradient id="background" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#12283b"/><stop offset="1" stop-color="#203b52"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" stroke="#85a4b9" stroke-opacity=".08" fill="none"/></pattern></defs>
+<rect width="1200" height="675" fill="url(#background)"/><rect width="1200" height="675" fill="url(#grid)"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e8f2f7">
+<text x="54" y="67" font-size="16" letter-spacing="3" font-weight="700">PAPRIKA / RELEASE WORKBENCH</text>
+<text x="1145" y="67" font-size="13" text-anchor="end" fill="#9cc2d8" letter-spacing="2">ILLUSTRATIVE / NOT LIVE</text>
+<path d="M54 89H1146M54 604H1146" stroke="#66869e" stroke-opacity=".8"/>
+
+<rect x="64" y="113" width="1070" height="458" fill="#132a3e" stroke="#8da7b8" stroke-width="1.5"/>
+<rect x="83" y="131" width="1031" height="51" fill="#29495f"/><text x="100" y="164" font-size="20" font-weight="700">RELEASE / checkout-service</text><text x="1098" y="164" text-anchor="end" font-size="16" fill="#a4c7df">REV  2f6a••••</text>
+<g><rect x="83" y="204" width="320" height="130" fill="#223f56" stroke="#648ca6"/><text x="105" y="236" font-size="16" fill="#b9d2e0">WORKLOAD HEALTH</text><text x="107" y="296" font-size="45" font-weight="700">3 / 3</text><text x="235" y="296" font-size="15" fill="#98d5b6">READY</text>
+<rect x="416" y="204" width="318" height="130" fill="#223f56" stroke="#648ca6"/><text x="438" y="236" font-size="16" fill="#b9d2e0">DESIRED / LIVE</text><text x="440" y="290" font-size="35" font-weight="700">OUT OF SYNC</text><path d="M443 308H694" stroke="#e6be8e" stroke-width="4"/>
+<rect x="747" y="204" width="367" height="130" fill="#223f56" stroke="#648ca6"/><text x="769" y="236" font-size="16" fill="#b9d2e0">OBSERVABILITY</text><text x="771" y="289" font-size="34" fill="#f0bf84" font-weight="700">NO SAMPLES</text></g>
+<rect x="83" y="354" width="1031" height="197" fill="#1b354c" stroke="#648ca6"/>
+<text x="104" y="386" font-size="17" font-weight="700">EVIDENCE TIMELINE</text><path d="M104 506H1084M104 403H1084" stroke="#4d7592" stroke-width="1.5"/>
+<path d="M110 487l120-25 118 20 108-64 101 22 107-33 107 20 108-50 108 7 94-18" stroke="#9dd1e9" stroke-width="5" fill="none"/>
+<path d="M547 406V518" stroke="#efc08d" stroke-dasharray="6 6" stroke-width="3"/><circle cx="547" cy="440" r="7" fill="#efc08d"/><text x="562" y="527" font-size="14" fill="#efc08d">DEPLOYMENT EVENT</text>
+<text x="55" y="638" font-size="13" letter-spacing="2" fill="#91b1c5">ENGINEERING NOTES / EVIDENCE BEFORE INTERPRETATION</text>
+</g></svg>

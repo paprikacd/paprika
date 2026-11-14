@@ -59,6 +59,89 @@ examples. Do not invent adoption statistics, benchmark results, supported
 capabilities, people or customer stories. Check the actual implementation
 before presenting a configuration field as working behavior.
 
+## Editorial artwork and identity
+
+Each published blog post has two purposeful visuals in `content/site.json`:
+`cover` is an original 1200×675 SVG illustration for the blog index,
+the homepage's reading list, and the article opening; `image` is the
+desktop/mobile PNG technical diagram that explains a specific claim.
+The Markdown source remains the article's authoritative text. Covers
+should introduce a question or mechanism; diagrams should clarify its
+operational meaning. Do not substitute atmospheric art for evidence.
+
+Add new covers in `landing/editorial/<descriptive-slug>.svg` and declare
+`cover.src`, `cover.alt`, and `cover.caption` alongside the article
+metadata. Use the restrained navy, steel, cool-white and attention-amber
+palette in `DESIGN.md`; keep linework and labels legible at card size,
+avoid fabricated metric values, and use native SVG shapes rather than
+external assets or embedded scripts. The build validates the local SVG
+and publishes only referenced covers. Both the article listing and
+homepage use the same source file at the appropriate 16:9 aspect ratio.
+
+The article retains its PNG explanatory diagram and PNG Open Graph/Twitter
+preview, because social crawlers do not reliably render SVG cards. The
+original Paprika mark is applied separately in editorial labels,
+thumbnail signatures and footers rather than redrawing the trademark
+inside each illustration. The `content.css` asset version should change
+whenever markup and styles change together.
+
+Run the standard site build, then the no-JavaScript and responsive
+Playwright checks. The browser test verifies SVG decoding, intrinsic
+dimensions, title-linked cover navigation and the existing article-image
+metadata. Its screenshots include a mobile and desktop editorial cover;
+inspect those alongside the blog index and product reading-list cards.
+
+## Dashboarding editorial discovery
+
+The homepage's chart showcase and the engineering blog topic hub now surface
+current dashboarding articles from the same published `posts` manifest.
+`build-content.mjs` selects the latest three entries in the `Dashboarding`
+category for the showcase and topic hub, and the three latest posts overall
+for the homepage engineering notes. Keep canonical article identities and
+publication dates in the manifest; do not edit these card lists manually.
+
+The dashboarding content and search-intent matrix is maintained in
+[`content/EDITORIAL_SEO.md`](content/EDITORIAL_SEO.md). This is a
+source-backed internal publication guide, not a claim about keyword demand.
+Each new article still needs its own cover, substantive Markdown, links to
+maintained documentation and a distinct editorial question. Sitemap, RSS and
+structured-data counts are derived automatically. Check desktop and mobile
+reading before publishing.
+
+## Interactive article components
+
+The static Markdown renderer accepts two strictly whitelisted fenced directives
+in blog articles only; their bodies must be empty:
+
+```text
+~~~paprika-dashboard release
+~~~
+~~~paprika-gallery kubernetes-fleet
+~~~
+```
+
+Use actual Markdown triple-backtick fences instead of the tildes shown above.
+Supported demo keys are `release`, `prometheus`, `layout`, `testing`
+and `mcp`. Gallery deep links may target `charts`, `kubernetes-fleet`,
+`performance-workbench` or `distributed-systems`. Unsupported directives
+and arbitrary HTML are rejected by the builder.
+
+The components in `article-demos.js` are deterministic synthetic fixtures.
+They expose native buttons, readable measurements, an accessible sample slider,
+responsive charts, dark/light display, query-state descriptions, and a clear
+warning that they do not connect to a real provider. They are not a substitute
+for an authenticated Insights dashboard or an MCP query.
+
+An inline gallery presents a direct working link even when JavaScript is
+disabled. The embedded chart application is loaded only after explicit user
+interaction, avoiding heavyweight renderers in ordinary article page loads.
+The article images under `editorial/` are original explanatory SVGs. Markdown
+image links are resolved, copied and checked by the content builder.
+
+Run `npm test --prefix landing` for directive safety, fixtures and build
+contracts; use the Chromium browser suite to validate actual state switches,
+mobile layout, gallery activation, no-JS fallback and asset decoding.
+
 ## SEO and measurement
 
 The sitemap uses canonical URLs under the project path, and content pages ship
