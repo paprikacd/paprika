@@ -50,16 +50,17 @@ func run() error {
 			return configErr
 		}
 	}
-	store, err := insights.OpenStore(*dataDir)
-	if err != nil {
-		return fmt.Errorf("open Insights store: %w", err)
-	}
 	telemetryConfig := observability.ConfigFromEnv()
 	if os.Getenv("OTEL_SERVICE_NAME") == "" {
 		telemetryConfig.ServiceName = "paprika-insights"
 	}
 	telemetry := observability.NewTelemetry(context.Background(), telemetryConfig)
 	defer shutdownTelemetry(telemetry)
+	// Telemetry starts first so that documents quarantined while the store opens reach the counter.
+	store, err := insights.OpenStore(*dataDir)
+	if err != nil {
+		return fmt.Errorf("open Insights store: %w", err)
+	}
 	service, err := insights.NewServer(cfg, store)
 	if err != nil {
 		return fmt.Errorf("configure Insights server: %w", err)

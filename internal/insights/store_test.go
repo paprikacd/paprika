@@ -65,11 +65,16 @@ func TestOpenStoreKeepsAnyStoredTimeZoneValue(t *testing.T) {
 	}
 }
 
-// Exempting the zone does not exempt the rest of the document: a stale zone never hides an invalid field.
+// Exempting the zone does not exempt the rest of the document: a stale zone never hides an invalid field. The invalid
+// document is quarantined and the store still opens.
 func TestOpenStoreStillValidatesOtherFieldsWhenZoneIsStale(t *testing.T) {
 	dir := t.TempDir()
 	document := storedDashboardDocument(t, "broken", map[string]any{"timeZone": "Factory", "timeRange": "bogus"})
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "broken.json"), document, 0o600))
-	_, err := OpenStore(dir)
-	require.ErrorContains(t, err, "invalid saved dashboard broken")
+	_ = quarantineMetrics(t)
+	store, err := OpenStore(dir)
+	require.NoError(t, err, "an invalid document is quarantined, not fatal")
+	_, _, err = store.Get("broken")
+	require.ErrorIs(t, err, ErrNotFound)
+	require.Len(t, quarantinedFiles(t, dir, "dashboard", "broken"), 1)
 }

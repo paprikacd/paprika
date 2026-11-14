@@ -546,6 +546,46 @@ on pod replacement.
 controller-runtime registry. Standard OTEL environment configuration is supported.
 No provider credentials, queries, or user IDs are metric labels.
 
+## Startup quarantine and downgrades
+
+When the store opens, a dashboard or saved query that fails validation no longer
+stops Insights. The file moves to `<data-dir>/quarantine/<kind>/<id>.<unix-nanos>.json`,
+where `<kind>` is `dashboard` or `saved_query`. Startup logs a warning with the kind,
+id and reason, increments `paprika_insights_store_quarantined_total{kind}`, and opens
+the store with the valid documents. The quarantine tree is never read as store
+entries. A second start does not quarantine anything again, because the invalid file
+has already left the store directory. A create with a quarantined id is a new
+document; the quarantined copy is kept and never overwritten.
+
+Anything that fails validation as this build reads it is quarantined. That includes a
+document a newer build wrote (a newer `schemaVersion`, or a field this build does not
+know) and a document over its size limit. These stay fatal: a symlink or other
+non-regular entry in a store directory, an invalid file name, a store over its
+capacity (100 dashboards, 32 MiB of documents, 256 saved queries), and I/O errors
+reading a file.
+
+To restore a quarantined document, stop the Insights process (or scale its single
+replica to zero), confirm no current document has the same id, and move the copy back:
+
+```sh
+# dashboard
+mv <data-dir>/quarantine/dashboard/<id>.<unix-nanos>.json <data-dir>/<id>.json
+# saved query
+mv <data-dir>/quarantine/saved_query/<id>.<unix-nanos>.json <data-dir>/saved-queries/<id>.json
+```
+
+Moving onto an existing id replaces the current document, so check first. Start the
+service again. If this build still rejects the file, it is quarantined again and the
+log gives the reason; correct the JSON by hand or run a build that accepts it.
+Quarantined copies are never pruned automatically. Delete them yourself once they are
+recovered or no longer needed.
+
+Downgrades: quarantine applies only to builds that include this section. Released
+builds that predate it still refuse to open a store that holds any document they
+cannot validate, and exit with `invalid saved dashboard <id>`. Before rolling back to
+such a build, restore a snapshot of the data directory taken before the upgrade, or
+remove the newer fields from the stored documents.
+
 ## Verification
 
 ```sh

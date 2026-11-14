@@ -330,6 +330,7 @@ func TestSavedQueryStoreConcurrentCASAndCapacity(t *testing.T) {
 	}
 }
 
+// Invalid documents are quarantined (see store_quarantine_test.go); only a non-regular entry is still refused.
 func TestSavedQueryStoreRejectsCorruptOrUnsafeFiles(t *testing.T) {
 	for _, tc := range []string{"malformed", "oversized", "symlink", "filename mismatch"} {
 		t.Run(tc, func(t *testing.T) {
@@ -349,21 +350,27 @@ func TestSavedQueryStoreRejectsCorruptOrUnsafeFiles(t *testing.T) {
 				raw = savedQueryJSON(t, savedQueryDocument("different"))
 			case "symlink":
 				target := filepath.Join(dir, "target")
-				if err := os.WriteFile(target, raw, 0600); err != nil {
+				if err = os.WriteFile(target, raw, 0600); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(target, path); err != nil {
+				if err = os.Symlink(target, path); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if tc != "symlink" {
-				if err := os.WriteFile(path, raw, 0600); err != nil {
+				if err = os.WriteFile(path, raw, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := openSavedQueryStore(dir); err == nil {
-				t.Fatal("unsafe persisted query accepted")
+			_ = quarantineMetrics(t)
+			_, err = openSavedQueryStore(dir)
+			if tc == "symlink" {
+				require.Error(t, err, "a symlink is not a regular store entry and is refused")
+				return
 			}
+			require.NoError(t, err, "an invalid saved query is quarantined, not fatal")
+			require.NoFileExists(t, path)
+			require.Len(t, quarantinedFiles(t, dir, "saved_query", "query"), 1)
 		})
 	}
 }
