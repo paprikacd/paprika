@@ -20,6 +20,12 @@ const dashboardQueryBudget = 22 * time.Second
 // docs/design/insights/dashboard-query.md, Compatibility, for the measured decision.
 const DashboardQueryResponseBytes = 130 << 10
 
+// dashboardResultCapText names the cap in KiB for the refusal message, derived from the constant so
+// the message cannot drift from the cap it reports.
+func dashboardResultCapText() string {
+	return fmt.Sprintf("%d KiB", DashboardQueryResponseBytes>>10)
+}
+
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
 	ID            string            `json:"id"`
@@ -247,7 +253,7 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 		if judgesStaleAfter(widget.Type) && widget.Options.StaleAfterSeconds != nil {
 			seconds := *widget.Options.StaleAfterSeconds
 			output.Sample.Basis, output.Sample.StaleAfterSeconds = sampleBasisStaleAfter, &seconds
-			// The freshness object. A stat's is the first contract's; a time series also gets one, which this release added.
+			// The freshness object. A stat's is the first contract's; a time series also gets one, added after the first contract.
 			threshold := int(seconds)
 			output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "unknown"}
 		}
@@ -311,7 +317,7 @@ func writeDashboardQueryResult(w http.ResponseWriter, result *DashboardQueryResu
 		return
 	}
 	if len(encoded) > DashboardQueryResponseBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "dashboard result exceeds 130 KiB even without optional detail; select fewer widgets, series or history points")
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("dashboard result exceeds %s even without optional detail; select fewer widgets, series or history points", dashboardResultCapText()))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

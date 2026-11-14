@@ -22,10 +22,10 @@ const dashboardCappedGoldenFiller = "<filler>"
 
 // cappedGoldenFixture is a complete query-dashboard result: the breach, band series, freshness and
 // sample fixture of withStatWidgets, with every top-level field the advertised schema requires. Its
-// attention counts 52 widgets: 48 critical breach widgets and 4 stale stats.
+// attention counts 52 widgets, all checked, with 48 critical breach widgets and 4 stale stats.
 func cappedGoldenFixture() *DashboardQueryResult {
 	result := withStatWidgets()
-	result.Attention = DashboardAttention{Basis: dashboardAttentionBasis, Widgets: 52, Critical: 48, Stale: 4}
+	result.Attention = DashboardAttention{Basis: dashboardAttentionBasis, Widgets: 52, Checked: 52, Critical: 48, Stale: 4}
 	result.ObservedAt = "2026-10-26T01:00:00Z"
 	result.Range = DashboardQueryRange{Start: "2026-10-26T00:00:00Z", End: "2026-10-26T01:00:00Z", StepSeconds: 60}
 	result.Dashboard.ETag = "v1"
@@ -46,6 +46,7 @@ func cappedGoldenFixture() *DashboardQueryResult {
 func TestDashboardCappedGoldens(t *testing.T) {
 	wantAttention := cappedGoldenFixture().Attention
 	require.Equal(t, 52, wantAttention.Widgets, "the golden fixture must carry real attention counts")
+	require.Equal(t, 52, wantAttention.Checked, "every widget in the golden fixture carries samples, so all 52 are checked")
 	require.Equal(t, 48, wantAttention.Critical)
 	require.Equal(t, 4, wantAttention.Stale)
 	for n := 1; n <= len(dashboardOmissionSteps); n++ {

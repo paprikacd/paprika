@@ -190,7 +190,7 @@ func TestDashboardOmittedListsExactlyWhatWasDropped(t *testing.T) {
 				require.NotEmpty(t, widget.Breaches.Summary, "summaries are kept until the breach object itself is dropped")
 			}
 			require.Equal(t, dropped["bandSeries"], widget.BandSeries == nil, "the bandSeries object on %s", widget.ID)
-			require.Equal(t, dropped["sample"], widget.Freshness == nil, "first-contract freshness on %s", widget.ID)
+			require.Equal(t, dropped["sample"], widget.Freshness == nil, "time-series freshness on %s", widget.ID)
 			switch {
 			case !dropped["sample"]:
 				require.NotNil(t, widget.Sample, "sample kept on %s", widget.ID)
@@ -221,7 +221,7 @@ func TestDashboardOmissionRefusesOnlyWhenTheFloorExceedsTheCap(t *testing.T) {
 }
 
 // A time-series dashboard with staleAfterSeconds and raw kube-state labels, and no status bands, is
-// near the cap before any omission. The first-contract freshness and the sample detail are what the
+// near the cap before any omission. The time-series freshness and the sample detail are what the
 // ladder drops, so the 48-widget result must still return 200 within the cap.
 func TestDashboardQueryTimeSeriesWithStalenessReturnsWithinTheCap(t *testing.T) {
 	body := kubeStateMatrix(t, "0")
@@ -244,7 +244,7 @@ func TestDashboardQueryTimeSeriesWithStalenessReturnsWithinTheCap(t *testing.T) 
 	require.Equal(t, []string{"sample"}, result.Omitted, "no breach detail exists, so only the sample detail is dropped")
 	require.Len(t, result.Widgets, 48)
 	for index := range result.Widgets {
-		require.Nil(t, result.Widgets[index].Freshness, "the first-contract freshness mirror is dropped with the sample detail")
+		require.Nil(t, result.Widgets[index].Freshness, "the time-series freshness mirror is dropped with the sample detail")
 	}
 }
 
@@ -341,7 +341,8 @@ func withStatWidgets() *DashboardQueryResult {
 }
 
 // A capped result keeps every stat's first-contract freshness, so a client of the first contract still
-// reads each stat's stale judgement. Only time-series freshness, which this release added, is dropped.
+// reads each stat's stale judgement. Only time-series freshness, which was added after the first
+// contract, is dropped.
 func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
 	const steps = 4 // The sample step runs, so the time-series freshness and sample detail are dropped.
 	result := withStatWidgets()
@@ -433,10 +434,10 @@ func kubeStateNineLabelMatrix(t *testing.T, value string, samples, padding int) 
 
 // A 48-widget colour-only time series, each judged stale by the cadence fallback because its samples end
 // ten minutes before the range end, must return 200 within the cap. The namespace label carries 30 extra
-// characters so that the result is over the cap on the previous ladder (131,916 bytes, a 413), while
-// the current ladder brings it to 130,620 bytes. The padding sizes this fixture; it is not a claim about
-// real namespaces, and it is not the review probe (b), which is pinned as a refusal in
-// dashboard_omission_probe_test.go.
+// characters, so the fixture encodes to 136,167 bytes before any step. Only step 4 (sample) runs, and it
+// fits at 130,620 bytes, which drops the stale stubs whose attention already reads stale. The padding
+// sizes this fixture; it is not a claim about real namespaces. It is a different shape from review
+// probe (b), which is pinned to 200 within the cap in dashboard_omission_probe_test.go.
 func TestDashboardQueryColourOnlyCadenceStale48WidgetsReturnWithinTheCap(t *testing.T) {
 	body := kubeStateNineLabelMatrix(t, "0", 51, 30)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

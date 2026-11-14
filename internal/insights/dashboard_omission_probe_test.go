@@ -103,8 +103,10 @@ func postReviewProbe(t *testing.T, endGap, seriesCount int, widgets []map[string
 // reviewProbeBody is the request for the whole review window, with the default three series.
 const reviewProbeBody = `{"id":"overview",` + dashboardQueryWindow + `}`
 
-// requireReviewProbeWithinCap requires 200 within the cap, with the omitted steps the probe needs and
-// all 48 widgets still carrying their attention.
+// requireReviewProbeWithinCap requires 200 within the cap, with the omitted steps the probe needs. It
+// also requires each widget that needs attention to keep its per-widget attention, so an omission that
+// cleared attention fails here: the flagged widgets must equal the top-level Critical, Warning, Failed
+// and Stale counts, which count each widget once.
 func requireReviewProbeWithinCap(t *testing.T, endGap int, widgets []map[string]any, wantOmitted []string) {
 	t.Helper()
 	w := postReviewProbe(t, endGap, 3, widgets, reviewProbeBody)
@@ -112,31 +114,44 @@ func requireReviewProbeWithinCap(t *testing.T, endGap int, widgets []map[string]
 	require.LessOrEqual(t, w.Body.Len(), DashboardQueryResponseBytes)
 	result := readDashboardResult(t, w)
 	require.Equal(t, wantOmitted, result.Omitted)
+	require.Len(t, result.Widgets, 48)
 	require.Equal(t, 48, result.Attention.Widgets)
+	flagged := 0
+	for index := range result.Widgets {
+		if result.Widgets[index].Attention != "" {
+			flagged++
+		}
+	}
+	attention := result.Attention
+	require.Positive(t, flagged, "the review probe has widgets that need attention")
+	require.Equal(t, attention.Critical+attention.Warning+attention.Failed+attention.Stale, flagged, "every flagged widget keeps its per-widget attention")
 	requireOmittedMatchesWidgets(t, result.Omitted, result.Widgets)
 }
 
-// Review probe (a): status bands on heatmap, status-grid, threshold-gauge and status-history widgets,
-// with raw kube-state series. After all four steps it encodes to 131,910 bytes, 1,210 bytes under the cap.
+// Review probe (a): status bands on time series, stat, heatmap, status-grid, threshold-gauge and
+// status-history widgets, with raw kube-state series. After all four steps it encodes to 131,910 bytes,
+// 1,210 bytes under the cap.
 func TestDashboardQueryReviewProbeStatusBandedReturnsWithinTheCap(t *testing.T) {
 	kinds := []string{"timeseries", "stat", "heatmap", "status-grid", "threshold-gauge", "status-history"}
 	requireReviewProbeWithinCap(t, 0, reviewProbeWidgets(kinds, true, 0), dashboardOmissionStepNamesThrough(len(dashboardOmissionSteps)))
 }
 
-// Review probe (b): a colour-only time series with cadence staleness. It has no breach or band objects,
-// so only the sample step removes anything. It encodes to 131,868 bytes, 1,252 bytes under the cap, and
-// its per-widget attention and top-level attention are kept.
+// Review probe (b) is the measured 7fe8ccca check: a colour-only time series with cadence staleness. It
+// has no breach or band objects, so only the sample step removes anything. It encodes to 131,868 bytes,
+// 1,252 bytes under the cap, and its per-widget attention and top-level attention are kept.
 func TestDashboardQueryReviewProbeColourOnlyCadenceStaleReturnsWithinTheCap(t *testing.T) {
 	requireReviewProbeWithinCap(t, 5, reviewProbeWidgets([]string{"timeseries"}, false, 61), []string{"sample"})
 }
 
-// A pathological selection still gets a clear 413. Eight series per query is within the supported range,
-// and its never-dropped signals and labels still exceed the cap after every ladder step.
+// A pathological selection still gets a clear 413. It is the 48-widget, nine-label shape with max_series 8.
+// Its never-dropped signals and labels still exceed the cap after every ladder step (322,187 bytes after
+// the ladder), so the refusal is the one path that stays pinned. The message names the cap in KiB, derived
+// from the constant, so it cannot drift from the cap it reports.
 func TestDashboardQueryPathologicalResultIsRefusedWithAClear413(t *testing.T) {
 	body := `{"id":"overview",` + dashboardQueryWindow + `,"max_series":8}`
 	w := postReviewProbe(t, 0, 8, reviewProbeWidgets([]string{"timeseries"}, false, 61), body)
 	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code, "eight series per query must exceed the cap: %.200s", w.Body.String())
 	require.Contains(t, w.Body.String(), "even without optional detail")
-	require.Contains(t, w.Body.String(), "130 KiB")
+	require.Contains(t, w.Body.String(), fmt.Sprintf("%d KiB", DashboardQueryResponseBytes>>10))
 	require.Less(t, w.Body.Len(), 1024)
 }
