@@ -33,12 +33,13 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
 | `variables` | Saved defaults with this call's declared overrides applied |
-| `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the first-contract `freshness` where an explicit option judges it, breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
+| `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the first-contract `freshness` where an explicit option judges it, breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; `sample`, `freshness`, `bandSeries` and the listed intervals may be omitted under the result cap (see `omitted`); saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
 | `signals` | Deduplicated query results, indexed by `q1`, `q2`, …; each identifies the query kind and, when provider lookup is authorized, its resolved provider ID |
 | `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided |
 | `state` | `ok`, `empty` or `partial`; availability, not service health |
 | `attention` | Dashboard-level count of widgets that need attention, with `checked` and the `basis` it counts; see below. Not a health verdict. Optional on the wire, so an older client's schema still accepts the result |
+| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 128 KiB: `breachIntervals`, `breaches`, `bandSeries`, `sample`. Absent when nothing was dropped. The step definitions are under Omitted detail below |
 
 ### Compatibility
 
@@ -53,6 +54,9 @@ field. A band's series index sits in `bandSeries`, beside `threshold`, which kee
 the first-contract shape with `additionalProperties: false`. The tests validate
 the first contract's output against the new schema and the new output against the
 first schema (`dashboard_query_schema_dfad989c.json`, `TestDashboardQuerySchemaIsSkewSafeWithTheFirstContract`).
+A capped result keeps every stat's `freshness`, the first contract's object, because
+a stat's stale judgement predates this release. Only the time-series `freshness`
+this release added is dropped under the cap, and `omitted` names `sample` when it is.
 
 ### Attention summary
 
@@ -173,23 +177,37 @@ would exceed 128 KiB, optional detail is dropped in this fixed order, and each s
 runs only if the result still does not fit: (1) `breachIntervals`, the listed breach
 intervals and their series names, with their count moved into `intervalsOmitted`;
 (2) `breaches`, each widget's whole breach object, which includes its window
-`summary` and `latestLevel`; (3) `bandSeries`, the series names that set a
-multi-series band, keeping the drawn and omitted counts; (4) `sample`: each widget's
+`summary` and `latestLevel`; (3) `bandSeries`, each multi-series band's whole
+`bandSeries` object, so the drawn and omitted counts and the series that set the
+band are absent while the band's `threshold` stays; (4) `sample`: each time series'
 first-contract `freshness` is removed, a stale `sample` keeps its `state` and loses
-its limit and age, and every other `sample` is removed entirely. A widget without
+its limit, timestamp and age, a stale `sample` is removed entirely when the widget's `attention`
+already reads `stale`, and every other `sample` is removed entirely. A widget without
 `sample` therefore has a fresh, `no_threshold` or `unknown` state that the cap
-removed. The top-level `omitted` array names the steps applied, in order. It is
-absent when nothing was dropped, so a result that fits keeps every fact. Attention
-counts, band `threshold` objects, signals and their series are never dropped, and
-attention is counted before any omission. The text synopsis states what was omitted
-and that `widget_ids` narrows the query to recover it. A selection whose remaining
-facts (signals, attention, widget identities and the `omitted` list) still exceed
-the cap after every step is refused with 413. The HTTP response says so; an MCP
-caller sees `resource_exhausted` with its fixed message. Narrow the selection, the
-series or the history points.
+removed. A stat's `freshness` is never removed. The top-level `omitted` array names
+the steps applied, in order. It is absent when nothing was dropped, so a result that
+fits keeps every fact. Attention is counted before any omission and is never changed.
+The text synopsis states what was omitted and that `widget_ids` narrows the query to
+recover it.
 
-Every metric widget reports `sample`: the age of its latest valid returned sample
-relative to the range end, and the limit that judges it. A stat measures its
+Never dropped, under any step: the top-level `schemaVersion`, `dashboard`,
+`observedAt`, `range`, `variables`, `savedQueries`, `signals` (every signal, its
+series summaries and their labels), `queryCount`, `state`, `attention` and `omitted`;
+and for each widget its identity fields (`id`, `title`, `type`, `unit`, `decimals`,
+`pluginId`, `dataKind`), its saved-query, annotation and signal references and
+resolution errors, its `threshold` object (for a multi-series band as well as a stat),
+its per-widget `attention`, and the first-contract `freshness` of a stat. A stale
+`sample` keeps its `state` unless `attention` already reads `stale`. A selection whose
+remaining facts still exceed the cap after every step is refused with 413. The
+largest of these is the signals: a dashboard of 48 widgets, each with three series of
+nine raw kube-state labels and status bands, keeps 131,910 bytes after all four steps
+on the current ladder, which is 838 bytes over the cap, so it is refused. Narrowing
+the selection, the series or the history points brings it under the cap. The HTTP
+response says so. An MCP caller sees `resource_exhausted` with its fixed message.
+
+Every metric widget reports `sample` unless the result cap removes it (see Omitted
+detail): the age of its latest valid returned sample relative to the range end, and
+the limit that judges it. A stat measures its
 displayed primary series. A time series measures the newest sample of any of its
 series, as the UI's stale tail does. The limit is the widget's `staleAfterSeconds`
 where it is set, for stat and time-series widgets. A time series without that
@@ -205,7 +223,7 @@ stale mark. `unknown` means no usable returned sample.
 `staleAfterSeconds` judges the widget. It carries the same judgement in the same
 three states, with `thresholdSeconds`. `thresholdSeconds` is an integer, so the
 cadence-derived limit appears only in `sample`. Text describes only judged samples.
-Under the result cap, `freshness` is the first sample detail removed (step 4 above).
+Under the result cap, a time series' `freshness` is removed in step 4, and a stat's is kept.
 
 Trace results include `returned`, `statusCounts` and a few examples with IDs,
 service, operation, duration in milliseconds and start time in Unix milliseconds. Counts describe the
@@ -281,7 +299,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Series | 3 by default, 1–8 supported |
 | Trace examples | 3 by default, 1–10 supported |
 | Breaches | 12 series evaluated, 12 most recent intervals listed per widget, two levels in the summary |
-| Structured result | 128 KiB. Optional detail is omitted in a fixed order and named in `omitted`; 413 only when the signals and the remaining facts still exceed it |
+| Structured result | 128 KiB. Optional detail is omitted in a fixed order and named in `omitted`; 413 only when the signals and the never-dropped facts (see Omitted detail) still exceed it |
 | Text synopsis | At most 8 KiB |
 | Execution | 22-second budget for the whole read; shared-catalog calls draw on it, each capped at 20 seconds, with partial timeout results when possible |
 | Shared catalog | 4 concurrent catalog phases; a waiting query gets one within 5 seconds (16 waiters), else 429 with `Retry-After: 1`; a listing's own cap is 10 seconds. A `/query` has one 22-second budget covering the wait, the admission wait, the listing and the data call |
