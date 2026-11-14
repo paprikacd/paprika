@@ -7,7 +7,7 @@ const guidanceLayout = "Place widgets without overlaps and fill each row; a gap 
 
 var layoutLintRules = []lintRule{
 	{
-		ID:       "layout.overlap",
+		ID:       overlapRuleID,
 		Severity: errorSeverity,
 		Summary:  guidanceLayout,
 		Fix:      "Move or resize one of the two widgets so their grid rectangles do not intersect.",
@@ -22,23 +22,51 @@ var layoutLintRules = []lintRule{
 	},
 }
 
-// checkLayoutOverlap fires once for each pair of widgets whose grid rectangles
-// share at least one cell. The pointer names the later widget's layout, and the
-// message names both ids. Touching edges do not overlap.
-func checkLayoutOverlap(doc *lintDocument) []lintHit {
-	var hits []lintHit
+// overlapKey names a pair of widgets by their ids, in either order.
+type overlapKey [2]string
+
+func overlapKeyOf(a, b string) overlapKey {
+	if b < a {
+		a, b = b, a
+	}
+	return overlapKey{a, b}
+}
+
+// overlapPair is a pair of widgets whose grid rectangles share at least one cell.
+type overlapPair struct {
+	key            overlapKey
+	earlier, later *lintWidget
+}
+
+// overlapPairs lists the overlapping pairs in document order of the later widget,
+// then of the earlier one. Touching edges do not overlap.
+func overlapPairs(doc *lintDocument) []overlapPair {
+	var pairs []overlapPair
 	for j := range doc.widgets {
 		later := &doc.widgets[j]
 		for i := range j {
 			earlier := &doc.widgets[i]
 			if earlier.x < later.x+later.w && later.x < earlier.x+earlier.w && earlier.y < later.y+later.h && later.y < earlier.y+earlier.h {
-				hits = append(hits, lintHit{
-					pointer:  widgetBase(later.index) + "/layout",
-					widgetID: later.id,
-					message:  widgetLabel(later) + " overlaps " + widgetLabel(earlier),
-				})
+				pairs = append(pairs, overlapPair{key: overlapKeyOf(earlier.id, later.id), earlier: earlier, later: later})
 			}
 		}
+	}
+	return pairs
+}
+
+// checkLayoutOverlap fires once for each pair of widgets whose grid rectangles
+// share at least one cell. The pointer names the later widget's layout, and the
+// message names both ids.
+func checkLayoutOverlap(doc *lintDocument) []lintHit {
+	pairs := overlapPairs(doc)
+	hits := make([]lintHit, 0, len(pairs))
+	for _, pair := range pairs {
+		hits = append(hits, lintHit{
+			pointer:  widgetBase(pair.later.index) + "/layout",
+			widgetID: pair.later.id,
+			message:  widgetLabel(pair.later) + " overlaps " + widgetLabel(pair.earlier),
+			pair:     pair.key,
+		})
 	}
 	return hits
 }

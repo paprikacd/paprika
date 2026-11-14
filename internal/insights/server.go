@@ -59,7 +59,24 @@ type Server struct {
 	queryBudget   time.Duration
 	queryCount    metric.Int64Counter
 	queryDuration metric.Float64Histogram
+	// checkSlots caps the dry runs and checked saves in flight. A dry run holds its
+	// slot while it decodes its request and builds its report; a checked save holds
+	// it through its lock wait, its check, its write and its response. Each one
+	// parses a whole document, so a burst of them is refused rather than allowed to
+	// grow the heap of a replica. A request body is read before a slot is taken, so
+	// a slow upload holds none.
+	checkSlots chan struct{}
+	// dryRunSlots caps the dry runs that execute queries. They hold a check slot
+	// only until their report is built, so provider latency never blocks checked
+	// saves; this pool bounds the executing dry runs on their own.
+	dryRunSlots chan struct{}
 }
+
+// maxActiveDashboardChecks is the number of dry runs and checked saves that may decode a document at once.
+const maxActiveDashboardChecks = 4
+
+// maxActiveDryRunQueries is the number of dry runs with execute that may run their queries at once.
+const maxActiveDryRunQueries = 4
 
 func NewServer(config Config, store *Store) (*Server, error) {
 	if err := validateServerConfig(&config, store); err != nil {
@@ -80,7 +97,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries)}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -250,6 +267,9 @@ func (s *Server) admitAndResolveShared(w http.ResponseWriter, r *http.Request, q
 
 var errCatalogBusy = errors.New("shared catalog capacity reached")
 
+// catalogBusyProvider is the provider label of a catalog-busy rejection.
+const catalogBusyProvider = "shared-catalog"
+
 // enterCatalogPhase takes a catalog phase, waiting up to catalogWaitTimeout when
 // all phases are busy. Only catalogWaiting callers may queue; any beyond that
 // fail fast, so a burst of shared work cannot pile up without bound.
@@ -296,7 +316,9 @@ func (s *Server) writeCatalogAdmissionError(w http.ResponseWriter, r *http.Reque
 		writeQueryError(w, err)
 		return
 	}
-	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))
+	// The provider label is fixed: the caller's id is not resolved yet, so it could
+	// otherwise name an unbounded number of series.
+	attributes := metric.WithAttributes(attribute.String("provider", catalogBusyProvider), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))
 	s.queryCount.Add(r.Context(), 1, attributes)
 	w.Header().Set("Retry-After", "1")
 	writeError(w, 429, "too many active shared catalog requests; retry shortly")
@@ -398,21 +420,40 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
+	// The body is read before a check slot is taken, so a stalled upload holds no
+	// slot. The slot covers the rest of a checked save: the lock wait, the check,
+	// the write and the response.
 	var doc json.RawMessage
 	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
 		writeError(w, 400, "invalid dashboard document")
 		return
 	}
+	if wantsChecks(r) {
+		release, ok := s.admitCheck(w)
+		if !ok {
+			return
+		}
+		defer release()
+	}
+	id := r.PathValue("id")
+	// The whole check runs under the mutation lock, for two reasons. The stored
+	// version must be read in the same critical section as the write, so the overlap
+	// check and the write see the same dashboard. And unchecked saves are not capped
+	// by the check slots: the lock is what runs their validation one document at a
+	// time, which bounds their memory. Moving the schema pass out of the lock needs
+	// every array a document can make large bounded first, so it stays here until
+	// then. A save of a valid dashboard takes well under a millisecond under it.
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
 	// Schema findings and error-severity lint findings reject the save. Warnings
-	// and info are returned in the checks field of a successful save.
-	findings := saveFindings(r.PathValue("id"), doc)
-	if hasErrorFinding(findings) {
+	// and info are returned in the checks field of a successful save. An overlap
+	// the stored version already has is a warning, so it does not reject the save.
+	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues)
+	if findings.hasErrors() {
 		writeSchemaFindings(w, findings)
 		return
 	}
-	s.mutations.Lock()
-	defer s.mutations.Unlock()
-	tag, err := s.store.Put(r.PathValue("id"), doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
+	tag, err := s.store.Put(id, doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
 	if err != nil {
 		storeError(w, err)
 		return
@@ -423,6 +464,30 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, doc)
+}
+
+// admitCheck takes a dry-run or checked-save slot. When every slot is taken it
+// writes the 429 the other Insights endpoints use, with a one-second retry hint.
+func (s *Server) admitCheck(w http.ResponseWriter) (func(), bool) {
+	return admitSlot(s.checkSlots, w, "too many active dashboard checks; retry shortly")
+}
+
+// admitDryRunQuery takes a slot for a dry run's query phase, with the same refusal as admitCheck.
+func (s *Server) admitDryRunQuery(w http.ResponseWriter) (func(), bool) {
+	return admitSlot(s.dryRunSlots, w, "too many active dashboard dry runs with queries; retry shortly")
+}
+
+// admitSlot takes a slot from pool without waiting. A full pool writes the 429 with
+// a one-second retry hint and the message, and reports false.
+func admitSlot(pool chan struct{}, w http.ResponseWriter, message string) (func(), bool) {
+	select {
+	case pool <- struct{}{}:
+		return func() { <-pool }, true
+	default:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, message)
+		return nil, false
+	}
 }
 
 // wantsChecks reports whether a save asks for its warnings in the response. The
@@ -436,8 +501,8 @@ func wantsChecks(r *http.Request) bool {
 
 // writeSavedDocument writes the saved document with a checks field added after
 // its members. The document bytes are otherwise written as they always were.
-func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, findings []*insightsv1.CheckFinding) {
-	report, err := checkwire.Marshal(capCheckReport(findings))
+func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, findings *findingSet) {
+	report, err := checkwire.Marshal(findings.report())
 	if err != nil {
 		writeError(w, 500, "dashboard validation failed")
 		return
@@ -457,7 +522,7 @@ func writeSavedDocument(w http.ResponseWriter, status int, document Dashboard, f
 	w.WriteHeader(status)
 	// The bytes are a compacted, schema-checked document plus the checks report,
 	// and the handler sends nosniff, so this is not an HTML or script response.
-	if _, err := w.Write(out); err != nil { //nolint:gosec // JSON body; nosniff is set by Handler.
+	if _, err := w.Write(out); err != nil {
 		slog.Debug("could not write insights document")
 	}
 }
@@ -480,24 +545,48 @@ type checkRequest struct {
 // checkDashboard is the dry run: it reports what a save would reject and never
 // writes. It reads the same document a PUT takes, and a read-only caller may use it.
 func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
-	var request checkRequest
-	if err := decodeBody(w, r, &request, maxCheckRequestBytes); err != nil {
-		writeError(w, 400, "invalid dashboard check request")
-		return
-	}
-	if len(request.Document) == 0 {
-		writeError(w, 400, "dashboard document is required")
+	request, report, ok := s.decodeCheck(w, r)
+	if !ok {
 		return
 	}
 	if !request.Execute {
-		if len(request.Variables) > 0 {
-			writeError(w, 400, "variables apply only when execute is true")
-			return
-		}
-		writeCheckReport(w, 200, capCheckReport(dryRunFindings(request.Document)))
+		writeCheckReport(w, 200, report.report())
 		return
 	}
-	s.executeDryRun(w, r, &request)
+	s.executeDryRun(w, r, request, report)
+}
+
+// decodeCheck decodes a dry-run request and builds its schema and lint report. The
+// raw body is read before a check slot is taken, so a stalled upload holds no slot.
+// The envelope is decoded only once a slot is held, so a refused request costs its
+// bytes and no more: decoding a variables object allocates several times its size.
+// The slot is released before any query runs, so a slow provider never keeps a
+// checked save out.
+func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequest, *findingSet, bool) {
+	raw, err := readBody(w, r, maxCheckRequestBytes)
+	if err != nil {
+		writeError(w, 400, "invalid dashboard check request")
+		return nil, nil, false
+	}
+	release, ok := s.admitCheck(w)
+	if !ok {
+		return nil, nil, false
+	}
+	defer release()
+	var request checkRequest
+	if err := decodeJSON(bytes.NewReader(raw), &request); err != nil {
+		writeError(w, 400, "invalid dashboard check request")
+		return nil, nil, false
+	}
+	if len(request.Document) == 0 {
+		writeError(w, 400, "dashboard document is required")
+		return nil, nil, false
+	}
+	if !request.Execute && len(request.Variables) > 0 {
+		writeError(w, 400, "variables apply only when execute is true")
+		return nil, nil, false
+	}
+	return &request, s.checkReport(request.Document), true
 }
 
 // validationErrorBody is the 400 response to a rejected save. Error keeps the
@@ -515,9 +604,9 @@ type validationErrorBody struct {
 	InfoCount    uint32 `json:"infoCount"`
 }
 
-func writeSchemaFindings(w http.ResponseWriter, findings []*insightsv1.CheckFinding) {
-	report := capCheckReport(findings)
-	body := validationErrorBody{Error: findings[0].GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated(), ErrorCount: report.GetErrorCount(), WarningCount: report.GetWarningCount(), InfoCount: report.GetInfoCount()}
+func writeSchemaFindings(w http.ResponseWriter, findings *findingSet) {
+	report := findings.report()
+	body := validationErrorBody{Error: findings.first.GetMessage(), Issues: make([]json.RawMessage, 0, len(report.GetIssues())), Total: report.GetTotal(), Truncated: report.GetTruncated(), ErrorCount: report.GetErrorCount(), WarningCount: report.GetWarningCount(), InfoCount: report.GetInfoCount()}
 	for _, finding := range report.GetIssues() {
 		issue, err := checkwire.Marshal(finding)
 		if err != nil {
@@ -555,7 +644,25 @@ func (s *Server) deleteDashboard(w http.ResponseWriter, r *http.Request) {
 func decodeBody(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	defer closeReadBody(r.Body)
-	decoder := json.NewDecoder(r.Body)
+	return decodeJSON(r.Body, v)
+}
+
+// readBody reads the request body, up to limit bytes, without decoding it. A handler
+// that must not decode until it holds a slot reads the body first with this.
+func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	defer closeReadBody(r.Body)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read request body: %w", err)
+	}
+	return raw, nil
+}
+
+// decodeJSON decodes exactly one JSON value from in into v, with unknown members
+// rejected.
+func decodeJSON(in io.Reader, v any) error {
+	decoder := json.NewDecoder(in)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(v); err != nil {
 		return fmt.Errorf("decode request body: %w", err)

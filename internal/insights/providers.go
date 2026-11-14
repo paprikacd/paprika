@@ -90,6 +90,9 @@ func newProvider(config *ProviderConfig) (*providerClient, error) {
 }
 
 func validateQuery(q *Query) error {
+	if !validID.MatchString(q.ProviderID) {
+		return errors.New("providerId must be a valid provider id")
+	}
 	if q.Kind != "metrics" && q.Kind != "traces" && q.Kind != "records" {
 		return errors.New("query kind must be metrics, traces or records")
 	}

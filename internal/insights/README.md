@@ -337,16 +337,34 @@ Every dashboard write (`PUT /api/dashboards/{id}`, including MCP create, update
 and patch and the portable import) runs the schema checks and then the lint
 rules. A save is rejected with `400 {error,issues,total,truncated}` when a schema
 check fails or a lint rule of error severity fires. Today the only error-severity
-rule is `layout.overlap`: two widgets whose grid rectangles share a cell. `error`
-is the first finding's message, and `issues` holds the findings, errors first, as
-a CheckReport (at most 32, with `total` counting all of them).
+rule is `layout.overlap`: two widgets whose grid rectangles share a cell. An
+overlap is an error when the save creates the dashboard or when it makes a pair
+overlap that did not overlap in the stored version. A pair that already overlapped
+in the stored dashboard is a warning, so an edit that leaves it in place (a rename,
+or a change to another widget) is saved. `error` is the first finding's message,
+and `issues` holds the findings, errors first, as a CheckReport (at most 32, with
+`total` counting all of them).
 
 Other lint rules are warnings. They never block a save. A successful save returns
 them in a `checks` field, but only when the request asks with `?checks=true`:
 `PUT /api/dashboards/{id}?checks=true` returns the stored document with `checks`
 added after its members. The default body is the document exactly as before, so a
 client that stores it never sends back an unknown member. The dry run lists every
-finding, warnings included, without writing.
+finding, warnings included, without writing, and reads the stored dashboard at the
+same id so it reports the same overlap warnings a save would.
+
+A dry run or save reads its body before it takes a slot, so a slow upload holds
+none. Dry runs and saves with `?checks=true` then share four concurrent slots: a
+dry run holds one while it decodes its request and builds its report, and a checked
+save holds one through its lock wait, its check, its write and its response. A
+request that finds them all taken gets `429` with `Retry-After: 1`, and a refused
+dry run decodes nothing. A dry run with `execute` releases its slot before its
+queries run and holds one of four dry-run query slots instead, so a slow provider
+never refuses a checked save. A full pool gets the same `429`. The schema check
+runs on a bounded part of a document: a widgets array longer than 48 gets its
+count error and shape checks on its first 48 widgets only, the variables array
+and widget drilldowns are read up to one past their limits, and the report counts
+every finding it makes.
 
 Stored documents are read without linting, so a dashboard saved before a rule
 existed still loads and renders. Saving it again runs the rules.

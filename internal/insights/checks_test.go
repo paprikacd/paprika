@@ -405,3 +405,13 @@ func TestCheckReportCountsSeveritiesPastTheCap(t *testing.T) {
 		t.Fatalf("counts = total %d errors %d warnings %d info %d", report.GetTotal(), report.GetErrorCount(), report.GetWarningCount(), report.GetInfoCount())
 	}
 }
+
+// capCheckReport reports a list of findings the way a check report does: it keeps the
+// first checkwire.MaxIssues and counts the rest. Document-level findings come first.
+func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
+	set := newFindingSet(checkwire.MaxIssues)
+	for _, finding := range findings {
+		set.add(finding)
+	}
+	return set.report()
+}

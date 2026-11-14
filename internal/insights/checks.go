@@ -71,102 +71,280 @@ type dashboardHeader struct {
 // so the existing error field keeps its meaning. Document-structure failures
 // stop the check, as they always have. Widget failures are collected for every
 // widget: a widget whose shape is broken is reported as a shape finding, and
-// the content checks still run on every widget whose shape passed.
+// the content checks still run on every widget whose shape passed. A document
+// with more widgets than the limit is shape-checked only up to the limit.
 //
 // Each finding names its own JSON Pointer: the validator that failed reports
 // the member it concerns, and its parents add their segments. See pointedError.
 func schemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
-	findings := unanchoredSchemaFindings(id, document)
-	if len(findings) == 0 {
-		return findings
-	}
-	return anchorFindings(document, findings)
+	set := newFindingSet(unboundedFindings)
+	schemaInto(set, id, document)
+	return set.findings()
+}
+
+// schemaInto adds the document's schema findings to set, each anchored to the
+// pointer of a node the document holds. A save and a dry run report through a
+// bounded set; schemaFindings keeps them all.
+func schemaInto(set *findingSet, id string, document Dashboard) {
+	unanchoredSchemaInto(set, id, document)
+	anchorFindings(document, set.list)
 }
 
 // anchorFindings moves a finding whose pointer names a member the document does
 // not have to the nearest ancestor it does have. A required member that is
 // missing, or an element that is null, is reported at the object that should
 // hold it, so every pointer resolves against the document it was checked from.
+// Findings are anchored in place.
+//
+// The document is read once, token by token. Only the nodes the findings name are
+// tracked, and every other value is skipped without being built, so the cost does
+// not grow with the size of members no finding names.
 func anchorFindings(document Dashboard, findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {
-	var tree any
-	if json.Unmarshal(document, &tree) != nil {
+	root := newAnchorNode()
+	paths := make([][]*anchorNode, len(findings))
+	for i, finding := range findings {
+		paths[i] = root.path(finding.GetPointer())
+	}
+	if len(root.members) == 0 {
+		// Every finding names the document itself, which is always held.
 		return findings
 	}
-	for _, finding := range findings {
-		finding.Pointer = nearestPresentPointer(tree, finding.GetPointer())
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	var discard json.RawMessage
+	if root.scan(decoder, &discard) != nil {
+		// The document is not JSON. Its findings keep the pointers they were given.
+		return findings
+	}
+	for i, finding := range findings {
+		finding.Pointer = presentPrefix(finding.GetPointer(), paths[i])
 	}
 	return findings
 }
 
-// nearestPresentPointer returns pointer if the tree holds the node it names,
-// and otherwise the longest ancestor of it that the tree holds.
-func nearestPresentPointer(tree any, pointer string) string {
-	for !pointerPresent(tree, pointer) {
-		cut := strings.LastIndex(pointer, "/")
-		if cut <= 0 {
-			return ""
-		}
-		pointer = pointer[:cut]
-	}
-	return pointer
+// anchorNode is one node a finding can name. A scan of the document marks the
+// nodes it holds. A node is shared by every pointer that names it, so a member
+// name and an array index that spell the same segment find the same node.
+type anchorNode struct {
+	present bool
+	members map[string]*anchorNode
+	// items keys the nodes whose segment is a canonical array index, so an array
+	// element is found without formatting its position.
+	items map[int]*anchorNode
 }
 
-// pointerPresent reports whether the tree holds the node at an RFC 6901 pointer.
-// The empty pointer names the root, which is always present.
-func pointerPresent(tree any, pointer string) bool {
-	node := tree
+func newAnchorNode() *anchorNode { return &anchorNode{} }
+
+// child returns the node for an unescaped pointer segment below n, creating it.
+func (n *anchorNode) child(segment string) *anchorNode {
+	if n.members == nil {
+		n.members = map[string]*anchorNode{}
+	}
+	if node := n.members[segment]; node != nil {
+		return node
+	}
+	node := newAnchorNode()
+	n.members[segment] = node
+	if index, err := strconv.Atoi(segment); err == nil && index >= 0 && strconv.Itoa(index) == segment {
+		if n.items == nil {
+			n.items = map[int]*anchorNode{}
+		}
+		n.items[index] = node
+	}
+	return node
+}
+
+// path returns the nodes a pointer names, from n down: the node for each
+// prefix of its segments, so path[k] names the first k segments.
+func (n *anchorNode) path(pointer string) []*anchorNode {
+	nodes := []*anchorNode{n}
 	if pointer == "" {
-		return true
+		return nodes
 	}
 	for _, segment := range strings.Split(pointer[1:], "/") {
-		segment = strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
-		switch current := node.(type) {
-		case map[string]any:
-			next, ok := current[segment]
-			if !ok {
-				return false
-			}
-			node = next
-		case []any:
-			index, err := strconv.Atoi(segment)
-			if err != nil || index < 0 || index >= len(current) {
-				return false
-			}
-			node = current[index]
-		default:
-			return false
-		}
+		nodes = append(nodes, nodes[len(nodes)-1].child(unescapePointerSegment(segment)))
 	}
-	return true
+	return nodes
 }
 
-// unanchoredSchemaFindings runs the schema checks and reports each finding at the
-// pointer its validator named. schemaFindings anchors those pointers.
-func unanchoredSchemaFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
+// scan reads one JSON value from decoder and marks each tracked node it holds.
+// A node's children are reset first, so when a member appears more than once the
+// last occurrence decides, as it does when the document is decoded into a value.
+func (n *anchorNode) scan(decoder *json.Decoder, discard *json.RawMessage) error {
+	n.present = true
+	if len(n.members) == 0 {
+		return skipValue(decoder, discard)
+	}
+	for _, child := range n.members {
+		child.clear()
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("read document token: %w", err)
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if err := n.scanContents(decoder, delim, discard); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != nil {
+		return fmt.Errorf("read document close: %w", err)
+	}
+	return nil
+}
+
+// scanContents reads the members of an object or the elements of an array, leaving
+// the closing delimiter to the caller.
+func (n *anchorNode) scanContents(decoder *json.Decoder, opening json.Delim, discard *json.RawMessage) error {
+	if opening == '{' {
+		return n.scanMembers(decoder, discard)
+	}
+	return n.scanElements(decoder, discard)
+}
+
+func (n *anchorNode) scanMembers(decoder *json.Decoder, discard *json.RawMessage) error {
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("read member name: %w", err)
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return errors.New("member name is not a string")
+		}
+		if err := n.scanChild(decoder, n.members[key], discard); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (n *anchorNode) scanElements(decoder *json.Decoder, discard *json.RawMessage) error {
+	for index := 0; decoder.More(); index++ {
+		if err := n.scanChild(decoder, n.items[index], discard); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scanChild scans the value at the decoder's position under child, or skips it
+// when no finding names it.
+func (n *anchorNode) scanChild(decoder *json.Decoder, child *anchorNode, discard *json.RawMessage) error {
+	if child == nil {
+		return skipValue(decoder, discard)
+	}
+	return child.scan(decoder, discard)
+}
+
+// skipValue reads the next value without keeping it. discard is reused, so the
+// skipped values share one buffer.
+func skipValue(decoder *json.Decoder, discard *json.RawMessage) error {
+	if err := decoder.Decode(discard); err != nil {
+		return fmt.Errorf("skip document value: %w", err)
+	}
+	return nil
+}
+
+// clear marks n and everything below it as not held by the document.
+func (n *anchorNode) clear() {
+	n.present = false
+	for _, child := range n.members {
+		child.clear()
+	}
+}
+
+// presentPrefix returns pointer, or its longest ancestor that the document holds.
+// path is the pointer's node path from anchorNode.path.
+func presentPrefix(pointer string, path []*anchorNode) string {
+	depth := 0
+	for depth+1 < len(path) && path[depth+1].present {
+		depth++
+	}
+	if depth == 0 {
+		return ""
+	}
+	return strings.Join(strings.Split(pointer, "/")[:depth+1], "/")
+}
+
+// unescapePointerSegment reverses RFC 6901 escaping of one pointer segment.
+func unescapePointerSegment(segment string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
+}
+
+// unanchoredSchemaInto runs the schema checks and adds each finding at the pointer
+// its validator named. schemaInto anchors those pointers.
+func unanchoredSchemaInto(set *findingSet, id string, document Dashboard) {
 	if !validID.MatchString(id) || len(document) > maxDocumentBytes {
-		return []*insightsv1.CheckFinding{findingAt("", errAt("", "dashboard id or size is invalid"), "")}
+		set.add(findingAt("", errAt("", "dashboard id or size is invalid"), ""))
+		return
 	}
 	root, err := requireObjectShape(document, dashboardRequiredFields, dashboardOptionalFields)
 	if err != nil {
-		return []*insightsv1.CheckFinding{findingAt("", err, "")}
+		set.add(findingAt("", err, ""))
+		return
 	}
 	if finding := extensionFinding(root); finding != nil {
-		return []*insightsv1.CheckFinding{finding}
+		set.add(finding)
+		return
 	}
-	var widgets []json.RawMessage
-	if json.Unmarshal(root["widgets"], &widgets) != nil {
-		return []*insightsv1.CheckFinding{findingAt("", errAt("/widgets", "widgets must be an array"), "")}
+	widgets, total, err := boundedArray(root["widgets"], maxDashboardWidgets)
+	if err != nil {
+		set.add(findingAt("", errAt("/widgets", "widgets must be an array"), ""))
+		return
 	}
-	findings, shapeOK := widgetShapeFindings(widgets)
+	shapeOK := widgetShapeInto(set, widgets)
 	var header dashboardHeader
 	if json.Unmarshal(document, &header) != nil {
-		return append(findings, findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
+		set.add(findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
+		return
 	}
-	findings = append(findings, identityFindings(id, &header)...)
-	if len(widgets) > maxDashboardWidgets {
-		return append(findings, findingAt("", errAt("/widgets", "dashboard requires an array of at most 48 widgets"), ""))
+	for _, finding := range identityFindings(id, &header) {
+		set.add(finding)
 	}
-	return append(findings, widgetContentFindings(widgets, shapeOK)...)
+	if total > maxDashboardWidgets {
+		set.add(findingAt("", errAt("/widgets", "dashboard requires an array of at most 48 widgets"), ""))
+		return
+	}
+	widgetContentInto(set, widgets, shapeOK)
+}
+
+// boundedArray decodes a JSON array. It keeps the first keep elements and counts
+// every element, so an array of any length costs what keep costs: the elements
+// past keep are validated as JSON and then dropped. A null value decodes to nil;
+// an empty array decodes to an empty, non-nil slice.
+func boundedArray(raw json.RawMessage, keep int) (elements []json.RawMessage, total int, err error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, 0, fmt.Errorf("read array: %w", err)
+	}
+	if token == nil {
+		return nil, 0, nil
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return nil, 0, errors.New("value must be an array")
+	}
+	elements = []json.RawMessage{}
+	var discard json.RawMessage
+	for decoder.More() {
+		if total < keep {
+			var element json.RawMessage
+			if err := decoder.Decode(&element); err != nil {
+				return nil, 0, fmt.Errorf("read element: %w", err)
+			}
+			elements = append(elements, element)
+		} else if err := decoder.Decode(&discard); err != nil {
+			// One buffer serves every discarded element: RawMessage reuses its backing array.
+			return nil, 0, fmt.Errorf("read element: %w", err)
+		}
+		total++
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, 0, fmt.Errorf("read array end: %w", err)
+	}
+	return elements, total, nil
 }
 
 // extensionFinding runs the document-level extension checks, in their fixed
@@ -194,40 +372,38 @@ func identityFindings(id string, header *dashboardHeader) []*insightsv1.CheckFin
 	return nil
 }
 
-// widgetShapeFindings checks each widget's structure and reports every failure.
-// It also returns which widgets passed, so content checks run only on those.
-func widgetShapeFindings(widgets []json.RawMessage) (findings []*insightsv1.CheckFinding, shapeOK []bool) {
+// widgetShapeInto checks each widget's structure and adds every failure to set.
+// It returns which widgets passed, so content checks run only on those.
+func widgetShapeInto(set *findingSet, widgets []json.RawMessage) (shapeOK []bool) {
 	shapeOK = make([]bool, len(widgets))
 	for i, widget := range widgets {
 		if err := validateDashboardWidgetShape(widget); err != nil {
-			findings = append(findings, findingAt(widgetBase(i), err, widgetIDOf(widget)))
+			set.add(findingAt(widgetBase(i), err, widgetIDOf(widget)))
 			continue
 		}
 		shapeOK[i] = true
 	}
-	return findings, shapeOK
+	return shapeOK
 }
 
-// widgetContentFindings runs the id, text, type and layout checks on every
-// widget whose shape passed. Duplicate ids are judged across the widgets that
-// were checked, in document order.
-func widgetContentFindings(widgets []json.RawMessage, shapeOK []bool) []*insightsv1.CheckFinding {
+// widgetContentInto runs the id, text, type and layout checks on every widget
+// whose shape passed. Duplicate ids are judged across the widgets that were
+// checked, in document order.
+func widgetContentInto(set *findingSet, widgets []json.RawMessage, shapeOK []bool) {
 	seen := make(map[string]bool, len(widgets))
-	var findings []*insightsv1.CheckFinding
 	for i, raw := range widgets {
 		if !shapeOK[i] {
 			continue
 		}
 		var widget dashboardWidget
 		if json.Unmarshal(raw, &widget) != nil {
-			findings = append(findings, findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
+			set.add(findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
 			continue
 		}
 		if err := validateDashboardWidget(&widget, seen); err != nil {
-			findings = append(findings, findingAt(widgetBase(i), err, widget.ID))
+			set.add(findingAt(widgetBase(i), err, widget.ID))
 		}
 	}
-	return findings
 }
 
 // findingAt turns a validator error into an error-severity schema finding. base
@@ -434,36 +610,17 @@ func truncateRunes(value string, limit int) string {
 // has no string id. The structure checks then report the document the way a save does.
 const dryRunPlaceholderID = "dry-run"
 
-// dryRunFindings checks a document the way a save at the path named by its own
-// id would, so a dry run reports exactly what the save reports. Structure is
-// checked before identity, and a missing or non-string id is never compared.
-func dryRunFindings(document Dashboard) []*insightsv1.CheckFinding {
+// dryRunID is the path id a dry run checks a document at: its own string id, or
+// the placeholder when it has none. The structure checks then report the document
+// the way a save at that path does.
+func dryRunID(document Dashboard) string {
 	var head struct {
 		ID *string `json:"id"`
 	}
-	id := dryRunPlaceholderID
 	if json.Unmarshal(document, &head) == nil && head.ID != nil {
-		id = *head.ID
+		return *head.ID
 	}
-	return saveFindings(id, document)
-}
-
-// capCheckReport keeps the first checkwire.MaxIssues findings and counts the rest.
-// Document-level findings come first, so a count or identity failure is never
-// pushed past the cap by many widget findings.
-func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
-	ordered := documentFirst(findings)
-	report := &insightsv1.CheckReport{Total: checkwire.Count(len(ordered))}
-	// Severity counts cover every finding, including those past the cap, so a
-	// truncated report never understates its errors.
-	counts := checkwire.CountSeverities(ordered)
-	report.ErrorCount, report.WarningCount, report.InfoCount = counts.Errors, counts.Warnings, counts.Infos
-	if len(ordered) > checkwire.MaxIssues {
-		ordered = ordered[:checkwire.MaxIssues]
-		report.Truncated = true
-	}
-	report.Issues = ordered
-	return report
+	return dryRunPlaceholderID
 }
 
 // documentFirst returns the findings with document-level ones ahead of widget
@@ -502,16 +659,21 @@ type dryRunOutcome struct {
 	widgets  []*insightsv1.WidgetDataState
 }
 
-// executeDryRun answers a dry run that asks for execute. A document with a schema
-// or error-severity lint finding is not executed, because it could not be saved;
-// each of its widgets reports not_run. Otherwise every distinct query runs once,
-// through the same path query_dashboard uses, under the same budget.
-func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *checkRequest) {
-	findings := dryRunFindings(request.Document)
-	if hasErrorFinding(findings) {
-		writeDryRunReport(w, capCheckReport(findings), notRunStates(request.Document))
+// executeDryRun answers a dry run that asks for execute. set is the report of the
+// document's schema and lint checks. A document with a schema or error-severity lint
+// finding is not executed, because it could not be saved; each of its widgets reports
+// not_run. Otherwise every distinct query runs once, through the same path
+// query_dashboard uses, under the same budget and a dry-run query slot.
+func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *checkRequest, set *findingSet) {
+	if set.hasErrors() {
+		writeDryRunReport(w, set.report(), notRunStates(request.Document))
 		return
 	}
+	release, ok := s.admitDryRunQuery(w)
+	if !ok {
+		return
+	}
+	defer release()
 	ctx, cancel := context.WithTimeout(r.Context(), dashboardQueryBudget)
 	defer cancel()
 	outcome, err := s.dryRunData(r.WithContext(ctx), request.Document, request.Variables)
@@ -524,7 +686,10 @@ func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *
 		writeError(w, http.StatusInternalServerError, "dashboard validation failed")
 		return
 	}
-	writeDryRunReport(w, capCheckReport(append(findings, outcome.findings...)), outcome.widgets)
+	for _, finding := range outcome.findings {
+		set.add(finding)
+	}
+	writeDryRunReport(w, set.report(), outcome.widgets)
 }
 
 // dryRunData plans the document's widgets and runs their queries with the shared
@@ -651,16 +816,17 @@ func failureCode(code string) string {
 // widgets fails anyway.
 func notRunStates(document Dashboard) []*insightsv1.WidgetDataState {
 	var head struct {
-		Widgets []json.RawMessage `json:"widgets"`
+		Widgets json.RawMessage `json:"widgets"`
 	}
 	states := []*insightsv1.WidgetDataState{}
 	if json.Unmarshal(document, &head) != nil {
 		return states
 	}
-	for i, widget := range head.Widgets {
-		if i == maxDashboardWidgets {
-			break
-		}
+	widgets, _, err := boundedArray(head.Widgets, maxDashboardWidgets)
+	if err != nil {
+		return states
+	}
+	for i, widget := range widgets {
 		states = append(states, &insightsv1.WidgetDataState{WidgetId: boundedWidgetID(widgetIDOf(widget)), Pointer: widgetBase(i), State: insightsv1.DataState_DATA_STATE_NOT_RUN})
 	}
 	return states
