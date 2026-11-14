@@ -49,28 +49,25 @@ spec:
         # Transition counters are created lazily: a series first appears at 1,
         # so increase() alone misses the first transition. Three branches:
         # - increase() catches a transition in the last five minutes.
-        # - The "unless" branch catches a series that is new to this process: no
-        #   sample in the hour before the last five minutes, or only samples
-        #   written by an earlier process (its newest sample predates
-        #   process_start_time_seconds on the same target). The range selector
-        #   matters: an instant "offset 5m" lookback re-fires every old failure
-        #   after a scrape gap, while last_over_time over a range sees the samples
-        #   from before the gap.
-        # - The last branch catches a value that rose above the last sample from
-        #   before the last five minutes: an increment hidden by a Prometheus outage.
-        # Blind spot: the restart check needs process_start_time_seconds on the
-        #   same instance and pod. Without it (for example when the pod label is
-        #   dropped), a failure in a container restarted in place, with the same
-        #   label set, is missed for up to an hour while the old history remains.
+        # - A series with no sample in the hour before the last five minutes is
+        #   new: a first failure, or a counter under a new pod label after a
+        #   Deployment restart. Counters restart from zero, so old failures under
+        #   the old pod label do not reappear. Range selectors skip staleness
+        #   markers, so a scrape gap shorter than the lookback does not make an
+        #   old series look new.
+        # - The last branch catches a value above the last sample from before the
+        #   last five minutes: an increment hidden by a Prometheus outage.
+        # Blind spot: after an in-place container restart (same pod name and label
+        #   set), a first failure that leaves the counter at its old value is not
+        #   reported until the counter rises again, because increase() sees no
+        #   change and the earlier samples count as history. If the scrape is
+        #   continuous and the counter drops, increase() counts the reset and the
+        #   alert fires for about five minutes, then goes quiet.
         - alert: PaprikaReleaseFailed
           expr: |
             increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
             or
-            paprika_release_phase_total{phase="Failed"} unless (
-              last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
-              unless
-              last_over_time(timestamp(paprika_release_phase_total{phase="Failed"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
-            )
+            paprika_release_phase_total{phase="Failed"} unless last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
             or
             paprika_release_phase_total{phase="Failed"} > last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
           for: 1m
@@ -91,15 +88,13 @@ spec:
             summary: Paprika applications are degraded
             description: "{{ "{{ $value }}" }} application(s) are in the Degraded phase. The gauge has no application label; list them with kubectl get applications -A."
 
+        # Rollbacks use the same three branches and have the same blind spot as
+        # PaprikaReleaseFailed above, on the application counter.
         - alert: PaprikaApplicationRolledBack
           expr: |
             increase(paprika_application_phase_total{phase="RolledBack"}[5m]) > 0
             or
-            paprika_application_phase_total{phase="RolledBack"} unless (
-              last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
-              unless
-              last_over_time(timestamp(paprika_application_phase_total{phase="RolledBack"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
-            )
+            paprika_application_phase_total{phase="RolledBack"} unless last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
             or
             paprika_application_phase_total{phase="RolledBack"} > last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
           for: 1m

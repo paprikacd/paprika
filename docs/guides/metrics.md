@@ -231,10 +231,15 @@ are illustrations, not shipped rules.
 
 Counters are created on their first increment, so a bare `increase()` misses
 that first event. The phase alerts below pair `increase()` with a check for a
-series with no sample in the hour before the last five minutes, or only samples
-from an earlier process, and a rise above that history. The other `increase()`
-examples in the Info, Warning and Drift sections do not, and can miss a first
-error or first prune. Current state comes from the `*_by_phase_ratio` gauges.
+series with no sample in the hour before the last five minutes, and a rise above
+the value from before the last five minutes. The other `increase()` examples in
+the Info, Warning and Drift sections do not, and can miss a first error or first
+prune. Current state comes from the `*_by_phase_ratio` gauges.
+
+The phase alerts have one known blind spot. After an in-place container restart
+(same pod name and label set), a first failure that leaves the counter at its
+old value is not reported until the counter rises again. A continuous scrape
+that sees the counter drop fires for about five minutes.
 
 ### Critical Alerts
 
@@ -247,11 +252,7 @@ groups:
         expr: |
           increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
           or
-          paprika_release_phase_total{phase="Failed"} unless (
-            last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
-            unless
-            last_over_time(timestamp(paprika_release_phase_total{phase="Failed"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
-          )
+          paprika_release_phase_total{phase="Failed"} unless last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
           or
           paprika_release_phase_total{phase="Failed"} > last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
         for: 1m
@@ -292,11 +293,7 @@ groups:
         expr: |
           increase(paprika_application_phase_total{phase="RolledBack"}[5m]) > 0
           or
-          paprika_application_phase_total{phase="RolledBack"} unless (
-            last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
-            unless
-            last_over_time(timestamp(paprika_application_phase_total{phase="RolledBack"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
-          )
+          paprika_application_phase_total{phase="RolledBack"} unless last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
           or
           paprika_application_phase_total{phase="RolledBack"} > last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
         for: 1m
