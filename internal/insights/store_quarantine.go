@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -76,6 +77,23 @@ func quarantineStoredDocument(root, dir, kind, id string, reason error) error {
 	slog.Warn("quarantined invalid stored document; the store opened without it", "kind", kind, "id", id, "reason", reason.Error(), "moved_to", destination)
 	recordQuarantine(kind)
 	return nil
+}
+
+// logQuarantineSummary writes the one line an operator reads after a startup that moved documents. The per-document
+// warnings name each file; this line gives the count, the kinds and the directory to check after a downgrade or upgrade.
+func logQuarantineSummary(root string, dashboards, savedQueries int) {
+	if dashboards+savedQueries == 0 {
+		return
+	}
+	var kinds []string
+	if dashboards > 0 {
+		kinds = append(kinds, quarantineKindDashboard)
+	}
+	if savedQueries > 0 {
+		kinds = append(kinds, quarantineKindSavedQuery)
+	}
+	slog.Warn("quarantined invalid stored documents at startup; restore any that should serve, see the Insights README",
+		"count", dashboards+savedQueries, "kinds", strings.Join(kinds, ","), "quarantine_path", filepath.Join(root, quarantineDirName))
 }
 
 // uniqueQuarantinePath never returns an existing file, so an earlier quarantined copy is never overwritten.

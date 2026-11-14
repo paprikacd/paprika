@@ -106,13 +106,16 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create query duration histogram: %w", err)
 	}
-	// Only a startup that has succeeded may move documents out of the stores.
+	// Only a startup that has succeeded may move documents out of the stores. The counts are read first because
+	// each commit drops documents from its pending list as it moves them.
+	dashboardsQuarantined, savedQueriesQuarantined := len(store.quarantine), len(savedQueries.quarantine)
 	if err := store.commitQuarantine(); err != nil {
 		return nil, err
 	}
 	if err := savedQueries.commitQuarantine(); err != nil {
 		return nil, err
 	}
+	logQuarantineSummary(store.dir, dashboardsQuarantined, savedQueriesQuarantined)
 	return s, nil
 }
 

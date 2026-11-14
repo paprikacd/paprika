@@ -380,3 +380,83 @@ func TestFailedQuarantineMoveLeavesDocumentInPlace(t *testing.T) {
 	require.FileExists(t, broken)
 	require.Equal(t, int64(0), quarantinedTotal(t, reader, "dashboard"))
 }
+
+// NewServer commits the saved-query quarantine as well as the dashboard one. Without that commit an invalid saved
+// query stays in place and a later write could replace it.
+func TestNewServerQuarantinesInvalidSavedQueries(t *testing.T) {
+	dir := t.TempDir()
+	saved, err := openSavedQueryStore(dir)
+	require.NoError(t, err)
+	future := savedQueryDocument("broken")
+	future["schemaVersion"] = 2
+	broken := filepath.Join(saved.dir, "broken.json")
+	writeStoredFile(t, broken, savedQueryJSON(t, future))
+	reader := quarantineMetrics(t)
+
+	store, err := OpenStore(dir)
+	require.NoError(t, err)
+	_, err = NewServer(Config{InsecureDev: true}, store)
+	require.NoError(t, err)
+
+	require.NoFileExists(t, broken, "a successful startup must move the invalid saved query out of the store")
+	require.Len(t, quarantinedFiles(t, dir, "saved_query", "broken"), 1)
+	require.Equal(t, int64(1), quarantinedTotal(t, reader, "saved_query"))
+}
+
+// A successful startup logs one warning that names how many documents moved, their kinds and the quarantine path, so
+// an operator can find them after a downgrade or upgrade.
+func TestStartupQuarantineSummaryNamesCountKindsAndPath(t *testing.T) {
+	dir := t.TempDir()
+	writeStoredFile(t, filepath.Join(dir, "healthy.json"), storedDashboardDocument(t, "healthy", nil))
+	writeStoredFile(t, filepath.Join(dir, "broken.json"), storedDashboardDocument(t, "broken", map[string]any{"timeRange": "bogus"}))
+	saved, err := openSavedQueryStore(dir)
+	require.NoError(t, err)
+	future := savedQueryDocument("future")
+	future["schemaVersion"] = 2
+	writeStoredFile(t, filepath.Join(saved.dir, "future.json"), savedQueryJSON(t, future))
+	_ = quarantineMetrics(t)
+	logs := captureLogs(t)
+
+	store, err := OpenStore(dir)
+	require.NoError(t, err)
+	_, err = NewServer(Config{InsecureDev: true}, store)
+	require.NoError(t, err)
+
+	summary := logLineContaining(t, logs.String(), "msg=\"quarantined invalid stored documents at startup")
+	require.Contains(t, summary, "level=WARN")
+	require.Contains(t, summary, "count=2")
+	require.Contains(t, summary, "kinds=dashboard,saved_query")
+	require.Contains(t, summary, "quarantine_path="+filepath.Join(dir, quarantineDirName))
+}
+
+// logLineContaining returns the first log line that contains text, or fails the test.
+func logLineContaining(t *testing.T, logs, text string) string {
+	t.Helper()
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, text) {
+			return line
+		}
+	}
+	require.Failf(t, "missing log line", "no log line contains %q in:\n%s", text, logs)
+	return ""
+}
+
+// Copies never overwrite one another: when the name for a stamp is taken, the next free stamp is used.
+func TestUniqueQuarantinePathNeverReturnsAnExistingCopy(t *testing.T) {
+	target := t.TempDir()
+	for _, name := range []string{"broken.5.json", "broken.6.json"} {
+		writeStoredFile(t, filepath.Join(target, name), []byte(name))
+	}
+
+	got := uniqueQuarantinePath(target, "broken", 5)
+	require.Equal(t, filepath.Join(target, "broken.7.json"), got)
+
+	free := uniqueQuarantinePath(target, "other", 5)
+	require.Equal(t, filepath.Join(target, "other.5.json"), free)
+
+	for _, name := range []string{"broken.5.json", "broken.6.json"} {
+		kept, err := os.ReadFile(filepath.Join(target, name)) //nolint:gosec // The test reads a file it wrote under t.TempDir.
+		require.NoError(t, err)
+		require.Equal(t, name, string(kept), "an existing copy must not be replaced")
+	}
+}
