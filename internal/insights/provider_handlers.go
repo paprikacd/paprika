@@ -32,19 +32,27 @@ func (s *Server) putProviderConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry.client.client.CloseIdleConnections()
+	s.putProviderConfigLocked(&config, r.Header.Get("If-Match"), r.Header.Get("If-None-Match")).replay(w)
+}
+
+// putProviderConfigLocked stores a provider under the mutation lock and returns the
+// response unwritten, so the write happens after the lock is released.
+func (s *Server) putProviderConfigLocked(config *ProviderConfig, ifMatch, ifNoneMatch string) *bufferedResponse {
+	out := &bufferedResponse{}
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
-	if s.providerTypeInUse(&config) {
-		writeError(w, 409, "provider is used by saved queries; remove those queries before changing its type")
-		return
+	if s.providerTypeInUse(config) {
+		writeError(out, 409, "provider is used by saved queries; remove those queries before changing its type")
+		return out
 	}
-	view, err := s.providers.put(&config, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
+	view, err := s.providers.put(config, ifMatch, ifNoneMatch)
 	if err != nil {
-		providerStoreError(w, err)
-		return
+		providerStoreError(out, err)
+		return out
 	}
-	w.Header().Set("ETag", view.ETag)
-	writeJSON(w, 200, view)
+	out.Header().Set("ETag", view.ETag)
+	writeJSON(out, 200, view)
+	return out
 }
 
 func (s *Server) deleteProviderConfig(w http.ResponseWriter, r *http.Request) {
@@ -52,17 +60,25 @@ func (s *Server) deleteProviderConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "shared observability providers are managed in Observability")
 		return
 	}
+	s.deleteProviderConfigLocked(r.PathValue("id"), r.Header.Get("If-Match")).replay(w)
+}
+
+// deleteProviderConfigLocked deletes a provider under the mutation lock and returns
+// the response unwritten, so the write happens after the lock is released.
+func (s *Server) deleteProviderConfigLocked(id, ifMatch string) *bufferedResponse {
+	out := &bufferedResponse{}
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
-	if s.savedQueries.usesProvider(r.PathValue("id")) {
-		writeError(w, 409, "provider is used by saved queries; remove those queries before deleting it")
-		return
+	if s.savedQueries.usesProvider(id) {
+		writeError(out, 409, "provider is used by saved queries; remove those queries before deleting it")
+		return out
 	}
-	if err := s.providers.remove(r.PathValue("id"), r.Header.Get("If-Match")); err != nil {
-		providerStoreError(w, err)
-		return
+	if err := s.providers.remove(id, ifMatch); err != nil {
+		providerStoreError(out, err)
+		return out
 	}
-	w.WriteHeader(http.StatusNoContent)
+	out.WriteHeader(http.StatusNoContent)
+	return out
 }
 
 func providerStoreError(w http.ResponseWriter, err error) {

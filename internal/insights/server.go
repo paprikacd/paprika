@@ -431,10 +431,10 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
-	// The body is read before a check slot is taken, so a stalled upload holds no
-	// slot. It is read under a document-read slot, which is released before the
-	// check slot is taken. The check slot covers the rest of a checked save: the
-	// lock wait, the check, the write and the response.
+	// The body is read under a document-read slot, which is released before a check
+	// slot is taken, so a stalled upload holds no check slot. A checked save then
+	// holds its check slot through its lock wait, its check and its response build.
+	// The response is written only after the lock and the slot are released.
 	release, ok := s.admitDocumentRead(w, r)
 	if !ok {
 		return
@@ -446,21 +446,32 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid dashboard document")
 		return
 	}
-	if wantsChecks(r) {
-		release, ok := s.admitCheck(w)
-		if !ok {
+	checks := wantsChecks(r)
+	releaseCheck := func() {}
+	if checks {
+		releaseSlot, slotOK := s.admitCheck(w)
+		if !slotOK {
 			return
 		}
-		defer release()
+		releaseCheck = releaseSlot
 	}
+	s.saveDashboard(r, doc, checks, releaseCheck).replay(w)
+}
+
+// saveDashboard runs a save under the mutation lock and returns its response
+// unwritten. The whole check runs under the lock, for two reasons. The stored
+// version must be read in the same critical section as the write, so the overlap
+// check and the write see the same dashboard. And unchecked saves are not capped
+// by the check slots: the lock is what runs their validation one document at a
+// time, which bounds their memory. Moving the schema pass out of the lock needs
+// every array a document can make large bounded first, so it stays here until
+// then. A save of a valid dashboard takes well under a millisecond under it.
+// release frees the check slot, if the save holds one. It runs after the lock is
+// released, and before the caller writes the response.
+func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool, release func()) *bufferedResponse {
+	defer release()
+	out := &bufferedResponse{}
 	id := r.PathValue("id")
-	// The whole check runs under the mutation lock, for two reasons. The stored
-	// version must be read in the same critical section as the write, so the overlap
-	// check and the write see the same dashboard. And unchecked saves are not capped
-	// by the check slots: the lock is what runs their validation one document at a
-	// time, which bounds their memory. Moving the schema pass out of the lock needs
-	// every array a document can make large bounded first, so it stays here until
-	// then. A save of a valid dashboard takes well under a millisecond under it.
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
 	// Schema findings and error-severity lint findings reject the save. Warnings
@@ -468,20 +479,21 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	// the stored version already has is a warning, so it does not reject the save.
 	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues)
 	if findings.hasErrors() {
-		writeSchemaFindings(w, findings)
-		return
+		writeSchemaFindings(out, findings)
+		return out
 	}
 	tag, err := s.store.Put(id, doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
 	if err != nil {
-		storeError(w, err)
-		return
+		storeError(out, err)
+		return out
 	}
-	setDocumentETag(w, tag)
-	if wantsChecks(r) {
-		writeSavedDocument(w, 200, doc, findings)
-		return
+	setDocumentETag(out, tag)
+	if checks {
+		writeSavedDocument(out, 200, doc, findings)
+		return out
 	}
-	writeJSON(w, 200, doc)
+	writeJSON(out, 200, doc)
+	return out
 }
 
 // admitCheck takes a dry-run or checked-save slot. When every slot is taken it
@@ -655,13 +667,21 @@ func writeCheckReport(w http.ResponseWriter, status int, report *insightsv1.Chec
 }
 
 func (s *Server) deleteDashboard(w http.ResponseWriter, r *http.Request) {
+	s.deleteDashboardLocked(r.PathValue("id"), r.Header.Get("If-Match")).replay(w)
+}
+
+// deleteDashboardLocked deletes under the mutation lock and returns the response
+// unwritten, so the write happens after the lock is released.
+func (s *Server) deleteDashboardLocked(id, ifMatch string) *bufferedResponse {
+	out := &bufferedResponse{}
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
-	if err := s.store.Delete(r.PathValue("id"), r.Header.Get("If-Match")); err != nil {
-		storeError(w, err)
-		return
+	if err := s.store.Delete(id, ifMatch); err != nil {
+		storeError(out, err)
+		return out
 	}
-	w.WriteHeader(http.StatusNoContent)
+	out.WriteHeader(http.StatusNoContent)
+	return out
 }
 
 // admitDocumentRead takes a document-read slot for a request that reads a whole
