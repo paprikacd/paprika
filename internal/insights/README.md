@@ -353,23 +353,26 @@ client that stores it never sends back an unknown member. The dry run lists ever
 finding, warnings included, without writing, and reads the stored dashboard at the
 same id so it reports the same overlap warnings a save would.
 
-A dry run or save reads its body under one of eight concurrent document-read
-slots, and releases it before it takes a check slot, so a slow upload holds no
-check slot. A request that finds the read slots full waits up to 2 seconds for one,
-with at most 16 requests queued. Past that it gets `429` with `Retry-After: 1`
-and "too many active dashboard uploads". Dry runs and saves with `?checks=true`
-then share four concurrent slots: a dry run holds one while it decodes its request
-and builds its report, and a checked save holds one through its lock wait, its
-check and the build of its response. The response is written after the lock and
-the slot are released, so a client that stops reading holds neither. A request
-that finds them all taken gets `429`
-with `Retry-After: 1`, and a refused dry run decodes nothing. A dry run with `execute` releases its slot before its
-queries run and holds one of four dry-run query slots instead, so a slow provider
-never refuses a checked save. A full pool gets the same `429`. The schema check
-runs on a bounded part of a document: a widgets array longer than 48 gets its
-count error and shape checks on its first 48 widgets only, the variables array
-and widget drilldowns are read up to one past their limits, and the report counts
-every finding it makes.
+A dry run or save reads its body through a byte budget of 32 MiB shared by every
+request. Each read reserves the bytes it returned. A dry run holds them only while it
+reads its body. A save holds them until its lock and check slot are released, before
+its response is written. A stalled upload therefore holds only the bytes it has sent,
+and it holds no check slot. A request whose read cannot reserve waits up to 2 seconds
+for bytes to free, with at most 16 requests queued. Past that it gets `429` with
+`Retry-After: 1` and "too many active dashboard uploads". A stalled upload also holds
+its connection until the server's read timeout ends it, but no budget beyond its
+bytes. Dry runs and saves with `?checks=true` then share four concurrent slots: a dry
+run holds one while it decodes its request and builds its report, and a checked save
+holds one through its lock wait, its check and the build of its response. The
+response is written after the lock and the slot are released, so a client that stops
+reading holds neither. A request that finds them all taken gets `429` with
+`Retry-After: 1`, and a refused dry run decodes nothing. A dry run with `execute`
+releases its slot before its queries run and holds one of four dry-run query slots
+instead, so a slow provider never refuses a checked save. A full pool gets the same
+`429`. The schema check runs on a bounded part of a document: a widgets array longer
+than 48 gets its count error and shape checks on its first 48 widgets only, the
+variables array and widget drilldowns are read up to one past their limits, and the
+report counts every finding it makes.
 
 Stored documents are read without linting, so a dashboard saved before a rule
 existed still loads and renders. Saving it again runs the rules.
