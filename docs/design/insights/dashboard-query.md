@@ -55,26 +55,29 @@ the first-contract shape with `additionalProperties: false`. The tests validate
 the first contract's output against the new schema and the new output against the
 first schema (`dashboard_query_schema_dfad989c.json`, `TestDashboardQuerySchemaIsSkewSafeWithTheFirstContract`).
 A capped result keeps every stat's `freshness`, the first contract's object, because
-a stat's stale judgement predates this release. Only the time-series `freshness`
-this release added is dropped under the cap, and `omitted` names `sample` when it is.
+a stat's stale judgement predates the time-series `freshness`. Only the time-series
+`freshness`, which was added after the first contract, is dropped under the cap, and
+`omitted` names `sample` when it is.
 
 The exception is the cap. The per-widget `attention`, the top-level `attention` and
 `omitted` are new, and no step of the omission ladder drops them, so they are never
 released to make room. At 48 widgets they add about 1.2 KB: 960 bytes of per-widget
 attention, 201 of top-level attention and 21 of `omitted`. The first two figures are
 measured on a colour-only time-series dashboard. The 960 bytes of per-widget attention
-is about 20 bytes per widget, and a dashboard has at most 48 widgets, so the increase
-is bounded by about 1.2 KB. That colour-only dashboard encodes to 130,687 bytes on
-7fe8ccca and to 131,868 bytes now, a difference of 1,181 bytes.
+is about 20 bytes per widget, and a dashboard has at most 48 widgets, so the attention
+growth is bounded by about 1.2 KB. For that dashboard, 7fe8ccca encodes probe (b) to
+130,687 bytes, with no attention, `sample` or `omitted` fields. This branch encodes it
+to 131,868 bytes after the sample step, a net difference of 1,181 bytes.
 
 Decision: the cap is 130 KiB (133,120 bytes), up from 128 KiB, in both
-`DashboardQueryResponseBytes` and the gateway's read limit, which must stay equal. The
-2 KiB increase covers the 1.2 KB bound above, so by that arithmetic a result that fit
-the 128 KiB cap on 7fe8ccca still fits; the two reviewed dashboards are the measured
-checks. Per-widget attention stays, because it is the summary
-agents read. The alternative, dropping per-widget attention to fit the 128 KiB cap,
-was rejected. The reviewed dashboards under this decision are in Omitted detail below.
-The never-dropped facts are listed there too.
+`DashboardQueryResponseBytes` and the gateway's `dashboardQueryResponseBytes`, which must
+stay equal. The 2 KiB increase covers the 1.2 KB attention bound above. By that
+arithmetic a result that fit the 128 KiB cap on 7fe8ccca still fits. Probe (b) is the
+one measured 7fe8ccca check, and both review probes return 200 within the cap. Per-widget
+attention stays, because it is the summary agents read. The alternative, dropping
+per-widget attention to fit the 128 KiB cap, was rejected. The reviewed dashboards under
+this decision are in Omitted detail below, and the never-dropped facts are listed there
+too.
 
 ### Attention summary
 
@@ -198,7 +201,7 @@ intervals and their series names, with their count moved into `intervalsOmitted`
 `summary` and `latestLevel`; (3) `bandSeries`, each multi-series band's whole
 `bandSeries` object, so the drawn and omitted counts and the series that set the
 band are absent while the band's `threshold` stays; (4) `sample`: each time series'
-`freshness` is removed (this release added it to time series); a stale `sample` whose
+`freshness` is removed (it was added to time series after the first contract); a stale `sample` whose
 widget's `attention` already reads `stale` is removed entirely; every other `sample`
 that is not stale is removed entirely, so a widget without `sample` has a fresh,
 `no_threshold` or `unknown` state that the cap removed; and every other stale `sample`
@@ -225,18 +228,19 @@ with 413. The reviewed dashboards below each have 48 widgets, three series per w
 nine raw kube-state labels per series. Both fit the 130 KiB cap after the ladder, and
 the ladder runs only the steps that remove something:
 
-- status bands on heatmap, status-grid, threshold-gauge and status-history widgets
-  with time series: 162,583 bytes before any step; all four steps run
+- status bands on time series, stat, heatmap, status-grid, threshold-gauge and
+  status-history widgets: 162,583 bytes before any step; all four steps run
   (`breachIntervals`, `breaches`, `bandSeries`, `sample`), and it encodes to 131,910
   bytes, 1,210 bytes under the cap;
 - colour-only time series judged stale by cadence: 137,319 bytes before any step; these
   widgets have no breach or band objects, so only `sample` runs, and it encodes to
   131,868 bytes, 1,252 bytes under the cap.
 
-Both keep every widget's per-widget `attention` and the top-level `attention`. The
-pathological case is a selection of eight series per query, which the supported range
-allows: its never-dropped signals and labels still exceed the cap after every step, so it
-is refused with 413. The HTTP response says `dashboard result exceeds 130 KiB even
+Both keep every flagged widget's per-widget `attention` and the top-level `attention`;
+the probe tests check that the flagged widgets match the top-level counts. The pathological
+case is the same 48-widget, nine-label dashboard with `max_series` 8: its never-dropped
+signals and labels still exceed the cap after every step (322,187 bytes after the ladder),
+so it is refused with 413. The HTTP response says `dashboard result exceeds 130 KiB even
 without optional detail`. An MCP caller sees `resource_exhausted` with its fixed
 message. To recover, narrow the selection, the series or the history points.
 
@@ -255,7 +259,7 @@ no limit. Rich metrics read `staleAfterSeconds` only as a track-end grace, not a
 stale mark. `unknown` means no usable returned sample.
 
 `freshness` is present only where an explicit `staleAfterSeconds` judges the widget. A
-stat's is the first contract's object; a time series' is new in this release. It carries
+stat's is the first contract's object; a time series' was added after the first contract. It carries
 the same judgement in the same three states, with `thresholdSeconds`. `thresholdSeconds` is an integer, so the
 cadence-derived limit appears only in `sample`. Text describes only judged samples.
 Under the result cap, a time series' `freshness` is removed in step 4, and a stat's is kept.
