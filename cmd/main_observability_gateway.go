@@ -44,6 +44,7 @@ import (
 	"github.com/benebsworth/paprika/internal/clusterconfig"
 	observecontroller "github.com/benebsworth/paprika/internal/controller/observe"
 	"github.com/benebsworth/paprika/internal/httpx"
+	"github.com/benebsworth/paprika/internal/memlimit"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
@@ -64,6 +65,7 @@ const observabilityGatewayRoutePrefix = "/observe"
 // paprika-observability audience so console or fleet-MCP tokens can never be
 // replayed against this surface.
 func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
+	memlimit.Apply(setupLog.Info)
 	capacity, err := prepareObservabilityGateway(cfg, setupLog)
 	if err != nil {
 		return err

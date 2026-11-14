@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/insights"
+	"github.com/benebsworth/paprika/internal/memlimit"
 	"github.com/benebsworth/paprika/internal/observability"
 )
 
@@ -32,6 +33,7 @@ func main() {
 }
 
 func run() error {
+	memlimit.Apply(slog.Info)
 	listen := flag.String("listen", "127.0.0.1:8090", "HTTP address (use :8090 in Kubernetes)")
 	dataDir := flag.String("data-dir", "./data/insights", "Persistent dashboard directory; one service replica only")
 	providersFile := flag.String("providers", "", "Path to provider configuration JSON")
