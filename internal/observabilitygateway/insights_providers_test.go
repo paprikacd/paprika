@@ -71,16 +71,6 @@ func TestListInsightsProvidersMapsDegradedSharedCatalogToErrors(t *testing.T) {
 			body: `{"providers":[],"sharedCatalog":{"status":"forbidden","code":403,"message":"shared observability provider access denied"}}`,
 			code: connect.CodePermissionDenied,
 		},
-		{
-			name: "unavailable is unavailable",
-			body: `{"providers":[],"sharedCatalog":{"status":"unavailable","code":504,"message":"observability gateway request timed out"}}`,
-			code: connect.CodeUnavailable,
-		},
-		{
-			name: "failed is unavailable",
-			body: `{"providers":[],"sharedCatalog":{"status":"failed","code":500,"message":"boom"}}`,
-			code: connect.CodeUnavailable,
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,6 +90,36 @@ func TestListInsightsProvidersMapsDegradedSharedCatalogToErrors(t *testing.T) {
 			require.Equal(t, tc.retry, retry.GetRetryDelay().AsDuration())
 		})
 	}
+}
+
+func TestListInsightsProvidersUnavailableCatalogIsToolError(t *testing.T) {
+	for _, status := range []string{"unavailable", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			body := `{"providers":[],"sharedCatalog":{"status":"` + status + `","code":504,"message":"observability gateway request timed out"}}`
+			tool := providersListingTool(t, http.StatusOK, body)
+			result, err := listProvidersAs(t, tool)
+			require.NoError(t, err, "an unavailable catalog is a tool error, not a protocol error")
+			callResult, ok := result.(*sdkmcp.CallToolResult)
+			require.True(t, ok, "got %T", result)
+			require.True(t, callResult.IsError)
+			require.Equal(t, map[string]any{"error": map[string]any{"code": "unavailable"}}, callResult.StructuredContent)
+			require.Len(t, callResult.Content, 1)
+			text, ok := callResult.Content[0].(*sdkmcp.TextContent)
+			require.True(t, ok)
+			require.Equal(t, "The shared observability provider catalog is unavailable; retry later.", text.Text)
+		})
+	}
+}
+
+func TestListInsightsProvidersRejectsProviderFilter(t *testing.T) {
+	tool := providersListingTool(t, http.StatusOK, `{"providers":[{"id":"prometheus","name":"Metrics"}]}`)
+	p := &auth.Principal{Subject: "human", Scopes: []string{string(mcp.ScopeObserve)}}
+	ctx := auth.WithPrincipal(context.Background(), p)
+	result, err := tool.Invoke(ctx, nil, json.RawMessage(`{"provider_id":"abc"}`))
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	require.Contains(t, err.Error(), "invalid provider ID")
 }
 
 func TestListInsightsProvidersKeepsHealthyListing(t *testing.T) {
@@ -128,10 +148,14 @@ func TestListInsightsProvidersPartialListingNotesDegradedCatalog(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "Note: the shared observability catalog is busy, so shared providers are missing from this list. Retry after 3 seconds.", note.Text)
 	require.NotContains(t, note.Text, "\n")
+	structured, ok := callResult.StructuredContent.(json.RawMessage)
+	require.True(t, ok, "structured content is %T", callResult.StructuredContent)
+	require.JSONEq(t, body, string(structured))
 }
 
 func TestSharedCatalogNoteNamesEachStatus(t *testing.T) {
 	require.Contains(t, sharedCatalogNote("forbidden", 0), "not available to this caller")
 	require.Contains(t, sharedCatalogNote("unavailable", 0), "unavailable")
 	require.Contains(t, sharedCatalogNote("failed", 0), "unavailable")
+	require.Contains(t, sharedCatalogNote("busy", 0), "Retry after 1 seconds.")
 }
