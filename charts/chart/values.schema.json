@@ -45,19 +45,19 @@
       "properties": {
         "persistSessions": {"type": "boolean"},
         "capacity": {
-          "description": "Query-path capacity per gateway process. Zero on a pool follows the budget; the gateway validates the combination at startup and names the value to change.",
+          "description": "Query-path capacity per gateway process. null omits a flag so the gateway built-in applies; an explicit zero is passed as set. The gateway validates the combination at startup and names the value to change.",
           "type": "object",
           "properties": {
-            "queryConcurrency": {"type": "integer", "minimum": 1, "maximum": 1024},
-            "queryProviderConcurrency": {"type": "integer", "minimum": 0, "maximum": 1024},
-            "queryQueue": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "queryProviderQueue": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "queryQueueWait": {"type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"},
-            "httpWorkSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "httpCatalogSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "httpDashboardSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "httpIntakeSlots": {"type": "integer", "minimum": 0, "maximum": 65536},
-            "httpAdmissionWait": {"description": "A duration with a unit, such as 1s. YAML 0 or \"0s\" rejects at once. A bare integer other than 0 is refused: it would mean nanoseconds.", "anyOf": [{"const": 0}, {"type": "string", "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$"}]}
+            "queryConcurrency": {"type": ["integer", "null"], "minimum": 1, "maximum": 1024},
+            "queryProviderConcurrency": {"type": ["integer", "null"], "minimum": 0, "maximum": 1024},
+            "queryQueue": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "queryProviderQueue": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "queryQueueWait": {"type": ["string", "null"], "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"},
+            "httpWorkSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpCatalogSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpDashboardSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpIntakeSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpAdmissionWait": {"description": "A duration with a unit, such as 1s. YAML 0 or \"0s\" rejects at once. A bare integer other than 0 is refused: it would mean nanoseconds.", "anyOf": [{"const": 0}, {"type": "string", "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$"}, {"type": "null"}]}
           }
         },
         "additionalCACertificates": {

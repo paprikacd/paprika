@@ -165,16 +165,43 @@ spec:
         - --obs-provider-probe-interval={{ .Values.observabilityGateway.probeInterval }}
         # Query-path capacity (observabilityGateway.capacity). The gateway
         # validates the combination at startup and refuses invalid values.
-        - --observability-query-concurrency={{ .Values.observabilityGateway.capacity.queryConcurrency }}
-        - --observability-query-provider-concurrency={{ .Values.observabilityGateway.capacity.queryProviderConcurrency }}
-        - --observability-query-queue={{ .Values.observabilityGateway.capacity.queryQueue }}
-        - --observability-query-provider-queue={{ .Values.observabilityGateway.capacity.queryProviderQueue }}
-        - --observability-query-queue-wait={{ .Values.observabilityGateway.capacity.queryQueueWait }}
-        - --observability-http-work-slots={{ .Values.observabilityGateway.capacity.httpWorkSlots }}
-        - --observability-http-catalog-slots={{ .Values.observabilityGateway.capacity.httpCatalogSlots }}
-        - --observability-http-dashboard-slots={{ .Values.observabilityGateway.capacity.httpDashboardSlots }}
-        - --observability-http-intake-slots={{ .Values.observabilityGateway.capacity.httpIntakeSlots }}
-        - --observability-http-admission-wait={{ .Values.observabilityGateway.capacity.httpAdmissionWait }}
+        {{- /*
+          Each flag is emitted only when its value is set: null omits it, so an
+          older gateway binary that predates the flag still starts with its
+          built-in default. An explicit 0 or "0s" is still passed. Do not use
+          `with` here, because it would drop 0 and "0s".
+        */}}
+        {{- $capacity := .Values.observabilityGateway.capacity }}
+        {{- if not (kindIs "invalid" $capacity.queryConcurrency) }}
+        - --observability-query-concurrency={{ $capacity.queryConcurrency }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.queryProviderConcurrency) }}
+        - --observability-query-provider-concurrency={{ $capacity.queryProviderConcurrency }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.queryQueue) }}
+        - --observability-query-queue={{ $capacity.queryQueue }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.queryProviderQueue) }}
+        - --observability-query-provider-queue={{ $capacity.queryProviderQueue }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.queryQueueWait) }}
+        - --observability-query-queue-wait={{ $capacity.queryQueueWait }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.httpWorkSlots) }}
+        - --observability-http-work-slots={{ $capacity.httpWorkSlots }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.httpCatalogSlots) }}
+        - --observability-http-catalog-slots={{ $capacity.httpCatalogSlots }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.httpDashboardSlots) }}
+        - --observability-http-dashboard-slots={{ $capacity.httpDashboardSlots }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.httpIntakeSlots) }}
+        - --observability-http-intake-slots={{ $capacity.httpIntakeSlots }}
+        {{- end }}
+        {{- if not (kindIs "invalid" $capacity.httpAdmissionWait) }}
+        - --observability-http-admission-wait={{ $capacity.httpAdmissionWait }}
+        {{- end }}
         {{- range .Values.observabilityGateway.args }}
         - {{ . }}
         {{- end }}

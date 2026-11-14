@@ -40,6 +40,13 @@ func (b providersRenderBearer) RoundTrip(r *http.Request) (*http.Response, error
 // gateway failure into its sharedCatalog body on the way back.
 func callProvidersOverMCP(t *testing.T, status int, retryAfter string, local bool, args map[string]any) *sdkmcp.CallToolResult {
 	t.Helper()
+	return callProvidersOverMCPWith(t, status, retryAfter, local, false, args)
+}
+
+// callProvidersOverMCPWith is callProvidersOverMCP with one more case: insightsDown
+// closes the Insights listener before the call, so the proxy cannot reach it.
+func callProvidersOverMCPWith(t *testing.T, status int, retryAfter string, local, insightsDown bool, args map[string]any) *sdkmcp.CallToolResult {
+	t.Helper()
 	ctx := t.Context()
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
@@ -63,6 +70,9 @@ func callProvidersOverMCP(t *testing.T, status int, retryAfter string, local boo
 	require.NoError(t, err)
 	serviceHTTP := httptest.NewServer(service.Handler())
 	t.Cleanup(serviceHTTP.Close)
+	if insightsDown {
+		serviceHTTP.Close()
+	}
 
 	secret := []byte(strings.Repeat("k", 64))
 	rules := []auth.RBACRule{{Subjects: []string{"reader"}, Actions: []string{"admin"}, Resources: []string{"insights"}, Namespaces: []string{"*"}}}
@@ -159,4 +169,29 @@ func TestListInsightsProvidersPartialCatalogKeepsListingWithNote(t *testing.T) {
 	require.Contains(t, texts[0], `"prometheus"`)
 	require.Contains(t, texts[0], `"sharedCatalog"`)
 	require.Equal(t, "Note: the shared observability catalog is busy, so shared providers are missing from this list. Retry after 3 seconds.", texts[1])
+}
+
+func TestListInsightsProvidersReportsUnavailableInsightsAsToolError(t *testing.T) {
+	t.Run("unavailable shared catalog", func(t *testing.T) {
+		result := callProvidersOverMCP(t, http.StatusBadGateway, "", false, nil)
+		require.True(t, result.IsError)
+		require.Equal(t, []string{"The shared observability provider catalog is unavailable; retry later."}, textOf(t, result))
+		require.Equal(t, "unavailable", errorCodeOf(t, result)["code"])
+	})
+
+	t.Run("insights unreachable", func(t *testing.T) {
+		result := callProvidersOverMCPWith(t, http.StatusOK, "", false, true, nil)
+		require.True(t, result.IsError, "an unreachable Insights is a tool error, not a protocol error")
+		require.Equal(t, []string{"Insights is unavailable; retry later."}, textOf(t, result))
+		require.Equal(t, "unavailable", errorCodeOf(t, result)["code"])
+	})
+
+	t.Run("degraded catalog with local providers keeps the listing", func(t *testing.T) {
+		result := callProvidersOverMCP(t, http.StatusForbidden, "", true, nil)
+		require.False(t, result.IsError)
+		texts := textOf(t, result)
+		require.Len(t, texts, 2)
+		require.Contains(t, texts[0], `"prometheus"`)
+		require.Equal(t, "Note: shared observability providers are not available to this caller, so they are missing from this list.", texts[1])
+	})
 }

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"connectrpc.com/connect"
+
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
@@ -26,6 +28,7 @@ func RegisterInsightsTools(registry *mcp.Registry, c *InsightsAuthoringClient, u
 		tools = append(tools, insightsGetTool(c, document.singular, document.collection), insightsPutTool(c, document.singular, document.collection, document.schema, true), insightsPutTool(c, document.singular, document.collection, document.schema, false), insightsPatchTool(c, document.singular, document.collection))
 	}
 	for i := range tools {
+		tools[i].Invoke = unavailableAsToolError(tools[i].Invoke)
 		if usage != nil {
 			tools[i].Invoke = recordUsage(usage, tools[i].Name, tools[i].Invoke)
 		}
@@ -34,6 +37,20 @@ func RegisterInsightsTools(registry *mcp.Registry, c *InsightsAuthoringClient, u
 		}
 	}
 	return nil
+}
+
+// unavailableAsToolError turns an Insights-backed call that failed because the
+// service is unavailable into an MCP tool error. Left as a Connect error, the
+// MCP server would answer with a protocol error that hides the cause from the
+// agent. Every other error passes through unchanged.
+func unavailableAsToolError(invoke func(context.Context, v1connect.PaprikaServiceClient, json.RawMessage) (any, error)) func(context.Context, v1connect.PaprikaServiceClient, json.RawMessage) (any, error) {
+	return func(ctx context.Context, client v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
+		result, err := invoke(ctx, client, raw)
+		if err != nil && connect.CodeOf(err) == connect.CodeUnavailable {
+			return insightsUnavailableResult("Insights is unavailable; retry later."), nil
+		}
+		return result, err
+	}
 }
 
 func insightsListTool(c *InsightsAuthoringClient, name, collection string) mcp.Tool {
