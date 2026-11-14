@@ -79,19 +79,24 @@ tests:
   # these alerts for every release that failed before the gap.
   - interval: 30s
     input_series:
-      # Failed 10 minutes ago. The target misses three scrapes (90s): one stale
-      # marker, then two missing samples. It resumes at 11m30s.
+      # Failed 10 minutes ago. The last sample is at 10m, the stale marker at 10m30s,
+      # one scrape is missing, and it resumes at 11m30s: 90 s after the last sample.
       - series: 'paprika_release_phase_total{release="old-r1",namespace="apps",phase="Failed"}'
-        values: '1x20 stale _x2 1x60'
-      # Failed 10 minutes ago. Prometheus is down for 7 minutes (14 scrapes, no
-      # samples). It resumes at 17m.
+        values: '1x20 stale _ 1x60'
+      # Failed 10 minutes ago. The last sample is at 10m, then 13 scrapes are missing
+      # with no stale marker (as when Prometheus is down). It resumes at 17m, 7 min later.
+      # The 7 min case also checks 18m, where the unfixed expression (X unless X
+      # offset 5m) fires: it is active from 17m to 22m.
       - series: 'paprika_release_phase_total{release="old-r2",namespace="apps",phase="Failed"}'
-        values: '1x20 _x14 1x60'
+        values: '1x20 _x13 1x60'
       # Rolled back 10 minutes ago, with the same 90s gap.
       - series: 'paprika_application_phase_total{application="old-a1",namespace="apps",phase="RolledBack"}'
-        values: '3x20 stale _x2 3x60'
+        values: '3x20 stale _ 3x60'
     alert_rule_test:
       - eval_time: 16m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 18m
         alertname: PaprikaReleaseFailed
         exp_alerts: []
       - eval_time: 21m30s
@@ -119,7 +124,7 @@ tests:
         values: '_x20 1x40'
       # Old failure with a 90s gap; it must stay silent.
       - series: 'paprika_release_phase_total{release="old-r4",namespace="apps",phase="Failed"}'
-        values: '1x20 stale _x2 1x60'
+        values: '1x20 stale _ 1x60'
     alert_rule_test:
       - eval_time: 12m
         alertname: PaprikaReleaseFailed
@@ -133,6 +138,122 @@ tests:
               summary: Paprika release failed
               description: Release new-r3 in namespace apps failed.
       - eval_time: 16m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+
+  # The same gaps with the target's instance and pod labels, as the manager's
+  # ServiceMonitor attaches them. The restart check joins process_start_time_seconds
+  # on instance and pod, so these series carry both. The process started at 0,
+  # before every sample, so nothing here is a restart and both gaps must stay silent.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_release_phase_total{release="old-r5",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '1x20 stale _ 1x60'
+      - series: 'paprika_release_phase_total{release="old-r6",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '1x20 _x13 1x60'
+      - series: 'paprika_application_phase_total{application="old-a2",namespace="apps",phase="RolledBack",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '3x20 stale _ 3x60'
+      - series: 'process_start_time_seconds{instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '0x80'
+    alert_rule_test:
+      - eval_time: 16m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 18m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 16m30s
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+
+  # An in-place container restart. The old process last reports the series at 10m.
+  # At 10m30s the scrape gives a stale marker, and process_start_time_seconds steps
+  # from 0 to 660 (the new process). The new process does not report the series
+  # until it fails again at 15m, with its counter at 1. The old process's history
+  # must not hide that failure: without the restart check, this alert is suppressed
+  # for up to an hour.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_release_phase_total{release="restart-r7",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '1x20 stale _x8 1x20'
+      - series: 'paprika_application_phase_total{application="restart-a3",namespace="apps",phase="RolledBack",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '1x20 stale _x8 1x20'
+      - series: 'process_start_time_seconds{instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '0x21 660x41'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: PaprikaReleaseFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              release: restart-r7
+              namespace: apps
+              phase: Failed
+              instance: manager-0:8443
+              pod: paprika-controller-manager-0
+            exp_annotations:
+              summary: Paprika release failed
+              description: Release restart-r7 in namespace apps failed.
+      - eval_time: 25m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              application: restart-a3
+              namespace: apps
+              phase: RolledBack
+              instance: manager-0:8443
+              pod: paprika-controller-manager-0
+            exp_annotations:
+              summary: Paprika application rolled back
+              description: Application restart-a3 in namespace apps was rolled back.
+      - eval_time: 25m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+
+  # A repeat failure during a Prometheus outage. Prometheus is down for seven minutes
+  # (no samples, from 10m to 17m), and the counter goes from 1 to 2 while it is down.
+  # Scraping resumes at 17m with 2. The series has history, and increase() sees only the resumed
+  # value, so the "rose above history" branch must fire it.
+  - interval: 30s
+    input_series:
+      - series: 'paprika_release_phase_total{release="outage-r8",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '1x20 _x13 2x60'
+      - series: 'process_start_time_seconds{instance="manager-0:8443",pod="paprika-controller-manager-0"}'
+        values: '0x80'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 18m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              release: outage-r8
+              namespace: apps
+              phase: Failed
+              instance: manager-0:8443
+              pod: paprika-controller-manager-0
+            exp_annotations:
+              summary: Paprika release failed
+              description: Release outage-r8 in namespace apps failed.
+      - eval_time: 25m
         alertname: PaprikaReleaseFailed
         exp_alerts: []
 
@@ -266,6 +387,40 @@ tests:
             exp_annotations:
               summary: Paprika container OOM killed
               description: Container insights in pod paprika-insights-7b8f9c5d6-qz7lw was OOM killed.
+      - eval_time: 20m
+        alertname: PaprikaOOMKilled
+        exp_alerts: []
+
+  # The agent DaemonSet and the Redis deployment are long-running containers too.
+  # The agent pod's istio-proxy sidecar still must not fire.
+  - interval: 30s
+    input_series:
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-agent-k7x2m",container="agent",instance="10.0.0.4:10250"}'
+        values: '0x20 1x30'
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-agent-k7x2m",container="istio-proxy",instance="10.0.0.4:10250"}'
+        values: '0x20 1x30'
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-redis-5c4d7f8b9-q2wzt",container="redis",instance="10.0.0.5:10250"}'
+        values: '0x20 1x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PaprikaOOMKilled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: paprika-system
+              pod: paprika-agent-k7x2m
+              container: agent
+            exp_annotations:
+              summary: Paprika container OOM killed
+              description: Container agent in pod paprika-agent-k7x2m was OOM killed.
+          - exp_labels:
+              severity: critical
+              namespace: paprika-system
+              pod: paprika-redis-5c4d7f8b9-q2wzt
+              container: redis
+            exp_annotations:
+              summary: Paprika container OOM killed
+              description: Container redis in pod paprika-redis-5c4d7f8b9-q2wzt was OOM killed.
       - eval_time: 20m
         alertname: PaprikaOOMKilled
         exp_alerts: []

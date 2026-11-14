@@ -47,17 +47,32 @@ spec:
             description: Controller {{ "{{ $labels.controller }}" }} 95th percentile latency exceeds 30s.
 
         # Transition counters are created lazily: a series first appears at 1,
-        # so increase() alone misses the first transition. The "unless" branch
-        # catches a series with no sample in the hour before the last five
-        # minutes, so it is new. The range selector matters: an instant
-        # "offset 5m" lookback misses a series after a scrape gap and re-fires
-        # for every old failure, while last_over_time over a range sees the
-        # samples from before the gap.
+        # so increase() alone misses the first transition. Three branches:
+        # - increase() catches a transition in the last five minutes.
+        # - The "unless" branch catches a series that is new to this process: no
+        #   sample in the hour before the last five minutes, or only samples
+        #   written by an earlier process (its newest sample predates
+        #   process_start_time_seconds on the same target). The range selector
+        #   matters: an instant "offset 5m" lookback re-fires every old failure
+        #   after a scrape gap, while last_over_time over a range sees the samples
+        #   from before the gap.
+        # - The last branch catches a value that rose above the last sample from
+        #   before the last five minutes: an increment hidden by a Prometheus outage.
+        # Blind spot: the restart check needs process_start_time_seconds on the
+        #   same instance and pod. Without it (for example when the pod label is
+        #   dropped), a failure in a container restarted in place, with the same
+        #   label set, is missed for up to an hour while the old history remains.
         - alert: PaprikaReleaseFailed
           expr: |
             increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
             or
-            paprika_release_phase_total{phase="Failed"} unless last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
+            paprika_release_phase_total{phase="Failed"} unless (
+              last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
+              unless
+              last_over_time(timestamp(paprika_release_phase_total{phase="Failed"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
+            )
+            or
+            paprika_release_phase_total{phase="Failed"} > last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
           for: 1m
           labels:
             severity: critical
@@ -80,7 +95,13 @@ spec:
           expr: |
             increase(paprika_application_phase_total{phase="RolledBack"}[5m]) > 0
             or
-            paprika_application_phase_total{phase="RolledBack"} unless last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+            paprika_application_phase_total{phase="RolledBack"} unless (
+              last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+              unless
+              last_over_time(timestamp(paprika_application_phase_total{phase="RolledBack"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
+            )
+            or
+            paprika_application_phase_total{phase="RolledBack"} > last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
           for: 1m
           labels:
             severity: warning
@@ -120,11 +141,12 @@ spec:
         # user's own Prometheus. The container names are the chart's
         # long-running containers: manager, api-server, repo-server,
         # webhook-receiver, observability-gateway (its dashboard-renderer
-        # sidecar) and insights. Sidecars such as istio-proxy stay out.
+        # sidecar), insights, agent (the agent DaemonSet) and redis (the
+        # extras Redis). Sidecars such as istio-proxy stay out.
         - alert: PaprikaOOMKilled
           expr: |
             sum by (namespace, pod, container) (
-              increase(container_oom_events_total{namespace="{{ .Release.Namespace }}", pod=~"{{ include "paprika.resourceName" (dict "suffix" "" "context" $) }}-.*", container=~"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights"}[5m])
+              increase(container_oom_events_total{namespace="{{ .Release.Namespace }}", pod=~"{{ include "paprika.resourceName" (dict "suffix" "" "context" $) }}-.*", container=~"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis"}[5m])
             ) > 0
           for: 1m
           labels:
