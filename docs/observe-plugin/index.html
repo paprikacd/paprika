@@ -120,7 +120,11 @@ applies one shared time range and filter set, and executes identical queries
 once. Its compact <code>structuredContent</code> includes widget-to-signal references,
 exact readings, units, timestamps, range summaries and a small trace sample.
 A short text synopsis presents the bundle without duplicating the full JSON.
-Missing data, failed queries and truncation remain explicit.</p>
+Missing data, failed queries and truncation remain explicit. Under the 130 KiB
+result cap, optional detail can be dropped: the result's <code>omitted</code> array names
+what was dropped, in order, and <code>widget_ids</code> narrows the query to get it back. Attention
+counts, declared bands and signals are never dropped; a dashboard whose kept facts still
+exceed the cap is refused.</p>
 <p>This is read-only: it requires <code>paprika:observe</code> plus existing Insights/provider
 permissions, and never changes the dashboard's defaults. Clients do not need to
 fetch each saved query and execute it separately. To inspect a small trend, add
