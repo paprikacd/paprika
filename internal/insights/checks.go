@@ -623,17 +623,6 @@ func dryRunID(document Dashboard) string {
 	return dryRunPlaceholderID
 }
 
-// capCheckReport reports a list of findings: it keeps the first checkwire.MaxIssues
-// and counts the rest. Document-level findings come first, so a count or identity
-// failure is never pushed past the cap by many widget findings.
-func capCheckReport(findings []*insightsv1.CheckFinding) *insightsv1.CheckReport {
-	set := newFindingSet(checkwire.MaxIssues)
-	for _, finding := range findings {
-		set.add(finding)
-	}
-	return set.report()
-}
-
 // documentFirst returns the findings with document-level ones ahead of widget
 // ones. Each group keeps its validation order.
 func documentFirst(findings []*insightsv1.CheckFinding) []*insightsv1.CheckFinding {

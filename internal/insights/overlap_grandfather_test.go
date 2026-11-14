@@ -91,13 +91,17 @@ func TestUpdateRejectsANewOverlapBesideAStoredOne(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code, "new overlap saved: %s", w.Body)
 	var body savedBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	var newErrors int
+	var newErrors, storedWarnings int
 	for _, issue := range body.Issues {
 		if issue["ruleId"] == "layout.overlap" && issue["severity"] == "SEVERITY_ERROR" && issue["widgetId"] == "c" {
 			newErrors++
 		}
+		if issue["ruleId"] == "layout.overlap" && issue["severity"] == "SEVERITY_WARNING" && issue["widgetId"] == "b" {
+			storedWarnings++
+		}
 	}
 	require.Equal(t, 2, newErrors, "each new pair is an error naming c: %v", body.Issues)
+	require.Equal(t, 1, storedWarnings, "the stored a-b pair is a warning on b in the same body: %v", body.Issues)
 
 	current, _, err := store.Get("demo")
 	require.NoError(t, err)

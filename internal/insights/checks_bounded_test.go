@@ -164,7 +164,7 @@ func TestDryRunAndCheckedSavesAreRefusedWhenSlotsAreFull(t *testing.T) {
 }
 
 // A finding set holds at most the cap of widget findings, counts the rest exactly,
-// and reports document-level findings first, as capCheckReport always did.
+// and reports document-level findings first.
 func TestFindingSetKeepsTheCapAndCountsTheRest(t *testing.T) {
 	set := newFindingSet(checkwire.MaxIssues)
 	set.add(&insightsv1.CheckFinding{RuleId: ruleWidgets, Severity: insightsv1.Severity_SEVERITY_ERROR, Pointer: "/widgets"})

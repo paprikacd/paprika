@@ -430,8 +430,13 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	// The stored version is read under the mutation lock, so the overlap check and
-	// the write see the same dashboard.
+	// The whole check runs under the mutation lock, for two reasons. The stored
+	// version must be read in the same critical section as the write, so the overlap
+	// check and the write see the same dashboard. And unchecked saves are not capped
+	// by the check slots: the lock is what runs their validation one document at a
+	// time, which bounds their memory. Moving the schema pass out of the lock needs
+	// every array a document can make large bounded first, so it stays here until
+	// then. A save of a valid dashboard takes well under a millisecond under it.
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
 	// Schema findings and error-severity lint findings reject the save. Warnings

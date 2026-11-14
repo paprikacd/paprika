@@ -333,18 +333,20 @@ func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool) {
 	if !ok {
 		return
 	}
+	// Each rule runs once; its hits are sorted into severity groups in rule order.
+	bySeverity := map[insightsv1.Severity][]*insightsv1.CheckFinding{}
+	for _, rule := range lintRules {
+		hits := rule.check(doc)
+		for i := range hits {
+			hit := &hits[i]
+			finding := lintFinding(rule, hit)
+			finding.Severity = hitSeverity(rule, hit, known)
+			bySeverity[finding.Severity] = append(bySeverity[finding.Severity], finding)
+		}
+	}
 	for _, severity := range []insightsv1.Severity{errorSeverity, warningSeverity, infoSeverity} {
-		for _, rule := range lintRules {
-			hits := rule.check(doc)
-			for i := range hits {
-				hit := &hits[i]
-				if hitSeverity(rule, hit, known) != severity {
-					continue
-				}
-				finding := lintFinding(rule, hit)
-				finding.Severity = severity
-				set.add(finding)
-			}
+		for _, finding := range bySeverity[severity] {
+			set.add(finding)
 		}
 	}
 }

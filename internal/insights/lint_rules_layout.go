@@ -7,7 +7,7 @@ const guidanceLayout = "Place widgets without overlaps and fill each row; a gap 
 
 var layoutLintRules = []lintRule{
 	{
-		ID:       "layout.overlap",
+		ID:       overlapRuleID,
 		Severity: errorSeverity,
 		Summary:  guidanceLayout,
 		Fix:      "Move or resize one of the two widgets so their grid rectangles do not intersect.",
