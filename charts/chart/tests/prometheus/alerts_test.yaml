@@ -72,6 +72,70 @@ tests:
         alertname: PaprikaApplicationRolledBack
         exp_alerts: []
 
+  # Scrape gaps. A target that misses scrapes writes staleness markers for its
+  # series, and Prometheus down writes nothing; either way the series returns
+  # with the same counter value. An old failure that comes back is not a new
+  # failure, so neither gap may fire. Without the history check, a gap fires
+  # these alerts for every release that failed before the gap.
+  - interval: 30s
+    input_series:
+      # Failed 10 minutes ago. The target misses three scrapes (90s): one stale
+      # marker, then two missing samples. It resumes at 11m30s.
+      - series: 'paprika_release_phase_total{release="old-r1",namespace="apps",phase="Failed"}'
+        values: '1x20 stale _x2 1x60'
+      # Failed 10 minutes ago. Prometheus is down for 7 minutes (14 scrapes, no
+      # samples). It resumes at 17m.
+      - series: 'paprika_release_phase_total{release="old-r2",namespace="apps",phase="Failed"}'
+        values: '1x20 _x14 1x60'
+      # Rolled back 10 minutes ago, with the same 90s gap.
+      - series: 'paprika_application_phase_total{application="old-a1",namespace="apps",phase="RolledBack"}'
+        values: '3x20 stale _x2 3x60'
+    alert_rule_test:
+      - eval_time: 16m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 21m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+      - eval_time: 16m30s
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+      - eval_time: 21m30s
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: PaprikaApplicationRolledBack
+        exp_alerts: []
+
+  # A genuinely new failure still fires while an old failure sits behind a
+  # 90s gap in the same group. Only the new release may appear.
+  - interval: 30s
+    input_series:
+      # First failed at 10 minutes, so this is a new transition.
+      - series: 'paprika_release_phase_total{release="new-r3",namespace="apps",phase="Failed"}'
+        values: '_x20 1x40'
+      # Old failure with a 90s gap; it must stay silent.
+      - series: 'paprika_release_phase_total{release="old-r4",namespace="apps",phase="Failed"}'
+        values: '1x20 stale _x2 1x60'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PaprikaReleaseFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              release: new-r3
+              namespace: apps
+              phase: Failed
+            exp_annotations:
+              summary: Paprika release failed
+              description: Release new-r3 in namespace apps failed.
+      - eval_time: 16m30s
+        alertname: PaprikaReleaseFailed
+        exp_alerts: []
+
   # Degraded is current state from the phase gauge. Two replicas report the same
   # cluster-wide value; max() collapses them, so the alert has no labels and
   # reports one application, not two. It needs five minutes to fire.
@@ -157,6 +221,51 @@ tests:
             exp_annotations:
               summary: Paprika container OOM killed
               description: Container manager in pod paprika-controller-manager-7d9f was OOM killed.
+      - eval_time: 20m
+        alertname: PaprikaOOMKilled
+        exp_alerts: []
+
+  # The other long-running containers count too: the observability gateway,
+  # the dashboard renderer sidecar and Insights. Their OOM kills must alert.
+  # The istio-proxy sidecar still must not.
+  - interval: 30s
+    input_series:
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-observability-gateway-6c9d4f7b8-x2k4p",container="observability-gateway",instance="10.0.0.2:10250"}'
+        values: '0x20 1x30'
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-observability-gateway-6c9d4f7b8-x2k4p",container="dashboard-renderer",instance="10.0.0.2:10250"}'
+        values: '0x20 1x30'
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-insights-7b8f9c5d6-qz7lw",container="insights",instance="10.0.0.3:10250"}'
+        values: '0x20 1x30'
+      - series: 'container_oom_events_total{namespace="paprika-system",pod="paprika-insights-7b8f9c5d6-qz7lw",container="istio-proxy",instance="10.0.0.3:10250"}'
+        values: '0x20 1x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PaprikaOOMKilled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: paprika-system
+              pod: paprika-observability-gateway-6c9d4f7b8-x2k4p
+              container: observability-gateway
+            exp_annotations:
+              summary: Paprika container OOM killed
+              description: Container observability-gateway in pod paprika-observability-gateway-6c9d4f7b8-x2k4p was OOM killed.
+          - exp_labels:
+              severity: critical
+              namespace: paprika-system
+              pod: paprika-observability-gateway-6c9d4f7b8-x2k4p
+              container: dashboard-renderer
+            exp_annotations:
+              summary: Paprika container OOM killed
+              description: Container dashboard-renderer in pod paprika-observability-gateway-6c9d4f7b8-x2k4p was OOM killed.
+          - exp_labels:
+              severity: critical
+              namespace: paprika-system
+              pod: paprika-insights-7b8f9c5d6-qz7lw
+              container: insights
+            exp_annotations:
+              summary: Paprika container OOM killed
+              description: Container insights in pod paprika-insights-7b8f9c5d6-qz7lw was OOM killed.
       - eval_time: 20m
         alertname: PaprikaOOMKilled
         exp_alerts: []
