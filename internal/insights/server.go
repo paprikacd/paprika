@@ -417,17 +417,19 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
+	// The body is read before a check slot is taken, so a stalled upload holds no
+	// slot. The slot covers only the check work that follows.
+	var doc json.RawMessage
+	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
+		writeError(w, 400, "invalid dashboard document")
+		return
+	}
 	if wantsChecks(r) {
 		release, ok := s.admitCheck(w)
 		if !ok {
 			return
 		}
 		defer release()
-	}
-	var doc json.RawMessage
-	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
-		writeError(w, 400, "invalid dashboard document")
-		return
 	}
 	id := r.PathValue("id")
 	// The whole check runs under the mutation lock, for two reasons. The stored
@@ -550,15 +552,11 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 	s.executeDryRun(w, r, request, report)
 }
 
-// decodeCheck decodes a dry-run request and builds its schema and lint report. It
-// holds a check slot only for that work: the slot is released before any query
-// runs, so a slow provider never keeps a checked save out.
+// decodeCheck decodes a dry-run request and builds its schema and lint report. The
+// body is read before a check slot is taken, so a stalled upload holds no slot. The
+// slot covers only the report, and it is released before any query runs, so a slow
+// provider never keeps a checked save out.
 func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequest, *findingSet, bool) {
-	release, ok := s.admitCheck(w)
-	if !ok {
-		return nil, nil, false
-	}
-	defer release()
 	var request checkRequest
 	if err := decodeBody(w, r, &request, maxCheckRequestBytes); err != nil {
 		writeError(w, 400, "invalid dashboard check request")
@@ -572,6 +570,11 @@ func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequ
 		writeError(w, 400, "variables apply only when execute is true")
 		return nil, nil, false
 	}
+	release, ok := s.admitCheck(w)
+	if !ok {
+		return nil, nil, false
+	}
+	defer release()
 	return &request, s.checkReport(request.Document), true
 }
 
