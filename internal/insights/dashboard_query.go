@@ -14,6 +14,10 @@ import (
 
 const dashboardQueryBudget = 22 * time.Second
 
+// DashboardQueryResponseBytes caps the encoded structured result of query-dashboard. The Observe
+// gateway reads at most this many bytes of the response, so the two must stay equal.
+const DashboardQueryResponseBytes = 128 << 10
+
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
 	ID            string            `json:"id"`
@@ -40,6 +44,9 @@ type DashboardQueryResult struct {
 	QueryCount    DashboardQueryCount      `json:"queryCount"`
 	State         string                   `json:"state"`
 	Attention     DashboardAttention       `json:"attention"`
+	// Omitted names, in the order applied, the optional detail dropped so the encoded result fits
+	// DashboardQueryResponseBytes. Absent when nothing was dropped. See dashboardOmissionSteps.
+	Omitted []string `json:"omitted,omitempty"`
 }
 
 type DashboardQueryDocument struct {
@@ -295,13 +302,13 @@ func validatePlannedDashboardQuery(widget *dashboardReadWidget, query *Query, sa
 }
 
 func writeDashboardQueryResult(w http.ResponseWriter, result *DashboardQueryResult) {
-	encoded, err := json.Marshal(result)
+	encoded, err := encodeDashboardQueryResult(result)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "dashboard signals could not be encoded")
 		return
 	}
-	if len(encoded) > 128<<10 {
-		writeError(w, http.StatusRequestEntityTooLarge, "dashboard result exceeds 128 KiB; select fewer widgets, series or history points")
+	if len(encoded) > DashboardQueryResponseBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "dashboard result exceeds 128 KiB even without optional detail; select fewer widgets, series or history points")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

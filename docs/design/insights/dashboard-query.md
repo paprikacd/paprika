@@ -155,6 +155,8 @@ widget. The caps are per level, so one critical interval is never crowded out by
 later warning flaps. A dashboard-wide budget (96 listed intervals) lowers the
 per-widget count when many widgets are selected, so the structured result stays
 well under its 128 KiB cap; `intervalsOmitted` counts every interval not listed.
+When the encoded result still exceeds the cap, the listed intervals are the first
+detail omitted (see Omitted detail below).
 Each interval gives `series`, a bounded `name`, `level`, `start`, `end` and
 `durationMs` (Unix milliseconds, except the duration). `latestLevel` names the band
 of the newest sample, and it is absent when that sample is not breaching.
@@ -164,6 +166,20 @@ positive duration, `samples` counts single breaching samples outside them, and
 window. Only `latestLevel` describes the current sample. A failed signal reports no
 `breaches`, so an absent object is not an empty result. A time series with no
 warning or critical status reports no `breaches`.
+
+Omitted detail. The structured result is budgeted against its encoded size. When it
+would exceed 128 KiB, optional detail is dropped in this fixed order, and each step
+runs only if the result still does not fit: (1) `breachIntervals`, the listed breach
+intervals and their series names, with their count moved into `intervalsOmitted`;
+(2) `breaches`, each widget's breach object; (3) `bandSeries`, the series names that
+set a multi-series band, keeping the drawn and omitted counts; (4) `sample`, the
+limit and age of each widget's sample, keeping its `state`. The top-level `omitted`
+array names the steps applied, in order. It is absent when nothing was dropped, so
+a result that fits keeps every fact. The attention summary, summaries, latest levels,
+states, signals and their series are never dropped, and attention is counted before
+any omission. The text synopsis states what was omitted. A selection whose signals
+alone exceed the cap is still refused with 413, and the message says so; narrow the
+selection, the series or the history points.
 
 Every metric widget reports `sample`: the age of its latest valid returned sample
 relative to the range end, and the limit that judges it. A stat measures its
@@ -257,7 +273,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Series | 3 by default, 1–8 supported |
 | Trace examples | 3 by default, 1–10 supported |
 | Breaches | 12 series evaluated, 12 most recent intervals listed per widget, two levels in the summary |
-| Structured result | 128 KiB; narrow widget/series/history selection if exceeded |
+| Structured result | 128 KiB. Optional detail is omitted in a fixed order and named in `omitted`; 413 only when the signals and the remaining facts still exceed it |
 | Text synopsis | At most 8 KiB |
 | Execution | 22-second budget for the whole read; shared-catalog calls draw on it, each capped at 20 seconds, with partial timeout results when possible |
 | Shared catalog | 4 concurrent catalog phases; a waiting query gets one within 5 seconds (16 waiters), else 429 with `Retry-After: 1`; a listing's own cap is 10 seconds. A `/query` has one 22-second budget covering the wait, the admission wait, the listing and the data call |
@@ -299,7 +315,7 @@ tests only. No UI port exists yet, so a later UI slice that computes attention
 must run it too. Characterisation tests pin the output of a document without status
 thresholds. Its structured values are unchanged, and its text synopsis is unchanged
 except for the leading attention line, which is the only added line. The additive
-fields (`attention`, `sample`, `breaches`, `bandSeries`) are stripped before the
+fields (`attention`, `sample`, `breaches`, `bandSeries`, `omitted`) are stripped before the
 structured comparison.
 
 The UI's series caps (`TestPluginSeriesCapsMatchTheUI`) and the stale set
