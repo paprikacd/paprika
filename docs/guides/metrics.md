@@ -237,9 +237,11 @@ the Info, Warning and Drift sections do not, and can miss a first error or first
 prune. Current state comes from the `*_by_phase_ratio` gauges.
 
 The phase alerts have one known blind spot. After an in-place container restart
-(same pod name and label set), a first failure that leaves the counter at its
-old value is not reported until the counter rises again. A continuous scrape
-that sees the counter drop fires for about five minutes.
+(same pod name and label set), the first failure of a release that the previous
+container exported within the past hour is not reported. The new counter starts
+at 1, which is not above the old value, and the old samples count as history.
+Later failures alert through `increase()`. Only a drop from a higher value seen
+within about three minutes of the old container's last scrape alerts, briefly.
 
 ### Critical Alerts
 

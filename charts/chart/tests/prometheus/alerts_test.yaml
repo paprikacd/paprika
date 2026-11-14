@@ -213,7 +213,9 @@ tests:
 
   # A pod restart with a new pod label and no new failure. The old pod's series
   # stops at 10m30s (staleness marker). The replacement pod reports no Failed
-  # series, so nothing may fire.
+  # series, so nothing may fire. This case documents the behaviour rather than
+  # exercising a branch: its only series ends at 10m30s, so no branch can match
+  # under any version of the rules.
   - interval: 30s
     input_series:
       - series: 'paprika_release_phase_total{release="pod-r6",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
@@ -330,11 +332,12 @@ tests:
         alertname: PaprikaReleaseFailed
         exp_alerts: []
 
-  # Documents the blind spot. After an in-place container restart (same pod, same
-  # label set) the counter goes 1, stale, then 1 again at 15m. The value did not
-  # rise, so increase() sees nothing, and the old and new samples both sit in the
-  # hour before each later evaluation, so no branch fires. The alert stays silent
-  # until the counter rises (see "later rise" below and the rule comment).
+  # Documents the blind spot in the rule comment. After an in-place container
+  # restart (same pod, same label set) the counter goes 1, stale, then 1 again at
+  # 15m. The first failure of a release that the previous container exported within
+  # the past hour is not reported: the new value is not above the old one, and the
+  # old samples count as history. Silent at 17m and 45m, while the old samples are
+  # inside the 1h lookback. The counter rise after a restart is covered by rise-r12.
   - interval: 30s
     input_series:
       - series: 'paprika_release_phase_total{release="restart-r10",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
@@ -349,8 +352,10 @@ tests:
 
   # The same restart with the counter dropping, 2 before (to 10m) and 1 after
   # (from 10m30s), scraped without a gap. increase() sees the drop as a reset and
-  # counts it, so the alert fires for about five minutes (12m and 13m here) and
-  # then goes silent by 20m.
+  # counts it as an increment of 1. The window holds the reset from 10m30s to 15m,
+  # so the alert fires from 11m30s and resolves at 15m, about 3.5 minutes in all.
+  # It is silent by 20m. This is the only restart shape that alerts on the first
+  # failure, and only briefly.
   - interval: 30s
     input_series:
       - series: 'paprika_release_phase_total{release="restart-r11",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
@@ -374,7 +379,7 @@ tests:
         exp_alerts: []
 
   # The counter rises again after a restart (1, stale, 1, then 2 from 30m30s). This
-  # increment is seen by increase(): the alert fires from 31m and is silent at 45m.
+  # increment is seen by increase(): the alert fires from 31m30s and is silent at 45m.
   - interval: 30s
     input_series:
       - series: 'paprika_release_phase_total{release="rise-r12",namespace="apps",phase="Failed",instance="manager-0:8443",pod="paprika-controller-manager-0"}'
