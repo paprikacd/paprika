@@ -22,7 +22,7 @@ func TestDashboardQueryTextNamesOmittedDetail(t *testing.T) {
 	raw := json.RawMessage(`{"schemaVersion":1,"dashboard":{"id":"overview","etag":"v1"},"state":"ok","omitted":["breachIntervals","sample","mystery"],"widgets":[],"signals":[]}`)
 	text, err := dashboardQueryText(raw)
 	require.NoError(t, err)
-	require.Contains(t, text, "Omitted from structuredContent to fit the result cap, in this order: listed breach intervals and their series names (window summaries kept); sample limit and age detail, freshness mirrors, and samples whose state is not stale; mystery. Attention counts are unchanged. Narrow the query with widget_ids to get the omitted detail back.")
+	require.Contains(t, text, "Omitted from structuredContent to fit the result cap, in this order: listed breach intervals and their series names (window summaries kept); time-series freshness, sample limit and age detail, samples whose state is not stale, and stale samples on widgets already marked stale; mystery. Attention counts are unchanged. Narrow the query with widget_ids to get the omitted detail back.")
 
 	raw = json.RawMessage(`{"schemaVersion":1,"dashboard":{"id":"overview","etag":"v1"},"state":"ok","widgets":[],"signals":[]}`)
 	text, err = dashboardQueryText(raw)
