@@ -557,13 +557,14 @@ does not quarantine anything again, because the invalid file has already left th
 store directory. A create with a quarantined id is a new document; the quarantined
 copy is kept and never overwritten.
 
-Startup is two-phase. The loaders only find invalid documents. They move them when
-`NewServer` has finished the whole startup (the dashboard and saved-query stores, and
-the managed provider configs), just before Insights serves. A fatal error anywhere
-earlier leaves every document where it was, so the build that can still read them
-finds them on the next start. Documents quarantined by a startup that succeeded stay
-moved. Rolling forward again does not restore them; this build no longer serves them
-and does not move them back.
+Startup is two-phase. The loaders only find invalid documents. The process binds its
+listen address first, so a taken or invalid address stops startup before the store is
+read. `NewServer` then finishes the whole startup (the dashboard and saved-query stores,
+and the managed provider configs) and only then moves the invalid documents. Insights
+serves on the listener it bound. A fatal error anywhere earlier leaves every document
+where it was, so the build that can still read them finds them on the next start.
+Documents quarantined by a startup that succeeded stay moved. Rolling forward again
+does not restore them; this build no longer serves them and does not move them back.
 
 Anything that fails validation as this build reads it is quarantined. That includes a
 document a newer build wrote (a newer `schemaVersion`, or a field this build does not
@@ -571,12 +572,27 @@ know) and a document over its size limit. These stay fatal, and nothing moves wh
 they occur: a symlink or other non-regular entry in a store directory, an invalid
 file name, a store over its capacity (100 dashboards, 32 MiB of documents, 256 saved
 queries), an I/O error reading a file, a managed provider config this build cannot
-decode (an unknown field or provider type), and a quarantine move that fails (for
-example a file where the `quarantine` directory belongs).
+decode (an unknown field or provider type), and a listen address that cannot be bound
+(already in use, or not a valid address).
 
-Quarantine is an operator signal. The counter exists only in the process that
-quarantined the documents, so it is visible on `/metrics` until that process restarts.
-Check the quarantine tree after every deploy and after every rollback:
+A quarantine move that fails also stops startup, for example when a file sits where the
+`quarantine` directory belongs. The moves are renames, one document at a time. Documents
+moved before the failure stay in quarantine, and the others stay in the store. Once the
+blocker is removed, a restart moves the rest. It never duplicates a document that already
+moved, because a moved file is no longer in the store directory.
+
+Quarantine is an operator signal, and on `paprika-e2e` the logs are the only one. Nothing
+scrapes Insights there, and the `paprika_insights_store_quarantined_total` counter exists
+only in the process that quarantined the documents. Each quarantined document logs a WARN
+line with its kind, id, reason and new path. A startup that moved anything also logs one
+WARN line, `quarantined invalid stored documents at startup`, with `count`, `kinds` and
+`quarantine_path`. Check the Insights logs after every downgrade and every upgrade:
+
+```sh
+kubectl -n paprika-e2e logs deploy/paprika-e2e-insights | grep quarantined
+```
+
+Then check the quarantine tree after every deploy and after every rollback:
 
 ```sh
 kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
