@@ -353,11 +353,15 @@ client that stores it never sends back an unknown member. The dry run lists ever
 finding, warnings included, without writing, and reads the stored dashboard at the
 same id so it reports the same overlap warnings a save would.
 
-Dry runs and saves with `?checks=true` share four concurrent slots. A request
-that finds them all taken gets `429` with `Retry-After: 1`. The schema check runs
-on a bounded part of a document: a widgets array longer than 48 gets its count
-error and shape checks on its first 48 widgets only, and the report counts every
-finding it makes.
+Dry runs and saves with `?checks=true` share four concurrent slots while they
+decode a document and build its report. A request that finds them all taken gets
+`429` with `Retry-After: 1`. A dry run with `execute` releases its slot before its
+queries run and holds one of four dry-run query slots instead, so a slow provider
+never refuses a checked save. A full pool gets the same `429`. The schema check
+runs on a bounded part of a document: a widgets array longer than 48 gets its
+count error and shape checks on its first 48 widgets only, the variables array
+and widget drilldowns are read up to one past their limits, and the report counts
+every finding it makes.
 
 Stored documents are read without linting, so a dashboard saved before a rule
 existed still loads and renders. Saving it again runs the rules.
