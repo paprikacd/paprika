@@ -42,7 +42,9 @@ func observeMCPTestGateway(t *testing.T, handler http.Handler) *httptest.Server 
 			response["error"] = map[string]any{"code": -32601, "message": "legacy protocol"}
 		case "initialize":
 			response["result"] = map[string]any{"protocolVersion": "2025-11-25", "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "observe-fixture", "version": "1"}}
-		case "notifications/initialized":
+		// A client that hits a phase deadline cancels its call and sends notifications/cancelled, which a real
+		// server accepts like any other notification. Slow runners (the race detector) reach that deadline.
+		case "notifications/initialized", "notifications/cancelled":
 			w.WriteHeader(http.StatusAccepted)
 			return
 		case "tools/list":

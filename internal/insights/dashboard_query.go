@@ -14,6 +14,18 @@ import (
 
 const dashboardQueryBudget = 22 * time.Second
 
+// DashboardQueryResponseBytes caps the encoded structured result of query-dashboard at 130 KiB. The
+// Observe gateway reads at most this many bytes of the response, so the two must stay equal. The cap
+// was 128 KiB until the per-widget and top-level attention and the omitted list were added; see
+// docs/design/insights/dashboard-query.md, Compatibility, for the measured decision.
+const DashboardQueryResponseBytes = 130 << 10
+
+// dashboardResultCapText names the cap in KiB for the refusal message, derived from the constant so
+// the message cannot drift from the cap it reports.
+func dashboardResultCapText() string {
+	return fmt.Sprintf("%d KiB", DashboardQueryResponseBytes>>10)
+}
+
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
 	ID            string            `json:"id"`
@@ -40,6 +52,9 @@ type DashboardQueryResult struct {
 	QueryCount    DashboardQueryCount      `json:"queryCount"`
 	State         string                   `json:"state"`
 	Attention     DashboardAttention       `json:"attention"`
+	// Omitted names, in the order applied, the optional detail dropped so the encoded result fits
+	// DashboardQueryResponseBytes. Absent when nothing was dropped. See dashboardOmissionSteps.
+	Omitted []string `json:"omitted,omitempty"`
 }
 
 type DashboardQueryDocument struct {
@@ -73,8 +88,9 @@ type DashboardQueryWidget struct {
 	AnnotationError        *DashboardQueryError            `json:"annotationError,omitempty"`
 	AnnotationColumns      *dashboardReadAnnotationColumns `json:"annotationColumns,omitempty"`
 	// Sample reports the age of the widget's latest observation and whether a staleness
-	// limit judges it. Every metric widget carries it. It is the version-tolerant home of
-	// the staleness judgement; freshness is kept for clients of the first contract.
+	// limit judges it. Every metric widget carries it, unless the result cap removes it. It
+	// is the version-tolerant home of the staleness judgement; freshness is kept for clients
+	// of the first contract.
 	Sample *DashboardSample `json:"sample,omitempty"`
 	// BandSeries names the series that set a multi-series band, and how many series the
 	// visualization draws. It sits beside threshold so the band keeps its first-contract shape.
@@ -237,7 +253,7 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 		if judgesStaleAfter(widget.Type) && widget.Options.StaleAfterSeconds != nil {
 			seconds := *widget.Options.StaleAfterSeconds
 			output.Sample.Basis, output.Sample.StaleAfterSeconds = sampleBasisStaleAfter, &seconds
-			// The first contract's freshness object, kept for clients that read it.
+			// The freshness object. A stat's is the first contract's; a time series also gets one, added after the first contract.
 			threshold := int(seconds)
 			output.Freshness = &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "unknown"}
 		}
@@ -295,13 +311,13 @@ func validatePlannedDashboardQuery(widget *dashboardReadWidget, query *Query, sa
 }
 
 func writeDashboardQueryResult(w http.ResponseWriter, result *DashboardQueryResult) {
-	encoded, err := json.Marshal(result)
+	encoded, err := encodeDashboardQueryResult(result)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "dashboard signals could not be encoded")
 		return
 	}
-	if len(encoded) > 128<<10 {
-		writeError(w, http.StatusRequestEntityTooLarge, "dashboard result exceeds 128 KiB; select fewer widgets, series or history points")
+	if len(encoded) > DashboardQueryResponseBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("dashboard result exceeds %s even without optional detail; select fewer widgets, series or history points", dashboardResultCapText()))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

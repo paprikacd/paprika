@@ -815,6 +815,21 @@ tasks:
             echo "FAIL[gateway-capacity]: rendered gateway lacks $want"; rc=1
           fi
         done
+        # Unset capacity values must not reach the binary: an older gateway image
+        # rejects an unknown flag and crash-loops. Explicit zeros are still passed.
+        gw_default="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set observabilityGateway.enabled=true --set auth.enabled=true --set mcp.publicURL=https://capacity.example.com --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' --set 'observabilityGateway.extraEnv[0].value=test-token-secret' 2>&1)"
+        if printf '%s\n' "$gw_default" | grep -qE -- '--observability-(query|http)-'; then
+          echo "FAIL[gateway-capacity-default]: unset capacity values must omit their flags"; rc=1
+        else
+          echo "ok[gateway-capacity-default] (no capacity flags)"
+        fi
+        gw_zero="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set observabilityGateway.enabled=true --set auth.enabled=true --set mcp.publicURL=https://capacity.example.com --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' --set 'observabilityGateway.extraEnv[0].value=test-token-secret' --set observabilityGateway.capacity.queryProviderConcurrency=0 --set observabilityGateway.capacity.httpWorkSlots=0 --set observabilityGateway.capacity.httpAdmissionWait=0s 2>&1)"
+        for want in '--observability-query-provider-concurrency=0' '--observability-http-work-slots=0' '--observability-http-admission-wait=0s'; do
+          if ! printf '%s\n' "$gw_zero" | grep -qF -- "$want"; then
+            echo "FAIL[gateway-capacity-explicit-zero]: explicit zero must still be passed: $want"; rc=1
+          fi
+        done
+        echo "ok[gateway-capacity-explicit-zero]"
         check_render omega-insights -f deploy/test-values.yaml -f deploy/omega-values.yaml \
           -f deploy/insights-omega-values.yaml
         expect_fail invalid-namespace-scope --set apiServer.namespaceScope=Review/production

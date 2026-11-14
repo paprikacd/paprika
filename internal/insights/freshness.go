@@ -127,7 +127,7 @@ func setUnknownSample(widget *DashboardQueryWidget) {
 	}
 }
 
-// mirrorFreshness copies the judged sample into the first-contract freshness, where one exists.
+// mirrorFreshness copies the judged sample into the freshness object, where one exists.
 func mirrorFreshness(widget *DashboardQueryWidget, timestamp, age float64) {
 	if widget.Freshness == nil {
 		return
@@ -136,7 +136,7 @@ func mirrorFreshness(widget *DashboardQueryWidget, timestamp, age float64) {
 	widget.Freshness.State = widget.Sample.State
 }
 
-// clearSampleLimit removes every limit from a widget's sample, and the first-contract freshness.
+// clearSampleLimit removes every limit from a widget's sample, and its freshness object.
 func clearSampleLimit(widget *DashboardQueryWidget) {
 	widget.Sample.Basis, widget.Sample.StaleAfterSeconds = "", nil
 	widget.Freshness = nil

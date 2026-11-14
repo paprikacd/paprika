@@ -44,7 +44,13 @@ func (s *Server) putSavedQuery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	shared := s.isSharedProviderID(query.ProviderID)
+	s.writeSavedQuery(r, &query, document, s.isSharedProviderID(query.ProviderID)).replay(w)
+}
+
+// writeSavedQuery validates and stores a saved query and returns its response
+// unwritten. Its locks are released when it returns, before the caller writes.
+func (s *Server) writeSavedQuery(r *http.Request, query *SavedQuery, document json.RawMessage, shared bool) *bufferedResponse {
+	out := &bufferedResponse{}
 	// Local provider validation must remain atomic with deletion/type changes.
 	// Shared providers live in the gateway, so authorize them before taking
 	// the store lock; slow network requests must not block unrelated writes.
@@ -55,32 +61,33 @@ func (s *Server) putSavedQuery(w http.ResponseWriter, r *http.Request) {
 	provider, err := s.resolveProvider(r, query.ProviderID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			writeError(w, 400, "saved query provider does not exist")
+			writeError(out, 400, "saved query provider does not exist")
 		} else {
-			writeProviderError(w, err)
+			writeProviderError(out, err)
 		}
-		return
+		return out
 	}
-	if providerErr := validateSavedQueryProvider(&provider.public, &query); providerErr != nil {
-		writeError(w, http.StatusBadRequest, providerErr.Error())
-		return
+	if providerErr := validateSavedQueryProvider(&provider.public, query); providerErr != nil {
+		writeError(out, http.StatusBadRequest, providerErr.Error())
+		return out
 	}
 
 	if shared {
 		s.mutations.Lock()
 		defer s.mutations.Unlock()
 	}
-	if updateErr := s.validateSavedQueryUpdate(&query, r.Header.Get("If-Match"), r.Header.Get("If-None-Match")); updateErr != nil {
-		savedQueryStoreError(w, updateErr)
-		return
+	if updateErr := s.validateSavedQueryUpdate(query, r.Header.Get("If-Match"), r.Header.Get("If-None-Match")); updateErr != nil {
+		savedQueryStoreError(out, updateErr)
+		return out
 	}
 	tag, err := s.savedQueries.put(query.ID, document, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
 	if err != nil {
-		savedQueryStoreError(w, err)
-		return
+		savedQueryStoreError(out, err)
+		return out
 	}
-	setDocumentETag(w, tag)
-	writeJSON(w, 200, document)
+	setDocumentETag(out, tag)
+	writeJSON(out, 200, document)
+	return out
 }
 
 func (s *Server) deleteSavedQuery(w http.ResponseWriter, r *http.Request) {
@@ -88,27 +95,34 @@ func (s *Server) deleteSavedQuery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusPreconditionRequired, "If-Match is required to delete a saved query")
 		return
 	}
+	s.deleteSavedQueryLocked(r.PathValue("id"), r.Header.Get("If-Match")).replay(w)
+}
+
+// deleteSavedQueryLocked deletes under the mutation lock and returns the response
+// unwritten, so the write happens after the lock is released.
+func (s *Server) deleteSavedQueryLocked(id, ifMatch string) *bufferedResponse {
+	out := &bufferedResponse{}
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
-	id := r.PathValue("id")
 	previous, _, err := s.savedQueries.get(id)
 	if err != nil {
-		savedQueryStoreError(w, err)
-		return
+		savedQueryStoreError(out, err)
+		return out
 	}
-	if err := preconditions(previous, true, r.Header.Get("If-Match"), ""); err != nil {
-		savedQueryStoreError(w, err)
-		return
+	if err := preconditions(previous, true, ifMatch, ""); err != nil {
+		savedQueryStoreError(out, err)
+		return out
 	}
 	if s.store.usesSavedQuery(id) {
-		writeError(w, 409, "saved query is in use by a persisted dashboard; remove its widget, event and tooltip references before deleting")
-		return
+		writeError(out, 409, "saved query is in use by a persisted dashboard; remove its widget, event and tooltip references before deleting")
+		return out
 	}
-	if err := s.savedQueries.remove(id, r.Header.Get("If-Match")); err != nil {
-		savedQueryStoreError(w, err)
-		return
+	if err := s.savedQueries.remove(id, ifMatch); err != nil {
+		savedQueryStoreError(out, err)
+		return out
 	}
-	w.WriteHeader(http.StatusNoContent)
+	out.WriteHeader(http.StatusNoContent)
+	return out
 }
 
 func savedQueryStoreError(w http.ResponseWriter, err error) {

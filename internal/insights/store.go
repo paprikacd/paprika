@@ -34,6 +34,8 @@ type Store struct {
 	mu        sync.RWMutex
 	dir       string
 	documents map[string]Dashboard
+	// quarantine holds the invalid documents OpenStore found. They move only in commitQuarantine.
+	quarantine []pendingQuarantine
 }
 
 // OpenStore uses a single-writer, atomic-file store suitable for a single
@@ -67,13 +69,14 @@ func (s *Store) loadEntries(dir string, entries []os.DirEntry) error {
 		if !validStoreEntry(id, entry) {
 			return errors.New("invalid file in dashboard store")
 		}
-		data, err := readStoreDocument(dir, entry.Name(), maxDocumentBytes)
-		if err != nil {
-			return fmt.Errorf("read dashboard document: %w", err)
+		data, staleZone, invalid, err := readStoredDashboard(dir, entry.Name(), id)
+		if invalid {
+			// An invalid document, such as one a newer build wrote, is set aside once the startup succeeds.
+			s.quarantine = append(s.quarantine, pendingQuarantine{root: dir, dir: dir, kind: quarantineKindDashboard, id: id, reason: err})
+			continue
 		}
-		staleZone, err := checkStoredDashboard(id, data)
 		if err != nil {
-			return fmt.Errorf("invalid saved dashboard %s: %w", id, err)
+			return err
 		}
 		if staleZone {
 			slog.Warn("saved dashboard time zone is not on the canonical list; viewers render it in their own zone", "dashboard", id)
@@ -85,6 +88,31 @@ func (s *Store) loadEntries(dir string, entries []os.DirEntry) error {
 		s.documents[id] = data
 	}
 	return nil
+}
+
+// readStoredDashboard reads and validates one dashboard file. invalid reports a document to quarantine, which is one
+// that fails validation or exceeds its size limit; err then gives the reason. A read failure is an error, not invalid.
+func readStoredDashboard(dir, name, id string) (data []byte, staleZone, invalid bool, err error) {
+	data, err = readStoreDocument(dir, name, maxDocumentBytes)
+	if errors.Is(err, errDocumentTooLarge) {
+		return nil, false, true, err
+	}
+	if err != nil {
+		return nil, false, false, fmt.Errorf("read dashboard document: %w", err)
+	}
+	staleZone, err = checkStoredDashboard(id, data)
+	if err != nil {
+		return nil, false, true, err
+	}
+	return data, staleZone, false, nil
+}
+
+// commitQuarantine moves the invalid documents that OpenStore found into quarantine. NewServer calls it after the whole
+// startup has succeeded, so a store that fails to open leaves every file where it was.
+func (s *Store) commitQuarantine() error {
+	var err error
+	s.quarantine, err = commitPendingQuarantine(s.quarantine)
+	return err
 }
 
 func (s *Store) List() []Dashboard {
@@ -304,7 +332,7 @@ func readStoreDocument(dir, name string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("read document: %w", err)
 	}
 	if int64(len(data)) > limit {
-		return nil, errors.New("document exceeds its size limit")
+		return nil, errDocumentTooLarge
 	}
 	return data, nil
 }

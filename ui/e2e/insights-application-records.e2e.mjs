@@ -273,7 +273,14 @@ try {
           return { theme: line.closest("[data-insights-theme]")?.getAttribute("data-insights-theme"), matchesInk: foreground.every((value, index) => value === ink[index]), contrast: (levels[0] + .05) / (levels[1] + .05), color: style.color }
         })
         return appearance?.theme === theme.toLowerCase() && appearance.matchesInk && appearance.contrast >= 4.5
-      }, `${viewport} SQL theme must resolve to ${theme}, use theme ink and retain 4.5:1 contrast`)
+      }, `${viewport} SQL theme must resolve to ${theme}, use theme ink and retain 4.5:1 contrast`).catch(async error => {
+        // Report what was measured, so an intermittent CI failure says which condition failed.
+        const now = await sqlEditor.evaluate(element => {
+          const line = element.querySelector(".cm-line"), style = line && getComputedStyle(line)
+          return { theme: line?.closest("[data-insights-theme]")?.getAttribute("data-insights-theme"), color: style?.color, ink: style?.getPropertyValue("--gamma-ink").trim(), lineClass: line?.className, lines: element.querySelectorAll(".cm-line").length, focused: element.contains(document.activeElement) }
+        }).catch(cause => ({ evaluateError: String(cause) }))
+        throw new Error(`${error.message}; last measured ${JSON.stringify(appearance)}; now ${JSON.stringify(now)}`)
+      })
       return appearance
     }
     assert.equal(await bindings.innerText(), "[{{service}}]")

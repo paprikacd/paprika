@@ -47,3 +47,7 @@ output/
 /obsloadgen
 .DS_Store
 .playwright*
+
+# Python bytecode from demo/insights-gallery runs
+__pycache__/
+*.pyc

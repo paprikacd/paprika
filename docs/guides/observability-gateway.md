@@ -286,7 +286,11 @@ Provider credentials and the Insights service token never enter tool responses.
 `query_dashboard` resolves the same saved-query bindings as the UI and executes
 identical panel queries once. Its structured result contains latest readings,
 range summaries, a bounded trace sample, document ETags and explicit
-missing/error/truncation states. History is opt-in; service overrides never
+missing/error/truncation states. Under the 130 KiB result cap, optional detail
+(breach intervals, breach objects, band series objects and sample detail) can be
+omitted; the top-level `omitted` array names what was dropped, in order, and
+`widget_ids` narrows the query to get it back. Attention counts, declared bands and
+signals are never dropped, so a dashboard whose kept facts still exceed the cap is refused. History is opt-in; service overrides never
 modify saved defaults. Data availability is not a service-health verdict.
 See the [dashboard query contract](../design/insights/dashboard-query.md) for
 limits, examples and interpretation.

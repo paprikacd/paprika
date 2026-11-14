@@ -353,18 +353,103 @@ client that stores it never sends back an unknown member. The dry run lists ever
 finding, warnings included, without writing, and reads the stored dashboard at the
 same id so it reports the same overlap warnings a save would.
 
-A dry run or save reads its body before it takes a slot, so a slow upload holds
-none. Dry runs and saves with `?checks=true` then share four concurrent slots: a
-dry run holds one while it decodes its request and builds its report, and a checked
-save holds one through its lock wait, its check, its write and its response. A
-request that finds them all taken gets `429` with `Retry-After: 1`, and a refused
-dry run decodes nothing. A dry run with `execute` releases its slot before its
-queries run and holds one of four dry-run query slots instead, so a slow provider
-never refuses a checked save. A full pool gets the same `429`. The schema check
-runs on a bounded part of a document: a widgets array longer than 48 gets its
-count error and shape checks on its first 48 widgets only, the variables array
-and widget drilldowns are read up to one past their limits, and the report counts
-every finding it makes.
+Saves and dry runs read their bodies through one byte budget of 8 MiB shared by all of them.
+The requests that use it are `PUT /api/dashboards/{id}`, with or without `?checks=true`
+(the MCP's writes and the portable import use this route too), and `POST /api/dashboards/validate`.
+Saved-query and provider-config writes do not use it: their bodies are capped at 32 KiB and 16 KiB.
+Each read reserves the bytes it returned. A dry run frees them once its body is read, so
+its response is written holding none. An admitted save frees them after its lock is released,
+and before its check slot is released and its response is written. A refused save, one whose body is
+invalid or whose check slot is taken, frees them before its 400 or 429 is written. A
+stalled upload therefore holds only the bytes it has sent, and it holds no check slot. A
+request whose read cannot reserve waits up to 2 seconds for bytes to free, with at most 16
+requests queued. Past that it gets `429` with `Retry-After: 1` and "too many active dashboard
+uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals_total`,
+labelled `route="save"` or `route="dry_run"`. The counter appears on Insights' own `/metrics`
+endpoint, or over OTLP when telemetry is configured. The chart as it stands does not scrape
+Insights. When `insights.enabled` and `networkPolicy.enabled` are both set (`networkPolicy.enabled`
+defaults to `false`), the Insights NetworkPolicy admits port 8090 only from the API server,
+controller and gateway pods. The chart has no value for an extra ingress rule, so a scrape
+needs a chart change as well as an operator's scrape job. The same is true of
+`paprika_insights_queries_total`.
+
+A principal can fill the budget with stalled uploads. The budget's worth of stalled bytes
+(8 MiB) refuses every save and dry run for up to the server's 10-second `ReadTimeout`, the
+time the stalled uploads take to end. In a test, 32 connections that each sent 256 KiB of a
+larger body (8 MiB in all) got `429` for a dry run and a checked save at 4 seconds, and both
+got `200` at 13 seconds. The principal can repeat it, and each refusal shows in the counter
+above, so watch `route="dry_run"` and `route="save"` together.
+
+Memory under a flood, measured in a 256 MiB container with 0.5 CPU, with the load generator
+in a second container on the same Docker network and 397 KB dry runs (`POST /api/dashboards/validate`)
+or 397 KB bodies to a route that never reads them (`POST /api/nonexistent`). Each run lasted 25 seconds.
+The budget caps the body bytes that saves and dry runs have reserved. At 8 MiB that is about 21
+full reads at once, and the check slots and the waiting queue refuse the rest. A dry run keeps
+its raw bytes through decode after its reservation is released, and its check slot bounds them.
+The budget does not bound kernel memory. Each accepted connection's receive buffer is capped at 8 KiB by the
+listener (`cmd/paprika-insights/listen.go`, Linux doubles it to 16 KiB). The connections that
+a refused request leaves closing still hold their buffers for Go's half-second close delay,
+so their kernel memory grows with the refusal rate, and the page cache is not counted at all.
+
+The residual is measured. Without the listener's bound, the 8 MiB build peaked at 155 to 212 MiB
+of kernel socket memory and was OOM-killed at 768 and 1,024 dry-run workers and at 384 workers
+on the 404 route. With the bound, the same floods peaked at 34 to 73 MiB of socket memory, and
+no run was OOM-killed:
+
+| Route | Workers | Result with the bound | Peak socket memory | `memory.max` events |
+| --- | --- | --- | --- | --- |
+| dry run | 384 | alive | 34 MiB | 0 |
+| dry run | 768 | alive | 51 MiB | 131 |
+| dry run | 1,024 | alive | 55 MiB | 853 |
+| 404 route | 384 | alive | 69 MiB | 0 |
+| 404 route | 768 | alive | 73 MiB | 0 |
+
+Each row is one run. The build without the bound ran the same floods: 384 dry-run workers
+alive (158 MiB of socket memory), 768 workers OOM-killed, 1,024 workers OOM-killed (179 MiB at
+the kill). The 404 route at 384 workers was OOM-killed. An intermediate build that allowed 32 KiB per connection
+was OOM-killed in one of five runs of the 768-worker dry-run flood, so one run per row is a
+sample, not a rate. A `memory.max` event means the kernel reclaimed to hold the container at its
+limit, so a run with events is under pressure without being killed. The table's rows and the
+reruns below are separate runs, so their `memory.max` counts differ.
+
+**Known limit.** An in-network flood of 768 or more concurrent requests can still hold the
+256 MiB pod at its limit. In the review's reruns at this build, 768 dry-run workers peaked at
+256.0 MiB with 192 and 653 `memory.max` events, and 1,024 workers with 397 and 449 events. Nothing
+was OOM-killed, but the pod is at its limit. The kernel socket buffers dominate at that load, so
+the per-connection bound does not cap it. The API proxy transport (`internal/api/insights_proxy.go`)
+sets no `MaxConnsPerHost`, and it has no per-principal limit. The fix belongs upstream, as
+per-principal limits or a connection cap at that proxy. It is not in this change.
+
+The bound has no setting. Turning it off means a code change in `cmd/paprika-insights/listen.go`.
+
+The bound costs latency whenever a round trip is long. Measured at HEAD (with the 8 KiB bound)
+and at the build before it (without the bound), with Insights at 256 MiB and 0.5 CPU and netem
+delay on the client's egress, p50 latency was:
+
+| Request | Client delay | With the bound | Without the bound |
+| --- | --- | --- | --- |
+| 397 KB dry run | none | 9.5 ms | 9.4 ms |
+| 397 KB dry run | +1 ms | 68.8 ms | 20.9 ms |
+| 397 KB dry run | +5 ms | 320 ms | 60 ms |
+| 244 KB save | +1 ms | 43 ms | 8 ms |
+| 244 KB save | +5 ms | 196 ms | 14 ms |
+
+Under a concurrent-upload flood, admitted checked saves fell from 411 to 127 with the bound,
+and `execute: true` dry runs that returned 200 fell from 613 to 466. The bound trades that
+throughput and latency for the memory limit above.
+
+Dry runs and saves with `?checks=true` share four concurrent slots: a dry
+run holds one while it decodes its request and builds its report, and a checked save
+holds one through its lock wait, its check and the build of its response. The
+response is written after the lock and the slot are released, so a client that stops
+reading holds neither. A request that finds them all taken gets `429` with
+`Retry-After: 1`, and a refused dry run decodes nothing. A dry run with `execute`
+releases its slot before its queries run and holds one of four dry-run query slots
+instead, so a slow provider never refuses a checked save. A full pool gets the same
+`429`. The schema check runs on a bounded part of a document: a widgets array longer
+than 48 gets its count error and shape checks on its first 48 widgets only, the
+variables array and widget drilldowns are read up to one past their limits, and the
+report counts every finding it makes.
 
 Stored documents are read without linting, so a dashboard saved before a rule
 existed still loads and renders. Saving it again runs the rules.
@@ -545,6 +630,94 @@ on pod replacement.
 `/metrics` exposes OTel query counters and latency histograms through the existing
 controller-runtime registry. Standard OTEL environment configuration is supported.
 No provider credentials, queries, or user IDs are metric labels.
+
+## Startup quarantine and downgrades
+
+When the store opens, a dashboard or saved query that fails validation no longer
+stops Insights. Startup moves the file to `<data-dir>/quarantine/<kind>/<id>.<unix-nanos>.json`,
+where `<kind>` is `dashboard` or `saved_query`, logs a warning with the kind, id and
+reason, increments `paprika_insights_store_quarantined_total{kind}`, and serves the
+valid documents. The quarantine tree is never read as store entries. A second start
+does not quarantine anything again, because the invalid file has already left the
+store directory. A create with a quarantined id is a new document; the quarantined
+copy is kept and never overwritten.
+
+Startup is two-phase. The loaders only find invalid documents. The process binds its
+listen address first, so a taken or invalid address stops startup before the store is
+read. `NewServer` then finishes the whole startup (the dashboard and saved-query stores,
+and the managed provider configs) and only then moves the invalid documents. Insights
+serves on the listener it bound. A fatal error anywhere earlier leaves every document
+where it was, so the build that can still read them finds them on the next start.
+Documents quarantined by a startup that succeeded stay moved. Rolling forward again
+does not restore them; this build no longer serves them and does not move them back.
+
+Anything that fails validation as this build reads it is quarantined. That includes a
+document a newer build wrote (a newer `schemaVersion`, or a field this build does not
+know) and a document over its size limit. These stay fatal, and nothing moves when
+they occur: a symlink or other non-regular entry in a store directory, an invalid
+file name, a store over its capacity (100 dashboards, 32 MiB of documents, 256 saved
+queries), an I/O error reading a file, a managed provider config this build cannot
+decode (an unknown field or provider type), and a listen address that cannot be bound
+(already in use, or not a valid address).
+
+A quarantine move that fails also stops startup, for example when a file sits where the
+`quarantine` directory belongs. The moves are renames, one document at a time. Documents
+moved before the failure stay in quarantine, and the others stay in the store. Once the
+blocker is removed, a restart moves the rest. It never duplicates a document that already
+moved, because a moved file is no longer in the store directory.
+
+Quarantine is an operator signal, and on `paprika-e2e` the logs are the only one. Nothing
+scrapes Insights there, and the `paprika_insights_store_quarantined_total` counter exists
+only in the process that quarantined the documents. Each quarantined document logs a WARN
+line with its kind, id, reason and new path. A startup that moved anything also logs one
+WARN line, `quarantined invalid stored documents at startup`, with `count`, `kinds` and
+`quarantine_path`. Check the Insights logs after every downgrade and every upgrade:
+
+```sh
+kubectl -n paprika-e2e logs deploy/paprika-e2e-insights | grep quarantined
+```
+
+Then check the quarantine tree after every deploy and after every rollback:
+
+```sh
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  find /var/lib/paprika-insights/quarantine -name '*.json'
+```
+
+To restore a quarantined document, first confirm no current document has the same id.
+Then move the copy back inside the running container, which runs as uid 65532 and
+keeps the file's ownership. A `cp` run as root would leave a file the process cannot
+read. Then restart so the store reloads:
+
+```sh
+# list the copies, then pick one and check the id is free
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  ls /var/lib/paprika-insights /var/lib/paprika-insights/saved-queries
+
+# dashboard
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  mv /var/lib/paprika-insights/quarantine/dashboard/<id>.<unix-nanos>.json /var/lib/paprika-insights/<id>.json
+# saved query
+kubectl -n paprika-e2e exec deploy/paprika-e2e-insights -- \
+  mv /var/lib/paprika-insights/quarantine/saved_query/<id>.<unix-nanos>.json /var/lib/paprika-insights/saved-queries/<id>.json
+
+kubectl -n paprika-e2e rollout restart deploy/paprika-e2e-insights
+```
+
+Do not scale the deployment to zero to restore a file. The volume is ReadWriteOnce
+and no container exists to run `mv` at zero replicas. Moving onto an existing id
+replaces the current document, so check first. If this build still rejects the file,
+it is quarantined again and the log gives the reason; correct the JSON by hand or run
+a build that accepts it. Quarantined copies are never pruned automatically. Delete
+them yourself once they are recovered or no longer needed.
+
+Downgrades: quarantine applies only to builds that include this section. Released
+builds that predate it still refuse to open a store that holds any document they
+cannot validate. A dashboard refusal exits with `open Insights store: invalid saved
+dashboard <id>: ...`, and a saved query refusal with `configure Insights server:
+invalid saved query <id>: ...`. Before rolling back to such a build, restore a
+snapshot of the data directory taken before the upgrade, or remove the newer fields
+from the stored documents.
 
 ## Verification
 
