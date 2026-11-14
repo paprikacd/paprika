@@ -59,14 +59,21 @@ type Server struct {
 	queryBudget   time.Duration
 	queryCount    metric.Int64Counter
 	queryDuration metric.Float64Histogram
-	// checkSlots caps the dry runs and checked saves in flight. Each one parses a
-	// whole document and builds its report, so a burst of them is refused rather
-	// than allowed to grow the heap of a single replica.
+	// checkSlots caps the dry runs and checked saves in flight while they decode
+	// a document and build its report. Each one parses a whole document, so a
+	// burst of them is refused rather than allowed to grow the heap of a replica.
 	checkSlots chan struct{}
+	// dryRunSlots caps the dry runs that execute queries. They hold a check slot
+	// only until their report is built, so provider latency never blocks checked
+	// saves; this pool bounds the executing dry runs on their own.
+	dryRunSlots chan struct{}
 }
 
-// maxActiveDashboardChecks is the number of dry runs and checked saves that may run at once.
+// maxActiveDashboardChecks is the number of dry runs and checked saves that may decode a document at once.
 const maxActiveDashboardChecks = 4
+
+// maxActiveDryRunQueries is the number of dry runs with execute that may run their queries at once.
+const maxActiveDryRunQueries = 4
 
 func NewServer(config Config, store *Store) (*Server, error) {
 	if err := validateServerConfig(&config, store); err != nil {
@@ -87,7 +94,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks)}
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries)}
 	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
 	if err != nil {
 		return nil, fmt.Errorf("create query counter: %w", err)
@@ -451,12 +458,23 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 // admitCheck takes a dry-run or checked-save slot. When every slot is taken it
 // writes the 429 the other Insights endpoints use, with a one-second retry hint.
 func (s *Server) admitCheck(w http.ResponseWriter) (func(), bool) {
+	return admitSlot(s.checkSlots, w, "too many active dashboard checks; retry shortly")
+}
+
+// admitDryRunQuery takes a slot for a dry run's query phase, with the same refusal as admitCheck.
+func (s *Server) admitDryRunQuery(w http.ResponseWriter) (func(), bool) {
+	return admitSlot(s.dryRunSlots, w, "too many active dashboard dry runs with queries; retry shortly")
+}
+
+// admitSlot takes a slot from pool without waiting. A full pool writes the 429 with
+// a one-second retry hint and the message, and reports false.
+func admitSlot(pool chan struct{}, w http.ResponseWriter, message string) (func(), bool) {
 	select {
-	case s.checkSlots <- struct{}{}:
-		return func() { <-s.checkSlots }, true
+	case pool <- struct{}{}:
+		return func() { <-pool }, true
 	default:
 		w.Header().Set("Retry-After", "1")
-		writeError(w, http.StatusTooManyRequests, "too many active dashboard checks; retry shortly")
+		writeError(w, http.StatusTooManyRequests, message)
 		return nil, false
 	}
 }
@@ -516,29 +534,40 @@ type checkRequest struct {
 // checkDashboard is the dry run: it reports what a save would reject and never
 // writes. It reads the same document a PUT takes, and a read-only caller may use it.
 func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
-	release, ok := s.admitCheck(w)
+	request, report, ok := s.decodeCheck(w, r)
 	if !ok {
 		return
+	}
+	if !request.Execute {
+		writeCheckReport(w, 200, report.report())
+		return
+	}
+	s.executeDryRun(w, r, request, report)
+}
+
+// decodeCheck decodes a dry-run request and builds its schema and lint report. It
+// holds a check slot only for that work: the slot is released before any query
+// runs, so a slow provider never keeps a checked save out.
+func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequest, *findingSet, bool) {
+	release, ok := s.admitCheck(w)
+	if !ok {
+		return nil, nil, false
 	}
 	defer release()
 	var request checkRequest
 	if err := decodeBody(w, r, &request, maxCheckRequestBytes); err != nil {
 		writeError(w, 400, "invalid dashboard check request")
-		return
+		return nil, nil, false
 	}
 	if len(request.Document) == 0 {
 		writeError(w, 400, "dashboard document is required")
-		return
+		return nil, nil, false
 	}
-	if !request.Execute {
-		if len(request.Variables) > 0 {
-			writeError(w, 400, "variables apply only when execute is true")
-			return
-		}
-		writeCheckReport(w, 200, s.checkReport(request.Document).report())
-		return
+	if !request.Execute && len(request.Variables) > 0 {
+		writeError(w, 400, "variables apply only when execute is true")
+		return nil, nil, false
 	}
-	s.executeDryRun(w, r, &request)
+	return &request, s.checkReport(request.Document), true
 }
 
 // validationErrorBody is the 400 response to a rejected save. Error keeps the

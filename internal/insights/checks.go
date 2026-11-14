@@ -581,16 +581,21 @@ type dryRunOutcome struct {
 	widgets  []*insightsv1.WidgetDataState
 }
 
-// executeDryRun answers a dry run that asks for execute. A document with a schema
-// or error-severity lint finding is not executed, because it could not be saved;
-// each of its widgets reports not_run. Otherwise every distinct query runs once,
-// through the same path query_dashboard uses, under the same budget.
-func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *checkRequest) {
-	set := s.checkReport(request.Document)
+// executeDryRun answers a dry run that asks for execute. set is the report of the
+// document's schema and lint checks. A document with a schema or error-severity lint
+// finding is not executed, because it could not be saved; each of its widgets reports
+// not_run. Otherwise every distinct query runs once, through the same path
+// query_dashboard uses, under the same budget and a dry-run query slot.
+func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *checkRequest, set *findingSet) {
 	if set.hasErrors() {
 		writeDryRunReport(w, set.report(), notRunStates(request.Document))
 		return
 	}
+	release, ok := s.admitDryRunQuery(w)
+	if !ok {
+		return
+	}
+	defer release()
 	ctx, cancel := context.WithTimeout(r.Context(), dashboardQueryBudget)
 	defer cancel()
 	outcome, err := s.dryRunData(r.WithContext(ctx), request.Document, request.Variables)
