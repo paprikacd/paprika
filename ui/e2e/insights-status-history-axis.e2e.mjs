@@ -67,6 +67,8 @@ try {
     const incident=rows.nth(1).getByRole("button",{name:/Breaching/}); await incident.focus()
     await page.keyboard.press("Enter")
     const tooltip=page.getByRole("tooltip"); await tooltip.waitFor()
+    // The status label can paint after the tooltip itself on a slow runner, so wait for it before reading the text.
+    await tooltip.getByText(/Breaching/).first().waitFor()
     assert.match(await tooltip.innerText(),/Breaching/)
     assert.equal(await tooltip.locator("[data-metric-value]").getAttribute("data-metric-value"),"2")
     await page.keyboard.press("Escape"); await tooltip.waitFor({state:"hidden"})

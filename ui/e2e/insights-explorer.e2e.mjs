@@ -1120,7 +1120,8 @@ try {
       await explorer().getByText("Query saved.", { exact: true }).waitFor()
       const saved = (await api("saved-queries")).document.queries.find(query => query.name === name)
       assert.equal(saved.imageUrl, "/query-cover.svg"); assert.deepEqual(saved.tags, ["production"]); assert.deepEqual(saved.metadata, { team: "platform" })
-      await page.reload({ waitUntil: "networkidle" }); await openExplorer()
+      // The dev server's websocket stays open through the relay, so the page never goes network-idle; openExplorer waits for the UI.
+      await page.reload({ waitUntil: "load" }); await openExplorer()
       const libraryPicker = explorer().getByRole("combobox", { name: "Open saved query", exact: true })
       await libraryPicker.click()
       await page.getByRole("combobox", { name: "Search open saved query", exact: true }).fill("platform")
