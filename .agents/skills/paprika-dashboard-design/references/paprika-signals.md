@@ -29,8 +29,8 @@ defined in Go is missing here or a listed source no longer exists.
 
 Source names are either Prometheus collectors (`internal/metrics/metrics.go`) or
 OpenTelemetry instruments. The OpenTelemetry instruments are in `otel.go`, `fleet.go`,
-`health.go`, `reconcile.go` and `satellite.go`, and the `paprika_insights_*` pair in
-`internal/insights/server.go` is also OpenTelemetry, with underscore names.
+`health.go`, `reconcile.go` and `satellite.go`, and the `paprika_insights_*` instruments in
+`internal/insights/server.go` and `document_budget.go` are also OpenTelemetry, with underscore names.
 The OpenTelemetry names are dotted; the exporter (`otel/exporters/prometheus`
 v0.69) turns them into the Exported name column:
 
@@ -118,6 +118,7 @@ is in the block below the table.
 | `paprika_healthcheck_last_observed_seconds` | `paprika.healthcheck.last_observed` | Gauge | `namespace`, `application`, `check` | Unix timestamp of the last real health check | — | — |
 | `paprika_healthcheck_observations_total` | `paprika.healthcheck.observations` | Counter | `namespace`, `application`, `check`, `result` | Actual health check evaluations; cached reads do not increment this counter | — | — |
 | `paprika_healthcheck_up_ratio` | `paprika.healthcheck.up` | Gauge | `namespace`, `application`, `check` | Latest fresh check: 1 healthy, 0 degraded; absent when stale or unknown | 1 healthy, 0 degraded; absent when stale or unknown (`health.go`) | — |
+| `paprika_insights_dashboard_upload_refusals_total` | `paprika_insights_dashboard_upload_refusals` | Counter | `route` | Dashboard saves and dry runs refused because the request-body budget was full, by route | — | — |
 | `paprika_insights_queries_total` | `paprika_insights_queries` | Counter | `kind`, `outcome`, `provider` | Provider queries by outcome | — | — |
 | `paprika_insights_query_duration_seconds` | `paprika_insights_query_duration_seconds` | Histogram | `kind`, `outcome`, `provider` | Provider query duration | — | — |
 | `paprika_insights_store_quarantined_total` | `paprika_insights_store_quarantined` | Counter | `kind` | Stored dashboards and saved queries moved to quarantine at startup because they failed validation | — | — |

@@ -61,15 +61,30 @@ type Server struct {
 	queryDuration metric.Float64Histogram
 	// checkSlots caps the dry runs and checked saves in flight. A dry run holds its
 	// slot while it decodes its request and builds its report; a checked save holds
-	// it through its lock wait, its check, its write and its response. Each one
-	// parses a whole document, so a burst of them is refused rather than allowed to
-	// grow the heap of a replica. A request body is read before a slot is taken, so
-	// a slow upload holds none.
+	// it through its lock wait, its check and the build of its response, and frees
+	// it before the response is written. Each one parses a whole document, so a
+	// burst of them is refused rather than allowed to grow the heap of a replica.
+	// A request body is read before a check slot is taken, so a slow upload holds
+	// none.
 	checkSlots chan struct{}
 	// dryRunSlots caps the dry runs that execute queries. They hold a check slot
 	// only until their report is built, so provider latency never blocks checked
 	// saves; this pool bounds the executing dry runs on their own.
 	dryRunSlots chan struct{}
+	// documentBytes caps the request-body bytes that saves and dry runs have reserved at
+	// once, at documentBodyBudget. Each read reserves the bytes it returns, before any
+	// check slot is taken, so the reserved bytes of a flood of uploads are at most
+	// documentBodyBudget. A dry run keeps its raw bytes through decode after releasing
+	// its reservation, and its check slot bounds them. The budget does not bound kernel
+	// socket memory (the listener bounds each connection's receive buffer). A stalled
+	// upload holds only the bytes it has sent. A request that cannot reserve waits up to
+	// documentWaitTimeout, and at most cap(documentWaiting) requests may wait at once.
+	documentBytes       *byteBudget
+	documentWaiting     chan struct{}
+	documentWaitTimeout time.Duration
+	// uploadRefusals counts saves and dry runs refused because the body budget was
+	// full, by route.
+	uploadRefusals metric.Int64Counter
 }
 
 // maxActiveDashboardChecks is the number of dry runs and checked saves that may decode a document at once.
@@ -97,26 +112,45 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries)}
-	s.queryCount, err = otel.Meter("paprika").Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
-	if err != nil {
-		return nil, fmt.Errorf("create query counter: %w", err)
+	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
+	if err := s.createInstruments(); err != nil {
+		return nil, err
 	}
-	s.queryDuration, err = otel.Meter("paprika").Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"))
-	if err != nil {
-		return nil, fmt.Errorf("create query duration histogram: %w", err)
+	// Only a startup that has succeeded may move documents out of the stores, so the instruments come first.
+	if err := commitStartupQuarantine(store, savedQueries); err != nil {
+		return nil, err
 	}
-	// Only a startup that has succeeded may move documents out of the stores. The counts are read first because
-	// each commit drops documents from its pending list as it moves them.
+	return s, nil
+}
+
+// createInstruments creates the Insights metrics instruments.
+func (s *Server) createInstruments() error {
+	meter := otel.Meter("paprika")
+	var err error
+	s.queryCount, err = meter.Int64Counter("paprika_insights_queries", metric.WithDescription("Provider queries by outcome"))
+	if err != nil {
+		return fmt.Errorf("create query counter: %w", err)
+	}
+	s.queryDuration, err = meter.Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"))
+	if err != nil {
+		return fmt.Errorf("create query duration histogram: %w", err)
+	}
+	s.uploadRefusals, err = newUploadRefusalCounter(meter)
+	return err
+}
+
+// commitStartupQuarantine moves the documents the stores could not read into quarantine. The counts are read first
+// because each commit drops documents from its pending list as it moves them.
+func commitStartupQuarantine(store *Store, savedQueries *savedQueryStore) error {
 	dashboardsQuarantined, savedQueriesQuarantined := len(store.quarantine), len(savedQueries.quarantine)
 	if err := store.commitQuarantine(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := savedQueries.commitQuarantine(); err != nil {
-		return nil, err
+		return err
 	}
 	logQuarantineSummary(store.dir, dashboardsQuarantined, savedQueriesQuarantined)
-	return s, nil
+	return nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -430,29 +464,49 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
-	// The body is read before a check slot is taken, so a stalled upload holds no
-	// slot. The slot covers the rest of a checked save: the lock wait, the check,
-	// the write and the response.
+	// The body counts against the body budget while it is read and while an admitted
+	// save needs the document. An admitted save frees the budget after its lock and check
+	// slot are released and before its response is written. A refused save frees it before
+	// its refusal is written. A stalled upload holds only the bytes it has sent, and no
+	// check slot, because the slot is taken after the body is read.
+	body := s.budgetBody(r)
+	defer body.release()
 	var doc json.RawMessage
 	if err := decodeBody(w, r, &doc, maxDocumentBytes); err != nil {
-		writeError(w, 400, "invalid dashboard document")
+		body.release()
+		s.writeBodyError(w, body, uploadRouteSave, "invalid dashboard document")
 		return
 	}
-	if wantsChecks(r) {
-		release, ok := s.admitCheck(w)
-		if !ok {
+	checks := wantsChecks(r)
+	releaseCheck := func() {}
+	if checks {
+		releaseSlot, slotOK := s.admitCheck(w, body.release)
+		if !slotOK {
 			return
 		}
-		defer release()
+		releaseCheck = releaseSlot
 	}
+	s.saveDashboard(r, doc, checks, func() {
+		body.release()
+		releaseCheck()
+	}).replay(w)
+}
+
+// saveDashboard runs a save under the mutation lock and returns its response
+// unwritten. The whole check runs under the lock, for two reasons. The stored
+// version must be read in the same critical section as the write, so the overlap
+// check and the write see the same dashboard. And unchecked saves are not capped
+// by the check slots: the lock is what runs their validation one document at a
+// time, which bounds their memory. Moving the schema pass out of the lock needs
+// every array a document can make large bounded first, so it stays here until
+// then. A save of a valid dashboard takes well under a millisecond under it.
+//
+// release frees the check slot and the body budget. It runs after the lock is
+// released, and before the caller writes the response.
+func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool, release func()) *bufferedResponse {
+	defer release()
+	out := &bufferedResponse{}
 	id := r.PathValue("id")
-	// The whole check runs under the mutation lock, for two reasons. The stored
-	// version must be read in the same critical section as the write, so the overlap
-	// check and the write see the same dashboard. And unchecked saves are not capped
-	// by the check slots: the lock is what runs their validation one document at a
-	// time, which bounds their memory. Moving the schema pass out of the lock needs
-	// every array a document can make large bounded first, so it stays here until
-	// then. A save of a valid dashboard takes well under a millisecond under it.
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
 	// Schema findings and error-severity lint findings reject the save. Warnings
@@ -460,40 +514,47 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	// the stored version already has is a warning, so it does not reject the save.
 	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues)
 	if findings.hasErrors() {
-		writeSchemaFindings(w, findings)
-		return
+		writeSchemaFindings(out, findings)
+		return out
 	}
 	tag, err := s.store.Put(id, doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
 	if err != nil {
-		storeError(w, err)
-		return
+		storeError(out, err)
+		return out
 	}
-	setDocumentETag(w, tag)
-	if wantsChecks(r) {
-		writeSavedDocument(w, 200, doc, findings)
-		return
+	setDocumentETag(out, tag)
+	if checks {
+		writeSavedDocument(out, 200, doc, findings)
+		return out
 	}
-	writeJSON(w, 200, doc)
+	writeJSON(out, 200, doc)
+	return out
 }
 
 // admitCheck takes a dry-run or checked-save slot. When every slot is taken it
-// writes the 429 the other Insights endpoints use, with a one-second retry hint.
-func (s *Server) admitCheck(w http.ResponseWriter) (func(), bool) {
-	return admitSlot(s.checkSlots, w, "too many active dashboard checks; retry shortly")
+// calls beforeRefusal, if set, and then writes the 429 the other Insights endpoints
+// use, with a one-second retry hint. A save passes its body's release, so a refused
+// save holds no body bytes while its refusal is written.
+func (s *Server) admitCheck(w http.ResponseWriter, beforeRefusal func()) (func(), bool) {
+	return admitSlot(s.checkSlots, w, "too many active dashboard checks; retry shortly", beforeRefusal)
 }
 
 // admitDryRunQuery takes a slot for a dry run's query phase, with the same refusal as admitCheck.
 func (s *Server) admitDryRunQuery(w http.ResponseWriter) (func(), bool) {
-	return admitSlot(s.dryRunSlots, w, "too many active dashboard dry runs with queries; retry shortly")
+	return admitSlot(s.dryRunSlots, w, "too many active dashboard dry runs with queries; retry shortly", nil)
 }
 
-// admitSlot takes a slot from pool without waiting. A full pool writes the 429 with
-// a one-second retry hint and the message, and reports false.
-func admitSlot(pool chan struct{}, w http.ResponseWriter, message string) (func(), bool) {
+// admitSlot takes a slot from pool without waiting. A full pool calls beforeRefusal,
+// if set, and writes the 429 with a one-second retry hint and the message, and reports
+// false.
+func admitSlot(pool chan struct{}, w http.ResponseWriter, message string, beforeRefusal func()) (func(), bool) {
 	select {
 	case pool <- struct{}{}:
 		return func() { <-pool }, true
 	default:
+		if beforeRefusal != nil {
+			beforeRefusal()
+		}
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, message)
 		return nil, false
@@ -573,16 +634,19 @@ func (s *Server) checkDashboard(w http.ResponseWriter, r *http.Request) {
 // The slot is released before any query runs, so a slow provider never keeps a
 // checked save out.
 func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequest, *findingSet, bool) {
+	body := s.budgetBody(r)
+	defer body.release()
 	raw, err := readBody(w, r, maxCheckRequestBytes)
+	body.release()
 	if err != nil {
-		writeError(w, 400, "invalid dashboard check request")
+		s.writeBodyError(w, body, uploadRouteDryRun, "invalid dashboard check request")
 		return nil, nil, false
 	}
-	release, ok := s.admitCheck(w)
+	releaseCheck, ok := s.admitCheck(w, nil)
 	if !ok {
 		return nil, nil, false
 	}
-	defer release()
+	defer releaseCheck()
 	var request checkRequest
 	if err := decodeJSON(bytes.NewReader(raw), &request); err != nil {
 		writeError(w, 400, "invalid dashboard check request")
@@ -642,13 +706,21 @@ func writeCheckReport(w http.ResponseWriter, status int, report *insightsv1.Chec
 }
 
 func (s *Server) deleteDashboard(w http.ResponseWriter, r *http.Request) {
+	s.deleteDashboardLocked(r.PathValue("id"), r.Header.Get("If-Match")).replay(w)
+}
+
+// deleteDashboardLocked deletes under the mutation lock and returns the response
+// unwritten, so the write happens after the lock is released.
+func (s *Server) deleteDashboardLocked(id, ifMatch string) *bufferedResponse {
+	out := &bufferedResponse{}
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
-	if err := s.store.Delete(r.PathValue("id"), r.Header.Get("If-Match")); err != nil {
-		storeError(w, err)
-		return
+	if err := s.store.Delete(id, ifMatch); err != nil {
+		storeError(out, err)
+		return out
 	}
-	w.WriteHeader(http.StatusNoContent)
+	out.WriteHeader(http.StatusNoContent)
+	return out
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, v any, limit int64) error {

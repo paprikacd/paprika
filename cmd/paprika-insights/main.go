@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/insights"
+	"github.com/benebsworth/paprika/internal/memlimit"
 	"github.com/benebsworth/paprika/internal/observability"
 )
 
@@ -32,6 +33,7 @@ func main() {
 }
 
 func run() error {
+	memlimit.Apply(slog.Info)
 	listen := flag.String("listen", "127.0.0.1:8090", "HTTP address (use :8090 in Kubernetes)")
 	dataDir := flag.String("data-dir", "./data/insights", "Persistent dashboard directory; one service replica only")
 	providersFile := flag.String("providers", "", "Path to provider configuration JSON")
@@ -73,8 +75,8 @@ func run() error {
 // every stored document is still in place. The store then opens, and NewServer commits the quarantine moves only once
 // the whole startup has succeeded. The caller serves on the returned listener.
 func openService(listen, dataDir string, cfg insights.Config) (*insights.Server, net.Listener, error) {
-	var lc net.ListenConfig
-	listener, err := lc.Listen(context.Background(), "tcp", listen)
+	// listenInsights bounds each accepted connection's receive buffer (see listen.go).
+	listener, err := listenInsights(context.Background(), listen)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen Insights: %w", err)
 	}

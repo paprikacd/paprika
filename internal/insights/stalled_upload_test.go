@@ -27,14 +27,16 @@ func (s *signalReader) Read(p []byte) (int, error) {
 	return s.r.Read(p)
 }
 
-// Stalled uploads hold no check slot. Each request sends its headers and the start
-// of a body, then the body never finishes. Twice the slot count of them run first,
-// and a normal dry run and a checked save must still succeed.
+// Stalled uploads hold no check slot and only the bytes they sent. Each request sends
+// its headers and the start of a body, then the body never finishes. There are more
+// of them than the waiting queue and the old eight-slot read pool ever admitted, so
+// a flood of them must not refuse a normal dry run or a checked save.
 func TestStalledUploadsHoldNoCheckSlot(t *testing.T) {
 	s, _ := testService(t)
 	h := s.Handler()
 	document := dashboard("demo", "Clean")
-	const stalled = 2 * maxActiveDashboardChecks
+	const stalled = 24
+	const prefix = `{"document":{"schemaVersion":1,`
 	var handlers sync.WaitGroup
 	writers := make([]*io.PipeWriter, 0, stalled)
 	t.Cleanup(func() {
@@ -60,7 +62,7 @@ func TestStalledUploadsHoldNoCheckSlot(t *testing.T) {
 		r := httptest.NewRequestWithContext(t.Context(), method, path, &signalReader{r: pr, started: signal})
 		r.Header.Set("Authorization", "Bearer "+testToken)
 		r.Header.Set("Content-Type", "application/json")
-		go func() { _, _ = pw.Write([]byte(`{"document":{"schemaVersion":1,`)) }()
+		go func() { _, _ = pw.Write([]byte(prefix)) }()
 		handlers.Add(1)
 		go func() {
 			defer handlers.Done()
@@ -87,6 +89,8 @@ func TestStalledUploadsHoldNoCheckSlot(t *testing.T) {
 		}
 	}
 	require.Zero(t, len(s.checkSlots), "stalled uploads hold no check slot")
+	require.Eventually(t, func() bool { return s.documentBytes.inUse() == int64(stalled*len(prefix)) }, 5*time.Second, time.Millisecond,
+		"each stalled upload holds exactly the bytes it sent: %d", s.documentBytes.inUse())
 
 	dry := request(t, h, "POST", "/api/dashboards/validate", checkBody(document), nil)
 	require.Equal(t, 200, dry.Code, "a normal dry run is not refused behind stalled uploads: %s", dry.Body)
@@ -135,5 +139,61 @@ func TestRefusedMaxSizeVariablesAllocateAboutTheirSize(t *testing.T) {
 	}
 	for range cap(s.checkSlots) {
 		<-s.checkSlots
+	}
+}
+
+// The budget counts bytes that have arrived. With room for one stalled prefix, a second
+// stalled upload waits for bytes that never free, is refused with the usual 429 once
+// its wait ends, and leaves the first upload's bytes as the only ones held.
+func TestBodyBudgetRefusesAStalledUploadThatCannotReserve(t *testing.T) {
+	s, _ := testService(t)
+	s.documentWaitTimeout = 50 * time.Millisecond
+	h := s.Handler()
+	const prefix = `{"document":{"schemaVersion":1,`
+	s.documentBytes = newByteBudget(int64(len(prefix)) + 8)
+	var handlers sync.WaitGroup
+	writers := make([]*io.PipeWriter, 0, 2)
+	t.Cleanup(func() {
+		for _, pw := range writers {
+			_ = pw.CloseWithError(errors.New("test over"))
+		}
+		handlers.Wait()
+	})
+	start := func(signal chan struct{}) (*httptest.ResponseRecorder, chan struct{}) {
+		pr, pw := io.Pipe()
+		writers = append(writers, pw)
+		go func() { _, _ = pw.Write([]byte(prefix)) }()
+		r := httptest.NewRequestWithContext(t.Context(), "POST", "/api/dashboards/validate", &signalReader{r: pr, started: signal})
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		done := make(chan struct{})
+		handlers.Add(1)
+		go func() {
+			defer handlers.Done()
+			h.ServeHTTP(w, r)
+			close(done)
+		}()
+		return w, done
+	}
+	first := make(chan struct{})
+	_, firstDone := start(first)
+	<-first
+	require.Eventually(t, func() bool { return s.documentBytes.inUse() == int64(len(prefix)) }, 5*time.Second, time.Millisecond)
+
+	second := make(chan struct{})
+	refused, secondDone := start(second)
+	select {
+	case <-secondDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the second upload was neither admitted nor refused")
+	}
+	require.Equal(t, http.StatusTooManyRequests, refused.Code, "%s", refused.Body)
+	require.Equal(t, "1", refused.Header().Get("Retry-After"))
+	require.Equal(t, int64(len(prefix)), s.documentBytes.inUse(), "a refused upload leaves only the first upload's bytes held")
+	select {
+	case <-firstDone:
+		t.Fatal("the first upload returned before its body finished")
+	default:
 	}
 }
