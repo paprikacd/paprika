@@ -368,6 +368,16 @@ async function stateAssertions(page, state) {
           const colors = await cells.evaluateAll(elements => elements.map(element => ({ foreground: getComputedStyle(element).color, background: getComputedStyle(element).backgroundColor })))
           for (const colorset of colors) assert.ok(colorContrast(colorset.foreground, colorset.background) >= 4.5, `Automatic heatmap label color must meet 4.5:1 contrast: ${JSON.stringify(colorset)}`)
         }
+        // A value never wraps or overflows its cell: every child box must sit inside the cell box, in every state.
+        const overflows = await cells.evaluateAll(elements => elements.flatMap((cell, index) => {
+          const box = cell.getBoundingClientRect()
+          return [...cell.children].flatMap(child => {
+            const rect = child.getBoundingClientRect()
+            const outside = rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5
+            return outside ? [{ index, text: child.textContent, cell: [box.top, box.bottom].map(Math.round), box: [rect.top, rect.bottom].map(Math.round) }] : []
+          })
+        }))
+        assert.deepEqual(overflows, [], `Heatmap cell children must stay inside their cell at ${page.viewportSize().width}px (${state})`)
         if (["null", "tail-null"].includes(state)) assert.match(await cells.first().getAttribute("aria-label"), /No data/)
         if (state === "zero") assert.match(await cells.first().getAttribute("aria-label"), /0\.00 req\/s.*At zero/)
         if (state === "negative") assert.match(await cells.first().getAttribute("aria-label"), /-12\.50 req\/s.*Below target/)
@@ -758,7 +768,7 @@ try {
     await context.close()
   }
   if (!inspectOnly && !detailsOnly) {
-    for (const width of [1512, 390]) for (const state of ["empty", "error", "zero", "negative", "null", "tail-null", "bounded"]) {
+    for (const width of [1512, 768, 390]) for (const state of ["empty", "error", "zero", "negative", "null", "tail-null", "bounded"]) {
       const { page, context } = await openFixture(state, width)
       await check(`${state} ${width}px geometry`, () => geometry(page, width), { viewport: width, state })
       await stateAssertions(page, state)

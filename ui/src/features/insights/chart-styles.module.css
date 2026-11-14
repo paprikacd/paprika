@@ -34,6 +34,7 @@
   padding: 10px;
   min-height: 64px;
   min-width: 0;
+  container-type: inline-size;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -76,10 +77,18 @@
   opacity: 1;
 }
 .cell strong {
-  font-size: 21px;
+  /* A value stays on one line and scales with its cell. The 10px floor keeps it readable; ellipsis is the last resort,
+     and the full value stays in the cell's aria-label and tooltip. */
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  font-size: clamp(10px, 14cqi, var(--heatmap-value-size, 21px));
   line-height: 1.1;
   font-weight: 570;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .thresholdLegend {
   display: flex;
@@ -425,7 +434,7 @@
     padding: 0;
   }
   .cell strong {
-    font-size: 17px;
+    --heatmap-value-size: 17px;
   }
   .thresholdLegend {
     max-height: 26px;
