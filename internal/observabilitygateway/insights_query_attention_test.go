@@ -29,7 +29,7 @@ func TestDashboardAttentionLeadsTheTextAndCountsDeclaredStatusesOnly(t *testing.
 	require.Equal(t, "Attention: 1 critical, 1 failed, 1 stale; 2 of 4 widgets checked. Declared statuses, failures and staleness only; not a health verdict.", lines[0])
 	require.Equal(t, `Attention widgets: "burn" critical in window; "boom" failed; "cold" stale`, lines[1], "a time series counts its breaches in the window, and the text says so when the newest sample is not critical")
 	require.Contains(t, text, `Dashboard "reliability": partial.`)
-	require.Contains(t, text, `widget "burn" breaches: "critical" in window: intervals=0, merged=0 ms, samples=1; "warning" in window: intervals=1, merged=1000 ms, samples=0; latest sample: "warning" now; [series 0 "a" "warning" 1000-2000 ms] [series 1 "b" "critical" 3000-3000 ms] (4 more intervals in structuredContent)`)
+	require.Contains(t, text, `widget "burn" breaches: "critical" in window: intervals=0, merged=0 ms, samples=1; "warning" in window: intervals=1, merged=1000 ms, samples=0; latest sample: "warning" now; [series 0 "a" "warning" 1000-2000 ms] [series 1 "b" "critical" 3000-3000 ms] (4 not listed)`)
 	require.Contains(t, text, `widget "grid": configured visual band="matched"; boundary=2; status="warning"; label="Degraded"; series=3 name="svc-3"; evaluated=3 omitted=2`)
 	require.Contains(t, text, `widget "cold": returned sample freshness=stale (threshold 300s, age 900s)`)
 	require.NotContains(t, text, `widget "burn": returned sample freshness`, "an unjudged age is not described in text")
