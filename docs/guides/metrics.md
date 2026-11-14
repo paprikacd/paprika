@@ -231,7 +231,8 @@ are illustrations, not shipped rules.
 
 Counters are created on their first increment, so a bare `increase()` misses
 that first event. The phase alerts below pair `increase()` with a check for a
-series that appeared within the last five minutes. The other `increase()`
+series with no sample in the hour before the last five minutes, or only samples
+from an earlier process, and a rise above that history. The other `increase()`
 examples in the Info, Warning and Drift sections do not, and can miss a first
 error or first prune. Current state comes from the `*_by_phase_ratio` gauges.
 
@@ -246,7 +247,13 @@ groups:
         expr: |
           increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
           or
-          paprika_release_phase_total{phase="Failed"} unless paprika_release_phase_total{phase="Failed"} offset 5m
+          paprika_release_phase_total{phase="Failed"} unless (
+            last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
+            unless
+            last_over_time(timestamp(paprika_release_phase_total{phase="Failed"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
+          )
+          or
+          paprika_release_phase_total{phase="Failed"} > last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
         for: 1m
         labels:
           severity: critical
@@ -285,7 +292,13 @@ groups:
         expr: |
           increase(paprika_application_phase_total{phase="RolledBack"}[5m]) > 0
           or
-          paprika_application_phase_total{phase="RolledBack"} unless paprika_application_phase_total{phase="RolledBack"} offset 5m
+          paprika_application_phase_total{phase="RolledBack"} unless (
+            last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+            unless
+            last_over_time(timestamp(paprika_application_phase_total{phase="RolledBack"})[1h:30s] offset 5m) < on (instance, pod) group_left () process_start_time_seconds
+          )
+          or
+          paprika_application_phase_total{phase="RolledBack"} > last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
         for: 1m
         labels:
           severity: warning
