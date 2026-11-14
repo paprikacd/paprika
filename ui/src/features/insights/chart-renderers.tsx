@@ -21,7 +21,7 @@ import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
 import { formatReading, formatSharedScale, joinReading } from "./units";
-import { heatmapValueEm } from "./heatmap-value-width";
+import { heatmapValueEm, heatmapValueGlyphs, useHeatmapValueFit } from "./heatmap-value-width";
 export {
   downsamplePoints,
   latestPoint,
@@ -831,6 +831,9 @@ export function Heatmap({
       ? new Date(selected.point.timestamp).toISOString()
       : undefined;
   const hasText = options.showLabels !== false || options.showValues !== false;
+  // One value text per cell feeds the visible text, its width and both accessible names, so they cannot drift apart.
+  const valueTexts = cells.map((cell) => heatmapValueText(cell.value, widget.unit, options.decimals));
+  useHeatmapValueFit(cellsRef, valueTexts.join("\u0000"));
   return (
     <div className={configStyles.heatmap}>
       <div
@@ -847,9 +850,8 @@ export function Heatmap({
             cell.value === undefined
               ? undefined
               : thresholdForValue(cell.value, thresholds);
-          // One value text feeds the visible text, its width and both accessible names, so they cannot drift apart.
-          const valueText = heatmapValueText(cell.value, widget.unit, options.decimals);
-          const valueStyle = { "--value-em": heatmapValueEm(valueText) } as CSSProperties;
+          const valueText = valueTexts[index];
+          const valueStyle = { "--value-em": heatmapValueEm(valueText), "--value-glyphs": heatmapValueGlyphs(valueText) } as CSSProperties;
           const label = `${cell.name}: ${valueText}${threshold?.label ? ` · ${threshold.label}` : ""}`;
           if (embedded)
             return (
@@ -872,7 +874,7 @@ export function Heatmap({
                   <span className={configStyles.cellName}>{cell.name}</span>
                 )}
                 {options.showValues !== false && (
-                  <strong style={valueStyle}>{valueText}</strong>
+                  <strong data-heatmap-value="" style={valueStyle}>{valueText}</strong>
                 )}
               </div>
             );
@@ -962,7 +964,7 @@ export function Heatmap({
                 <span className={configStyles.cellName}>{cell.name}</span>
               )}
               {options.showValues !== false && (
-                <strong style={valueStyle}>{valueText}</strong>
+                <strong data-heatmap-value="" style={valueStyle}>{valueText}</strong>
               )}
             </button>
           );

@@ -769,22 +769,26 @@ async function heatmapFitAudit(width) {
       await page.locator(`[data-widget-id="${widget.id}"]`).scrollIntoViewIfNeeded()
       await page.locator(`[data-widget-id="${widget.id}"] [data-heatmap-cell] strong`).first().waitFor()
       const values = await page.locator(`[data-widget-id="${widget.id}"] [data-heatmap-cell] strong`).evaluateAll(strongs => strongs.map(strong => {
-        const ellipsized = strong.scrollWidth > strong.clientWidth + 0.5
-        // Fractional widths: scrollWidth and clientWidth are whole pixels, so a value that is 0.4px too wide at 10px would
-        // otherwise pass as fitting.
-        let fitsAt10 = null
+        // scrollWidth and clientWidth are whole pixels, so they cannot see a fraction of a pixel of overflow (Chromium
+        // still draws the ellipsis for 0.1px). Each value's natural width is measured in fractional pixels with a hidden
+        // clone of the same text and font, at its computed size and at the 10px floor.
+        const style = getComputedStyle(strong)
+        const size = parseFloat(style.fontSize)
         const box = strong.getBoundingClientRect().width
-        if (ellipsized) {
+        const naturalAt = px => {
           const probe = strong.cloneNode(false)
           probe.removeAttribute("style")
           probe.textContent = strong.textContent
-          Object.assign(probe.style, { position: "absolute", visibility: "hidden", fontSize: "10px", maxWidth: "none", width: "auto", display: "inline-block", overflow: "visible" })
+          Object.assign(probe.style, { position: "absolute", visibility: "hidden", fontSize: `${px}px`, maxWidth: "none", width: "auto", display: "inline-block", overflow: "visible" })
           strong.parentElement.appendChild(probe)
-          const natural = probe.getBoundingClientRect().width
+          const width = probe.getBoundingClientRect().width
           probe.remove()
-          fitsAt10 = natural > 0 && natural <= box + 0.05
+          return width
         }
-        return { text: strong.textContent, width: box, size: parseFloat(getComputedStyle(strong).fontSize), ellipsized, fitsAt10 }
+        const natural = naturalAt(size)
+        const natural10 = naturalAt(10)
+        const ellipsized = natural > box + 0.01
+        return { text: strong.textContent, width: box, size, natural, natural10, ellipsized, fitsAt10: natural10 <= box + 0.01 }
       }))
       counts.values += values.length
       counts.ellipsized += values.filter(value => value.ellipsized).length

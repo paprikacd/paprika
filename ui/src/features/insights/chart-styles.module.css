@@ -85,9 +85,12 @@
   min-width: 0;
   max-width: 100%;
   /* --value-em is the value's measured width in em (heatmap-value-width.ts). Dividing the cell's width by it fills the
-     cell exactly, so a short value keeps the 21px ceiling and a long one shrinks to the 10px floor before it ellipsizes. */
+     cell, so a short value keeps the 21px ceiling and a long one shrinks toward the 10px floor before it ellipsizes.
+     Browsers that round each glyph advance to whole pixels (Linux at DPR 1) run wider than the fractional sum, so
+     --value-glyphs reserves half a pixel per glyph before dividing. The measured fit in heatmap-value-width.ts corrects
+     whatever the estimate still gets wrong. */
   flex-shrink: 0;
-  font-size: clamp(10px, calc(100cqi / var(--value-em, 4)), var(--heatmap-value-size, 21px));
+  font-size: clamp(10px, calc((100cqi - var(--value-glyphs, 0) * 0.5px) / var(--value-em, 4)), var(--heatmap-value-size, 21px));
   line-height: 1.1;
   font-weight: 570;
   font-variant-numeric: tabular-nums;

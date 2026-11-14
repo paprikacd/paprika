@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heatmapValueEm } from "./heatmap-value-width";
+import { heatmapValueEm, heatmapValueGlyphs } from "./heatmap-value-width";
 
 // Widths measured in Chromium with the heatmap's own font (Barlow 570, tabular figures) at 10px, as the box width in px.
 const MEASURED_AT_10PX: Array<[text: string, width: number]> = [
@@ -36,8 +36,19 @@ describe("heatmapValueEm", () => {
     expect(heatmapValueEm("1 mm")).toBeGreaterThan(heatmapValueEm("1 ms"));
   });
 
-  it("charges an unknown character the widest measured glyph, and an empty value one em", () => {
-    expect(heatmapValueEm("é")).toBeGreaterThanOrEqual(0.967);
+  it("charges an unknown character 1.35em, so authored CJK and emoji units fit the browser's width", () => {
+    // "-12.5 🚀" measured 59.9px at 16.03px in Chromium on macOS, which is 3.74em.
+    expect(heatmapValueEm("-12.5 🚀")).toBeGreaterThanOrEqual(3.74);
+    // A CJK unit is about 1em in the fallback font.
+    expect(heatmapValueEm("12 件/秒")).toBeGreaterThanOrEqual(heatmapValueEm("12 ") + 2 * 1);
     expect(heatmapValueEm("")).toBe(1);
+  });
+});
+
+describe("heatmapValueGlyphs", () => {
+  it("counts code points, so an emoji or CJK character is one glyph", () => {
+    expect(heatmapValueGlyphs("42.57 req/s")).toBe(11);
+    expect(heatmapValueGlyphs("🚀")).toBe(1);
+    expect(heatmapValueGlyphs("件")).toBe(1);
   });
 });
