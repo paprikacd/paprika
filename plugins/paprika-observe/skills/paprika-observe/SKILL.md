@@ -64,7 +64,7 @@ IDs here are placeholders; run the steps in order.
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a
    failed query or stale data. Stat, gauge, status-view and heatmap widgets with a band report
    `threshold`; time series report `breaches`; metric widgets report `sample` freshness.
-   Under the 128 KiB result cap, optional detail can be omitted; `omitted` names what was dropped,
+   Under the 130 KiB result cap, optional detail can be omitted; `omitted` names what was dropped,
    and `widget_ids` narrows the query to get it back.
    `state` describes data availability, never service health or SLO compliance. An
    unavailable provider is not zero traffic. Overrides apply only to this call, never to saved defaults.

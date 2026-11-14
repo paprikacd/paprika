@@ -29,7 +29,7 @@ const (
 
 // dashboardBreachBudget bounds the breach intervals listed across one dashboard result.
 // Each widget keeps at most breachIntervalsPerLevel intervals per level; a large selection
-// keeps fewer, so the structured result is more likely to fit its 128 KiB cap unaided.
+// keeps fewer, so the structured result is more likely to fit its 130 KiB cap unaided.
 const dashboardBreachBudget = 96
 
 // dashboardPluginConfig is the part of a plugin's config that decides which series are drawn.

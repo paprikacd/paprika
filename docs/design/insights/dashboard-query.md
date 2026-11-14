@@ -33,13 +33,13 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
 | `variables` | Saved defaults with this call's declared overrides applied |
-| `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the `freshness` object where an explicit option judges it (a stat's is the first contract's), breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; `sample`, `freshness`, `bandSeries` and the listed intervals may be omitted under the result cap (see `omitted`); saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
+| `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the `freshness` object where an explicit option judges it (a stat's is the first contract's), breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; under the result cap the listed breach intervals, each widget's whole `breaches` object, each multi-series `bandSeries` object, and `sample` may be omitted (see `omitted`). Only a time series' `freshness` can be dropped; a stat's `freshness` is never dropped; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
 | `signals` | Deduplicated query results, indexed by `q1`, `q2`, …; each identifies the query kind and, when provider lookup is authorized, its resolved provider ID |
 | `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided |
 | `state` | `ok`, `empty` or `partial`; availability, not service health |
 | `attention` | Dashboard-level count of widgets that need attention, with `checked` and the `basis` it counts; see below. Not a health verdict. Optional on the wire, so an older client's schema still accepts the result |
-| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 128 KiB: `breachIntervals`, `breaches`, `bandSeries`, `sample`. Absent when nothing was dropped. The step definitions are under Omitted detail below. Facts that no step drops are listed there too; a result whose never-dropped facts alone exceed 128 KiB is refused with 413, and `omitted` is never present on a refusal |
+| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 130 KiB: `breachIntervals`, `breaches`, `bandSeries`, `sample`. Absent when nothing was dropped. The step definitions are under Omitted detail below. Facts that no step drops are listed there too; a result whose never-dropped facts alone exceed 130 KiB is refused with 413, and `omitted` is never present on a refusal |
 
 ### Compatibility
 
@@ -61,14 +61,20 @@ this release added is dropped under the cap, and `omitted` names `sample` when i
 The exception is the cap. The per-widget `attention`, the top-level `attention` and
 `omitted` are new, and no step of the omission ladder drops them, so they are never
 released to make room. At 48 widgets they add about 1.2 KB: 960 bytes of per-widget
-attention, 201 of top-level attention and 21 of `omitted`, measured as the difference
-between 7fe8ccca and this release on a colour-only time-series dashboard. A result
-within about 1.2 KB of the cap at 7fe8ccca can therefore now be refused with 413. For
-example, a 48-widget dashboard of mixed stats and time series with nine raw
-kube-state labels per series, colour-only thresholds and every metric widget stale
-returns 200 at 130,194 bytes on 7fe8ccca and is refused at this release.
-The never-dropped facts are listed under Omitted detail. Against the live
-5f595164 deployment nothing regresses: the dashboards measured here are refused there too.
+attention, 201 of top-level attention and 21 of `omitted`. The first two figures are
+measured on a colour-only time-series dashboard. The 960 bytes of per-widget attention
+is about 20 bytes per widget, and a dashboard has at most 48 widgets, so the increase
+is bounded by about 1.2 KB. That colour-only dashboard encodes to 130,687 bytes on
+7fe8ccca and to 131,868 bytes now, a difference of 1,181 bytes.
+
+Decision: the cap is 130 KiB (133,120 bytes), up from 128 KiB, in both
+`DashboardQueryResponseBytes` and the gateway's read limit, which must stay equal. The
+2 KiB increase covers the 1.2 KB bound above, so by that arithmetic a result that fit
+the 128 KiB cap on 7fe8ccca still fits; the two reviewed dashboards are the measured
+checks. Per-widget attention stays, because it is the summary
+agents read. The alternative, dropping per-widget attention to fit the 128 KiB cap,
+was rejected. The reviewed dashboards under this decision are in Omitted detail below.
+The never-dropped facts are listed there too.
 
 ### Attention summary
 
@@ -170,7 +176,7 @@ Up to 12 series are evaluated; `seriesEvaluated` and `seriesOmitted` say which.
 widget. The caps are per level, so one critical interval is never crowded out by
 later warning flaps. A dashboard-wide budget (96 listed intervals) lowers the
 per-widget count when many widgets are selected, which makes the structured result
-more likely to fit its 128 KiB cap before any omission; `intervalsOmitted` counts
+more likely to fit its 130 KiB cap before any omission; `intervalsOmitted` counts
 every interval not listed.
 When the encoded result still exceeds the cap, the listed intervals are the first
 detail omitted (see Omitted detail below).
@@ -185,7 +191,7 @@ window. Only `latestLevel` describes the current sample. A failed signal reports
 warning or critical status reports no `breaches`.
 
 Omitted detail. The structured result is budgeted against its encoded size. When it
-would exceed 128 KiB, optional detail is dropped in this fixed order, and each step
+would exceed 130 KiB, optional detail is dropped in this fixed order, and each step
 runs only if the result still does not fit: (1) `breachIntervals`, the listed breach
 intervals and their series names, with their count moved into `intervalsOmitted`;
 (2) `breaches`, each widget's whole breach object, which includes its window
@@ -215,23 +221,24 @@ per-widget `attention`, and the first-contract `freshness` of a stat. A stale
 are computed before any step and never change.
 
 A selection whose never-dropped facts still exceed the cap after every step is refused
-with 413. The reviewed dashboards below are refused on the current ladder; each has 48
-widgets, three series per widget and nine raw kube-state labels per series:
+with 413. The reviewed dashboards below each have 48 widgets, three series per widget and
+nine raw kube-state labels per series. Both fit the 130 KiB cap after the ladder, and
+the ladder runs only the steps that remove something:
 
 - status bands on heatmap, status-grid, threshold-gauge and status-history widgets
-  with time series: 131,910 bytes after all four steps, 838 bytes over the cap;
-- colour-only time series judged stale by cadence: 131,868 bytes after all four
-  steps, 796 bytes over the cap. At 7fe8ccca the same dashboard returns 200 at
-  130,687 bytes; the difference is per-widget and top-level attention and `omitted`.
+  with time series: 162,583 bytes before any step; all four steps run
+  (`breachIntervals`, `breaches`, `bandSeries`, `sample`), and it encodes to 131,910
+  bytes, 1,210 bytes under the cap;
+- colour-only time series judged stale by cadence: 137,319 bytes before any step; these
+  widgets have no breach or band objects, so only `sample` runs, and it encodes to
+  131,868 bytes, 1,252 bytes under the cap.
 
-These are facts that the ladder cannot release. Dropping the per-widget `attention`
-(about 1 KB at 48 widgets) would bring both measured dashboards under the cap, but this
-release keeps it on purpose as the summary agents read. Open decision: either raise
-`DashboardQueryResponseBytes` and the gateway's read limit together, or allow
-per-widget attention to go under the cap. Until then, narrow the selection, the
-series or the history points. The HTTP response says `dashboard result exceeds 128 KiB
-even without optional detail`. An MCP caller sees `resource_exhausted` with its fixed
-message.
+Both keep every widget's per-widget `attention` and the top-level `attention`. The
+pathological case is a selection of eight series per query, which the supported range
+allows: its never-dropped signals and labels still exceed the cap after every step, so it
+is refused with 413. The HTTP response says `dashboard result exceeds 130 KiB even
+without optional detail`. An MCP caller sees `resource_exhausted` with its fixed
+message. To recover, narrow the selection, the series or the history points.
 
 Every metric widget reports `sample` unless the result cap removes it (see Omitted
 detail): the age of its latest valid returned sample relative to the range end, and
@@ -327,7 +334,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Series | 3 by default, 1–8 supported |
 | Trace examples | 3 by default, 1–10 supported |
 | Breaches | 12 series evaluated, 12 most recent intervals listed per widget, two levels in the summary |
-| Structured result | 128 KiB. Optional detail is omitted in a fixed order and named in `omitted`; 413 only when the never-dropped facts (see Omitted detail) still exceed it |
+| Structured result | 130 KiB. Optional detail is omitted in a fixed order and named in `omitted`; 413 only when the never-dropped facts (see Omitted detail) still exceed it |
 | Text synopsis | At most 8 KiB |
 | Execution | 22-second budget for the whole read; shared-catalog calls draw on it, each capped at 20 seconds, with partial timeout results when possible |
 | Shared catalog | 4 concurrent catalog phases; a waiting query gets one within 5 seconds (16 waiters), else 429 with `Retry-After: 1`; a listing's own cap is 10 seconds. A `/query` has one 22-second budget covering the wait, the admission wait, the listing and the data call |

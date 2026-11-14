@@ -34,8 +34,8 @@ func statusBandedMatrix(t *testing.T) string {
 	return string(body)
 }
 
-// The status-banded 48-widget dashboard used to return 413 from the 128 KiB cap. It must now
-// return 200 within the cap, and report the detail it dropped in the fixed order.
+// The status-banded 48-widget dashboard is within the 130 KiB cap. It must return 200 within the cap,
+// and report the detail it dropped in the fixed order.
 func TestDashboardQueryStatusBanded48WidgetsReturnWithinTheCap(t *testing.T) {
 	body := statusBandedMatrix(t)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -248,8 +248,8 @@ func TestDashboardQueryTimeSeriesWithStalenessReturnsWithinTheCap(t *testing.T) 
 	}
 }
 
-// Forty-six critical widgets with raw kube-state labels need the second ladder step: dropping the listed
-// intervals alone leaves the result just over the cap, so the per-widget breach objects go too, and
+// Forty-eight critical widgets with raw kube-state labels need the second ladder step: dropping the listed
+// intervals alone leaves the result over the 130 KiB cap, so the per-widget breach objects go too, and
 // the omitted list names both, in order.
 func TestDashboardQueryStatusBandedDropsBreachObjectsWithinTheCap(t *testing.T) {
 	body := kubeStateMatrix(t, "5")
@@ -258,15 +258,15 @@ func TestDashboardQueryStatusBandedDropsBreachObjectsWithinTheCap(t *testing.T) 
 	}))
 	defer provider.Close()
 	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
-	widgets := make([]map[string]any, 0, 46)
-	for index := range 46 {
+	widgets := make([]map[string]any, 0, 48)
+	for index := range 48 {
 		widget := queryReadWidget(fmt.Sprintf("pod-restarts-widget-%02d", index), fmt.Sprintf("sum by (pod) (kube_pod_container_status_restarts_total{job=\"kube-state-%d\"})", index))
 		widget["type"], widget["options"] = "timeseries", severityBands()
 		widgets = append(widgets, widget)
 	}
 	putReadDashboard(t, s, widgets...)
 	w := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil)
-	require.Equal(t, http.StatusOK, w.Code, "a 46-widget status-banded dashboard must not exceed the cap: %s", w.Body.String()[:min(w.Body.Len(), 200)])
+	require.Equal(t, http.StatusOK, w.Code, "a 48-widget status-banded dashboard must not exceed the cap: %s", w.Body.String()[:min(w.Body.Len(), 200)])
 	require.LessOrEqual(t, w.Body.Len(), DashboardQueryResponseBytes)
 	result := readDashboardResult(t, w)
 	require.Equal(t, []string{"breachIntervals", "breaches"}, result.Omitted)
@@ -274,7 +274,7 @@ func TestDashboardQueryStatusBandedDropsBreachObjectsWithinTheCap(t *testing.T) 
 		require.Nil(t, result.Widgets[index].Breaches, "breaches is reported, so none is present on %s", result.Widgets[index].ID)
 		require.Equal(t, "critical", result.Widgets[index].Attention, "attention is decided before any detail is omitted")
 	}
-	require.Equal(t, 46, result.Attention.Critical)
+	require.Equal(t, 48, result.Attention.Critical)
 }
 
 // kubeStateMatrix is a three-series matrix with raw kube-state labels, the shape of a pod-level query.

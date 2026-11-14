@@ -14,9 +14,11 @@ import (
 
 const dashboardQueryBudget = 22 * time.Second
 
-// DashboardQueryResponseBytes caps the encoded structured result of query-dashboard. The Observe
-// gateway reads at most this many bytes of the response, so the two must stay equal.
-const DashboardQueryResponseBytes = 128 << 10
+// DashboardQueryResponseBytes caps the encoded structured result of query-dashboard at 130 KiB. The
+// Observe gateway reads at most this many bytes of the response, so the two must stay equal. The cap
+// was 128 KiB until the per-widget and top-level attention and the omitted list were added; see
+// docs/design/insights/dashboard-query.md, Compatibility, for the measured decision.
+const DashboardQueryResponseBytes = 130 << 10
 
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
@@ -309,7 +311,7 @@ func writeDashboardQueryResult(w http.ResponseWriter, result *DashboardQueryResu
 		return
 	}
 	if len(encoded) > DashboardQueryResponseBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "dashboard result exceeds 128 KiB even without optional detail; select fewer widgets, series or history points")
+		writeError(w, http.StatusRequestEntityTooLarge, "dashboard result exceeds 130 KiB even without optional detail; select fewer widgets, series or history points")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
