@@ -378,6 +378,15 @@ async function stateAssertions(page, state) {
           })
         }))
         assert.deepEqual(overflows, [], `Heatmap cell children must stay inside their cell at ${page.viewportSize().width}px (${state})`)
+        // A value box must also be at least one line tall, so a flex shrink cannot clip it inside a cell that still contains it.
+        const clipped = await cells.evaluateAll(elements => elements.flatMap((cell, index) => {
+          const value = cell.querySelector("strong")
+          if (!value) return []
+          const line = parseFloat(getComputedStyle(value).lineHeight)
+          const height = value.getBoundingClientRect().height
+          return height < line - 0.5 ? [{ index, text: value.textContent, height: Math.round(height), line: Math.round(line) }] : []
+        }))
+        assert.deepEqual(clipped, [], `Heatmap values must be at least one line tall at ${page.viewportSize().width}px (${state})`)
         if (["null", "tail-null"].includes(state)) assert.match(await cells.first().getAttribute("aria-label"), /No data/)
         if (state === "zero") assert.match(await cells.first().getAttribute("aria-label"), /0\.00 req\/s.*At zero/)
         if (state === "negative") assert.match(await cells.first().getAttribute("aria-label"), /-12\.50 req\/s.*Below target/)

@@ -20,6 +20,8 @@
   overflow: auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* Rows never shrink below their content, so a dense or scrolling layout grows a short row instead of clipping its value. */
+  grid-auto-rows: minmax(min-content, auto);
   gap: 6px;
   flex: 1;
   align-content: stretch;
@@ -82,7 +84,10 @@
   display: block;
   min-width: 0;
   max-width: 100%;
-  font-size: clamp(10px, 14cqi, var(--heatmap-value-size, 21px));
+  /* Size follows the cell width and the value's length, so a short value keeps the 21px ceiling. About 200 cqi-px per
+     character keeps the value inside the cell. */
+  flex-shrink: 0;
+  font-size: clamp(10px, calc(200cqi / max(var(--value-chars, 1), 1)), var(--heatmap-value-size, 21px));
   line-height: 1.1;
   font-weight: 570;
   font-variant-numeric: tabular-nums;

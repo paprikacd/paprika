@@ -82,6 +82,11 @@ function criticalStroke(threshold: Threshold | undefined): CSSProperties {
   return critical(threshold) ? ({ "--status-stroke-color": "currentColor" } as CSSProperties) : {};
 }
 
+/** The value text a heatmap cell shows. Its length sizes the value so a long unit or number stays inside its cell. */
+function heatmapValueText(value: number | undefined, unit: Widget["unit"], decimals: number | undefined): string {
+  return value === undefined ? "No data" : formatMetric(value, unit, false, decimals);
+}
+
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
   { value: 0, status: "critical", label: "Unhealthy" },
   { value: 1, status: "ok", label: "Healthy" },
@@ -862,15 +867,8 @@ export function Heatmap({
                   <span className={configStyles.cellName}>{cell.name}</span>
                 )}
                 {options.showValues !== false && (
-                  <strong>
-                    {cell.value === undefined
-                      ? "No data"
-                      : formatMetric(
-                          cell.value,
-                          widget.unit,
-                          false,
-                          options.decimals,
-                        )}
+                  <strong style={{ "--value-chars": heatmapValueText(cell.value, widget.unit, options.decimals).length } as CSSProperties}>
+                    {heatmapValueText(cell.value, widget.unit, options.decimals)}
                   </strong>
                 )}
               </div>
@@ -961,15 +959,8 @@ export function Heatmap({
                 <span className={configStyles.cellName}>{cell.name}</span>
               )}
               {options.showValues !== false && (
-                <strong>
-                  {cell.value === undefined
-                    ? "No data"
-                    : formatMetric(
-                        cell.value,
-                        widget.unit,
-                        false,
-                        options.decimals,
-                      )}
+                <strong style={{ "--value-chars": heatmapValueText(cell.value, widget.unit, options.decimals).length } as CSSProperties}>
+                  {heatmapValueText(cell.value, widget.unit, options.decimals)}
                 </strong>
               )}
             </button>
