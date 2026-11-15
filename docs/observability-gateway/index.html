@@ -118,7 +118,8 @@ scheduler, which is not appropriate for synchronous MCP requests.</li>
 <p>Query results are returned synchronously. Queuing does not change OAuth scopes,
 provider RBAC, saved dashboard versions or query timeout/error semantics.</p>
 <h3 id="end-to-end-capacity">End-to-end capacity</h3>
-<p>A dashboard query passes eight hops between the browser and the provider. Each
+<p>A dashboard query passes eight hops between the browser and the provider, and
+two edge bounds (E1 and E2) sit in front of them. Each
 row gives the hop's default limit, where it is configured, and what a caller
 sees when the hop is full. The defaults are the values in code. A changed flag
 or chart value replaces them, and the gateway validates the combination at
@@ -135,6 +136,22 @@ startup.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>E1</td>
+<td>Cloudflare proxy in front of the public hostname (<code>proxied</code> record, outside this chart)</td>
+<td>Proxy read timeout <strong>125 s</strong> (Cloudflare default, measured between reads). An origin that stays silent past it gets <strong>524</strong> <code>origin_response_timeout</code>. An origin 504 is passed through as <strong>504</strong> <code>origin_gateway_timeout</code>, so a 504 from that origin does not by itself mean Cloudflare timed out</td>
+<td>Cloudflare zone setting</td>
+<td>Cloudflare's own error page, 524 at 120 s</td>
+<td>Yes, with backoff</td>
+</tr>
+<tr>
+<td>E2</td>
+<td>Envoy Gateway route request timeout (<code>timeouts.request</code> on the HTTPRoute rule, <code>charts/chart/templates/observability-gateway/httproute.yaml</code> and <code>api-server/httproute.yaml</code>)</td>
+<td><code>/observe</code> <strong>50 s</strong> (<code>observabilityGateway.ingress.requestTimeout</code>, valid 46 to 119 s). <code>/api/insights/</code> <strong>35 s</strong> (<code>apiServer.ingress.insightsRequestTimeout</code>, valid 29 to 119 s). <code>/</code> sets no explicit timeout, so it gets Envoy Gateway's default of <strong>15 s</strong>, including its Connect streams (browser SSE is disabled on the api-server)</td>
+<td><code>observabilityGateway.ingress.requestTimeout</code>, <code>apiServer.ingress.insightsRequestTimeout</code></td>
+<td>Envoy answers <strong>504</strong> <code>upstream request timeout</code> at the route's limit and resets the upstream stream, which cancels the gateway's tool or query</td>
+<td>Yes, with backoff, since the earlier attempt may have used provider time</td>
+</tr>
 <tr>
 <td>1</td>
 <td>Browser scheduler (<code>createQueryScheduler</code>, <code>ui/src/features/insights/query.ts</code>)</td>
@@ -188,7 +205,7 @@ startup.</p>
 <td>Gateway execution budget (<code>DefaultBudgetConfig</code>, <code>executionBudget.begin</code>, <code>internal/observabilitygateway/budget.go</code>)</td>
 <td>4 executing across providers, 2 per provider. Queued: 32 across providers, 8 per provider. The admission cap is 36 (concurrency + queue). Per provider, the budget holds 2 running and 8 waiting, so 36 is reachable only across at least four providers (see below). A waiter holds its place for at most 5 s. Each execution has a 30 s budget that starts when it is admitted</td>
 <td><code>--observability-query-*</code> flags; chart <code>observabilityGateway.capacity.query*</code></td>
-<td>Queue full, reported as <code>resource_exhausted</code>. On REST (<code>/observe/api/query</code>) that is <strong>429</strong> <code>temporarily_unavailable</code> with <code>Retry-After: 1</code> (<code>writeDashboardError</code>). On MCP it is an error result with code <code>resource_exhausted</code> and no retry hint, text from <code>operationalToolErrorText</code>. Queue wait expired, or the 30 s budget used up, is a deadline error: <strong>504</strong> on REST, &quot;tool execution timed out&quot; on MCP</td>
+<td>A full queue is <code>resource_exhausted</code> with no retry hint. A queue wait that expired while the caller still had budget is <code>resource_exhausted</code> with a one-second <code>RetryInfo</code>. On REST (<code>/observe/api/query</code>) either is <strong>429</strong> <code>temporarily_unavailable</code> with <code>Retry-After: 1</code> (<code>writeDashboardError</code>). On MCP either is an error result with code <code>resource_exhausted</code> and text from <code>operationalToolErrorText</code>; only the queue-wait expiry adds <code>retryAfterSeconds: 1</code>. Insights turns either into a <strong>429</strong> with <code>Retry-After: 1</code>, which the browser replays. Only the caller's own deadline ending the wait, or the 30 s budget used up, is <code>deadline_exceeded</code>: <strong>504</strong> on REST, &quot;tool execution timed out&quot; on MCP</td>
 <td>429: yes, after Retry-After. 504: yes, with backoff, since the earlier attempt may have used provider time</td>
 </tr>
 <tr>
@@ -203,6 +220,16 @@ startup.</p>
 </table></div>
 <p><strong>What each hop's wait costs.</strong></p>
 <ul>
+<li><strong>Edge bounds (E1 and E2).</strong> The <code>/observe</code> route allows 50 s. That is above
+the 45 s HTTP write timeout and the gateway's roughly 31 s <code>query_dashboard</code>
+ceiling (1 s admission, 2 s rate queue, 28 s client), so the gateway's own
+answer, success or typed error, arrives before Envoy cuts the stream. The
+<code>/api/insights/</code> route allows 35 s, above the 28 s Insights budget. Envoy
+Gateway's 15 s default cut a six-read dashboard (about 14.8 s of serial Uptime
+reads) at 15.00 s with a 504 while the gateway was still working. The chart
+rejects a <code>/observe</code> timeout under 46 s or over 119 s, and an Insights timeout
+under 29 s or over 119 s, so the route never falls inside the write or budget
+window or past Cloudflare's 125 s.</li>
 <li><strong>Edge (hops 5 and 6).</strong> The intake and pool waits share one deadline of
 <code>--observability-http-admission-wait</code> (1 s by default), measured from the start
 of the handler. A request that is refused there has waited at most that long.
@@ -210,7 +237,10 @@ The MCP rate queue (hop 6) runs after edge admission and adds at most 2 s.</li>
 <li><strong>Budget (hop 7).</strong> A query waits at most <code>--observability-query-queue-wait</code>
 (5 s) for a slot. The 30 s execution budget starts when the query is admitted,
 so after a wait its execution time is still a full 30 s. Over REST the dashboard
-handler applies its 30 s to the whole request, queue wait included.</li>
+handler applies its 30 s to the whole request, queue wait included. A wait that
+expires while the caller is still within its own deadline answers
+<code>resource_exhausted</code> (retry after 1 s), so a busy provider is never reported as
+a timeout; the caller's own deadline keeps <code>deadline_exceeded</code>.</li>
 <li><strong>Per MCP request, worst case:</strong> admission wait + 2 s rate queue + queue wait +
 30 s execution. At defaults that is 38 s. The validator requires the sum to
 stay at or below 40 s, which leaves 5 s to read, serialise and write the
@@ -229,6 +259,86 @@ at most the admission wait. A body larger than the classification limit is
 read only in part, so the same applies to it. REST POST bodies
 (<code>/observe/api/query</code>, <code>/observe/api/explore</code>) are read the same way as MCP
 bodies, so a departed client is noticed at the same point for both.</li>
+</ul>
+<p><strong>Timeout chain.</strong> A hop's read timeout must be at least the time the hop below
+it may legitimately take, or a read still running downstream is reported as a
+timeout upstream. The chain, outermost first:</p>
+<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>Hop</th>
+<th>Bound</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cloudflare to origin</td>
+<td>125 s read (between reads), then 524 (proxied records, Cloudflare default)</td>
+<td><code>terraform/main.tf</code></td>
+</tr>
+<tr>
+<td>Envoy Gateway, api-server route (<code>/</code>: the console and <code>/api/insights</code>)</td>
+<td>15 s by default; the HTTPRoute sets no <code>timeouts</code></td>
+<td><code>charts/chart/templates/api-server/httproute.yaml</code>, Envoy Gateway default</td>
+</tr>
+<tr>
+<td>Envoy Gateway, <code>/observe</code> route</td>
+<td>15 s by default; the HTTPRoute sets no <code>timeouts</code></td>
+<td><code>charts/chart/templates/observability-gateway/httproute.yaml</code>, Envoy Gateway default</td>
+</tr>
+<tr>
+<td>Console Insights proxy</td>
+<td>25 s until response headers, 28 s total</td>
+<td><code>internal/api/insights_proxy.go</code></td>
+</tr>
+<tr>
+<td>Gateway HTTP server</td>
+<td>read 15 s, write 45 s</td>
+<td><code>cmd/main_observability_gateway.go</code></td>
+</tr>
+<tr>
+<td>Insights dashboard query</td>
+<td>22 s budget, one phase at a time</td>
+<td><code>internal/insights/dashboard_query.go</code></td>
+</tr>
+<tr>
+<td>Insights <code>/query</code></td>
+<td>22 s budget (<code>queryBudget</code>)</td>
+<td><code>internal/insights/server.go</code></td>
+</tr>
+<tr>
+<td>Insights to gateway, per operation</td>
+<td>min(20 s, remaining budget). Response-header wait and client timeout are 20 s too. The bound includes the gateway queue wait</td>
+<td><code>internal/insights/observability_provider.go</code>, <code>internal/insights/observe_mcp.go</code></td>
+</tr>
+<tr>
+<td>Gateway execution</td>
+<td>queue wait 5 s, then 30 s budget, started on admission</td>
+<td><code>internal/observabilitygateway/budget.go</code></td>
+</tr>
+<tr>
+<td>Uptime connector read</td>
+<td>20 s per query, transport response-header wait 10 s</td>
+<td><code>internal/observabilitygateway/connector/uptime/uptime.go</code>, <code>internal/observabilitygateway/connector/uptime/http.go</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Insights' header wait was 15 s, so a 15 to 20 s read was reported as a timeout
+while the gateway was still running it. It now equals the 20 s operation bound,
+so a read is cut only by its own budget. Two limits remain:</p>
+<ul>
+<li>The 20 s Insights bound includes up to 5 s of gateway queue wait, and the
+uptime connector's 20 s starts only once the query is admitted. A read that
+queues first can therefore outlast Insights' bound while the gateway finishes.</li>
+<li>The api-server and <code>/observe</code> HTTPRoutes set no <code>timeouts</code>, so Envoy Gateway's
+default 15 s applies to both. A read longer than 15 s through either public
+route returns a 504 from Envoy even when the gateway would finish, and the UI
+does not replay that 504. The browser widget path (<code>/api/insights</code> through the
+api-server route) is therefore bounded at 15 s in production until the charts
+set a request timeout on those routes: at least 28 s on the api-server route
+(the console proxy's total), and at least 46 s on <code>/observe</code> (above the 45 s
+gateway write timeout and below Cloudflare's 125 s).</li>
 </ul>
 <p><strong>What is coupled to what.</strong></p>
 <ul>
@@ -311,7 +421,7 @@ values as <code>--observability-*</code> arguments on the gateway container
 (<code>charts/chart/templates/observability-gateway/deployment.yaml</code>).</p>
 <h2 id="the-mcp-surface">The MCP surface</h2>
 <p>Fifteen provider tools, all read-only and requiring <code>paprika:observe</code>:</p>
-<div class="table-scroll" role="region" aria-label="Table 2, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 3, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>Tool</th>
@@ -393,7 +503,7 @@ not become historical series unless the source supplies timestamps. See the
 <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/shorted-provider.md">Shorted</a>, <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/uptime-provider.md">Uptime</a> and
 <a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/postgresql-provider.md">PostgreSQL</a> adapter contracts.</p>
 <p>When Insights is configured, the same MCP endpoint additionally exposes:</p>
-<div class="table-scroll" role="region" aria-label="Table 3, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 4, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>Tool</th>
@@ -482,7 +592,7 @@ and authoring guidance.</p>
 query what it found without learning a gateway dialect. Exploration is an
 optional connector capability (<code>connector.Explorer</code>) implemented per provider,
 each mapping the generic kinds onto its own native discovery mechanism:</p>
-<div class="table-scroll" role="region" aria-label="Table 4, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 5, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>Provider</th>
@@ -653,7 +763,7 @@ otherwise derived as max(10s, span/250)).</li>
 </li>
 </ul>
 <h3 id="connector-specifics">Connector specifics</h3>
-<div class="table-scroll" role="region" aria-label="Table 5, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 6, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>type</th>
@@ -857,7 +967,7 @@ from the Service name (<code>prometheus</code>, <code>loki</code>, <code>tempo</
 names (<code>http-web</code>/<code>web</code>/<code>http</code>, <code>http-metrics</code>, <code>otlp-http</code>, …) falling back
 to the first declared port, and the endpoint is
 <code>http://&lt;service&gt;.&lt;ns&gt;.svc:&lt;port&gt;</code>. Inference overrides:</p>
-<div class="table-scroll" role="region" aria-label="Table 6, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 7, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>Annotation</th>
