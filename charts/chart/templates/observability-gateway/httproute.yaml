@@ -12,6 +12,17 @@
 {{- if not $gw.hostname }}
 {{- fail "apiServer.ingress.gateway.hostname is required when the gateway HTTPRoute is enabled" }}
 {{- end }}
+{{- /*
+Envoy Gateway applies a 15 s request timeout to a route with none. A query_dashboard
+can take six serial Uptime reads (about 15 s), so the route needs its own bound. It must
+exceed the gateway's 45 s HTTP write timeout, or the edge cuts a slow answer before the
+gateway does, and stay below Cloudflare's 120 s proxy timeout.
+*/ -}}
+{{- $timeout := .Values.observabilityGateway.ingress.requestTimeout | default "50s" | toString }}
+{{- $timeoutSeconds := include "paprika.durationSeconds" $timeout | atoi }}
+{{- if or (lt $timeoutSeconds 46) (gt $timeoutSeconds 119) }}
+{{- fail (printf "observabilityGateway.ingress.requestTimeout must be between 46s and 119s (it must exceed the gateway's 45s write timeout and stay under Cloudflare's 120s proxy timeout), got %q" $timeout) }}
+{{- end }}
 # Routes https://<hostname>/observe* to the observability gateway. The
 # api-server's own HTTPRoute matches path prefix "/" on the same hostname;
 # gateway-api longest-prefix matching sends /observe/* here and everything
@@ -60,6 +71,8 @@ spec:
     - path:
         type: Exact
         value: /.well-known/oauth-protected-resource/observe/mcp
+    timeouts:
+      request: {{ $timeout | quote }}
     backendRefs:
     - name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
       port: {{ $.Values.observabilityGateway.service.port }}
