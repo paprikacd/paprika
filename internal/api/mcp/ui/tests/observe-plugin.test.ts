@@ -70,14 +70,44 @@ test("only the canonical Observe package declares the paprika-observe skill name
   assert.deepEqual(declaring.sort(), ["plugins/paprika-observe/skills/paprika-observe/SKILL.md"]);
 });
 
+test("no shipped SKILL.md body contains a dollar sign followed by a digit or $ARGUMENTS", async () => {
+  // Claude Code substitutes $ARGUMENTS, $ARGUMENTS[N] and the shorthand $0, $1, $2, ... with the
+  // caller's arguments when a skill loads, so a literal PostgreSQL $1 in prose or examples is corrupted.
+  const shipped: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules") await walk(path);
+      } else if (entry.isFile() && entry.name === "SKILL.md") {
+        shipped.push(path);
+      }
+    }
+  };
+  await walk(fileURLToPath(new URL("plugins/", root)));
+  assert.ok(shipped.length >= 3, "the paprika, paprika-setup and paprika-observe skills must be found");
+  for (const path of shipped) {
+    const text = await readFile(path, "utf8");
+    assert.doesNotMatch(
+      text,
+      /\$(?:\d|ARGUMENTS)/,
+      `${relative(fileURLToPath(root), path)} contains a dollar sign followed by a digit or $ARGUMENTS. Claude Code substitutes these with the caller's arguments when the skill loads, corrupting the body. Describe positional parameters in words and move literal examples to a references/ file, which is read on demand and not substituted.`,
+    );
+  }
+});
+
 test("the merged records and SQL guidance stays in the canonical Observe skill", async () => {
   // Pins the typed-records and SQL binding text ported from the removed fleet copy.
   const skill = await readFile(new URL("skills/paprika-observe/SKILL.md", plugin), "utf8");
   assert.match(skill, /`query_records` returns bounded `columns` and `rows`/);
   assert.match(skill, /Records\s+never accept a metric projection/);
-  assert.match(skill, /write `\$1` in the fixed SQL text/);
+  assert.match(skill, /the SQL text stays fixed/);
   assert.match(skill, /unquoted\s+`\{\{service\}\}` placeholder/);
   assert.match(skill, /\{"range":"start"\}/);
+  // The literal positional example lives in a reference file: read on demand, never substituted.
+  assert.match(skill, /\[worked example\]\(references\/postgresql-bindings\.md\)/);
+  const bindings = await readFile(new URL("skills/paprika-observe/references/postgresql-bindings.md", plugin), "utf8");
+  assert.match(bindings, /WHERE service=\$1","parameters":\[\{\{service\}\}\]\}/);
   assert.match(skill, /verify-full TLS and an unprivileged\s+reader role/);
   assert.match(skill, /the Uptime connector rejects more than 100 rows/);
   assert.match(skill, /`Forbidden` means the backend refused the supplied credentials/);
