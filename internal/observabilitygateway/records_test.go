@@ -97,17 +97,16 @@ func TestRecordsDashboardAndMCPUseAuthorizedUptimeProvider(t *testing.T) {
 	require.Equal(t, [][]any{{"service-1", "Checkout", "checkout"}}, frame.Rows)
 	tool := queryRecordsTool(backend)
 	ctx := auth.WithPrincipal(context.Background(), &auth.Principal{Subject: "test-user"})
-	_, err = tool.Invoke(ctx, nil, json.RawMessage(`{"provider":"allowed/uptime","query":"{\"operation\":\"services\"}"}`))
+	// A distinct limit changes the page size in the upstream body, so this read
+	// misses the connector's 15 s read cache and reaches the provider.
+	_, err = tool.Invoke(ctx, nil, json.RawMessage(`{"provider":"allowed/uptime","query":"{\"operation\":\"services\",\"args\":{\"limit\":5}}"}`))
 	require.NoError(t, err)
-	// The tool repeats the dashboard's identical read with the same credential
-	// inside the connector's 15 s read cache, so it is served without a second
-	// upstream call. Authorization still ran for this request.
-	require.EqualValues(t, 1, calls.Load())
+	require.EqualValues(t, 2, calls.Load())
 	denied := strings.Replace(recordsDashboardQuery, "allowed/uptime", "private/uptime", 1)
 	require.Equal(t, http.StatusForbidden, doCatalogRequest(t, mux, http.MethodPost, "/observe/api/query", token, denied).Code)
 	require.Equal(t, http.StatusUnauthorized, doCatalogRequest(t, mux, http.MethodPost, "/observe/api/query", "", recordsDashboardQuery).Code)
 	require.Equal(t, http.StatusForbidden, doCatalogRequest(t, mux, http.MethodPost, "/observe/api/query", catalogTestToken(t, tokenSecret, string(mcp.ScopeRead)), recordsDashboardQuery).Code)
-	require.EqualValues(t, 1, calls.Load(), "denial must happen before credentialed backend access")
+	require.EqualValues(t, 2, calls.Load(), "denial must happen before credentialed backend access")
 }
 
 func TestApplicationProviderCatalogAndProbes(t *testing.T) {
