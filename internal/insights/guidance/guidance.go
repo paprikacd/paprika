@@ -2,12 +2,13 @@
 // show. There are two lists with different audiences:
 //
 //   - DashboardComposition is what a dashboard should look like. It is served in
-//     get_insights_schema notes, in the observe MCP server instructions, and in
-//     the Build with AI prompt.
+//     get_insights_schema notes and in the Build with AI prompt. The observe MCP
+//     server instructions serve MCPDashboardComposition, a compact variant.
 //   - DashboardWorkflow is how an MCP agent verifies and saves a change. It names
-//     MCP tools, so it is served only in the MCP server instructions and schema
-//     notes. The Build with AI prompt returns a document for review and applies
-//     nothing, so it must not receive these rules.
+//     MCP tools, so it is served only in schema notes and, compactly, through
+//     MCPDashboardWorkflow in the MCP server instructions. The Build with AI prompt
+//     returns a document for review and applies nothing, so it must not receive
+//     these rules.
 //
 // The Build with AI copy in ui/src/features/insights/authoring-guidance.ts is
 // generated from these lists. TestAuthoringGuidanceTypeScriptIsGenerated fails
@@ -51,8 +52,41 @@ var dashboardWorkflow = []string{
 	"Read the first line of a render_dashboard result and its visualStatus. Report visual QA as FAIL when visualStatus is failed, or when the screenshot shows a clipped or scrolling KPI, an overlapping or out-of-bounds tooltip, a clipped chart or horizontal page overflow; fix every defect and render again. Report PASS only when visualStatus is passed, you looked at the screenshot at 1512px and 390px, reviewed each warning finding, and saw none of those defects. Report NOT RUN when there is no renderer, the capture returns an error, or visualStatus is not_run. Checks are DOM heuristics, so a pass does not prove good design, and a valid schema, a saved ETag or query_dashboard is never visual evidence.",
 }
 
+// Claude Code keeps only the first 4096 characters of MCP server instructions, so
+// the observe instructions carry compact variants of both lists. Each compact line
+// states its full rule's substance in fewer words. The full rules stay in the
+// get_insights_schema notes and the Build with AI prompt, which have no limit.
+var mcpDashboardComposition = []string{
+	"Compact stat cards (h<=2) show a short title, the exact value and at most one sparkline, with no showStatBar, long description, or min and max by default.",
+	"Use showStatBar only when the bar is the reading: a bounded quantity with explicit min and max at h>=3. Never add a bar to a rate or a count, or because a metric is a percentage.",
+	"Give stat thresholds ascending, each naming a status, starting at the lowest meaningful value. Warn at the objective and go critical at the breach.",
+	"Name a status for a threshold and a series role for a series colour. A hex colour is an override only where it has its own meaning.",
+	"On a stat, warning and critical bands show a chip, and a colour-only band takes a label or value. The reading stays in ink. A labelled referenceLines entry marks an objective on a time series and never shades.",
+	"Set staleAfterSeconds only when the scrape or evaluation interval is known, at least twice that interval, on stat and time-series widgets.",
+	"Keep provenance out of titles and descriptions. Show a unit once, as the widget unit.",
+	"Place widgets without overlaps and fill each row. Avoid widget-internal scrolling, and do not force max to 100 on rate charts.",
+	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id.",
+	"On a stat, set min and max only with showStatBar, which requires both.",
+}
+
+var mcpDashboardWorkflow = []string{
+	"Change only intended widget IDs with patch_dashboard and widget_edits, keeping unchanged widgets, queries, provider IDs and bindings. Then get_dashboard reads the saved document back.",
+	"Run one bounded query_dashboard to confirm signals and freshness. A successful query is not visual evidence.",
+	"When render_dashboard is available, render at 1512px and 390px in light and dark. Check each compact KPI for a scrollbar, clipped value or unit, overlap, clipped chart or horizontal overflow, and inspect a real hover or pinned tooltip.",
+	"Record the previous rendering when possible; revert a regression with a targeted, ETag-safe patch, not by restyling other widgets.",
+	"Read the first line of a render_dashboard result and its visualStatus. Report visual QA as FAIL when visualStatus is failed or a screenshot shows a defect, then fix and render again. Report PASS only when visualStatus is passed, you viewed both screenshots, reviewed each warning and saw no defect. Report NOT RUN when there is no renderer, the capture errors or visualStatus is not_run. A valid schema, saved ETag or query_dashboard is never visual evidence.",
+}
+
 // DashboardComposition returns the composition rules in display order.
 func DashboardComposition() []string { return slices.Clone(dashboardComposition) }
 
 // DashboardWorkflow returns the MCP workflow rules in display order.
 func DashboardWorkflow() []string { return slices.Clone(dashboardWorkflow) }
+
+// MCPDashboardComposition returns the compact composition rules served in MCP
+// instructions, in display order.
+func MCPDashboardComposition() []string { return slices.Clone(mcpDashboardComposition) }
+
+// MCPDashboardWorkflow returns the compact MCP workflow rules served in MCP
+// instructions, in display order.
+func MCPDashboardWorkflow() []string { return slices.Clone(mcpDashboardWorkflow) }

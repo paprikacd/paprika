@@ -89,3 +89,36 @@ func TestAuthoringGuidanceListsAreIndependentCopies(t *testing.T) {
 	workflow[0] = "mutated."
 	require.NotEqual(t, "mutated.", DashboardWorkflow()[0], "callers must not mutate the shared workflow rules")
 }
+
+func TestMCPDashboardGuidanceIsCompactAndWellFormed(t *testing.T) {
+	composition, workflow := MCPDashboardComposition(), MCPDashboardWorkflow()
+	require.GreaterOrEqual(t, len(composition), 8)
+	require.GreaterOrEqual(t, len(workflow), 4)
+	seen := map[string]bool{}
+	for _, line := range append(append([]string{}, composition...), workflow...) {
+		require.True(t, strings.HasSuffix(line, "."), "compact rules end with a full stop: %s", line)
+		require.NotContains(t, line, `"`, "compact rules stay quote-free: %s", line)
+		require.NotContains(t, line, `\`, "compact rules stay backslash-free: %s", line)
+		require.False(t, seen[line], "duplicate compact rule: %s", line)
+		seen[line] = true
+	}
+	// The compact variant must be a summary of the full lists, not a second copy.
+	fullLength := 0
+	for _, line := range DashboardComposition() {
+		fullLength += len(line)
+	}
+	compactLength := 0
+	for _, line := range composition {
+		compactLength += len(line)
+	}
+	require.Less(t, compactLength, fullLength, "the compact composition must be shorter than the full list")
+	// Compact composition names no MCP tool; the workflow must still name the tools
+	// and the visual QA verdicts an agent reports.
+	for _, line := range composition {
+		require.NotContains(t, line, "render_dashboard", "compact composition rules name no MCP workflow: %s", line)
+	}
+	joined := strings.Join(workflow, "\n")
+	for _, required := range []string{"patch_dashboard", "get_dashboard", "query_dashboard", "render_dashboard", "visualStatus", "PASS", "FAIL", "NOT RUN", "1512px", "390px", "ETag"} {
+		require.Contains(t, joined, required, "compact workflow rules must name %s", required)
+	}
+}

@@ -502,6 +502,23 @@ func (s *Server) toolAuthMeta(tool *Tool) sdkmcp.Meta {
 	return meta
 }
 
+// observeAuthoringInstructions orders the observe rules by importance. Claude
+// Code keeps only the first 4096 characters of MCP server instructions, so scope
+// and safety come first, then the dashboard workflow, then a compact composition
+// summary. The full composition rules are in the get_insights_schema notes, which
+// have no length limit. TestServedInstructionsFitClaudeCodeLimit enforces the bound.
+// Clients such as ChatGPT receive no skill text, so the dashboard rules travel in
+// this initialize response.
+func observeAuthoringInstructions() string {
+	return strings.Join([]string{
+		"Prefer query_dashboard when a saved dashboard covers the question: list_dashboards finds its ID, get_dashboard shows its variables, and a variables map sets shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing, error and truncation states, and document ETags; text is a synopsis. This read requires paprika:observe and existing Insights and provider read permission, not authoring consent.",
+		"Preserve provider errors, unavailable signals and truncation; empty results do not establish health. For standalone provider queries, discover authorized providers and their signal capabilities first, then metric names, labels and trace services, with an explicit namespace and name, a short range and a small limit.",
+		"Saved-query and dashboard writes additionally require explicit paprika:insights:write consent and Insights write permission, and grant no provider configuration or fleet delivery writes. Read current documents first. Create with a new ID, or prefer patch_saved_query or patch_dashboard with widget_edits by widget ID and the exact ETag just read. Reread conflicts; unsaved drafts stay protected.",
+		"Dashboard workflow: " + strings.Join(guidance.MCPDashboardWorkflow(), " "),
+		"Composition: " + strings.Join(guidance.MCPDashboardComposition(), " ") + " Full composition rules are in the get_insights_schema notes.",
+	}, " ")
+}
+
 func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope) (description, instructions string) {
 	description = "Application delivery, fleet health, drift, and deployment diagnostics."
 	instructions = "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
@@ -510,11 +527,7 @@ func serverDescriptionAndInstructions(disableConsoleResources bool, supportedSco
 		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
 		if slices.Contains(supportedScopes, ScopeInsightsWrite) {
 			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
-			instructions = "Prefer query_dashboard when a saved dashboard covers the question. Discover its ID with list_dashboards, inspect its variables with get_dashboard when needed, and pass a variables map to query_dashboard for shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing/error/truncation states and document versions; text is a compact synopsis. This read requires paprika:observe and existing Insights/provider read permission, not authoring consent. For standalone provider queries: " + instructions
-			instructions += " Saved-query and dashboard creation or updates additionally require explicit paprika:insights:write consent and Insights write permission. Discover Insights providers and get_insights_schema for canonical dashboard, widget and saved-query schemas. Read current documents first. Create with a new ID; prefer patch_saved_query or patch_dashboard for targeted edits, with widget_edits addressed by widget ID. Every update requires the exact ETag just read; reread and review conflicts. Changes appear in the Insights UI while unsaved drafts remain protected. This scope grants no provider configuration or fleet delivery writes."
-			// Clients such as ChatGPT receive no skill text, so the shared dashboard
-			// rules travel with every authoring surface's initialize response.
-			instructions += " Dashboard composition rules: " + strings.Join(guidance.DashboardComposition(), " ") + " MCP dashboard workflow: " + strings.Join(guidance.DashboardWorkflow(), " ")
+			instructions = observeAuthoringInstructions()
 		}
 	}
 	return description, instructions

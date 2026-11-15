@@ -164,9 +164,9 @@ func TestObservabilityGatewayInitializeCarriesDashboardRulesWhenInsightsConfigur
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope), recorder.Body.String())
 	require.Empty(t, envelope.Error)
 	instructions := envelope.Result.Instructions
-	require.Contains(t, instructions, "Dashboard composition rules:")
-	require.Contains(t, instructions, "MCP dashboard workflow:")
-	for _, rule := range append(guidance.DashboardComposition(), guidance.DashboardWorkflow()...) {
-		require.Contains(t, instructions, rule, "production initialize must carry every shared dashboard rule")
+	require.Contains(t, instructions, "Composition:")
+	require.Contains(t, instructions, "Dashboard workflow:")
+	for _, rule := range append(guidance.MCPDashboardComposition(), guidance.MCPDashboardWorkflow()...) {
+		require.Contains(t, instructions, rule, "production initialize must carry every compact dashboard rule")
 	}
 }
