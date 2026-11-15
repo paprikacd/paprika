@@ -139,8 +139,10 @@ func (b *backend) reliability(ctx context.Context, operation string) (*dataframe
 	// Uptime's current reliability handler checks only the membership lookup
 	// error, not its boolean. ListServices correctly enforces organization
 	// membership; never read a report before this independent authorization gate.
+	// The gate is read uncached: a membership revoked moments ago must refuse
+	// here, not be answered from a kept services read.
 	var access servicesResponse
-	if err := b.call(ctx, servicesRPC, rpcRequest{OrgID: b.config.OrgID, Page: &pageRequest{PageSize: 1}}, &access); err != nil {
+	if err := b.callUncached(ctx, servicesRPC, rpcRequest{OrgID: b.config.OrgID, Page: &pageRequest{PageSize: 1}}, &access); err != nil {
 		return nil, err
 	}
 	var response reliabilityResponse

@@ -27,7 +27,7 @@ const (
 // tokens keeps Firebase ID tokens, keyed by the credential identity. Each
 // token is kept until tokenRefreshMargin before its expires_in, and concurrent
 // refreshes for one credential share a single request.
-var tokens = newCoalescer[string](maxCachedEntries)
+var tokens = newCoalescer[string](maxCachedEntries, func(token string) int { return len(token) })
 
 // The refresh credential is accepted only from credentialsSecretRef. It is
 // never accepted from config, query text, provider metadata or error messages.

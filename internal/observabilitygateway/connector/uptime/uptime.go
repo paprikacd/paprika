@@ -25,15 +25,26 @@ const (
 	queryTimeout  = 20 * time.Second
 )
 
-// Uptime keeps no per-query state. Two process-local caches live between
-// queries, both bounded to 64 entries and keyed by a digest of the caller's
-// credential, so callers never share results across credentials:
-//   - successful read responses for 15 seconds, so the several widgets of one
-//     dashboard that issue the same read make one upstream call, not one each;
+// Uptime keeps no per-query state, but two process-local caches are shared
+// between queries. Both are bounded (64 entries and 8 MiB each; a single value
+// over 256 KiB is never kept), expire on their own timers, and are keyed by a
+// digest of the caller's credential, so no caller sees another caller's result:
+//   - successful read responses for 15 seconds, with identical concurrent reads
+//     sharing one upstream request. A dashboard's widgets that issue the same
+//     read make one upstream call, not one each, and a slow read is not repeated
+//     for every widget. The key covers the endpoint, procedure, canonical body,
+//     credential digest and configured headers. Membership of the reliability
+//     path is checked uncached on every query.
 //   - Firebase ID tokens until five minutes before they expire, so a query does
-//     not repeat a token refresh that is still valid.
+//     not repeat a token refresh that is still valid. A token that Uptime
+//     rejects is dropped at once.
 //
 // Neither cache is durable or shared between processes. Errors are never kept.
+// Revocation: Uptime's membership gate on the reliability path is uncached, and
+// other reads may be answered from the cache for up to 15 seconds. A cached ID
+// token keeps working until it expires, up to about 55 minutes after a Firebase
+// account is disabled. Replacing the credential Secret or restarting the gateway
+// cuts access off at once.
 type Uptime struct{}
 
 // New returns the Uptime application data connector.
@@ -215,9 +226,14 @@ func executeQuery(ctx context.Context, req *connector.QueryRequest, cfg *config,
 	if q.Args.Limit != nil {
 		limit = min(limit, *q.Args.Limit)
 	}
-	reader := backend{config: cfg, credential: credential, identity: credentialIdentity(req.Credentials), limit: limit}
+	identity := credentialIdentity(req.Credentials)
+	reader := backend{config: cfg, credential: credential, identity: identity, limit: limit}
 	frame, err := reader.read(ctx, q)
 	if err != nil {
+		if errors.Is(err, connector.ErrForbidden) {
+			// A rejected ID token must not be reused; the next query refreshes it.
+			tokens.forget(identity)
+		}
 		state := httphelp.ClassifyState(err)
 		return &connector.QueryResult{State: state, Reason: httphelp.ReasonFor(state)}, nil
 	}

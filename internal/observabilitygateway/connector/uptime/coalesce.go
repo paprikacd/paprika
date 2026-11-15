@@ -11,9 +11,15 @@ import (
 	"time"
 )
 
-// maxCachedEntries bounds each process-local cache. The oldest settled entry
-// is evicted first when a new one would exceed it.
-const maxCachedEntries = 64
+const (
+	// maxCachedEntries bounds the number of kept values in each process-local cache.
+	maxCachedEntries = 64
+	// maxCachedBytes bounds the total size of kept values in each cache.
+	maxCachedBytes = 8 << 20
+	// maxEntryBytes is the largest single value a cache keeps. Larger values
+	// are returned to their callers but never stored.
+	maxEntryBytes = 256 << 10
+)
 
 // coalescer shares one in-flight fetch among concurrent callers that ask for
 // the same key, and keeps successful results for a short time so that a
@@ -22,6 +28,9 @@ type coalescer[V any] struct {
 	mu       sync.Mutex
 	now      func() time.Time
 	max      int
+	maxBytes int
+	size     func(V) int
+	bytes    int
 	entries  map[string]*list.Element // holds *cacheEntry[V]; front is most recently used
 	order    *list.List
 	inflight map[string]*flight[V]
@@ -30,6 +39,7 @@ type coalescer[V any] struct {
 type cacheEntry[V any] struct {
 	key     string
 	value   V
+	cost    int
 	expires time.Time
 }
 
@@ -39,10 +49,14 @@ type flight[V any] struct {
 	err   error
 }
 
-func newCoalescer[V any](limit int) *coalescer[V] {
+// newCoalescer returns a coalescer that keeps at most limit values, and at most
+// maxCachedBytes by size. size reports the cost of one value.
+func newCoalescer[V any](limit int, size func(V) int) *coalescer[V] {
 	return &coalescer[V]{
 		now:      time.Now,
 		max:      limit,
+		maxBytes: maxCachedBytes,
+		size:     size,
 		entries:  make(map[string]*list.Element),
 		order:    list.New(),
 		inflight: make(map[string]*flight[V]),
@@ -56,7 +70,9 @@ func newCoalescer[V any](limit int) *coalescer[V] {
 // waiter that gives up returns its own ctx error and leaves the fetch running
 // for the others. The fetch is still bounded by timeout. fetch returns how long
 // its value may be kept; a zero duration keeps nothing, and errors are never kept.
+// A caller whose context has already ended does not start a new fetch.
 func (c *coalescer[V]) do(ctx context.Context, key string, timeout time.Duration, fetch func(context.Context) (V, time.Duration, error)) (V, error) {
+	var zero V
 	c.mu.Lock()
 	if value, ok := c.lookupLocked(key); ok {
 		c.mu.Unlock()
@@ -64,12 +80,26 @@ func (c *coalescer[V]) do(ctx context.Context, key string, timeout time.Duration
 	}
 	f, running := c.inflight[key]
 	if !running {
+		if err := ctx.Err(); err != nil {
+			c.mu.Unlock()
+			return zero, abandoned(err)
+		}
 		f = &flight[V]{done: make(chan struct{})}
 		c.inflight[key] = f
 		go c.run(context.WithoutCancel(ctx), key, f, timeout, fetch)
 	}
 	c.mu.Unlock()
 	return wait(ctx, f)
+}
+
+// forget drops any kept value for key. It is used when Uptime rejects a
+// credential, so the next query refreshes it rather than reusing it.
+func (c *coalescer[V]) forget(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element, ok := c.entries[key]; ok {
+		c.removeLocked(element)
+	}
 }
 
 func (c *coalescer[V]) run(parent context.Context, key string, f *flight[V], timeout time.Duration, fetch func(context.Context) (V, time.Duration, error)) {
@@ -80,7 +110,7 @@ func (c *coalescer[V]) run(parent context.Context, key string, f *flight[V], tim
 	defer c.mu.Unlock()
 	delete(c.inflight, key)
 	if err == nil && keep > 0 {
-		c.storeLocked(key, value, c.now().Add(keep))
+		c.storeLocked(key, value, keep)
 	}
 	f.value, f.err = value, err
 	close(f.done)
@@ -92,8 +122,12 @@ func wait[V any](ctx context.Context, f *flight[V]) (V, error) {
 		return f.value, f.err
 	case <-ctx.Done():
 		var zero V
-		return zero, fmt.Errorf("uptime read abandoned by caller: %w", ctx.Err())
+		return zero, abandoned(ctx.Err())
 	}
+}
+
+func abandoned(err error) error {
+	return fmt.Errorf("uptime read abandoned by caller: %w", err)
 }
 
 func (c *coalescer[V]) lookupLocked(key string) (V, bool) {
@@ -107,27 +141,51 @@ func (c *coalescer[V]) lookupLocked(key string) (V, bool) {
 		return zero, false
 	}
 	if !c.now().Before(entry.expires) {
-		c.order.Remove(element)
-		delete(c.entries, key)
+		c.removeLocked(element)
 		return zero, false
 	}
 	c.order.MoveToFront(element)
 	return entry.value, true
 }
 
-func (c *coalescer[V]) storeLocked(key string, value V, expires time.Time) {
+// storeLocked keeps value for keep. Expired values are also removed by a timer,
+// so a value does not stay in memory after its time is up when no later query
+// asks for its key.
+func (c *coalescer[V]) storeLocked(key string, value V, keep time.Duration) {
+	cost := c.size(value)
+	if cost > maxEntryBytes {
+		return
+	}
 	if element, ok := c.entries[key]; ok {
-		c.order.Remove(element)
-		delete(c.entries, key)
+		c.removeLocked(element)
 	}
-	c.entries[key] = c.order.PushFront(&cacheEntry[V]{key: key, value: value, expires: expires})
-	for c.order.Len() > c.max {
+	entry := &cacheEntry[V]{key: key, value: value, cost: cost, expires: c.now().Add(keep)}
+	c.entries[key] = c.order.PushFront(entry)
+	c.bytes += cost
+	for c.order.Len() > c.max || c.bytes > c.maxBytes {
 		oldest := c.order.Back()
-		c.order.Remove(oldest)
-		if entry, ok := oldest.Value.(*cacheEntry[V]); ok {
-			delete(c.entries, entry.key)
+		if oldest == nil {
+			break
 		}
+		c.removeLocked(oldest)
 	}
+	time.AfterFunc(keep, func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if element, ok := c.entries[key]; ok && element.Value == any(entry) {
+			c.removeLocked(element)
+		}
+	})
+}
+
+func (c *coalescer[V]) removeLocked(element *list.Element) {
+	c.order.Remove(element)
+	entry, ok := element.Value.(*cacheEntry[V])
+	if !ok {
+		return
+	}
+	delete(c.entries, entry.key)
+	c.bytes -= entry.cost
 }
 
 // digestOf returns a SHA-256 hex digest of the canonical JSON encoding of v.

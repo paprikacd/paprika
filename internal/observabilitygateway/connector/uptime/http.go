@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -32,7 +33,11 @@ const readCacheTTL = 15 * time.Second
 // reads coalesces identical upstream reads and keeps successful response bodies
 // for readCacheTTL. Keys cover the URL, canonical body, credential identity,
 // config headers and TLS mode, so no caller can see another caller's result.
-var reads = newCoalescer[[]byte](maxCachedEntries)
+var reads = newCoalescer[[]byte](maxCachedEntries, func(body []byte) int { return len(body) })
+
+// errInvalidRecord is returned when a 200 body does not decode into the shape
+// the operation expects. Such a body is never kept.
+var errInvalidRecord = errors.New("uptime response was not a valid application record")
 
 var transport = &http.Transport{
 	Proxy:        http.ProxyFromEnvironment,
@@ -72,12 +77,12 @@ func (b *backend) listRequest() rpcRequest {
 	return rpcRequest{OrgID: b.config.OrgID, Page: &pageRequest{PageSize: b.limit}}
 }
 
+// call performs one cached, coalesced read and decodes it into target.
 func (b *backend) call(ctx context.Context, procedure string, body rpcRequest, target any) error {
-	encoded, err := json.Marshal(body)
+	endpoint, encoded, err := b.request(procedure, body)
 	if err != nil {
-		return errors.New("uptime request could not be encoded")
+		return err
 	}
-	endpoint := strings.TrimRight(b.config.Endpoint, "/") + procedure
 	key, err := b.readKey(endpoint, encoded)
 	if err != nil {
 		return errors.New("uptime request could not be encoded")
@@ -87,13 +92,50 @@ func (b *backend) call(ctx context.Context, procedure string, body rpcRequest, t
 		if fetchErr != nil {
 			return nil, 0, fetchErr
 		}
+		// Check the shape before the body can be kept, so a wrong-shaped 200 is
+		// an error for every waiter and is never cached.
+		if checkErr := checkRecord(body, target); checkErr != nil {
+			return nil, 0, checkErr
+		}
 		return body, readCacheTTL, nil
 	})
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(raw, target); err != nil {
-		return errors.New("uptime response was not a valid application record")
+	return decodeRecord(raw, target)
+}
+
+// callUncached performs one read with no coalescing and no cache. It is for
+// authorization gates, which must reflect the current membership.
+func (b *backend) callUncached(ctx context.Context, procedure string, body rpcRequest, target any) error {
+	endpoint, encoded, err := b.request(procedure, body)
+	if err != nil {
+		return err
+	}
+	raw, err := b.fetch(ctx, endpoint, encoded)
+	if err != nil {
+		return err
+	}
+	return decodeRecord(raw, target)
+}
+
+func (b *backend) request(procedure string, body rpcRequest) (endpoint string, encoded []byte, err error) {
+	encoded, err = json.Marshal(body)
+	if err != nil {
+		return "", nil, errors.New("uptime request could not be encoded")
+	}
+	return strings.TrimRight(b.config.Endpoint, "/") + procedure, encoded, nil
+}
+
+// checkRecord reports whether body decodes into a value shaped like target.
+func checkRecord(body []byte, target any) error {
+	probe := reflect.New(reflect.TypeOf(target).Elem()).Interface()
+	return decodeRecord(body, probe)
+}
+
+func decodeRecord(body []byte, target any) error {
+	if err := json.Unmarshal(body, target); err != nil {
+		return errInvalidRecord
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package uptime
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -40,9 +41,9 @@ func isolateCaches(t *testing.T) *fakeClock {
 	t.Helper()
 	clock := &fakeClock{now: time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)}
 	oldReads, oldTokens := reads, tokens
-	reads = newCoalescer[[]byte](maxCachedEntries)
+	reads = newCoalescer[[]byte](maxCachedEntries, func(body []byte) int { return len(body) })
 	reads.now = clock.Now
-	tokens = newCoalescer[string](maxCachedEntries)
+	tokens = newCoalescer[string](maxCachedEntries, func(token string) int { return len(token) })
 	tokens.now = clock.Now
 	t.Cleanup(func() { reads, tokens = oldReads, oldTokens })
 	return clock
@@ -251,7 +252,7 @@ func TestCancelledWaiterDoesNotCancelOthers(t *testing.T) {
 
 func TestCoalescerBoundsEntriesAndEvictsLeastRecentlyUsed(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(0, 0)}
-	c := newCoalescer[string](2)
+	c := newCoalescer[string](2, func(value string) int { return len(value) })
 	c.now = clock.Now
 	fetch := func(value string) func(context.Context) (string, time.Duration, error) {
 		return func(context.Context) (string, time.Duration, error) { return value, time.Minute, nil }
@@ -297,7 +298,7 @@ func TestCoalescerBoundsEntriesAndEvictsLeastRecentlyUsed(t *testing.T) {
 }
 
 func TestCoalescerKeepsNothingForErrorsOrZeroTTL(t *testing.T) {
-	c := newCoalescer[int](maxCachedEntries)
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
 	var calls atomic.Int32
 	failing := func(context.Context) (int, time.Duration, error) {
 		calls.Add(1)
@@ -397,5 +398,237 @@ func TestReadKeySeparatesCredentialsAndHeaders(t *testing.T) {
 	headers.config = &config{Config: httphelp.Config{Endpoint: "https://example.invalid", Headers: map[string]string{"X-Scope-OrgID": "tenant-2"}}}
 	if headerKey, _ := headers.readKey("https://example.invalid/rpc", body); headerKey == key {
 		t.Fatal("different tenant headers produced the same read key")
+	}
+}
+
+// The first caller starts the shared read and then cancels. A later waiter
+// with a live context must still receive the result: the read must not run on
+// the first caller's context.
+func TestFirstCallerCancelDoesNotFailLaterWaiter(t *testing.T) {
+	isolateCaches(t)
+	release := make(chan struct{})
+	reached := make(chan struct{}, 4)
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		reached <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		writeJSON(t, w, `{"services":[]}`)
+	}))
+	defer server.Close()
+	var once sync.Once
+	releaseAll := func() { once.Do(func() { close(release) }) }
+	defer releaseAll()
+
+	originCtx, cancelOrigin := context.WithCancel(context.Background())
+	origin := make(chan *connector.QueryResult, 1)
+	go func() {
+		result, _ := New().Query(originCtx, testRequest(t, server.URL, sloQueries[0]))
+		origin <- result
+	}()
+	<-reached
+	later := make(chan *connector.QueryResult, 1)
+	go func() {
+		result, _ := New().Query(context.Background(), testRequest(t, server.URL, sloQueries[0]))
+		later <- result
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancelOrigin()
+	if result := <-origin; result == nil || result.State != connector.StateError {
+		t.Fatalf("cancelled origin result = %#v", result)
+	}
+	releaseAll()
+	if result := <-later; result == nil || result.State != connector.StateOK {
+		t.Fatalf("later waiter result = %#v; the first caller's cancellation failed it", result)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("upstream calls = %d, want 1", got)
+	}
+}
+
+// The shared read is bounded by its own timeout, not by any caller's context.
+func TestSharedFetchIsBoundedByTimeout(t *testing.T) {
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
+	start := time.Now()
+	_, err := c.do(context.Background(), "slow", 50*time.Millisecond, func(ctx context.Context) (int, time.Duration, error) {
+		select {
+		case <-ctx.Done():
+			return 0, 0, ctx.Err()
+		case <-time.After(5 * time.Second):
+			return 1, time.Minute, nil
+		}
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shared fetch error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("shared fetch ran %s; the 50ms timeout did not bound it", elapsed)
+	}
+}
+
+// A caller that arrives with its context already ended does not start a read.
+func TestEndedCallerDoesNotStartFetch(t *testing.T) {
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var fetches atomic.Int32
+	_, err := c.do(ctx, "k", time.Second, func(context.Context) (int, time.Duration, error) {
+		fetches.Add(1)
+		return 1, time.Minute, nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled", err)
+	}
+	if got := fetches.Load(); got != 0 {
+		t.Fatalf("fetches = %d, want 0", got)
+	}
+}
+
+// A 200 whose body has the wrong shape is an error for every caller and is
+// never kept, so the next query reaches the upstream again.
+func TestWrongShapedBodyIsNotCached(t *testing.T) {
+	isolateCaches(t)
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			writeJSON(t, w, `{"services":"temporarily unavailable"}`)
+			return
+		}
+		writeJSON(t, w, `{"services":[]}`)
+	}))
+	defer server.Close()
+	first, err := New().Query(context.Background(), testRequest(t, server.URL, sloQueries[0]))
+	if err != nil || first.State != connector.StateError {
+		t.Fatalf("wrong-shaped body result = %#v, %v; want error state", first, err)
+	}
+	second, err := New().Query(context.Background(), testRequest(t, server.URL, sloQueries[0]))
+	if err != nil || second.State != connector.StateOK {
+		t.Fatalf("second result = %#v, %v; want OK", second, err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("upstream calls = %d, want 2", got)
+	}
+}
+
+// Entries leave memory when they expire, even if no later query asks for them.
+func TestExpiredEntriesAreRemovedWithoutAccess(t *testing.T) {
+	c := newCoalescer[string](maxCachedEntries, func(value string) int { return len(value) })
+	ctx := context.Background()
+	if _, err := c.do(ctx, "short", time.Second, func(context.Context) (string, time.Duration, error) {
+		return "value", 20 * time.Millisecond, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) != 0 || c.bytes != 0 {
+		t.Fatalf("expired entries kept: %d entries, %d bytes", len(c.entries), c.bytes)
+	}
+}
+
+// Values are bounded by bytes as well as count, and an oversized value is
+// returned to its caller but never kept.
+func TestCoalescerBoundsBytesAndSkipsOversizedValues(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	c := newCoalescer[[]byte](maxCachedEntries, func(value []byte) int { return len(value) })
+	c.now = clock.Now
+	block := make([]byte, 200<<10)
+	for i := range 60 {
+		key := strconv.Itoa(i)
+		if _, err := c.do(context.Background(), key, time.Second, func(context.Context) ([]byte, time.Duration, error) {
+			return block, time.Minute, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c.bytes > c.maxBytes || c.bytes != len(c.entries)*len(block) {
+		t.Fatalf("bytes = %d over %d entries, budget %d", c.bytes, len(c.entries), c.maxBytes)
+	}
+	var fetches atomic.Int32
+	big := make([]byte, maxEntryBytes+1)
+	for range 2 {
+		if _, err := c.do(context.Background(), "big", time.Second, func(context.Context) ([]byte, time.Duration, error) {
+			fetches.Add(1)
+			return big, time.Minute, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Fatalf("oversized value fetches = %d, want 2 (not kept)", got)
+	}
+}
+
+// Dropping a rejected token makes the next query refresh it.
+func TestForgetDropsKeptValue(t *testing.T) {
+	c := newCoalescer[string](maxCachedEntries, func(value string) int { return len(value) })
+	var fetches atomic.Int32
+	fetch := func(context.Context) (string, time.Duration, error) {
+		fetches.Add(1)
+		return "token", time.Minute, nil
+	}
+	for range 2 {
+		if _, err := c.do(context.Background(), "k", time.Second, fetch); err != nil {
+			t.Fatal(err)
+		}
+		c.forget("k")
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Fatalf("fetches = %d, want 2 after forget", got)
+	}
+}
+
+// Two Firebase credentials must each get their own ID token, never one
+// tenant's token served to another.
+func TestFirebaseTokensAreSeparatedByCredential(t *testing.T) {
+	isolateCaches(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		writeJSON(t, w, `{"id_token":"token-for-`+r.PostForm.Get("refresh_token")+`","expires_in":"3600"}`)
+	}))
+	defer server.Close()
+	client := tokenTestClient(t, server)
+	a, errA := bearerCredential(context.Background(), []byte(`{"apiKey":"shared-key","refreshToken":"tenant-a"}`), client)
+	b, errB := bearerCredential(context.Background(), []byte(`{"apiKey":"shared-key","refreshToken":"tenant-b"}`), client)
+	if errA != nil || errB != nil || a != "token-for-tenant-a" || b != "token-for-tenant-b" {
+		t.Fatalf("tokens a=%q (%v) b=%q (%v)", a, errA, b, errB)
+	}
+}
+
+// Membership is checked on every reliability read, not from the read cache: a
+// services read kept a moment earlier must not admit a revoked caller.
+func TestReliabilityMembershipIsNotServedFromCache(t *testing.T) {
+	isolateCaches(t)
+	var services, reports atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case servicesRPC:
+			if services.Add(1) > 1 {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			writeJSON(t, w, `{"services":[]}`)
+		case reliabilityRPC:
+			reports.Add(1)
+			writeJSON(t, w, `{"latestReport":null}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	if result, err := New().Query(context.Background(), testRequest(t, server.URL, `{"operation":"services","args":{"limit":1}}`)); err != nil || result.State != connector.StateOK {
+		t.Fatalf("services read = %#v, %v", result, err)
+	}
+	result, err := New().Query(context.Background(), testRequest(t, server.URL, `{"operation":"reliability_summary"}`))
+	if err != nil || result.State != connector.StateForbidden {
+		t.Fatalf("revoked reliability read = %#v, %v; want Forbidden", result, err)
+	}
+	if got := reports.Load(); got != 0 {
+		t.Fatalf("report reads = %d, want 0 after the membership refusal", got)
 	}
 }
