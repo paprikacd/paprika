@@ -159,15 +159,20 @@ function Stat({
   // Thresholds stay on their side of the rounded reading: 99.86 never reads 99.9 against a 99.9 threshold.
   const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) });
   const barColor = thresholdPaint(band) ?? widget.color ?? "var(--gamma-chart-1)";
-  // The status chip names a warning or critical band with its glyph and label. A colour-only band above the first one
-  // gets a dot and its label; the first band is the normal state and stays unlabelled.
+  // The status chip names a warning or critical band with its glyph and label. A colour-only band gets a dot and a text
+  // label, so the cue is never colour alone: its own label, or when unlabelled, its threshold value ("≥ 80 %"). The first
+  // band is the normal state and stays unlabelled when it has no label.
   // A stale sample is a notice, not a breach: it takes the chip slot, so it never pushes the reading out of a one-row card.
   const sampleAge = ageSeconds === undefined ? "" : Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`;
+  const colourBand = band && band.status === undefined && band.color !== undefined ? band : undefined;
+  const colourBandLabel = colourBand
+    ? colourBand.label?.trim() || (thresholds?.[0] && colourBand.value > thresholds[0].value ? `≥ ${formatMetric(colourBand.value, widget.unit, false, widget.options?.decimals)}` : "")
+    : "";
   const chip = <>
     {band?.status === "warning" || band?.status === "critical"
       ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
-      : band && band.status === undefined && band.color !== undefined && band.label?.trim()
-        ? <StatBandChip color={band.color} label={band.label.trim()} />
+      : colourBand?.color && colourBandLabel
+        ? <StatBandChip color={colourBand.color} label={colourBandLabel} />
         : null}
     {stale && <StatNoticeChip visible={`Stale · ${sampleAge}`} full={`Last valid sample: ${sampleAge} before range end.`} dataAttribute="data-stale-observation" />}
     {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}

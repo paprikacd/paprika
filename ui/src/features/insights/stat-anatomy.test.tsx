@@ -42,8 +42,16 @@ describe("stat status chip", () => {
     expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
   });
 
-  it("shows no chip for an unlabelled colour-only band, which names nothing", () => {
-    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800" }] })} result={one(42)} />);
+  it("names an unlabelled colour-only band above the first with its threshold value, in its hue, with the reading still in ink", () => {
+    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 80, color: "#dd8800" }] })} result={one(85.2)} />);
+    const band = container.querySelector('[data-stat-chip="band"]');
+    expect(band).toHaveTextContent("≥ 80%");
+    expect(band?.querySelector('[aria-hidden="true"]')).toHaveStyle({ background: "#dd8800" });
+    expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
+  });
+
+  it("shows no chip for an unlabelled first band, which is the normal state", () => {
+    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800", label: "Hot" }] })} result={one(10)} />);
     expect(container.querySelector("[data-stat-chip]")).toBeNull();
   });
 
