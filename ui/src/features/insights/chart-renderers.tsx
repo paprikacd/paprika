@@ -159,20 +159,23 @@ function Stat({
   // Thresholds stay on their side of the rounded reading: 99.86 never reads 99.9 against a 99.9 threshold.
   const statReading = formatReading(first.point.value, widget.unit, { decimals: widget.options?.decimals, keepSides: (thresholds ?? []).map(threshold => threshold.value) });
   const barColor = thresholdPaint(band) ?? widget.color ?? "var(--gamma-chart-1)";
-  // The status chip names a warning or critical band with its glyph and label. A colour-only band gets a dot and a text
-  // label, so the cue is never colour alone: its own label, or when unlabelled, its threshold value ("≥ 80 %"). The first
-  // band is the normal state and stays unlabelled when it has no label.
+  // The status chip names a warning or critical band with its glyph and label. Every matched colour-only band gets a dot in
+  // its hue, so the cue is never colour alone. Its text is its own label, or when unlabelled, its threshold value ("≥ 80%").
+  // The first band has no value text ("≥ 0%" is noise): its dot alone, named "below" the next threshold.
   // A stale sample is a notice, not a breach: it takes the chip slot, so it never pushes the reading out of a one-row card.
   const sampleAge = ageSeconds === undefined ? "" : Math.floor(ageSeconds / 60) >= 1 ? `${Math.floor(ageSeconds / 60)} min` : `${Math.floor(ageSeconds)} sec`;
   const colourBand = band && band.status === undefined && band.color !== undefined ? band : undefined;
-  const colourBandLabel = colourBand
-    ? colourBand.label?.trim() || (thresholds?.[0] && colourBand.value > thresholds[0].value ? `≥ ${formatMetric(colourBand.value, widget.unit, false, widget.options?.decimals)}` : "")
-    : "";
+  const colourBandFirst = colourBand !== undefined && thresholds?.[0] !== undefined && colourBand.value <= thresholds[0].value;
+  const colourBandOwnLabel = colourBand?.label?.trim() ?? "";
+  const colourBandValue = colourBand ? formatMetric(colourBand.value, widget.unit, false, widget.options?.decimals) : "";
+  const colourBandNext = colourBandFirst && thresholds?.[1] ? formatMetric(thresholds[1].value, widget.unit, false, widget.options?.decimals) : undefined;
+  const colourBandText = colourBandOwnLabel || (colourBandFirst ? "" : `≥ ${colourBandValue}`);
+  const colourBandName = colourBandOwnLabel || (colourBandFirst && colourBandNext ? `below ${colourBandNext}` : `≥ ${colourBandValue}`);
   const chip = <>
     {band?.status === "warning" || band?.status === "critical"
       ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
-      : colourBand?.color && colourBandLabel
-        ? <StatBandChip color={colourBand.color} label={colourBandLabel} />
+      : colourBand?.color
+        ? <StatBandChip color={colourBand.color} text={colourBandText} name={colourBandName} />
         : null}
     {stale && <StatNoticeChip visible={`Stale · ${sampleAge}`} full={`Last valid sample: ${sampleAge} before range end.`} dataAttribute="data-stale-observation" />}
     {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}
@@ -258,12 +261,17 @@ function Stat({
   );
 }
 
-/** A colour-only band's label: a dot in the band's hue, then the label. Non-interactive, like the status chip. */
-function StatBandChip({ color, label }: { color: string; label: string }) {
+/**
+ * A colour-only band: a dot in the band's hue, then its text when it has one. The dot is the named element, so the full
+ * name ("Threshold ≥ 80%") reaches assistive technology even when the text is empty or cut by the card's width; the title
+ * shows the same name on hover. Non-interactive, like the status chip.
+ */
+function StatBandChip({ color, text, name }: { color: string; text: string; name: string }) {
+  const full = `Threshold ${name}`;
   return (
-    <span className={styles.statBandChip} data-stat-chip="band">
-      <span className={styles.statBandDot} aria-hidden="true" style={{ background: color }} />
-      <span className={styles.statBandText}>{label}</span>
+    <span className={styles.statBandChip} data-stat-chip="band" title={full}>
+      <span className={styles.statBandDot} role="img" aria-label={full} style={{ background: color }} />
+      {text && <span className={styles.statBandText} aria-hidden="true">{text}</span>}
     </span>
   );
 }
