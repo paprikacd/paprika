@@ -109,8 +109,8 @@ Measured at the default timeouts against a gateway that never answers or stalls:
   `sharedCatalog: {status: "unavailable", code: 504}`. A silent gateway does not
   fail the listing, because a 504 there would blank local tiles.
 - `/query`, catalog never answers: 504 after 10 seconds (the catalog phase cap).
-- `/query`, catalog answers, data call stalls: 504 after 15 seconds. The
-  gateway transport's response-header timeout ends a silent response first.
+- `/query`, catalog answers, data call stalls: 504 after 20 seconds, the 20 s
+  operation bound, which the gateway transport's response-header wait now equals.
 - `/query`, catalog takes 9 seconds, then data stalls: 504 after 22 seconds (the
   overall budget; before this change it was 24 seconds).
 

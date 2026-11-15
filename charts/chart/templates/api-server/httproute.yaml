@@ -12,14 +12,16 @@
 {{- /*
 Envoy Gateway applies a 15 s request timeout to a route with none. The Insights proxy
 budgets a UI query at 28 s, so /api/insights gets its own rule with a longer bound. The
-"/" rule keeps no timeout: it carries streaming endpoints (SSE), which a request timeout
-would cut. Gateway API precedence picks the longest matching prefix, so /api/insights*
-takes the new rule and everything else takes "/".
+"/" rule sets no explicit timeout, so Envoy Gateway's 15 s default still applies to it,
+including its Connect streams (StreamResourceLogs, SatelliteLink); browser SSE is disabled
+on the api-server. Gateway API precedence picks the longest matching prefix, so
+/api/insights* takes the new rule and everything else takes "/". The new rule comes after
+"/" so the existing rule keeps its index, and Envoy route names, at rule/0.
 */ -}}
 {{- $insightsTimeout := .Values.apiServer.ingress.insightsRequestTimeout | default "35s" | toString }}
 {{- $insightsSeconds := include "paprika.durationSeconds" $insightsTimeout | atoi }}
 {{- if or (lt $insightsSeconds 29) (gt $insightsSeconds 119) }}
-{{- fail (printf "apiServer.ingress.insightsRequestTimeout must be between 29s and 119s (it must exceed the Insights proxy's 28s query budget and stay under Cloudflare's 120s proxy timeout), got %q" $insightsTimeout) }}
+{{- fail (printf "apiServer.ingress.insightsRequestTimeout must be between 29s and 119s (it must exceed the Insights proxy's 28s query budget and stay under Cloudflare's 125s default proxy read timeout), got %q" $insightsTimeout) }}
 {{- end }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -51,16 +53,16 @@ spec:
   - matches:
     - path:
         type: PathPrefix
-        value: /api/insights
-    timeouts:
-      request: {{ $insightsTimeout | quote }}
+        value: /
     backendRefs:
     - name: {{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }}
       port: {{ $.Values.apiServer.service.port }}
   - matches:
     - path:
         type: PathPrefix
-        value: /
+        value: /api/insights
+    timeouts:
+      request: {{ $insightsTimeout | quote }}
     backendRefs:
     - name: {{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }}
       port: {{ $.Values.apiServer.service.port }}

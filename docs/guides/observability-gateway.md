@@ -92,8 +92,8 @@ startup.
 
 | # | Hop | Limit (default) | Configured in | When full, the caller sees | Retry |
 |---|---|---|---|---|---|
-| E1 | Cloudflare proxy in front of the public hostname (`proxied` record, outside this chart) | Proxy read timeout **120 s**. An origin that stays silent past 120 s gets **524** `origin_response_timeout`. An origin 504 is passed through as **504** `origin_gateway_timeout`, so a 504 from that origin does not by itself mean Cloudflare timed out | Cloudflare zone setting | Cloudflare's own error page, 524 at 120 s | Yes, with backoff |
-| E2 | Envoy Gateway route request timeout (`timeouts.request` on the HTTPRoute rule, `charts/chart/templates/observability-gateway/httproute.yaml` and `api-server/httproute.yaml`) | `/observe` **50 s** (`observabilityGateway.ingress.requestTimeout`, valid 46 to 119 s). `/api/insights/` **35 s** (`apiServer.ingress.insightsRequestTimeout`, valid 29 to 119 s). `/` **none**, because it carries the SSE endpoints. A route without a timeout gets Envoy Gateway's default of **15 s** | `observabilityGateway.ingress.requestTimeout`, `apiServer.ingress.insightsRequestTimeout` | Envoy answers **504** `upstream request timeout` at the route's limit and resets the upstream stream, which cancels the gateway's tool or query | Yes, with backoff, since the earlier attempt may have used provider time |
+| E1 | Cloudflare proxy in front of the public hostname (`proxied` record, outside this chart) | Proxy read timeout **125 s** (Cloudflare default, measured between reads). An origin that stays silent past it gets **524** `origin_response_timeout`. An origin 504 is passed through as **504** `origin_gateway_timeout`, so a 504 from that origin does not by itself mean Cloudflare timed out | Cloudflare zone setting | Cloudflare's own error page, 524 at 120 s | Yes, with backoff |
+| E2 | Envoy Gateway route request timeout (`timeouts.request` on the HTTPRoute rule, `charts/chart/templates/observability-gateway/httproute.yaml` and `api-server/httproute.yaml`) | `/observe` **50 s** (`observabilityGateway.ingress.requestTimeout`, valid 46 to 119 s). `/api/insights/` **35 s** (`apiServer.ingress.insightsRequestTimeout`, valid 29 to 119 s). `/` sets no explicit timeout, so it gets Envoy Gateway's default of **15 s**, including its Connect streams (browser SSE is disabled on the api-server) | `observabilityGateway.ingress.requestTimeout`, `apiServer.ingress.insightsRequestTimeout` | Envoy answers **504** `upstream request timeout` at the route's limit and resets the upstream stream, which cancels the gateway's tool or query | Yes, with backoff, since the earlier attempt may have used provider time |
 | 1 | Browser scheduler (`createQueryScheduler`, `ui/src/features/insights/query.ts`) | 4 queries in flight per viewer, maximum 16 | Code only | Nothing is sent; further widgets wait in the local queue | n/a |
 | 2 | Browser replay (`capacityRetryDelay`, `ui/src/features/insights/client.ts`) | A 429 on `/query`, a read or a conditional write is replayed up to 3 times, waiting Retry-After seconds. A wait over 10 s is not retried | Code only | After the replays fail the widget shows "Query failed" with a Retry button (`ui/src/features/insights/charts.tsx`) | Manual |
 | 3 | Console API proxy (`insightsProxyRequestHandler`, `internal/api/insights_proxy.go`) | No admission limit. Response-header timeout 25 s (transport) and a 28 s request budget (`insightsProxyRequestHandler`); the header timeout cuts in first if Insights sends no headers. The console's connection cap is `--api-max-conns` (128) | Code; `--api-max-conns` | An unreachable or slow Insights gets **502** "Insights service is unavailable" | Yes, with backoff |
@@ -114,7 +114,7 @@ startup.
   reads) at 15.00 s with a 504 while the gateway was still working. The chart
   rejects a `/observe` timeout under 46 s or over 119 s, and an Insights timeout
   under 29 s or over 119 s, so the route never falls inside the write or budget
-  window or past Cloudflare's 120 s.
+  window or past Cloudflare's 125 s.
 - **Edge (hops 5 and 6).** The intake and pool waits share one deadline of
   `--observability-http-admission-wait` (1 s by default), measured from the start
   of the handler. A request that is refused there has waited at most that long.
@@ -151,7 +151,7 @@ timeout upstream. The chain, outermost first:
 
 | Hop | Bound | Source |
 |---|---|---|
-| Cloudflare to origin | 120 s read, then 524 (proxied records, Cloudflare default) | `terraform/main.tf` |
+| Cloudflare to origin | 125 s read (between reads), then 524 (proxied records, Cloudflare default) | `terraform/main.tf` |
 | Envoy Gateway, api-server route (`/`: the console and `/api/insights`) | 15 s by default; the HTTPRoute sets no `timeouts` | `charts/chart/templates/api-server/httproute.yaml`, Envoy Gateway default |
 | Envoy Gateway, `/observe` route | 15 s by default; the HTTPRoute sets no `timeouts` | `charts/chart/templates/observability-gateway/httproute.yaml`, Envoy Gateway default |
 | Console Insights proxy | 25 s until response headers, 28 s total | `internal/api/insights_proxy.go` |
@@ -176,7 +176,7 @@ so a read is cut only by its own budget. Two limits remain:
   api-server route) is therefore bounded at 15 s in production until the charts
   set a request timeout on those routes: at least 28 s on the api-server route
   (the console proxy's total), and at least 46 s on `/observe` (above the 45 s
-  gateway write timeout and below Cloudflare's 120 s).
+  gateway write timeout and below Cloudflare's 125 s).
 
 **What is coupled to what.**
 

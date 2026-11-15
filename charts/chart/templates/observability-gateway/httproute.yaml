@@ -16,12 +16,12 @@
 Envoy Gateway applies a 15 s request timeout to a route with none. A query_dashboard
 can take six serial Uptime reads (about 15 s), so the route needs its own bound. It must
 exceed the gateway's 45 s HTTP write timeout, or the edge cuts a slow answer before the
-gateway does, and stay below Cloudflare's 120 s proxy timeout.
+gateway does, and stay below Cloudflare's 125 s default proxy read timeout.
 */ -}}
 {{- $timeout := .Values.observabilityGateway.ingress.requestTimeout | default "50s" | toString }}
 {{- $timeoutSeconds := include "paprika.durationSeconds" $timeout | atoi }}
 {{- if or (lt $timeoutSeconds 46) (gt $timeoutSeconds 119) }}
-{{- fail (printf "observabilityGateway.ingress.requestTimeout must be between 46s and 119s (it must exceed the gateway's 45s write timeout and stay under Cloudflare's 120s proxy timeout), got %q" $timeout) }}
+{{- fail (printf "observabilityGateway.ingress.requestTimeout must be between 46s and 119s (it must exceed the gateway's 45s write timeout and stay under Cloudflare's 125s default proxy read timeout), got %q" $timeout) }}
 {{- end }}
 # Routes https://<hostname>/observe* to the observability gateway. The
 # api-server's own HTTPRoute matches path prefix "/" on the same hostname;
