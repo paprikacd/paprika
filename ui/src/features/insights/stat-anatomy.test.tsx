@@ -47,6 +47,8 @@ describe("stat status chip", () => {
     const band = container.querySelector('[data-stat-chip="band"]');
     expect(band).toHaveTextContent("≥ 80%");
     expect(screen.getByRole("img", { name: "Threshold ≥ 80%" })).toHaveStyle({ background: "#dd8800" });
+    // The visible value is hidden from assistive technology, which already hears the name once from the dot.
+    expect(container.querySelector('[data-stat-chip="band"] [aria-hidden="true"]')).toHaveTextContent("≥ 80%");
     expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
   });
 
@@ -67,6 +69,24 @@ describe("stat status chip", () => {
     expect(band).not.toBeNull();
     expect(band?.textContent).toBe("");
     expect(screen.getByRole("img", { name: "Threshold below 40%" })).toHaveStyle({ background: "#008866" });
+  });
+
+  it("keeps the widget's decimals in the first band's name, as in the value", () => {
+    render(<WidgetVisualization widget={widgetWith({ decimals: 2, thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800", label: "Hot" }] })} result={one(10)} />);
+    expect(screen.getByRole("img", { name: "Threshold below 40.00%" })).toBeInTheDocument();
+  });
+
+  it("names a lone colour-only band by the reading's side of it, not as a bare \"≥\" that a lower reading contradicts", () => {
+    const { container, rerender } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 50, color: "#dd8800" }] })} result={one(10)} />);
+    expect(screen.getByRole("img", { name: "Threshold below 50%" })).toBeInTheDocument();
+    expect(container.querySelector('[data-stat-chip="band"]')).toHaveAttribute("title", "Threshold below 50%");
+    rerender(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 50, color: "#dd8800" }] })} result={one(60)} />);
+    expect(screen.getByRole("img", { name: "Threshold from 50%" })).toBeInTheDocument();
+  });
+
+  it("names a lone band at 0 without the \"≥ 0%\" noise", () => {
+    render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }] })} result={one(10)} />);
+    expect(screen.getByRole("img", { name: "Threshold from 0%" })).toBeInTheDocument();
   });
 
   it("shows a labelled colour-only band wherever it sits, so a low-is-bad scale is labelled too", () => {

@@ -170,7 +170,11 @@ function Stat({
   const colourBandValue = colourBand ? formatMetric(colourBand.value, widget.unit, false, widget.options?.decimals) : "";
   const colourBandNext = colourBandFirst && thresholds?.[1] ? formatMetric(thresholds[1].value, widget.unit, false, widget.options?.decimals) : undefined;
   const colourBandText = colourBandOwnLabel || (colourBandFirst ? "" : `≥ ${colourBandValue}`);
-  const colourBandName = colourBandOwnLabel || (colourBandFirst && colourBandNext ? `below ${colourBandNext}` : `≥ ${colourBandValue}`);
+  // A reading below a lone first band is named "below" it; a reading at or above it is "from" it, since "≥ 0%" is noise.
+  const readingBelowBand = colourBand !== undefined && first.point.value < colourBand.value;
+  const colourBandName = colourBandOwnLabel || (colourBandFirst && colourBandNext ? `below ${colourBandNext}`
+    : colourBandFirst ? `${readingBelowBand ? "below" : "from"} ${colourBandValue}`
+    : `≥ ${colourBandValue}`);
   const chip = <>
     {band?.status === "warning" || band?.status === "critical"
       ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
