@@ -68,9 +68,12 @@ func newObserveGateway(rawURL string) (*observeGateway, error) {
 		return nil, err
 	}
 	transport.MaxIdleConnsPerHost = 8
-	transport.ResponseHeaderTimeout = 15 * time.Second
+	// Header and client waits equal the per-operation bound, so a read the gateway
+	// is still running is not abandoned early. The uptime connector allows 20 s
+	// per read; each call's deadline, min(operation, remaining budget), ends it.
+	transport.ResponseHeaderTimeout = defaultObserveTimeouts.operation
 	return &observeGateway{baseURL: u, timeouts: defaultObserveTimeouts, client: &http.Client{
-		Transport: transport, Timeout: 20 * time.Second,
+		Transport: transport, Timeout: defaultObserveTimeouts.operation,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }

@@ -38,13 +38,55 @@ describe("stat status chip", () => {
     const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800", label: "Hot" }] })} result={one(42.34)} />);
     const band = container.querySelector('[data-stat-chip="band"]');
     expect(band).toHaveTextContent("Hot");
-    expect(band?.querySelector('[aria-hidden="true"]')).toHaveStyle({ background: "#dd8800" });
+    expect(screen.getByRole("img", { name: "Threshold Hot" })).toHaveStyle({ background: "#dd8800" });
     expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
   });
 
-  it("shows no chip for an unlabelled colour-only band, which names nothing", () => {
-    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800" }] })} result={one(42)} />);
-    expect(container.querySelector("[data-stat-chip]")).toBeNull();
+  it("names an unlabelled colour-only band above the first with its threshold value, in its hue, with the reading still in ink", () => {
+    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 80, color: "#dd8800" }] })} result={one(85.2)} />);
+    const band = container.querySelector('[data-stat-chip="band"]');
+    expect(band).toHaveTextContent("≥ 80%");
+    expect(screen.getByRole("img", { name: "Threshold ≥ 80%" })).toHaveStyle({ background: "#dd8800" });
+    // The visible value is hidden from assistive technology, which already hears the name once from the dot.
+    expect(container.querySelector('[data-stat-chip="band"] [aria-hidden="true"]')).toHaveTextContent("≥ 80%");
+    expect(container.querySelector("[data-metric-value]")?.getAttribute("style") ?? "").not.toContain("color");
+  });
+
+  it("keeps the decimals of the widget in the unlabelled band's value, as the reading has them", () => {
+    const { container } = render(<WidgetVisualization widget={widgetWith({ decimals: 2, thresholds: [{ value: 0, color: "#008866" }, { value: 80, color: "#dd8800" }] })} result={one(85.2)} />);
+    expect(container.querySelector('[data-stat-chip="band"]')).toHaveTextContent("≥ 80.00%");
+    expect(screen.getByRole("img", { name: "Threshold ≥ 80.00%" })).toBeInTheDocument();
+  });
+
+  it("gives the full band name as the chip's title, so a truncated value on a narrow card can be read", () => {
+    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 80, color: "#dd8800" }] })} result={one(85.2)} />);
+    expect(container.querySelector('[data-stat-chip="band"]')).toHaveAttribute("title", "Threshold ≥ 80%");
+  });
+
+  it("shows the first unlabelled band as its dot alone, named below the next threshold, with no value text", () => {
+    const { container } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800", label: "Hot" }] })} result={one(10)} />);
+    const band = container.querySelector('[data-stat-chip="band"]');
+    expect(band).not.toBeNull();
+    expect(band?.textContent).toBe("");
+    expect(screen.getByRole("img", { name: "Threshold below 40%" })).toHaveStyle({ background: "#008866" });
+  });
+
+  it("keeps the widget's decimals in the first band's name, as in the value", () => {
+    render(<WidgetVisualization widget={widgetWith({ decimals: 2, thresholds: [{ value: 0, color: "#008866" }, { value: 40, color: "#dd8800", label: "Hot" }] })} result={one(10)} />);
+    expect(screen.getByRole("img", { name: "Threshold below 40.00%" })).toBeInTheDocument();
+  });
+
+  it("names a lone colour-only band by the reading's side of it, not as a bare \"≥\" that a lower reading contradicts", () => {
+    const { container, rerender } = render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 50, color: "#dd8800" }] })} result={one(10)} />);
+    expect(screen.getByRole("img", { name: "Threshold below 50%" })).toBeInTheDocument();
+    expect(container.querySelector('[data-stat-chip="band"]')).toHaveAttribute("title", "Threshold below 50%");
+    rerender(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 50, color: "#dd8800" }] })} result={one(60)} />);
+    expect(screen.getByRole("img", { name: "Threshold from 50%" })).toBeInTheDocument();
+  });
+
+  it("names a lone band at 0 without the \"≥ 0%\" noise", () => {
+    render(<WidgetVisualization widget={widgetWith({ thresholds: [{ value: 0, color: "#008866" }] })} result={one(10)} />);
+    expect(screen.getByRole("img", { name: "Threshold from 0%" })).toBeInTheDocument();
   });
 
   it("shows a labelled colour-only band wherever it sits, so a low-is-bad scale is labelled too", () => {

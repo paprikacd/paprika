@@ -416,3 +416,32 @@ func TestObserveSavedQueryCatalogDoesNotBlockStoreWrites(t *testing.T) {
 		t.Fatalf("cancelled saved query was persisted: %v", err)
 	}
 }
+
+// A read that takes 18 s upstream (inside the 20 s operation bound and the uptime
+// connector's 20 s) completes. The header wait used to be 15 s, which reported a
+// timeout while the gateway kept running the same read.
+func TestObserveSlowReadWithinOperationBoundCompletes(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("an 18 s upstream read")
+	}
+	const upstream = 18 * time.Second
+	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/list_observability_providers" {
+			writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
+			return
+		}
+		select {
+		case <-time.After(upstream):
+		case <-r.Context().Done():
+			return
+		}
+		writeJSON(w, 200, map[string]any{"state": "OK", "data": json.RawMessage(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1700000000.25,"4.25"]]}]}}`)})
+	}))
+	defer gateway.Close()
+	s := observeTestService(t, gateway.URL)
+	started := time.Now()
+	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.GreaterOrEqual(t, time.Since(started), upstream)
+}

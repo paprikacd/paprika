@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func TestInsightsInitializeGuidesReadOnlyClientsToDashboardBundles(t *testing.T)
 				return
 			}
 			assert.True(t, strings.HasPrefix(instructions, "Prefer query_dashboard"))
-			for _, detail := range []string{"list_dashboards", "get_dashboard", "variables map", "identical queries once", "structuredContent", "not authoring consent", "Discover authorized providers", "exact ETag", "paprika:insights:write"} {
+			for _, detail := range []string{"list_dashboards", "get_dashboard", "variables map", "identical queries once", "structuredContent", "not authoring consent", "discover authorized providers", "exact ETag", "paprika:insights:write"} {
 				assert.Contains(t, instructions, detail)
 			}
 		})
@@ -63,13 +64,36 @@ func TestInsightsInitializeGuidesReadOnlyClientsToDashboardBundles(t *testing.T)
 func TestAuthoringInstructionsCarryDashboardRulesOnlyForInsightsAuthoring(t *testing.T) {
 	_, authoring := serverDescriptionAndInstructions(true, []Scope{ScopeObserve, ScopeInsightsWrite})
 	assert.True(t, strings.HasPrefix(authoring, "Prefer query_dashboard"), "the authoring instructions keep their existing opening")
-	for _, rule := range append(guidance.DashboardComposition(), guidance.DashboardWorkflow()...) {
-		assert.Contains(t, authoring, rule, "an authoring surface must advertise every dashboard rule to every client")
+	for _, rule := range append(guidance.MCPDashboardComposition(), guidance.MCPDashboardWorkflow()...) {
+		assert.Contains(t, authoring, rule, "an authoring surface must advertise every compact dashboard rule to every client")
 	}
 	_, withoutInsights := serverDescriptionAndInstructions(true, []Scope{ScopeObserve})
-	assert.NotContains(t, withoutInsights, guidance.DashboardComposition()[0], "a server without Insights authoring does not advertise dashboard rules")
+	assert.NotContains(t, withoutInsights, guidance.MCPDashboardComposition()[0], "a server without Insights authoring does not advertise dashboard rules")
 	_, fleet := serverDescriptionAndInstructions(false, []Scope{ScopeRead, ScopeWrite})
-	assert.NotContains(t, fleet, guidance.DashboardComposition()[0], "the fleet surface never receives Insights rules")
+	assert.NotContains(t, fleet, guidance.MCPDashboardComposition()[0], "the fleet surface never receives Insights rules")
+}
+
+// Claude Code truncates an MCP server's instructions at 4096 characters, and the
+// rules after the cut never reach the agent. Every surface must fit well inside
+// that limit, so this guard fails before a longer text ships.
+func TestServedInstructionsFitClaudeCodeLimit(t *testing.T) {
+	const budget = 4000
+	for _, tc := range []struct {
+		name            string
+		disableConsole  bool
+		supportedScopes []Scope
+	}{
+		{"fleet", false, []Scope{ScopeRead, ScopeWrite}},
+		{"observe without Insights", true, []Scope{ScopeObserve}},
+		{"observe with Insights authoring", true, []Scope{ScopeObserve, ScopeInsightsWrite}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, instructions := serverDescriptionAndInstructions(tc.disableConsole, tc.supportedScopes)
+			// Claude Code counts JavaScript string length, which is UTF-16 code units.
+			length := len(utf16.Encode([]rune(instructions)))
+			assert.LessOrEqual(t, length, budget, "served MCP instructions for %s are %d characters; Claude Code truncates MCP server instructions at 4096 characters, so keep them at most %d", tc.name, length, budget)
+		})
+	}
 }
 
 func TestInsightsAuthoringScopeConsentAndRefreshPreserveExplicitGrant(t *testing.T) {
