@@ -511,11 +511,11 @@ func (s *Server) toolAuthMeta(tool *Tool) sdkmcp.Meta {
 // this initialize response.
 func observeAuthoringInstructions() string {
 	return strings.Join([]string{
-		"Prefer query_dashboard when a saved dashboard covers the question: list_dashboards finds its ID, get_dashboard shows its variables, and a variables map sets shared filters. One call collects all main-widget signals over one time range and executes identical queries once. Read structuredContent for exact values, units, missing, error and truncation states, and document ETags; text is a synopsis. This read requires paprika:observe and existing Insights and provider read permission, not authoring consent.",
-		"Preserve provider errors, unavailable signals and truncation; empty results do not establish health. For standalone provider queries, discover authorized providers and their signal capabilities first, then metric names, labels and trace services, with an explicit namespace and name, a short range and a small limit.",
-		"Saved-query and dashboard writes additionally require explicit paprika:insights:write consent and Insights write permission, and grant no provider configuration or fleet delivery writes. Read current documents first. Create with a new ID, or prefer patch_saved_query or patch_dashboard with widget_edits by widget ID and the exact ETag just read. Reread conflicts; unsaved drafts stay protected.",
+		"Prefer query_dashboard when a saved dashboard covers the question: list_dashboards finds its ID, get_dashboard its variables, and a variables map sets shared filters. One call collects all main-widget signals over one range and executes identical queries once. Read structuredContent for exact values, states and ETags; text is a synopsis. It needs paprika:observe and Insights and provider read access, not authoring consent.",
+		"Preserve provider errors, unavailable signals and truncation; empty results do not establish health. For standalone provider queries, discover authorized providers and signal capabilities, then metric names, labels and trace services; use an explicit namespace and name, a short range and a small limit.",
+		"Writes also need explicit paprika:insights:write consent and Insights write permission; they grant no provider configuration or fleet delivery writes. Read current documents first, then create with a new ID or prefer patch_saved_query or patch_dashboard with widget_edits by widget ID and the exact ETag just read. Reread conflicts; unsaved drafts stay protected.",
 		"Dashboard workflow: " + strings.Join(guidance.MCPDashboardWorkflow(), " "),
-		"Composition: " + strings.Join(guidance.MCPDashboardComposition(), " ") + " Full composition rules are in the get_insights_schema notes.",
+		"Composition: " + strings.Join(guidance.MCPDashboardComposition(), " ") + " Before authoring, read get_insights_schema (kind dashboard or widget) and list_insights_providers; its notes hold the full composition rules.",
 	}, " ")
 }
 

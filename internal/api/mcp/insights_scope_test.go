@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"unicode/utf8"
+	"unicode/utf16"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,7 +89,8 @@ func TestServedInstructionsFitClaudeCodeLimit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, instructions := serverDescriptionAndInstructions(tc.disableConsole, tc.supportedScopes)
-			length := utf8.RuneCountInString(instructions)
+			// Claude Code counts JavaScript string length, which is UTF-16 code units.
+			length := len(utf16.Encode([]rune(instructions)))
 			assert.LessOrEqual(t, length, budget, "served MCP instructions for %s are %d characters; Claude Code truncates MCP server instructions at 4096 characters, so keep them at most %d", tc.name, length, budget)
 		})
 	}

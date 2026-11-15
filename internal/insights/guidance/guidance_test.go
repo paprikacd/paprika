@@ -76,7 +76,7 @@ func TestAuthoringGuidanceListsAreWellFormedAndSplit(t *testing.T) {
 		}
 	}
 	joined := strings.Join(workflow, "\n")
-	for _, required := range []string{"patch_dashboard", "get_dashboard", "query_dashboard", "render_dashboard", "NOT RUN", "1512px", "390px", "ETag"} {
+	for _, required := range []string{"validate_dashboard", "patch_dashboard", "get_dashboard", "query_dashboard", "render_dashboard", "NOT RUN", "1512px", "390px", "ETag"} {
 		require.Contains(t, joined, required, "workflow rules must name %s", required)
 	}
 }
@@ -118,7 +118,20 @@ func TestMCPDashboardGuidanceIsCompactAndWellFormed(t *testing.T) {
 		require.NotContains(t, line, "render_dashboard", "compact composition rules name no MCP workflow: %s", line)
 	}
 	joined := strings.Join(workflow, "\n")
-	for _, required := range []string{"patch_dashboard", "get_dashboard", "query_dashboard", "render_dashboard", "visualStatus", "PASS", "FAIL", "NOT RUN", "1512px", "390px", "ETag"} {
+	for _, required := range []string{"validate_dashboard", "patch_dashboard", "get_dashboard", "query_dashboard", "render_dashboard", "visualStatus", "PASS", "FAIL", "NOT RUN", "1512px", "390px", "ETag"} {
 		require.Contains(t, joined, required, "compact workflow rules must name %s", required)
+	}
+}
+
+// Each compact rule is a summary of a full rule. A term the compact rules name
+// must also appear in the full rules, so a renamed or dropped term fails here.
+func TestCompactRulesNameOnlyTermsTheFullRulesName(t *testing.T) {
+	full := strings.Join(append(DashboardComposition(), DashboardWorkflow()...), "\n")
+	compact := strings.Join(append(MCPDashboardComposition(), MCPDashboardWorkflow()...), "\n")
+	terms := []string{"showStatBar", "staleAfterSeconds", "referenceLines", "plugin id", "min and max", "h<=2", "h>=3", "validate_dashboard", "get_dashboard", "query_dashboard", "render_dashboard", "patch_dashboard", "visualStatus", "ETag", "1512px", "390px", "NOT RUN", "PASS", "FAIL"}
+	for _, term := range terms {
+		if strings.Contains(compact, term) {
+			require.Contains(t, full, term, "compact rules name %q, so the full rules must name it too", term)
+		}
 	}
 }
