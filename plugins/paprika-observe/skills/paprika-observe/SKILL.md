@@ -32,13 +32,12 @@ IDs here are placeholders; run the steps in order.
    Keep enumerations small; do not invent pagination. IDs come from
    `list_insights_providers`, never a provider name.
 
-2. **Start from a starter when one fits.** The first-party starters are `service-overview`,
+2. **Start from a starter when one fits.** First-party starters are `service-overview`,
    `slo-burn-rate`, `namespace-capacity` and `paprika-control-plane`; `get_insights_schema` notes describe each. No MCP tool lists them.
 
 3. **Reuse saved queries.** Check `list_saved_queries` and `get_saved_query` before inventing
    PromQL or SQL. Create new ones with `create_saved_query` before `create_dashboard`
-   references them. Paprika's `paprika_*` metrics, including the control-plane starter's, are
-   listed in [paprika-signals.md](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/paprika-signals.md).
+   references them. Paprika's `paprika_*` metrics are listed in [paprika-signals.md](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/paprika-signals.md).
 
 4. **Compose.** Follow the composition rules in the server instructions and
    `get_insights_schema` notes. Starter sizes: stat cards w3 to w6 h2 with
@@ -64,12 +63,12 @@ IDs here are placeholders; run the steps in order.
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a
    failed query or stale data. Stat, gauge, status-view and heatmap widgets with a band report
    `threshold`; time series report `breaches`; metric widgets report `sample` freshness.
-   Under the 130 KiB result cap, optional detail can be omitted; `omitted` names what was dropped,
-   and `widget_ids` narrows the query to get it back.
+   Under the 130 KiB cap, optional detail can be omitted; `omitted` names what was dropped,
+   and `widget_ids` narrows the query to recover it.
    `state` describes data availability, never service health or SLO compliance. An
    unavailable provider is not zero traffic. Overrides apply only to this call, never to saved defaults.
 
-8. **Render, when advertised.** `render_dashboard` is listed in `tools/list` only when the
+8. **Render, when advertised.** `render_dashboard` is listed only when the
    operator has deployed the isolated renderer. Pass `id`, `width` (390, 768 or 1512; default
    1512), `theme` (`light` or `dark`; default `dark`), and optional `focus_widget` or `checks_only: true`. Report visual QA as:
    - **FAIL:** `visualStatus` is `failed` (at least one `SEVERITY_ERROR` finding), or the
@@ -135,8 +134,9 @@ truncation. Records never accept a metric projection. The range defaults to 30 m
 (maximum 31 days) and `limit` to 100 (maximum 1000); the Uptime connector rejects more than 100 rows.
 PostgreSQL does not filter by the dashboard range: bind `{"range":"start"}` or
 `{"range":"end"}` in `parameters` and reference the positional `$n`. In a saved PostgreSQL
-query, write `$1` in the fixed SQL text and place an unquoted `{{service}}` placeholder in
-`parameters`, for example `{"sql":"SELECT ... WHERE service=$1","parameters":[{{service}}]}`.
+query, the SQL text stays fixed and refers to each bound value by its 1-based position, which PostgreSQL
+writes as a dollar sign followed by the number. `parameters` holds the values in that order, with an unquoted
+`{{service}}` placeholder. See the [worked example](references/postgresql-bindings.md).
 Never interpolate values into SQL. PostgreSQL providers require verify-full TLS and an unprivileged reader role.
 
 `validate_provider` checks configuration offline; it does not test backend connectivity.
