@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -201,6 +202,23 @@ func TestExecutionBudgetGlobalAdmissionCoversProviderWaiters(t *testing.T) {
 	require.Empty(t, b.providers)
 }
 
+// retryDelayOf returns the RetryInfo delay a Connect error carries, if any.
+func retryDelayOf(t *testing.T, err error) (time.Duration, bool) {
+	t.Helper()
+	var ce *connect.Error
+	require.ErrorAs(t, err, &ce)
+	for _, detail := range ce.Details() {
+		message, valueErr := detail.Value()
+		require.NoError(t, valueErr)
+		if info, ok := message.(*errdetails.RetryInfo); ok {
+			return info.GetRetryDelay().AsDuration(), true
+		}
+	}
+	return 0, false
+}
+
+// A queue wait that expires while the caller still has budget is a busy
+// provider, so it answers resource_exhausted with a one-second retry hint.
 func TestExecutionBudgetQueueTimeout(t *testing.T) {
 	b := newExecutionBudget(1, time.Second)
 	b.perProvider = 1
@@ -210,8 +228,69 @@ func TestExecutionBudgetQueueTimeout(t *testing.T) {
 	defer done()
 	started := time.Now()
 	_, _, err = b.begin(t.Context(), "obs/prom")
-	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(err))
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+	delay, ok := retryDelayOf(t, err)
+	require.True(t, ok, "queue expiry names a retry delay")
+	require.Equal(t, time.Second, delay)
 	require.Less(t, time.Since(started), time.Second)
+	require.Len(t, b.admitted, 1, "only the holder keeps admission; the failed wait released its own")
+}
+
+// The caller's own deadline ending the wait keeps deadline_exceeded, even when
+// the queue timer would have fired later.
+func TestExecutionBudgetCallerDeadlineStaysDeadlineExceeded(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.perProvider = 1
+	b.queueTimeout = 5 * time.Second
+	_, done, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err)
+	defer done()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	_, _, err = b.begin(ctx, "obs/prom")
+	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(err))
+	_, ok := retryDelayOf(t, err)
+	require.False(t, ok, "a spent caller budget is not retryable by delay")
+}
+
+// Scenario G from the live investigation: four parallel widget queries share one
+// provider, and each takes 6 s. Two run; the two queued behind them outlive the
+// 5 s queue wait. Those two must get a retryable resource_exhausted, never
+// deadline_exceeded, and the two that ran must succeed.
+func TestParallelWidgetQueriesQueuedPastWaitAreRetryable(t *testing.T) {
+	t.Parallel()
+	b := budgetBackend(t, newExecutionBudgetFromConfig(DefaultBudgetConfig(), queryTimeout), func(ctx context.Context) error {
+		select {
+		case <-time.After(6 * time.Second):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	const widgets = 4
+	results := make(chan error, widgets)
+	for range widgets {
+		go func() {
+			_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up"})
+			results <- err
+		}()
+	}
+	var succeeded, busy int
+	for range widgets {
+		err := <-results
+		if err == nil {
+			succeeded++
+			continue
+		}
+		require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err),
+			"a queued widget query must not time out at the queue: %v", err)
+		busy++
+		delay, ok := retryDelayOf(t, err)
+		require.True(t, ok, "a queued widget query names a retry delay")
+		require.Equal(t, time.Second, delay)
+	}
+	require.Equal(t, 2, succeeded, "two queries run within the per-provider limit")
+	require.Equal(t, 2, busy, "the two queued past the queue wait get resource_exhausted")
 }
 
 func TestExecutionBudgetKeepsEarlierDeadline(t *testing.T) {
