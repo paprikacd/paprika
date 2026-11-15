@@ -44,14 +44,49 @@ Uptime's source supports Firebase user tokens and a separate `upk_` project-toke
 middleware path, but the protected dashboard handlers check user organization
 membership. Project-token access to these handlers has **not** been established;
 do not assume a project token works. For durable Firebase access, store the
-refresh credential obtained by a supported user login. Before each provider
-query, the connector exchanges it at the fixed
+refresh credential obtained by a supported user login. The connector exchanges
+it at the fixed
 `https://securetoken.googleapis.com/v1/token` endpoint with verified TLS, no
 redirects, no retries, an eight-second deadline and a 32 KiB response cap. Only
-the resulting ID token reaches Uptime. There is no cross-query token cache and
-no token or updated credential is persisted. If the account revokes access or
-the refresh credential stops working, replace the Secret through an approved
-login flow. See the [Firebase REST authentication contract](https://firebase.google.com/docs/reference/rest/auth#section-refresh-token).
+the resulting ID token reaches Uptime. If the account revokes access or the
+refresh credential stops working, replace the Secret through an approved login
+flow. See the [Firebase REST authentication contract](https://firebase.google.com/docs/reference/rest/auth#section-refresh-token).
+
+### Gateway caches
+
+The gateway keeps two process-local caches between queries. Each holds only
+successful results, is bounded to 64 entries and 8 MiB (a single value over
+256 KiB is never kept), removes its entries when they expire, and is keyed by a
+digest of the caller's credential, so no caller sees another caller's result.
+Neither is persisted, and neither is shared between gateway replicas.
+
+| Cache | Holds | Key | Lifetime |
+| --- | --- | --- | --- |
+| Firebase ID tokens | The ID token from one refresh | Digest of the credential document | Until five minutes before the token expires (about 55 minutes) |
+| Uptime read responses | The response body of one read | Endpoint, procedure, canonical request body, credential digest, configured headers and TLS mode | 15 seconds |
+
+Identical reads that run together, such as the six widgets of one dashboard,
+share one upstream request, and a read that is still running is not repeated for
+each widget. A caller whose own context ends returns at once and leaves the
+shared read running for the others, which is still bounded by the 20-second
+query deadline. A body that does not match the operation's shape is an error and
+is not kept. A rejected ID token (HTTP 401 or 403 from Uptime) is dropped from
+the cache, so the next query refreshes it.
+
+### Revoking access
+
+- The reliability read's organization-membership check is never served from a
+  cache. Removing a member stops reliability reads on the next query.
+- Other reads can still return a cached response for up to 15 seconds after
+  membership is removed.
+- Disabling the Firebase user or revoking its refresh token does not cut off
+  access at once. A cached ID token keeps working until it expires, up to about
+  55 minutes later. Revocation on the Firebase side therefore takes that long to
+  take effect.
+- To cut access off at once, replace or delete the credential Secret. Each query
+  reads the Secret, so the next query uses the new credential and no cached
+  token or response for the old one. Restarting the gateway pods also clears
+  both caches.
 
 `orgId` is a required UUID and is fixed by provider configuration. Queries cannot
 override it. The only additional config keys are the shared `headers` and
@@ -109,9 +144,10 @@ Optional arguments:
   whose source SLA is breached; no-data services are excluded.
 
 The SLO window is an explicit source aggregation window, independent of the
-dashboard time picker. Inventory, alert and reliability reads return their
-current or latest stored state. They do not claim the dashboard time range
-filters source records. Stored reliability reports expose their actual period
+dashboard time picker. Inventory, alert and reliability reads return the state
+Uptime reports at the time of the read, which may be up to 15 seconds old
+because of the read cache. They do not claim the dashboard time range filters
+source records. Stored reliability reports expose their actual period
 and generation timestamps. Organization-level summary/report operations reject
 `serviceId` because their scores and prose cannot be faithfully service-filtered.
 
@@ -167,8 +203,9 @@ a claim of a standard SRE burn-rate definition.
 A missing stored reliability report is an empty frame. Affected service names
 are displayed as a comma-separated text column, not executable queries or a
 structured service selector. Reliability reads first call `ListServices` with a
-one-row limit to enforce organization membership independently, then verify the
-returned report's organization. This compensates for the surveyed reliability
+one-row limit to enforce organization membership independently. That check is
+uncached and runs on every query. The adapter then verifies the returned
+report's organization. This compensates for the surveyed reliability
 handler checking a membership lookup error without checking its boolean result.
 
 Backend errors expose fixed messages only. HTTP 401/403 becomes `Forbidden`;
@@ -187,6 +224,11 @@ headers, organization denial, report organization matching, hidden source-field
 exclusion, read-only query allowlisting, optional nulls, timestamp projections,
 SLO no-data semantics, row/response caps, partial counts, redirect refusal,
 missing credentials, fixed-endpoint Firebase refresh, revocation, and cancellation.
+It also checks read coalescing (six identical concurrent reads make one upstream
+request), the 15-second read TTL, credential separation, error and wrong-shape
+non-caching, cancelled callers not cancelling shared reads, the shared read's
+timeout, token reuse and refresh near expiry, byte and entry bounds, and expiry
+removal.
 The application integration runner also exercises actual Observe MCP and Insights
 with a real disposable PostgreSQL reader. Optional live Uptime validation uses
 the existing E2E account's supported Firebase login and a refresh credential
