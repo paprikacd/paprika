@@ -97,7 +97,7 @@ startup.
 | 4 | Insights admission (`acquireQuery`, `internal/insights/server.go`) | 16 executing, 64 waiting, 2 s wait | Code only; a later slice adds flags | `/query`: **429** "too many active queries; retry shortly" with `Retry-After: 1`. Dashboard queries: a per-signal `rate_limited` error inside a 200 response, not an HTTP 429 (`dashboardProviderError`) | Yes, after Retry-After |
 | 5 | Gateway HTTP admission (`observabilityAdmissionPool`, `limitObservabilityProtocolRequestsWith`) | Intake 8 (waiters cover all pool capacity), MCP work 4 (up to 32 waiting, the budget queue), catalog 4 and dashboards 2 (each up to its own size waiting). One deadline of 1 s covers the intake and pool waits | `--observability-http-*` flags; chart `observabilityGateway.capacity.http*` | **429** "observability gateway is at its request limit; retry later", `Retry-After: 1`, `Cache-Control: no-store` | Yes, after Retry-After |
 | 6 | Gateway MCP rate limit (`mcpRatePerSecond`, `mcpRateBurst`, `mcpRateQueueWait` in `internal/api/mcp/ratelimit.go`) | 50 requests/s, burst 100 per principal. Queue: 8 per principal, 64 in total, each waiting at most 2 s | Code only | **429** "rate limit queue is full; retry shortly", `Retry-After: 1` | Yes, after Retry-After |
-| 7 | Gateway execution budget (`DefaultBudgetConfig`, `executionBudget.begin`, `internal/observabilitygateway/budget.go`) | 4 executing across providers, 2 per provider. Queued: 32 across providers, 8 per provider. The admission cap is 36 (concurrency + queue). Per provider, the budget holds 2 running and 8 waiting, so 36 is reachable only across at least four providers (see below). A waiter holds its place for at most 5 s. Each execution has a 30 s budget that starts when it is admitted | `--observability-query-*` flags; chart `observabilityGateway.capacity.query*` | Queue full, reported as `resource_exhausted`. On REST (`/observe/api/query`) that is **429** `temporarily_unavailable` with `Retry-After: 1` (`writeDashboardError`). On MCP it is an error result with code `resource_exhausted` and no retry hint, text from `operationalToolErrorText`. Queue wait expired, or the 30 s budget used up, is a deadline error: **504** on REST, "tool execution timed out" on MCP | 429: yes, after Retry-After. 504: yes, with backoff, since the earlier attempt may have used provider time |
+| 7 | Gateway execution budget (`DefaultBudgetConfig`, `executionBudget.begin`, `internal/observabilitygateway/budget.go`) | 4 executing across providers, 2 per provider. Queued: 32 across providers, 8 per provider. The admission cap is 36 (concurrency + queue). Per provider, the budget holds 2 running and 8 waiting, so 36 is reachable only across at least four providers (see below). A waiter holds its place for at most 5 s. Each execution has a 30 s budget that starts when it is admitted | `--observability-query-*` flags; chart `observabilityGateway.capacity.query*` | Queue full, or the queue wait expired while the caller still had budget, is `resource_exhausted` with a one-second `RetryInfo`. On REST (`/observe/api/query`) that is **429** `temporarily_unavailable` with `Retry-After: 1` (`writeDashboardError`). On MCP it is an error result with code `resource_exhausted`, `retryAfterSeconds: 1` and text from `operationalToolErrorText`. Insights turns it into a **429** with `Retry-After: 1`, which the browser replays. Only the caller's own deadline ending the wait, or the 30 s budget used up, is `deadline_exceeded`: **504** on REST, "tool execution timed out" on MCP | 429: yes, after Retry-After. 504: yes, with backoff, since the earlier attempt may have used provider time |
 | 8 | Backend connector (`internal/observabilitygateway/connector/…`) | Per-connector client timeouts: Shorted `queryTimeout` 10 s (`connector/shorted`), Uptime `queryTimeout` 20 s (`connector/uptime`), PostgreSQL connect 5 s (`connector/postgresql`). The 30 s budget applies to all of them | Code only | A provider failure is a sanitized error state in the result, or **502** `server_error` on REST. Insights passes a gateway 504 through as 504 without Retry-After (`observeHTTPError`) | Yes, with backoff |
 
 **What each hop's wait costs.**
@@ -109,7 +109,10 @@ startup.
 - **Budget (hop 7).** A query waits at most `--observability-query-queue-wait`
   (5 s) for a slot. The 30 s execution budget starts when the query is admitted,
   so after a wait its execution time is still a full 30 s. Over REST the dashboard
-  handler applies its 30 s to the whole request, queue wait included.
+  handler applies its 30 s to the whole request, queue wait included. A wait that
+  expires while the caller is still within its own deadline answers
+  `resource_exhausted` (retry after 1 s), so a busy provider is never reported as
+  a timeout; the caller's own deadline keeps `deadline_exceeded`.
 - **Per MCP request, worst case:** admission wait + 2 s rate queue + queue wait +
   30 s execution. At defaults that is 38 s. The validator requires the sum to
   stay at or below 40 s, which leaves 5 s to read, serialise and write the
@@ -120,6 +123,30 @@ startup.
   30 s (`cmd/paprika-insights/main.go`), so the proxy's 28 s decides. Inside that
   budget Insights holds a query for at most 2 s at hop 4, and each provider
   connection it opens has a 20 s budget (`observe_mcp.go`).
+
+**Timeout chain.** Each hop's read timeout must be at least the time the hop
+below it may legitimately take, or a read still running downstream is reported
+as a timeout upstream. The chain, outermost first:
+
+| Hop | Bound | Source |
+|---|---|---|
+| Cloudflare to origin | 120 s read, then 524 | edge (`infra/terraform`) |
+| Envoy Gateway `/observe` route | 15 s by default; the HTTPRoute sets no `timeouts` | Envoy Gateway default; see the note below |
+| Gateway HTTP server | read 15 s, write 45 s | `cmd/main_observability_gateway.go` |
+| Insights dashboard query | 22 s budget, one phase at a time | `internal/insights/dashboard_query.go` |
+| Insights `/query` | 22 s budget (`queryBudget`) | `internal/insights/server.go` |
+| Insights to gateway, per operation | min(20 s, remaining budget). Response-header wait and client timeout are 20 s too | `internal/insights/observability_provider.go`, `observe_mcp.go` |
+| Gateway execution | queue wait 5 s, then 30 s execution | `internal/observabilitygateway/budget.go` |
+| Uptime connector read | 20 s per query, transport response-header wait 10 s | `connector/uptime/uptime.go`, `connector/uptime/http.go` |
+
+Insights' header wait was 15 s, so a 15 to 20 s read was reported as a timeout
+while the gateway was still running it. It now equals the 20 s operation bound,
+and a read is cut only by its own budget. The Envoy route is the exception: the
+`/observe` HTTPRoute sets no `timeouts`, so Envoy Gateway's default 15 s applies,
+and a read longer than 15 s through the public route returns a 504 from Envoy
+even when the gateway would finish. Until the chart sets a request timeout of at
+least 46 s on that route (above the 45 s gateway write timeout and below
+Cloudflare's 120 s), reads over 15 s through `/observe` are not reliable.
 - **Disconnects.** Once a request's body has been read, a client that leaves
   while the request waits for its pool is noticed at once, because the server
   then watches the connection. A request that is still waiting for an intake

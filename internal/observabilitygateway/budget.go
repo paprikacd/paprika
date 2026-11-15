@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
@@ -24,6 +26,9 @@ const (
 	maxQueryWindow     = 31 * 24 * time.Hour
 	maxQueryResults    = 1000
 	maxQueryBytes      = 32 << 10
+	// queueRetryDelay is the RetryInfo a queue-wait expiry carries. Insights
+	// forwards it as Retry-After: 1, and the browser replays the 429.
+	queueRetryDelay = time.Second
 )
 
 // RequestTimeout is the execution budget a query gets once it is admitted: the
@@ -45,7 +50,7 @@ type BudgetConfig struct {
 	ProviderConcurrency int           // queries executing at once per provider
 	Queue               int           // waiters across all providers
 	ProviderQueue       int           // waiters per provider
-	QueueWait           time.Duration // longest a waiter holds its place before a deadline error
+	QueueWait           time.Duration // longest a waiter holds its place before a resource_exhausted retry hint
 }
 
 // DefaultBudgetConfig returns the gateway's built-in budget. Per-provider
@@ -205,12 +210,12 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 	}
 	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting); err != nil {
 		release()
-		return nil, nil, err
+		return nil, nil, queueWaitError(ctx, queueCtx, err)
 	}
 	providerAcquired = true
 	if err := waitForQuerySlot(queueCtx, b.active, b.waiting); err != nil {
 		release()
-		return nil, nil, err
+		return nil, nil, queueWaitError(ctx, queueCtx, err)
 	}
 	globalAcquired = true
 	bounded, cancel := context.WithTimeout(ctx, b.timeout)
@@ -226,6 +231,22 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 			release()
 		})
 	}, nil
+}
+
+// queueWaitError classifies a slot wait that failed. When only the queue's own
+// timer ended the wait, the caller still has budget, so the answer is a
+// resource_exhausted with a retry hint: a busy provider, not a spent request. A
+// caller deadline or cancellation keeps the code contextError gave it.
+func queueWaitError(caller, queue context.Context, err error) error {
+	if caller.Err() != nil || !errors.Is(queue.Err(), context.DeadlineExceeded) {
+		return err
+	}
+	queueErr := connect.NewError(connect.CodeResourceExhausted,
+		errors.New("observability query waited too long for a free slot; retry shortly"))
+	if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(queueRetryDelay)}); detailErr == nil {
+		queueErr.AddDetail(detail)
+	}
+	return queueErr
 }
 
 func contextError(ctx context.Context) error {
