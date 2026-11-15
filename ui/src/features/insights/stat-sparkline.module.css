@@ -16,6 +16,10 @@
   /* Captions and empty space pass the pointer through, so the history beneath the card stays reachable. */
   pointer-events: none;
 }
+/* The band chip's name is its title, the only mouse route to a value that a narrow card cuts. Like the value, it covers the history beneath it. */
+.withSparkline [data-stat-chip="band"] {
+  pointer-events: auto;
+}
 .withSparkline [data-metric-value] {
   /* The value's box is its text, not the full column, so the history beside it stays reachable. */
   align-self: flex-start;
