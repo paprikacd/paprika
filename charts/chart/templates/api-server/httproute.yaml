@@ -9,6 +9,18 @@
 {{- if not $gw.hostname }}
 {{- fail "apiServer.ingress.gateway.hostname is required" }}
 {{- end }}
+{{- /*
+Envoy Gateway applies a 15 s request timeout to a route with none. The Insights proxy
+budgets a UI query at 28 s, so /api/insights gets its own rule with a longer bound. The
+"/" rule keeps no timeout: it carries streaming endpoints (SSE), which a request timeout
+would cut. Gateway API precedence picks the longest matching prefix, so /api/insights*
+takes the new rule and everything else takes "/".
+*/ -}}
+{{- $insightsTimeout := .Values.apiServer.ingress.insightsRequestTimeout | default "35s" | toString }}
+{{- $insightsSeconds := include "paprika.durationSeconds" $insightsTimeout | atoi }}
+{{- if or (lt $insightsSeconds 29) (gt $insightsSeconds 119) }}
+{{- fail (printf "apiServer.ingress.insightsRequestTimeout must be between 29s and 119s (it must exceed the Insights proxy's 28s query budget and stay under Cloudflare's 120s proxy timeout), got %q" $insightsTimeout) }}
+{{- end }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -36,6 +48,15 @@ spec:
   hostnames:
   - {{ $gw.hostname | quote }}
   rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/insights
+    timeouts:
+      request: {{ $insightsTimeout | quote }}
+    backendRefs:
+    - name: {{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }}
+      port: {{ $.Values.apiServer.service.port }}
   - matches:
     - path:
         type: PathPrefix

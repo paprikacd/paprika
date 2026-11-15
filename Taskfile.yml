@@ -885,6 +885,67 @@ tasks:
         expect_fail capacity-nonnumeric-pool \
           --set observabilityGateway.capacity.httpWorkSlots=many
 
+        # HTTPRoute request timeouts. Envoy Gateway's default is 15 s, so the
+        # /observe route and the /api/insights rule must carry their own bound.
+        route_render() { # extra set-args...: renders the gateway-api HTTPRoutes
+          helm template paprika charts/chart --namespace paprika-system \
+            --set deploymentMode=split --set apiServer.enabled=true \
+            --set apiServer.ingress.enabled=true --set apiServer.ingress.type=gateway-api \
+            --set apiServer.ingress.gateway.gatewayRef.name=paprika \
+            --set apiServer.ingress.gateway.gatewayRef.namespace=envoy-gateway-system \
+            --set apiServer.ingress.gateway.hostname=paprika.example.com \
+            --set observabilityGateway.enabled=true --set observabilityGateway.ingress.enabled=true \
+            --set auth.enabled=true --set mcp.publicURL=https://paprika.example.com \
+            --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+            --set 'observabilityGateway.extraEnv[0].value=test-token-secret' "$@"
+        }
+        expect_route_fail() { # name, extra set-args...
+          name="$1"; shift
+          if msg="$(route_render "$@" 2>&1)"; then
+            echo "FAIL[$name]: expected render failure but succeeded"; rc=1
+          elif printf '%s\n' "$msg" | grep -qE 'Timeout must be between|single-unit Go duration'; then
+            echo "ok[$name] (rejected as expected)"
+          else
+            echo "FAIL[$name]: rejected, but not by the timeout guard: $msg"; rc=1
+          fi
+        }
+        if ! route_out="$(route_render 2>&1)"; then
+          echo "FAIL[route-timeouts]: render errored: $route_out"; rc=1
+        else
+          for want in 'request: "50s"' 'request: "35s"'; do
+            if [ "$(printf '%s\n' "$route_out" | grep -cF -- "$want")" -ne 1 ]; then
+              echo "FAIL[route-timeouts]: expected exactly one rule with $want"; rc=1
+            fi
+          done
+          api_rt="$(printf '%s\n' "$route_out" | awk 'BEGIN { RS="\n---\n" } /kind: HTTPRoute/ && /component: api-server/ { print }')"
+          if [ "$(printf '%s\n' "$api_rt" | grep -c 'timeouts:')" -ne 1 ] \
+            || ! printf '%s\n' "$api_rt" | grep -B2 -A8 'request: "35s"' | grep -qF 'value: /api/insights'; then
+            echo "FAIL[route-timeouts]: only the /api/insights rule may carry a timeout"; rc=1
+          else
+            echo "ok[route-timeouts] (50s on /observe, 35s on /api/insights, none on /)"
+          fi
+        fi
+        if route_render --set observabilityGateway.ingress.requestTimeout=46s >/dev/null 2>&1; then
+          echo "ok[route-timeout-min] (46s accepted)"
+        else
+          echo "FAIL[route-timeout-min]: 46s must be accepted"; rc=1
+        fi
+        if route_render --set observabilityGateway.ingress.requestTimeout=1m >/dev/null 2>&1; then
+          echo "ok[route-timeout-1m] (1m, a Go duration in range, accepted)"
+        else
+          echo "FAIL[route-timeout-1m]: 1m (60s) must be accepted"; rc=1
+        fi
+        if route_render --set observabilityGateway.ingress.requestTimeout=119s >/dev/null 2>&1; then
+          echo "ok[route-timeout-max] (119s accepted)"
+        else
+          echo "FAIL[route-timeout-max]: 119s must be accepted"; rc=1
+        fi
+        expect_route_fail route-timeout-under-write --set observabilityGateway.ingress.requestTimeout=45s
+        expect_route_fail route-timeout-over-cloudflare --set observabilityGateway.ingress.requestTimeout=120s
+        expect_route_fail route-timeout-compound --set observabilityGateway.ingress.requestTimeout=1m30s
+        expect_route_fail route-timeout-insights-low --set apiServer.ingress.insightsRequestTimeout=28s
+        expect_route_fail route-timeout-insights-high --set apiServer.ingress.insightsRequestTimeout=2m
+
         exit $rc
 
   chart:rules:

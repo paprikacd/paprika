@@ -379,6 +379,13 @@ apiServer:
   ##
   ingress:
     enabled: false
+    ## Gateway API request timeout for the /api/insights/ prefix (gateway-api
+    ## only). The Insights proxy ends a UI query at 28 s, so this must stay above
+    ## 28 s, or the edge cuts a query before the console returns its partial
+    ## answer. The "/" rule keeps no timeout: it carries the SSE endpoints.
+    ## Must be a single-unit Go duration between 29s and 119s (Cloudflare's
+    ## 120 s proxy timeout is the outer bound). Chart-validated.
+    insightsRequestTimeout: "35s"
     ## Type of ingress resource: "ingress" or "gateway-api"
     ##
     # type: ingress
@@ -912,6 +919,13 @@ observabilityGateway:
   ingress:
     enabled: false
     annotations: {}
+    ## Gateway API request timeout for the /observe route. Envoy Gateway's
+    ## default is 15 s, which cut a six-read query_dashboard at 15.00 s with a
+    ## 504. Keep it above the gateway's 45 s HTTP write timeout (so the gateway,
+    ## not the edge, decides a slow query's outcome) and below Cloudflare's
+    ## 120 s proxy timeout. Must be a single-unit Go duration between 46s and
+    ## 119s; chart-validated. Edge bounds: docs/guides/observability-gateway.md.
+    requestTimeout: "50s"
 
   extraEnv: []
   extraEnvFrom: []

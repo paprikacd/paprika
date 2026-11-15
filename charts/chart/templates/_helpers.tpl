@@ -506,3 +506,22 @@ HPA, and a strategy that stops the old pod before starting the new one.
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+paprika.durationSeconds converts a single-unit Go duration ("50s", "1m", "2h")
+to whole seconds. Anything else fails the render, so a malformed edge timeout
+never reaches the cluster. Compound forms ("1m30s") and sub-second units are
+rejected on purpose: the edge bounds are whole seconds.
+*/}}
+{{- define "paprika.durationSeconds" -}}
+{{- $v := toString . -}}
+{{- if regexMatch "^[0-9]+s$" $v -}}
+{{- trimSuffix "s" $v -}}
+{{- else if regexMatch "^[0-9]+m$" $v -}}
+{{- mul (trimSuffix "m" $v | atoi) 60 -}}
+{{- else if regexMatch "^[0-9]+h$" $v -}}
+{{- mul (trimSuffix "h" $v | atoi) 3600 -}}
+{{- else -}}
+{{- fail (printf "duration %q must be a single-unit Go duration such as 50s or 1m" $v) -}}
+{{- end -}}
+{{- end -}}
