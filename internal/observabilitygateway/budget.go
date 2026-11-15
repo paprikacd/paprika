@@ -26,8 +26,9 @@ const (
 	maxQueryWindow     = 31 * 24 * time.Hour
 	maxQueryResults    = 1000
 	maxQueryBytes      = 32 << 10
-	// queueRetryDelay is the RetryInfo a queue-wait expiry carries. Insights
-	// forwards it as Retry-After: 1, and the browser replays the 429.
+	// queueRetryDelay is the RetryInfo a queue-wait expiry carries. Insights reads
+	// only the error code and answers 429 with its own one-second Retry-After
+	// default, so keep the two in step; the browser replays the 429.
 	queueRetryDelay = time.Second
 )
 

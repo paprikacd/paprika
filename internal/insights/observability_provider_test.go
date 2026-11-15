@@ -421,6 +421,7 @@ func TestObserveSavedQueryCatalogDoesNotBlockStoreWrites(t *testing.T) {
 // connector's 20 s) completes. The header wait used to be 15 s, which reported a
 // timeout while the gateway kept running the same read.
 func TestObserveSlowReadWithinOperationBoundCompletes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("an 18 s upstream read")
 	}
