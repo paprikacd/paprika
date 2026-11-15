@@ -37,6 +37,7 @@ func tokenTestClient(t *testing.T, server *httptest.Server) *http.Client {
 }
 
 func TestFirebaseRefreshUsesFixedEndpointAndFreshRequestToken(t *testing.T) {
+	isolateCaches(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -65,11 +66,13 @@ func TestFirebaseRefreshUsesFixedEndpointAndFreshRequestToken(t *testing.T) {
 			t.Fatalf("refresh failed: %v", err)
 		}
 	}
-	if calls.Load() != 2 {
-		t.Error("refresh token state leaked between requests")
+	// The second call is served from the token cache: the ID token is valid
+	// for an hour, so the refresh is not repeated.
+	if calls.Load() != 1 {
+		t.Errorf("refreshes = %d, want 1 (valid token reused)", calls.Load())
 	}
 	token, err := bearerCredential(context.Background(), []byte("existing-bearer"), client)
-	if err != nil || token != "existing-bearer" || calls.Load() != 2 {
+	if err != nil || token != "existing-bearer" || calls.Load() != 1 {
 		t.Error("raw bearer support changed")
 	}
 }
@@ -139,6 +142,7 @@ func TestFirebaseRefreshDoesNotRedirectAndBoundsResponse(t *testing.T) {
 }
 
 func TestFirebaseRefreshHonorsCallerDeadline(t *testing.T) {
+	isolateCaches(t)
 	client := &http.Client{Transport: tokenRoundTrip(func(request *http.Request) (*http.Response, error) {
 		<-request.Context().Done()
 		return nil, request.Context().Err()
@@ -146,7 +150,7 @@ func TestFirebaseRefreshHonorsCallerDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	_, err := bearerCredential(ctx, []byte(`{"apiKey":"key","refreshToken":"token"}`), client)
+	_, err := bearerCredential(ctx, []byte(`{"apiKey":"deadline-key","refreshToken":"deadline-token"}`), client)
 	if err == nil || time.Since(start) > time.Second {
 		t.Error("refresh did not honor parent deadline")
 	}

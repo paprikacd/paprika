@@ -25,7 +25,15 @@ const (
 	queryTimeout  = 20 * time.Second
 )
 
-// Uptime keeps no organization or credential state between queries.
+// Uptime keeps no per-query state. Two process-local caches live between
+// queries, both bounded to 64 entries and keyed by a digest of the caller's
+// credential, so callers never share results across credentials:
+//   - successful read responses for 15 seconds, so the several widgets of one
+//     dashboard that issue the same read make one upstream call, not one each;
+//   - Firebase ID tokens until five minutes before they expire, so a query does
+//     not repeat a token refresh that is still valid.
+//
+// Neither cache is durable or shared between processes. Errors are never kept.
 type Uptime struct{}
 
 // New returns the Uptime application data connector.
@@ -207,7 +215,7 @@ func executeQuery(ctx context.Context, req *connector.QueryRequest, cfg *config,
 	if q.Args.Limit != nil {
 		limit = min(limit, *q.Args.Limit)
 	}
-	reader := backend{config: cfg, credential: credential, limit: limit}
+	reader := backend{config: cfg, credential: credential, identity: credentialIdentity(req.Credentials), limit: limit}
 	frame, err := reader.read(ctx, q)
 	if err != nil {
 		state := httphelp.ClassifyState(err)

@@ -99,12 +99,15 @@ func TestRecordsDashboardAndMCPUseAuthorizedUptimeProvider(t *testing.T) {
 	ctx := auth.WithPrincipal(context.Background(), &auth.Principal{Subject: "test-user"})
 	_, err = tool.Invoke(ctx, nil, json.RawMessage(`{"provider":"allowed/uptime","query":"{\"operation\":\"services\"}"}`))
 	require.NoError(t, err)
-	require.EqualValues(t, 2, calls.Load())
+	// The tool repeats the dashboard's identical read with the same credential
+	// inside the connector's 15 s read cache, so it is served without a second
+	// upstream call. Authorization still ran for this request.
+	require.EqualValues(t, 1, calls.Load())
 	denied := strings.Replace(recordsDashboardQuery, "allowed/uptime", "private/uptime", 1)
 	require.Equal(t, http.StatusForbidden, doCatalogRequest(t, mux, http.MethodPost, "/observe/api/query", token, denied).Code)
 	require.Equal(t, http.StatusUnauthorized, doCatalogRequest(t, mux, http.MethodPost, "/observe/api/query", "", recordsDashboardQuery).Code)
 	require.Equal(t, http.StatusForbidden, doCatalogRequest(t, mux, http.MethodPost, "/observe/api/query", catalogTestToken(t, tokenSecret, string(mcp.ScopeRead)), recordsDashboardQuery).Code)
-	require.EqualValues(t, 2, calls.Load(), "denial must happen before credentialed backend access")
+	require.EqualValues(t, 1, calls.Load(), "denial must happen before credentialed backend access")
 }
 
 func TestApplicationProviderCatalogAndProbes(t *testing.T) {
