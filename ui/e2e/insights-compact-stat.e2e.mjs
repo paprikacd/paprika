@@ -27,6 +27,9 @@ try {
   // A breached one-row card with a long label on a narrow column: the reading must stay whole and clear of the chip,
   // which gives way by ellipsis and then collapses to its glyph (the status word stays for screen readers).
   dashboard.widgets.push({ ...widget("breach", 0, { showSparkline: true, sparklinePlacement: "side", decimals: 2, thresholds: [{ value: 0, status: "ok" }, { value: 10, status: "critical", label: "Above the monthly error budget of 0.1%" }] }), title: "Errors this month", layout: { x: 0, y: 3, w: 2, h: 1 } });
+  // A two-column one-row side-sparkline card with an unlabelled band above the first: its reading is ellipsis-prone, so its
+  // band chip must keep the full name as its title, and the chip must stay hoverable over the reading column.
+  dashboard.widgets.push({ ...widget("band", 0, { showSparkline: true, sparklinePlacement: "side", decimals: 2, thresholds: [{ value: 0, color: "#008866" }, { value: 80, color: "#dd8800" }] }), title: "Upload rate", layout: { x: 0, y: 4, w: 2, h: 1 } });
   await environment.api(`dashboards/${dashboard.id}`, "PUT", dashboard, { "If-None-Match": "*" });
   const saved = (await environment.api(`dashboards/${dashboard.id}`)).document;
   assert.equal(saved.widgets[0].options.sparklinePlacement, "side");
@@ -152,6 +155,29 @@ try {
       assertEditGeometry(view, edit, "touch 1512");
       for (const entry of edit) assert.equal(entry.chipBefore, 44, `touch ${entry.id}: the touch target must be 44px: ${describe(entry)}`);
       for (const entry of edit) assert.ok(entry.chip.width <= 32.5, `touch ${entry.id}: the visible chip must stay at its normal size: ${describe(entry)}`);
+    } finally { await context.close(); }
+  }
+  {
+    // The band card's reading is 85.2, above the 80 threshold, so its chip names "≥ 80.00 Mb/s" and the reading is cut by its width.
+    const context = await browser.newContext({ viewport: { width: 1512, height: 900 } });
+    const page = await context.newPage();
+    const errors = []; page.on("pageerror", error => errors.push(error.message));
+    await environment.installQueryFixture(page, request => ({ series: [{ name: "api", labels: {}, points: [{ timestamp: Date.now(), value: request.query === "band" ? 85.2 : 42.34 }] }] }));
+    try {
+      await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" });
+      const card = page.locator('[data-widget-id="band"]');
+      await card.locator('[data-metric-value="85.2"]').waitFor();
+      const chip = card.locator('[data-stat-chip="band"]');
+      assert.equal(await chip.getAttribute("title"), "Threshold ≥ 80.00 Mb/s", "the chip's title must give the full band name");
+      assert.equal(await card.getByRole("img", { name: "Threshold ≥ 80.00 Mb/s" }).count(), 1, "the dot must carry the full band name once");
+      await chip.scrollIntoViewIfNeeded();
+      const hit = await chip.evaluate(node => {
+        const box = node.getBoundingClientRect();
+        const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return { inside: node.contains(top), tag: top?.tagName, box: { width: box.width, height: box.height } };
+      });
+      assert.ok(hit.inside, `the band chip must be the hit target over the reading column so its title can show on hover: ${JSON.stringify(hit)}`);
+      assert.deepEqual(errors, [], "no page errors while the band card renders");
     } finally { await context.close(); }
   }
   for (const theme of ["light", "dark"]) for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
