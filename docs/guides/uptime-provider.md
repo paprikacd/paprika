@@ -55,11 +55,13 @@ flow. See the [Firebase REST authentication contract](https://firebase.google.co
 ### Gateway caches
 
 The gateway keeps two process-local caches between queries. Each holds only
-successful results, is bounded to 64 entries and 8 MiB (a single value over
-256 KiB is never kept. Each skip is logged at debug verbosity
-(`--zap-log-level=debug`) by the `observability-uptime` logger, without the
-body. The caches are keyed by a digest of the caller's credential, so no caller
-sees another caller's result.
+successful results, is bounded to 64 entries and 8 MiB, and never keeps a single
+value over 256 KiB. A value over that size is skipped and logged at V(1) by the
+`observability-uptime` logger. V(1) entries appear at debug verbosity
+(`--zap-log-level=debug`, for example through `observabilityGateway.args`). The
+skip entry names the operation, size and limit, and never carries the body. The
+caches are keyed by a digest of the caller's credential, so no caller sees
+another caller's result.
 An expired entry is dropped the next time its key is read or another value is
 stored, and no timer holds it. Neither cache is persisted, and neither is shared
 between gateway replicas.
@@ -238,17 +240,20 @@ exclusion, read-only query allowlisting, optional nulls, timestamp projections,
 SLO no-data semantics, row/response caps, partial counts, redirect refusal,
 missing credentials, fixed-endpoint Firebase refresh, revocation, and cancellation.
 It also checks read coalescing (six identical concurrent reads make one upstream
-request), the 15-second read TTL, and the read key, which separates credentials
-and the TLS mode. Error and wrong-shape responses are never kept. Expiry is lazy:
-an expired value is dropped on its next access or insert, and an evicted value
-is unreachable. Byte and entry bounds hold, and an oversized value is not kept.
-When the last waiter leaves, the upstream read is cancelled. A caller whose
-context has already ended starts nothing, and a waiter that leaves does not
-cancel the shared read for the others. The shared read's own timeout bounds it.
-A caller never joins an abandoned flight, so a later caller starts a fresh read.
-A rejected token is forgotten, so the next query refreshes it. A shared token
-refresh survives its first caller leaving, and a token is reused until near
-expiry. A panicking fetch becomes an error for every waiter and is logged.
+request), the 15-second read TTL, and the read key, which separates credentials,
+configured headers and the TLS mode. Error and wrong-shape responses are never
+kept. Expiry is lazy: an expired value is dropped when its key is looked up or
+another value is stored, and an evicted value is unreachable. Byte and entry
+bounds hold. An oversized value is not kept, and its skip is logged at V(1)
+with the operation, size and limit but not the body. When the last waiter
+leaves, the upstream read is cancelled. A caller whose context has already ended
+starts nothing, and a waiter that leaves does not cancel the shared read for the
+others. The shared read's own timeout bounds it. A caller never joins an
+abandoned flight, so a later caller starts a fresh read. A rejected token is
+forgotten, so the next query refreshes it. A shared token refresh survives its
+first caller leaving, and a token is reused until near expiry. A panicking fetch
+becomes an error for every waiter and is logged at error level with the
+recovered value and the stack.
 The application integration runner also exercises actual Observe MCP and Insights
 with a real disposable PostgreSQL reader. Optional live Uptime validation uses
 the existing E2E account's supported Firebase login and a refresh credential
