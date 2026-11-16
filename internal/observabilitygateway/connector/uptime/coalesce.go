@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // errReadPanicked is the error every waiter of a panicking fetch receives.
@@ -83,7 +83,7 @@ func newCoalescer[V any](limit int, size func(V) int) *coalescer[V] {
 		entries:  make(map[string]*list.Element),
 		order:    list.New(),
 		inflight: make(map[string]*flight[V]),
-		log:      ctrl.Log.WithName("observability-uptime"),
+		log:      logf.Log.WithName("observability-uptime"),
 	}
 }
 
