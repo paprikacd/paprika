@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -27,14 +26,17 @@ const (
 
 // Uptime keeps no per-query state, but two process-local caches are shared
 // between queries. Both are bounded (64 entries and 8 MiB each; a single value
-// over 256 KiB is never kept), expire on their own timers, and are keyed by a
-// digest of the caller's credential, so no caller sees another caller's result:
-//   - successful read responses for 15 seconds, with identical concurrent reads
-//     sharing one upstream request. A dashboard's widgets that issue the same
-//     read make one upstream call, not one each, and a slow read is not repeated
-//     for every widget. The key covers the endpoint, procedure, canonical body,
-//     credential digest and configured headers. Membership of the reliability
-//     path is checked uncached on every query.
+// over 256 KiB is never kept), expire lazily (an expired value is dropped on
+// its next access or the next insert), and are keyed by a digest of the
+// caller's credential, so no caller sees another caller's result:
+//   - successful read responses for 15 seconds. Identical concurrent reads share
+//     one upstream request while a waiter is still joined; the shared request is
+//     cancelled when the last waiter leaves. query_dashboard runs its distinct
+//     queries one after another, so for a dashboard the gain comes from this TTL
+//     across those serial calls, not from concurrent coalescing. The key covers
+//     the endpoint, procedure, canonical body, credential digest, configured
+//     headers and TLS mode. Membership of the reliability path is checked
+//     uncached on every query.
 //   - Firebase ID tokens until five minutes before they expire, so a query does
 //     not repeat a token refresh that is still valid. A token that Uptime
 //     rejects is dropped at once.
@@ -218,7 +220,7 @@ func (Uptime) Query(ctx context.Context, req connector.QueryRequest) (*connector
 func executeQuery(ctx context.Context, req *connector.QueryRequest, cfg *config, q *query) (*connector.QueryResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	credential, credentialErr := bearerCredential(ctx, req.Credentials, &http.Client{Transport: transport, CheckRedirect: httphelp.RejectRedirect})
+	credential, credentialErr := bearerCredential(ctx, req.Credentials, newCredentialClient())
 	if credentialErr != nil {
 		return credentialFailure(credentialErr), nil
 	}

@@ -27,7 +27,9 @@ const (
 )
 
 // readCacheTTL is deliberately short. A dashboard's widgets run within seconds
-// of each other, and a longer window would serve stale SLO data.
+// of each other, and a longer window would serve stale SLO data. query_dashboard
+// runs its distinct queries one after another, so this TTL, not concurrent
+// coalescing, is what collapses its repeated SLO reads.
 const readCacheTTL = 15 * time.Second
 
 // reads coalesces identical upstream reads and keeps successful response bodies

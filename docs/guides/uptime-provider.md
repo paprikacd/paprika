@@ -56,22 +56,33 @@ flow. See the [Firebase REST authentication contract](https://firebase.google.co
 
 The gateway keeps two process-local caches between queries. Each holds only
 successful results, is bounded to 64 entries and 8 MiB (a single value over
-256 KiB is never kept), removes its entries when they expire, and is keyed by a
+256 KiB is never kept, and a debug log records each skip), and is keyed by a
 digest of the caller's credential, so no caller sees another caller's result.
-Neither is persisted, and neither is shared between gateway replicas.
+An expired entry is dropped the next time its key is read or another value is
+stored, and no timer holds it. Neither cache is persisted, and neither is shared
+between gateway replicas.
 
 | Cache | Holds | Key | Lifetime |
 | --- | --- | --- | --- |
 | Firebase ID tokens | The ID token from one refresh | Digest of the credential document | Until five minutes before the token expires (about 55 minutes) |
 | Uptime read responses | The response body of one read | Endpoint, procedure, canonical request body, credential digest, configured headers and TLS mode | 15 seconds |
 
-Identical reads that run together, such as the six widgets of one dashboard,
-share one upstream request, and a read that is still running is not repeated for
-each widget. A caller whose own context ends returns at once and leaves the
-shared read running for the others, which is still bounded by the 20-second
-query deadline. A body that does not match the operation's shape is an error and
-is not kept. A rejected ID token (HTTP 401 or 403 from Uptime) is dropped from
-the cache, so the next query refreshes it.
+Identical reads that run at the same time share one upstream request while at
+least one of their callers is still waiting. A caller whose own context ends
+returns at once with its own error. When the last waiting caller leaves, the
+upstream request is cancelled and is not left running. Every shared read is also
+bounded by the 20-second query deadline. A caller whose context has already
+ended starts no upstream read.
+
+`query_dashboard` runs its distinct queries one after another, not at the same
+time. For a dashboard, the gain therefore comes from the 15-second read TTL
+across those serial calls: the six SLO widgets of one dashboard make one
+upstream request, not six. Concurrent sharing matters for callers that issue
+identical reads together, such as several Insights queries at once.
+
+A body that does not match the operation's shape is an error and is not kept. A
+rejected ID token (HTTP 401 or 403 from Uptime) is dropped from the cache, so the
+next query refreshes it.
 
 ### Revoking access
 

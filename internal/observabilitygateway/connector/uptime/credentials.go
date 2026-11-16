@@ -24,6 +24,13 @@ const (
 	tokenRefreshMargin = 5 * time.Minute
 )
 
+// newCredentialClient returns the client for Firebase refreshes. It uses the
+// shared verified transport with no provider TLS options. Tests replace it to
+// reach a fake token endpoint.
+var newCredentialClient = func() *http.Client {
+	return &http.Client{Transport: transport, CheckRedirect: httphelp.RejectRedirect}
+}
+
 // tokens keeps Firebase ID tokens, keyed by the credential identity. Each
 // token is kept until tokenRefreshMargin before its expires_in, and concurrent
 // refreshes for one credential share a single request.

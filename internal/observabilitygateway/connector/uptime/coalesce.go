@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -24,6 +26,11 @@ const (
 // coalescer shares one in-flight fetch among concurrent callers that ask for
 // the same key, and keeps successful results for a short time so that a
 // dashboard's repeated identical reads do not each reach the upstream.
+//
+// Kept values expire lazily: an expired value is dropped the next time its key
+// is looked up or another value is stored. No timers are used, so an evicted
+// value is not reachable from any timer closure. The count and byte bounds
+// therefore limit how much memory can be held, not just the index.
 type coalescer[V any] struct {
 	mu       sync.Mutex
 	now      func() time.Time
@@ -43,10 +50,16 @@ type cacheEntry[V any] struct {
 	expires time.Time
 }
 
+// flight is one shared fetch. refs counts the waiters still joined, and
+// finished is set once fetch has returned. Both are guarded by coalescer.mu.
+// cancel stops the shared fetch; it runs when the last waiter leaves.
 type flight[V any] struct {
-	done  chan struct{}
-	value V
-	err   error
+	done     chan struct{}
+	cancel   context.CancelFunc
+	refs     int
+	finished bool
+	value    V
+	err      error
 }
 
 // newCoalescer returns a coalescer that keeps at most limit values, and at most
@@ -66,11 +79,16 @@ func newCoalescer[V any](limit int, size func(V) int) *coalescer[V] {
 // do returns the value for key. A kept value is returned without calling
 // fetch. Otherwise one fetch runs for all concurrent callers with the same key.
 //
-// The fetch runs on a context detached from every caller's cancellation, so a
-// waiter that gives up returns its own ctx error and leaves the fetch running
-// for the others. The fetch is still bounded by timeout. fetch returns how long
-// its value may be kept; a zero duration keeps nothing, and errors are never kept.
-// A caller whose context has already ended does not start a new fetch.
+// The shared fetch runs on its own context, bounded by timeout, and is not a
+// child of any caller's context. Each waiter counts itself against the flight.
+// A waiter whose ctx ends leaves and returns its own ctx error. The flight keeps
+// running while at least one waiter is joined. When the last waiter leaves, the
+// fetch is cancelled and the flight is forgotten, so a later caller starts a
+// fresh fetch rather than joining a cancelled one.
+//
+// fetch returns how long its value may be kept; a zero duration keeps nothing,
+// and errors are never kept. A caller whose context has already ended does not
+// start a fetch or join one.
 func (c *coalescer[V]) do(ctx context.Context, key string, timeout time.Duration, fetch func(context.Context) (V, time.Duration, error)) (V, error) {
 	var zero V
 	c.mu.Lock()
@@ -78,18 +96,23 @@ func (c *coalescer[V]) do(ctx context.Context, key string, timeout time.Duration
 		c.mu.Unlock()
 		return value, nil
 	}
+	if err := ctx.Err(); err != nil {
+		c.mu.Unlock()
+		return zero, abandoned(err)
+	}
 	f, running := c.inflight[key]
 	if !running {
-		if err := ctx.Err(); err != nil {
-			c.mu.Unlock()
-			return zero, abandoned(err)
-		}
-		f = &flight[V]{done: make(chan struct{})}
+		// The shared fetch keeps ctx's values but not its cancellation, so the
+		// first caller leaving does not stop it. The cancel func is stored on the
+		// flight and called by run, or by the last waiter's leave.
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout) //nolint:gosec // G118: cancel is owned by the flight; run or leave calls it.
+		f = &flight[V]{done: make(chan struct{}), cancel: cancel}
 		c.inflight[key] = f
-		go c.run(context.WithoutCancel(ctx), key, f, timeout, fetch)
+		go c.run(fetchCtx, key, f, fetch)
 	}
+	f.refs++
 	c.mu.Unlock()
-	return wait(ctx, f)
+	return c.wait(ctx, key, f)
 }
 
 // forget drops any kept value for key. It is used when Uptime rejects a
@@ -102,13 +125,16 @@ func (c *coalescer[V]) forget(key string) {
 	}
 }
 
-func (c *coalescer[V]) run(parent context.Context, key string, f *flight[V], timeout time.Duration, fetch func(context.Context) (V, time.Duration, error)) {
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-	value, keep, err := fetch(ctx)
+// run performs the shared fetch and publishes its result to the waiters.
+func (c *coalescer[V]) run(ctx context.Context, key string, f *flight[V], fetch func(context.Context) (V, time.Duration, error)) {
+	defer f.cancel()
+	value, keep, err := safeFetch(ctx, fetch)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.inflight, key)
+	f.finished = true
+	if c.inflight[key] == f {
+		delete(c.inflight, key)
+	}
 	if err == nil && keep > 0 {
 		c.storeLocked(key, value, keep)
 	}
@@ -116,13 +142,42 @@ func (c *coalescer[V]) run(parent context.Context, key string, f *flight[V], tim
 	close(f.done)
 }
 
-func wait[V any](ctx context.Context, f *flight[V]) (V, error) {
+// safeFetch turns a panic in fetch into an error for this flight's waiters. A
+// panic on the detached fetch goroutine would otherwise crash the gateway.
+func safeFetch[V any](ctx context.Context, fetch func(context.Context) (V, time.Duration, error)) (value V, keep time.Duration, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			var zero V
+			value, keep, err = zero, 0, errors.New("uptime read panicked")
+		}
+	}()
+	return fetch(ctx)
+}
+
+// wait blocks until the flight finishes or ctx ends, whichever is first.
+func (c *coalescer[V]) wait(ctx context.Context, key string, f *flight[V]) (V, error) {
 	select {
 	case <-f.done:
 		return f.value, f.err
 	case <-ctx.Done():
+		c.leave(key, f)
 		var zero V
 		return zero, abandoned(ctx.Err())
+	}
+}
+
+// leave removes one waiter from f. When the last waiter leaves a flight that
+// has not finished, its fetch is cancelled and the flight is forgotten.
+func (c *coalescer[V]) leave(key string, f *flight[V]) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	f.refs--
+	if f.refs > 0 || f.finished {
+		return
+	}
+	f.cancel()
+	if c.inflight[key] == f {
+		delete(c.inflight, key)
 	}
 }
 
@@ -130,6 +185,8 @@ func abandoned(err error) error {
 	return fmt.Errorf("uptime read abandoned by caller: %w", err)
 }
 
+// lookupLocked returns a kept value that has not expired. An expired entry is
+// dropped here, so an access never returns or retains a stale value.
 func (c *coalescer[V]) lookupLocked(key string) (V, bool) {
 	var zero V
 	element, ok := c.entries[key]
@@ -148,17 +205,20 @@ func (c *coalescer[V]) lookupLocked(key string) (V, bool) {
 	return entry.value, true
 }
 
-// storeLocked keeps value for keep. Expired values are also removed by a timer,
-// so a value does not stay in memory after its time is up when no later query
-// asks for its key.
+// storeLocked keeps value for keep. Before inserting, it drops every expired
+// entry, then evicts least recently used entries until the count and byte
+// bounds hold. Values over maxEntryBytes are not kept and are logged at debug
+// level, so a dashboard whose reads are too large to cache is visible.
 func (c *coalescer[V]) storeLocked(key string, value V, keep time.Duration) {
 	cost := c.size(value)
 	if cost > maxEntryBytes {
+		slog.Debug("uptime read over the cache size limit was not kept", "bytes", cost, "limit", maxEntryBytes)
 		return
 	}
 	if element, ok := c.entries[key]; ok {
 		c.removeLocked(element)
 	}
+	c.sweepExpiredLocked()
 	entry := &cacheEntry[V]{key: key, value: value, cost: cost, expires: c.now().Add(keep)}
 	c.entries[key] = c.order.PushFront(entry)
 	c.bytes += cost
@@ -169,13 +229,19 @@ func (c *coalescer[V]) storeLocked(key string, value V, keep time.Duration) {
 		}
 		c.removeLocked(oldest)
 	}
-	time.AfterFunc(keep, func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if element, ok := c.entries[key]; ok && element.Value == any(entry) {
+}
+
+// sweepExpiredLocked removes every expired entry. The list holds at most
+// maxCachedEntries elements, so a full pass on insert is cheap.
+func (c *coalescer[V]) sweepExpiredLocked() {
+	now := c.now()
+	for element := c.order.Back(); element != nil; {
+		previous := element.Prev()
+		if entry, ok := element.Value.(*cacheEntry[V]); ok && !now.Before(entry.expires) {
 			c.removeLocked(element)
 		}
-	})
+		element = previous
+	}
 }
 
 func (c *coalescer[V]) removeLocked(element *list.Element) {

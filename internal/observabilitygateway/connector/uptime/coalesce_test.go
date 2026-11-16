@@ -3,14 +3,17 @@ package uptime
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
@@ -470,21 +473,32 @@ func TestSharedFetchIsBoundedByTimeout(t *testing.T) {
 	}
 }
 
-// A caller that arrives with its context already ended does not start a read.
 func TestEndedCallerDoesNotStartFetch(t *testing.T) {
 	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	var fetches atomic.Int32
+	// The fetch blocks until the test ends, so a fetch that wrongly starts is
+	// visible at once without relying on a goroutine finishing first.
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	started := make(chan struct{}, 1)
 	_, err := c.do(ctx, "k", time.Second, func(context.Context) (int, time.Duration, error) {
-		fetches.Add(1)
+		started <- struct{}{}
+		<-gate
 		return 1, time.Minute, nil
 	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context canceled", err)
 	}
-	if got := fetches.Load(); got != 0 {
-		t.Fatalf("fetches = %d, want 0", got)
+	select {
+	case <-started:
+		t.Fatal("an ended caller started a fetch")
+	case <-time.After(200 * time.Millisecond):
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.inflight) != 0 {
+		t.Fatalf("in-flight reads = %d, want 0", len(c.inflight))
 	}
 }
 
@@ -514,20 +528,44 @@ func TestWrongShapedBodyIsNotCached(t *testing.T) {
 	}
 }
 
-// Entries leave memory when they expire, even if no later query asks for them.
-func TestExpiredEntriesAreRemovedWithoutAccess(t *testing.T) {
+func TestExpiredEntriesAreDroppedOnNextAccessOrInsert(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(0, 0)}
 	c := newCoalescer[string](maxCachedEntries, func(value string) int { return len(value) })
+	c.now = clock.Now
 	ctx := context.Background()
 	if _, err := c.do(ctx, "short", time.Second, func(context.Context) (string, time.Duration, error) {
-		return "value", 20 * time.Millisecond, nil
+		return "value", time.Minute, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(150 * time.Millisecond)
+	clock.Advance(2 * time.Minute)
+	// An expired key is not served, and its value is dropped on this access.
+	var fetches atomic.Int32
+	if _, err := c.do(ctx, "short", time.Second, func(context.Context) (string, time.Duration, error) {
+		fetches.Add(1)
+		return "fresh", time.Minute, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fetches.Load() != 1 {
+		t.Fatal("expired value was served")
+	}
+	// Another insert drops any other expired value, so nothing expired remains.
+	if _, err := c.do(ctx, "stale", time.Second, func(context.Context) (string, time.Duration, error) {
+		return "old", time.Minute, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(2 * time.Minute)
+	if _, err := c.do(ctx, "next", time.Second, func(context.Context) (string, time.Duration, error) {
+		return "new", time.Minute, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.entries) != 0 || c.bytes != 0 {
-		t.Fatalf("expired entries kept: %d entries, %d bytes", len(c.entries), c.bytes)
+	if len(c.entries) != 1 || c.bytes != len("new") {
+		t.Fatalf("kept after expiry: %d entries, %d bytes; want only the newest value", len(c.entries), c.bytes)
 	}
 }
 
@@ -630,5 +668,255 @@ func TestReliabilityMembershipIsNotServedFromCache(t *testing.T) {
 	}
 	if got := reports.Load(); got != 0 {
 		t.Fatalf("report reads = %d, want 0 after the membership refusal", got)
+	}
+}
+
+// eventually polls cond until it holds or two seconds pass.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// When the last waiter leaves, the shared fetch is cancelled, its goroutine
+// exits, and the flight is forgotten so a later caller starts a fresh fetch.
+func TestLastWaiterLeavingStopsFetchAndForgetsFlight(t *testing.T) {
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
+	var running atomic.Int32
+	started := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() {
+		_, err := c.do(ctx, "k", time.Minute, func(fetchCtx context.Context) (int, time.Duration, error) {
+			running.Add(1)
+			defer running.Add(-1)
+			started <- struct{}{}
+			<-fetchCtx.Done()
+			return 0, 0, fetchCtx.Err()
+		})
+		errc <- err
+	}()
+	<-started
+	cancel()
+	if err := <-errc; !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiter error = %v, want context canceled", err)
+	}
+	eventually(t, "the cancelled fetch to exit", func() bool { return running.Load() == 0 })
+	c.mu.Lock()
+	inflight := len(c.inflight)
+	c.mu.Unlock()
+	if inflight != 0 {
+		t.Fatalf("in-flight reads after the last waiter left = %d, want 0", inflight)
+	}
+	value, err := c.do(context.Background(), "k", time.Minute, func(context.Context) (int, time.Duration, error) {
+		return 7, time.Minute, nil
+	})
+	if err != nil || value != 7 {
+		t.Fatalf("later caller = %d, %v; want a fresh fetch", value, err)
+	}
+}
+
+// The upstream request itself is cancelled once every waiter has left. While
+// one waiter remains, the request keeps running.
+func TestLastWaiterLeavingCancelsUpstreamRequest(t *testing.T) {
+	isolateCaches(t)
+	reached := make(chan struct{}, 4)
+	cancelled := make(chan struct{}, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The server only notices a client disconnect once the request body is
+		// consumed, so drain it before waiting on the request context.
+		_, _ = io.Copy(io.Discard, r.Body)
+		reached <- struct{}{}
+		select {
+		case <-r.Context().Done():
+			cancelled <- struct{}{}
+		case <-time.After(10 * time.Second):
+			writeJSON(t, w, `{"services":[]}`)
+		}
+	}))
+	defer server.Close()
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxB, cancelB := context.WithCancel(context.Background())
+	defer cancelB()
+	done := make(chan *connector.QueryResult, 2)
+	for _, ctx := range []context.Context{ctxA, ctxB} {
+		go func() {
+			result, _ := New().Query(ctx, testRequest(t, server.URL, sloQueries[0]))
+			done <- result
+		}()
+	}
+	<-reached
+	time.Sleep(100 * time.Millisecond) // let the second waiter join the same read
+	cancelA()
+	select {
+	case <-cancelled:
+		t.Fatal("upstream request was cancelled while a waiter remained")
+	case <-time.After(200 * time.Millisecond):
+	}
+	cancelB()
+	select {
+	case <-cancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream request was not cancelled after the last waiter left")
+	}
+	for range 2 {
+		if result := <-done; result == nil || result.State != connector.StateError {
+			t.Fatalf("cancelled waiter result = %#v", result)
+		}
+	}
+	if got := len(reached); got != 0 {
+		t.Fatalf("unexpected extra upstream requests: %d", got)
+	}
+}
+
+// A value removed by eviction is no longer reachable, so its memory can be
+// reclaimed. Expired and evicted values are not held by any timer.
+type blob struct{ data []byte }
+
+func storeBlob(t *testing.T, c *coalescer[*blob], key string) weak.Pointer[blob] {
+	t.Helper()
+	b := &blob{data: make([]byte, 100<<10)}
+	if _, err := c.do(context.Background(), key, time.Second, func(context.Context) (*blob, time.Duration, error) {
+		return b, time.Hour, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return weak.Make(b)
+}
+
+func TestEvictedValueIsNoLongerReferenced(t *testing.T) {
+	c := newCoalescer[*blob](2, func(b *blob) int { return len(b.data) })
+	evicted := storeBlob(t, c, "a")
+	storeBlob(t, c, "b")
+	storeBlob(t, c, "c") // the count bound of 2 evicts "a"
+	for range 5 {
+		if evicted.Value() == nil {
+			break
+		}
+		runtime.GC()
+	}
+	if evicted.Value() != nil {
+		t.Fatal("evicted value is still reachable from the cache")
+	}
+	runtime.KeepAlive(c)
+}
+
+// Every setting that changes which upstream answers, or how it is trusted, is
+// part of the read key. Two providers that differ in any of them never share a
+// kept or in-flight read.
+func TestReadKeyCoversEverySettingThatChangesTheUpstream(t *testing.T) {
+	type input struct {
+		endpoint string
+		headers  map[string]string
+		insecure bool
+		identity string
+		body     string
+	}
+	base := input{
+		endpoint: "https://uptime.example.com",
+		headers:  map[string]string{"X-Scope-OrgID": "tenant"},
+		identity: credentialIdentity([]byte("bearer-a")),
+		body:     `{"orgId":"x"}`,
+	}
+	keyOf := func(in input) string {
+		b := backend{config: &config{Config: httphelp.Config{Endpoint: in.endpoint, Headers: in.headers, InsecureSkipTLS: in.insecure}}, identity: in.identity}
+		key, err := b.readKey(in.endpoint+"/rpc", []byte(in.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return key
+	}
+	baseKey := keyOf(base)
+	if len(baseKey) != 64 || strings.Contains(baseKey, "bearer-a") {
+		t.Fatalf("read key %q has unexpected shape", baseKey)
+	}
+	mutants := map[string]func(*input){
+		"endpoint":     func(in *input) { in.endpoint = "https://other.example.com" },
+		"header value": func(in *input) { in.headers = map[string]string{"X-Scope-OrgID": "tenant-2"} },
+		"header name":  func(in *input) { in.headers = map[string]string{"X-Other": "tenant"} },
+		"insecure TLS": func(in *input) { in.insecure = true },
+		"credential":   func(in *input) { in.identity = credentialIdentity([]byte("bearer-b")) },
+		"body":         func(in *input) { in.body = `{"orgId":"y"}` },
+	}
+	for name, mutate := range mutants {
+		in := base
+		mutate(&in)
+		if keyOf(in) == baseKey {
+			t.Errorf("changing %s did not change the read key", name)
+		}
+	}
+}
+
+// Two providers with the same endpoint and credential but different TLS
+// settings never share a result.
+func TestInsecureTLSProviderDoesNotShareReadsWithStrictProvider(t *testing.T) {
+	isolateCaches(t)
+	server, calls := countingUptime(t, 0, http.StatusOK)
+	strict := testRequest(t, server.URL, sloQueries[0])
+	insecure := testRequest(t, server.URL, sloQueries[0])
+	insecure.Config = []byte(`{"endpoint":"` + server.URL + `","orgId":"` + testOrg + `","insecureSkipTLS":true}`)
+	for _, req := range []connector.QueryRequest{strict, insecure} {
+		if result, err := New().Query(context.Background(), req); err != nil || result.State != connector.StateOK {
+			t.Fatalf("query = %#v, %v", result, err)
+		}
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("upstream calls = %d, want 2 (TLS settings must separate reads)", got)
+	}
+}
+
+// A rejected Firebase ID token is dropped, so the next query refreshes it
+// rather than sending the rejected token again.
+func TestRejectedTokenIsForgottenSoNextQueryRefreshes(t *testing.T) {
+	isolateCaches(t)
+	var refreshes atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := refreshes.Add(1)
+		writeJSON(t, w, `{"id_token":"token-`+strconv.Itoa(int(n))+`","expires_in":"3600"}`)
+	}))
+	defer tokenServer.Close()
+	tokenClient := tokenTestClient(t, tokenServer)
+	oldClient := newCredentialClient
+	newCredentialClient = func() *http.Client { return tokenClient }
+	t.Cleanup(func() { newCredentialClient = oldClient })
+
+	var mu sync.Mutex
+	var authorizations []string
+	var uptimeCalls atomic.Int32
+	uptime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		mu.Unlock()
+		if uptimeCalls.Add(1) == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writeJSON(t, w, `{"services":[]}`)
+	}))
+	defer uptime.Close()
+
+	req := testRequest(t, uptime.URL, sloQueries[0])
+	req.Credentials = []byte(`{"apiKey":"key-forget","refreshToken":"refresh-forget"}`)
+	first, err := New().Query(context.Background(), req)
+	if err != nil || first.State != connector.StateForbidden {
+		t.Fatalf("rejected query = %#v, %v; want Forbidden", first, err)
+	}
+	second, err := New().Query(context.Background(), req)
+	if err != nil || second.State != connector.StateOK {
+		t.Fatalf("second query = %#v, %v; want OK", second, err)
+	}
+	if got := refreshes.Load(); got != 2 {
+		t.Fatalf("token refreshes = %d, want 2 (the rejected token must be dropped)", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(authorizations) != 2 || authorizations[1] != "Bearer token-2" {
+		t.Fatalf("authorizations = %v, want the second query to send token-2", authorizations)
 	}
 }
