@@ -470,6 +470,7 @@ not establish health or zero drift. The current detailed drift backend returns
 <code>NOT_CONFIGURED</code>; resource sync and <code>status.outOfSync</code> remain available.</p>
 <p>For more detail, use <code>get_application</code>, <code>get_resource_tree</code> with <code>detailed=true</code>,
 <code>investigate</code> on an exact selected resource, or <code>get_logs</code> with <code>tail_lines</code>.
+<code>get_logs</code> reads only pods in the application's resource tree.
 The investigator's findings are advisory: its current API does not report each
 source collection failure. Empty findings or missing logs are not proof of an
 absence of errors. Pipeline run-history collection is currently unavailable;
