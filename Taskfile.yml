@@ -133,7 +133,7 @@ tasks:
   # --- Local perf / profiling stack (kind) ---
   #
   # Full split-mode deploy on an isolated kind cluster: controller-manager,
-  # api-server (MCP + basic auth admin/admin123, pprof on :6060),
+  # api-server (MCP + basic auth admin/admin123, pprof on 127.0.0.1:6060),
   # repo-server, webhook-receiver, redis, metrics-server. Ports are
   # deliberately distinct from the e2e suite.
   #
@@ -223,9 +223,9 @@ tasks:
           --set metrics.enable=true \
           --set metrics.secure=false \
           --set metrics.bindAddress=:8080 \
-          --set 'manager.args[0]=--pprof-bind-address=:6060' \
-          --set 'apiServer.args[0]=--pprof-bind-address=:6060' \
-          --set 'observabilityGateway.args[0]=--pprof-bind-address=:6060' \
+          --set 'manager.args[0]=--pprof-bind-address=127.0.0.1:6060' \
+          --set 'apiServer.args[0]=--pprof-bind-address=127.0.0.1:6060' \
+          --set 'observabilityGateway.args[0]=--pprof-bind-address=127.0.0.1:6060' \
           --set 'apiServer.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'apiServer.extraEnv[0].value=perf-token-secret' \
           --set auth.enabled=true \
@@ -555,10 +555,10 @@ tasks:
         if ! kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' get deploy \
             {{.PERF_RELEASE}}-observability-gateway -o jsonpath='{.spec.template.spec.containers[0].args}' \
             | grep -q 'pprof-bind-address'; then
-          echo "==> enabling gateway pprof (:6060)"
+          echo "==> enabling gateway pprof (127.0.0.1:6060)"
           kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' patch deploy \
             {{.PERF_RELEASE}}-observability-gateway --type=json -p \
-            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--pprof-bind-address=:6060"}]'
+            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--pprof-bind-address=127.0.0.1:6060"}]'
         fi
         kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' rollout status \
           deploy/{{.PERF_RELEASE}}-observability-gateway --timeout=180s
@@ -701,11 +701,37 @@ tasks:
           if ! out="$(helm template paprika charts/chart --namespace paprika-system "$@" 2>&1)"; then
             echo "FAIL[$name]: render errored: $out"; rc=1; return
           fi
-          if echo "$out" | grep -nE '^[[:space:]]*- --[A-Za-z0-9-]+=$'; then
+          # An empty value is the disable switch for the console and the inline
+          # webhook, so those two are allowed to render empty on the controller-manager
+          # workloads only. Any other empty --flag= fails in every document.
+          empty_args="$(printf '%s\n' "$out" | awk '
+            BEGIN { RS = "\n---\n" }
+            {
+              mgr = ($0 ~ /kind: (Deployment|StatefulSet)/ && index($0, "\n  name: paprika-controller-manager\n"))
+              n = split($0, lines, "\n")
+              for (i = 1; i <= n; i++) {
+                if (lines[i] ~ /^[[:space:]]*- --[A-Za-z0-9-]+=$/) {
+                  if (mgr && lines[i] ~ /--(ui-bind-address|inline-webhook-bind-address)=$/) continue
+                  print lines[i]
+                }
+              }
+            }')"
+          if [ -n "$empty_args" ]; then
+            printf '%s\n' "$empty_args"
             echo "FAIL[$name]: empty --flag= args rendered"; rc=1
           else
             echo "ok[$name]"
           fi
+          # Deploy stacks must keep pprof on loopback; kubectl port-forward still reaches it.
+          case "$*" in
+            *deploy/*-values.yaml*)
+              pprof_bad="$(printf '%s\n' "$out" | grep -E -- '--pprof-bind-address=.' | grep -vE -- '--pprof-bind-address=(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$' || true)"
+              if [ -n "$pprof_bad" ]; then
+                printf '%s\n' "$pprof_bad"
+                echo "FAIL[$name]: pprof rendered on a non-loopback address"; rc=1
+              fi
+              ;;
+          esac
           if [ "$name" = insights-shared ]; then
             gateway_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR')"
             issuer_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_MCP_PUBLIC_URL')"
@@ -911,8 +937,8 @@ tasks:
         fi
         if ! np_out="$(render -f deploy/test-values.yaml -f deploy/omega-values.yaml -f deploy/insights-omega-values.yaml 2>&1)"; then
           echo "FAIL[insights-netpol-omega]: render errored"; rc=1
-        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
-          echo "FAIL[insights-netpol-omega]: the omega stack must render only the Insights policy"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-controller-manager-ingress paprika-insights " ]; then
+          echo "FAIL[insights-netpol-omega]: the omega stack must render only the Insights and manager ingress policies"; rc=1
         elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-omega ingress-api-gateway.txt egress-dns-gateway.txt; then
           rc=1
         else
@@ -1065,6 +1091,167 @@ tasks:
         expect_route_fail route-timeout-insights-low --set apiServer.ingress.insightsRequestTimeout=28s
         expect_route_fail route-timeout-insights-high --set apiServer.ingress.insightsRequestTimeout=2m
 
+        # Manager listeners and policy. The split-mode manager opens no console or
+        # inline webhook listener, its pprof listener is loopback-only, and its
+        # ingress policy is off unless manager.networkPolicy.enabled is set.
+        mgr_deploy() { # extra set-args...: the controller-manager Deployment
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: Deployment/ && index($0, "\n  name: paprika-controller-manager\n") { print }'
+        }
+        mgr_sts() { # extra set-args...: the sharded controller-manager StatefulSet
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: StatefulSet/ && index($0, "\n  name: paprika-controller-manager\n") { print }'
+        }
+        mgr_policy() { # extra set-args...: the per-component manager NetworkPolicy
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: NetworkPolicy/ && index($0, "\n  name: paprika-controller-manager-ingress\n") { print }'
+        }
+        global_policy() { # extra set-args...: the global controller-manager NetworkPolicy
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: NetworkPolicy/ && index($0, "\n  name: paprika-controller-manager\n") { print }'
+        }
+        policy_ports() { # reads a NetworkPolicy on stdin, prints its admitted ports
+          grep -E '^ +port: [0-9]+$' | awk '{ print $2 }' | sort -n | tr '\n' ' '
+        }
+        check_split_listeners() { # label, rendered manager workload: no console, no inline webhook, loopback pprof
+          label="$1"; doc="$2"; before=$rc
+          if [ -z "$doc" ]; then
+            echo "FAIL[$label]: no manager workload rendered"; rc=1; return
+          fi
+          for want in '        - --ui-bind-address=' '        - --inline-webhook-bind-address=' '        - --pprof-bind-address=127.0.0.1:6060'; do
+            if ! printf '%s\n' "$doc" | grep -qxF -- "$want"; then
+              echo "FAIL[$label]: split manager lacks exact arg: $want"; rc=1
+            fi
+          done
+          if printf '%s\n' "$doc" | grep -qE -- '--(ui-bind-address|inline-webhook-bind-address)=.'; then
+            echo "FAIL[$label]: split manager renders a console or inline webhook listener"; rc=1
+          fi
+          pprof_bad="$(printf '%s\n' "$doc" | grep -E -- '--pprof-bind-address=.' | grep -vE -- '--pprof-bind-address=(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$' || true)"
+          if [ -n "$pprof_bad" ]; then
+            echo "FAIL[$label]: split manager renders pprof beyond loopback: $pprof_bad"; rc=1
+          fi
+          for absent in 'containerPort: 3000' 'containerPort: 8080'; do
+            if printf '%s\n' "$doc" | grep -qF -- "$absent"; then
+              echo "FAIL[$label]: split manager declares $absent"; rc=1
+            fi
+          done
+          if printf '%s\n' "$doc" | grep -qF -- '--mode=api'; then
+            echo "FAIL[$label]: split manager must run as operator"; rc=1
+          fi
+          if [ "$rc" -eq "$before" ]; then echo "ok[$label] (no console, no inline webhook, pprof on loopback)"; fi
+        }
+        split_args='["--pprof-bind-address=127.0.0.1:6060","--ui-bind-address=:3000","--inline-webhook-bind-address=:8080"]'
+        check_split_listeners split-manager-args "$(mgr_deploy --set deploymentMode=split --set webhook.enabled=true \
+          --set-json "manager.args=$split_args")"
+        check_split_listeners split-sharded-manager-args "$(mgr_sts --set deploymentMode=split --set webhook.enabled=true \
+          --set manager.sharding.enabled=true --set-json "manager.args=$split_args")"
+        before=$rc
+        mono_mgr="$(mgr_deploy)"
+        for want in '        - --ui-bind-address=:3000' '        - --mode=operator'; do
+          if ! printf '%s\n' "$mono_mgr" | grep -qxF -- "$want"; then
+            echo "FAIL[monolith-manager-args]: monolith lacks $want"; rc=1
+          fi
+        done
+        if printf '%s\n' "$mono_mgr" | grep -qE -- '--inline-webhook-bind-address|--ui-bind-address=$'; then
+          echo "FAIL[monolith-manager-args]: monolith must keep the default listeners"; rc=1
+        fi
+        if [ "$rc" -eq "$before" ]; then echo "ok[monolith-manager-args] (console and inline webhook at defaults)"; fi
+        # A bare listener flag (two-item form) must fail in split mode: dropping only the
+        # flag would leave its value as a positional argument.
+        expect_fail split-bare-ui-flag --set deploymentMode=split \
+          --set-json 'manager.args=["--ui-bind-address",":3000"]'
+        expect_fail split-bare-inline-webhook-flag --set deploymentMode=split \
+          --set-json 'manager.args=["--inline-webhook-bind-address",":8080"]'
+        # The bare form stays valid in monolith mode.
+        check_render monolith-bare-ui-flag --set-json 'manager.args=["--ui-bind-address",":3000"]'
+        # Leading whitespace in a manager.args item must not defeat the split-mode filter:
+        # the item is trimmed first, so the console listener is still dropped.
+        leading_doc="$(mgr_deploy --set deploymentMode=split --set webhook.enabled=true \
+          --set-json 'manager.args=[" --ui-bind-address=:3000","--pprof-bind-address=127.0.0.1:6060"]')"
+        check_split_listeners split-manager-leading-space-arg "$leading_doc"
+        # A null manager.args item has no flag to pass; it is refused rather than rendered as "<nil>".
+        expect_fail manager-args-null-item --set-json 'manager.args=[null]'
+        # The enabled switch is a boolean. A string "false" is truthy in a template, so it is refused.
+        expect_fail manager-networkpolicy-string-enabled --set-string manager.networkPolicy.enabled=false
+        # Split mode with mode=api: the manager Service keeps health and metrics, but not the api port.
+        split_api_svc="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set mode=api 2>&1 \
+          | awk 'BEGIN { RS="\n---\n" } /kind: Service/ && index($0, "\n  name: paprika-manager-api-service\n") { print }')"
+        if [ -z "$split_api_svc" ]; then
+          echo "FAIL[split-api-service]: manager Service not rendered"; rc=1
+        elif printf '%s\n' "$split_api_svc" | grep -qE 'port: 3000$'; then
+          echo "FAIL[split-api-service]: split-mode manager Service routes the console port 3000"; rc=1
+        elif ! printf '%s\n' "$split_api_svc" | grep -qE 'port: 8081$'; then
+          echo "FAIL[split-api-service]: split-mode manager Service lost the health port"; rc=1
+        else
+          echo "ok[split-api-service] (no console port, health kept)"
+        fi
+        if [ -n "$(mgr_policy)" ]; then
+          echo "FAIL[manager-policy-default]: manager.networkPolicy must be off by default"; rc=1
+        else
+          echo "ok[manager-policy-default] (absent)"
+        fi
+        split_policy="$(mgr_policy --set deploymentMode=split --set webhook.enabled=true --set manager.networkPolicy.enabled=true)"
+        if [ -z "$split_policy" ]; then
+          echo "FAIL[manager-policy-split]: enabled policy not rendered"; rc=1
+        else
+          if printf '%s\n' "$split_policy" | grep -qE '^ +- Egress$|from:'; then
+            echo "FAIL[manager-policy-split]: manager policy must be ingress-only, with no source restriction in split mode"; rc=1
+          fi
+          if ! printf '%s\n' "$split_policy" | grep -qxF '    - Ingress'; then
+            echo "FAIL[manager-policy-split]: policyTypes must list Ingress"; rc=1
+          fi
+          got="$(printf '%s\n' "$split_policy" | policy_ports)"
+          if [ "$got" != "8081 8443 9443 " ]; then
+            echo "FAIL[manager-policy-split]: admitted ports were '$got', want '8081 8443 9443 '"; rc=1
+          else
+            echo "ok[manager-policy-split] (ingress-only: 8081 8443 9443)"
+          fi
+        fi
+        metrics_off_policy="$(mgr_policy --set deploymentMode=split --set webhook.enabled=true --set metrics.enable=false --set manager.networkPolicy.enabled=true)"
+        got="$(printf '%s\n' "$metrics_off_policy" | policy_ports)"
+        if [ "$got" != "8081 9443 " ]; then
+          echo "FAIL[manager-policy-metrics-off]: admitted ports were '$got', want '8081 9443 '"; rc=1
+        else
+          echo "ok[manager-policy-metrics-off] (no metrics port when metrics.enable=false)"
+        fi
+        # A values stack that omits manager.networkPolicy (or sets it to null) must still render.
+        if ! helm template paprika charts/chart --namespace paprika-system --set manager.networkPolicy=null >/dev/null 2>&1; then
+          echo "FAIL[manager-policy-null]: a null manager.networkPolicy must render"; rc=1
+        else
+          echo "ok[manager-policy-null]"
+        fi
+        mono_policy="$(mgr_policy --set manager.networkPolicy.enabled=true --set webhook.enabled=true)"
+        got="$(printf '%s\n' "$mono_policy" | policy_ports)"
+        if [ "$got" != "3000 8080 8081 8443 9443 " ]; then
+          echo "FAIL[manager-policy-monolith]: admitted ports were '$got'"; rc=1
+        elif ! printf '%s\n' "$mono_policy" | grep -qF 'kubernetes.io/metadata.name: paprika-system'; then
+          echo "FAIL[manager-policy-monolith]: console and webhook ports must be limited to the release namespace"; rc=1
+        else
+          echo "ok[manager-policy-monolith] (console and webhook from the release namespace only)"
+        fi
+        if [ -n "$(mgr_policy --set manager.networkPolicy.enabled=true --set webhook.enabled=false --set deploymentMode=split | grep -E '^ +port: 9443$')" ]; then
+          echo "FAIL[manager-policy-no-webhook]: 9443 admitted with webhook.enabled=false"; rc=1
+        else
+          echo "ok[manager-policy-no-webhook]"
+        fi
+        # The global template admits the admission port when webhooks are on. The
+        # kube-apiserver is not in the release namespace, so this rule has no source
+        # restriction; without it failurePolicy Ignore skips admission silently.
+        global_on="$(global_policy --set networkPolicy.enabled=true --set webhook.enabled=true)"
+        if [ "$(printf '%s\n' "$global_on" | grep -c 'port: 9443$')" -ne 1 ]; then
+          echo "FAIL[global-policy-webhook]: global controller-manager policy must admit 9443 once"; rc=1
+        elif [ "$(printf '%s\n' "$global_on" | awk '/^  ingress:/ { f = 1 } /^  egress:/ { f = 0 } f' | grep -c 'from:')" -ne 1 ]; then
+          # Exactly one ingress rule (the existing console/API rule) carries a source
+          # restriction; the 9443 rule must not.
+          echo "FAIL[global-policy-webhook]: the 9443 rule must not be limited to a source namespace"; rc=1
+        else
+          echo "ok[global-policy-webhook] (9443 admitted from any source)"
+        fi
+        if [ -n "$(global_policy --set networkPolicy.enabled=true --set webhook.enabled=false | grep 'port: 9443$')" ]; then
+          echo "FAIL[global-policy-no-webhook]: 9443 admitted with webhook.enabled=false"; rc=1
+        else
+          echo "ok[global-policy-no-webhook]"
+        fi
         exit $rc
 
   chart:rules:

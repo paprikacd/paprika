@@ -158,6 +158,7 @@ type cliConfig struct {
 	ProbeAddr                     string        `mapstructure:"health-probe-bind-address"`
 	UIAddr                        string        `mapstructure:"ui-bind-address"`
 	WebhookAddr                   string        `mapstructure:"webhook-bind-address"`
+	InlineWebhookAddr             string        `mapstructure:"inline-webhook-bind-address"`
 	PprofAddr                     string        `mapstructure:"pprof-bind-address"`
 	OperatorNamespace             string        `mapstructure:"operator-namespace"`
 	APINamespace                  string        `mapstructure:"api-namespace"`
@@ -700,7 +701,8 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	fs.String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	fs.String("pprof-bind-address", "", "The address the pprof debug endpoint binds to "+
-		"(e.g. :6060 serves /debug/pprof/*). Empty disables it. Off by default because it "+
+		"(e.g. 127.0.0.1:6060 serves /debug/pprof/* to processes in the pod, and to kubectl port-forward). "+
+		"Empty disables it. Off by default because it "+
 		"exposes heap, goroutine and execution-trace internals; enable only for profiling.")
 	fs.Bool("leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -727,7 +729,10 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
 	fs.String("api-namespace", "", "Restrict standalone API and observability reads to one namespace. Empty retains cluster-wide behavior; Kubernetes RBAC remains required.")
 	fs.String("ui-bind-address", ":3000",
-		"The address the UI dashboard server binds to.")
+		"The address the UI dashboard server binds to. In 'operator' mode an empty value disables the "+
+			"console, along with the API routes it serves (the satellite link and the GitHub Actions token "+
+			"exchange); split-mode managers run this way. Operator and api modes log an error when the console serves the API "+
+			"with authentication disabled on a non-loopback address.")
 	fs.String("internal-bind-address", "",
 		"The address the API server's internal listener binds to, serving component-to-component routes. Empty disables it. Only used in 'api' mode.")
 	fs.String("internal-token-file", "",
@@ -750,6 +755,9 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 		"Path to Kubernetes service account token. Only used in 'api' mode.")
 	fs.String("webhook-bind-address", ":8080",
 		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
+	fs.String("inline-webhook-bind-address", ":8080",
+		"The address the operator's inline webhook receiver (/webhook) binds to in 'operator' mode. "+
+			"Empty disables it; split-mode managers run this way because the webhook-receiver deployment serves /webhook.")
 	registerRepoServerFlags(fs)
 	registerObservabilityCapacityFlags(fs)
 	fs.String("agent-cluster-id", "",
@@ -1044,6 +1052,9 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return err
 	}
 
+	// The api-server serves the console on --ui-bind-address, so it gets the same
+	// authentication warning that operator mode logs for its console.
+	warnConsoleAuthDisabled(setupLog, cfg.UIAddr, clients.authCfg.Enabled)
 	if clients.cacheBundle == nil {
 		return startAPIServer(apiCtx, wrappedHandler, cfg.UIAddr, cfg.APIMaxConns, setupLog)
 	}
