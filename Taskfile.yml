@@ -832,6 +832,125 @@ tasks:
         echo "ok[gateway-capacity-explicit-zero]"
         check_render omega-insights -f deploy/test-values.yaml -f deploy/omega-values.yaml \
           -f deploy/insights-omega-values.yaml
+        # Insights NetworkPolicy checks (internal/insights/README.md "Network policy").
+        # The policy's ingress and egress must equal the expected paths in
+        # charts/chart/tests/insights-netpol/, so a wider peer, port or rule fails the diff.
+        np_dir=charts/chart/tests/insights-netpol
+        np_tmp="$(mktemp -d)"
+        render() { helm template paprika charts/chart --namespace paprika-system "$@"; }
+        np_names() { awk 'BEGIN { RS="---" } /kind: NetworkPolicy/ { n=split($0,a,"\n"); for(i=1;i<=n;i++) if (a[i] ~ /^  name:/) print a[i] }' | sed 's/^  name: //' | sort | tr '\n' ' '; }
+        np_doc() { awk 'BEGIN { RS="---" } /kind: NetworkPolicy/ && /\n  name: paprika-insights\n/' | grep -v '^[[:space:]]*$' || true; }
+        # np_exact LABEL INGRESS_FIXTURE EGRESS_FIXTURE: reads the rendered output on stdin.
+        # The whole spec (selector, policyTypes, ingress, egress) must equal spec-head.txt
+        # plus the two fixtures, and the policy must live in the release namespace.
+        np_exact() {
+          np_bad=0
+          np_doc > "$np_tmp/doc"
+          sed -n '/^spec:/,$p' "$np_tmp/doc" > "$np_tmp/got-spec"
+          cat "$np_dir/spec-head.txt" "$np_dir/$2" "$np_dir/$3" > "$np_tmp/want-spec"
+          if ! diff -u "$np_tmp/want-spec" "$np_tmp/got-spec" > "$np_tmp/spec.diff"; then
+            echo "FAIL[$1]: spec differs from spec-head.txt + $2 + $3"; sed 's/^/  /' "$np_tmp/spec.diff"; np_bad=1
+          fi
+          if [ "$(grep -c '^  namespace: paprika-system$' "$np_tmp/doc")" -ne 1 ]; then
+            echo "FAIL[$1]: the policy must be in namespace paprika-system"; np_bad=1
+          fi
+          return "$np_bad"
+        }
+        ins_set='--set insights.enabled=true --set insights.token.existingSecretName=insights-test'
+        ins_only='--set insights.networkPolicy.enabled=true'
+        glob_split='--set deploymentMode=split --set apiServer.enabled=true --set repoServer.enabled=true --set webhookReceiver.enabled=true'
+        all_seven='paprika-agent paprika-api-server paprika-controller-manager paprika-insights paprika-observability-gateway paprika-repo-server paprika-webhook-receiver '
+        if ! np_out="$(render $ins_set 2>&1)"; then
+          echo "FAIL[insights-netpol-default]: render errored"; rc=1
+        elif [ -n "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-default]: default render must not add a NetworkPolicy"; rc=1
+        else
+          echo "ok[insights-netpol-default]"
+        fi
+        printf '%s\n' 'insights:' '  enabled: true' '  token:' '    existingSecretName: insights-test' '  networkPolicy: null' > "$np_tmp/null-values.yaml"
+        if ! np_out="$(render -f "$np_tmp/null-values.yaml" 2>&1)"; then
+          echo "FAIL[insights-netpol-null]: a null insights.networkPolicy must render"; rc=1
+        elif [ -n "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-null]: a null insights.networkPolicy must not add a NetworkPolicy"; rc=1
+        else
+          echo "ok[insights-netpol-null]"
+        fi
+        if ! np_out="$(render -f "$np_tmp/null-values.yaml" --set networkPolicy.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-null-global]: a null insights.networkPolicy must render under the global switch"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_names | grep -qw paprika-insights; then
+          echo "FAIL[insights-netpol-null-global]: the global switch must still render the Insights policy"; rc=1
+        else
+          echo "ok[insights-netpol-null-global]"
+        fi
+        if ! np_out="$(render $glob_split $ins_set $ins_only 2>&1)"; then
+          echo "FAIL[insights-netpol-switch]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-switch]: switch must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-switch ingress-api-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-switch]"
+        fi
+        if ! np_out="$(render $ins_set $ins_only --set deploymentMode=monolith 2>&1)"; then
+          echo "FAIL[insights-netpol-monolith]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-monolith]: monolith with auth.enabled=false must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-monolith ingress-api-manager-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-monolith]"
+        fi
+        if ! np_out="$(render $ins_set $ins_only --set deploymentMode=monolith --set auth.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-monolith-auth]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-monolith-auth]: monolith with auth must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-monolith-auth ingress-api-manager-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-monolith-auth]"
+        fi
+        if ! np_out="$(render -f deploy/test-values.yaml -f deploy/omega-values.yaml -f deploy/insights-omega-values.yaml 2>&1)"; then
+          echo "FAIL[insights-netpol-omega]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-omega]: the omega stack must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-omega ingress-api-gateway.txt egress-dns-gateway.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-omega]"
+        fi
+        if ! np_out="$(render $glob_split $ins_set --set networkPolicy.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-global]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "$all_seven" ]; then
+          echo "FAIL[insights-netpol-global]: the global switch must still render all seven policies"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-global ingress-api-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-global]"
+        fi
+        if ! np_out="$(render $ins_set --set networkPolicy.enabled=true --set deploymentMode=monolith 2>&1)"; then
+          echo "FAIL[insights-netpol-global-monolith]: render errored"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-global-monolith ingress-api-manager-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-global-monolith]"
+        fi
+        if ! np_out="$(render $ins_only --set insights.enabled=false 2>&1)"; then
+          echo "FAIL[insights-netpol-disabled]: render errored"; rc=1
+        elif [ -n "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-disabled]: insights.enabled=false must render no NetworkPolicy"; rc=1
+        else
+          echo "ok[insights-netpol-disabled]"
+        fi
+        if ! np_out="$(render $glob_split --set insights.enabled=false --set networkPolicy.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-global-disabled]: render errored"; rc=1
+        elif [ -z "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-global-disabled]: the global switch must still render the other policies"; rc=1
+        elif printf '%s\n' "$np_out" | np_names | grep -qw paprika-insights; then
+          echo "FAIL[insights-netpol-global-disabled]: insights.enabled=false must render no Insights NetworkPolicy under the global switch"; rc=1
+        else
+          echo "ok[insights-netpol-global-disabled]"
+        fi
+        rm -rf "$np_tmp"
         expect_fail invalid-namespace-scope --set apiServer.namespaceScope=Review/production
         expect_fail namespace-scope-in-monolith --set apiServer.namespaceScope=review-samples
         check_render reconcile-zero \

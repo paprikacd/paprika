@@ -87,6 +87,23 @@ configuration. The referenced service Secret must exist before deployment.
 The 10 GiB retained Vultr block volume preserves saved queries and dashboards
 across Insights pod replacement.
 
+The overlay also sets `insights.networkPolicy.enabled`, which renders only the Insights
+NetworkPolicy. Its `egress: []` admits only DNS and the observability-gateway. The deployer Role in
+`terraform/github-actions-deployer-rbac.yaml` must allow `networkpolicies` before the first deploy
+that renders this policy, or that deploy's Helm upgrade fails with a forbidden error on
+`paprika-e2e-insights`. Check the service account and the OIDC user after applying:
+
+```sh
+KUBECONFIG=terraform/omega-ha.kubeconfig kubectl apply -f terraform/github-actions-deployer-rbac.yaml
+KUBECONFIG=terraform/omega-ha.kubeconfig kubectl auth can-i create networkpolicies -n paprika-e2e \
+  --as=system:serviceaccount:paprika-e2e:github-actions-vke-deployer
+KUBECONFIG=terraform/omega-ha.kubeconfig kubectl auth can-i create networkpolicies -n paprika-e2e \
+  --as=repo:paprikacd/paprika:environment:vke-production
+```
+
+Both must print `yes`. See `internal/insights/README.md` "Network policy", including the
+back-out steps.
+
 The branch preview workflow publishes the full `linux/amd64` Docker image as
 `ghcr.io/paprikacd/paprika:insights-<commit>`. Deploy by its immutable digest to
 the API, Observability gateway and Insights components. Preserve the current

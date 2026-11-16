@@ -14,3 +14,13 @@ insights:
     storageClassName: vultr-block-storage-retain
   # Providers are discovered from the existing authorized Observe gateway.
   providers: []
+  # Limits who can reach Insights on the shared cluster. Only the Insights policy
+  # is rendered, and only the api-server and observability-gateway can reach it.
+  # The other components keep networkPolicy.enabled (false here). Every Omega
+  # provider is shared through the gateway, so Insights needs no egress extras.
+  # See internal/insights/README.md "Network policy".
+  networkPolicy:
+    enabled: true
+    # Empty list: DNS and the observability-gateway only. Any managed provider needs an
+    # egress entry here before it is added.
+    egress: []

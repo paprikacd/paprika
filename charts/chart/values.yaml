@@ -21,6 +21,11 @@
 # priorityClassName: production-high
 
 ## NetworkPolicy configuration.
+## The global switch renders each component's policy: agent, api-server,
+## controller-manager, observability-gateway and repo-server always; webhook-receiver
+## in split mode when webhookReceiver.enabled (the default); insights when
+## insights.enabled is true. Insights can also be isolated alone with
+## insights.networkPolicy.enabled (see internal/insights/README.md "Network policy").
 ##
 networkPolicy:
   enabled: false
@@ -1115,9 +1120,19 @@ insights:
     limits:
       cpu: 500m
       memory: 256Mi
-  # In addition to DNS, permit query traffic on these provider ports. Operators
-  # may replace this with namespace/pod selectors for their monitoring stack.
+  # Per-component NetworkPolicy switch for Insights only. It renders the Insights
+  # policy alone, and only when insights.enabled is true. The policies of the other
+  # components follow networkPolicy.enabled, which also renders the Insights policy.
+  # Ingress on :8090 comes from the api-server and the observability-gateway. The
+  # controller-manager is admitted only in monolith mode, where it serves the console.
+  # In split mode the api-server serves the console.
+  # Egress goes to DNS, to the observability-gateway when enabled, and to the extras below.
+  # See internal/insights/README.md "Network policy".
   networkPolicy:
+    enabled: false
+    # Egress extras. Provider ports beyond these need an entry here, or queries to
+    # those providers time out. Each entry has no `to`, so it reaches any
+    # destination on its ports. Add a `to` with namespace or pod selectors to narrow it.
     egress:
       - ports:
           - { protocol: TCP, port: 80 }
