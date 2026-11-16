@@ -1,12 +1,15 @@
 package uptime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -17,11 +20,50 @@ import (
 	"time"
 	"weak"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
 )
+
+// managerLog receives what the process logger writes. TestMain installs it.
+var managerLog = &lockedBuffer{}
+
+// TestMain installs a zap logger the way cmd/main.go does, at debug verbosity,
+// so V(1) entries are visible. SetLogger takes effect once per process. The
+// package caches built at init already hold the delegating logger, which
+// forwards to this sink, as the gateway's package-level read cache does.
+func TestMain(m *testing.M) {
+	opts := zap.Options{Development: false}
+	flags := flag.NewFlagSet("zap", flag.ContinueOnError)
+	opts.BindFlags(flags)
+	if err := flags.Parse([]string{"--zap-log-level=debug"}); err != nil {
+		panic(err)
+	}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.WriteTo(managerLog)))
+	os.Exit(m.Run())
+}
+
+// lockedBuffer is a concurrency-safe byte sink for log output.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // fakeClock drives cache expiry deterministically. Tests install it before
 // any goroutine uses the caches.
@@ -1135,5 +1177,138 @@ func TestExpiredEntryIsDroppedOnLookupWhenRefetchFails(t *testing.T) {
 	c.mu.Unlock()
 	if entries != 0 || bytes != 0 {
 		t.Fatalf("after an expired lookup: entries=%d bytes=%d, want 0 and 0", entries, bytes)
+	}
+}
+
+// An oversized value's skip reaches the process logger at debug verbosity. The
+// read cache is built at init, before cmd/main.go calls SetLogger, so this
+// also covers the production default logger, with its name. The entry carries
+// the operation, size and limit, and never the body or the read key.
+func TestOversizeSkipReachesProcessLoggerAtDebugLevel(t *testing.T) {
+	const marker = "MANAGER-LOG-BODY-MARKER"
+	const readKey = "manager-log-read-key"
+	const operation = "manager-log-operation"
+	body := append([]byte(marker), make([]byte, maxEntryBytes)...)
+	before := managerLog.String()
+	if _, err := reads.do(context.Background(), operation, readKey, time.Second, func(context.Context) ([]byte, time.Duration, error) {
+		return body, time.Minute, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.TrimPrefix(managerLog.String(), before)
+	for _, want := range []string{
+		`"level":"debug"`,
+		`"logger":"observability-uptime"`,
+		`"msg":"uptime read over the cache size limit was not kept"`,
+		`"operation":"` + operation + `"`,
+		`"bytes":` + strconv.Itoa(len(body)),
+		`"limit":` + strconv.Itoa(maxEntryBytes),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("process log lacks %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, marker) || strings.Contains(out, readKey) {
+		t.Fatalf("process log carries the body or the read key:\n%s", out)
+	}
+}
+
+// The skip and the panic are logged with c.mu released. Each log call checks
+// whether the mutex is held and records the answer.
+type lockCheckSink struct {
+	mu     sync.Mutex
+	held   func() bool
+	calls  int
+	locked int
+}
+
+func (s *lockCheckSink) Init(logr.RuntimeInfo)          {}
+func (s *lockCheckSink) Enabled(int) bool               { return true }
+func (s *lockCheckSink) Info(int, string, ...any)       { s.check() }
+func (s *lockCheckSink) Error(error, string, ...any)    { s.check() }
+func (s *lockCheckSink) WithValues(...any) logr.LogSink { return s }
+func (s *lockCheckSink) WithName(string) logr.LogSink   { return s }
+
+func (s *lockCheckSink) check() {
+	held := s.held()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	if held {
+		s.locked++
+	}
+}
+
+func (s *lockCheckSink) result() (calls, locked int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls, s.locked
+}
+
+func TestSkipAndPanicLogsAreWrittenOutsideTheMutex(t *testing.T) {
+	c := newCoalescer[[]byte](maxCachedEntries, func(b []byte) int { return len(b) })
+	sink := &lockCheckSink{held: func() bool {
+		if c.mu.TryLock() {
+			c.mu.Unlock()
+			return false
+		}
+		return true
+	}}
+	c.log = logr.New(sink)
+	// The skip. run releases mu before it logs, so a held mutex can only be
+	// a lock that some other path still holds.
+	if _, err := c.do(context.Background(), "op", "skip", time.Second, func(context.Context) ([]byte, time.Duration, error) {
+		return make([]byte, maxEntryBytes+1), time.Minute, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The panic. The fetch waits until the caller has joined and released mu.
+	gate := make(chan struct{})
+	errc := make(chan error, 1)
+	go func() {
+		_, err := c.do(context.Background(), "op", "panic", time.Second, func(context.Context) ([]byte, time.Duration, error) {
+			<-gate
+			panic("boom")
+		})
+		errc <- err
+	}()
+	eventually(t, "the caller joined the panicking flight", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		f := c.inflight["panic"]
+		return f != nil && f.refs == 1
+	})
+	close(gate)
+	if err := <-errc; err == nil {
+		t.Fatal("panicking fetch returned no error")
+	}
+	if calls, locked := sink.result(); calls != 2 || locked != 0 {
+		t.Fatalf("log calls = %d, with the mutex held = %d; want 2 and 0", calls, locked)
+	}
+}
+
+// Storing a key that is already kept replaces its entry. It never leaves a
+// second element for the key or counts its bytes twice.
+func TestStoringKeyAgainReplacesItsEntry(t *testing.T) {
+	c := newCoalescer[string](maxCachedEntries, func(v string) int { return len(v) })
+	c.mu.Lock()
+	c.storeLocked("k", "one", time.Minute)
+	c.storeLocked("k", "three", time.Minute)
+	elements, bytes := c.order.Len(), c.bytes
+	c.mu.Unlock()
+	if elements != 1 || bytes != len("three") {
+		t.Fatalf("after storing one key twice: %d elements, %d bytes; want 1 and %d", elements, bytes, len("three"))
+	}
+}
+
+// A panic in a shared fetch is an error for its waiter. It must not crash the
+// test binary, which is what the gateway process would suffer.
+func TestPanickingFetchReturnsErrorWithoutCrashing(t *testing.T) {
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
+	_, err := c.do(context.Background(), "test", "k", time.Second, func(context.Context) (int, time.Duration, error) {
+		panic("boom")
+	})
+	if !errors.Is(err, errReadPanicked) {
+		t.Fatalf("panicking fetch error = %v, want the panic error", err)
 	}
 }
