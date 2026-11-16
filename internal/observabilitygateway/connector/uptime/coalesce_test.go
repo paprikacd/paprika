@@ -1026,3 +1026,40 @@ func TestPanickingFetchFailsEveryWaiterAndIsLogged(t *testing.T) {
 		t.Fatalf("after the panic = %d, %v; the failed flight must not be kept", value, err)
 	}
 }
+
+// The reviewer's abandoned-flight gap: the last waiter leaves while the fetch
+// is still unwinding. A later caller with its own deadline must start a fresh
+// fetch rather than join the cancelled one.
+func TestLaterCallerDoesNotJoinAbandonedFlight(t *testing.T) {
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
+	gate := make(chan struct{})
+	defer close(gate)
+	started := make(chan struct{}, 1)
+	var fetches atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := c.do(ctx, "test", "k", time.Minute, func(fetchCtx context.Context) (int, time.Duration, error) {
+			fetches.Add(1)
+			started <- struct{}{}
+			<-fetchCtx.Done()
+			<-gate // a slow unwind: the cancelled fetch has not returned yet
+			return 0, 0, fetchCtx.Err()
+		})
+		first <- err
+	}()
+	<-started
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first caller error = %v, want canceled", err)
+	}
+	laterCtx, laterCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer laterCancel()
+	value, err := c.do(laterCtx, "test", "k", time.Minute, func(context.Context) (int, time.Duration, error) {
+		fetches.Add(1)
+		return 7, time.Minute, nil
+	})
+	if err != nil || value != 7 || fetches.Load() != 2 {
+		t.Fatalf("later caller = %d, %v after %d fetches; it joined the abandoned flight", value, err, fetches.Load())
+	}
+}

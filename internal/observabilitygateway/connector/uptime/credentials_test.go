@@ -155,3 +155,53 @@ func TestFirebaseRefreshHonorsCallerDeadline(t *testing.T) {
 		t.Error("refresh did not honor parent deadline")
 	}
 }
+
+// The first caller of a shared Firebase refresh leaves while a second caller
+// is still waiting on the same refresh. The refresh must keep running for the
+// second caller, which gets the token from exactly one refresh.
+func TestSharedTokenRefreshSurvivesFirstCallerLeaving(t *testing.T) {
+	isolateCaches(t)
+	release := make(chan struct{})
+	reached := make(chan struct{}, 4)
+	var refreshes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshes.Add(1)
+		reached <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		writeJSON(t, w, `{"id_token":"shared-refresh-token","expires_in":"3600"}`)
+	}))
+	defer server.Close()
+	client := tokenTestClient(t, server)
+	raw := []byte(`{"apiKey":"key-first-leaves","refreshToken":"refresh-first-leaves"}`)
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := bearerCredential(firstCtx, raw, client)
+		first <- err
+	}()
+	<-reached
+	second := make(chan string, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		token, err := bearerCredential(context.Background(), raw, client)
+		second <- token
+		secondErr <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // let the second caller join the refresh
+	cancelFirst()
+	if err := <-first; err == nil {
+		t.Fatal("cancelled first caller returned no error")
+	}
+	close(release)
+	if token, err := <-second, <-secondErr; err != nil || token != "shared-refresh-token" {
+		t.Fatalf("second caller = %q, %v; the first caller leaving failed the shared refresh", token, err)
+	}
+	if got := refreshes.Load(); got != 1 {
+		t.Fatalf("refreshes = %d, want 1", got)
+	}
+}
