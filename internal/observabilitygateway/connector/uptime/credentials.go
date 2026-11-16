@@ -88,7 +88,7 @@ func parseFirebaseCredential(raw string) (firebaseCredential, error) {
 }
 
 func refreshFirebase(ctx context.Context, raw []byte, credential firebaseCredential, client *http.Client) (string, error) {
-	return tokens.do(ctx, credentialIdentity(raw), firebaseRefreshTimeout, func(fetchCtx context.Context) (string, time.Duration, error) {
+	return tokens.do(ctx, "firebase-token-refresh", credentialIdentity(raw), firebaseRefreshTimeout, func(fetchCtx context.Context) (string, time.Duration, error) {
 		token, lifetime, err := fetchFirebaseToken(fetchCtx, credential, client)
 		if err != nil {
 			return "", 0, err

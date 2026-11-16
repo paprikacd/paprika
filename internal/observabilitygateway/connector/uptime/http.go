@@ -89,7 +89,7 @@ func (b *backend) call(ctx context.Context, procedure string, body rpcRequest, t
 	if err != nil {
 		return errors.New("uptime request could not be encoded")
 	}
-	raw, err := reads.do(ctx, key, queryTimeout, func(fetchCtx context.Context) ([]byte, time.Duration, error) {
+	raw, err := reads.do(ctx, procedure, key, queryTimeout, func(fetchCtx context.Context) ([]byte, time.Duration, error) {
 		body, fetchErr := b.fetch(fetchCtx, endpoint, encoded)
 		if fetchErr != nil {
 			return nil, 0, fetchErr

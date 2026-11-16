@@ -15,6 +15,8 @@ import (
 	"time"
 	"weak"
 
+	"github.com/go-logr/logr/funcr"
+
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
 )
@@ -262,15 +264,15 @@ func TestCoalescerBoundsEntriesAndEvictsLeastRecentlyUsed(t *testing.T) {
 	}
 	ctx := context.Background()
 	for _, key := range []string{"a", "b"} {
-		if _, err := c.do(ctx, key, time.Second, fetch(key)); err != nil {
+		if _, err := c.do(ctx, "test", key, time.Second, fetch(key)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Touch "a" so "b" becomes the least recently used entry.
-	if _, err := c.do(ctx, "a", time.Second, fetch("unused")); err != nil {
+	if _, err := c.do(ctx, "test", "a", time.Second, fetch("unused")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.do(ctx, "c", time.Second, fetch("c")); err != nil {
+	if _, err := c.do(ctx, "test", "c", time.Second, fetch("c")); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.entries) != 2 {
@@ -284,7 +286,7 @@ func TestCoalescerBoundsEntriesAndEvictsLeastRecentlyUsed(t *testing.T) {
 		}
 	}
 	// "b" was least recently used, so it was evicted and must be fetched again.
-	if _, err := c.do(ctx, "b", time.Second, counted("b")); err != nil {
+	if _, err := c.do(ctx, "test", "b", time.Second, counted("b")); err != nil {
 		t.Fatal(err)
 	}
 	if fetches.Load() != 1 {
@@ -292,7 +294,7 @@ func TestCoalescerBoundsEntriesAndEvictsLeastRecentlyUsed(t *testing.T) {
 	}
 	// Refetching "b" pushed out "a", the least recently used entry at that
 	// point. "c" was inserted after "a" and is still kept, so it is a hit.
-	if _, err := c.do(ctx, "c", time.Second, counted("c")); err != nil {
+	if _, err := c.do(ctx, "test", "c", time.Second, counted("c")); err != nil {
 		t.Fatal(err)
 	}
 	if fetches.Load() != 1 {
@@ -308,7 +310,7 @@ func TestCoalescerKeepsNothingForErrorsOrZeroTTL(t *testing.T) {
 		return 0, time.Minute, context.DeadlineExceeded
 	}
 	for range 2 {
-		if _, err := c.do(context.Background(), "k", time.Second, failing); err == nil {
+		if _, err := c.do(context.Background(), "test", "k", time.Second, failing); err == nil {
 			t.Fatal("error not returned")
 		}
 	}
@@ -317,7 +319,7 @@ func TestCoalescerKeepsNothingForErrorsOrZeroTTL(t *testing.T) {
 		return 1, 0, nil
 	}
 	for range 2 {
-		if _, err := c.do(context.Background(), "z", time.Second, unkept); err != nil {
+		if _, err := c.do(context.Background(), "test", "z", time.Second, unkept); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -457,7 +459,7 @@ func TestFirstCallerCancelDoesNotFailLaterWaiter(t *testing.T) {
 func TestSharedFetchIsBoundedByTimeout(t *testing.T) {
 	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
 	start := time.Now()
-	_, err := c.do(context.Background(), "slow", 50*time.Millisecond, func(ctx context.Context) (int, time.Duration, error) {
+	_, err := c.do(context.Background(), "test", "slow", 50*time.Millisecond, func(ctx context.Context) (int, time.Duration, error) {
 		select {
 		case <-ctx.Done():
 			return 0, 0, ctx.Err()
@@ -482,7 +484,7 @@ func TestEndedCallerDoesNotStartFetch(t *testing.T) {
 	gate := make(chan struct{})
 	t.Cleanup(func() { close(gate) })
 	started := make(chan struct{}, 1)
-	_, err := c.do(ctx, "k", time.Second, func(context.Context) (int, time.Duration, error) {
+	_, err := c.do(ctx, "test", "k", time.Second, func(context.Context) (int, time.Duration, error) {
 		started <- struct{}{}
 		<-gate
 		return 1, time.Minute, nil
@@ -533,7 +535,7 @@ func TestExpiredEntriesAreDroppedOnNextAccessOrInsert(t *testing.T) {
 	c := newCoalescer[string](maxCachedEntries, func(value string) int { return len(value) })
 	c.now = clock.Now
 	ctx := context.Background()
-	if _, err := c.do(ctx, "short", time.Second, func(context.Context) (string, time.Duration, error) {
+	if _, err := c.do(ctx, "test", "short", time.Second, func(context.Context) (string, time.Duration, error) {
 		return "value", time.Minute, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -541,7 +543,7 @@ func TestExpiredEntriesAreDroppedOnNextAccessOrInsert(t *testing.T) {
 	clock.Advance(2 * time.Minute)
 	// An expired key is not served, and its value is dropped on this access.
 	var fetches atomic.Int32
-	if _, err := c.do(ctx, "short", time.Second, func(context.Context) (string, time.Duration, error) {
+	if _, err := c.do(ctx, "test", "short", time.Second, func(context.Context) (string, time.Duration, error) {
 		fetches.Add(1)
 		return "fresh", time.Minute, nil
 	}); err != nil {
@@ -551,13 +553,13 @@ func TestExpiredEntriesAreDroppedOnNextAccessOrInsert(t *testing.T) {
 		t.Fatal("expired value was served")
 	}
 	// Another insert drops any other expired value, so nothing expired remains.
-	if _, err := c.do(ctx, "stale", time.Second, func(context.Context) (string, time.Duration, error) {
+	if _, err := c.do(ctx, "test", "stale", time.Second, func(context.Context) (string, time.Duration, error) {
 		return "old", time.Minute, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	clock.Advance(2 * time.Minute)
-	if _, err := c.do(ctx, "next", time.Second, func(context.Context) (string, time.Duration, error) {
+	if _, err := c.do(ctx, "test", "next", time.Second, func(context.Context) (string, time.Duration, error) {
 		return "new", time.Minute, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -578,7 +580,7 @@ func TestCoalescerBoundsBytesAndSkipsOversizedValues(t *testing.T) {
 	block := make([]byte, 200<<10)
 	for i := range 60 {
 		key := strconv.Itoa(i)
-		if _, err := c.do(context.Background(), key, time.Second, func(context.Context) ([]byte, time.Duration, error) {
+		if _, err := c.do(context.Background(), "test", key, time.Second, func(context.Context) ([]byte, time.Duration, error) {
 			return block, time.Minute, nil
 		}); err != nil {
 			t.Fatal(err)
@@ -590,7 +592,7 @@ func TestCoalescerBoundsBytesAndSkipsOversizedValues(t *testing.T) {
 	var fetches atomic.Int32
 	big := make([]byte, maxEntryBytes+1)
 	for range 2 {
-		if _, err := c.do(context.Background(), "big", time.Second, func(context.Context) ([]byte, time.Duration, error) {
+		if _, err := c.do(context.Background(), "test", "big", time.Second, func(context.Context) ([]byte, time.Duration, error) {
 			fetches.Add(1)
 			return big, time.Minute, nil
 		}); err != nil {
@@ -611,7 +613,7 @@ func TestForgetDropsKeptValue(t *testing.T) {
 		return "token", time.Minute, nil
 	}
 	for range 2 {
-		if _, err := c.do(context.Background(), "k", time.Second, fetch); err != nil {
+		if _, err := c.do(context.Background(), "test", "k", time.Second, fetch); err != nil {
 			t.Fatal(err)
 		}
 		c.forget("k")
@@ -692,7 +694,7 @@ func TestLastWaiterLeavingStopsFetchAndForgetsFlight(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error, 1)
 	go func() {
-		_, err := c.do(ctx, "k", time.Minute, func(fetchCtx context.Context) (int, time.Duration, error) {
+		_, err := c.do(ctx, "test", "k", time.Minute, func(fetchCtx context.Context) (int, time.Duration, error) {
 			running.Add(1)
 			defer running.Add(-1)
 			started <- struct{}{}
@@ -713,7 +715,7 @@ func TestLastWaiterLeavingStopsFetchAndForgetsFlight(t *testing.T) {
 	if inflight != 0 {
 		t.Fatalf("in-flight reads after the last waiter left = %d, want 0", inflight)
 	}
-	value, err := c.do(context.Background(), "k", time.Minute, func(context.Context) (int, time.Duration, error) {
+	value, err := c.do(context.Background(), "test", "k", time.Minute, func(context.Context) (int, time.Duration, error) {
 		return 7, time.Minute, nil
 	})
 	if err != nil || value != 7 {
@@ -782,7 +784,7 @@ type blob struct{ data []byte }
 func storeBlob(t *testing.T, c *coalescer[*blob], key string) weak.Pointer[blob] {
 	t.Helper()
 	b := &blob{data: make([]byte, 100<<10)}
-	if _, err := c.do(context.Background(), key, time.Second, func(context.Context) (*blob, time.Duration, error) {
+	if _, err := c.do(context.Background(), "test", key, time.Second, func(context.Context) (*blob, time.Duration, error) {
 		return b, time.Hour, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -918,5 +920,109 @@ func TestRejectedTokenIsForgottenSoNextQueryRefreshes(t *testing.T) {
 	defer mu.Unlock()
 	if len(authorizations) != 2 || authorizations[1] != "Bearer token-2" {
 		t.Fatalf("authorizations = %v, want the second query to send token-2", authorizations)
+	}
+}
+
+// logSink collects the lines a funcr logger writes, for assertions.
+type logSink struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (s *logSink) write(prefix, args string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buf.WriteString(prefix + " " + args + "\n")
+}
+
+func (s *logSink) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+// An oversized value is skipped at V(1): it is logged with its operation,
+// size and limit, and the log never carries the body.
+func TestOversizeSkipIsLoggedAtVerbosityOneWithoutBody(t *testing.T) {
+	const marker = "SECRET-BODY-MARKER"
+	body := append([]byte(marker), make([]byte, maxEntryBytes)...)
+	for _, verbosity := range []int{0, 1} {
+		logs := &logSink{}
+		c := newCoalescer[[]byte](maxCachedEntries, func(body []byte) int { return len(body) })
+		c.log = funcr.New(logs.write, funcr.Options{Verbosity: verbosity})
+		if _, err := c.do(context.Background(), "test-operation", "big", time.Second, func(context.Context) ([]byte, time.Duration, error) {
+			return body, time.Minute, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		out := logs.String()
+		if verbosity == 0 {
+			if out != "" {
+				t.Fatalf("verbosity 0 logged %q; the skip must be V(1)", out)
+			}
+			continue
+		}
+		for _, want := range []string{
+			"uptime read over the cache size limit was not kept",
+			`"operation"="test-operation"`,
+			`"bytes"=` + strconv.Itoa(len(body)),
+			`"limit"=` + strconv.Itoa(maxEntryBytes),
+		} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("skip log missing %q:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, marker) {
+			t.Fatalf("skip log carries body bytes:\n%s", out)
+		}
+	}
+}
+
+// A panicking shared fetch fails every waiter with an error, nothing is kept,
+// the panic value and stack are logged at error level, and the process survives.
+func TestPanickingFetchFailsEveryWaiterAndIsLogged(t *testing.T) {
+	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
+	logs := &logSink{}
+	c.log = funcr.New(logs.write, funcr.Options{Verbosity: 0})
+	release := make(chan struct{})
+	var fetches atomic.Int32
+	const waiters = 3
+	errs := make(chan error, waiters)
+	for range waiters {
+		go func() {
+			_, err := c.do(context.Background(), "test-operation", "k", time.Minute, func(context.Context) (int, time.Duration, error) {
+				fetches.Add(1)
+				<-release
+				panic("boom-from-fetch")
+			})
+			errs <- err
+		}()
+	}
+	eventually(t, "every waiter joined the panicking flight", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		f := c.inflight["k"]
+		return f != nil && f.refs == waiters
+	})
+	close(release)
+	for range waiters {
+		if err := <-errs; !errors.Is(err, errReadPanicked) {
+			t.Fatalf("waiter error = %v, want the panic error", err)
+		}
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Fatalf("fetches = %d, want 1 shared fetch", got)
+	}
+	out := logs.String()
+	for _, want := range []string{"uptime read panicked", "boom-from-fetch", `"operation"="test-operation"`, "goroutine "} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("panic log missing %q:\n%s", want, out)
+		}
+	}
+	value, err := c.do(context.Background(), "test-operation", "k", time.Minute, func(context.Context) (int, time.Duration, error) {
+		return 5, time.Minute, nil
+	})
+	if err != nil || value != 5 {
+		t.Fatalf("after the panic = %d, %v; the failed flight must not be kept", value, err)
 	}
 }
