@@ -1196,17 +1196,37 @@ func TestOversizeSkipReachesProcessLoggerAtDebugLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := strings.TrimPrefix(managerLog.String(), before)
-	for _, want := range []string{
-		`"level":"debug"`,
-		`"logger":"observability-uptime"`,
-		`"msg":"uptime read over the cache size limit was not kept"`,
-		`"operation":"` + operation + `"`,
-		`"bytes":` + strconv.Itoa(len(body)),
-		`"limit":` + strconv.Itoa(maxEntryBytes),
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("process log lacks %s:\n%s", want, out)
+	var entry map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var candidate map[string]any
+		if json.Unmarshal([]byte(line), &candidate) == nil && candidate["msg"] == "uptime read over the cache size limit was not kept" {
+			entry = candidate
+			break
 		}
+	}
+	if entry == nil {
+		t.Fatalf("process log has no skip entry:\n%s", out)
+	}
+	for key, want := range map[string]any{
+		"level":     "debug",
+		"logger":    "observability-uptime",
+		"operation": operation,
+		"bytes":     float64(len(body)),
+		"limit":     float64(maxEntryBytes),
+	} {
+		if entry[key] != want {
+			t.Fatalf("skip entry %s = %v, want %v:\n%s", key, entry[key], want, out)
+		}
+	}
+	// zap writes a []byte field as base64, so a text search cannot see a logged
+	// body. Require the exact field set instead.
+	keys := make([]string, 0, len(entry))
+	for key := range entry {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if got, want := strings.Join(keys, ","), "bytes,level,limit,logger,msg,operation,ts"; got != want {
+		t.Fatalf("skip entry fields = %s, want exactly %s:\n%s", got, want, out)
 	}
 	if strings.Contains(out, marker) || strings.Contains(out, readKey) {
 		t.Fatalf("process log carries the body or the read key:\n%s", out)

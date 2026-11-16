@@ -221,9 +221,10 @@ func TestSharedTokenRefreshSurvivesFirstCallerLeaving(t *testing.T) {
 	}
 }
 
-// The shared Firebase refresh is bounded by the documented eight-second
-// deadline, whatever deadline the caller's context has.
-func TestTokenRefreshDeadlineIsAtMostEightSeconds(t *testing.T) {
+// The shared Firebase refresh gets the documented eight-second deadline,
+// whatever deadline the caller's context has: not longer, and not so short
+// that a slow but valid refresh fails.
+func TestTokenRefreshDeadlineIsEightSeconds(t *testing.T) {
 	isolateCaches(t)
 	var remaining atomic.Int64
 	client := &http.Client{Transport: tokenRoundTrip(func(request *http.Request) (*http.Response, error) {
@@ -233,8 +234,8 @@ func TestTokenRefreshDeadlineIsAtMostEightSeconds(t *testing.T) {
 		return nil, errors.New("refresh stopped by test")
 	})}
 	_, _ = bearerCredential(context.Background(), []byte(`{"apiKey":"deadline-key-8s","refreshToken":"deadline-refresh-8s"}`), client)
-	if got := time.Duration(remaining.Load()); got <= 0 || got > 8*time.Second {
-		t.Fatalf("refresh deadline = %s from the request, want at most 8s", got)
+	if got := time.Duration(remaining.Load()); got <= 7*time.Second || got > 8*time.Second {
+		t.Fatalf("refresh deadline = %s from the request, want about 8s", got)
 	}
 }
 
