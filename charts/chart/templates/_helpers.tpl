@@ -281,6 +281,44 @@ binary default instead of handing flag parsing an empty string. */}}
 {{- end }}
 
 {{/*
+Console and inline-webhook listener args for the controller-manager in split
+mode. The split-mode manager opens neither listener: the api-server serves the
+console, the API, the satellite link and the token exchange, and the
+webhook-receiver deployment serves /webhook. An empty address disables a
+listener. Renders nothing in monolith mode.
+*/}}
+{{- define "paprika.managerSplitListenerArgs" -}}
+{{- if eq .Values.deploymentMode "split" }}
+- --ui-bind-address=
+- --inline-webhook-bind-address=
+{{- end }}
+{{- end }}
+
+{{/*
+manager.args for the controller-manager. In split mode, entries in the
+--flag=value form that name the console or the inline webhook listener are
+dropped, so they cannot re-enable a listener the split-mode manager is meant to
+leave off. The bare flag name (the two-item form, "--ui-bind-address", ":3000")
+is rejected instead: dropping only the flag would leave its value behind as a
+positional argument.
+*/}}
+{{- define "paprika.managerArgs" -}}
+{{- $split := eq .Values.deploymentMode "split" }}
+{{- range .Values.manager.args }}
+{{- if kindIs "invalid" . }}
+{{- fail "manager.args: an item is null. Remove the empty item." }}
+{{- end }}
+{{- $arg := toString . | trim }}
+{{- if and $split (or (eq $arg "--ui-bind-address") (eq $arg "--inline-webhook-bind-address")) }}
+{{- fail (printf "manager.args: %s cannot be given as a separate item in split mode. The split-mode manager opens neither listener, so remove that item and its value." $arg) }}
+{{- end }}
+{{- if not (and $split (or (hasPrefix "--ui-bind-address" $arg) (hasPrefix "--inline-webhook-bind-address" $arg))) }}
+- {{ $arg }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Reconcile-rate tuning args shared by operator and api modes. Empty fields are
 omitted so the binary defaults apply; set them to tune a large fleet without
 touching manager.args.

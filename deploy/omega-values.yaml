@@ -32,6 +32,10 @@ mcp:
 # Reserve memory on the existing 8Gi core pool; keep the dedicated search pool
 # untouched and avoid evicting workloads on the smaller 4Gi nodes.
 manager:
+  # Ingress-only policy for the controller-manager pods. It admits the probe,
+  # admission and metrics ports from any source and nothing else in split mode.
+  networkPolicy:
+    enabled: true
   # Keep the controller on the other existing large node when capacity permits,
   # leaving room for bounded CI workers on cf404. Allow fallback after replacement.
   affinity:

@@ -309,6 +309,11 @@ gh api repos/paprikacd/paprika/dispatches --method POST \
 gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-pages
 ```
 
+This chart revision needs a manager image that knows the `--inline-webhook-bind-address` flag. A
+manager from an `image_ref` built before that flag existed exits at startup when split mode passes
+it. See
+`docs/guides/operations.md`, Manager Listeners.
+
 CI cancels superseded pull-request runs. For `master`, the running workflow/ref-group member is
 never cancelled; GitHub retains only the newest pending run and may replace an older pending run.
 The VKE token exchange independently requires the allowed event, exact

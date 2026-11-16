@@ -114,8 +114,26 @@ manager:
 
   ## Arguments (added in both operator and api modes)
   ##
+  ## In split mode, --flag=value entries that name --ui-bind-address or
+  ## --inline-webhook-bind-address are dropped, and the two-item form (the bare flag
+  ## followed by a value) fails to render. The split-mode manager runs with both
+  ## listeners off.
   args:
     - --ui-bind-address=:3000
+
+  ## Per-component ingress policy for the controller-manager pods. Off by default.
+  ## When on, the policy admits only:
+  ##   - the health probe port (8081), from any source; the policy does not restrict probes,
+  ##     because a NetworkPolicy does not reliably match kubelet traffic from the pod's node;
+  ##   - the admission webhook port (9443) when webhook.enabled, from any source,
+  ##     because the kube-apiserver calls it;
+  ##   - the metrics port (metrics.port) when metrics.enable, from any source;
+  ##   - in monolith mode only, the console (3000) and inline webhook (8080) ports
+  ##     from the release namespace.
+  ## The policy restricts ingress only. Egress stays with the global networkPolicy
+  ## template.
+  networkPolicy:
+    enabled: false
 
   ## Image pull secrets
   ##

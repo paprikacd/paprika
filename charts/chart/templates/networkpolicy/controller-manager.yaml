@@ -38,6 +38,15 @@ spec:
         - protocol: TCP
           port: {{ .Values.metrics.port }}
         {{- end }}
+    {{- if .Values.webhook.enabled }}
+    # The kube-apiserver calls admission webhooks from outside this namespace, so
+    # this port admits any source. With failurePolicy Ignore (the managed control
+    # plane values), a blocked port skips admission silently; with Fail, it
+    # rejects writes instead.
+    - ports:
+        - protocol: TCP
+          port: 9443
+    {{- end }}
   egress:
     {{- if .Values.insights.enabled }}
     - to:

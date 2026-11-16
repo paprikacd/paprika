@@ -649,7 +649,7 @@ E2E_SKIP_IMAGE_BUILD=true E2E_SKIP_IMAGE_LOAD=true \
   go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m
 
 # Local perf/profiling stack (kind paprika-perf: full split chart,
-# MCP + basic auth admin/admin123, pprof on :6060, metrics-server).
+# MCP + basic auth admin/admin123, pprof on 127.0.0.1:6060, metrics-server).
 # All knobs are env/CLI vars (PERF_CLUSTER, PERF_PORT, PERF_IMG, ... —
 # see the perf:* section of Taskfile.yml):
 task perf:up        # build image (native arch), kind load, helm install
@@ -694,9 +694,10 @@ skip with `E2E_SKIP_METRICS_SERVER=true`.
 ### Debug
 
 ```sh
-# pprof: enable with --pprof-bind-address=:6060 (flag exists on every mode,
-# patched into paprika-e2e api-server + controller-manager args). Reach it
-# only through port-forward — no Service/Ingress exposes 6060.
+# pprof: enable with --pprof-bind-address=127.0.0.1:6060 in the component's
+# args (flag exists on every mode; deploy/test-values.yaml sets it for the
+# manager and api-server). Loopback only: reach it through port-forward, since
+# no Service/Ingress routes to 6060.
 kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 16060:6060 &
 mkdir -p /tmp/paprika-perf/vke
 curl -sf http://localhost:16060/debug/pprof/heap -o /tmp/paprika-perf/vke/heap.pprof
