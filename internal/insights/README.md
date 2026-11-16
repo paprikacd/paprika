@@ -366,12 +366,13 @@ request whose read cannot reserve waits up to 2 seconds for bytes to free, with 
 requests queued. Past that it gets `429` with `Retry-After: 1` and "too many active dashboard
 uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals_total`,
 labelled `route="save"` or `route="dry_run"`. The counter appears on Insights' own `/metrics`
-endpoint, or over OTLP when telemetry is configured. The chart as it stands does not scrape
-Insights. When `insights.enabled` and `networkPolicy.enabled` are both set (`networkPolicy.enabled`
-defaults to `false`), the Insights NetworkPolicy admits port 8090 only from the API server,
-controller and gateway pods. The chart has no value for an extra ingress rule, so a scrape
-needs a chart change as well as an operator's scrape job. The same is true of
-`paprika_insights_queries_total`.
+endpoint, or over OTLP when telemetry is configured. The chart as it stands does not
+scrape Insights. When `insights.enabled` is set and either `insights.networkPolicy.enabled`
+or `networkPolicy.enabled` is set (both default to `false`), the Insights NetworkPolicy
+admits port 8090 from the API server and the observability gateway, and from the
+controller-manager in monolith mode (see "Network policy"). The chart has no
+value for an extra ingress rule, so a scrape needs a chart change as well as an operator's
+scrape job. The same is true of `paprika_insights_queries_total`.
 
 A principal can fill the budget with stalled uploads. The budget's worth of stalled bytes
 (8 MiB) refuses every save and dry run for up to the server's 10-second `ReadTimeout`, the
@@ -616,10 +617,12 @@ insights:
     size: 1Gi
 ```
 
-Create the referenced Secret through your existing secret manager. Configure
-provider credentials through `insights.extraEnv`/`extraEnvFrom`. NetworkPolicy
-allows the API/operator to reach Insights and allows configured provider ports;
-customize `insights.networkPolicy.egress` for provider namespaces/ports.
+Create the referenced Secret through your existing secret manager. Configure provider
+credentials through `insights.extraEnv`/`extraEnvFrom`. The Insights NetworkPolicy, when
+enabled, admits the API server and the observability gateway (and the controller-manager in
+monolith mode), and allows the provider ports in `insights.networkPolicy.egress`. Add a port
+there before you add a provider that uses it, or its queries time out. See "Network policy"
+for the switch and its rules.
 
 The file store uses fsync plus atomic rename on a persistent volume and serves
 one writer. Helm uses one replica and `Recreate`; do not increase replica count
@@ -630,6 +633,94 @@ on pod replacement.
 `/metrics` exposes OTel query counters and latency histograms through the existing
 controller-runtime registry. Standard OTEL environment configuration is supported.
 No provider credentials, queries, or user IDs are metric labels.
+
+## Network policy
+
+`insights.networkPolicy.enabled` (default `false`) renders the Insights NetworkPolicy alone,
+and only when `insights.enabled` is true. The global `networkPolicy.enabled` also renders it,
+beside the policies of the other components. The other components' policies, the
+controller-manager's included, come from `networkPolicy.enabled`.
+`deploy/insights-omega-values.yaml` sets the per-component switch and leaves the global switch
+off. The policy is named `<fullname>-insights`. It has the same name as the Insights Service and
+Deployment (`paprika.resourceName` with the suffix `insights` in `_helpers.tpl`).
+
+The policy selects the Insights pods and allows only these paths. Every ingress peer is a
+pod selector in the release namespace, so no other namespace is admitted. With the default
+extras, egress has one namespace peer, kube-system for DNS. Its other rules are the
+observability-gateway (when enabled) and the extras, which have no `to` by default, as described
+below.
+
+- Ingress on TCP 8090 from the api-server, which proxies `/api/insights`.
+- Ingress on TCP 8090 from the observability-gateway, which calls Insights for the Observe
+  paths.
+- Ingress on TCP 8090 from pods labelled `control-plane: controller-manager`, only when
+  `deploymentMode` is `monolith`. In monolith mode the manager serves the console, which
+  reaches Insights through this peer. In split mode the API server serves the console, so the
+  manager peer is left out.
+- Egress on UDP and TCP 53 to kube-system (DNS).
+- Egress on TCP 8090 to the observability-gateway, when `observabilityGateway.enabled`.
+- The `insights.networkPolicy.egress` extras. The defaults are TCP 80, 443, 9090 and 3200,
+  with no `to`, so they reach any destination on those ports, which is how provider queries
+  reach their backends. Narrow them with `to` selectors where the destinations are known.
+  `deploy/insights-omega-values.yaml` sets `egress: []`. Every Omega provider is shared through
+  the gateway, so Insights needs only DNS and the gateway. Any managed provider needs an egress
+  entry here before it is added.
+
+The Insights binary makes no Kubernetes API calls, so the policy has no API-server egress.
+
+What it closes: without the policy, the Insights pod has no ingress restriction on
+`<fullname>-insights:8090`. About 768 or more in-cluster requests can hold the Insights
+pod at its 256Mi memory limit. Only the Insights pod is held; other pods are not affected.
+
+What it does not cover:
+
+- Kubelet probes. The probes are the Deployment's `/readyz` and `/healthz`, and the policy
+  does not block them. Calico admits host-to-pod traffic by default, so the probes pass.
+  Under another CNI, or with host endpoint policies, check the Insights pod's READY state
+  after rollout.
+- Metrics. `/metrics` is served on 8090, but the chart does not scrape it: it has no
+  ServiceMonitor for Insights. A scraper needs a new ingress rule, which the chart does not
+  expose yet.
+- Floods from admitted peers. The admitted peers (the api-server, the gateway and, in monolith
+  mode, the controller-manager) can still send the load described in "Known limit" above.
+- Providers and telemetry on other ports. A managed provider added through
+  `PUT /api/provider-configs/{id}` (`/api/insights/provider-configs/{id}` on the public host)
+  on a port outside the extras times out, and the Insights readiness check does not report it
+  (`/readyz` is static). An OTLP collector set through `insights.extraEnv` needs its port in the
+  extras too.
+
+Back out. Set `insights.networkPolicy.enabled: false` in the overlay and deploy again, and
+Helm removes the policy. In an emergency, delete the policy directly with
+`kubectl -n <ns> delete networkpolicy <fullname>-insights`. The next Helm deploy with the
+switch on recreates it, so set the overlay first.
+
+Verify after rollout. Set `<ns>` to the release namespace and `<fullname>-insights` to the
+Insights Service name:
+
+```sh
+kubectl -n <ns> get networkpolicy <fullname>-insights
+kubectl -n <ns> get pods -l app.kubernetes.io/component=insights   # READY 1/1
+```
+
+From a pod in another namespace, the positive control must print an HTTP code other than
+`000`, and the Insights Service must time out. curl exits with status 28 for a timeout, and the
+script prints it:
+
+```sh
+kubectl run np-check --rm -i --restart=Never --image=curlimages/curl -n <other-ns> -- sh -c '
+  curl -sk -m 5 -o /dev/null -w "control %{http_code}\n" https://kubernetes.default.svc/version
+  curl -sS -m 5 http://<fullname>-insights.<ns>.svc.cluster.local:8090/healthz; echo "insights exit $?"'
+```
+
+Through the public host, sign in and `GET /api/insights/providers`. The response should list
+the shared providers and carry no `sharedCatalog` key. That key appears only when the
+Observe listing fails, and then the Insights to gateway path, or the gateway ingress rule, is
+the first place to check. This one call exercises the api-server to Insights path and the
+Insights to gateway path. Insights' `/readyz` does not check its dependencies, so the Ready
+state does not prove that egress works.
+
+The Observe MCP should keep answering through the observability-gateway. If a path fails,
+the policy's ingress and egress lists are the first place to check.
 
 ## Startup quarantine and downgrades
 
