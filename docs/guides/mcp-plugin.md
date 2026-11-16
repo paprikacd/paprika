@@ -465,6 +465,7 @@ not establish health or zero drift. The current detailed drift backend returns
 
 For more detail, use `get_application`, `get_resource_tree` with `detailed=true`,
 `investigate` on an exact selected resource, or `get_logs` with `tail_lines`.
+`get_logs` reads only pods in the application's resource tree.
 The investigator's findings are advisory: its current API does not report each
 source collection failure. Empty findings or missing logs are not proof of an
 absence of errors. Pipeline run-history collection is currently unavailable;
