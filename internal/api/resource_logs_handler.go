@@ -8,7 +8,6 @@ import (
 	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -16,10 +15,12 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
 
-// GetResourceLogs returns the recent log output of a managed resource's pod.
-// For Pod kinds, returns logs directly. For Deployments, ReplicaSets,
-// StatefulSets, DaemonSets, and Jobs, discovers the first matching child Pod
-// via label selector and returns its logs. Other kinds return an error field.
+// GetResourceLogs returns the recent log output of a pod in the application's
+// resource tree. For Pod kinds, returns logs directly. For Deployments,
+// ReplicaSets, StatefulSets, DaemonSets, and Jobs, finds the first pod of the
+// workload that the resource tree shows and returns its logs. Other kinds, and
+// malformed names, return an error field. A resource outside the tree returns
+// CodeNotFound.
 func (s *PaprikaServer) GetResourceLogs(
 	ctx context.Context,
 	req *connect.Request[paprikav1.GetResourceLogsRequest],
@@ -52,21 +53,20 @@ func (s *PaprikaServer) GetResourceLogs(
 		ns = app.Namespace
 	}
 
-	pod, err := resolveLogsPod(ctx, typed, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	pod, err := resolveApplicationLogsPod(ctx, typed, &app, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
 	if err != nil {
-		resp.Error = err.Error()
+		if unaryLogsPassThrough[connect.CodeOf(err)] {
+			return nil, err
+		}
+		// A request the server cannot accept, and a read that failed, are
+		// answered in the response, as the console expects.
+		resp.Error = logsErrorText(err)
 		return connect.NewResponse(resp), nil
 	}
 
-	containerNames := make([]string, 0, len(pod.Spec.Containers))
-	for i := range pod.Spec.Containers {
-		containerNames = append(containerNames, pod.Spec.Containers[i].Name)
-	}
 	resp.PodName = pod.Name
-	resp.Containers = containerNames
-	if len(containerNames) > 0 {
-		resp.ContainerName = containerNames[0]
-	}
+	resp.Containers = podContainerNames(pod)
+	resp.ContainerName = pickContainer("", pod)
 
 	logs, err := s.streamPodLogs(ctx, typed, ns, pod.Name, req.Msg.TailLines)
 	if err != nil {
@@ -77,40 +77,32 @@ func (s *PaprikaServer) GetResourceLogs(
 	return connect.NewResponse(resp), nil
 }
 
-// resolveLogsPod maps any supported resource kind to a single Pod object to
-// fetch logs from, on the cluster that pod lives on. Returns an error (not a
-// panic) when unsupported.
-func resolveLogsPod(ctx context.Context, typed kubernetes.Interface, kind, name, namespace string) (*corev1.Pod, error) {
-	switch kind {
-	case "Pod":
-		pod, err := typed.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("pod %s/%s not found", namespace, name)
-		}
-		return pod, nil
-	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Job":
-		selector, err := logsWorkloadSelector(ctx, typed, kind, name, namespace)
-		if err != nil {
-			return nil, fmt.Errorf("reading selector for %s/%s: %w", kind, name, err)
-		}
-		labels, err := logsPodSelectorString(selector, kind, name)
-		if err != nil {
-			return nil, err
-		}
-		pods, err := typed.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: labels,
-			Limit:         1,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("listing pods for %s/%s: %w", kind, name, err)
-		}
-		if len(pods.Items) == 0 {
-			return nil, fmt.Errorf("no pods found for %s/%s", kind, name)
-		}
-		return &pods.Items[0], nil
-	default:
-		return nil, errors.New("logs only available for Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, or Job")
+// unaryLogsPassThrough lists the resolve failures GetResourceLogs returns as RPC
+// errors: outside the tree, and a caller that went away or ran out of time. Other
+// failures are answered in the response, as the console expects.
+var unaryLogsPassThrough = map[connect.Code]bool{
+	connect.CodeNotFound:         true,
+	connect.CodeCanceled:         true,
+	connect.CodeDeadlineExceeded: true,
+}
+
+// podContainerNames lists a pod's containers in spec order.
+func podContainerNames(pod *corev1.Pod) []string {
+	names := make([]string, 0, len(pod.Spec.Containers))
+	for i := range pod.Spec.Containers {
+		names = append(names, pod.Spec.Containers[i].Name)
 	}
+	return names
+}
+
+// logsErrorText is the text a log response carries for a failed read. A connect
+// error contributes its message, without the code prefix that Error adds.
+func logsErrorText(err error) string {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce.Message()
+	}
+	return err.Error()
 }
 
 // Workload names do not determine pod labels. Read the controller's selector,
@@ -124,46 +116,4 @@ func logsPodSelectorString(selector *metav1.LabelSelector, kind, name string) (s
 		return "", fmt.Errorf("invalid pod selector for %s/%s: %w", kind, name, err)
 	}
 	return labels.String(), nil
-}
-
-func logsWorkloadSelector(ctx context.Context, typed kubernetes.Interface, kind, name, namespace string) (*metav1.LabelSelector, error) {
-	if kind == "Job" {
-		obj, err := typed.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get job: %w", err)
-		}
-		return obj.Spec.Selector, nil
-	}
-	return logsAppsWorkloadSelector(ctx, typed, kind, name, namespace)
-}
-
-func logsAppsWorkloadSelector(ctx context.Context, typed kubernetes.Interface, kind, name, namespace string) (*metav1.LabelSelector, error) {
-	switch kind {
-	case "Deployment":
-		obj, err := typed.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get deployment: %w", err)
-		}
-		return obj.Spec.Selector, nil
-	case "ReplicaSet":
-		obj, err := typed.AppsV1().ReplicaSets(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get replicaset: %w", err)
-		}
-		return obj.Spec.Selector, nil
-	case "StatefulSet":
-		obj, err := typed.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get statefulset: %w", err)
-		}
-		return obj.Spec.Selector, nil
-	case "DaemonSet":
-		obj, err := typed.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("get daemonset: %w", err)
-		}
-		return obj.Spec.Selector, nil
-	default:
-		return nil, fmt.Errorf("unsupported workload kind %q", kind)
-	}
 }
