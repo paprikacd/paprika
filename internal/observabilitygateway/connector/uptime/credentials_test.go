@@ -3,10 +3,13 @@ package uptime
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -37,6 +40,7 @@ func tokenTestClient(t *testing.T, server *httptest.Server) *http.Client {
 }
 
 func TestFirebaseRefreshUsesFixedEndpointAndFreshRequestToken(t *testing.T) {
+	isolateCaches(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -65,11 +69,13 @@ func TestFirebaseRefreshUsesFixedEndpointAndFreshRequestToken(t *testing.T) {
 			t.Fatalf("refresh failed: %v", err)
 		}
 	}
-	if calls.Load() != 2 {
-		t.Error("refresh token state leaked between requests")
+	// The second call is served from the token cache: the ID token is valid
+	// for an hour, so the refresh is not repeated.
+	if calls.Load() != 1 {
+		t.Errorf("refreshes = %d, want 1 (valid token reused)", calls.Load())
 	}
 	token, err := bearerCredential(context.Background(), []byte("existing-bearer"), client)
-	if err != nil || token != "existing-bearer" || calls.Load() != 2 {
+	if err != nil || token != "existing-bearer" || calls.Load() != 1 {
 		t.Error("raw bearer support changed")
 	}
 }
@@ -139,6 +145,7 @@ func TestFirebaseRefreshDoesNotRedirectAndBoundsResponse(t *testing.T) {
 }
 
 func TestFirebaseRefreshHonorsCallerDeadline(t *testing.T) {
+	isolateCaches(t)
 	client := &http.Client{Transport: tokenRoundTrip(func(request *http.Request) (*http.Response, error) {
 		<-request.Context().Done()
 		return nil, request.Context().Err()
@@ -146,8 +153,124 @@ func TestFirebaseRefreshHonorsCallerDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	_, err := bearerCredential(ctx, []byte(`{"apiKey":"key","refreshToken":"token"}`), client)
+	_, err := bearerCredential(ctx, []byte(`{"apiKey":"deadline-key","refreshToken":"deadline-token"}`), client)
 	if err == nil || time.Since(start) > time.Second {
 		t.Error("refresh did not honor parent deadline")
+	}
+}
+
+// The first caller of a shared Firebase refresh leaves while a second caller
+// is still waiting on the same refresh. The refresh must keep running for the
+// second caller, which gets the token from exactly one refresh.
+func TestSharedTokenRefreshSurvivesFirstCallerLeaving(t *testing.T) {
+	isolateCaches(t)
+	release := make(chan struct{})
+	reached := make(chan struct{}, 4)
+	var refreshes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Drain the body, so a client that cancels is seen on r.Context.
+		_, _ = io.Copy(io.Discard, r.Body)
+		refreshes.Add(1)
+		reached <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		writeJSON(t, w, `{"id_token":"shared-refresh-token","expires_in":"3600"}`)
+	}))
+	defer server.Close()
+	// Deferred after server.Close, so a failing test unblocks the handler
+	// before the server waits for it.
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseAll()
+	client := tokenTestClient(t, server)
+	raw := []byte(`{"apiKey":"key-first-leaves","refreshToken":"refresh-first-leaves"}`)
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := bearerCredential(firstCtx, raw, client)
+		first <- err
+	}()
+	<-reached
+	second := make(chan string, 1)
+	secondErr := make(chan error, 1)
+	go func() {
+		token, err := bearerCredential(context.Background(), raw, client)
+		second <- token
+		secondErr <- err
+	}()
+	eventually(t, "the second caller joined the shared refresh", func() bool {
+		tokens.mu.Lock()
+		defer tokens.mu.Unlock()
+		f := tokens.inflight[credentialIdentity(raw)]
+		return f != nil && f.refs == 2
+	})
+	cancelFirst()
+	if err := <-first; err == nil {
+		t.Fatal("cancelled first caller returned no error")
+	}
+	releaseAll()
+	if token, err := <-second, <-secondErr; err != nil || token != "shared-refresh-token" {
+		t.Fatalf("second caller = %q, %v; the first caller leaving failed the shared refresh", token, err)
+	}
+	if got := refreshes.Load(); got != 1 {
+		t.Fatalf("refreshes = %d, want 1", got)
+	}
+}
+
+// The shared Firebase refresh gets the documented eight-second deadline,
+// whatever deadline the caller's context has: not longer, and not so short
+// that a slow but valid refresh fails.
+func TestTokenRefreshDeadlineIsEightSeconds(t *testing.T) {
+	isolateCaches(t)
+	var remaining atomic.Int64
+	client := &http.Client{Transport: tokenRoundTrip(func(request *http.Request) (*http.Response, error) {
+		if deadline, ok := request.Context().Deadline(); ok {
+			remaining.Store(int64(time.Until(deadline)))
+		}
+		return nil, errors.New("refresh stopped by test")
+	})}
+	_, _ = bearerCredential(context.Background(), []byte(`{"apiKey":"deadline-key-8s","refreshToken":"deadline-refresh-8s"}`), client)
+	if got := time.Duration(remaining.Load()); got <= 7*time.Second || got > 8*time.Second {
+		t.Fatalf("refresh deadline = %s from the request, want about 8s", got)
+	}
+}
+
+// An Uptime read that fails for a reason other than a rejected token keeps the
+// cached ID token, so an outage does not add a Firebase refresh per query.
+func TestServerErrorKeepsCachedFirebaseToken(t *testing.T) {
+	isolateCaches(t)
+	var refreshes atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := refreshes.Add(1)
+		writeJSON(t, w, `{"id_token":"token-`+strconv.Itoa(int(n))+`","expires_in":"3600"}`)
+	}))
+	defer tokenServer.Close()
+	tokenClient := tokenTestClient(t, tokenServer)
+	oldClient := newCredentialClient
+	newCredentialClient = func() *http.Client { return tokenClient }
+	t.Cleanup(func() { newCredentialClient = oldClient })
+	var calls atomic.Int32
+	uptime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writeJSON(t, w, `{"services":[]}`)
+	}))
+	defer uptime.Close()
+	req := testRequest(t, uptime.URL, sloQueries[0])
+	req.Credentials = []byte(`{"apiKey":"key-500","refreshToken":"refresh-500"}`)
+	if first, err := New().Query(context.Background(), req); err != nil || first.State != connector.StateError {
+		t.Fatalf("first = %#v, %v; want error state", first, err)
+	}
+	if second, err := New().Query(context.Background(), req); err != nil || second.State != connector.StateOK {
+		t.Fatalf("second = %#v, %v; want OK", second, err)
+	}
+	if got := refreshes.Load(); got != 1 {
+		t.Fatalf("refreshes = %d, want 1 (a 500 must not drop the token)", got)
 	}
 }
