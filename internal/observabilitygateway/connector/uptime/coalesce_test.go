@@ -2,11 +2,13 @@ package uptime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -923,67 +925,103 @@ func TestRejectedTokenIsForgottenSoNextQueryRefreshes(t *testing.T) {
 	}
 }
 
-// logSink collects the lines a funcr logger writes, for assertions.
-type logSink struct {
-	mu  sync.Mutex
-	buf strings.Builder
+// jsonLogSink collects the JSON lines a funcr logger writes, for assertions.
+type jsonLogSink struct {
+	mu    sync.Mutex
+	lines []string
 }
 
-func (s *logSink) write(prefix, args string) {
+func (s *jsonLogSink) write(line string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.buf.WriteString(prefix + " " + args + "\n")
+	s.lines = append(s.lines, line)
 }
 
-func (s *logSink) String() string {
+// raw returns every collected line, so a test can search the whole output.
+func (s *jsonLogSink) raw() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.buf.String()
+	return strings.Join(s.lines, "\n")
 }
 
-// An oversized value is skipped at V(1): it is logged with its operation,
-// size and limit, and the log never carries the body.
-func TestOversizeSkipIsLoggedAtVerbosityOneWithoutBody(t *testing.T) {
+// entries decodes each collected line, which must be one JSON object.
+func (s *jsonLogSink) entries(t *testing.T) []map[string]any {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries := make([]map[string]any, 0, len(s.lines))
+	for _, line := range s.lines {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("log line is not one JSON object: %v\n%s", err, line)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// sortedKeys returns the field names of one log entry, sorted and comma-joined.
+func sortedKeys(entry map[string]any) string {
+	keys := make([]string, 0, len(entry))
+	for key := range entry {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+// An oversized value is skipped at V(1), and the entry has exactly the fields
+// named here. A body, header or read key added to it changes the field set and
+// fails the test, whatever the value's type.
+func TestOversizeSkipIsLoggedAtVerbosityOneWithOnlyAllowedFields(t *testing.T) {
 	const marker = "SECRET-BODY-MARKER"
+	const readKey = "secret-read-key"
 	body := append([]byte(marker), make([]byte, maxEntryBytes)...)
 	for _, verbosity := range []int{0, 1} {
-		logs := &logSink{}
+		logs := &jsonLogSink{}
 		c := newCoalescer[[]byte](maxCachedEntries, func(body []byte) int { return len(body) })
-		c.log = funcr.New(logs.write, funcr.Options{Verbosity: verbosity})
-		if _, err := c.do(context.Background(), "test-operation", "big", time.Second, func(context.Context) ([]byte, time.Duration, error) {
+		c.log = funcr.NewJSON(logs.write, funcr.Options{Verbosity: verbosity}).WithName("observability-uptime")
+		if _, err := c.do(context.Background(), "test-operation", readKey, time.Second, func(context.Context) ([]byte, time.Duration, error) {
 			return body, time.Minute, nil
 		}); err != nil {
 			t.Fatal(err)
 		}
-		out := logs.String()
+		entries := logs.entries(t)
 		if verbosity == 0 {
-			if out != "" {
-				t.Fatalf("verbosity 0 logged %q; the skip must be V(1)", out)
+			if len(entries) != 0 {
+				t.Fatalf("verbosity 0 logged %d entries; the skip must be V(1)", len(entries))
 			}
 			continue
 		}
-		for _, want := range []string{
-			"uptime read over the cache size limit was not kept",
-			`"operation"="test-operation"`,
-			`"bytes"=` + strconv.Itoa(len(body)),
-			`"limit"=` + strconv.Itoa(maxEntryBytes),
-		} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("skip log missing %q:\n%s", want, out)
-			}
+		if len(entries) != 1 {
+			t.Fatalf("verbosity 1 logged %d entries, want 1 skip entry:\n%s", len(entries), logs.raw())
 		}
-		if strings.Contains(out, marker) {
-			t.Fatalf("skip log carries body bytes:\n%s", out)
+		entry := entries[0]
+		if got, want := sortedKeys(entry), "bytes,level,limit,logger,msg,operation"; got != want {
+			t.Fatalf("skip log keys = %s, want %s", got, want)
+		}
+		if entry["msg"] != "uptime read over the cache size limit was not kept" || entry["logger"] != "observability-uptime" {
+			t.Fatalf("skip log message or logger = %v / %v", entry["msg"], entry["logger"])
+		}
+		if entry["operation"] != "test-operation" {
+			t.Fatalf("skip log operation = %v, want test-operation", entry["operation"])
+		}
+		if entry["bytes"] != float64(len(body)) || entry["limit"] != float64(maxEntryBytes) {
+			t.Fatalf("skip log bytes = %v, limit = %v; want %d and %d", entry["bytes"], entry["limit"], len(body), maxEntryBytes)
+		}
+		if out := logs.raw(); strings.Contains(out, marker) || strings.Contains(out, readKey) {
+			t.Fatalf("skip log carries the body or the read key:\n%s", out)
 		}
 	}
 }
 
-// A panicking shared fetch fails every waiter with an error, nothing is kept,
-// the panic value and stack are logged at error level, and the process survives.
+// A panicking shared fetch fails every waiter with an error and keeps nothing.
+// The panic is logged through Error, with the recovered value, the operation
+// and the stack, and the process survives.
 func TestPanickingFetchFailsEveryWaiterAndIsLogged(t *testing.T) {
 	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
-	logs := &logSink{}
-	c.log = funcr.New(logs.write, funcr.Options{Verbosity: 0})
+	logs := &jsonLogSink{}
+	c.log = funcr.NewJSON(logs.write, funcr.Options{Verbosity: 0}).WithName("observability-uptime")
 	release := make(chan struct{})
 	var fetches atomic.Int32
 	const waiters = 3
@@ -1013,11 +1051,22 @@ func TestPanickingFetchFailsEveryWaiterAndIsLogged(t *testing.T) {
 	if got := fetches.Load(); got != 1 {
 		t.Fatalf("fetches = %d, want 1 shared fetch", got)
 	}
-	out := logs.String()
-	for _, want := range []string{"uptime read panicked", "boom-from-fetch", `"operation"="test-operation"`, "goroutine "} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("panic log missing %q:\n%s", want, out)
-		}
+	entries := logs.entries(t)
+	if len(entries) != 1 {
+		t.Fatalf("panic log entries = %d, want 1:\n%s", len(entries), logs.raw())
+	}
+	entry := entries[0]
+	if entry["level"] != nil {
+		t.Fatalf("panic entry has level %v; it must be an Error entry, not V(n) Info", entry["level"])
+	}
+	if entry["error"] != errReadPanicked.Error() || entry["msg"] != "uptime read panicked" {
+		t.Fatalf("panic entry error/msg = %v / %v; want the Error entry for the panic", entry["error"], entry["msg"])
+	}
+	if entry["recovered"] != "boom-from-fetch" || entry["operation"] != "test-operation" {
+		t.Fatalf("panic entry recovered/operation = %v / %v", entry["recovered"], entry["operation"])
+	}
+	if stack, _ := entry["stack"].(string); !strings.Contains(stack, "goroutine ") {
+		t.Fatalf("panic entry has no stack trace: %v", entry["stack"])
 	}
 	value, err := c.do(context.Background(), "test-operation", "k", time.Minute, func(context.Context) (int, time.Duration, error) {
 		return 5, time.Minute, nil
@@ -1027,9 +1076,8 @@ func TestPanickingFetchFailsEveryWaiterAndIsLogged(t *testing.T) {
 	}
 }
 
-// The reviewer's abandoned-flight gap: the last waiter leaves while the fetch
-// is still unwinding. A later caller with its own deadline must start a fresh
-// fetch rather than join the cancelled one.
+// The last waiter leaves while the cancelled fetch is still unwinding. A later
+// caller starts a fresh fetch and does not join the abandoned one.
 func TestLaterCallerDoesNotJoinAbandonedFlight(t *testing.T) {
 	c := newCoalescer[int](maxCachedEntries, func(int) int { return 1 })
 	gate := make(chan struct{})
@@ -1061,5 +1109,31 @@ func TestLaterCallerDoesNotJoinAbandonedFlight(t *testing.T) {
 	})
 	if err != nil || value != 7 || fetches.Load() != 2 {
 		t.Fatalf("later caller = %d, %v after %d fetches; it joined the abandoned flight", value, err, fetches.Load())
+	}
+}
+
+// An expired value is dropped by the lookup that finds it, so it is gone even
+// when the refetch fails and nothing is stored afterwards.
+func TestExpiredEntryIsDroppedOnLookupWhenRefetchFails(t *testing.T) {
+	clock := &fakeClock{now: time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)}
+	c := newCoalescer[string](maxCachedEntries, func(value string) int { return len(value) })
+	c.now = clock.Now
+	ctx := context.Background()
+	if _, err := c.do(ctx, "test", "k", time.Second, func(context.Context) (string, time.Duration, error) {
+		return "value", time.Minute, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(2 * time.Minute)
+	if _, err := c.do(ctx, "test", "k", time.Second, func(context.Context) (string, time.Duration, error) {
+		return "", 0, errors.New("upstream down")
+	}); err == nil {
+		t.Fatal("refetch error not returned")
+	}
+	c.mu.Lock()
+	entries, bytes := len(c.entries), c.bytes
+	c.mu.Unlock()
+	if entries != 0 || bytes != 0 {
+		t.Fatalf("after an expired lookup: entries=%d bytes=%d, want 0 and 0", entries, bytes)
 	}
 }

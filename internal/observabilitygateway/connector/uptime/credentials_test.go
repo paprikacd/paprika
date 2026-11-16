@@ -192,7 +192,12 @@ func TestSharedTokenRefreshSurvivesFirstCallerLeaving(t *testing.T) {
 		second <- token
 		secondErr <- err
 	}()
-	time.Sleep(100 * time.Millisecond) // let the second caller join the refresh
+	eventually(t, "the second caller joined the shared refresh", func() bool {
+		tokens.mu.Lock()
+		defer tokens.mu.Unlock()
+		f := tokens.inflight[credentialIdentity(raw)]
+		return f != nil && f.refs == 2
+	})
 	cancelFirst()
 	if err := <-first; err == nil {
 		t.Fatal("cancelled first caller returned no error")
