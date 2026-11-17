@@ -341,7 +341,7 @@ lag and release-liveness view that those generic metrics cannot express.</p>
 <tr>
 <td><code>paprika_auth_attempts_total</code></td>
 <td>Counter</td>
-<td>Authentication attempts</td>
+<td>Successful authentications, by <code>subject</code>: one per unary RPC, one per stream open, and one per successful re-check of an open log follow (every 5 minutes). A failed authentication counts in <code>paprika_auth_failures_total</code> instead</td>
 </tr>
 <tr>
 <td><code>paprika_auth_failures_total</code></td>
@@ -351,7 +351,7 @@ lag and release-liveness view that those generic metrics cannot express.</p>
 <tr>
 <td><code>paprika_authz_denials_total</code></td>
 <td>Counter</td>
-<td>Authorization denials</td>
+<td>Authorization denials from the interceptor. The <code>StreamResourceLogs</code> handler checks (its first check and each follow re-check) do not increment it</td>
 </tr>
 <tr>
 <td><code>paprika_sse_connections</code></td>
