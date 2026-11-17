@@ -12,12 +12,47 @@
 {{- /*
 Envoy Gateway applies a 15 s request timeout to a route with none. The Insights proxy
 budgets a UI query at 28 s, so /api/insights gets its own rule with a longer bound. The
-"/" rule sets no explicit timeout, so Envoy Gateway's 15 s default still applies to it,
-including its Connect streams (StreamResourceLogs, SatelliteLink); browser SSE is disabled
-on the api-server. Gateway API precedence picks the longest matching prefix, so
-/api/insights* takes the new rule and everything else takes "/". The new rule comes after
-"/" so the existing rule keeps its index, and Envoy route names, at rule/0.
+"/" rule sets no explicit timeout, so Envoy Gateway's 15 s default still applies to it.
+Gateway API precedence picks the longest matching prefix (Exact beats PathPrefix), so
+/api/insights* takes its rule, the follow-mode log stream takes its rule, and everything
+else takes "/". The new rules come after "/" so the existing rule keeps its index, and
+Envoy route names, at rule/0 and /api/insights at rule/1.
+
+The log-stream rule sets apiServer.ingress.logStreamRequestTimeout (default "0s"). Envoy
+Gateway reads "0s" as no request timeout and also sets the route's idle timeout to 0
+(internal/xds/translator/route.go, idleTimeout), so nothing at Envoy ends a silent or
+abandoned follow. It matches only /paprika.v1.PaprikaService/StreamResourceLogs (Exact;
+the only streaming RPC on PaprikaService). Every other RPC keeps the 15 s default.
+
+Auth does not depend on this rule. The api-server authenticates a stream from its request
+headers before connect reads the body, and only procedures on its handler-authorized list
+reach a handler (StreamResourceLogs today). While a follow is open the handler re-checks
+the caller and re-reads the application every 5 minutes, so an expired token, a removed
+role, or a moved, deleted or recreated app ends the follow within that interval, including
+when the pod is silent. The api-server listener serves h2c as well as HTTP/1.1, and Envoy
+uses h2c. Over h2c the rejection does not wait for the request body. Over HTTP/1.1,
+net/http can hold the reply while a chunked body, or a declared body of 256 KiB or less,
+stays unfinished (see the observability gateway guide, "known limit").
+
+The SatelliteLink bidi stream stays on "/", which keeps the 15 s default. Envoy's
+RouteAction.timeout starts only when the client has finished sending its request
+(end of stream), and a satellite never ends its request, so the 15 s timer does not
+cut the link. A 0s rule would also disable the route's idle timeout (Envoy's default
+of 5 min when unset), the only Envoy-side reaper of a dead satellite link, because the
+hub has no liveness check of its own. Satellites send a report at the 30 s heartbeat,
+well inside that idle limit. Browser SSE is disabled on the api-server, and the MCP
+endpoint is stateless with JSON responses.
+See docs/guides/observability-gateway.md for the bounds that still apply.
 */ -}}
+{{- $rawStreamTimeout := .Values.apiServer.ingress.logStreamRequestTimeout }}
+{{- $streamTimeout := ternary "0s" (toString $rawStreamTimeout) (kindIs "invalid" $rawStreamTimeout) }}
+{{- if not (regexMatch "^[0-9]{1,5}[smh]$" $streamTimeout) }}
+{{- fail (printf "apiServer.ingress.logStreamRequestTimeout must be 0s (no timeout) or at least 120s, at most 5 digits, got %q" $streamTimeout) }}
+{{- end }}
+{{- $streamSeconds := include "paprika.durationSeconds" $streamTimeout | atoi }}
+{{- if and (ne $streamSeconds 0) (lt $streamSeconds 120) }}
+{{- fail (printf "apiServer.ingress.logStreamRequestTimeout must be 0s (no timeout) or at least 120s, at most 5 digits, got %q" $streamTimeout) }}
+{{- end }}
 {{- $insightsTimeout := .Values.apiServer.ingress.insightsRequestTimeout | default "35s" | toString }}
 {{- $insightsSeconds := include "paprika.durationSeconds" $insightsTimeout | atoi }}
 {{- if or (lt $insightsSeconds 29) (gt $insightsSeconds 119) }}
@@ -63,6 +98,15 @@ spec:
         value: /api/insights
     timeouts:
       request: {{ $insightsTimeout | quote }}
+    backendRefs:
+    - name: {{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }}
+      port: {{ $.Values.apiServer.service.port }}
+  - matches:
+    - path:
+        type: Exact
+        value: /paprika.v1.PaprikaService/StreamResourceLogs
+    timeouts:
+      request: {{ $streamTimeout | quote }}
     backendRefs:
     - name: {{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }}
       port: {{ $.Values.apiServer.service.port }}

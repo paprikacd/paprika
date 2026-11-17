@@ -142,9 +142,9 @@ These use the OTel API (`otel.Meter("paprika")`) and appear with the
 | `paprika_git_operations_total` | Counter | Git source operations |
 | `paprika_git_errors_total` | Counter | Git source errors |
 | `paprika_git_duration_seconds` | Histogram | Git source operation duration |
-| `paprika_auth_attempts_total` | Counter | Authentication attempts |
+| `paprika_auth_attempts_total` | Counter | Successful authentications, by `subject`: one per unary RPC, one per stream open, and one per successful re-check of an open log follow (every 5 minutes). A failed authentication counts in `paprika_auth_failures_total` instead |
 | `paprika_auth_failures_total` | Counter | Authentication failures |
-| `paprika_authz_denials_total` | Counter | Authorization denials |
+| `paprika_authz_denials_total` | Counter | Authorization denials from the interceptor. The `StreamResourceLogs` handler checks (its first check and each follow re-check) do not increment it |
 | `paprika_sse_connections` | UpDownCounter | Active SSE connections |
 | `paprika_events_published_total` | Counter | Events published |
 

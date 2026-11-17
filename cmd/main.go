@@ -202,6 +202,7 @@ type cliConfig struct {
 	ShardTotal                    int           `mapstructure:"shard-total"`
 	ShardIDSource                 string        `mapstructure:"shard-id-source"`
 	APIMaxConns                   int           `mapstructure:"api-max-conns"`
+	APILogStreamLimit             int           `mapstructure:"api-log-stream-limit"`
 	ObsQueryConcurrency           int           `mapstructure:"observability-query-concurrency"`
 	ObsQueryProviderConcurrency   int           `mapstructure:"observability-query-provider-concurrency"`
 	ObsQueryQueue                 int           `mapstructure:"observability-query-queue"`
@@ -588,6 +589,9 @@ func validateServingLimits(cfg *cliConfig) error {
 	if cfg.APIMaxConns < 1 {
 		return fmt.Errorf("--api-max-conns must be >= 1, got %d", cfg.APIMaxConns)
 	}
+	if cfg.APILogStreamLimit < 1 {
+		return fmt.Errorf("--api-log-stream-limit must be >= 1, got %d", cfg.APILogStreamLimit)
+	}
 	return nil
 }
 
@@ -745,6 +749,9 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 		"Maximum number of concurrent TCP connections the UI/API server accepts. "+
 			"Bounds connection and in-flight request memory on small pods; excess "+
 			"connections wait in the kernel accept queue. 0 disables the limit.")
+	fs.Int("api-log-stream-limit", 8,
+		"Maximum number of open StreamResourceLogs follows per caller subject. Every Basic-auth "+
+			"caller with the same username shares one count. Must be at least 1.")
 	registerControllerTuningFlags(fs)
 	fs.String("mode", "operator",
 		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), 'agent' (apply agent), 'satellite' (outbound state reporting), or 'observability-gateway' (observability MCP). "+
@@ -1291,6 +1298,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 		apiserver.WithCapacityProviders(capacityRegistry),
 		apiserver.WithControlPlaneNamespace(cfg.OperatorNamespace),
 		apiserver.WithObservabilityGateway(cfg.ObservabilityGatewayAddr, authCfg.TokenSecret, cfg.MCPPublicURL),
+		apiserver.WithLogStreamLimit(cfg.APILogStreamLimit),
 	)
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 

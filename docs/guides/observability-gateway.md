@@ -92,8 +92,8 @@ startup.
 
 | # | Hop | Limit (default) | Configured in | When full, the caller sees | Retry |
 |---|---|---|---|---|---|
-| E1 | Cloudflare proxy in front of the public hostname (`proxied` record, outside this chart) | Proxy read timeout **125 s** (Cloudflare default, measured between reads). An origin that stays silent past it gets **524** `origin_response_timeout`. An origin 504 is passed through as **504** `origin_gateway_timeout`, so a 504 from that origin does not by itself mean Cloudflare timed out | Cloudflare zone setting | Cloudflare's own error page, 524 at 120 s | Yes, with backoff |
-| E2 | Envoy Gateway route request timeout (`timeouts.request` on the HTTPRoute rule, `charts/chart/templates/observability-gateway/httproute.yaml` and `api-server/httproute.yaml`) | `/observe` **50 s** (`observabilityGateway.ingress.requestTimeout`, valid 46 to 119 s). `/api/insights/` **35 s** (`apiServer.ingress.insightsRequestTimeout`, valid 29 to 119 s). `/` sets no explicit timeout, so it gets Envoy Gateway's default of **15 s**, including its Connect streams (browser SSE is disabled on the api-server) | `observabilityGateway.ingress.requestTimeout`, `apiServer.ingress.insightsRequestTimeout` | Envoy answers **504** `upstream request timeout` at the route's limit and resets the upstream stream, which cancels the gateway's tool or query | Yes, with backoff, since the earlier attempt may have used provider time |
+| E1 | Cloudflare proxy in front of the public hostname (`proxied` record, outside this chart) | Proxy read timeout **125 s** (Cloudflare default, measured between reads). An origin that stays silent past it gets **524** `origin_response_timeout`. An origin 504 is passed through as **504** `origin_gateway_timeout`, so a 504 from that origin does not by itself mean Cloudflare timed out | Cloudflare zone setting | Cloudflare's own error page, 524 at 125 s | Yes, with backoff |
+| E2 | Envoy Gateway route request timeout (`timeouts.request` on the HTTPRoute rule, `charts/chart/templates/observability-gateway/httproute.yaml` and `api-server/httproute.yaml`) | `/observe` **50 s** (`observabilityGateway.ingress.requestTimeout`, valid 46 to 119 s). `/api/insights/` **35 s** (`apiServer.ingress.insightsRequestTimeout`, valid 29 to 119 s). The follow-mode log stream `/paprika.v1.PaprikaService/StreamResourceLogs` (Exact) is **no timeout** (`0s`, `apiServer.ingress.logStreamRequestTimeout`, valid `0s` or at least 120 s, at most 5 digits), so Envoy Gateway's 15 s default does not cut a follow. `/` sets no explicit timeout, so every other api-server path gets Envoy Gateway's default of **15 s**. That timer starts only after the client has finished sending its request, so it does not cut an open SatelliteLink stream (see the stream notes). Browser SSE is disabled on the api-server | `observabilityGateway.ingress.requestTimeout`, `apiServer.ingress.insightsRequestTimeout`, `apiServer.ingress.logStreamRequestTimeout` | Envoy answers **504** `upstream request timeout` at the route's limit and resets the upstream stream, which cancels the gateway's tool or query | Yes, with backoff, since the earlier attempt may have used provider time |
 | 1 | Browser scheduler (`createQueryScheduler`, `ui/src/features/insights/query.ts`) | 4 queries in flight per viewer, maximum 16 | Code only | Nothing is sent; further widgets wait in the local queue | n/a |
 | 2 | Browser replay (`capacityRetryDelay`, `ui/src/features/insights/client.ts`) | A 429 on `/query`, a read or a conditional write is replayed up to 3 times, waiting Retry-After seconds. A wait over 10 s is not retried | Code only | After the replays fail the widget shows "Query failed" with a Retry button (`ui/src/features/insights/charts.tsx`) | Manual |
 | 3 | Console API proxy (`insightsProxyRequestHandler`, `internal/api/insights_proxy.go`) | No admission limit. Response-header timeout 25 s (transport) and a 28 s request budget (`insightsProxyRequestHandler`); the header timeout cuts in first if Insights sends no headers. The console's connection cap is `--api-max-conns` (128) | Code; `--api-max-conns` | An unreachable or slow Insights gets **502** "Insights service is unavailable" | Yes, with backoff |
@@ -152,8 +152,8 @@ timeout upstream. The chain, outermost first:
 | Hop | Bound | Source |
 |---|---|---|
 | Cloudflare to origin | 125 s read (between reads), then 524 (proxied records, Cloudflare default) | `terraform/main.tf` |
-| Envoy Gateway, api-server route (`/`: the console and `/api/insights`) | 15 s by default; the HTTPRoute sets no `timeouts` | `charts/chart/templates/api-server/httproute.yaml`, Envoy Gateway default |
-| Envoy Gateway, `/observe` route | 15 s by default; the HTTPRoute sets no `timeouts` | `charts/chart/templates/observability-gateway/httproute.yaml`, Envoy Gateway default |
+| Envoy Gateway, api-server route | `/` 15 s (default, no `timeouts`); `/api/insights` 35 s; `StreamResourceLogs` no request or idle timeout (`0s`) | `charts/chart/templates/api-server/httproute.yaml`; `idleTimeout()` in Envoy Gateway v1.4 `internal/xds/translator/route.go` |
+| Envoy Gateway, `/observe` route | 50 s (`observabilityGateway.ingress.requestTimeout`) | `charts/chart/templates/observability-gateway/httproute.yaml` |
 | Console Insights proxy | 25 s until response headers, 28 s total | `internal/api/insights_proxy.go` |
 | Gateway HTTP server | read 15 s, write 45 s | `cmd/main_observability_gateway.go` |
 | Insights dashboard query | 22 s budget, one phase at a time | `internal/insights/dashboard_query.go` |
@@ -164,19 +164,141 @@ timeout upstream. The chain, outermost first:
 
 Insights' header wait was 15 s, so a 15 to 20 s read was reported as a timeout
 while the gateway was still running it. It now equals the 20 s operation bound,
-so a read is cut only by its own budget. Two limits remain:
+so a read is cut only by its own budget. Two caveats remain:
 
 - The 20 s Insights bound includes up to 5 s of gateway queue wait, and the
   uptime connector's 20 s starts only once the query is admitted. A read that
   queues first can therefore outlast Insights' bound while the gateway finishes.
-- The api-server and `/observe` HTTPRoutes set no `timeouts`, so Envoy Gateway's
-  default 15 s applies to both. A read longer than 15 s through either public
-  route returns a 504 from Envoy even when the gateway would finish, and the UI
-  does not replay that 504. The browser widget path (`/api/insights` through the
-  api-server route) is therefore bounded at 15 s in production until the charts
-  set a request timeout on those routes: at least 28 s on the api-server route
-  (the console proxy's total), and at least 46 s on `/observe` (above the 45 s
-  gateway write timeout and below Cloudflare's 125 s).
+- The `/` rule on the api-server route sets no `timeouts`, so Envoy Gateway's
+  default 15 s applies to every api-server path except `/api/insights` (35 s, the
+  browser widget path, above the 28 s console budget and below Cloudflare's 125 s)
+  and `StreamResourceLogs` (`0s`). A new api-server RPC inherits the 15 s limit
+  unless it gets a rule of its own.
+
+**Stream notes (which streams have no timeout, and what still bounds them).**
+
+- `StreamResourceLogs` (`follow` true, the log stream the resource detail panel
+  uses) has a route rule of `0s` (`logStreamRequestTimeout`). Envoy Gateway v1.4
+  turns a `0s` request timeout into route timeout 0 and also sets the route's
+  `idle_timeout` to 0 (`idleTimeout()` in `internal/xds/translator/route.go`), so
+  nothing at Envoy ends a silent or abandoned follow. The panel aborts its stream
+  when the Logs tab closes or the panel unmounts, which closes the request. Bounds
+  that still apply: Cloudflare's proxy read timeout (E1, 125 s between reads). Once
+  the response has started Cloudflare cannot replace it with a 524, so a silent
+  origin can only end the stream there (not verified on a live zone). The browser
+  tab also ends it. The stream sends one `LogChunk` per log line and no keepalive,
+  so a pod that logs less often than every two minutes may be cut at Cloudflare.
+- **Auth: a follow authenticates from its headers before the body is read.** The
+  interceptor (`Interceptor` in `internal/api/auth/middleware.go`) is a
+  `connect.Interceptor`. For a server stream, `WrapStreamingHandler` runs the same
+  authenticators as unary RPCs on the request headers before connect reads the
+  request message. Those authenticators read only the `Authorization` header. Neither
+  path has a cookie, Origin or CSRF check: the browser-session cookie is set on
+  `/auth`, and no Connect authenticator reads it. An unauthenticated or bad-token
+  stream gets `unauthenticated`, and its handler never runs. The API listener serves
+  HTTP/2 over h2c as well as HTTP/1.1, and over h2c that reply does not wait for the
+  request body (`TestStreamAuth_UnauthenticatedReplyDoesNotWaitForBodyOverH2C`).
+- **Fail-closed list.** Only procedures in `handlerAuthorizedStreams` reach a
+  handler, and today that is `StreamResourceLogs` alone. Any other streaming
+  procedure gets `permission_denied` after authentication, until someone adds it to
+  the list on purpose once its handler checks the request.
+  `TestStreamingProceduresAreListedOrDenied` enumerates the generated streaming
+  methods and fails when one is neither listed nor denied. `StreamResourceLogs`
+  checks the application's namespace before the lookup, then the application, with
+  `read`. `ActionFor` gives that action, and unary `GetResourceLogs` requires the
+  same one, so a read-only role can follow the logs. The open then resolves the pod
+  through the application's resource tree, with the resolver `GetResourceLogs` uses,
+  so a pod outside the tree is `not_found` and its logs are not read. The audit
+  interceptor records only mutating unary RPCs, so streams are not in the audit log.
+- **Re-check every 5 minutes while a follow is open.** The handler re-authenticates
+  the stored request headers and reads the application again on a ticker
+  (`defaultFollowRecheckInterval`, 5 minutes). It then re-authorizes the application
+  as it is now. The re-check does not re-resolve the pod against the resource tree;
+  the pod is resolved once, when the stream opens. The ticker runs whether or not the
+  pod writes, so a silent pod is covered. A failed check ends the stream with `unauthenticated` (the credential no
+  longer authenticates), `permission_denied` (the caller lost read on the
+  application's AppProject, or the AppProject no longer exists), `not_found` (the
+  application was deleted or recreated under a new UID), or `unavailable` (another
+  read failed; the UI retries that one). With an authorizer configured, a follow that
+  arrives without the interceptor's re-authenticator is refused at open with
+  `unauthenticated`. A follow therefore ends within one interval of any of these:
+  - the caller's token expires. An OIDC ID token expires at its `exp` claim, and a
+    self-signed token at its TTL. A token cannot be revoked early, because there is
+    no revocation list, so expiry is the only way the token stops authenticating.
+  - the Basic-auth password hash changes. It is a startup flag
+    (`--auth-basic-password-hash`) with no reload, so a change takes an api-server
+    restart, and a restart ends every follow.
+  - the caller's AppProject role changes so that it no longer grants `read`.
+  - the application moves to another AppProject, is deleted, or is recreated.
+  The UI reconnects once at once after `unauthenticated`. Before that retry it recovers
+  the session against the token the stream opened with. A token the app has already
+  replaced is used as is, and a refresh runs only while that token is still current,
+  so the new call carries a fresh token. If that refresh fails, the UI reconnects with
+  backoff instead. If the session has no token, the follow ends. An `unauthenticated`
+  that arrives within 60 seconds of the stream's open, after a retry, is final. A later
+  one comes from the re-check, so the UI reconnects once more. `permission_denied`,
+  `unimplemented` and `resource_exhausted` are always final. `not_found` is final when
+  it arrives within 60 seconds of the open. The open resolves the pod through the
+  resource tree, so that `not_found` means the application is gone or the resource is
+  not in its tree. Otherwise it comes from the re-check, which means the application was
+  deleted or recreated. The UI then reconnects, and that open ends a deleted application,
+  or a resource outside its tree, with `not_found` at once. A recreated application
+  streams once its tree lists the resource again. If the tree is still empty at that
+  reopen, the `not_found` is final, and the user must reopen the tab.
+  A reconnect replays the pod log from the start (the handler sets neither
+  `TailLines` nor `SinceSeconds` on `PodLogOptions`), so the panel replaces its
+  buffer with the replay instead of appending it.
+- **Per-caller limit.** Each api-server process holds at most
+  `--api-log-stream-limit` open `StreamResourceLogs` calls per principal subject.
+  The binary default is 8, the minimum is 1. The chart's `apiServer.logStreamLimit`
+  is unset (`null`) by default, which renders no flag, so the binary default
+  applies. Setting it renders the flag on the split-mode api-server and on the
+  monolith manager, which serves the API in either its Deployment or its sharded
+  StatefulSet. Set it only with an image that knows the flag. N replicas allow
+  up to N times the limit. The call past the limit on a process ends with
+  `resource_exhausted`. A slot frees when that call ends. A follow on a silent pod
+  holds its slot until its connection ends or a re-check fails. Envoy's 0s route
+  does not end it, and Cloudflare's 125 s read timeout ends it only when the origin
+  stays silent that long. There is no idle reaper yet.
+  - A subject is the principal's `Subject`. Every Basic-auth caller with the same
+    username shares one count, whether the request carries a Basic header or a token
+    from basic login, because both have the configured username as their subject.
+    Callers who share that login therefore share one limit.
+  - Calls without a principal (auth disabled) share one count.
+- **HTTP/1.1 replies wait for the request body.** Over HTTP/1.1, `net/http` reads up
+  to 256 KiB of an unread request body before it closes the request. So the reply to
+  a request whose body has not ended waits until the body ends or the connection
+  closes. A declared body over 256 KiB gets its reply at once. This is `net/http`
+  behaviour for every HTTP/1.1 request, unary or streaming. The API listener also
+  serves h2c, and Envoy reaches the api-server over h2c (the Service declares
+  `appProtocol: kubernetes.io/h2c`), so requests through Envoy are not affected.
+- `SatelliteLink.Connect` (`/paprika.v1.SatelliteLink/Connect`, bidirectional) has
+  no rule of its own and stays on `/`. Envoy's `RouteAction.timeout` (in
+  `route_components.proto`) starts only when the client has finished sending its
+  request, and a satellite never finishes its request, so the 15 s default does not
+  start on an open link, whether or not the satellite sends. A `0s` rule would also
+  disable the route's idle timeout (Envoy's default of 5 min when unset), which is
+  the only Envoy-side reaper of a dead link, because the hub has no liveness check
+  of its own. The satellite sends a report at its heartbeat (`needsReport`, default
+  30 s, `--satellite-heartbeat-interval`), well inside that limit. Satellites reach
+  the hub through `controlPlaneURL` (`internal/satellite/link.go`), and streaming is
+  opt-in (`--satellite-stream-enabled`, off by default). The api-server Service sets
+  `appProtocol: kubernetes.io/h2c`, which Envoy Gateway uses for HTTP/2 to the
+  backend that bidi streaming needs. The chart has no BackendTrafficPolicy or
+  EnvoyProxy. When `controlPlaneURL` goes through a proxy such as Cloudflare (E1),
+  that proxy's read timeout also applies, so keep the heartbeat well under 125 s.
+- Other streams on this route: none. `PaprikaService` has one server-streaming RPC
+  (`StreamResourceLogs`), and `SatelliteLink` has one bidirectional RPC
+  (`Connect`); `proto/paprika/insights/v1/checks.proto` defines no service. No gRPC
+  reflection or health service is mounted. The observability gateway mux serves MCP,
+  OAuth, consent and JSON `/api/*` routes, with no Connect RPC. The satellite report
+  at `/api/satellite/report` is a pooled POST. The MCP endpoint is stateless with
+  JSON responses.
+- Follow-ups, all Go changes and none made here: a heartbeat frame for
+  `StreamResourceLogs`, an app-level idle reaper for abandoned follows, and a
+  `SatelliteLink` liveness check in the hub.
+  Adding a streaming procedure to `handlerAuthorizedStreams` needs a handler that
+  checks the request with the classifier's action, and a test for that check.
 
 **What is coupled to what.**
 

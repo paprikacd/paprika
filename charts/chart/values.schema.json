@@ -37,6 +37,11 @@
           "maxLength": 63,
           "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
           "description": "Optional standalone API and observability namespace bound; Kubernetes RBAC remains required."
+        },
+        "logStreamLimit": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Most StreamResourceLogs follows one caller subject may hold open at once, per process. Rendered on the split-mode api-server and on the monolith manager, including its sharded StatefulSet."
         }
       }
     },

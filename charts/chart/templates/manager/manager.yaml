@@ -128,6 +128,9 @@ spec:
         {{- end }}
         {{- if eq .Values.deploymentMode "monolith" }}
         {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- with include "paprika.logStreamLimitArg" . }}
+        - {{ . }}
+        {{- end }}
         {{- end }}
         {{- include "paprika.reconcileArgs" . | nindent 8 }}
         {{- include "paprika.observationStoreArgs" . | nindent 8 }}

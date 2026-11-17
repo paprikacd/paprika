@@ -60,6 +60,13 @@ func WithAuthorizer(a auth.Authorizer) ServerOption {
 	return func(s *PaprikaServer) { s.authorizer = a }
 }
 
+// WithLogStreamLimit sets how many StreamResourceLogs calls one principal
+// subject may hold open at once. Zero or less keeps the default of 8. Calls past
+// the limit end with ResourceExhausted.
+func WithLogStreamLimit(n int) ServerOption {
+	return func(s *PaprikaServer) { s.logStreamLimit = n }
+}
+
 // WithFleetIndex sets the narrow immutable fleet query surface.
 func WithFleetIndex(reader fleet.Reader) ServerOption {
 	return func(s *PaprikaServer) { s.fleetIndex = reader }
@@ -154,6 +161,17 @@ type PaprikaServer struct {
 	// created on first use unless injected through WithKubeClients.
 	kubeClients     *kube.Clients
 	kubeClientsOnce sync.Once
+
+	// followRecheckInterval is how often a follow-mode log stream
+	// re-authenticates and re-authorizes its caller. Zero means
+	// defaultFollowRecheckInterval. Tests set it to a short duration.
+	followRecheckInterval time.Duration
+
+	// logStreams counts the open StreamResourceLogs calls of each principal
+	// subject. logStreamLimit is the most one subject may hold; zero means
+	// defaultLogStreamLimit.
+	logStreams     logStreamSlots
+	logStreamLimit int
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.

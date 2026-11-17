@@ -107,6 +107,9 @@ spec:
         {{- with .Values.apiServer.namespaceScope }}
         - --api-namespace={{ . }}
         {{- end }}
+        {{- with include "paprika.logStreamLimitArg" . }}
+        - {{ . }}
+        {{- end }}
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
         {{- include "paprika.observationStoreArgs" . | nindent 8 }}

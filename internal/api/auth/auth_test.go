@@ -792,7 +792,7 @@ func TestInterceptor_Disabled(t *testing.T) {
 		return connect.NewResponse(&paprikav1.ListApplicationsResponse{}), nil
 	}
 
-	wrapped := interceptor(next)
+	wrapped := interceptor.WrapUnary(next)
 	ns := testNS
 	resp, err := wrapped(context.Background(), connect.NewRequest(&paprikav1.ListApplicationsRequest{Namespace: &ns}))
 	require.NoError(t, err)
@@ -820,7 +820,7 @@ func TestInterceptor_BasicAuth(t *testing.T) {
 		assert.NotNil(t, p)
 		return connect.NewResponse(&paprikav1.ListApplicationsResponse{}), nil
 	}
-	wrapped := interceptor(next)
+	wrapped := interceptor.WrapUnary(next)
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", http.NoBody)
 	req.SetBasicAuth(testUsername, testPassword)
@@ -848,7 +848,7 @@ func TestInterceptor_Unauthenticated(t *testing.T) {
 		t.Fatal("should not reach next")
 		return nil, nil
 	}
-	wrapped := interceptor(next)
+	wrapped := interceptor.WrapUnary(next)
 
 	ns := testNS
 	_, err = wrapped(context.Background(), connect.NewRequest(&paprikav1.ListApplicationsRequest{Namespace: &ns}))
@@ -1054,7 +1054,7 @@ func TestInterceptor_RejectsMCPAudienceToken(t *testing.T) {
 		t.Fatal("must not reach next: an aud=paprika-mcp token must never authenticate the console chain")
 		return nil, nil
 	}
-	wrapped := interceptor(next)
+	wrapped := interceptor.WrapUnary(next)
 
 	mcpToken, err := IssueTokenWithOptions(TokenOptions{
 		Subject: "mcp-user", Email: "mcp-user@example.com", Name: "MCP User",
