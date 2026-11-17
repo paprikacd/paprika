@@ -176,6 +176,37 @@ describe("ResourceDetailPanel", () => {
     })
   })
 
+  it("shows a changed Secret value as marked lines, not as no differences", async () => {
+    // The server marks a value-only change to a Secret on each side, so the diff is not empty.
+    mockClient.getResource.mockResolvedValue({
+      kind: "Secret",
+      name: "shop-creds",
+      namespace: "test-ns",
+      syncStatus: "OutOfSync",
+      healthStatus: "",
+      healthMessage: "",
+      liveManifest: "data:\n  password: '<redacted: live value differs>'",
+      desiredManifest: "data:\n  password: '<redacted: desired value differs>'",
+      diff: "--- Desired\n+++ Live\n@@ -1,2 +1,2 @@\n data:\n-  password: '<redacted: desired value differs>'\n+  password: '<redacted: live value differs>'",
+      events: [],
+    })
+
+    render(
+      <ResourceDetailPanel
+        applicationNamespace="test-ns"
+        applicationName="demo-app"
+        resource={resource}
+        onClose={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/<redacted: desired value differs>/).length).toBeGreaterThan(0)
+    })
+    expect(screen.getAllByText(/<redacted: live value differs>/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/No differences/i)).not.toBeInTheDocument()
+  })
+
   it("switches to events tab and shows k8s events", async () => {
     const user = userEvent.setup()
     mockClient.getResource.mockResolvedValue({

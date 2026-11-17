@@ -201,7 +201,7 @@ func (s *logSink) count(text string) int {
 func TestResourceLogsScopeReportsACancelledReadAsCanceled(t *testing.T) {
 	t.Parallel()
 	app := logsScopeApplication(nil)
-	const logged = "reading a resource for logs failed"
+	const logged = "reading a resource failed"
 
 	t.Run("cancelled caller gets CodeCanceled and no log line", func(t *testing.T) {
 		t.Parallel()
@@ -274,7 +274,7 @@ func TestResourceLogsScopeReportsForbiddenReadsByWhetherTheTreeShowsThem(t *test
 		}
 		return false, nil, nil
 	})
-	const failed = "reading a resource for logs failed"
+	const failed = "reading a resource failed"
 	const owner = "owner read forbidden"
 
 	t.Run("managed deployment is a logged read failure", func(t *testing.T) {
@@ -350,7 +350,7 @@ func TestResourceLogsScopeAppliesTheWorkloadPodLimit(t *testing.T) {
 // Every ReplicaSet read fails here, so any read would show up as a log line.
 func TestResourceLogsScopeTreatsInvalidOwnerNamesAsOutsideTheTree(t *testing.T) {
 	t.Parallel()
-	const logged = "reading a resource for logs failed"
+	const logged = "reading a resource failed"
 
 	t.Run("pod whose owner name is invalid", func(t *testing.T) {
 		t.Parallel()
@@ -408,7 +408,7 @@ func TestResourceLogsScopeReportsAnExpiredDeadlineAsDeadlineExceeded(t *testing.
 
 	_, err := resolveApplicationLogsPod(ctx, cs, logsScopeApplication(nil), "Pod", "api-7d9-x1", logsScopeNamespace)
 	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(err))
-	require.Zero(t, sink.count("reading a resource for logs failed"))
+	require.Zero(t, sink.count("reading a resource failed"))
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
@@ -428,7 +428,7 @@ func TestResourceLogsScopeReportsAnExpiredDeadlineAsDeadlineExceeded(t *testing.
 		ResourceKind: "Pod", ResourceName: "api-7d9-x1", ResourceNamespace: logsScopeNamespace,
 	}), nil)
 	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(streamErr))
-	require.Zero(t, sink.count("reading a resource for logs failed"))
+	require.Zero(t, sink.count("reading a resource failed"))
 }
 
 // TestResourceLogsScopeCountsOnlyValidOwnersTowardTheBound pins the owner-name

@@ -1,7 +1,6 @@
 package apiserver
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pmezard/go-difflib/difflib"
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,6 +15,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8syaml "sigs.k8s.io/yaml"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/auth"
@@ -62,9 +61,10 @@ type resolvedResourceMapping struct {
 	scope meta.RESTScopeName
 }
 
-// GetResource returns detailed information about a single managed resource
-// including its live manifest, desired manifest, unified diff, and recent
-// Kubernetes events.
+// GetResource returns detailed information about a resource in the application's
+// resource tree: its live manifest, desired manifest, unified diff, and recent
+// Kubernetes events. A resource outside the tree gets the same error as one that
+// does not exist. Secret values are redacted in every manifest and diff.
 func (s *PaprikaServer) GetResource(
 	ctx context.Context,
 	req *connect.Request[paprikav1.GetResourceRequest],
@@ -92,12 +92,27 @@ func (s *PaprikaServer) GetResource(
 
 	// The live half of this view belongs to the cluster the application is
 	// deployed to. A target we cannot read yields the status and desired halves
-	// without fabricating a live manifest from another cluster.
+	// without fabricating a live manifest from another cluster. The tree check
+	// runs before the desired manifest is rendered and before any event is read.
 	target, targetErr := s.applicationTargetCluster(ctx, &app)
 	dyn := s.targetDynamicClientOrNil(ctx, target, targetErr)
 	typed := s.targetTypedClientOrNil(ctx, target, targetErr)
-	s.populateLiveManifest(ctx, dyn, targetMapper(s, target), resp, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
-	s.populateDesiredManifest(ctx, resp, &app, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
+	live, mapping, err := readTreeResource(ctx, &app, dyn, typed, targetMapper(s, target),
+		req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
+	if err != nil {
+		return nil, err
+	}
+	desired := s.desiredObjectOrNil(ctx, &app, req.Msg.ResourceKind, req.Msg.ResourceName)
+	// Both sides are redacted together, before the identity copies the live
+	// annotations, so a Secret whose values differ shows the same marker on each side.
+	redactManifestPair(desired, liveObject(live))
+	if live != nil {
+		populateResourceIdentity(resp, live, &mapping)
+	}
+	resp.DesiredManifest, resp.LiveManifest = manifestsToYAML(desired, live)
+	if resp.DesiredManifest != "" && resp.LiveManifest != "" {
+		resp.Diff = unifiedDiff(resp.DesiredManifest, resp.LiveManifest)
+	}
 	s.populateEvents(ctx, typed, resp, req.Msg.ResourceKind, req.Msg.ResourceName, namespace)
 
 	return connect.NewResponse(resp), nil
@@ -139,38 +154,28 @@ func targetMapper(s *PaprikaServer, target targetCluster) meta.RESTMapper {
 	return nil
 }
 
-// populateLiveManifest fetches the live resource from the cluster and fills in LiveManifest.
-func (s *PaprikaServer) populateLiveManifest(
-	ctx context.Context,
-	dyn dynamic.Interface,
-	mapper meta.RESTMapper,
-	resp *paprikav1.GetResourceResponse,
-	kind, name, namespace string,
-) {
-	if dyn == nil {
-		return
+// liveObject returns the object map of a live object, or nil for no object.
+func liveObject(live *unstructured.Unstructured) map[string]any {
+	if live == nil {
+		return nil
 	}
-	if obj, mapping, err := getLiveResource(ctx, dyn, mapper, kind, name, namespace); err == nil {
-		populateResourceIdentity(resp, obj, &mapping)
-		if live, err := manifestToYAML(obj.Object); err == nil {
-			resp.LiveManifest = live
-		}
-	}
+	return live.Object
 }
 
-// populateDesiredManifest renders the application template and fills in DesiredManifest + Diff.
-func (s *PaprikaServer) populateDesiredManifest(ctx context.Context, resp *paprikav1.GetResourceResponse, app *pipelinesv1alpha1.Application, kind, name, namespace string) {
-	if s.renderer == nil {
-		return
+// manifestsToYAML encodes a desired and a live object for a response. A nil side
+// gives "". Both objects must already be redacted.
+func manifestsToYAML(desired map[string]any, live *unstructured.Unstructured) (desiredYAML, liveYAML string) {
+	if desired != nil {
+		if out, err := manifestToYAML(desired); err == nil {
+			desiredYAML = out
+		}
 	}
-	desired, err := s.getDesiredManifest(ctx, app, kind, name)
-	if err != nil {
-		return
+	if live != nil {
+		if out, err := manifestToYAML(live.Object); err == nil {
+			liveYAML = out
+		}
 	}
-	resp.DesiredManifest = desired
-	if resp.LiveManifest != "" {
-		resp.Diff = unifiedDiff(desired, resp.LiveManifest)
-	}
+	return desiredYAML, liveYAML
 }
 
 // populateEvents fetches Kubernetes events for the resource.
@@ -311,11 +316,25 @@ func copyStringMap(in map[string]string) map[string]string {
 	return out
 }
 
-func (s *PaprikaServer) getDesiredManifest(ctx context.Context, app *pipelinesv1alpha1.Application, kind, name string) (string, error) {
+// desiredObjectOrNil returns the object the application's template renders for
+// kind and name. It returns nil when there is no renderer or no such object. The
+// object is raw: callers redact it before they use it.
+func (s *PaprikaServer) desiredObjectOrNil(ctx context.Context, app *pipelinesv1alpha1.Application, kind, name string) map[string]any {
+	if s.renderer == nil {
+		return nil
+	}
+	desired, err := s.getDesiredObject(ctx, app, kind, name)
+	if err != nil {
+		return nil
+	}
+	return desired
+}
+
+func (s *PaprikaServer) getDesiredObject(ctx context.Context, app *pipelinesv1alpha1.Application, kind, name string) (map[string]any, error) {
 	templateName := app.Name + "-template"
 	var tmpl pipelinesv1alpha1.Template
 	if err := s.client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: templateName}, &tmpl); err != nil {
-		return "", fmt.Errorf("get template: %w", err)
+		return nil, fmt.Errorf("get template: %w", err)
 	}
 
 	params := make(map[string]string, len(app.Spec.Parameters)+1)
@@ -333,10 +352,10 @@ func (s *PaprikaServer) getDesiredManifest(ctx context.Context, app *pipelinesv1
 
 	manifests, err := s.renderer.Render(ctx, &tmpl, params)
 	if err != nil {
-		return "", fmt.Errorf("render template: %w", err)
+		return nil, fmt.Errorf("render template: %w", err)
 	}
 
-	return findManifestDoc(manifests, kind, name)
+	return findManifestObject(manifests, kind, name)
 }
 
 // mergeReleaseParams reads the active Release and merges its parameters into params.
@@ -349,22 +368,24 @@ func (s *PaprikaServer) mergeReleaseParams(ctx context.Context, app *pipelinesv1
 	}
 }
 
-// findManifestDoc searches split YAML documents for a resource matching kind + name.
-func findManifestDoc(manifests []byte, kind, name string) (found string, err error) {
+// findManifestObject searches split YAML documents for a resource matching kind +
+// name, and returns its decoded object. Documents are decoded with
+// sigs.k8s.io/yaml, as the controller decodes them. The object is raw.
+func findManifestObject(manifests []byte, kind, name string) (map[string]any, error) {
 	docs := engine.SplitYAMLDocuments(manifests)
 	for _, doc := range docs {
 		var obj map[string]any
-		if err := yaml.Unmarshal(doc, &obj); err != nil || obj == nil {
+		if err := k8syaml.Unmarshal(doc, &obj); err != nil || obj == nil {
 			continue
 		}
 		objKind, _ := obj["kind"].(string)          //nolint:errcheck // map value type check
 		meta, _ := obj["metadata"].(map[string]any) //nolint:errcheck // map value type check
 		objName, _ := meta["name"].(string)         //nolint:errcheck // map value type check
 		if objKind == kind && objName == name {
-			return manifestToYAML(obj)
+			return obj, nil
 		}
 	}
-	return "", fmt.Errorf("resource %s/%s not found in rendered manifests", kind, name)
+	return nil, fmt.Errorf("resource %s/%s not found in rendered manifests", kind, name)
 }
 
 func (s *PaprikaServer) getResourceEvents(
@@ -400,19 +421,13 @@ func (s *PaprikaServer) getResourceEvents(
 }
 
 // manifestToYAML serialises a map (typically unstructured.Unstructured.Object)
-// into a cleaned YAML string with server-managed fields stripped.
+// into a cleaned YAML string with server-managed fields stripped. Every manifest
+// a client can receive, and every diff built from one, passes through here, so
+// Secret values are redacted here.
 func manifestToYAML(obj map[string]interface{}) (string, error) {
+	redactSecretValues(obj)
 	cleanForSerialization(obj)
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(obj); err != nil {
-		return "", fmt.Errorf("encode yaml: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return "", fmt.Errorf("close yaml encoder: %w", err)
-	}
-	return strings.TrimSpace(buf.String()), nil
+	return encodeYAML(obj)
 }
 
 // cleanForSerialization removes server-managed fields that would clutter the

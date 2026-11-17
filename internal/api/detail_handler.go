@@ -417,10 +417,10 @@ func (s *PaprikaServer) ApplyResourcePatch(
 	return connect.NewResponse(final), nil
 }
 
-// prepareResourcePatch runs the shared prologue: app lookup, write authz,
-// request validation, GVR resolution, the remote-cluster refusal, and the
-// managed-label guard. It returns the resource interface, patch type, and
-// verified-managed live object.
+// prepareResourcePatch runs the shared prologue: app lookup, write authz, the
+// refusal of Secrets, request validation, GVR resolution, the remote-cluster
+// refusal, the resource-tree check and the managed-label guard. It returns the
+// resource interface, patch type, and verified-managed live object.
 func (s *PaprikaServer) prepareResourcePatch(ctx context.Context, req *paprikav1.ApplyResourcePatchRequest) (dynamic.ResourceInterface, types.PatchType, *unstructured.Unstructured, error) {
 	var app pipelinesv1alpha1.Application
 	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: req.Name}, &app); err != nil {
@@ -428,6 +428,10 @@ func (s *PaprikaServer) prepareResourcePatch(ctx context.Context, req *paprikav1
 	}
 	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
 		return nil, "", nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	if req.Kind == "Secret" {
+		return nil, "", nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("resource patching does not accept Secrets"))
 	}
 	ri, patchType, err := s.resolvePatchTarget(req)
 	if err != nil {
@@ -441,7 +445,7 @@ func (s *PaprikaServer) prepareResourcePatch(ctx context.Context, req *paprikav1
 		return nil, "", nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
 			"resource patching is not supported for agent or remote-cluster targets yet"))
 	}
-	live, err := getManagedLiveObject(ctx, ri, req)
+	live, err := getManagedLiveObject(ctx, ri, req, &app)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -488,22 +492,44 @@ func (s *PaprikaServer) namedClusterIsRemote(ctx context.Context, namespace, nam
 		(cluster.Spec.KubeconfigSecretRef != nil && cluster.Spec.KubeconfigSecretRef.Name != ""), nil
 }
 
-// getManagedLiveObject fetches the target resource and refuses when it is
-// not managed by the named application — the guard that scopes patches to
-// app-owned resources.
-func getManagedLiveObject(ctx context.Context, ri dynamic.ResourceInterface, req *paprikav1.ApplyResourcePatchRequest) (*unstructured.Unstructured, error) {
+// getManagedLiveObject fetches the target resource and refuses unless it is a
+// root of the application's resource tree and carries the app's management label.
+// Both guards scope patches to the application's own resources. The tree check
+// runs first, so an object outside the tree is refused without a read.
+func getManagedLiveObject(
+	ctx context.Context,
+	ri dynamic.ResourceInterface,
+	req *paprikav1.ApplyResourcePatchRequest,
+	app *pipelinesv1alpha1.Application,
+) (*unstructured.Unstructured, error) {
+	refuse := func() error {
+		metrics.ResourcePatchTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("kind", req.Kind), attribute.String("result", "refused")))
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%s/%s is not managed by application %s — refusing to patch unmanaged resources",
+			req.Kind, req.ResourceName, req.Name))
+	}
+	sc := newLogsTreeScope(app, nil)
+	if !sc.managed(req.Kind, patchTargetNamespace(req), req.ResourceName) {
+		return nil, refuse()
+	}
 	live, err := ri.Get(ctx, req.ResourceName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get %s/%s: %w", req.Kind, req.ResourceName, err)
 	}
 	if !isAppManagedResource(live, req.Name) {
-		metrics.ResourcePatchTotal.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("kind", req.Kind), attribute.String("result", "refused")))
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-			"%s/%s is not managed by application %s — refusing to patch unmanaged resources",
-			req.Kind, req.ResourceName, req.Name))
+		return nil, refuse()
 	}
 	return live, nil
+}
+
+// patchTargetNamespace returns the namespace a patch names: the resource's own
+// namespace, or the application's when the request leaves it empty.
+func patchTargetNamespace(req *paprikav1.ApplyResourcePatchRequest) string {
+	if req.ResourceNamespace != "" {
+		return req.ResourceNamespace
+	}
+	return req.Namespace
 }
 
 // resolvePatchTarget validates the request and resolves the live resource
@@ -528,16 +554,15 @@ func (s *PaprikaServer) resolvePatchTarget(req *paprikav1.ApplyResourcePatchRequ
 	if mapping.Scope.Name() == meta.RESTScopeNameRoot {
 		return s.dynamicClient.Resource(mapping.Resource), patchType, nil
 	}
-	ns := req.ResourceNamespace
-	if ns == "" {
-		ns = req.Namespace
-	}
-	return s.dynamicClient.Resource(mapping.Resource).Namespace(ns), patchType, nil
+	return s.dynamicClient.Resource(mapping.Resource).Namespace(patchTargetNamespace(req)), patchType, nil
 }
 
 // patchPreviewResponse builds the diff-bearing response from the live object
 // and a patch result (dry-run or applied).
 func patchPreviewResponse(live, result *unstructured.Unstructured) (*paprikav1.ApplyResourcePatchResponse, error) {
+	// Secret values are redacted before either side is marshalled, so the diff
+	// and the result manifest carry the same redacted text.
+	redactManifestPair(live.Object, result.Object)
 	liveYAML, err := yaml.Marshal(live.Object)
 	if err != nil {
 		return nil, fmt.Errorf("marshal live manifest: %w", err)
