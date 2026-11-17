@@ -470,7 +470,14 @@ not establish health or zero drift. The current detailed drift backend returns
 <code>NOT_CONFIGURED</code>; resource sync and <code>status.outOfSync</code> remain available.</p>
 <p>For more detail, use <code>get_application</code>, <code>get_resource_tree</code> with <code>detailed=true</code>,
 <code>investigate</code> on an exact selected resource, or <code>get_logs</code> with <code>tail_lines</code>.
-<code>get_logs</code> reads only pods in the application's resource tree.
+<code>get_logs</code> reads only pods in the application's resource tree. <code>investigate</code>
+returns or uses only objects in that tree. Secret values are redacted from the
+Secret's own manifest and diff text, including copies in its annotations and in
+a List that holds it. A value that another object copies, such as a Deployment
+environment value, is not redacted. A Secret key whose value changed shows
+<code>&lt;redacted: desired value differs&gt;</code> on the desired side of the diff and
+<code>&lt;redacted: live value differs&gt;</code> on the live side, so the change is visible
+without the value.
 The investigator's findings are advisory: its current API does not report each
 source collection failure. Empty findings or missing logs are not proof of an
 absence of errors. Pipeline run-history collection is currently unavailable;
