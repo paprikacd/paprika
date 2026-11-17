@@ -10,12 +10,15 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	k8syaml "sigs.k8s.io/yaml"
 
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/engine"
 )
 
 // renderThroughServer renders a manifest stream through the Render handler, as a
@@ -49,6 +52,18 @@ func requireChangedPair(t *testing.T, diff, key string) {
 		}
 	}
 	require.True(t, removed && added, "diff has no -/+ pair for %s:\n%s", key, diff)
+}
+
+// requireDocumentRefused fails unless err is the refusal for the document at index.
+// The message must not hold any of the values or their base64.
+func requireDocumentRefused(t *testing.T, err error, index int, values ...string) {
+	t.Helper()
+	require.Error(t, err)
+	require.EqualError(t, err, fmt.Sprintf("rendered document %d could not be checked for Secret values", index))
+	for _, v := range values {
+		require.NotContains(t, err.Error(), v)
+		require.NotContains(t, err.Error(), b64(v))
+	}
 }
 
 // Each shape below holds Secret values in a form the node walk does not follow on
@@ -425,6 +440,23 @@ func TestRedactSecretManifestsRedactsASequenceAndKeepsAScalar(t *testing.T) {
 	require.Equal(t, "just text\n", string(out))
 }
 
+// A top-level sequence that holds a sequence fails the render, and the error names only
+// the position of the document. A sequence of mappings and scalars is still redacted.
+func TestRedactSecretManifestsRefusesASequenceThatHoldsASequence(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	_, err := redactSecretManifests([]byte("- - kind: Secret\n    stringData: {password: " + v + "}\n"))
+	requireDocumentRefused(t, err, 1, v)
+
+	_, err = redactSecretManifests([]byte("kind: ConfigMap\nmetadata: {name: cfg}\n---\n- - kind: Secret\n    stringData: {password: " + v + "}\n"))
+	requireDocumentRefused(t, err, 2, v)
+
+	out, err := redactSecretManifests([]byte("- kind: Secret\n  metadata: {name: shop-creds}\n  stringData: {password: " + v + "}\n- plain scalar\n"))
+	require.NoError(t, err)
+	assertNoSecretValues(t, string(out))
+	require.Contains(t, string(out), "plain scalar")
+}
+
 // A Secret whose key the controller cannot read fails the render, and the error
 // does not quote the document.
 func TestRedactSecretManifestsFailsClosedOnAKeyTheControllerCannotRead(t *testing.T) {
@@ -437,9 +469,10 @@ func TestRedactSecretManifestsFailsClosedOnAKeyTheControllerCannotRead(t *testin
 		{"a merge key with a scalar", "kind: Secret\nmetadata:\n  name: shop-creds\nstringData:\n  <<: 1\n  password: " + treeScopeDesiredValue + "\n"},
 	} {
 		out, err := redactSecretManifests([]byte(tc.input))
-		require.Error(t, err, tc.name)
 		require.Nil(t, out, tc.name)
+		require.Error(t, err, tc.name)
 		require.NotContains(t, err.Error(), treeScopeDesiredValue, tc.name)
+		require.NotContains(t, err.Error(), b64(treeScopeDesiredValue), tc.name)
 	}
 }
 
@@ -489,4 +522,1128 @@ func TestRedactSecretManifestsKeepsAnUndecodableDocumentThatIsNotASecret(t *test
 	out, err := redactSecretManifests([]byte("kind: ConfigMap\nmetadata:\n  name: cfg\ndata:\n  ? [a]\n  : one\n"))
 	require.NoError(t, err)
 	require.Contains(t, string(out), "name: cfg")
+}
+
+// A scalar outside data and stringData is scanned for a value only up to the scan
+// cap. A longer scalar is replaced without a scan, and a shorter one is matched as
+// before.
+func TestRenderReplacesAStrayScalarOverTheScanCap(t *testing.T) {
+	t.Parallel()
+	over := strings.Repeat("x", secretScanCap+1)
+	under := strings.Repeat("y", secretScanCap)
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n" +
+		"    over: " + over + "\n" +
+		"    under: " + under + "\n" +
+		"    copied: note " + treeScopeDesiredValue + "\n" +
+		"stringData:\n  password: " + treeScopeDesiredValue + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	// The long texts are checked with strings.Contains, so a failure does not print them.
+	require.False(t, strings.Contains(out, over), "a scalar over the scan cap was kept")
+	require.True(t, strings.Contains(out, "under: "+under), "a scalar under the scan cap was replaced")
+	require.Contains(t, out, "over: <redacted>")
+	require.Contains(t, out, "copied: <redacted>")
+	assertNoSecretValues(t, out)
+}
+
+// A value shorter than secretFormMinLen is not searched for outside data and
+// stringData, so ordinary labels and annotations that contain its characters keep
+// their text. Each data and stringData value is still replaced.
+func TestRenderKeepsOrdinaryTextThatHoldsAShortSecretValue(t *testing.T) {
+	t.Parallel()
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n" +
+		"  name: shop-creds\n" +
+		"  labels:\n    app.kubernetes.io/version: 1.4.0\n    tier: backend\n" +
+		"  annotations:\n    description: Edge credentials, rotated 1 day ago\n" +
+		"data:\n  digit: MQ==\n  letter: ZQ==\n" +
+		"stringData:\n  pin: \"1\"\n  initial: e\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.Contains(t, out, "app.kubernetes.io/version: 1.4.0")
+	require.Contains(t, out, "tier: backend")
+	require.Contains(t, out, "description: Edge credentials, rotated 1 day ago")
+	require.Contains(t, out, "digit: <redacted>")
+	require.Contains(t, out, "letter: <redacted>")
+	require.Contains(t, out, "pin: <redacted>")
+	require.Contains(t, out, "initial: <redacted>")
+}
+
+// A value of secretFormMinLen bytes or more still finds its copies outside data and
+// stringData.
+func TestRenderReplacesAnAnnotationThatHoldsAMinimumLengthValue(t *testing.T) {
+	t.Parallel()
+	const value = "abcdef"
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n    copied: " + value + "\n" +
+		"stringData:\n  password: " + value + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.NotContains(t, out, value)
+	require.Contains(t, out, "copied: <redacted>")
+}
+
+// Two inputs that yaml.v3 cannot read are refused. The controller may apply such
+// text, but Render refuses text it cannot check.
+func TestRedactSecretManifestsRefusesADocumentThatYAMLCannotRead(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		input string
+		index int
+	}{
+		{"a flow mapping followed by a stray quoted scalar",
+			"{kind: ConfigMap, metname: cfg},\"0000000000000000", 1},
+		{"a second document after a separator with a space is malformed",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nkind: ConfigMap\ndata: {a: \"unterminated\n", 2},
+	} {
+		chunk := engine.SplitYAMLDocuments([]byte(tc.input))
+		require.Len(t, chunk, 1, tc.name)
+		view, err := decodeManifest(chunk[0])
+		require.NoError(t, err, tc.name)
+		require.Equal(t, "ConfigMap", kindOf(view), tc.name)
+
+		out, err := redactSecretManifests([]byte(tc.input))
+		require.Nil(t, out, tc.name)
+		requireDocumentRefused(t, err, tc.index)
+	}
+}
+
+// A malformed document fails the render, even when a readable Secret follows it in
+// the stream. The Secret is not returned, and the error names the malformed document.
+func TestRedactSecretManifestsRefusesAMalformedDocumentBeforeAReadableSecret(t *testing.T) {
+	t.Parallel()
+	input := "kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nkind: [\n--- \nkind: Secret\nmetadata:\n  name: shop-creds\nstringData:\n  password: " + treeScopeDesiredValue + "\n"
+	out, err := redactSecretManifests([]byte(input))
+	require.Nil(t, out)
+	requireDocumentRefused(t, err, 2, treeScopeDesiredValue)
+}
+
+// A malformed Secret, or a malformed List, fails the render, whether it is the first
+// document of the stream or a later one. The error names the document's position,
+// and not its kind or its values.
+func TestRedactSecretManifestsFailsOnAnUnreadableSecretOrList(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		input string
+		index int
+	}{
+		{"an unreadable Secret in the first position",
+			"kind: Secret\nmetadata:\n  name: shop-creds\nstringData: {password: " + treeScopeDesiredValue + "\n", 1},
+		{"an unreadable Secret after a separator with a space",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nkind: Secret\nmetadata:\n  name: shop-creds\nstringData: {password: " + treeScopeDesiredValue + "\n", 2},
+		{"an unreadable List after a separator",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n---\nkind: SecretList\nitems: [" + treeScopeDesiredValue + "\n", 2},
+		{"an anchored Secret in the first position that the controller reads as a Secret",
+			"{kind: &k Secret, metadata: {name: s}, stringData: {password: " + treeScopeDesiredValue + "}},\"0000000000000000", 1},
+		{"an anchored Secret after a separator with a space",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nkind: &k Secret\nstringData: {password: " + treeScopeDesiredValue + "\n", 2},
+		{"a binary-tagged Secret kind in the first position",
+			"kind: !!binary U2VjcmV0\nmetadata:\n  name: shop-creds\nstringData: {password: " + treeScopeDesiredValue + "\n", 1},
+		{"an escaped kind after a separator with a space",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nkind: \"Secr\\x65t\"\nstringData: {password: " + treeScopeDesiredValue + "\n", 2},
+		{"a folded block kind after a separator with a space",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nkind: >-\n  Secret\nstringData: {password: " + treeScopeDesiredValue + "\n", 2},
+		{"a Secret kind after a comment line, after a separator with a space",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \n# note\nkind: Secret\nstringData: {password: " + treeScopeDesiredValue + "\n", 2},
+	} {
+		out, err := redactSecretManifests([]byte(tc.input))
+		require.Nil(t, out, tc.name)
+		requireDocumentRefused(t, err, tc.index, treeScopeDesiredValue)
+	}
+}
+
+// A document-end marker, "...", inside a Secret fails the render. The controller reads
+// the Secret from the text before the marker, and the text after it as a document of
+// its own. Render refuses the Secret, so neither the values nor their text is returned.
+func TestRedactSecretManifestsRefusesASecretWithADocumentEndMarker(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		input string
+		index int
+	}{
+		{"a document-end marker before stringData",
+			"kind: Secret\nmetadata:\n  name: shop-creds\n...\nstringData:\n  password: " + treeScopeDesiredValue + "\n", 2},
+		{"a document-end marker followed by text before stringData",
+			"kind: Secret\nmetadata:\n  name: shop-creds\n... x\nstringData:\n  password: " + treeScopeDesiredValue + "\n", 1},
+	} {
+		out, err := redactSecretManifests([]byte(tc.input))
+		require.Nil(t, out, tc.name)
+		requireDocumentRefused(t, err, tc.index, treeScopeDesiredValue)
+	}
+}
+
+// An items list that cannot be checked fails the render, whether its items are read as
+// Secrets or the Secret is anchored or merged. The error names the document's position
+// and not its values, and no value or its base64 reaches the output.
+func TestRedactSecretManifestsRefusesAnItemsListThatCannotBeChecked(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	head := "kind: ConfigMap\nmetadata:\n  name: cfg\n--- \n"
+	for _, tc := range []struct {
+		name  string
+		input string
+		index int
+	}{
+		{"an items list with an anchored Secret and a merge key",
+			"{items: [{kind: Secret, metadata: {name: s}, stringData: &s {kind: " + v + "}}], <<: *s},\"0000000000000000", 1},
+		{"the same items list after a separator with a space",
+			head + "{items: [{kind: Secret, metadata: {name: s}, stringData: &s {kind: " + v + "}}], <<: *s},\"0000000000000000", 2},
+		{"a block Secret with an anchored stringData and a merge key, then a malformed value",
+			"items:\n- kind: Secret\n  metadata: {name: s}\n  stringData: &s\n    kind: " + v + "\n    <<: *s\n    bad: [\n", 1},
+		{"a Bundle with an undecodable item that holds a Secret value",
+			"kind: Bundle\nitems:\n- stringData:\n    password: " + v + "\n  ? [a]\n  : b\n", 1},
+		{"an items list with a complex key under a Secret item",
+			"items:\n- stringData:\n    password: " + v + "\n  ? [a]\n  : b\n", 1},
+	} {
+		out, err := redactSecretManifests([]byte(tc.input))
+		require.Nil(t, out, tc.name)
+		requireDocumentRefused(t, err, tc.index, v)
+	}
+}
+
+// A render that cannot check a document returns CodeInvalidArgument, and its message
+// names the document and not its values.
+func TestRenderReturnsInvalidArgumentForAnUnreadableSecret(t *testing.T) {
+	t.Parallel()
+	_, err := renderThroughServer(t, "kind: Secret\nmetadata:\n  name: shop-creds\nstringData: {password: "+treeScopeDesiredValue+"\n")
+	require.Error(t, err)
+	var connectErr *connect.Error
+	require.ErrorAs(t, err, &connectErr)
+	require.Equal(t, connect.CodeInvalidArgument, connectErr.Code())
+	require.Equal(t, "rendered document 1 could not be checked for Secret values", connectErr.Message())
+	require.NotContains(t, connectErr.Message(), treeScopeDesiredValue)
+}
+
+// The last-applied and kapp original annotations of a Secret are replaced whole, even
+// when they hold a value that stringData no longer has, a rotated value. The stray
+// check cannot find such a value, so only the whole replacement removes it. Both
+// the rendered node and the decoded object are checked.
+func TestRedactionReplacesAppliedCopiesThatHoldARotatedValue(t *testing.T) {
+	t.Parallel()
+	const rotated = treeScopeRotatedValue
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n" +
+		"    kubectl.kubernetes.io/last-applied-configuration: '{\"kind\":\"Secret\",\"stringData\":{\"password\":\"" + rotated + "\"}}'\n" +
+		"    kapp.k14s.io/original: 'password: " + rotated + "'\n" +
+		"    owner: platform\n" +
+		"stringData:\n  password: " + treeScopeDesiredValue + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.False(t, strings.Contains(out, rotated), "the rotated value was kept")
+	require.Contains(t, out, "kubectl.kubernetes.io/last-applied-configuration: <redacted>")
+	require.Contains(t, out, "kapp.k14s.io/original: <redacted>")
+	require.Contains(t, out, "owner: platform")
+	assertNoSecretValues(t, out)
+
+	secret := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]any{
+			"name": "shop-creds",
+			"annotations": map[string]any{
+				lastAppliedConfigAnnotation: `{"stringData":{"password":"` + rotated + `"}}`,
+				kappOriginalAnnotation:      "password: " + rotated,
+				"owner":                     "platform",
+			},
+		},
+		"stringData": map[string]any{"password": treeScopeDesiredValue},
+	}
+	redactSecretValues(secret)
+	meta, ok := secret["metadata"].(map[string]any)
+	require.True(t, ok)
+	annotations, ok := meta["annotations"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, redactedSecretValue, annotations[lastAppliedConfigAnnotation])
+	require.Equal(t, redactedSecretValue, annotations[kappOriginalAnnotation])
+	require.Equal(t, "platform", annotations["owner"])
+}
+
+// A Secret that uses an alias is redacted as a decoded object, so the output still
+// reads back as YAML. Redacting its node in place would leave the alias without its
+// anchor.
+func TestRenderRedactsASecretWithAnAliasSoItReadsBack(t *testing.T) {
+	t.Parallel()
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n" +
+		"    note: &v " + treeScopeDesiredValue + "\n    copy: *v\n" +
+		"stringData:\n  password: " + treeScopeDesiredValue + "\n  other: *v\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	assertNoSecretValues(t, out)
+	var obj map[string]any
+	require.NoError(t, k8syaml.Unmarshal([]byte(out), &obj), "the rendered Secret does not read back")
+	require.Equal(t, "Secret", obj["kind"])
+}
+
+// A document that yaml.v3 reads, followed by one it cannot read, fails the render.
+// Each separator is a line break that yaml.v3 reads as one before the separator.
+func TestRedactSecretManifestsFailsOnAnUnreadableDocumentAfterAReadableOne(t *testing.T) {
+	t.Parallel()
+	for _, sep := range []string{"\u2028", "\u2029", "\u0085", "\r"} {
+		input := "kind: &k Secret\nmetadata:\n  name: s\nstringData:\n  password: " + treeScopeDesiredValue + sep + "---" + sep + "bad: ["
+		out, err := redactSecretManifests([]byte(input))
+		require.Error(t, err, "separator %U", []rune(sep)[0])
+		require.Nil(t, out)
+		require.NotContains(t, err.Error(), treeScopeDesiredValue)
+		require.Equal(t, "rendered document 2 could not be checked for Secret values", err.Error())
+	}
+}
+
+// An unreadable first document that the controller reads as a Secret, or cannot
+// decode at all, fails the render when its text is not readable. Its value is not
+// returned.
+func TestRedactSecretManifestsFailsOnAFirstDocumentTheControllerCannotRead(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{
+		"kind: &k Secret\nmetadata:\n  name: s\nstringData:\n  password: " + treeScopeDesiredValue + "\nbad: [\n",
+		"kind: ConfigMap\nmetadata:\n  name: [cfg\n",
+	} {
+		out, err := redactSecretManifests([]byte(input))
+		require.Nil(t, out)
+		requireDocumentRefused(t, err, 1, treeScopeDesiredValue)
+	}
+}
+
+// The error names only the document's position. A value placed under a stringData key
+// named kind is not named.
+func TestRenderErrorDoesNotQuoteAValueUnderAKindKey(t *testing.T) {
+	t.Parallel()
+	const value = "Hunter2TokenValue99"
+	rendered := "stringData:\n  kind: " + value + "\nkind: Secret\nmetadata: {name: [\n"
+	_, err := renderThroughServer(t, rendered)
+	require.Error(t, err)
+	var connectErr *connect.Error
+	require.ErrorAs(t, err, &connectErr)
+	require.Equal(t, connect.CodeInvalidArgument, connectErr.Code())
+	require.Equal(t, "rendered document 1 could not be checked for Secret values", connectErr.Message())
+	require.NotContains(t, connectErr.Message(), value)
+	require.NotContains(t, connectErr.Message(), base64.RawStdEncoding.EncodeToString([]byte(value)))
+	require.NotContains(t, connectErr.Message(), base64.StdEncoding.EncodeToString([]byte(value)))
+}
+
+// documentCheckError names the document's position, and nothing from the document.
+func TestDocumentCheckErrorNamesOnlyThePosition(t *testing.T) {
+	t.Parallel()
+	require.EqualError(t, documentCheckError(3), "rendered document 3 could not be checked for Secret values")
+}
+
+// A node the encoder cannot write is refused, and the refusal names nothing from it. Both
+// the document's own encoding and a later document's re-encoding refuse it, so neither
+// is written and neither can fall back to the text as written.
+func TestRedactionRefusesANodeTheEncoderCannotWrite(t *testing.T) {
+	t.Parallel()
+	node := &yaml.Node{Kind: 99, Value: treeScopeDesiredValue}
+	text, keep, err := encodeDocument(node)
+	require.Empty(t, text)
+	require.False(t, keep)
+	require.EqualError(t, err, "rendered document could not be re-encoded")
+
+	view, err := nodeView(node)
+	require.Nil(t, view)
+	require.EqualError(t, err, "rendered document could not be re-encoded")
+}
+
+// A value of more than secretFormMaxLen bytes is still found in a copy of it, whole.
+func TestRenderReplacesACopyOfALongValue(t *testing.T) {
+	t.Parallel()
+	value := strings.Repeat("long-value-", 12)
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n    copied: " + value + "\n" +
+		"stringData:\n  password: " + value + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.False(t, strings.Contains(out, value), "a copy of the long value was kept")
+	require.Contains(t, out, "copied: <redacted>")
+}
+
+// A text that shares only the first secretFormMaxLen bytes of a value is replaced,
+// since a copy of the value is matched by its prefix. The value is longer than the
+// prefix, so only the prefix is searched for.
+func TestRenderReplacesATextThatSharesOnlyTheFormPrefix(t *testing.T) {
+	t.Parallel()
+	value := strings.Repeat("long-value-", 12)
+	shared := value[:secretFormMaxLen+4]
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n    note: 'starts " + shared + " and goes on'\n" +
+		"stringData:\n  password: " + value + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.NotContains(t, out, shared)
+	require.Contains(t, out, "note: <redacted>")
+}
+
+// A top-level sequence whose node cannot be checked in place is refused. Here the
+// Secret's stringData is anchored, so the sequence fails the render.
+func TestRedactSecretManifestsRefusesASequenceWhoseNodeCannotBeChecked(t *testing.T) {
+	t.Parallel()
+	out, err := redactSecretManifests([]byte("- kind: Secret\n  metadata:\n    name: shop-creds\n  stringData: &s\n    password: " + treeScopeDesiredValue + "\n"))
+	require.Nil(t, out)
+	requireDocumentRefused(t, err, 1, treeScopeDesiredValue)
+}
+
+// A search set holds at most secretSetMaxForms distinct forms. A repeated form counts
+// once. A set with one more distinct form matches every text, and builds no search, and
+// the forms past the cap are not stored.
+func TestFormCollectorMatchesEveryTextOnlyPastTheFormCap(t *testing.T) {
+	t.Parallel()
+	forms := make([]string, 0, secretSetMaxForms)
+	for i := range secretSetMaxForms {
+		forms = append(forms, fmt.Sprintf("form-%05d", i))
+	}
+	var within formCollector
+	for _, f := range forms {
+		within.add(f)
+	}
+	set := within.set()
+	require.False(t, set.all)
+	require.NotNil(t, set.repl)
+	require.False(t, set.has("ordinary text"))
+	require.True(t, set.has("contains form-00007 here"))
+
+	var repeated formCollector
+	for _, f := range append(forms, forms...) {
+		repeated.add(f)
+	}
+	require.False(t, repeated.set().all, "repeated forms counted twice")
+
+	var over formCollector
+	for _, f := range append(forms, "form-extra") {
+		over.add(f)
+	}
+	require.True(t, over.over)
+	require.Nil(t, over.forms, "forms past the cap were stored")
+	require.Nil(t, over.seen, "forms past the cap were stored")
+	overSet := over.set()
+	require.True(t, overSet.all)
+	require.Nil(t, overSet.repl)
+	require.True(t, overSet.has("ordinary text"))
+	require.True(t, overSet.has(""))
+}
+
+// A Secret whose forms pass the cap is not searched: every other scalar outside data
+// and stringData is replaced, and so is every comment that is kept. The identity
+// fields are kept.
+func TestRenderReplacesEveryScalarOfASecretPastTheFormCap(t *testing.T) {
+	t.Parallel()
+	var stringData strings.Builder
+	for i := range 1500 {
+		fmt.Fprintf(&stringData, "  key%04d: value-%04d-secret\n", i, i)
+	}
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  labels:\n    tier: backend\n" +
+		"  annotations:\n    note: ordinary text\n# a comment about the Secret\n" +
+		"stringData:\n" + stringData.String()
+	view, err := decodeManifest([]byte(rendered))
+	require.NoError(t, err)
+	require.True(t, secretSetOf(view).all, "the fixture must pass the form cap")
+
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.Contains(t, out, "name: shop-creds")
+	require.Contains(t, out, "apiVersion: v1")
+	require.Contains(t, out, "tier: <redacted>")
+	require.Contains(t, out, "note: <redacted>")
+	require.Contains(t, out, "key0007: <redacted>")
+	require.NotContains(t, out, "backend")
+	require.NotContains(t, out, "ordinary")
+	require.NotContains(t, out, "a comment about")
+	require.NotContains(t, out, "value-0007-secret")
+}
+
+// A decoded object past the form cap has each stray value replaced, whatever its type:
+// a string, a number and a null.
+func TestRedactionReplacesEveryDecodedScalarPastTheFormCap(t *testing.T) {
+	t.Parallel()
+	stringData := make(map[string]any)
+	for i := range 1500 {
+		stringData[fmt.Sprintf("key%04d", i)] = fmt.Sprintf("value-%04d-secret", i)
+	}
+	secret := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]any{
+			"name": "creds",
+			"annotations": map[string]any{
+				"note":  "ordinary",
+				"count": 7.0,
+				"unset": nil,
+			},
+		},
+		"stringData": stringData,
+	}
+	redactSecretValues(secret)
+	meta, ok := secret["metadata"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "creds", meta["name"])
+	annotations, ok := meta["annotations"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, redactedSecretValue, annotations["note"])
+	require.Equal(t, redactedSecretValue, annotations["count"])
+	require.Equal(t, redactedSecretValue, annotations["unset"])
+	require.Equal(t, redactedSecretValue, stringData["key0007"])
+}
+
+// The scan cap applies only when the Secret holds a form to search for. A Secret whose
+// values are all shorter than secretFormMinLen has no form, so its long stray scalar is
+// kept, while its short value is still replaced.
+func TestRenderKeepsALongStrayScalarOfASecretWithNoForm(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("z", secretScanCap+1)
+	rendered := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shop-creds\n  annotations:\n    long: " + long +
+		"\nstringData:\n  short: abc\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.True(t, strings.Contains(out, "long: "+long), "a long scalar of a Secret with no form was replaced")
+	require.Contains(t, out, "short: <redacted>")
+
+	// The decoded path, which GetResource uses, has the same rule.
+	secret := map[string]any{
+		"kind":       "Secret",
+		"metadata":   map[string]any{"name": "shop-creds", "annotations": map[string]any{"long": long}},
+		"stringData": map[string]any{"short": "abc"},
+	}
+	redactSecretValues(secret)
+	meta, ok := secret["metadata"].(map[string]any)
+	require.True(t, ok)
+	annotations, ok := meta["annotations"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, long, annotations["long"], "a long scalar of a Secret with no form was replaced")
+	data, ok := secret["stringData"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, redactedSecretValue, data["short"])
+}
+
+// A document the controller cannot decode is refused when it is a Secret, a List, a
+// kind-less Secret, or not plain: it has an alias, an anchor, a merge key, an explicit
+// tag or a duplicate key. Each shape below holds a Secret value under a complex key, so
+// the controller skips the document, and Render would otherwise return the value as
+// written. The second kind key and the items alias are refused only because they are
+// not plain. The binary-tagged kind is also refused as a kind-less Secret, since its
+// text declares no string kind (its tag is !!binary). The others are refused by the
+// Secret or kind-less rules as well.
+func TestRedactSecretManifestsRefusesANonPlainDocumentTheControllerCannotDecode(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	complexKey := "? [a]\n: b\n"
+	head := "metadata:\n  name: shop-creds\n"
+	for _, tc := range []struct {
+		name  string
+		input string
+		index int
+	}{
+		{"an alias kind whose anchor is a label value",
+			"metadata:\n  name: shop-creds\n  labels:\n    tier: &k Secret\nkind: *k\nstringData:\n  password: " + v + "\n" + complexKey, 1},
+		{"a binary-tagged kind",
+			"kind: !!binary U2VjcmV0\n" + head + "stringData:\n  password: " + v + "\n" + complexKey, 1},
+		{"a merge key that sets the kind",
+			head + "<<: {kind: Secret}\nstringData:\n  password: " + v + "\n" + complexKey, 1},
+		{"a second kind key after ConfigMap",
+			"kind: ConfigMap\nkind: Secret\n" + head + "stringData:\n  password: " + v + "\n" + complexKey, 1},
+		{"an anchored kind in a later document after a separator with a space",
+			"kind: ConfigMap\nmetadata:\n  name: cfg\n--- \nmetadata:\n  name: shop-creds\n  labels:\n    tier: &k Secret\nkind: *k\nstringData:\n  password: " + v + "\n" + complexKey, 2},
+		{"an items alias whose anchor holds a Secret item",
+			"base: &i\n  - kind: Secret\n    metadata: {name: s}\n    stringData: {password: " + v + "}\nitems: *i\n" + complexKey, 1},
+	} {
+		out, err := redactSecretManifests([]byte(tc.input))
+		require.Nil(t, out, tc.name)
+		requireDocumentRefused(t, err, tc.index, v)
+	}
+}
+
+// A document the controller cannot decode, with no alias, anchor, merge key, tag or
+// duplicate key, is kept as written. A duplicate key in a document the controller reads
+// is not refused either.
+func TestRedactSecretManifestsKeepsAPlainDocumentThatIsNotRefused(t *testing.T) {
+	t.Parallel()
+	out, err := redactSecretManifests([]byte("kind: ConfigMap\nmetadata:\n  name: cfg\n? [a]\n: one\n"))
+	require.NoError(t, err)
+	require.Contains(t, string(out), "name: cfg")
+	require.Contains(t, string(out), "one")
+
+	out, err = redactSecretManifests([]byte("kind: ConfigMap\nmetadata:\n  name: cfg\n  labels:\n    tier: a\n    tier: b\n"))
+	require.NoError(t, err)
+	require.Contains(t, string(out), "name: cfg")
+}
+
+// A document with no kind that has data or stringData is redacted as a Secret. A
+// misplaced end around a Secret header, or a separator between the header and its
+// stringData, leaves such a document, and the controller skips it.
+func TestRenderRedactsAKindlessDocumentWithSecretData(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, tc := range []struct {
+		name     string
+		rendered string
+	}{
+		{"a misplaced end around a Secret header",
+			"metadata: {name: s}\nstringData: {password: " + v + "}\n"},
+		{"the same with base64 data",
+			"metadata: {name: s}\ndata: {password: " + b64(v) + "}\n"},
+		{"a separator between a Secret header and its stringData",
+			"kind: Secret\nmetadata:\n  name: s\n---\nstringData:\n  password: " + v + "\n"},
+		{"a CR separator inside one chunk",
+			"kind: Secret\nmetadata:\n  name: s\n\r---\r" + "stringData:\n  password: " + v + "\n"},
+		{"a U+2028 separator inside one chunk",
+			"kind: Secret\nmetadata:\n  name: s\n --- " + "stringData:\n  password: " + v + "\n"},
+		{"a separator with a space inside one chunk",
+			"kind: Secret\nmetadata:\n  name: s\n--- \nstringData:\n  password: " + v + "\n"},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, v, tc.name)
+		require.NotContains(t, out, b64(v), tc.name)
+		require.Contains(t, out, "password: <redacted>", tc.name)
+	}
+}
+
+// A copy of a kind-less document's value elsewhere in it is replaced, and an items
+// list of such a document keeps its item redaction, with its own stringData redacted too.
+func TestRenderRedactsAKindlessDocumentsCopiesAndItems(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	rendered := "metadata:\n  name: s\n  annotations:\n    note: " + v + "\nstringData:\n  password: " + v + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	assertNoSecretValues(t, out)
+	require.Contains(t, out, "note: <redacted>")
+
+	items := "metadata:\n  name: list\nitems:\n- kind: Secret\n  metadata: {name: a}\n  stringData: {password: " + v + "}\n" +
+		"stringData: {token: " + treeScopeRotatedValue + "}\n"
+	out, err = renderThroughServer(t, items)
+	require.NoError(t, err)
+	assertNoSecretValues(t, out)
+	require.Contains(t, out, "password: <redacted>")
+	require.Contains(t, out, "token: <redacted>")
+}
+
+// A kind-less document with data or stringData that the controller cannot decode is
+// refused, as an undecodable Secret is.
+func TestRedactSecretManifestsRefusesAnUndecodableKindlessDocument(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, input := range []string{
+		"metadata:\n  name: s\nstringData:\n  password: " + v + "\n? [a]\n: b\n",
+		"metadata:\n  name: s\ndata:\n  password: " + b64(v) + "\n? [a]\n: b\n",
+	} {
+		out, err := redactSecretManifests([]byte(input))
+		require.Nil(t, out)
+		requireDocumentRefused(t, err, 1, v)
+	}
+}
+
+// A top-level mapping with no kind and neither data nor stringData is kept as written.
+func TestRenderKeepsAKindlessDocumentWithNeitherDataNorStringData(t *testing.T) {
+	t.Parallel()
+	out, err := renderThroughServer(t, "metadata:\n  name: x\nfoo: bar\n")
+	require.NoError(t, err)
+	require.Contains(t, out, "name: x")
+	require.Contains(t, out, "foo: bar")
+}
+
+// Each data and stringData value of a kind-less Secret becomes the marker, whatever its
+// length, as a Secret's values do. A value shorter than the search minimum is not found
+// by a search, so only the Secret redaction replaces it. Both the node and the decoded
+// path are checked: the decoded path is taken when the document is not plain.
+func TestRenderMarksEveryValueOfAKindlessSecret(t *testing.T) {
+	t.Parallel()
+	out, err := renderThroughServer(t, "metadata: {name: s}\nstringData:\n  pin: \"1\"\n  empty: \"\"\n")
+	require.NoError(t, err)
+	require.Contains(t, out, "pin: <redacted>")
+	require.Contains(t, out, "empty: <redacted>")
+
+	out, err = renderThroughServer(t, "metadata: {name: s}\nstringData:\n  pin: \"1\"\nnote: &n plain text\ncopy: *n\n")
+	require.NoError(t, err)
+	require.Contains(t, out, "pin: <redacted>")
+	require.NotContains(t, out, "pin: \"1\"")
+}
+
+// A List item, or a top-level sequence item, whose kind is not a string is read as an
+// item with no kind. Its values and a copy of them are redacted, even when the value is
+// shorter than the search minimum, since the item is treated as a Secret.
+func TestRenderRedactsASecretItemWhoseKindIsNotAString(t *testing.T) {
+	t.Parallel()
+	const pin = "12345"
+	copied := `{"stringData":{"pin":"` + pin + `"}}`
+	for _, kind := range []string{"~", "5", "yes", "\"\""} {
+		list := "kind: List\nitems:\n- kind: " + kind + "\n  metadata:\n    name: a\n" +
+			"    annotations:\n      kubectl.kubernetes.io/last-applied-configuration: '" + copied + "'\n" +
+			"  stringData:\n    pin: \"" + pin + "\"\n"
+		out, err := renderThroughServer(t, list)
+		require.NoError(t, err, "kind %s", kind)
+		require.NotContains(t, out, pin, "kind %s", kind)
+		require.Contains(t, out, "pin: <redacted>", "kind %s", kind)
+	}
+
+	out, err := redactSecretManifests([]byte("- kind: ~\n  metadata:\n    name: a\n  stringData:\n    pin: \"" + pin + "\"\n"))
+	require.NoError(t, err)
+	require.NotContains(t, string(out), pin)
+	require.Contains(t, string(out), "pin: <redacted>")
+}
+
+// A kind-less Secret's values are found when they sit under a merge key, which the
+// document's own data and stringData do not show. The merged values are in the search
+// set, so a copy of one elsewhere in the document is replaced, and the document is
+// redacted as a Secret.
+func TestRenderRedactsAKindlessSecretWhoseValuesComeFromAMergeKey(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, tc := range []struct {
+		name     string
+		rendered string
+	}{
+		{"a merged stringData with a copy in a stray field",
+			"metadata: {name: s}\n<<: {stringData: {password: " + v + "}}\nnote: " + v + "\n"},
+		{"a merged data with a base64 copy in a stray field",
+			"metadata: {name: s}\n<<: {data: {password: " + b64(v) + "}}\nnote: " + b64(v) + "\n"},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, v, tc.name)
+		require.NotContains(t, out, b64(v), tc.name)
+		require.Contains(t, out, "note: <redacted>", tc.name)
+	}
+}
+
+// A kind-less Secret's stringData value that is a number, and that is written with
+// underscores, is also found as a copy in a stray field, from its written text.
+func TestRenderRedactsAKindlessSecretNumericValueCopiedElsewhere(t *testing.T) {
+	t.Parallel()
+	const pin = "1_234_567_890_123"
+	out, err := renderThroughServer(t, "metadata:\n  name: s\n  annotations:\n    note: \""+pin+" here\"\nstringData:\n  pin: "+pin+"\n")
+	require.NoError(t, err)
+	require.NotContains(t, out, pin)
+	require.Contains(t, out, "note: <redacted>")
+}
+
+// A document whose kind is a YAML 1.1 scalar that is not a string, such as ~, null, yes
+// or 5, has no kind to the controller. Its data and stringData are redacted as a
+// kind-less Secret, whether the values are base64 or plain.
+func TestRenderRedactsAKindlessSecretWhoseKindIsNotAString(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, kind := range []string{"~", "null", "yes", "5"} {
+		for _, tc := range []struct {
+			name  string
+			field string
+		}{
+			{"base64 data", "data: {password: " + b64(v) + "}\n"},
+			{"stringData", "stringData: {password: " + v + "}\n"},
+		} {
+			rendered := "kind: " + kind + "\nmetadata: {name: s}\n" + tc.field
+			out, err := renderThroughServer(t, rendered)
+			require.NoError(t, err, "kind %s with %s", kind, tc.name)
+			require.NotContains(t, out, v, "kind %s with %s", kind, tc.name)
+			require.NotContains(t, out, b64(v), "kind %s with %s", kind, tc.name)
+			require.Contains(t, out, "password: <redacted>", "kind %s with %s", kind, tc.name)
+		}
+	}
+}
+
+// A document whose kind is read as no string, after a kind that is a string, is judged
+// by the controller's reading. A duplicate kind key takes the last value, so a later
+// null, empty or bool kind leaves the document with no kind. The first kind is Secret
+// or ConfigMap: a ConfigMap first kind would make a node-declared kind check pass, and
+// the controller still reads no kind.
+func TestRenderRedactsASecretWhoseLastKindIsNotAString(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, first := range []string{"Secret", "ConfigMap"} {
+		for _, kind := range []string{"~", "\"\"", "yes"} {
+			rendered := "kind: " + first + "\nkind: " + kind + "\nmetadata: {name: s}\nstringData: {password: " + v + "}\n"
+			out, err := renderThroughServer(t, rendered)
+			require.NoError(t, err, "first kind %s, last kind %s", first, kind)
+			require.NotContains(t, out, v, "first kind %s, last kind %s", first, kind)
+			require.Contains(t, out, "password: <redacted>", "first kind %s, last kind %s", first, kind)
+		}
+	}
+}
+
+// A later document in a chunk, after a separator with a space, is judged on its own
+// reading. Its kind ~ is no string, so its stringData is redacted as a kind-less Secret.
+func TestRenderRedactsALaterKindlessDocumentWithSecretData(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	rendered := "kind: ConfigMap\nmetadata: {name: cfg}\n--- \nkind: ~\nmetadata: {name: s}\nstringData: {password: " + v + "}\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.NotContains(t, out, v)
+	require.Contains(t, out, "name: cfg")
+	require.Contains(t, out, "password: <redacted>")
+}
+
+// An undecodable document whose kind is ~ has no kind, so it is a kind-less Secret, and
+// Render refuses it. A complex key makes the controller skip the document.
+func TestRedactSecretManifestsRefusesAnUndecodableDocumentWhoseKindIsNotAString(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, kind := range []string{"~", "null", "yes"} {
+		input := "kind: " + kind + "\nmetadata: {name: s}\nstringData: {password: " + v + "}\n? [a]\n: b\n"
+		out, err := redactSecretManifests([]byte(input))
+		require.Nil(t, out, "kind %s", kind)
+		requireDocumentRefused(t, err, 1, v)
+	}
+}
+
+// A document whose kind is a string the controller reads is not a kind-less Secret. A
+// merge key supplies the kind, so the controller reads ConfigMap, and its value is kept.
+func TestRenderKeepsAConfigMapWhoseKindComesFromAMergeKey(t *testing.T) {
+	t.Parallel()
+	out, err := renderThroughServer(t, "<<: {kind: ConfigMap}\nmetadata: {name: cfg}\ndata: {k: plain-config-value}\n")
+	require.NoError(t, err)
+	require.Contains(t, out, "plain-config-value")
+	require.NotContains(t, out, "<redacted>")
+}
+
+// A quoted kind that is a string is read as a kind, not as a YAML 1.1 bool. A List item
+// of kind "yes" is an item of its own kind, so its copied-Secret annotation is kept. The
+// item holds no data key, since an item with data or stringData is a Secret item.
+func TestRenderKeepsAListItemWhoseQuotedKindIsYes(t *testing.T) {
+	t.Parallel()
+	const value = "12345"
+	out, err := renderThroughServer(t, "kind: List\nitems:\n- kind: \"yes\"\n  metadata:\n    name: a\n    annotations: {kubectl.kubernetes.io/last-applied-configuration: '"+value+"'}\n")
+	require.NoError(t, err)
+	require.Contains(t, out, value)
+	require.NotContains(t, out, "<redacted>")
+}
+
+// A Secret whose last kind key is another string has its values read from the
+// document's second stringData key, which the node walk does not reach. A copy of one
+// of those values in a stray field is replaced.
+func TestRenderRedactsASecretWhoseLastKindIsAnotherStringAndCopiesSecondStringData(t *testing.T) {
+	t.Parallel()
+	v := treeScopeRotatedValue
+	rendered := "kind: Secret\nkind: ConfigMap\nmetadata: {name: s}\nstringData: {password: " + treeScopeDesiredValue +
+		"}\nstringData: {token: " + v + "}\nnote: " + v + "\n"
+	out, err := renderThroughServer(t, rendered)
+	require.NoError(t, err)
+	require.NotContains(t, out, v)
+	require.Contains(t, out, "note: <redacted>")
+}
+
+// A document with a duplicate items key, whose first value is a list of items with a
+// Secret item, is redacted as a List even when its last items value is not a list. The
+// document is re-encoded from the controller's object, which holds only the last items
+// value, so the Secret item is not printed.
+func TestRenderRedactsADocumentWithDuplicateItemsKeysWhoseLastValueIsNotAList(t *testing.T) {
+	t.Parallel()
+	v := treeScopeDesiredValue
+	for _, last := range []string{"{x: 1}", "scalar", "~"} {
+		rendered := "metadata: {name: l}\nitems:\n- kind: Secret\n  metadata: {name: a}\n  stringData: {password: " + v +
+			"}\nitems: " + last + "\n"
+		out, err := renderThroughServer(t, rendered)
+		require.NoError(t, err, "last items %s", last)
+		require.NotContains(t, out, v, "last items %s", last)
+	}
+}
+
+// A List item that is read as a Secret, because it has no kind, a kind that is not a
+// string, or sits in a SecretList, can hold a List of its own. The Secrets in that List
+// are redacted in place, so a value shorter than the search minimum is not printed.
+func TestRenderRedactsASecretInAListHeldByASecretItem(t *testing.T) {
+	t.Parallel()
+	const pin = "1234"
+	nested := "  items:\n  - kind: Secret\n    metadata: {name: s}\n    stringData:\n      pin: \"" + pin + "\"\n"
+	for _, tc := range []struct{ name, rendered string }{
+		{"an item with no kind", "kind: List\nitems:\n- metadata: {name: l}\n" + nested},
+		{"an item whose kind is ~", "kind: List\nitems:\n- kind: ~\n" + nested},
+		{"an item whose kind is yes", "kind: List\nitems:\n- kind: yes\n" + nested},
+		{"a List item of a SecretList", "kind: SecretList\nitems:\n- kind: List\n" + nested},
+		{"a sequence item with no kind", "- metadata: {name: l}\n" + nested},
+		{"an aliased item, read from the decoded object", "x: &a plain\nkind: List\nitems:\n- note: *a\n" + nested},
+		{"a Secret with an items list", "kind: Secret\nmetadata: {name: s}\n" + nested[2:]},
+		{"an anchored Secret with an items list", "x: &a plain\nnote: *a\nkind: Secret\nmetadata: {name: s}\n" + nested[2:]},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, `"`+pin+`"`, tc.name)
+		require.Contains(t, out, "pin: <redacted>", tc.name)
+	}
+}
+
+// A Secret that holds the value Secret, and has an items list, is redacted with its
+// items. The stray walk of the Secret must not rewrite the kind of a Secret item in the
+// list, so the item's short value is still replaced. The rows are a List item with no
+// kind, a top-level Secret, an anchored Secret, a sequence item and a decoded pair.
+func TestRenderRedactsASecretItemHeldByAListWhoseSecretValueIsSecret(t *testing.T) {
+	t.Parallel()
+	const pin = "1234"
+	nestedItem := "  items:\n  - kind: Secret\n    metadata: {name: s}\n    stringData: {pin: \"" + pin + "\"}\n"
+	for _, tc := range []struct{ name, rendered string }{
+		{"a List item with no kind", "kind: List\nitems:\n- metadata: {name: l}\n  stringData: {word: Secret}\n" + nestedItem},
+		{"a top-level Secret", "kind: Secret\nmetadata: {name: s}\nstringData: {word: Secret}\n" + nestedItem[2:]},
+		{"an anchored Secret", "x: &a plain\nkind: Secret\nmetadata: {name: s}\nstringData: {word: Secret}\nnote: *a\n" + nestedItem[2:]},
+		{"a sequence item", "- metadata: {name: l}\n  stringData: {word: Secret}\n" + nestedItem},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, `"`+pin+`"`, tc.name)
+		require.Contains(t, out, "pin: <redacted>", tc.name)
+	}
+
+	desired, err := decodeManifest([]byte("kind: Secret\nmetadata: {name: s}\nstringData: {word: Secret}\n" + nestedItem[2:]))
+	require.NoError(t, err)
+	redactManifestPair(desired, nil)
+	items, ok := desired["items"].([]any)
+	require.True(t, ok)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	itemData, ok := item["stringData"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, redactedSecretValue, itemData["pin"])
+	stringData, ok := desired["stringData"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, redactedSecretValue, stringData["word"])
+}
+
+// A Secret with an items list is redacted with that list in a pair too: the Secret item in
+// the list has its values replaced, and the pair holds no value.
+func TestRedactManifestPairRedactsTheItemsOfASecret(t *testing.T) {
+	t.Parallel()
+	desired, err := decodeManifest([]byte("kind: Secret\nmetadata: {name: s}\nstringData: {pin: \"1234\"}\nitems:\n- kind: Secret\n  stringData: {pin: \"1234\"}\n"))
+	require.NoError(t, err)
+	redactManifestPair(desired, nil)
+	require.Equal(t, map[string]any{
+		"kind":       "Secret",
+		"metadata":   map[string]any{"name": "s"},
+		"stringData": map[string]any{"pin": redactedSecretValue},
+		"items": []any{map[string]any{
+			"kind":       "Secret",
+			"stringData": map[string]any{"pin": redactedSecretValue},
+		}},
+	}, desired)
+}
+
+// A SecretList that holds a SecretList reads the items of the inner list as Secret
+// items, so the copied-Secret annotation of a ConfigMap item there is replaced. The item
+// has no data key, so only the SecretList reading redacts it. The rows are plain and
+// anchored.
+func TestRenderRedactsTheItemsOfANestedSecretList(t *testing.T) {
+	t.Parallel()
+	inner := "- kind: SecretList\n  items:\n  - kind: ConfigMap\n    metadata:\n      name: a\n" +
+		"      annotations: {kubectl.kubernetes.io/last-applied-configuration: '{\"pin\":\"1234\"}'}\n"
+	for _, tc := range []struct{ name, rendered string }{
+		{"a plain SecretList", "kind: SecretList\nitems:\n" + inner},
+		{"an anchored SecretList", "x: &a plain\nnote: *a\nkind: SecretList\nitems:\n" + inner},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, "1234", tc.name)
+		require.Contains(t, out, "last-applied-configuration: "+redactedSecretValue, tc.name)
+	}
+}
+
+// A Secret with no items list is redacted as before: each stringData value is replaced
+// whole, and the name is kept.
+func TestRedactManifestPairRedactsASecretWithoutAnItemsListAsBefore(t *testing.T) {
+	t.Parallel()
+	desired, err := decodeManifest([]byte("kind: Secret\nmetadata: {name: s}\nstringData: {pin: \"1234\"}\n"))
+	require.NoError(t, err)
+	redactManifestPair(desired, nil)
+	require.Equal(t, map[string]any{
+		"kind":       "Secret",
+		"metadata":   map[string]any{"name": "s"},
+		"stringData": map[string]any{"pin": redactedSecretValue},
+	}, desired)
+}
+
+// A value of a Secret that is copied into an identity field of an object in a List that
+// the Secret holds is replaced, as a value copied into any other field is. The rows are a
+// top-level Secret, a List held by a kind-less Secret item, and an anchored Secret, which
+// is redacted as a decoded object.
+func TestRenderRedactsAnIdentityCopyOfASecretValueInAHeldList(t *testing.T) {
+	t.Parallel()
+	const copied = "mysecretname"
+	for _, tc := range []struct{ name, rendered string }{
+		{"a top-level Secret", "kind: Secret\nmetadata: {name: s}\nstringData: {user: " + copied + "}\nitems:\n- kind: ConfigMap\n  metadata: {name: " + copied + "}\n"},
+		{"a List held by a kind-less item", "kind: List\nitems:\n- stringData: {user: " + copied + "}\n  items:\n  - kind: ConfigMap\n    metadata: {name: " + copied + "}\n"},
+		{"an anchored Secret", "x: &a plain\nkind: Secret\nmetadata: {name: s}\nstringData: {user: " + copied + "}\nnote: *a\nitems:\n- kind: ConfigMap\n  metadata: {name: " + copied + "}\n"},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, copied, tc.name)
+		require.Contains(t, out, "name: "+redactedSecretValue, tc.name)
+	}
+}
+
+// A desired Secret that holds an items list has an identity copy of its value replaced in
+// the pair too, as the Secret's own fields are.
+func TestRedactManifestPairRedactsAnIdentityCopyInTheItemsOfASecret(t *testing.T) {
+	t.Parallel()
+	desired, err := decodeManifest([]byte("kind: Secret\nmetadata: {name: s}\nstringData: {user: mysecretname}\nitems:\n- kind: ConfigMap\n  metadata: {name: mysecretname}\n"))
+	require.NoError(t, err)
+	redactManifestPair(desired, nil)
+	items, ok := desired["items"].([]any)
+	require.True(t, ok)
+	item, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"name": redactedSecretValue}, item["metadata"])
+}
+
+// The stray pass over a List that a Secret holds runs once, for the outermost holder, so
+// redaction stays linear in how deep Secrets that hold Lists nest. A pass at every level
+// would walk each held List again for every holder above it, so the allocations per level
+// would grow with the depth. The chain is redacted on the node path, on the decoded path
+// (its root holds an alias) and as a decoded pair. The test does not run in parallel,
+// because AllocsPerRun counts the whole process.
+func TestRedactionOfNestedHeldListsStaysLinear(t *testing.T) {
+	const shallow, deep = 100, 400
+	render := func(root string) func(depth int) func() {
+		return func(depth int) func() {
+			rendered := []byte(heldSecretChain(depth, root))
+			return func() {
+				_, err := redactSecretManifests(rendered)
+				require.NoError(t, err)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		run  func(depth int) func()
+	}{
+		{"node path", render("")},
+		{"decoded path", render("x: &a plain, note: *a, ")},
+		{"pair", func(depth int) func() {
+			return func() { redactManifestPair(heldSecretChainObject(depth), nil) }
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			perLevel := func(depth int) float64 {
+				return testing.AllocsPerRun(2, tc.run(depth)) / float64(depth)
+			}
+			low, high := perLevel(shallow), perLevel(deep)
+			t.Logf("allocations per level: %.0f at depth %d, %.0f at depth %d", low, shallow, high, deep)
+			require.Less(t, high, 2*low, "allocations per level grow with the depth")
+		})
+	}
+}
+
+// heldSecretChain returns, in flow style, a Secret that holds a List whose one item is a
+// Secret that holds a List, depth Secrets deep. root is written at the start of the
+// outermost mapping.
+func heldSecretChain(depth int, root string) string {
+	var b strings.Builder
+	for i := range depth {
+		if i == 0 {
+			b.WriteString("{" + root)
+		} else {
+			b.WriteString("{")
+		}
+		fmt.Fprintf(&b, "kind: Secret, metadata: {name: s%d}, stringData: {v: value-%04d}, items: [", i, i)
+	}
+	b.WriteString("{kind: ConfigMap, metadata: {name: last}}")
+	for range depth {
+		b.WriteString("]}")
+	}
+	return b.String() + "\n"
+}
+
+// heldSecretChainObject is heldSecretChain as a decoded object.
+func heldSecretChainObject(depth int) map[string]any {
+	inner := map[string]any{"kind": "ConfigMap", "metadata": map[string]any{"name": "last"}}
+	for i := depth - 1; i >= 0; i-- {
+		inner = map[string]any{
+			"kind":       "Secret",
+			"metadata":   map[string]any{"name": fmt.Sprintf("s%d", i)},
+			"stringData": map[string]any{"v": fmt.Sprintf("value-%04d", i)},
+			"items":      []any{inner},
+		}
+	}
+	return inner
+}
+
+// A List item that yaml.v3 reads as a Secret, and the controller does not, has its values
+// redacted as a Secret's. The rows are a duplicate kind, an alias kind, a duplicate List
+// kind, a merge key and a duplicate Secret kind. The controller applies no List, so no
+// value here is one it applies.
+func TestRenderRedactsAnItemThatYamlReadsAsASecretWhoseValueIsShort(t *testing.T) {
+	t.Parallel()
+	const pin = "1234"
+	for _, tc := range []struct{ name, rendered string }{
+		{"a duplicate kind that yaml.v3 reads as Secret", "kind: List\nitems:\n- kind: Secret\n  kind: ConfigMap\n  data: {pin: \"" + pin + "\"}\n"},
+		{"an alias kind", "x: &k ConfigMap\nkind: List\nitems:\n- kind: *k\n  stringData: {pin: \"" + pin + "\"}\n"},
+		{"a duplicate List kind", "kind: SecretList\nkind: List\nitems:\n- kind: ConfigMap\n  stringData: {pin: \"" + pin + "\"}\n"},
+		{"a merge key that supplies the kind", "kind: List\nitems:\n- <<: {kind: ConfigMap}\n  stringData: {pin: \"" + pin + "\"}\n"},
+		{"a duplicate Secret kind in a SecretList", "kind: SecretList\nkind: Secret\nitems: [{kind: ConfigMap, data: {pin: \"" + pin + "\"}}]\n"},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, pin, tc.name)
+		require.Contains(t, out, redactedSecretValue, tc.name)
+	}
+}
+
+// An item with data in a plain List is a Secret item whatever its kind, so its short value
+// is redacted. A top-level sequence item with data is redacted the same way.
+func TestRenderRedactsADataItemOfAPlainListAndOfATopLevelSequence(t *testing.T) {
+	t.Parallel()
+	const pin = "1234"
+	for _, tc := range []struct{ name, rendered string }{
+		{"a ConfigMap item of a plain List", "kind: List\nitems:\n- kind: ConfigMap\n  data: {pin: \"" + pin + "\"}\n"},
+		{"a ConfigMap sequence item", "- kind: ConfigMap\n  data: {pin: \"" + pin + "\"}\n"},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, pin, tc.name)
+		require.Contains(t, out, "pin: "+redactedSecretValue, tc.name)
+	}
+}
+
+// The copied-Secret annotations of a ConfigMap item of a SecretList are replaced, whether
+// the SecretList is top-level, nested in a List, or a top-level sequence item. The item
+// has no data key except where a row says so, so only the SecretList reading redacts it.
+func TestRenderRedactsTheCopiedAnnotationsOfAnItemOfASecretList(t *testing.T) {
+	t.Parallel()
+	const item = "  - kind: ConfigMap\n    metadata:\n      name: a\n" +
+		"      annotations: {kubectl.kubernetes.io/last-applied-configuration: '{\"pin\":\"1234\"}'}\n"
+	for _, tc := range []struct{ name, rendered string }{
+		{"a plain SecretList", "kind: SecretList\nitems:\n" + item},
+		{"an anchored SecretList", "x: &a plain\nnote: *a\nkind: SecretList\nitems:\n" + item},
+		{"a SecretList item of a List", "kind: List\nitems:\n- kind: SecretList\n  items:\n" + item},
+		{"a SecretList item with data in a List", "kind: List\nitems:\n- kind: SecretList\n  data: {}\n  items:\n" + item},
+		{"an anchored SecretList item with data in a List", "x: &a plain\nnote: *a\nkind: List\nitems:\n- kind: SecretList\n  data: {}\n  items:\n" + item},
+		{"a SecretList sequence item with data", "- kind: SecretList\n  data: {}\n  items:\n" + item},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, "1234", tc.name)
+		require.Contains(t, out, "last-applied-configuration: "+redactedSecretValue, tc.name)
+	}
+}
+
+// A value of a Secret that is copied into an identity field of an object in a List that a
+// Secret or a kind-less item holds is replaced, whether the List is plain or decoded, and
+// whether it is nested, or is the items of a top-level sequence's Secret item.
+func TestRenderRedactsAnIdentityCopyInAListHeldByASecretItem(t *testing.T) {
+	t.Parallel()
+	const copied = "mysecretname"
+	held := "  items:\n  - kind: ConfigMap\n    metadata: {name: " + copied + "}\n"
+	for _, tc := range []struct{ name, rendered string }{
+		{"an anchored kind List whose Secret item holds a List", "x: &a plain\nnote: *a\nkind: List\nitems:\n- kind: Secret\n  stringData: {user: " + copied + "}\n" + held},
+		{"a Secret and a List kind on one node", "kind: Secret\nkind: List\nstringData: {user: " + copied + "}\nitems:\n- kind: ConfigMap\n  metadata: {name: " + copied + "}\n"},
+		{"a plain kind-less root holding a List", "stringData: {user: " + copied + "}\nitems:\n- kind: ConfigMap\n  metadata: {name: " + copied + "}\n"},
+		{"an anchored kind-less root holding a List", "x: &a plain\nnote: *a\nstringData: {user: " + copied + "}\nitems:\n- kind: ConfigMap\n  metadata: {name: " + copied + "}\n"},
+		{"a sequence Secret item holding a List", "- kind: Secret\n  stringData: {user: " + copied + "}\n" + held},
+		{"a plain List item of a List whose Secret item holds a List", "kind: List\nitems:\n- kind: List\n  items:\n  - kind: Secret\n    stringData: {user: " + copied + "}\n    items:\n    - kind: ConfigMap\n      metadata: {name: " + copied + "}\n"},
+		{"an anchored List item of a List whose Secret item holds a List", "x: &a plain\nnote: *a\nkind: List\nitems:\n- kind: List\n  items:\n  - kind: Secret\n    stringData: {user: " + copied + "}\n    items:\n    - kind: ConfigMap\n      metadata: {name: " + copied + "}\n"},
+	} {
+		out, err := renderThroughServer(t, tc.rendered)
+		require.NoError(t, err, tc.name)
+		require.NotContains(t, out, copied, tc.name)
+		require.Contains(t, out, "name: "+redactedSecretValue, tc.name)
+	}
+}
+
+// A desired or live List, and a desired Secret, that holds an identity copy of a Secret
+// value in an item of its held List have that copy replaced in the pair.
+func TestRedactManifestPairRedactsAnIdentityCopyInAHeldList(t *testing.T) {
+	t.Parallel()
+	const copied = "mysecretname"
+	for _, manifest := range []string{
+		"kind: List\nitems:\n- kind: Secret\n  stringData: {user: " + copied + "}\n  items:\n  - kind: ConfigMap\n    metadata: {name: " + copied + "}\n",
+		"kind: List\nitems:\n- kind: List\n  items:\n  - kind: Secret\n    stringData: {user: " + copied + "}\n    items:\n    - kind: ConfigMap\n      metadata: {name: " + copied + "}\n",
+	} {
+		desired, err := decodeManifest([]byte(manifest))
+		require.NoError(t, err)
+		redactManifestPair(desired, nil)
+		text, err := encodeYAML(desired)
+		require.NoError(t, err)
+		require.NotContains(t, text, copied, manifest)
+		require.Contains(t, text, "name: "+redactedSecretValue, manifest)
+	}
 }

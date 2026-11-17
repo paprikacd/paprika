@@ -98,52 +98,113 @@ func isListNode(n *yaml.Node) bool {
 	return items != nil && items.Kind == yaml.SequenceNode
 }
 
-// isSecretItem reports whether a List item is treated as a Secret.
+// isSecretItem reports whether a List item is treated as a Secret: an item of a
+// SecretList, an item with no kind, an item of kind Secret, or an item with a data or
+// stringData key whatever its kind. The last rule makes Render stricter than the
+// controller. The controller applies no built-in List kind and no top-level sequence, so
+// for those the rule hides nothing it applies. For a custom resource whose kind ends in
+// List, as for another kind with an items list, it can hide values the controller
+// applies.
 func isSecretItem(item map[string]any, allSecret bool) bool {
 	kind := kindOf(item)
-	return allSecret || kind == "" || kind == "Secret"
+	return allSecret || kind == "" || kind == "Secret" || objectHasSecretData(item)
 }
 
-// isSecretNodeItem reports whether a List item node is treated as a Secret.
+// isSecretNodeItem reports whether a List item node is treated as a Secret, by the rules
+// of isSecretItem. An item whose kind is not a string is read as having no kind, as
+// isSecretItem reads it.
 func isSecretNodeItem(item *yaml.Node, allSecret bool) bool {
-	kind := nodeKind(item)
-	return allSecret || kind == "" || kind == "Secret"
+	return allSecret || !nodeHasStringKind(item) || nodeKind(item) == "Secret" || nodeHasSecretData(item)
 }
+
+// secretSetMaxForms is the most distinct forms a search set holds. A document with
+// more distinct forms gets a set that matches every text, and no search is built. A
+// search over that many forms can allocate far more memory than the document holds.
+const secretSetMaxForms = 4096
 
 // secretSet holds the forms of the Secret values that a document must not show.
 // has reports whether a text holds one of them. The check is a single pass over
 // the text, however many forms the set holds, so a long List costs no more per
-// item than its own length.
+// item than its own length. A set with all true matches every text.
 type secretSet struct {
 	repl *strings.Replacer
+	all  bool
 }
 
 // secretSetMark is what each form is replaced with in a search. It is one byte,
 // and no form is equal to it, so a text that holds a form always changes.
 const secretSetMark = "\x00"
 
-func newSecretSet(forms []string) secretSet {
-	pairs := make([]string, 0, 2*len(forms))
-	for _, form := range forms {
-		if form == "" || form == secretSetMark {
-			continue
-		}
-		pairs = append(pairs, form, secretSetMark)
+// formCollector gathers the distinct forms of a document's Secret values for a search
+// set. A repeated form counts once. Once it holds more than secretSetMaxForms forms it
+// stops collecting, and the set it builds matches every text. The forms beyond the cap
+// are never stored, so a large Secret costs no more than the cap to collect.
+type formCollector struct {
+	seen  map[string]bool
+	forms []string
+	over  bool
+}
+
+// add collects a form unless it is blank, a marker, repeated, or the collector is over
+// its cap.
+func (c *formCollector) add(form string) {
+	if c.over || form == "" || form == secretSetMark || c.seen[form] {
+		return
 	}
-	if len(pairs) == 0 {
+	if c.seen == nil {
+		c.seen = make(map[string]bool)
+	}
+	c.seen[form] = true
+	if len(c.seen) > secretSetMaxForms {
+		c.over = true
+		c.seen, c.forms = nil, nil
+		return
+	}
+	c.forms = append(c.forms, form)
+}
+
+// set returns the search set of the collected forms.
+func (c *formCollector) set() secretSet {
+	if c.over {
+		return secretSet{all: true}
+	}
+	if len(c.forms) == 0 {
 		return secretSet{}
+	}
+	pairs := make([]string, 0, 2*len(c.forms))
+	for _, form := range c.forms {
+		pairs = append(pairs, form, secretSetMark)
 	}
 	return secretSet{repl: strings.NewReplacer(pairs...)}
 }
 
-// empty reports whether the set holds no form.
+// secretScanCap is the longest text the check scans. A longer text is taken to hold a
+// value and is replaced without a scan, so the scan's cost is bounded by the size of
+// the document. The cap applies only when the set holds a form to search for. Every
+// form is at most secretFormMaxLen (32) bytes, so a scan costs at most 32 steps per
+// byte of text.
+const secretScanCap = 16 << 10
+
+// empty reports whether the set holds no form and matches no text.
 func (s secretSet) empty() bool {
-	return s.repl == nil
+	return s.repl == nil && !s.all
 }
 
-// has reports whether text holds one of the forms.
+// has reports whether text holds one of the forms. A set with all set matches every
+// text, empty ones included. Otherwise a text over secretScanCap is reported as
+// holding one, without a scan, when the set holds a form. A form is matched by its
+// first secretFormMaxLen bytes, so a text that holds a copy of a value always matches.
 func (s secretSet) has(text string) bool {
-	return s.repl != nil && text != "" && s.repl.Replace(text) != text
+	if s.all {
+		return true
+	}
+	if s.repl == nil || text == "" {
+		return false
+	}
+	if len(text) > secretScanCap {
+		return true
+	}
+	return s.repl.Replace(text) != text
 }
 
 // redactSecretValues redacts obj in place, as a manifest on its own. A Secret's
@@ -154,7 +215,7 @@ func (s secretSet) has(text string) bool {
 // manifests, so its map keys are strings. The checks are still fail-closed: a
 // value of unexpected type is replaced whole, and a map keyed by any is walked.
 func redactSecretValues(obj map[string]any) {
-	redactObject(obj, newSecretSet(secretFormsOf(obj)), nil)
+	redactObject(obj, secretSetOf(obj), nil)
 }
 
 // redactManifestPair redacts a desired and a live object in place, so they can be
@@ -164,7 +225,7 @@ func redactSecretValues(obj map[string]any) {
 // empty. Every other Secret value gets redactedSecretValue, and any other string
 // that holds one is replaced too.
 func redactManifestPair(desired, live map[string]any) {
-	set := newSecretSet(append(secretFormsOf(desired), secretFormsOf(live)...))
+	set := secretSetOf(desired, live)
 	desiredMarks, liveMarks := changedSecretMarkers(desired, live)
 	if desired != nil {
 		redactObject(desired, set, desiredMarks)
@@ -178,21 +239,49 @@ func redactManifestPair(desired, live map[string]any) {
 // the object must keep out of itself. marks names the data keys whose values differ
 // from the other side of a pair, with the marker each one gets.
 func redactObject(obj map[string]any, set secretSet, marks map[string]string) {
+	redactObjectHeld(obj, set, marks, false)
+}
+
+// redactObjectHeld is redactObject. held means a Secret above obj walks its items
+// list for stray values once it is redacted.
+func redactObjectHeld(obj map[string]any, set secretSet, marks map[string]string, held bool) {
 	switch {
 	case kindOf(obj) == "Secret":
 		redactSecretObject(obj, set, marks)
+		if isListObject(obj) {
+			redactListItems(obj, false, set, true)
+			if !held {
+				redactHeldItems(obj, set)
+			}
+		}
 	case isListObject(obj):
-		redactListObject(obj, kindOf(obj) == "SecretList", set)
+		redactListItems(obj, kindOf(obj) == "SecretList", set, held)
 	default:
 		redactStrayFields(obj, set)
 	}
 }
 
-// redactSecretObject redacts one object of kind Secret. Every string outside data
-// and stringData that holds one of the values is replaced first, so the values sit
-// only in data and stringData before those are redacted.
+// redactHeldItems runs one stray pass over the items list of a List that a Secret holds,
+// after each item is redacted: every string in it that holds one of the values is
+// replaced, identity fields included. An object that is not a List is left alone.
+func redactHeldItems(obj map[string]any, set secretSet) {
+	if items, ok := obj["items"]; ok && isListObject(obj) {
+		obj["items"] = redactStray(items, set)
+	}
+}
+
+// redactSecretObject redacts one Secret, or one Secret item of a List. Every string
+// outside data and stringData that holds one of the values is replaced first, so the
+// values sit only in data and stringData before those are redacted. When the object
+// also holds an items list, that list is left to redactListItems, which the caller
+// runs. A walk over the list here could rewrite the kind of a Secret item in it, which
+// would stop that item being read as a Secret before its values are redacted.
 func redactSecretObject(obj map[string]any, set secretSet, marks map[string]string) {
-	redactStrayFields(obj, set, "data", "stringData")
+	skip := []string{"data", "stringData"}
+	if isListObject(obj) {
+		skip = append(skip, "items")
+	}
+	redactStrayFields(obj, set, skip...)
 	for _, field := range []string{"data", "stringData"} {
 		value, ok := obj[field]
 		if !ok || value == nil {
@@ -248,11 +337,17 @@ func replaceCopiedAnyKeys(annotations map[any]any) {
 }
 
 // redactListObject redacts the items of a List, and the List's own fields. Every
-// item of a SecretList is a Secret, and so is an item with no kind. The values of
-// every Secret item are kept out of every item and out of the List's own fields,
-// so a value copied elsewhere in the List is redacted too. An item that is not a
-// map, or an items field that is not a list, is replaced.
+// item of a SecretList is a Secret, and so is an item with no kind or with data or
+// stringData. The values of every Secret item are kept out of every item and out of
+// the List's own fields, so a value copied elsewhere in the List is redacted too. An
+// item that is not a map, or an items field that is not a list, is replaced.
 func redactListObject(obj map[string]any, allSecret bool, set secretSet) {
+	redactListItems(obj, allSecret, set, false)
+}
+
+// redactListItems is redactListObject. held means a Secret above obj walks its items
+// list for stray values once it is redacted, so a nested List does not walk it again.
+func redactListItems(obj map[string]any, allSecret bool, set secretSet, held bool) {
 	redactStrayFields(obj, set, "items")
 	items, ok := obj["items"]
 	if !ok || items == nil {
@@ -271,8 +366,14 @@ func redactListObject(obj map[string]any, allSecret bool, set secretSet) {
 		}
 		if isSecretItem(m, allSecret) {
 			redactSecretObject(m, set, nil)
+			if isListObject(m) {
+				redactListItems(m, kindOf(m) == "SecretList", set, true)
+				if !held {
+					redactHeldItems(m, set)
+				}
+			}
 		} else {
-			redactObject(m, set, nil)
+			redactObjectHeld(m, set, nil, held)
 		}
 	}
 }
@@ -311,8 +412,21 @@ func redactStray(v any, set secretSet) any {
 		}
 		return s
 	}
+	if set.all && isScalar(v) {
+		return redactedSecretValue
+	}
 	redactStrayChildren(v, set)
 	return v
+}
+
+// isScalar reports whether a decoded value is a scalar, which is neither a map nor a
+// list.
+func isScalar(v any) bool {
+	switch v.(type) {
+	case map[string]any, map[any]any, []any:
+		return false
+	}
+	return true
 }
 
 // redactStrayChildren replaces the strings that hold a value inside a map or list,
@@ -438,19 +552,25 @@ func eachMapEntry(v any, fn func(key string, value any)) bool {
 	return true
 }
 
-// secretFormsOf returns the forms of the Secret values an object holds: those of a
-// Secret, and those of each Secret item of a List, at any depth.
-func secretFormsOf(obj map[string]any) []string {
-	return appendSecretFormsOf(nil, obj)
+// secretSetOf returns the search set of the Secret values that the objects hold. A
+// nil object holds none.
+func secretSetOf(objs ...map[string]any) secretSet {
+	var c formCollector
+	for _, obj := range objs {
+		collectObjectForms(&c, obj)
+	}
+	return c.set()
 }
 
-func appendSecretFormsOf(out []string, obj map[string]any) []string {
+// collectObjectForms collects the forms of the Secret values an object holds: those of
+// a Secret, and those of each Secret item of a List, at any depth.
+func collectObjectForms(c *formCollector, obj map[string]any) {
 	if kindOf(obj) == "Secret" {
-		out = appendObjectSecretForms(out, obj)
+		collectObjectSecretForms(c, obj)
 	}
 	items, ok := obj["items"].([]any)
 	if !ok {
-		return out
+		return
 	}
 	allSecret := kindOf(obj) == "SecretList"
 	for _, item := range items {
@@ -459,24 +579,22 @@ func appendSecretFormsOf(out []string, obj map[string]any) []string {
 			continue
 		}
 		if isSecretItem(m, allSecret) {
-			out = appendObjectSecretForms(out, m)
+			collectObjectSecretForms(c, m)
 		}
 		if isListObject(m) {
-			out = appendSecretFormsOf(out, m)
+			collectObjectForms(c, m)
 		}
 	}
-	return out
 }
 
-// appendObjectSecretForms adds the forms of the values under data and stringData.
-func appendObjectSecretForms(out []string, obj map[string]any) []string {
+// collectObjectSecretForms collects the forms of the values under data and stringData.
+func collectObjectSecretForms(c *formCollector, obj map[string]any) {
 	eachLeaf(obj["data"], func(s string) {
-		out = appendSecretForms(out, s, true)
+		collectSecretForms(c, s, true)
 	})
 	eachLeaf(obj["stringData"], func(s string) {
-		out = appendSecretForms(out, s, false)
+		collectSecretForms(c, s, false)
 	})
-	return out
 }
 
 // eachLeaf calls fn for each string leaf of a value, including the values of maps
@@ -503,16 +621,20 @@ func eachLeaf(v any, fn func(string)) {
 	}
 }
 
-// appendSecretForms adds the forms of one Secret value to out. encoded means s is
-// a data value, whose stored text is base64, so its decoding is a form too.
+// collectSecretForms collects the forms of one Secret value. encoded means s is a data
+// value, whose stored text is base64, so its decoding is a form too.
 //
 // The forms are the raw value and its trimmed text, each with its padded and
-// unpadded standard and URL-safe base64, and its JSON-escaped text. Blank forms and
-// markers are skipped.
-func appendSecretForms(out []string, s string, encoded bool) []string {
+// unpadded standard and URL-safe base64, and its JSON-escaped text. Forms shorter than
+// secretFormMinLen, blank forms and markers are skipped, and a longer form is cut to
+// its first secretFormMaxLen bytes.
+func collectSecretForms(c *formCollector, s string, encoded bool) {
+	if c.over {
+		return
+	}
 	raw := s
 	if encoded {
-		out = appendForm(out, s)
+		addForm(c, s)
 		if decoded, err := base64.StdEncoding.DecodeString(s); err == nil {
 			raw = string(decoded)
 		}
@@ -522,48 +644,74 @@ func appendSecretForms(out []string, s string, encoded bool) []string {
 		bases = append(bases, trimmed)
 	}
 	for _, b := range bases {
-		out = appendForm(out, b)
-		out = appendForm(out, base64.StdEncoding.EncodeToString([]byte(b)))
-		out = appendForm(out, base64.RawStdEncoding.EncodeToString([]byte(b)))
-		out = appendForm(out, base64.URLEncoding.EncodeToString([]byte(b)))
-		out = appendForm(out, base64.RawURLEncoding.EncodeToString([]byte(b)))
+		addForm(c, b)
+		addForm(c, base64.StdEncoding.EncodeToString([]byte(b)))
+		addForm(c, base64.RawStdEncoding.EncodeToString([]byte(b)))
+		addForm(c, base64.URLEncoding.EncodeToString([]byte(b)))
+		addForm(c, base64.RawURLEncoding.EncodeToString([]byte(b)))
 		if quoted, err := json.Marshal(b); err == nil {
-			out = appendForm(out, string(quoted[1:len(quoted)-1]))
+			addForm(c, string(quoted[1:len(quoted)-1]))
 		}
 	}
-	return out
 }
 
-// appendForm adds form to out unless it is blank or a marker.
-func appendForm(out []string, form string) []string {
-	if strings.TrimSpace(form) == "" || isSecretMarker(form) {
-		return out
+// secretFormMinLen is the shortest form searched for. A shorter value, such as a
+// single digit, would match ordinary text in labels and annotations. Each data and
+// stringData value is still replaced in place, whatever its length.
+const secretFormMinLen = 6
+
+// secretFormMaxLen is the longest part of a form that is searched for. A longer form
+// is cut to this prefix. A copy of the value contains the prefix, so a copy is still
+// found. The cut also bounds the search: forms that share a long prefix made a scan
+// cost grow with the length of the shared text. The cost is that a text which shares
+// only the prefix, such as a PEM header common to several certificates, is replaced.
+const secretFormMaxLen = 32
+
+// addForm collects form unless it is too short, blank, or a marker. A longer form is
+// cut to its first secretFormMaxLen bytes.
+func addForm(c *formCollector, form string) {
+	if len(form) < secretFormMinLen || strings.TrimSpace(form) == "" || isSecretMarker(form) {
+		return
 	}
-	return append(out, form)
+	if len(form) > secretFormMaxLen {
+		form = form[:secretFormMaxLen]
+	}
+	c.add(form)
 }
 
 // redactSecretManifests returns a multi-document manifest in which every Secret's
-// values are redacted.
+// values are redacted. The Secret items of a top-level sequence are redacted too.
 //
-// The stream is split as the controller splits it, and the first document of each
-// piece is checked against the object the controller decodes from that piece. The
-// controller applies that object, so a value that is hidden from the node of a
-// document, by a BOM, a tag, or a key read differently, is still found. A
-// document of kind Secret, or a kind ending in List, or any document with an items
-// list, is redacted on its YAML node, and re-encoded from that node, when the node
-// has no duplicate key, alias, anchor, merge key or explicit tag: its comments and
-// fields such as finalizers and ownerReferences survive. Any other such document
-// is redacted as the decoded object and re-encoded from it. Every comment that
-// holds a value is dropped. Any other document is kept as written, apart from
-// indentation, and a duplicate key in it does not fail the render.
+// The stream is split as the controller splits it, and the first document of each chunk is
+// checked against the object the controller decodes from that chunk. The controller
+// applies that object, so a value that is hidden from the node of a document, by a BOM, a
+// tag, or a key read differently, is still found. A document of kind Secret, or a kind
+// ending in List, or any document with an items list, or a document with no kind that has
+// data or stringData, is redacted on its YAML node, and re-encoded from that node, when
+// the node is plain (it has no duplicate key, alias, anchor, merge key or explicit tag)
+// and the node declares the kind the controller reads: its comments and fields such as
+// finalizers and ownerReferences survive. Any other such document is redacted as the
+// decoded object and re-encoded from it, so the kind of a document whose kind is ~ is
+// printed as `kind: null`. A document has no kind when the controller reads no string kind
+// from it: its kind is missing, empty or not a string, such as ~, yes or 5. That is judged
+// from the decoded object, or from the text when the controller cannot decode the
+// document. A document with no kind that has data or stringData is redacted as a Secret.
+// Every comment that holds a value is dropped. Any other document is kept as written,
+// apart from indentation, and a duplicate key in it does not fail the render.
 //
-// A document that does not parse fails the whole stream, and so does a Secret or
-// List that cannot be decoded, so a Secret is never returned unread. The error text
-// does not quote the document, since it may hold a value.
+// Render refuses what it cannot check. A document that yaml.v3 cannot read fails the
+// render, even when the controller would apply it. Among the documents the controller
+// cannot decode, Render also refuses a Secret, a List, a document with an items list, a
+// document with no kind that has data or stringData, any document with an alias, anchor,
+// merge key, explicit tag or duplicate key, and a top-level sequence that holds a
+// sequence. Any other document the controller cannot decode is kept as written, since the
+// controller never applies it. The error names the document's position only, and not its
+// text, since the text may hold a value.
 func redactSecretManifests(manifests []byte) ([]byte, error) {
 	var out []string
+	docs := 0
 	for _, chunk := range engine.SplitYAMLDocuments(manifests) {
-		texts, err := redactChunk(chunk)
+		texts, err := redactChunk(chunk, &docs)
 		if err != nil {
 			return nil, err
 		}
@@ -575,10 +723,13 @@ func redactSecretManifests(manifests []byte) ([]byte, error) {
 	return []byte(strings.Join(out, "\n---\n") + "\n"), nil
 }
 
-// redactChunk redacts one piece of the stream. The first document in it is the
-// one the controller applies, so it is checked against the controller's decoding.
-// Any later document in the piece is checked against its own re-encoding.
-func redactChunk(chunk []byte) ([]string, error) {
+// redactChunk redacts one chunk of the stream, which is one document as the
+// controller splits it. docs counts the documents read so far, across the stream, so
+// an error can name the position of the document it is about. The first document in
+// the chunk is the one the controller applies, so it is checked against the
+// controller's decoding. Any later document in the chunk is checked against its own
+// re-encoding.
+func redactChunk(chunk []byte, docs *int) ([]string, error) {
 	view, viewErr := decodeManifest(chunk)
 	dec := yaml.NewDecoder(bytes.NewReader(chunk))
 	var out []string
@@ -588,14 +739,11 @@ func redactChunk(chunk []byte) ([]string, error) {
 		if errors.Is(err, io.EOF) {
 			return out, nil
 		}
+		*docs++
 		if err != nil {
-			return nil, errors.New("rendered document is not valid YAML")
+			return nil, documentCheckError(*docs)
 		}
-		docView, docViewErr := view, viewErr
-		if !first {
-			docView, docViewErr = nodeView(&doc)
-		}
-		text, keep, err := redactDocument(&doc, docView, docViewErr)
+		text, keep, err := readDocument(&doc, *docs, first, view, viewErr)
 		if err != nil {
 			return nil, err
 		}
@@ -603,6 +751,29 @@ func redactChunk(chunk []byte) ([]string, error) {
 			out = append(out, text)
 		}
 	}
+}
+
+// readDocument redacts a document that yaml.v3 reads. The first document of a chunk
+// is checked against the controller's decoding, and any other against its own
+// re-encoding. A document that cannot be checked fails with an error that names only
+// its position.
+func readDocument(doc *yaml.Node, index int, first bool, view map[string]any, viewErr error) (text string, keep bool, err error) {
+	docView, docViewErr := view, viewErr
+	if !first {
+		docView, docViewErr = nodeView(doc)
+	}
+	text, keep, err = redactDocument(doc, docView, docViewErr)
+	if err != nil {
+		return "", false, documentCheckError(index)
+	}
+	return text, keep, nil
+}
+
+// documentCheckError is the error for a rendered document that cannot be checked
+// for Secret values. It names the document's position only. Neither its text nor
+// its kind is named, since either may come from a value.
+func documentCheckError(index int) error {
+	return fmt.Errorf("rendered document %d could not be checked for Secret values", index)
 }
 
 // decodeManifest decodes one manifest with sigs.k8s.io/yaml, as the controller does.
@@ -614,7 +785,7 @@ func decodeManifest(manifest []byte) (map[string]any, error) {
 	return obj, nil
 }
 
-// nodeView decodes a document node the way a later document of a piece is read:
+// nodeView decodes a document node the way a later document of a chunk is read:
 // from its own re-encoding.
 func nodeView(doc *yaml.Node) (map[string]any, error) {
 	text, err := encodeYAML(doc)
@@ -633,7 +804,7 @@ func redactDocument(doc *yaml.Node, view map[string]any, viewErr error) (text st
 		return redactSequenceDocument(doc, root)
 	}
 	if viewErr != nil {
-		if isSecretOrList(nodeKind(root)) {
+		if refusesUndecodedDocument(doc, root) {
 			return "", false, errors.New("rendered Secret could not be decoded")
 		}
 		return encodeDocument(doc)
@@ -641,44 +812,137 @@ func redactDocument(doc *yaml.Node, view map[string]any, viewErr error) (text st
 	if view == nil {
 		return "", false, nil
 	}
-	if !isSecretOrList(kindOf(view)) && !isSecretOrList(nodeKind(root)) && !isListObject(view) {
+	if !holdsRedactedValues(root, view) {
 		return encodeDocument(doc)
 	}
 	return redactManifestDocument(doc, root, view)
 }
 
-// redactManifestDocument redacts a document that holds a Secret or a List. The node
-// is redacted in place when the node and the controller's object agree on the kind
-// and the node is plain. Otherwise the decoded object is redacted and re-encoded.
+// refusesUndecodedDocument reports whether Render refuses a document the controller
+// cannot decode. The controller never applies such a document, so Render refuses one that
+// could hold a value it cannot check: a Secret, a List or a document with an items
+// list, a kind-less Secret, or a document that is not plain.
+func refusesUndecodedDocument(doc, root *yaml.Node) bool {
+	return isSecretOrList(nodeKind(root)) || isListNode(root) || isKindlessSecret(root, nil) || !nodePlain(doc)
+}
+
+// holdsRedactedValues reports whether a readable document is redacted as a Secret or a
+// List: one that holds a Secret or a List, or a kind-less Secret.
+func holdsRedactedValues(root *yaml.Node, view map[string]any) bool {
+	return isSecretOrList(kindOf(view)) || isSecretOrList(nodeKind(root)) || isListObject(view) || isListNode(root) || isKindlessSecret(root, view)
+}
+
+// redactManifestDocument redacts a document that holds a Secret or a List, or a
+// kind-less Secret. The node is redacted in place when the node and the controller's
+// object agree on the kind and the node is plain. Otherwise the decoded object is
+// redacted and re-encoded. The values of a Secret that the node declares, and of a
+// kind-less Secret, are in the search set, read from the decoded object as well as the
+// node, so a copy of one elsewhere in the document is replaced. A kind-less Secret is
+// also redacted as a Secret.
 func redactManifestDocument(doc, root *yaml.Node, view map[string]any) (text string, keep bool, err error) {
 	declared := nodeKind(root)
 	decoded := kindOf(view)
-	set := newSecretSet(append(secretFormsOf(view), nodeSecretFormsOf(nil, root)...))
+	kindless := isKindlessSecret(root, view)
+	set := manifestDocumentSet(root, view, declared, kindless)
 	if decoded == declared && nodePlain(doc) {
 		redactNodeDoc(root, decoded, set)
+		if kindless {
+			redactSecretNode(root, set)
+			walkHeldNodeItems(root, set)
+		}
 		dropCommentsEverywhere(doc, set)
 		return encodeDocument(doc)
 	}
 	// The node cannot be trusted to say what the controller applies, so the decoded
 	// object is redacted for each kind either side declares, and re-encoded.
 	redactDecodedDoc(view, set, declared)
+	if kindless {
+		redactSecretObject(view, set, nil)
+	}
+	if kindless || declared == "Secret" {
+		redactHeldItems(view, set)
+	}
 	return encodeDocument(view)
+}
+
+// manifestDocumentSet returns the search set of a document redacted by
+// redactManifestDocument. It holds the forms of the Secret values in the decoded object
+// and in the node, and, for a Secret or a kind-less Secret, the forms of its data and
+// stringData.
+func manifestDocumentSet(root *yaml.Node, view map[string]any, declared string, kindless bool) secretSet {
+	var collected formCollector
+	collectObjectForms(&collected, view)
+	collectNodeForms(&collected, root)
+	if declared == "Secret" {
+		collectObjectSecretForms(&collected, view)
+	}
+	if kindless {
+		collectObjectSecretForms(&collected, view)
+		collectNodeObjectForms(&collected, root)
+	}
+	return collected.set()
+}
+
+// walkHeldNodeItems walks the items list of a List node for stray values, identity
+// fields included. redactNodeList keeps the identity fields of a held List's items, so a
+// Secret node that is a List calls this after it is redacted.
+func walkHeldNodeItems(root *yaml.Node, set secretSet) {
+	if isListNode(root) {
+		walkStrayNode(mappingValue(root, "items"), set)
+	}
+}
+
+// isKindlessSecret reports whether a top-level mapping has no kind and holds data or
+// stringData, on the node or in the decoded view. A readable document has no kind when
+// the controller reads no string kind from its decoded object, and the node's kind is
+// not consulted. An undecodable document, which has a nil view, has no kind when its
+// node declares no string kind. The controller never applies such a document's values,
+// but Render would return them as written.
+func isKindlessSecret(root *yaml.Node, view map[string]any) bool {
+	noKind := kindOf(view) == ""
+	if view == nil {
+		noKind = !nodeHasStringKind(root)
+	}
+	return noKind && (nodeHasSecretData(root) || objectHasSecretData(view))
+}
+
+// nodeHasSecretData reports whether a mapping node has a data or stringData key.
+func nodeHasSecretData(root *yaml.Node) bool {
+	return mappingValue(root, "data") != nil || mappingValue(root, "stringData") != nil
+}
+
+// objectHasSecretData reports whether a decoded object has a data or stringData key.
+func objectHasSecretData(obj map[string]any) bool {
+	_, hasData := obj["data"]
+	_, hasStringData := obj["stringData"]
+	return hasData || hasStringData
 }
 
 // redactSequenceDocument redacts a top-level sequence. The controller does not apply
 // such a document, so its mapping items are read as Secret items where they have no
-// kind or a Secret kind, and other items only have their stray values replaced.
+// kind, a Secret kind, or data or stringData. A List item is redacted as a List, and any
+// other mapping item as its own kind. A scalar item only has its stray values replaced.
+// A sequence that holds a sequence is refused, as Render cannot check it.
 func redactSequenceDocument(doc, root *yaml.Node) (text string, keep bool, err error) {
 	if !nodePlain(doc) {
 		return "", false, errors.New("rendered document could not be checked")
 	}
-	set := newSecretSet(sequenceSecretForms(root.Content))
+	for _, item := range root.Content {
+		if item.Kind == yaml.SequenceNode {
+			return "", false, errors.New("rendered document holds a sequence item")
+		}
+	}
+	set := sequenceSecretSet(root.Content)
 	for _, item := range root.Content {
 		switch {
 		case item.Kind != yaml.MappingNode:
 			walkStrayNode(item, set)
 		case isSecretNodeItem(item, false):
 			redactSecretNode(item, set)
+			if isListNode(item) {
+				redactNodeList(item, nodeKind(item) == "SecretList", set, true)
+				walkHeldNodeItems(item, set)
+			}
 		default:
 			redactNodeDoc(item, nodeKind(item), set)
 		}
@@ -699,75 +963,86 @@ func redactDecodedDoc(obj map[string]any, set secretSet, declared string) {
 	}
 }
 
-// sequenceSecretForms returns the forms of the Secret items of a top-level sequence.
-func sequenceSecretForms(items []*yaml.Node) []string {
-	var out []string
+// sequenceSecretSet returns the search set of the Secret items of a top-level sequence.
+func sequenceSecretSet(items []*yaml.Node) secretSet {
+	var c formCollector
 	for _, item := range items {
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
 		if isSecretNodeItem(item, false) {
-			out = appendNodeObjectForms(out, item)
+			collectNodeObjectForms(&c, item)
 		}
-		out = nodeSecretFormsOf(out, item)
+		collectNodeForms(&c, item)
 	}
-	return out
+	return c.set()
 }
 
-// nodeSecretFormsOf appends the forms of the Secret values a mapping node holds:
-// those of a Secret, and those of each Secret item of a List, at any depth.
-func nodeSecretFormsOf(out []string, n *yaml.Node) []string {
+// collectNodeForms collects the forms of the Secret values a mapping node holds: those
+// of a Secret, and those of each Secret item of a List, at any depth.
+func collectNodeForms(c *formCollector, n *yaml.Node) {
 	if n == nil || n.Kind != yaml.MappingNode {
-		return out
+		return
 	}
 	kind := nodeKind(n)
 	if kind == "Secret" {
-		out = appendNodeObjectForms(out, n)
+		collectNodeObjectForms(c, n)
 	}
 	items := mappingValue(n, "items")
 	if items == nil || items.Kind != yaml.SequenceNode {
-		return out
+		return
 	}
 	for _, item := range items.Content {
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
 		if isSecretNodeItem(item, kind == "SecretList") {
-			out = appendNodeObjectForms(out, item)
+			collectNodeObjectForms(c, item)
 		}
 		if isListNode(item) {
-			out = nodeSecretFormsOf(out, item)
+			collectNodeForms(c, item)
 		}
 	}
-	return out
 }
 
-// appendNodeObjectForms adds the forms of the scalars under data and stringData.
-func appendNodeObjectForms(out []string, n *yaml.Node) []string {
+// collectNodeObjectForms collects the forms of the scalars under data and stringData.
+func collectNodeObjectForms(c *formCollector, n *yaml.Node) {
 	nodeLeaves(mappingValue(n, "data"), func(s string) {
-		out = appendSecretForms(out, s, true)
+		collectSecretForms(c, s, true)
 	})
 	nodeLeaves(mappingValue(n, "stringData"), func(s string) {
-		out = appendSecretForms(out, s, false)
+		collectSecretForms(c, s, false)
 	})
-	return out
 }
 
 // redactNodeDoc redacts one document node of the given kind in place.
 func redactNodeDoc(root *yaml.Node, kind string, set secretSet) {
+	redactNodeDocHeld(root, kind, set, false)
+}
+
+// redactNodeDocHeld is redactNodeDoc. held means a Secret above root walks its items
+// list for stray values once it is redacted.
+func redactNodeDocHeld(root *yaml.Node, kind string, set secretSet, held bool) {
 	switch {
 	case kind == "Secret":
 		redactSecretNode(root, set)
+		if isListNode(root) {
+			redactNodeList(root, false, set, true)
+			if !held {
+				walkHeldNodeItems(root, set)
+			}
+		}
 	case isListNode(root):
-		redactNodeList(root, kind == "SecretList", set)
+		redactNodeList(root, kind == "SecretList", set, held)
 	default:
 		walkStrayFieldNodes(root, set)
 	}
 }
 
 // redactNodeList redacts the items of a List node, and the List's own fields. The
-// rules are those of redactListObject.
-func redactNodeList(root *yaml.Node, allSecret bool, set secretSet) {
+// rules are those of redactListObject. held means a Secret above root walks its items
+// list for stray values once it is redacted.
+func redactNodeList(root *yaml.Node, allSecret bool, set secretSet, held bool) {
 	walkStrayFieldNodes(root, set, "items")
 	items := mappingValue(root, "items")
 	if items == nil || isNullNode(items) {
@@ -784,17 +1059,28 @@ func redactNodeList(root *yaml.Node, allSecret bool, set secretSet) {
 		}
 		if isSecretNodeItem(item, allSecret) {
 			redactSecretNode(item, set)
+			if isListNode(item) {
+				redactNodeList(item, nodeKind(item) == "SecretList", set, true)
+				if !held {
+					walkHeldNodeItems(item, set)
+				}
+			}
 			continue
 		}
-		redactNodeDoc(item, nodeKind(item), set)
+		redactNodeDocHeld(item, nodeKind(item), set, held)
 	}
 }
 
 // redactSecretNode redacts one Secret node in place. Each value of data and
 // stringData becomes the marker, and the keys stay. Every other scalar that holds a
-// value is replaced, and so is each copied-Secret annotation.
+// value is replaced, and so is each copied-Secret annotation. An items list is left
+// to redactNodeList, as in redactSecretObject.
 func redactSecretNode(root *yaml.Node, set secretSet) {
-	walkStrayFieldNodes(root, set, "data", "stringData")
+	skip := []string{"data", "stringData"}
+	if isListNode(root) {
+		skip = append(skip, "items")
+	}
+	walkStrayFieldNodes(root, set, skip...)
 	for _, field := range []string{"data", "stringData"} {
 		value := mappingValue(root, field)
 		clearCommentsWithin(value)
@@ -982,6 +1268,29 @@ func nodeKind(root *yaml.Node) string {
 		return k.Value
 	}
 	return ""
+}
+
+// yaml11Bools are the plain words YAML 1.1 reads as a bool. The controller decodes
+// manifests with a YAML 1.1 reader, so a plain kind with one of these words is not a
+// string to it, although yaml.v3 reads it as one.
+var yaml11Bools = []string{
+	"y", "Y", "yes", "Yes", "YES", "n", "N", "no", "No", "NO",
+	"true", "True", "TRUE", "false", "False", "FALSE",
+	"on", "On", "ON", "off", "Off", "OFF",
+}
+
+// nodeHasStringKind reports whether a mapping node declares a kind that the controller
+// reads as a non-empty string. A kind that is missing, empty, or not a scalar is not
+// one, and neither is a plain kind that is a YAML 1.1 bool word or a non-string scalar,
+// such as a null or a number. A kind that yaml.v3 does not tag !!str, such as a
+// timestamp, << or a scalar with another tag, counts as no kind even where the controller
+// reads a string. This only makes Render stricter.
+func nodeHasStringKind(root *yaml.Node) bool {
+	k := mappingValue(root, "kind")
+	if k == nil || k.Kind != yaml.ScalarNode || k.Value == "" || k.ShortTag() != "!!str" {
+		return false
+	}
+	return k.Style != 0 || !slices.Contains(yaml11Bools, k.Value)
 }
 
 // nodePlain reports whether a node has no alias, anchor, merge key, explicit tag

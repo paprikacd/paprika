@@ -466,17 +466,60 @@ not establish health or zero drift. The current detailed drift backend returns
 For more detail, use `get_application`, `get_resource_tree` with `detailed=true`,
 `investigate` on an exact selected resource, or `get_logs` with `tail_lines`.
 `get_logs` reads only pods in the application's resource tree. `investigate`
-returns or uses only objects in that tree. Secret values are redacted from the
-Secret's own manifest and diff text, including copies in its annotations and in
-a List that holds it. A value that another object copies, such as a Deployment
-environment value, is not redacted. A Secret key whose value changed shows
-`<redacted: desired value differs>` on the desired side of the diff and
-`<redacted: live value differs>` on the live side, so the change is visible
-without the value.
-The investigator's findings are advisory: its current API does not report each
-source collection failure. Empty findings or missing logs are not proof of an
-absence of errors. Pipeline run-history collection is currently unavailable;
-Pipeline object status and step logs remain useful evidence.
+returns or uses only objects in that tree. A Pod, ReplicaSet or Job that is not a
+managed resource is read, with its owners, to check that the tree holds it.
+
+Secret values are redacted from the Secret's own manifest and diff text, and from a
+List that holds the Secret. Each `data` and `stringData` value is replaced. Outside
+`data` and `stringData`, a text that contains one of the searched forms is replaced
+whole. The forms of a value are its raw text, its trimmed text, its padded and
+unpadded standard and URL-safe base64, its JSON-escaped text, and, for a `data`
+value, its stored base64 text. Each form is matched by its first 32 bytes, and a form
+shorter than 6 bytes is not searched for. So a value of 4 or 5 bytes is found through
+its base64 forms, and through its JSON-escaped text when escaping makes it 6 bytes or
+more. A value of 3 bytes or fewer is found only through its JSON-escaped text, and
+only when escaping makes it 6 bytes or more. A text longer than 16 KiB outside `data`
+and `stringData` is replaced without a search, but only when the Secret, or the List
+that holds it, has a form to search for. When the forms number more than 4096
+distinct ones, no search is built: every other scalar outside `data`, `stringData`
+and the identity fields is replaced, empty ones included, and so is every comment.
+GetResource and investigate count the desired and live Secrets together, since they
+redact both with one set. Map keys and the identity fields (`apiVersion`, `kind`, and
+the metadata `name`, `namespace`, `uid` and `ownerReferences`) are kept as written.
+In a List held by a Secret or a Secret item, a field that holds a value is replaced,
+identity fields included. The `last-applied-configuration` and
+`kapp.k14s.io/original` annotations of a Secret are always replaced whole. A value
+that another object copies, such as a Deployment environment value, is not redacted.
+A Secret key whose value changed shows `<redacted: desired value differs>` on the
+desired side of the diff and `<redacted: live value differs>` on the live side, so
+the change is visible without the value.
+
+The Render RPC, which `paprika render` calls, redacts a document with no kind that
+has `data` or `stringData` as a Secret. A document has no kind when the controller
+reads no string kind from it: its `kind` is missing, empty or not a string, such as
+`~`, `yes` or `5`. When the controller cannot decode a document, its text decides
+this. A top-level sequence has its Secret items redacted. An item of a List or of a
+top-level sequence is a Secret item when it is a Secret, when its kind is missing or
+not a string, when it has a `data` or `stringData` key whatever its kind, or when it
+is an item of a SecretList. The controller applies no built-in List kind and no
+top-level sequence, so for those this rule hides nothing the controller applies. For
+a custom resource whose kind ends in `List`, as for another kind with an `items`
+list, it can also hide values the controller applies.
+
+Render refuses a document it cannot check. A document that yaml.v3 cannot read is
+refused even when the controller might apply it. Among the documents the controller
+cannot decode, Render also refuses a Secret, a List, a document with an `items` list,
+a document with no kind that has `data` or `stringData`, any document with an alias,
+anchor, merge key, explicit tag or duplicate key, and a top-level sequence that holds
+a sequence. Any other document the controller cannot decode is kept as written, since
+the controller never applies it. A refused render fails with `InvalidArgument`, and
+the message names only the document's position, for example
+`rendered document 3 could not be checked for Secret values`.
+
+The investigator's findings are advisory: its current API does not report each source
+collection failure. Empty findings or missing logs are not proof of an absence of
+errors. Pipeline run-history collection is currently unavailable; Pipeline object
+status and step logs remain useful evidence.
 
 ## Delivery actions
 
