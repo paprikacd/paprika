@@ -221,3 +221,5 @@ if grep -Fq -- 'git clone https://github.com/benebsworth/paprika.git' "${getting
 fi
 
 printf 'landing install contract: PASS\n'
+
+node --test "${repo_root}/hack/test-landing-analytics.cjs"
