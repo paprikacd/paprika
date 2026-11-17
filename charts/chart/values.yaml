@@ -303,9 +303,10 @@ apiServer:
   # accounts; this does not scope the controller-manager or typed clients.
   namespaceScope: ""
 
-  # Most StreamResourceLogs follows one caller subject may hold open at once, per
-  # process. Each Basic-auth caller with the same username shares one count, so raise
-  # this for a shared login used by many people. Must be a positive integer.
+  # Most open StreamResourceLogs calls (follow or not) one caller subject may hold at
+  # once, per process. Each Basic-auth caller with the same username shares one
+  # count, so raise this for a shared login used by many people. Must be a positive
+  # integer.
   # Applies to the api-server in deploymentMode: split, and to the manager in
   # deploymentMode: monolith, where the manager serves the API. That includes the
   # sharded StatefulSet (manager.sharding.enabled), which serves the API too.

@@ -48,6 +48,11 @@ const OPEN_FAILURE_WINDOW_MS = 60_000
 // connect-es reports Code values as numbers. These end the follow at once, since a
 // retry cannot succeed: PermissionDenied (7), Unimplemented (12) and
 // ResourceExhausted (8), the per-caller stream limit.
+// InvalidArgument (3) is final until a stream of this follow has sent a chunk. The
+// server sends it at open, for the request itself: a kind with no logs, or an
+// invalid name or namespace. The request does not change during a follow, so after
+// a chunk the 3 comes from the client, when a response ends partway through a
+// message, and the follow reconnects.
 // NotFound (5) is final when it arrives within OPEN_FAILURE_WINDOW_MS of the
 // stream's open. Later, it comes from the server's periodic re-check, so the stream
 // reconnects. Each reconnect opens anew, so a NotFound that arrives near that open
@@ -60,6 +65,7 @@ const NOT_FOUND_LOG_CODE = 5
 const RESOURCE_EXHAUSTED_LOG_CODE = 8
 const UNIMPLEMENTED_LOG_CODE = 12
 const UNAUTHENTICATED_LOG_CODE = 16
+const INVALID_ARGUMENT_LOG_CODE = 3
 const NON_RETRYABLE_LOG_CODES: ReadonlySet<unknown> = new Set<unknown>([
   PERMISSION_DENIED_LOG_CODE,
   RESOURCE_EXHAUSTED_LOG_CODE,
@@ -442,7 +448,7 @@ function LogsTab({
     let authRetried = false
     // True once any stream of this follow has sent a chunk. A reconnect replays the
     // pod log from the start (no TailLines or SinceSeconds), so its first chunk must
-    // replace the buffer.
+    // replace the buffer. Until then, InvalidArgument (3) is final.
     let sawChunk = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -530,7 +536,8 @@ function LogsTab({
           // ends. Later, the server's re-check found it gone. A reconnect then opens again:
           // the open resolves the pod through the application's tree, so a NotFound there
           // covers a deleted application and a resource outside its tree alike. A recreated
-          // application streams once its tree lists the resource again.
+          // application streams again only if its tree lists the resource by that reopen;
+          // otherwise that NotFound is final.
           if (failedNearOpen) {
             setError("This resource or its application no longer exists.")
             setConnected(false)
@@ -546,6 +553,15 @@ function LogsTab({
             reconnectTimer = null
             void refreshThenOpen(msg, tokenAtOpen)
           }, 0)
+          return
+        }
+        // InvalidArgument before this follow's first chunk is final: the kind has no
+        // logs, or the name or namespace is invalid. After a chunk, the stream
+        // reconnects below.
+        if (code === INVALID_ARGUMENT_LOG_CODE && !sawChunk) {
+          setError(msg)
+          setConnected(false)
+          setReconnecting(false)
           return
         }
         if (NON_RETRYABLE_LOG_CODES.has(code)) {
