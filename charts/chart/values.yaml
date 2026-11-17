@@ -303,6 +303,16 @@ apiServer:
   # accounts; this does not scope the controller-manager or typed clients.
   namespaceScope: ""
 
+  # Most StreamResourceLogs follows one caller subject may hold open at once, per
+  # process. Each Basic-auth caller with the same username shares one count, so raise
+  # this for a shared login used by many people. Must be a positive integer.
+  # Applies to the api-server in deploymentMode: split, and to the manager in
+  # deploymentMode: monolith, where the manager serves the API. That includes the
+  # sharded StatefulSet (manager.sharding.enabled), which serves the API too.
+  # Unset (null) renders no flag, so the binary default of 8 applies. Set a value
+  # only with an image that knows --api-log-stream-limit.
+  logStreamLimit: null
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)
@@ -405,10 +415,28 @@ apiServer:
     ## Gateway API request timeout for the /api/insights/ prefix (gateway-api
     ## only). The Insights proxy ends a UI query at 28 s, so this must stay above
     ## 28 s, or the edge cuts a query before the console returns its partial
-    ## answer. The "/" rule sets no explicit timeout, so Envoy Gateway's 15 s default applies to it.
+    ## answer. The "/" rule sets no explicit timeout, so Envoy Gateway's 15 s
+    ## default applies to it.
     ## Must be a single-unit Go duration between 29s and 119s (Cloudflare's
     ## 125 s default proxy read timeout is the outer bound). Chart-validated.
     insightsRequestTimeout: "35s"
+    ## Gateway API request timeout for the follow-mode log stream only
+    ## (gateway-api only): PaprikaService/StreamResourceLogs (Exact match).
+    ## "0s" (the default) disables the request timeout and, in Envoy Gateway v1.4,
+    ## also the route's idle timeout, so nothing at Envoy ends a silent or
+    ## abandoned follow. A non-zero value ends every follow at that age, whether or
+    ## not it is active; the UI then reconnects and re-reads the whole pod log (no
+    ## TailLines or SinceSeconds on PodLogOptions), and the panel replaces its
+    ## buffer with the replay.
+    ## Must be "0s" or a single-unit Go duration of at least 120s, at most 5 digits.
+    ## This value does not affect the SatelliteLink stream, which keeps Envoy
+    ## Gateway's 15 s default on "/" (see the template comment). Cloudflare's 125 s
+    ## proxy read timeout (between reads) still returns 524 when the origin is
+    ## silent for that long. Chart-validated.
+    ## Independent of this value, a follow re-authenticates its caller and re-reads
+    ## its application every 5 minutes. An expired token, a removed role, or a moved,
+    ## deleted or recreated application ends the follow within that interval.
+    logStreamRequestTimeout: "0s"
     ## Type of ingress resource: "ingress" or "gateway-api"
     ##
     # type: ingress

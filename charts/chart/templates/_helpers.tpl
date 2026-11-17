@@ -281,6 +281,24 @@ binary default instead of handing flag parsing an empty string. */}}
 {{- end }}
 
 {{/*
+--api-log-stream-limit for the process that serves the API: the split-mode
+api-server, or the monolith manager (Deployment or sharded StatefulSet). The
+value is passed only when set. Unset (null) omits the flag, so the binary
+default of 8 applies and an image built before the flag existed still starts.
+A set value must be a positive integer; zero and negatives fail the render.
+Emits the bare flag; callers add the list dash.
+*/}}
+{{- define "paprika.logStreamLimitArg" -}}
+{{- $raw := .Values.apiServer.logStreamLimit -}}
+{{- if not (kindIs "invalid" $raw) -}}
+{{- if lt (int $raw) 1 -}}
+{{- fail "apiServer.logStreamLimit must be a positive integer" -}}
+{{- end -}}
+--api-log-stream-limit={{ int $raw }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Console and inline-webhook listener args for the controller-manager in split
 mode. The split-mode manager opens neither listener: the api-server serves the
 console, the API, the satellite link and the token exchange, and the

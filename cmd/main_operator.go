@@ -673,6 +673,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		apiserver.WithCapacityProviders(capacityRegistry),
 		apiserver.WithControlPlaneNamespace(cfg.OperatorNamespace),
 		apiserver.WithObservabilityGateway(cfg.ObservabilityGatewayAddr, authCfg.TokenSecret, cfg.MCPPublicURL),
+		apiserver.WithLogStreamLimit(cfg.APILogStreamLimit),
 	)
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 

@@ -666,6 +666,24 @@ func TestAPIMaxConnsFlag(t *testing.T) {
 	assert.Equal(t, 0, cfg.APIMaxConns)
 }
 
+func TestAPILogStreamLimitFlag(t *testing.T) {
+	cfg, err := parseManagerConfig(nil, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, 8, cfg.APILogStreamLimit)
+	require.NoError(t, validateServingLimits(cfg))
+
+	cfg, err = parseManagerConfig([]string{"--api-log-stream-limit=20"}, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, 20, cfg.APILogStreamLimit)
+	require.NoError(t, validateServingLimits(cfg))
+
+	for _, bad := range []string{"0", "-1"} {
+		cfg, err = parseManagerConfig([]string{"--api-log-stream-limit=" + bad}, io.Discard)
+		require.NoError(t, err)
+		assert.ErrorContains(t, validateServingLimits(cfg), "--api-log-stream-limit must be >= 1")
+	}
+}
+
 func TestRunHTTPServerMaxConns(t *testing.T) {
 	t.Parallel()
 
@@ -980,6 +998,7 @@ func TestValidateControllerTuning(t *testing.T) {
 			ReconcileAppRate:                10,
 			ReconcileAppBurst:               20,
 			APIMaxConns:                     128,
+			APILogStreamLimit:               8,
 		}
 	}
 

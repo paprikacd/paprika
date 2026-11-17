@@ -81,6 +81,9 @@ spec:
         - --mode=operator
         {{- if eq .Values.deploymentMode "monolith" }}
         {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- with include "paprika.logStreamLimitArg" . }}
+        - {{ . }}
+        {{- end }}
         {{- end }}
         {{- /* Split mode: the sharded manager serves no console and no inline webhook, as in manager.yaml. */}}
         {{- with include "paprika.managerSplitListenerArgs" . | trim }}

@@ -21,6 +21,7 @@ import type {
   KubernetesEvent,
   LogChunk,
 } from "@/gen/paprika/v1/api_pb"
+import { getSessionSnapshot, recoverUnauthorized } from "@/lib/browser-session"
 import { STATUS_TONES } from "@/lib/status-tone"
 import { createTransport } from "@/lib/transport"
 import { cn } from "@/lib/utils"
@@ -41,6 +42,30 @@ const TABS: { id: Tab; label: string }[] = [
 const LOG_BUFFER_LIMIT = 5000
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 30_000
+// The server re-checks a follow every five minutes by default, so a NotFound or 16
+// that arrives this soon after open comes from the open itself, not from a re-check.
+const OPEN_FAILURE_WINDOW_MS = 60_000
+// connect-es reports Code values as numbers. These end the follow at once, since a
+// retry cannot succeed: PermissionDenied (7), Unimplemented (12) and
+// ResourceExhausted (8), the per-caller stream limit.
+// NotFound (5) is final when it arrives within OPEN_FAILURE_WINDOW_MS of the
+// stream's open. Later, it comes from the server's periodic re-check, so the stream
+// reconnects. Each reconnect opens anew, so a NotFound that arrives near that open
+// is final.
+// Unauthenticated (16) is final there only after its one retry. It gets one
+// immediate retry, after recovering the session, and a 16 that follows that retry
+// and arrives near the open is final.
+const PERMISSION_DENIED_LOG_CODE = 7
+const NOT_FOUND_LOG_CODE = 5
+const RESOURCE_EXHAUSTED_LOG_CODE = 8
+const UNIMPLEMENTED_LOG_CODE = 12
+const UNAUTHENTICATED_LOG_CODE = 16
+const NON_RETRYABLE_LOG_CODES: ReadonlySet<unknown> = new Set<unknown>([
+  PERMISSION_DENIED_LOG_CODE,
+  RESOURCE_EXHAUSTED_LOG_CODE,
+  UNIMPLEMENTED_LOG_CODE,
+  UNAUTHENTICATED_LOG_CODE,
+])
 
 export interface InspectedResource {
   kind: string
@@ -413,6 +438,12 @@ function LogsTab({
     if (!isActive) return
     let cancelled = false
     let attempt = 0
+    // True after one immediate retry of an Unauthenticated stream, until a chunk arrives.
+    let authRetried = false
+    // True once any stream of this follow has sent a chunk. A reconnect replays the
+    // pod log from the start (no TailLines or SinceSeconds), so its first chunk must
+    // replace the buffer.
+    let sawChunk = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
     const open = async () => {
@@ -420,6 +451,13 @@ function LogsTab({
       const controller = new AbortController()
       abortRef.current = controller
       setReconnecting(true)
+      // The session token this stream opens with. An Unauthenticated answer is
+      // recovered against it, so a token the app has already replaced is not refreshed.
+      const tokenAtOpen = getSessionSnapshot().idToken
+      const openedAt = Date.now()
+      // Whether this stream has sent a chunk yet. It is set on the first chunk of
+      // this stream, which may be a replay of the buffered log.
+      let streamHasChunk = false
       try {
         const iter = client.streamResourceLogs({
           applicationNamespace,
@@ -428,7 +466,7 @@ function LogsTab({
           resourceName: resource.name,
           resourceNamespace: resource.namespace,
           follow: true,
-        })
+        }, { signal: controller.signal })
         const reader = iter[Symbol.asyncIterator]()
         while (!cancelled) {
           const { value, done } = await reader.next()
@@ -437,6 +475,18 @@ function LogsTab({
           // Bail out if the caller (tab switch / unmount / explicit cancel)
           // aborted the stream while we were waiting.
           if (controller.signal.aborted) break
+          authRetried = false
+          if (!streamHasChunk) {
+            streamHasChunk = true
+            setError(null)
+            if (sawChunk) {
+              // A reconnect replays the whole log, so drop the lines already shown.
+              setLines([])
+              setLineCount(0)
+              setFirstChunkAt(Date.now())
+            }
+          }
+          sawChunk = true
           if (!connected) {
             setConnected(true)
             setReconnecting(false)
@@ -460,26 +510,93 @@ function LogsTab({
         if (cancelled) return
         const msg = err instanceof Error ? err.message : String(err)
         console.warn("StreamResourceLogs error:", msg)
-        if (err && typeof err === "object" && "code" in err) {
-          // Unimplemented on agent/repo-server: don't keep trying.
-          const code = (err as { code: unknown }).code
-          if (typeof code === "string" && code.includes("unimplemented")) {
-            setError("Streaming logs are not available on this server.")
+        const code = err && typeof err === "object" && "code" in err ? (err as { code: unknown }).code : undefined
+        // Unimplemented on agent/repo-server: don't keep trying.
+        if (code === UNIMPLEMENTED_LOG_CODE) {
+          setError("Streaming logs are not available on this server.")
+          setConnected(false)
+          setReconnecting(false)
+          return
+        }
+        if (code === RESOURCE_EXHAUSTED_LOG_CODE) {
+          setError("Too many log streams are open. Close another log view, then reopen this one.")
+          setConnected(false)
+          setReconnecting(false)
+          return
+        }
+        const failedNearOpen = Date.now() - openedAt < OPEN_FAILURE_WINDOW_MS
+        if (code === NOT_FOUND_LOG_CODE) {
+          // Near the open, the resource or its application is missing now, so the follow
+          // ends. Later, the server's re-check found it gone. A reconnect then opens again:
+          // the open resolves the pod through the application's tree, so a NotFound there
+          // covers a deleted application and a resource outside its tree alike. A recreated
+          // application streams once its tree lists the resource again.
+          if (failedNearOpen) {
+            setError("This resource or its application no longer exists.")
             setConnected(false)
             setReconnecting(false)
             return
           }
         }
+        if (code === UNAUTHENTICATED_LOG_CODE && (!authRetried || !failedNearOpen)) {
+          authRetried = true
+          setConnected(false)
+          setReconnecting(true)
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null
+            void refreshThenOpen(msg, tokenAtOpen)
+          }, 0)
+          return
+        }
+        if (NON_RETRYABLE_LOG_CODES.has(code)) {
+          setError(msg)
+          setConnected(false)
+          setReconnecting(false)
+          return
+        }
         setError(msg)
         setConnected(false)
-        const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS)
-        attempt++
-        setReconnecting(true)
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null
-          void open()
-        }, delay)
+        scheduleReconnect()
       }
+    }
+
+    // Retries open() with exponential backoff.
+    const scheduleReconnect = () => {
+      const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS)
+      attempt++
+      setReconnecting(true)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        void open()
+      }, delay)
+    }
+
+    // Recovers the session before the Unauthenticated retry. The transport refreshes
+    // only when the token is near expiry, so a token the server rejected would otherwise
+    // be sent again. recoverUnauthorized returns the token the app already holds when
+    // it has replaced the rejected one, and refreshes only when the rejected token is
+    // still current. A refresh that fails may be temporary and leaves the token valid,
+    // so the follow reconnects with backoff, and the transport then uses that token. A
+    // session with no token ends the follow, because the retry would carry no bearer.
+    const refreshThenOpen = async (msg: string, rejectedToken: string | null) => {
+      let token: string | null
+      try {
+        token = await recoverUnauthorized(rejectedToken)
+      } catch {
+        if (cancelled) return
+        setError(msg)
+        setConnected(false)
+        scheduleReconnect()
+        return
+      }
+      if (cancelled) return
+      if (token === null) {
+        setError("Your session could not be renewed. Sign in again to keep following the logs.")
+        setConnected(false)
+        setReconnecting(false)
+        return
+      }
+      void open()
     }
 
     void open()

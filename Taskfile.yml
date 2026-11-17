@@ -979,6 +979,54 @@ tasks:
         rm -rf "$np_tmp"
         expect_fail invalid-namespace-scope --set apiServer.namespaceScope=Review/production
         expect_fail namespace-scope-in-monolith --set apiServer.namespaceScope=review-samples
+        # The schema's minimum rejects zero first, so the render error must name it.
+        if out="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set apiServer.enabled=true --set apiServer.logStreamLimit=0 2>&1)"; then
+          echo "FAIL[log-stream-limit-zero]: expected render failure but succeeded"; rc=1
+        elif printf '%s\n' "$out" | grep -Fq "logStreamLimit': minimum"; then
+          echo "ok[log-stream-limit-zero] (schema minimum rejected)"
+        else
+          echo "FAIL[log-stream-limit-zero]: render failed without the schema minimum: $out"; rc=1
+        fi
+        # --api-log-stream-limit is rendered once per API process when set, in each
+        # mode that serves the API, and never when unset: an image built before the
+        # flag existed rejects it and crash-loops.
+        log_limit_check() { # name, expected value or "none", extra set-args...
+          name="$1"; want="$2"; shift 2
+          if ! out="$(helm template paprika charts/chart --namespace paprika-system "$@" 2>&1)"; then
+            echo "FAIL[$name]: render errored: $out"; rc=1; return
+          fi
+          total="$(printf '%s\n' "$out" | grep -c -- '--api-log-stream-limit' || true)"
+          if [ "$want" = none ]; then
+            if [ "$total" -eq 0 ]; then echo "ok[$name] (no flag)"; else echo "FAIL[$name]: unset must render no flag, got $total"; rc=1; fi
+            return
+          fi
+          exact="$(printf '%s\n' "$out" | grep -c -- "^[[:space:]]*- --api-log-stream-limit=${want}\$" || true)"
+          if [ "$total" -eq 1 ] && [ "$exact" -eq 1 ]; then
+            echo "ok[$name]"
+          else
+            echo "FAIL[$name]: want exactly one --api-log-stream-limit=$want, got $total lines ($exact exact)"; rc=1
+          fi
+        }
+        # Template guard: the schema is skipped so the helper itself must reject zero.
+        log_limit_guard() { # name, extra set-args...
+          name="$1"; shift
+          if out="$(helm template paprika charts/chart --namespace paprika-system --skip-schema-validation --set apiServer.logStreamLimit=0 "$@" 2>&1)"; then
+            echo "FAIL[$name]: expected render failure but succeeded"; rc=1
+          elif printf '%s\n' "$out" | grep -q -- 'apiServer.logStreamLimit must be a positive integer'; then
+            echo "ok[$name] (guard rejected)"
+          else
+            echo "FAIL[$name]: render failed without the guard message: $out"; rc=1
+          fi
+        }
+        log_limit_check log-stream-limit-split-default none --set deploymentMode=split --set apiServer.enabled=true
+        log_limit_check log-stream-limit-monolith-default none
+        log_limit_check log-stream-limit-sharded-default none --set manager.sharding.enabled=true
+        log_limit_check log-stream-limit-split 20 --set deploymentMode=split --set apiServer.enabled=true --set apiServer.logStreamLimit=20
+        log_limit_check log-stream-limit-monolith 20 --set apiServer.logStreamLimit=20
+        log_limit_check log-stream-limit-sharded 20 --set manager.sharding.enabled=true --set apiServer.logStreamLimit=20
+        log_limit_guard log-stream-limit-zero-guard-split --set deploymentMode=split --set apiServer.enabled=true
+        log_limit_guard log-stream-limit-zero-guard-monolith
+        log_limit_guard log-stream-limit-zero-guard-sharded --set manager.sharding.enabled=true
         check_render reconcile-zero \
           --set manager.reconcile.rateLimit.globalRate=0
         check_render reconcile-tuning \
@@ -1030,8 +1078,10 @@ tasks:
         expect_fail capacity-nonnumeric-pool \
           --set observabilityGateway.capacity.httpWorkSlots=many
 
-        # HTTPRoute request timeouts. Envoy Gateway's default is 15 s, so the
-        # /observe route and the /api/insights rule must carry their own bound.
+        # HTTPRoute request timeouts. Envoy Gateway's default is 15 s. The /observe
+        # route and the /api/insights rule carry their own bound. The follow-mode log
+        # stream (StreamResourceLogs) has its own rule, which is unbounded by default
+        # ("0s", logStreamRequestTimeout); the fixtures below pin that rule's value.
         route_render() { # extra set-args...: renders the gateway-api HTTPRoutes
           helm template paprika charts/chart --namespace paprika-system \
             --set deploymentMode=split --set apiServer.enabled=true \
@@ -1048,12 +1098,66 @@ tasks:
           name="$1"; shift
           if msg="$(route_render "$@" 2>&1)"; then
             echo "FAIL[$name]: expected render failure but succeeded"; rc=1
-          elif printf '%s\n' "$msg" | grep -qE 'Timeout must be between|single-unit Go duration'; then
+          elif printf '%s\n' "$msg" | grep -qE 'Timeout must be (between|0s)|single-unit Go duration'; then
             echo "ok[$name] (rejected as expected)"
           else
             echo "FAIL[$name]: rejected, but not by the timeout guard: $msg"; rc=1
           fi
         }
+        # One line per api-server rule, in order:
+        # "<matches>|<request timeout>|<backendRequest>|<backendRef name>|<backendRef port>".
+        # <matches> is "type value[ method M]" per match, comma-separated. Every match
+        # and every field is printed, so an extra match, a route-wide backendRequest,
+        # a method filter or a different Service or port shows up.
+        api_rule_summary() {
+          awk '
+            function flush() { if (seen) print (ms == "" ? "-" : ms) "|" tm "|" tb "|" bn "|" port }
+            /^  - matches:/ { flush(); seen = 1; ms = ""; tm = "-"; tb = "-"; bn = "-"; port = "-"; next }
+            /^        type: / { cur = $2 }
+            /^        value: / { ms = ms (ms == "" ? "" : ",") cur " " $2 }
+            /^      method: / { ms = ms " method " $2 }
+            /^      request: / { tm = $2 }
+            /^      backendRequest: / { tb = $2 }
+            /^    - name: / { bn = $3 }
+            /^      port: / { port = $2 }
+            END { flush() }
+          ' | tr -d '"'
+        }
+        expected_api_rules() { # $1 = /api/insights timeout, $2 = log stream timeout
+          printf '%s\n' "PathPrefix /|-|-|paprika-api-server|3000" \
+            "PathPrefix /api/insights|$1|-|paprika-api-server|3000" \
+            "Exact /paprika.v1.PaprikaService/StreamResourceLogs|$2|-|paprika-api-server|3000"
+        }
+        check_api_rules() { # name, insights timeout, log stream timeout, extra set-args...
+          name="$1"; want_ins="$2"; want_stream="$3"; shift 3
+          if ! out="$(route_render "$@" 2>&1)"; then
+            echo "FAIL[$name]: render errored: $out"; rc=1; return
+          fi
+          api_rt="$(printf '%s\n' "$out" | awk 'BEGIN { RS="\n---\n" } /kind: HTTPRoute/ && /component: api-server/ { print }')"
+          got="$(printf '%s\n' "$api_rt" | api_rule_summary)"
+          if [ "$got" = "$(expected_api_rules "$want_ins" "$want_stream")" ]; then
+            echo "ok[$name] (/ none, /api/insights $want_ins, log stream $want_stream)"
+          else
+            echo "FAIL[$name]: api-server rules, want / none, /api/insights $want_ins, log stream $want_stream; got:"
+            printf '%s\n' "$got"; rc=1
+          fi
+        }
+        check_api_rules route-stream-default 35s 0s
+        # A null value (a key missing after --reuse-values) takes the 0s default.
+        check_api_rules route-stream-null 35s 0s --set apiServer.ingress.logStreamRequestTimeout=null
+        check_api_rules route-stream-explicit-zero 35s 0s --set apiServer.ingress.logStreamRequestTimeout=0s
+        check_api_rules route-stream-min 35s 120s --set apiServer.ingress.logStreamRequestTimeout=120s
+        check_api_rules route-stream-2m 35s 2m --set apiServer.ingress.logStreamRequestTimeout=2m
+        check_api_rules route-stream-configured 35s 600s --set apiServer.ingress.logStreamRequestTimeout=600s
+        check_api_rules route-insights-configured 40s 0s --set apiServer.ingress.insightsRequestTimeout=40s
+        expect_route_fail route-stream-1s --set apiServer.ingress.logStreamRequestTimeout=1s
+        expect_route_fail route-stream-60s --set apiServer.ingress.logStreamRequestTimeout=60s
+        expect_route_fail route-stream-1m --set apiServer.ingress.logStreamRequestTimeout=1m
+        expect_route_fail route-stream-119s --set apiServer.ingress.logStreamRequestTimeout=119s
+        expect_route_fail route-stream-compound --set apiServer.ingress.logStreamRequestTimeout=2m30s
+        expect_route_fail route-stream-bare-zero --set apiServer.ingress.logStreamRequestTimeout=0
+        expect_route_fail route-stream-six-digits --set apiServer.ingress.logStreamRequestTimeout=100000s
+        expect_route_fail route-stream-garbage --set apiServer.ingress.logStreamRequestTimeout=soon
         if ! route_out="$(route_render 2>&1)"; then
           echo "FAIL[route-timeouts]: render errored: $route_out"; rc=1
         else
@@ -1062,13 +1166,7 @@ tasks:
               echo "FAIL[route-timeouts]: expected exactly one rule with $want"; rc=1
             fi
           done
-          api_rt="$(printf '%s\n' "$route_out" | awk 'BEGIN { RS="\n---\n" } /kind: HTTPRoute/ && /component: api-server/ { print }')"
-          if [ "$(printf '%s\n' "$api_rt" | grep -c 'timeouts:')" -ne 1 ] \
-            || ! printf '%s\n' "$api_rt" | grep -B2 -A8 'request: "35s"' | grep -qF 'value: /api/insights'; then
-            echo "FAIL[route-timeouts]: only the /api/insights rule may carry a timeout"; rc=1
-          else
-            echo "ok[route-timeouts] (50s on /observe, 35s on /api/insights, none on /)"
-          fi
+          echo "ok[route-timeouts] (observe 50s; api-server checked above)"
         fi
         if route_render --set observabilityGateway.ingress.requestTimeout=46s >/dev/null 2>&1; then
           echo "ok[route-timeout-min] (46s accepted)"
