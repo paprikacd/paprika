@@ -423,6 +423,11 @@ func (s *PaprikaServer) Render(
 	if err != nil {
 		return nil, fmt.Errorf("render template: %w", err)
 	}
+	manifests, err = redactSecretManifests(manifests)
+	if err != nil {
+		// The reason is not wrapped: it could be read from the document, and the document may hold a Secret value.
+		return nil, connect.NewError(connect.CodeInternal, errors.New("rendered manifests could not be checked for Secret values"))
+	}
 	return connect.NewResponse(&paprikav1.RenderResponse{Manifests: manifests}), nil
 }
 

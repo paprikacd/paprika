@@ -373,7 +373,10 @@ func TestGetResource_AppNotFound(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestGetResource_ResourceNotInDesiredManifests(t *testing.T) {
+// A Deployment that is neither managed nor in the live cluster is outside the
+// tree, so it gets the same not-found answer as any other such resource. The
+// desired manifest of an object outside the tree is never rendered.
+func TestGetResource_ResourceOutsideTheTreeIsNotFound(t *testing.T) {
 	ctx := context.Background()
 	srv, _ := setupGetResourceTest(t)
 
@@ -386,10 +389,9 @@ func TestGetResource_ResourceNotInDesiredManifests(t *testing.T) {
 	})
 
 	resp, err := srv.GetResource(ctx, req)
-	require.NoError(t, err)
-	// Should still return sync status from Application CR, just no desired manifest.
-	require.Equal(t, "", resp.Msg.SyncStatus) // not found in resources list
-	require.Empty(t, resp.Msg.DesiredManifest)
+	require.Nil(t, resp)
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+	require.Equal(t, logsScopeOutsideMessage("Deployment", "test-ns", "nonexistent-deployment"), logsScopeMessage(t, err))
 }
 
 func TestGetResource_LiveManifestStripsServerFields(t *testing.T) {

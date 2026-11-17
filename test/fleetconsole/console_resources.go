@@ -89,9 +89,16 @@ func (c *consoleServer) GetResource(
 	req *connect.Request[paprikav1.GetResourceRequest],
 ) (*connect.Response[paprikav1.GetResourceResponse], error) {
 	response, err := c.PaprikaServer.GetResource(ctx, req)
-	if err != nil || !isCheckoutFixture(req.Msg.GetApplicationNamespace(), req.Msg.GetApplicationName()) {
+	if !isCheckoutFixture(req.Msg.GetApplicationNamespace(), req.Msg.GetApplicationName()) {
 		return response, err
 	}
+	// The real handler still runs for authorization and returns every error but
+	// NotFound. NotFound is expected here: the fixture's nodes are not in the
+	// destination cluster, so the tree check refuses them, and the fixture serves them itself.
+	if err != nil && connect.CodeOf(err) != connect.CodeNotFound {
+		return response, err
+	}
+	response = connect.NewResponse(&paprikav1.GetResourceResponse{})
 	node, err := checkoutFixtureResource(req.Msg.GetResourceKind(), req.Msg.GetResourceName(), req.Msg.GetResourceNamespace())
 	if err != nil {
 		return nil, err

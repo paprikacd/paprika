@@ -137,6 +137,11 @@ func validateLogsIdentifiers(name, namespace string) error {
 	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid resource name %q", name))
 	}
+	return validateLogsNamespace(namespace)
+}
+
+// validateLogsNamespace rejects a namespace the cluster could never hold.
+func validateLogsNamespace(namespace string) error {
 	if errs := validation.IsDNS1123Label(namespace); len(errs) > 0 {
 		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid resource namespace %q", namespace))
 	}
@@ -316,7 +321,7 @@ func logsReadFailure(ctx context.Context, kind, namespace, name string, err erro
 		}
 		return connect.NewError(connect.CodeCanceled, ctxErr)
 	}
-	log.FromContext(ctx).Error(err, "reading a resource for logs failed", "kind", kind, "namespace", namespace, "name", name)
+	log.FromContext(ctx).Error(err, "reading a resource failed", "kind", kind, "namespace", namespace, "name", name)
 	return errLogsReadFailed
 }
 
@@ -406,22 +411,35 @@ func (sc *logsTreeScope) ownerRefsOf(ctx context.Context, kind, namespace, name 
 		return nil, errLogsReadBudget
 	}
 	sc.reads++
-	spec, err := readWorkloadSpec(ctx, sc.typed, kind, name, namespace)
-	switch {
-	case err == nil:
-	case apierrors.IsNotFound(err):
-		spec = workloadSpec{}
-	case apierrors.IsForbidden(err):
-		// No owners, so the object is outside the tree. Logged at verbosity 1, so
-		// an operator whose credential cannot read owners can find the cause.
-		log.FromContext(ctx).V(1).Info("owner read forbidden; object treated as outside the tree",
-			"kind", kind, "namespace", namespace, "name", name)
-		spec = workloadSpec{}
-	default:
-		return nil, logsReadFailure(ctx, kind, namespace, name, err)
+	spec, err := sc.readOwnerSpec(ctx, kind, namespace, name)
+	if err != nil {
+		return nil, err
 	}
 	sc.remember(kind, namespace, name, spec.owners)
 	return spec.owners, nil
+}
+
+// readOwnerSpec reads an owner object for the walk. A missing or forbidden owner
+// has no owners, so the object it would place is outside the tree. Without a
+// destination client nothing can be read, so the owner is outside the tree too.
+func (sc *logsTreeScope) readOwnerSpec(ctx context.Context, kind, namespace, name string) (workloadSpec, error) {
+	if sc.typed == nil {
+		return workloadSpec{}, nil
+	}
+	spec, err := readWorkloadSpec(ctx, sc.typed, kind, name, namespace)
+	switch {
+	case err == nil:
+		return spec, nil
+	case apierrors.IsNotFound(err):
+		return workloadSpec{}, nil
+	case apierrors.IsForbidden(err):
+		// Logged at verbosity 1, so an operator whose credential cannot read owners can find the cause.
+		log.FromContext(ctx).V(1).Info("owner read forbidden; object treated as outside the tree",
+			"kind", kind, "namespace", namespace, "name", name)
+		return workloadSpec{}, nil
+	default:
+		return workloadSpec{}, logsReadFailure(ctx, kind, namespace, name, err)
+	}
 }
 
 // remember stores the owner references of a ReplicaSet or Job so a later walk

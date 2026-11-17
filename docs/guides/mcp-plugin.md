@@ -465,7 +465,14 @@ not establish health or zero drift. The current detailed drift backend returns
 
 For more detail, use `get_application`, `get_resource_tree` with `detailed=true`,
 `investigate` on an exact selected resource, or `get_logs` with `tail_lines`.
-`get_logs` reads only pods in the application's resource tree.
+`get_logs` reads only pods in the application's resource tree. `investigate`
+returns or uses only objects in that tree. Secret values are redacted from the
+Secret's own manifest and diff text, including copies in its annotations and in
+a List that holds it. A value that another object copies, such as a Deployment
+environment value, is not redacted. A Secret key whose value changed shows
+`<redacted: desired value differs>` on the desired side of the diff and
+`<redacted: live value differs>` on the live side, so the change is visible
+without the value.
 The investigator's findings are advisory: its current API does not report each
 source collection failure. Empty findings or missing logs are not proof of an
 absence of errors. Pipeline run-history collection is currently unavailable;

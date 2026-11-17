@@ -125,6 +125,29 @@ describe("UnifiedDiffPane", () => {
 
     expect(screen.getByText("No differences")).toBeInTheDocument()
   })
+
+  it("shows a changed Secret value as a marked line, not as no differences", () => {
+    // The lines are the server's unified diff for a Secret whose value changed, as
+    // GetResource returns them: each side carries its own marker, so the changed key
+    // is a removed and an added line.
+    const secretDiff = [
+      "--- Desired",
+      "+++ Live",
+      "@@ -1,6 +1,6 @@",
+      " apiVersion: v1",
+      " data:",
+      "-  password: '<redacted: desired value differs>'",
+      "+  password: '<redacted: live value differs>'",
+      " kind: Secret",
+      " metadata:",
+      "   labels:",
+    ].join("\n")
+    render(<UnifiedDiffPane diff={secretDiff} />)
+
+    expect(screen.queryByText("No differences")).not.toBeInTheDocument()
+    expect(screen.getAllByText(/<redacted: desired value differs>/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/<redacted: live value differs>/).length).toBeGreaterThan(0)
+  })
 })
 
 describe("SplitDiffPane", () => {

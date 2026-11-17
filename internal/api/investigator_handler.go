@@ -2,7 +2,6 @@ package apiserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -11,8 +10,11 @@ import (
 
 	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -32,7 +34,10 @@ const investigatorEventsLimit = 50
 // own init() in subdirectories of internal/investigator/plugins/.
 var investigatorRegistry = investigator.NewDefaultRegistry()
 
-// Investigate runs the configured registry against the target resource.
+// Investigate runs the configured registry against the target resource. The
+// resource must be in the application's resource tree: a resource outside it
+// gets the same error as one that does not exist, and no logs or events are
+// read for it. Secret values are redacted in the diff the detectors see.
 func (s *PaprikaServer) Investigate(
 	ctx context.Context,
 	req *connect.Request[paprikav1.InvestigateRequest],
@@ -79,14 +84,28 @@ func (s *PaprikaServer) Investigate(
 				app.Namespace, app.Name, ErrTargetUnavailable, target.label))
 	}
 
-	live, _, err := s.fetchInvestigatorLiveManifest(ctx, target, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
-	if err == nil {
+	// An application-level investigation names no resource. Nothing about a
+	// resource is read for it, and the detectors run on the application alone.
+	// Otherwise the tree check runs first. An out-of-tree resource is never
+	// returned or used: its owner objects may be read to place it in the tree,
+	// but nothing about it reaches the detectors.
+	dyn := s.targetDynamicClientOrNil(ctx, target, nil)
+	typed := s.targetTypedClientOrNil(ctx, target, nil)
+	live, err := investigatorLive(ctx, &app, dyn, typed, targetMapper(s, target),
+		req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	if err != nil {
+		return nil, err
+	}
+	if live != nil {
 		in.LiveManifest = live
 	}
 
-	in.Diff = s.fetchInvestigatorDiff(ctx, target, &app, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
-	in.Events = s.fetchInvestigatorEvents(ctx, target, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
-	in.Logs = s.fetchInvestigatorLogs(ctx, target, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	// investigatorDiff redacts the live object, so it is safe to hand to the detectors.
+	in.Diff = s.investigatorDiff(ctx, &app, req.Msg.ResourceKind, req.Msg.ResourceName, live)
+	if req.Msg.ResourceName != "" {
+		in.Events = fetchInvestigatorEvents(ctx, typed, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	}
+	in.Logs = investigatorLogs(ctx, typed, req.Msg.ResourceKind, req.Msg.ResourceName, ns, live)
 
 	resp, err := investigatorRegistry.Investigate(ctx, in)
 	if err != nil {
@@ -125,64 +144,49 @@ func (s *PaprikaServer) ListInvestigatorPlugins(
 	return connect.NewResponse(&paprikav1.ListInvestigatorPluginsResponse{Plugins: plugins}), nil
 }
 
-// fetchInvestigatorLiveManifest retrieves the live unstructured manifest for
-// the given resource via the dynamic client. Returns nil, nil if unavailable.
-func (s *PaprikaServer) fetchInvestigatorLiveManifest(ctx context.Context, target targetCluster, kind, name, namespace string) (*unstructured.Unstructured, string, error) {
-	dynamicClient, clientErr := s.targetDynamicClient(ctx, target)
-	if errors.Is(clientErr, ErrTargetUnavailable) {
-		// The investigation still runs on whatever status the application
-		// carries; live detectors simply have nothing to look at.
-		return nil, "", nil
+// investigatorLive reads the live object an investigation names, when the
+// application's tree holds it. The object is raw and must be redacted before use.
+// An application-level investigation names no resource, so it reads none and
+// returns no object.
+func investigatorLive(
+	ctx context.Context,
+	app *pipelinesv1alpha1.Application,
+	dyn dynamic.Interface,
+	typed kubernetes.Interface,
+	mapper meta.RESTMapper,
+	kind, name, namespace string,
+) (*unstructured.Unstructured, error) {
+	if name == "" {
+		return nil, nil
 	}
-	if clientErr != nil {
-		return nil, "", clientErr
-	}
-	gvr, ok := knownResourceGVRs[kind]
-	if !ok {
-		return nil, "", fmt.Errorf("unknown kind %q", kind)
-	}
-	resource := dynamicClient.Resource(gvr)
-	var obj *unstructured.Unstructured
-	if gvr.Group == "" && gvr.Resource == "namespaces" {
-		got, err := resource.Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, "", fmt.Errorf("get live %s/%s: %w", kind, name, err)
-		}
-		obj = got
-	} else {
-		got, err := resource.Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return nil, "", fmt.Errorf("get live %s/%s/%s: %w", kind, namespace, name, err)
-		}
-		obj = got
-	}
-	yaml, err := manifestToYAML(obj.Object)
-	if err != nil {
-		return obj, "", err
-	}
-	return obj, yaml, nil
+	live, _, err := readTreeResource(ctx, app, dyn, typed, mapper, kind, name, namespace)
+	return live, err
 }
 
-// fetchInvestigatorDiff renders the desired vs. live diff using the
-// existing resource_handler helpers. Returns "" if anything is missing.
-func (s *PaprikaServer) fetchInvestigatorDiff(ctx context.Context, target targetCluster, app *pipelinesv1alpha1.Application, kind, name, namespace string) string {
-	if s.renderer == nil {
+// investigatorDiff renders the desired vs. live diff. The live object is redacted
+// in place with its desired object, so its Secret values are gone before any
+// detector sees it, and a value-only change to a Secret still gives a diff. It
+// returns "" when the desired object is missing.
+func (s *PaprikaServer) investigatorDiff(ctx context.Context, app *pipelinesv1alpha1.Application, kind, name string, live *unstructured.Unstructured) string {
+	if live == nil {
 		return ""
 	}
-	desired, err := s.getDesiredManifest(ctx, app, kind, name)
-	if err != nil {
+	desired := s.desiredObjectOrNil(ctx, app, kind, name)
+	redactManifestPair(desired, live.Object)
+	if desired == nil {
 		return ""
 	}
-	_, live, err := s.fetchInvestigatorLiveManifest(ctx, target, kind, name, namespace)
-	if err != nil || live == "" {
+	desiredYAML, liveYAML := manifestsToYAML(desired, live)
+	if desiredYAML == "" || liveYAML == "" {
 		return ""
 	}
-	return unifiedDiff(desired, live)
+	return unifiedDiff(desiredYAML, liveYAML)
 }
 
-func (s *PaprikaServer) fetchInvestigatorEvents(ctx context.Context, target targetCluster, kind, name, namespace string) []investigator.KubernetesEvent {
-	typedClient, clientErr := s.targetTypedClient(ctx, target)
-	if clientErr != nil {
+// fetchInvestigatorEvents lists the recent events for a resource the tree holds.
+// A nil typed client, for an unreachable destination, lists nothing.
+func fetchInvestigatorEvents(ctx context.Context, typedClient kubernetes.Interface, kind, name, namespace string) []investigator.KubernetesEvent {
+	if typedClient == nil {
 		return nil
 	}
 	fieldSelector := fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s", kind, name)
@@ -220,14 +224,25 @@ func (s *PaprikaServer) fetchInvestigatorEvents(ctx context.Context, target targ
 	return out
 }
 
-func (s *PaprikaServer) fetchInvestigatorLogs(ctx context.Context, target targetCluster, kind, name, namespace string) []string {
-	if kind != "Pod" {
+// investigatorLogs returns the tail of a pod's logs. Only a Pod has logs, and only
+// when readTreeResource returned it: a non-nil live object is a pod the tree holds,
+// already read and checked, so its logs are read without a second lookup. A nil
+// live object (no object, or a managed pod that is gone) has no logs.
+func investigatorLogs(
+	ctx context.Context,
+	typedClient kubernetes.Interface,
+	kind, name, namespace string,
+	live *unstructured.Unstructured,
+) []string {
+	if kind != "Pod" || typedClient == nil || live == nil {
 		return nil
 	}
-	typedClient, clientErr := s.targetTypedClient(ctx, target)
-	if clientErr != nil {
-		return nil
-	}
+	return fetchInvestigatorLogs(ctx, typedClient, namespace, name)
+}
+
+// fetchInvestigatorLogs reads the tail of one pod's logs. An unreadable log
+// yields no lines.
+func fetchInvestigatorLogs(ctx context.Context, typedClient kubernetes.Interface, namespace, name string) []string {
 	tail := int64(investigatorLogsTailLines)
 	logs, err := typedClient.CoreV1().Pods(namespace).GetLogs(name, &corev1.PodLogOptions{TailLines: &tail}).Stream(ctx)
 	if err != nil {
