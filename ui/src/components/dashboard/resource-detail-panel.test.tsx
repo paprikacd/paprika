@@ -466,6 +466,7 @@ describe("ResourceDetailPanel", () => {
       }
 
       it.each([
+        ["InvalidArgument", 3, /nope/],
         ["PermissionDenied", 7, /nope/],
         ["Unimplemented", 12, /not available on this server/],
       ])("stops retrying a log stream that ends with %s (code %i)", async (_name, code, text) => {
@@ -476,6 +477,57 @@ describe("ResourceDetailPanel", () => {
         await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument())
         await vi.advanceTimersByTimeAsync(5000)
         expect(mockClient.streamResourceLogs).toHaveBeenCalledTimes(1)
+        expect(screen.queryByText(/reconnecting/)).not.toBeInTheDocument()
+      })
+
+      it("reconnects after InvalidArgument that arrives after a chunk", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        const one = new LogChunk({ podName: "demo-deploy-pod", containerName: "app", line: "chunk-before-invalid", timestampMs: BigInt(1) })
+        mockClient.streamResourceLogs
+          .mockReturnValueOnce(chunksThenFail([one], 3))
+          .mockReturnValueOnce(asyncIter([]))
+
+        await openLogsTab()
+        await waitFor(() =>
+          expect(screen.getByTestId("logs-output")).toHaveTextContent(/chunk-before-invalid/),
+        )
+        await waitFor(() => expect(screen.getByText(/stream ended/)).toBeInTheDocument())
+        // The reconnect waits for the backoff, so the stream is not reopened at once.
+        expect(mockClient.streamResourceLogs).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(mockClient.streamResourceLogs).toHaveBeenCalledTimes(2)
+      })
+
+      it("ends at once when InvalidArgument arrives before the first chunk of a reopened stream", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        mockClient.streamResourceLogs
+          .mockReturnValueOnce(failingStream(14, "[14] unavailable"))
+          .mockReturnValueOnce(failingStream(3, "[3] invalid name"))
+
+        await openLogsTab()
+        await waitFor(() => expect(screen.getByText(/unavailable/)).toBeInTheDocument())
+        await vi.advanceTimersByTimeAsync(1000)
+        await waitFor(() => expect(screen.getByText(/invalid name/)).toBeInTheDocument())
+        await vi.advanceTimersByTimeAsync(5000)
+        expect(mockClient.streamResourceLogs).toHaveBeenCalledTimes(2)
+        expect(screen.queryByText(/reconnecting/)).not.toBeInTheDocument()
+      })
+
+      it("reconnects when a reopened stream gets InvalidArgument before its first chunk, after an earlier stream sent lines", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        const one = new LogChunk({ podName: "demo-deploy-pod", containerName: "app", line: "line-before-reopen", timestampMs: BigInt(1) })
+        mockClient.streamResourceLogs
+          .mockReturnValueOnce(chunksThenFail([one], 14))
+          .mockReturnValueOnce(failingStream(3, "[3] invalid name"))
+          .mockReturnValueOnce(asyncIter([]))
+
+        await openLogsTab()
+        await waitFor(() => expect(screen.getByText(/stream ended/)).toBeInTheDocument())
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(mockClient.streamResourceLogs).toHaveBeenCalledTimes(2)
+        await waitFor(() => expect(screen.getByText(/invalid name/)).toBeInTheDocument())
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(mockClient.streamResourceLogs).toHaveBeenCalledTimes(3)
       })
 
       it("reconnects once at once after Unauthenticated, after forcing a token refresh", async () => {

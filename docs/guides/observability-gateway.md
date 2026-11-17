@@ -215,13 +215,14 @@ so a read is cut only by its own budget. Two caveats remain:
   (`defaultFollowRecheckInterval`, 5 minutes). It then re-authorizes the application
   as it is now. The re-check does not re-resolve the pod against the resource tree;
   the pod is resolved once, when the stream opens. The ticker runs whether or not the
-  pod writes, so a silent pod is covered. A failed check ends the stream with `unauthenticated` (the credential no
-  longer authenticates), `permission_denied` (the caller lost read on the
-  application's AppProject, or the AppProject no longer exists), `not_found` (the
-  application was deleted or recreated under a new UID), or `unavailable` (another
-  read failed; the UI retries that one). With an authorizer configured, a follow that
-  arrives without the interceptor's re-authenticator is refused at open with
-  `unauthenticated`. A follow therefore ends within one interval of any of these:
+  pod writes, so a silent pod is covered. A failed check ends the stream with
+  `unauthenticated` (the credential no longer authenticates), `permission_denied`
+  (the caller lost read on the application's AppProject, or the AppProject no longer
+  exists), `not_found` (the application was deleted or recreated under a new UID), or
+  `unavailable` (another read failed; the UI retries that one). With an authorizer
+  configured, a follow that arrives without the interceptor's re-authenticator is
+  refused at open with `unauthenticated`. A follow therefore ends within one interval
+  of any of these:
   - the caller's token expires. An OIDC ID token expires at its `exp` claim, and a
     self-signed token at its TTL. A token cannot be revoked early, because there is
     no revocation list, so expiry is the only way the token stops authenticating.
@@ -230,21 +231,24 @@ so a read is cut only by its own budget. Two caveats remain:
     restart, and a restart ends every follow.
   - the caller's AppProject role changes so that it no longer grants `read`.
   - the application moves to another AppProject, is deleted, or is recreated.
-  The UI reconnects once at once after `unauthenticated`. Before that retry it recovers
-  the session against the token the stream opened with. A token the app has already
-  replaced is used as is, and a refresh runs only while that token is still current,
-  so the new call carries a fresh token. If that refresh fails, the UI reconnects with
-  backoff instead. If the session has no token, the follow ends. An `unauthenticated`
-  that arrives within 60 seconds of the stream's open, after a retry, is final. A later
-  one comes from the re-check, so the UI reconnects once more. `permission_denied`,
-  `unimplemented` and `resource_exhausted` are always final. `not_found` is final when
-  it arrives within 60 seconds of the open. The open resolves the pod through the
-  resource tree, so that `not_found` means the application is gone or the resource is
-  not in its tree. Otherwise it comes from the re-check, which means the application was
-  deleted or recreated. The UI then reconnects, and that open ends a deleted application,
-  or a resource outside its tree, with `not_found` at once. A recreated application
-  streams once its tree lists the resource again. If the tree is still empty at that
-  reopen, the `not_found` is final, and the user must reopen the tab.
+  The UI reconnects once at once after `unauthenticated`. Before that retry it
+  recovers the session against the token the stream opened with. A token the app has
+  already replaced is used as is, and a refresh runs only while that token is still
+  current, so the new call carries a fresh token. If that refresh fails, the UI
+  reconnects with backoff instead. If the session has no token, the follow ends. An
+  `unauthenticated` that arrives within 60 seconds of the stream's open, after a
+  retry, is final. A later one comes from the re-check, so the UI reconnects once
+  more. `permission_denied`, `unimplemented` and `resource_exhausted` are always
+  final. `invalid_argument` (a kind with no logs, such as a Service, or an invalid
+  name) is final until the follow has shown a log line; after that, the UI
+  reconnects. `not_found` is final when it arrives within 60 seconds of the open. The
+  open resolves the pod through the resource tree, so that `not_found` means the
+  application is gone or the resource is not in its tree. Otherwise it comes from the
+  re-check, which means the application was deleted or recreated. The UI then
+  reconnects, and that open ends a deleted application, or a resource outside its
+  tree, with `not_found` at once. A recreated application streams once its tree lists
+  the resource again. If the tree is still empty at that reopen, the `not_found` is
+  final, and the user must reopen the tab.
   A reconnect replays the pod log from the start (the handler sets neither
   `TailLines` nor `SinceSeconds` on `PodLogOptions`), so the panel replaces its
   buffer with the replay instead of appending it.

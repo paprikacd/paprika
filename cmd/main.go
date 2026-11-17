@@ -750,8 +750,8 @@ func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
 			"Bounds connection and in-flight request memory on small pods; excess "+
 			"connections wait in the kernel accept queue. 0 disables the limit.")
 	fs.Int("api-log-stream-limit", 8,
-		"Maximum number of open StreamResourceLogs follows per caller subject. Every Basic-auth "+
-			"caller with the same username shares one count. Must be at least 1.")
+		"Maximum number of open StreamResourceLogs calls (follow or not) per caller subject. "+
+			"Every Basic-auth caller with the same username shares one count. Must be at least 1.")
 	registerControllerTuningFlags(fs)
 	fs.String("mode", "operator",
 		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), 'agent' (apply agent), 'satellite' (outbound state reporting), or 'observability-gateway' (observability MCP). "+

@@ -41,7 +41,7 @@
         "logStreamLimit": {
           "type": ["integer", "null"],
           "minimum": 1,
-          "description": "Most StreamResourceLogs follows one caller subject may hold open at once, per process. Rendered on the split-mode api-server and on the monolith manager, including its sharded StatefulSet."
+          "description": "Most open StreamResourceLogs calls (follow or not) one caller subject may hold at once, per process. Rendered on the split-mode api-server and on the monolith manager, including its sharded StatefulSet."
         }
       }
     },
