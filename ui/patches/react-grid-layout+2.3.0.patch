@@ -1,0 +1,220 @@
+diff --git a/node_modules/react-grid-layout/dist/chunk-CUP5Y2ZG.js b/node_modules/react-grid-layout/dist/chunk-CUP5Y2ZG.js
+index 23399ca..2e137d1 100644
+--- a/node_modules/react-grid-layout/dist/chunk-CUP5Y2ZG.js
++++ b/node_modules/react-grid-layout/dist/chunk-CUP5Y2ZG.js
+@@ -91,6 +91,8 @@ function GridItemInner(props) {
+     isResizable,
+     isBounded,
+     allowMobileScroll,
++    dragUserSelectHack,
++    resizeUserSelectHack,
+     static: isStatic,
+     useCSSTransforms = true,
+     usePercentages = false,
+@@ -587,7 +589,7 @@ function GridItemInner(props) {
+   newChild = /* @__PURE__ */ jsxRuntime.jsx(
+     reactResizable.Resizable,
+     {
+-      draggableOpts: { disabled: !isResizable },
++      draggableOpts: { disabled: !isResizable, enableUserSelectHack: resizeUserSelectHack },
+       className: isResizable ? void 0 : "react-resizable-hide",
+       width: pos.width,
+       height: pos.height,
+@@ -613,6 +615,7 @@ function GridItemInner(props) {
+       cancel: ".react-resizable-handle" + (cancel ? "," + cancel : ""),
+       scale: transformScale,
+       allowMobileScroll,
++      enableUserSelectHack: dragUserSelectHack,
+       nodeRef: elementRef,
+       children: newChild
+     }
+@@ -635,6 +638,8 @@ var GridItem = React2__default.default.memo(GridItemInner, (prev, next) => {
+   if (prev.isResizable !== next.isResizable) return false;
+   if (prev.isBounded !== next.isBounded) return false;
+   if (prev.allowMobileScroll !== next.allowMobileScroll) return false;
++  if (prev.dragUserSelectHack !== next.dragUserSelectHack) return false;
++  if (prev.resizeUserSelectHack !== next.resizeUserSelectHack) return false;
+   if (prev.useCSSTransforms !== next.useCSSTransforms) return false;
+   if (prev.usePercentages !== next.usePercentages) return false;
+   if (prev.children !== next.children) return false;
+@@ -828,12 +833,14 @@ function GridLayout(props) {
+     handle: draggableHandle,
+     cancel: draggableCancel,
+     threshold: dragThreshold,
+-    allowMobileScroll: dragAllowMobileScroll
++    allowMobileScroll: dragAllowMobileScroll,
++    enableUserSelectHack: dragUserSelectHack
+   } = dragConfig;
+   const {
+     enabled: isResizable,
+     handles: resizeHandles,
+-    handleComponent: resizeHandle
++    handleComponent: resizeHandle,
++    enableUserSelectHack: resizeUserSelectHack
+   } = resizeConfig;
+   const {
+     enabled: isDroppable,
+@@ -1449,6 +1456,8 @@ function GridLayout(props) {
+           isResizable: resizable,
+           isBounded: bounded,
+           allowMobileScroll: dragAllowMobileScroll,
++          dragUserSelectHack,
++          resizeUserSelectHack,
+           useCSSTransforms: useCSSTransforms && mounted,
+           usePercentages: !mounted,
+           transformScale,
+@@ -1485,6 +1494,9 @@ function GridLayout(props) {
+       rowHeight,
+       draggableCancel,
+       draggableHandle,
++      dragAllowMobileScroll,
++      dragUserSelectHack,
++      resizeUserSelectHack,
+       onDragStart,
+       onDrag,
+       onDragStop,
+diff --git a/node_modules/react-grid-layout/dist/chunk-Z6CWRR74.mjs b/node_modules/react-grid-layout/dist/chunk-Z6CWRR74.mjs
+index 5d3ee00..2ca146e 100644
+--- a/node_modules/react-grid-layout/dist/chunk-Z6CWRR74.mjs
++++ b/node_modules/react-grid-layout/dist/chunk-Z6CWRR74.mjs
+@@ -84,6 +84,8 @@ function GridItemInner(props) {
+     isResizable,
+     isBounded,
+     allowMobileScroll,
++    dragUserSelectHack,
++    resizeUserSelectHack,
+     static: isStatic,
+     useCSSTransforms = true,
+     usePercentages = false,
+@@ -580,7 +582,7 @@ function GridItemInner(props) {
+   newChild = /* @__PURE__ */ jsx(
+     Resizable,
+     {
+-      draggableOpts: { disabled: !isResizable },
++      draggableOpts: { disabled: !isResizable, enableUserSelectHack: resizeUserSelectHack },
+       className: isResizable ? void 0 : "react-resizable-hide",
+       width: pos.width,
+       height: pos.height,
+@@ -606,6 +608,7 @@ function GridItemInner(props) {
+       cancel: ".react-resizable-handle" + (cancel ? "," + cancel : ""),
+       scale: transformScale,
+       allowMobileScroll,
++      enableUserSelectHack: dragUserSelectHack,
+       nodeRef: elementRef,
+       children: newChild
+     }
+@@ -628,6 +631,8 @@ var GridItem = React2.memo(GridItemInner, (prev, next) => {
+   if (prev.isResizable !== next.isResizable) return false;
+   if (prev.isBounded !== next.isBounded) return false;
+   if (prev.allowMobileScroll !== next.allowMobileScroll) return false;
++  if (prev.dragUserSelectHack !== next.dragUserSelectHack) return false;
++  if (prev.resizeUserSelectHack !== next.resizeUserSelectHack) return false;
+   if (prev.useCSSTransforms !== next.useCSSTransforms) return false;
+   if (prev.usePercentages !== next.usePercentages) return false;
+   if (prev.children !== next.children) return false;
+@@ -821,12 +826,14 @@ function GridLayout(props) {
+     handle: draggableHandle,
+     cancel: draggableCancel,
+     threshold: dragThreshold,
+-    allowMobileScroll: dragAllowMobileScroll
++    allowMobileScroll: dragAllowMobileScroll,
++    enableUserSelectHack: dragUserSelectHack
+   } = dragConfig;
+   const {
+     enabled: isResizable,
+     handles: resizeHandles,
+-    handleComponent: resizeHandle
++    handleComponent: resizeHandle,
++    enableUserSelectHack: resizeUserSelectHack
+   } = resizeConfig;
+   const {
+     enabled: isDroppable,
+@@ -1442,6 +1449,8 @@ function GridLayout(props) {
+           isResizable: resizable,
+           isBounded: bounded,
+           allowMobileScroll: dragAllowMobileScroll,
++          dragUserSelectHack,
++          resizeUserSelectHack,
+           useCSSTransforms: useCSSTransforms && mounted,
+           usePercentages: !mounted,
+           transformScale,
+@@ -1478,6 +1487,9 @@ function GridLayout(props) {
+       rowHeight,
+       draggableCancel,
+       draggableHandle,
++      dragAllowMobileScroll,
++      dragUserSelectHack,
++      resizeUserSelectHack,
+       onDragStart,
+       onDrag,
+       onDragStop,
+diff --git a/node_modules/react-grid-layout/dist/react.d.mts b/node_modules/react-grid-layout/dist/react.d.mts
+index 586f6fa..52b62d2 100644
+--- a/node_modules/react-grid-layout/dist/react.d.mts
++++ b/node_modules/react-grid-layout/dist/react.d.mts
+@@ -36,6 +36,8 @@ interface GridItemProps {
+     isBounded: boolean;
+     /** Allow native touch scroll while dragging (react-draggable allowMobileScroll) */
+     allowMobileScroll?: boolean;
++    dragUserSelectHack?: boolean;
++    resizeUserSelectHack?: boolean;
+     /** Whether the item is static (can't be moved/resized) */
+     static?: boolean;
+     /** Use CSS transforms instead of top/left */
+diff --git a/node_modules/react-grid-layout/dist/react.d.ts b/node_modules/react-grid-layout/dist/react.d.ts
+index 05206bd..0af382d 100644
+--- a/node_modules/react-grid-layout/dist/react.d.ts
++++ b/node_modules/react-grid-layout/dist/react.d.ts
+@@ -36,6 +36,8 @@ interface GridItemProps {
+     isBounded: boolean;
+     /** Allow native touch scroll while dragging (react-draggable allowMobileScroll) */
+     allowMobileScroll?: boolean;
++    dragUserSelectHack?: boolean;
++    resizeUserSelectHack?: boolean;
+     /** Whether the item is static (can't be moved/resized) */
+     static?: boolean;
+     /** Use CSS transforms instead of top/left */
+diff --git a/node_modules/react-grid-layout/dist/types-DlzNckle.d.mts b/node_modules/react-grid-layout/dist/types-DlzNckle.d.mts
+index 7733e86..e93e9b5 100644
+--- a/node_modules/react-grid-layout/dist/types-DlzNckle.d.mts
++++ b/node_modules/react-grid-layout/dist/types-DlzNckle.d.mts
+@@ -355,6 +355,8 @@ declare const defaultGridConfig: GridConfig;
+  * Groups all drag-related settings.
+  */
+ interface DragConfig {
++    /** Forward react-draggable's selection workaround; false when the host owns selection. */
++    enableUserSelectHack?: boolean;
+     /** Whether items can be dragged (default: true) */
+     enabled: boolean;
+     /** Whether items are bounded to the container (default: false) */
+@@ -385,6 +387,8 @@ declare const defaultDragConfig: DragConfig;
+  * Groups all resize-related settings.
+  */
+ interface ResizeConfig {
++    /** Forward react-draggable's selection workaround; false when the host owns selection. */
++    enableUserSelectHack?: boolean;
+     /** Whether items can be resized (default: true) */
+     enabled: boolean;
+     /** Which resize handles to show (default: ['se']) */
+diff --git a/node_modules/react-grid-layout/dist/types-DlzNckle.d.ts b/node_modules/react-grid-layout/dist/types-DlzNckle.d.ts
+index 7733e86..e93e9b5 100644
+--- a/node_modules/react-grid-layout/dist/types-DlzNckle.d.ts
++++ b/node_modules/react-grid-layout/dist/types-DlzNckle.d.ts
+@@ -355,6 +355,8 @@ declare const defaultGridConfig: GridConfig;
+  * Groups all drag-related settings.
+  */
+ interface DragConfig {
++    /** Forward react-draggable's selection workaround; false when the host owns selection. */
++    enableUserSelectHack?: boolean;
+     /** Whether items can be dragged (default: true) */
+     enabled: boolean;
+     /** Whether items are bounded to the container (default: false) */
+@@ -385,6 +387,8 @@ declare const defaultDragConfig: DragConfig;
+  * Groups all resize-related settings.
+  */
+ interface ResizeConfig {
++    /** Forward react-draggable's selection workaround; false when the host owns selection. */
++    enableUserSelectHack?: boolean;
+     /** Whether items can be resized (default: true) */
+     enabled: boolean;
+     /** Which resize handles to show (default: ['se']) */

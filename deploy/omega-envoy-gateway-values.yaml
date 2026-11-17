@@ -1,0 +1,11 @@
+# Existing omega-ha capacity only. Helm release eg, namespace envoy-gateway-system.
+# Apply with gateway-helm v1.4.0 (OCI digest
+# sha256:97fdb734b1e4ecba282f2134c551c000b96ce9cc2bca9dd1982907610313c108).
+# Move the management controller's 100m CPU / 256Mi reservation to an existing
+# small node, preserving the larger nodes for bounded Cuttlefish runner Jobs.
+# Resource limits, replica count, rolling strategy and data-plane placement stay
+# at the installed chart defaults. Re-evaluate this hostname if that node changes.
+deployment:
+  pod:
+    nodeSelector:
+      kubernetes.io/hostname: core-05d9658519fd

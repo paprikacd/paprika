@@ -37,12 +37,18 @@ func newInvestigatorServer(t *testing.T, dynamicObjs []runtime.Object) *PaprikaS
 			Phase: "Degraded",
 			Resources: []pipelinesv1alpha1.ResourceSync{
 				{Kind: "Deployment", Name: "demo-deploy", Namespace: "test-ns", Status: "OutOfSync"},
+				{Kind: "Pod", Name: "demo-pod", Namespace: "test-ns", Status: "Synced"},
 			},
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(s).WithObjects(app).WithStatusSubresource(&pipelinesv1alpha1.Application{}).Build()
 	dyn := dynamicfake.NewSimpleDynamicClient(s, dynamicObjs...)
-	k8s := k8sfake.NewSimpleClientset()
+	// The typed client serves the same destination: the log path reads pods through it.
+	typedObjs := make([]runtime.Object, 0, len(dynamicObjs))
+	for _, o := range dynamicObjs {
+		typedObjs = append(typedObjs, o.DeepCopyObject())
+	}
+	k8s := k8sfake.NewSimpleClientset(typedObjs...)
 	return NewPaprikaServer(c, nil, WithDynamicClient(dyn), WithK8sClient(k8s))
 }
 

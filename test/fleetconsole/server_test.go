@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -188,6 +189,7 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newFixtureHandler: %v", err)
 	}
+	assertFixtureAuthConfig(t, handler)
 
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -223,6 +225,22 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 	assertRealFleetQueries(t, client)
 	assertEventsDisabled(t, httpClient, baseURL)
 	stopServer()
+}
+
+func assertFixtureAuthConfig(t *testing.T, handler http.Handler) {
+	t.Helper()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/config", http.NoBody))
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("GET /auth/config status/cache = %d/%q", response.Code, response.Header().Get("Cache-Control"))
+	}
+	var config map[string]map[string]interface{}
+	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
+		t.Fatalf("decode auth configuration: %v", err)
+	}
+	if config["oidc"]["enabled"] != false || config["basic"]["enabled"] != false || config["session"]["refreshEnabled"] != false {
+		t.Fatalf("auth-disabled fixture advertised login methods: %v", config)
+	}
 }
 
 func assertCompiledFleetRoutes(t *testing.T, httpClient *http.Client, baseURL string) {

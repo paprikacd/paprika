@@ -15,6 +15,11 @@ auth:
   basic:
     enabled: false
 
+# Preserve OAuth grants across the normal image rollout for both MCP surfaces.
+mcp:
+  oauth:
+    persistSessions: true
+
 # The same reasoning applies to the HMAC secret that signs and verifies
 # console, MCP and observability tokens: test-values commits a dev secret for
 # kind, and anyone who reads this repository could mint tokens with it. On
@@ -27,12 +32,28 @@ auth:
 # Reserve memory on the existing 8Gi core pool; keep the dedicated search pool
 # untouched and avoid evicting workloads on the smaller 4Gi nodes.
 manager:
+  # Ingress-only policy for the controller-manager pods. It admits the probe,
+  # admission and metrics ports from any source and nothing else in split mode.
+  networkPolicy:
+    enabled: true
+  # Keep the controller on the other existing large node when capacity permits,
+  # leaving room for bounded CI workers on cf404. Allow fallback after replacement.
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values: ["core-large-a2ff109d4a7d"]
   nodeSelector:
     node.kubernetes.io/instance-type: vc2-4c-8gb
   resources:
     requests:
       cpu: 500m
-      memory: 2Gi
+      # Reserve observed steady capacity; retain the 3Gi cap for Git bursts.
+      memory: 1Gi
     limits:
       cpu: 2000m
       memory: 3Gi
@@ -51,7 +72,47 @@ apiServer:
           name: paprika-auth-token
           key: token-secret
 
+# Git fetching: the git CLI blobless fetch (PR #165, step 2 of 2). Step 1 pinned
+# go-git so the one-off source-hash change for charts holding executable files
+# landed on its own; it shipped in Helm revision 69. auto uses the git CLI,
+# whose hashes match go-git's, so this upgrade creates no Releases. To roll
+# back without an image change, set repoServer.git.backend: go-git here.
+# See charts/chart/values.yaml repoServer.git.
+repoServer:
+  git:
+    backend: auto
+
 observabilityGateway:
+  persistSessions: true
+  # Public Supabase Root 2021 CA; verified against the database pooler's TLS
+  # certificate and hostname. Expires 2031-04-26T10:56:53Z.
+  # Source: https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt
+  # DER SHA-256: 807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa
+  additionalCACertificates:
+    supabase-prod-ca-2021.crt: |
+      -----BEGIN CERTIFICATE-----
+      MIIDxDCCAqygAwIBAgIUbLxMod62P2ktCiAkxnKJwtE9VPYwDQYJKoZIhvcNAQEL
+      BQAwazELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5l
+      dyBDYXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJh
+      c2UgUm9vdCAyMDIxIENBMB4XDTIxMDQyODEwNTY1M1oXDTMxMDQyNjEwNTY1M1ow
+      azELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5ldyBD
+      YXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJhc2Ug
+      Um9vdCAyMDIxIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqQXW
+      QyHOB+qR2GJobCq/CBmQ40G0oDmCC3mzVnn8sv4XNeWtE5XcEL0uVih7Jo4Dkx1Q
+      DmGHBH1zDfgs2qXiLb6xpw/CKQPypZW1JssOTMIfQppNQ87K75Ya0p25Y3ePS2t2
+      GtvHxNjUV6kjOZjEn2yWEcBdpOVCUYBVFBNMB4YBHkNRDa/+S4uywAoaTWnCJLUi
+      cvTlHmMw6xSQQn1UfRQHk50DMCEJ7Cy1RxrZJrkXXRP3LqQL2ijJ6F4yMfh+Gyb4
+      O4XajoVj/+R4GwywKYrrS8PrSNtwxr5StlQO8zIQUSMiq26wM8mgELFlS/32Uclt
+      NaQ1xBRizkzpZct9DwIDAQABo2AwXjALBgNVHQ8EBAMCAQYwHQYDVR0OBBYEFKjX
+      uXY32CztkhImng4yJNUtaUYsMB8GA1UdIwQYMBaAFKjXuXY32CztkhImng4yJNUt
+      aUYsMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAB8spzNn+4VU
+      tVxbdMaX+39Z50sc7uATmus16jmmHjhIHz+l/9GlJ5KqAMOx26mPZgfzG7oneL2b
+      VW+WgYUkTT3XEPFWnTp2RJwQao8/tYPXWEJDc0WVQHrpmnWOFKU/d3MqBgBm5y+6
+      jB81TU/RG2rVerPDWP+1MMcNNy0491CTL5XQZ7JfDJJ9CCmXSdtTl4uUQnSuv/Qx
+      Cea13BX2ZgJc7Au30vihLhub52De4P/4gonKsNHYdbWjg7OWKwNv/zitGDVDB9Y2
+      CMTyZKG3XEu5Ghl1LEnI3QmEKsqaCLv12BnVjbkSeZsMnevJPs1Ye6TjjJwdik5P
+      o/bKiIz+Fq8=
+      -----END CERTIFICATE-----
   extraEnv:
     - name: PAPRIKA_AUTH_TOKEN_SECRET
       valueFrom:

@@ -1,0 +1,6 @@
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: paprika
+      app.kubernetes.io/component: insights
+  policyTypes: [Ingress, Egress]

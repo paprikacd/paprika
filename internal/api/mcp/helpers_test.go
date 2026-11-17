@@ -33,6 +33,13 @@ var testSecret = []byte("mcp-test-secret-mcp-test-secret")
 // issuer verification, since it never sets one.
 const testIssuer = ""
 
+func testClientIDAllowed(t *testing.T, srv *Server, clientID string) bool {
+	t.Helper()
+	allowed, err := srv.checkClientID(t.Context(), clientID)
+	require.NoError(t, err)
+	return allowed
+}
+
 // mustAudienceAuthenticator builds a self-signed authenticator that only
 // accepts tokens minted for audience, failing the test immediately if the
 // audience is empty (NewSelfSignedAuthenticatorForAudience rejects that at

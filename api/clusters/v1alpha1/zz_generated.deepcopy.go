@@ -368,6 +368,15 @@ func (in *SatelliteStatus) DeepCopyInto(out *SatelliteStatus) {
 		*out = make([]SatelliteApplication, len(*in))
 		copy(*out, *in)
 	}
+	if in.ReportedPolicies != nil {
+		in, out := &in.ReportedPolicies, &out.ReportedPolicies
+		*out = new([]ManagementPolicy)
+		if **in != nil {
+			in, out := *in, *out
+			*out = make([]ManagementPolicy, len(*in))
+			copy(*out, *in)
+		}
+	}
 	if in.EffectivePolicies != nil {
 		in, out := &in.EffectivePolicies, &out.EffectivePolicies
 		*out = make([]ManagementPolicy, len(*in))

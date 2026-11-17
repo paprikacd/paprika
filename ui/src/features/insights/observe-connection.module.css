@@ -1,0 +1,31 @@
+.card {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  color: var(--gamma-ink);
+  background: var(--gamma-surface);
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-panel);
+}
+.heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.heading h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.heading p, .description { margin: 0; color: var(--gamma-muted); font-size: 12px; line-height: 1.6; }
+.mark { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--gamma-radius-control); color: var(--gamma-accent-text); background: var(--gamma-accent-soft); }
+.status { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0; color: var(--gamma-muted); font-size: 12px; font-weight: 600; }
+.status[data-connected="true"] { color: var(--gamma-success); }
+.status span { color: var(--gamma-muted); font-weight: 400; }
+.tools { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.tools code { color: var(--gamma-ink); font: 11px var(--gamma-font-code); overflow-wrap: anywhere; }
+.tools p, .protocol { margin: 3px 0 0; color: var(--gamma-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.protocol { margin-top: 14px; }
+.error { margin: 0; color: var(--gamma-danger); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.manage { color: var(--gamma-accent-text); font-size: 12px; text-underline-offset: 3px; }
+.manage:focus-visible { border-radius: var(--gamma-radius-small); outline: 2px solid var(--gamma-accent); outline-offset: 3px; }
+.binding { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--gamma-border); border-radius: var(--gamma-radius-control); background: var(--gamma-surface); color: var(--gamma-muted); font-size: 11px; line-height: 1.5; }
+.binding > svg { flex: none; margin-top: 2px; color: var(--gamma-accent-text); }
+.bindingTitle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--gamma-ink); }
+.bindingTitle strong { font-weight: 600; }
+.binding code { font: 11px var(--gamma-font-code); color: var(--gamma-accent-text); }
+.binding p { margin: 4px 0 0; }

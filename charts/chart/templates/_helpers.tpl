@@ -23,6 +23,19 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 {{- end }}
 
+{{/* Shared secret and destination for the in-process Insights API proxy. */}}
+{{- define "paprika.insightsEnv" -}}
+{{- if .Values.insights.enabled }}
+- name: PAPRIKA_INSIGHTS_URL
+  value: http://{{ include "paprika.resourceName" (dict "suffix" "insights" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:8090
+- name: PAPRIKA_INSIGHTS_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "insights.token.existingSecretName is required when Insights is enabled" .Values.insights.token.existingSecretName }}
+      key: {{ .Values.insights.token.existingSecretKey | default "token" }}
+{{- end }}
+{{- end }}
+
 {{/*
 Namespace for generated references.
 Always uses the Helm release namespace.
@@ -268,6 +281,44 @@ binary default instead of handing flag parsing an empty string. */}}
 {{- end }}
 
 {{/*
+Console and inline-webhook listener args for the controller-manager in split
+mode. The split-mode manager opens neither listener: the api-server serves the
+console, the API, the satellite link and the token exchange, and the
+webhook-receiver deployment serves /webhook. An empty address disables a
+listener. Renders nothing in monolith mode.
+*/}}
+{{- define "paprika.managerSplitListenerArgs" -}}
+{{- if eq .Values.deploymentMode "split" }}
+- --ui-bind-address=
+- --inline-webhook-bind-address=
+{{- end }}
+{{- end }}
+
+{{/*
+manager.args for the controller-manager. In split mode, entries in the
+--flag=value form that name the console or the inline webhook listener are
+dropped, so they cannot re-enable a listener the split-mode manager is meant to
+leave off. The bare flag name (the two-item form, "--ui-bind-address", ":3000")
+is rejected instead: dropping only the flag would leave its value behind as a
+positional argument.
+*/}}
+{{- define "paprika.managerArgs" -}}
+{{- $split := eq .Values.deploymentMode "split" }}
+{{- range .Values.manager.args }}
+{{- if kindIs "invalid" . }}
+{{- fail "manager.args: an item is null. Remove the empty item." }}
+{{- end }}
+{{- $arg := toString . | trim }}
+{{- if and $split (or (eq $arg "--ui-bind-address") (eq $arg "--inline-webhook-bind-address")) }}
+{{- fail (printf "manager.args: %s cannot be given as a separate item in split mode. The split-mode manager opens neither listener, so remove that item and its value." $arg) }}
+{{- end }}
+{{- if not (and $split (or (hasPrefix "--ui-bind-address" $arg) (hasPrefix "--inline-webhook-bind-address" $arg))) }}
+- {{ $arg }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Reconcile-rate tuning args shared by operator and api modes. Empty fields are
 omitted so the binary defaults apply; set them to tune a large fleet without
 touching manager.args.
@@ -280,6 +331,9 @@ touching manager.args.
 {{- end }}
 {{- if $r.sourceResolveTTL }}
 - --application-source-resolve-ttl={{ $r.sourceResolveTTL }}
+{{- end }}
+{{- if $r.repoServerTimeout }}
+- --application-repo-server-timeout={{ $r.repoServerTimeout }}
 {{- end }}
 {{- if $r.cacheResyncPeriod }}
 - --cache-resync-period={{ $r.cacheResyncPeriod }}
@@ -423,3 +477,89 @@ in split mode and in the manager in monolith mode, so both include this.
     secretName: {{ .Values.satellite.observationStore.redis.existingSecret }}
 {{- end }}
 {{- end }}
+
+{{/*
+"true" when the repo server keeps its git cache on a PersistentVolumeClaim.
+*/}}
+{{- define "paprika.repoServerCachePersistent" -}}
+{{- if dig "cache" "persistence" "enabled" false .Values.repoServer -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The repo server's git cache claim.
+*/}}
+{{- define "paprika.repoServerCacheClaim" -}}
+{{- dig "cache" "persistence" "existingClaim" "" .Values.repoServer | default (include "paprika.resourceName" (dict "suffix" "repo-server-git-cache" "context" .)) -}}
+{{- end -}}
+
+{{/*
+Git fetch and cache settings for the repo server (internal/source).
+*/}}
+{{- define "paprika.repoServerGitEnv" -}}
+{{- $git := .Values.repoServer.git | default dict -}}
+{{- $cache := .Values.repoServer.cache | default dict -}}
+{{- with $git.backend }}
+- name: PAPRIKA_GIT_BACKEND
+  value: {{ . | quote }}
+{{- end }}
+{{- with $git.maxConcurrentFetches }}
+- name: PAPRIKA_GIT_MAX_CONCURRENT_FETCHES
+  value: {{ . | quote }}
+{{- end }}
+{{- with $git.fetchTimeout }}
+- name: PAPRIKA_GIT_FETCH_TIMEOUT
+  value: {{ . | quote }}
+{{- end }}
+{{- with $cache.maxSize }}
+- name: PAPRIKA_GIT_CACHE_MAX_BYTES
+  value: {{ . | quote }}
+{{- end }}
+{{- with $cache.minAge }}
+- name: PAPRIKA_GIT_CACHE_MIN_AGE
+  value: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+A ReadWriteOnce git cache volume can be attached to one pod: one replica, no
+HPA, and a strategy that stops the old pod before starting the new one.
+*/}}
+{{- define "paprika.validateRepoServerCache" -}}
+{{- $rs := .Values.repoServer -}}
+{{- if and $rs.enabled (include "paprika.repoServerCachePersistent" .) -}}
+{{- if ne (dig "cache" "persistence" "accessMode" "ReadWriteOnce" $rs) "ReadWriteMany" -}}
+{{- if gt (int $rs.replicas) 1 -}}
+{{- fail "repoServer.cache.persistence: a ReadWriteOnce volume needs repoServer.replicas: 1" -}}
+{{- end -}}
+{{- if dig "hpa" "enabled" false $rs -}}
+{{- fail "repoServer.cache.persistence: a ReadWriteOnce volume cannot be combined with repoServer.hpa" -}}
+{{- end -}}
+{{- with $rs.strategy -}}
+{{- $type := toString (.type | default "RollingUpdate") -}}
+{{- $surge := toString (dig "rollingUpdate" "maxSurge" "25%" .) -}}
+{{- if not (or (eq $type "Recreate") (and (eq $type "RollingUpdate") (has $surge (list "0" "0%")))) -}}
+{{- fail "repoServer.cache.persistence: a ReadWriteOnce volume needs repoServer.strategy Recreate or RollingUpdate with maxSurge 0 (the new pod cannot attach the volume while the old one holds it)" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+paprika.durationSeconds converts a single-unit Go duration ("50s", "1m", "2h")
+to whole seconds. Anything else fails the render, so a malformed edge timeout
+never reaches the cluster. Compound forms ("1m30s") and sub-second units are
+rejected on purpose: the edge bounds are whole seconds.
+*/}}
+{{- define "paprika.durationSeconds" -}}
+{{- $v := toString . -}}
+{{- if regexMatch "^[0-9]+s$" $v -}}
+{{- trimSuffix "s" $v -}}
+{{- else if regexMatch "^[0-9]+m$" $v -}}
+{{- mul (trimSuffix "m" $v | atoi) 60 -}}
+{{- else if regexMatch "^[0-9]+h$" $v -}}
+{{- mul (trimSuffix "h" $v | atoi) 3600 -}}
+{{- else -}}
+{{- fail (printf "duration %q must be a single-unit Go duration such as 50s or 1m" $v) -}}
+{{- end -}}
+{{- end -}}

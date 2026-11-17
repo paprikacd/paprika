@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="art-title art-desc">
+<title id="art-title">One pinned revision across deployment environments</title><desc id="art-desc">A source revision follows dev and staging verification while production preserves its accepted release.</desc>
+<defs>
+ <linearGradient id="night" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102334"/><stop offset=".62" stop-color="#1d3449"/><stop offset="1" stop-color="#112334"/></linearGradient>
+ <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#81a6c1" stroke-width=".8" stroke-opacity=".13"/></pattern>
+ <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#99c6ef" stop-opacity=".35"/><stop offset="1" stop-color="#99c6ef" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="url(#night)"/>
+<rect width="1200" height="675" fill="url(#grid)"/>
+<path d="M0 121H1200M0 590H1200" stroke="#6f90a8" stroke-opacity=".45"/>
+<path d="M70 64H124M1090 64H1130" stroke="#99c6ef" stroke-width="4"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#dce9f2">
+ <text x="70" y="86" font-size="19" font-weight="700" letter-spacing="4">02 / DELIVERY</text>
+ <text x="1130" y="86" font-size="13" letter-spacing="3" text-anchor="end" fill="#91afc4">PAPRIKA / ENGINEERING</text>
+ 
+ <rect x="335" y="137" width="530" height="62" fill="#2a4c66" stroke="#9ec7e2" stroke-width="1.5"/>
+ <path d="M366 154v30m0-30l17 15-17 15" stroke="#acd0e7" fill="none" stroke-width="3"/>
+ <text x="405" y="176" font-size="19" font-weight="700" letter-spacing="2" fill="#e0f2ff">PINNED GIT REVISION</text>
+ <path d="M600 199V237M226 237H974" fill="none" stroke="#84aeca" stroke-width="2" stroke-dasharray="6 8"/>
+ <path d="M226 237v26m374-26v26m374-26v26" stroke="#8bb6d0" stroke-width="2"/>
+ <g transform="translate(76 265)">
+  <rect width="302" height="257" fill="#1a364c" stroke="#779bb2"/>
+  <path d="M0 55H302" stroke="#60839b"/>
+  <circle cx="35" cy="28" r="9" fill="#91d3bf"/>
+  <text x="56" y="35" font-size="21" font-weight="700">DEV</text>
+  <text x="26" y="104" font-size="15" fill="#a5c4d8">SOURCE SELECTED</text>
+  <rect x="26" y="132" width="250" height="78" fill="#30536a"/>
+  <g stroke="#91d3bf" stroke-width="3" fill="none"><path d="M68 171l19 19 40-45"/><path d="M145 172h93"/></g>
+  <text x="26" y="242" font-size="15" fill="#b9d4e3">Release recorded</text>
+ </g>
+ <g transform="translate(449 265)">
+  <rect width="302" height="257" fill="#1a364c" stroke="#779bb2"/>
+  <path d="M0 55H302" stroke="#60839b"/>
+  <circle cx="35" cy="28" r="9" fill="#91d3bf"/>
+  <text x="56" y="35" font-size="21" font-weight="700">STAGING</text>
+  <text x="26" y="104" font-size="15" fill="#a5c4d8">UPSTREAM VERIFIED</text>
+  <rect x="26" y="132" width="250" height="78" fill="#30536a"/>
+  <g stroke="#91d3bf" stroke-width="3" fill="none"><path d="M68 171l19 19 40-45"/><path d="M145 172h93"/></g>
+  <text x="26" y="242" font-size="15" fill="#b9d4e3">Verification evidence</text>
+ </g>
+ <g transform="translate(822 265)">
+  <rect width="302" height="257" fill="#1a364c" stroke="#779bb2"/>
+  <path d="M0 55H302" stroke="#60839b"/>
+  <circle cx="35" cy="28" r="9" fill="#eebc87"/>
+  <text x="56" y="35" font-size="21" font-weight="700">PRODUCTION</text>
+  <text x="26" y="104" font-size="15" fill="#a5c4d8">CANDIDATE HELD</text>
+  <rect x="26" y="132" width="250" height="78" fill="#33465a" stroke="#eebc87" stroke-dasharray="6 5"/>
+  <path d="M135 151v18m-24 0h48v26h-48z" fill="none" stroke="#eebc87" stroke-width="3"/>
+  <text x="26" y="242" font-size="15" fill="#eebc87">Existing release kept</text>
+ </g>
+ <text x="75" y="570" font-size="17" fill="#d1e0eb">Same commit</text>
+ <path d="M207 562H317" stroke="#9ac3de" stroke-width="2"/>
+ <text x="341" y="570" font-size="17" fill="#d1e0eb">Independent configuration and targets</text>
+
+ <text x="70" y="630" font-size="13" letter-spacing="3" fill="#9eb8c9">SOURCE / STAGE / RELEASE</text>
+ <path d="M1000 626H1130" stroke="#99c6ef" stroke-opacity=".7" stroke-width="2"/>
+</g>
+</svg>

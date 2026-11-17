@@ -131,9 +131,9 @@ func benchmarkConcurrentQueries(b *testing.B, concurrency int, invoke func() err
 	workers.Wait()
 }
 
-// BenchmarkSyntheticGatewayOverload measures only the fail-fast admission
-// path, with all query slots deliberately occupied. It never calls a cloud
-// provider or a Kubernetes API server and is not end-to-end MCP latency.
+// BenchmarkSyntheticGatewayOverload deliberately fills the global slots and
+// disables waiting to measure queue-overflow rejection. Production requests
+// use the bounded queue instead. No provider or Kubernetes I/O is performed.
 func BenchmarkSyntheticGatewayOverload(b *testing.B) {
 	configured := NewBackend(fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build())
 	backend, ok := configured.(*k8sBackend)
@@ -141,8 +141,10 @@ func BenchmarkSyntheticGatewayOverload(b *testing.B) {
 		b.Fatalf("overload benchmark requires Kubernetes backend, got %T", configured)
 	}
 	budget := backend.executionBudget()
-	for range cap(budget.active) {
-		_, finish, err := budget.begin(context.Background())
+	// This benchmark exercises the exhausted-queue path, not normal queued admission.
+	budget.waiting = make(chan struct{})
+	for slot := range cap(budget.active) {
+		_, finish, err := budget.begin(context.Background(), fmt.Sprintf("synthetic/filler-%d", slot))
 		if err != nil {
 			b.Fatal(err)
 		}

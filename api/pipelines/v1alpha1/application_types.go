@@ -212,6 +212,9 @@ type AnalysisResult struct {
 	CheckedAt *metav1.Time     `json:"checkedAt,omitempty"`
 }
 
+// MaxHealthFailureThreshold bounds self-heal configuration and persisted failure streaks.
+const MaxHealthFailureThreshold int32 = 10
+
 // SelfHealConfig controls automatic remediation behavior.
 type SelfHealConfig struct {
 	// AutoSyncOnDrift triggers a re-sync when managed resources are out of sync.
@@ -221,6 +224,16 @@ type SelfHealConfig struct {
 	// AutoRevertOnHealthFailure rolls back the current release when the application becomes Degraded.
 	// +optional
 	AutoRevertOnHealthFailure bool `json:"autoRevertOnHealthFailure,omitempty"`
+
+	// HealthFailureThreshold is the number of consecutive, distinct Degraded
+	// observations of one current health check required before automatic rollback.
+	// Omitted or 1 preserves immediate rollback. Cached results do not count;
+	// recovery, unknown health, changed checks, and observation gaps reset the streak.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	// +optional
+	HealthFailureThreshold int32 `json:"healthFailureThreshold,omitempty"`
 
 	// Cooldown between self-heal actions. Defaults to 5m.
 	// +kubebuilder:default="5m"
@@ -637,7 +650,14 @@ type HealthCheckResult struct {
 	HTTPBody       string `json:"httpBody,omitempty"`
 	// ConfigurationHash invalidates cached results when a probe changes.
 	ConfigurationHash string `json:"configurationHash,omitempty"`
-	DurationMillis    int64  `json:"durationMillis,omitempty"`
+	// ConsecutiveFailures counts distinct consecutive Degraded observations of
+	// this configuration, capped at 10. Non-degraded observations and gaps longer
+	// than twice the check interval reset it. Cached observations leave it intact.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10
+	// +optional
+	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
+	DurationMillis      int64 `json:"durationMillis,omitempty"`
 	// +optional
 	SLOHistory    *SLOHistory `json:"sloHistory,omitempty"`
 	Reason        string      `json:"reason,omitempty"`

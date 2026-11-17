@@ -17,11 +17,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 const (
@@ -35,8 +38,8 @@ const (
 // TestObservabilityGatewayNativeOAuthConstructorContract exercises the actual
 // constructor, console authenticator, OAuth routes, gateway mux and request
 // limiter together. No authenticator is replaced with a principal stub. The
-// only Kubernetes client is an empty fake, OIDC is absent, and the sole invoked
-// tool reads the static provider-type catalog without contacting a provider.
+// Kubernetes is a fake with separate client and session stores, OIDC is absent,
+// and the invoked tool reads the static catalog without contacting a provider.
 func TestObservabilityGatewayNativeOAuthConstructorContract(t *testing.T) {
 	for _, protocolVersion := range []string{"2025-03-26", "2025-11-25"} {
 		t.Run(protocolVersion, func(t *testing.T) {
@@ -51,16 +54,22 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	cfg := &cliConfig{
 		AuthEnabled: true, MCPPublicURL: nativeGatewayContractIssuer,
 		MCPAccessTokenTTL: time.Minute, MCPRefreshTokenTTL: time.Hour,
+		MCPClientRegistryConfigMap: "clients", MCPClientRegistryNamespace: "paprika",
+		MCPSessionSecret: "sessions", MCPSessionNamespace: "paprika",
 	}
 	require.NoError(t, validateObservabilityGatewayConfig(cfg))
 	store, err := cache.New(t.Context(), cache.Config{Backend: cache.BackendMemory})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	kube := fake.NewClientBuilder().WithScheme(newScheme()).Build()
-	srv, authenticator, usage, err := buildObservabilityServer(t.Context(), cfg,
-		auth.Config{Enabled: true, TokenSecret: secret}, kube, store)
+	resource := nativeGatewayContractIssuer + "/observe/mcp"
+	kube := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "paprika", Name: "clients"}, Data: map[string]string{"resource": resource}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "paprika", Name: "sessions"}, Data: map[string][]byte{"resource": []byte(resource)}},
+	).Build()
+	srv, authenticator, usage, backend, err := buildObservabilityServer(t.Context(), cfg,
+		auth.Config{Enabled: true, TokenSecret: secret}, kube, store, observabilitygateway.DefaultBudgetConfig())
 	require.NoError(t, err)
-	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage)
+	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
 
 	// The gate is dormant through OAuth and the protocol flow. Later it holds
 	// four real protocol responses in Write, inside the production limiter,
@@ -71,7 +80,7 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	var releaseOnce sync.Once
 	releaseWriters := func() { releaseOnce.Do(func() { close(release) }) }
 	defer releaseWriters()
-	handler := limitObservabilityProtocolRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := limitWithProductionPools(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/observe/mcp" && holdProtocolWrites.Load() {
 			w = &nativeGatewayContractBlockedWriter{ResponseWriter: w, entered: entered, release: release}
 		}
@@ -102,7 +111,6 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 
 	digest := sha256.Sum256([]byte(nativeGatewayContractVerifier))
 	challenge := base64.RawURLEncoding.EncodeToString(digest[:])
-	resource := nativeGatewayContractIssuer + "/observe/mcp"
 	query := url.Values{
 		"client_id": {registration.ClientID}, "response_type": {"code"},
 		"redirect_uri": {nativeGatewayContractRedirect}, "scope": {string(mcp.ScopeObserve)},
@@ -185,8 +193,8 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	require.Equal(t, "no-store", tokenResponse.header.Get("Cache-Control"))
 	//nolint:tagliatelle // RFC 6749 token response wire names.
 	var pair struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
+		AccessToken  string `json:"access_token"`  // #nosec G117 -- Decode the RFC 6749 response from the isolated test server to verify authentication.
+		RefreshToken string `json:"refresh_token"` // #nosec G117 -- Decode the RFC 6749 response from the isolated test server to verify token issuance.
 		TokenType    string `json:"token_type"`
 		Scope        string `json:"scope"`
 	}
@@ -201,6 +209,42 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 	require.NoError(t, err)
 	require.Equal(t, "native-contract-user", principal.Subject)
 	require.Equal(t, []string{string(mcp.ScopeObserve)}, principal.Scopes)
+
+	t.Run("native refresh survives gateway replacement", func(t *testing.T) {
+		// Construct a new gateway and HTTP listener with empty process-local
+		// state; both the registered client and refresh grant must come from
+		// their separate persistent stores.
+		replacement, replacementAuth, replacementUsage, replacementBackend, buildErr := buildObservabilityServer(t.Context(), cfg,
+			auth.Config{Enabled: true, TokenSecret: secret}, kube, store, observabilitygateway.DefaultBudgetConfig())
+		require.NoError(t, buildErr)
+		replacementHTTP := httptest.NewServer(buildObservabilityMux(replacement, replacementAuth, cfg.MCPPublicURL, replacementUsage, replacementBackend))
+		t.Cleanup(replacementHTTP.Close)
+		flow := nativeGatewayContractHTTP{client: replacementHTTP.Client(), baseURL: replacementHTTP.URL, protocolVersion: protocolVersion}
+		refresh := url.Values{"grant_type": {"refresh_token"}, "client_id": {registration.ClientID}, "refresh_token": {pair.RefreshToken}, "resource": {resource}}
+		refreshed := flow.mustRequest(t, nativeGatewayContractRequest{
+			method: http.MethodPost, path: "/observe/token", body: []byte(refresh.Encode()),
+			contentType: "application/x-www-form-urlencoded", accept: "application/json",
+		})
+		require.Equal(t, http.StatusOK, refreshed.status)
+		//nolint:tagliatelle // RFC 6749 token response field names.
+		var rotated struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		}
+		require.NoError(t, json.Unmarshal(refreshed.body, &rotated))
+		require.NotEmpty(t, rotated.AccessToken)
+		require.NotEqual(t, pair.RefreshToken, rotated.RefreshToken)
+		call := flow.mustRequest(t, nativeGatewayContractRequest{
+			method: http.MethodPost, path: "/observe/mcp", token: rotated.AccessToken,
+			body: nativeGatewayContractStaticCallBody(t, 91), contentType: "application/json", accept: "application/json",
+		})
+		require.NoError(t, nativeGatewayContractStaticResult(call, 91))
+		replay := flow.mustRequest(t, nativeGatewayContractRequest{
+			method: http.MethodPost, path: "/observe/token", body: []byte(refresh.Encode()),
+			contentType: "application/x-www-form-urlencoded", accept: "application/json",
+		})
+		require.Equal(t, http.StatusBadRequest, replay.status)
+	})
 
 	// Legacy native HTTP requests carry the negotiated MCP-Protocol-Version
 	// and accept only JSON, with no Origin or modern Mcp-Method/Mcp-Name
@@ -236,15 +280,15 @@ func testObservabilityGatewayNativeOAuthConstructorContract(t *testing.T, protoc
 		NextCursor string `json:"nextCursor"`
 	}
 	nativeGatewayContractDecodeRPC(t, listed, 2, &inventory)
-	require.Len(t, inventory.Tools, 13)
+	require.Len(t, inventory.Tools, 15)
 	require.Empty(t, inventory.NextCursor)
 	names := make([]string, 0, len(inventory.Tools))
 	for _, tool := range inventory.Tools {
 		names = append(names, tool.Name)
 	}
 	require.ElementsMatch(t, []string{
-		"list_observability_providers", "get_observability_provider", "query_metrics", "query_logs", "query_traces",
-		"list_provider_types", "describe_provider_type", "validate_provider", "list_metric_names", "list_label_names",
+		"list_observability_providers", "get_observability_provider", "query_metrics", "query_logs", "query_traces", "query_records",
+		"list_provider_types", "describe_provider_type", "validate_provider", "list_metric_names", "list_metric_series", "list_label_names",
 		"list_label_values", "get_metric_metadata", "list_trace_services",
 	}, names)
 	staticCall := nativeGatewayContractStaticCallBody(t, 3)
@@ -368,7 +412,7 @@ func (h nativeGatewayContractHTTP) request(ctx context.Context, in nativeGateway
 	if in.path == "/observe/mcp" {
 		req.Header.Set("MCP-Protocol-Version", h.protocolVersion)
 	}
-	resp, err := h.client.Do(req)
+	resp, err := h.client.Do(req) // #nosec G704 -- The contract harness uses only its local httptest server URL.
 	if err != nil {
 		return nativeGatewayContractResponse{}, errors.New("local contract HTTP request failed")
 	}
@@ -443,7 +487,7 @@ func nativeGatewayContractStaticResult(response nativeGatewayContractResponse, i
 	if err := nativeGatewayContractRPCResult(response, id, &callResult); err != nil {
 		return err
 	}
-	if callResult.IsError || len(callResult.StructuredContent.Types) != 13 {
+	if callResult.IsError || len(callResult.StructuredContent.Types) != 16 {
 		return errors.New("contract static tool result was erroneous or had an incomplete catalog")
 	}
 	seen := make(map[string]struct{}, 13)

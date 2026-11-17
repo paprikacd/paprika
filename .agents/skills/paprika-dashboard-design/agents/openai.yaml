@@ -1,0 +1,14 @@
+interface:
+  display_name: Paprika Dashboard Design
+  short_description: Build precise, beautiful observability dashboards
+  default_prompt: Use $paprika-dashboard-design to design, build, or review a Paprika
+    dashboard with truthful charts, refined visual hierarchy, and verified interactions.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

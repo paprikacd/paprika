@@ -1,0 +1,68 @@
+{
+  "service-http-client-error-ratio": {
+    "query": "(100 * (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\",status_code=~\"4..\"}[5m])) or (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m])) * 0)) / sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m]))) or (100 * (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\",http_response_status_code=~\"4..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])) * 0)) / sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])))",
+    "description": "Percentage of observed HTTP requests returning 4xx, using five-minute rates. These are client responses, separate from server failures. Zero is emitted only against observed request traffic; absent telemetry and zero-traffic ratios remain undefined.",
+    "metadata": {
+      "unit": "%",
+      "serviceLabel": "Uptime: otel_scope_name; Brandbrain: service_name",
+      "dataset": "Uptime: service=telesis; Brandbrain: job=brandbrain-api, service=brandbrain",
+      "rateWindow": "5m",
+      "coverage": "HTTP metrics and traces for uptime-api and brandbrain-api; missing telemetry is not replaced with zero."
+    }
+  },
+  "service-http-error-ratios": {
+    "query": "(label_replace(((100 * (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\",status_code=~\"4..\"}[5m])) or (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m])) * 0)) / sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m]))) or (100 * (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\",http_response_status_code=~\"4..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])) * 0)) / sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])))), \"status_class\", \"4xx\", \"\", \"\")) or (label_replace(((100 * (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\",status_code=~\"5..\"}[5m])) or (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m])) * 0)) / sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m]))) or (100 * (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\",http_response_status_code=~\"5..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])) * 0)) / sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])))), \"status_class\", \"5xx\", \"\", \"\"))",
+    "description": "Separate 4xx client-response and 5xx server-error percentages using five-minute rates. Each class uses the same observed total as denominator. No global zero fallback; missing telemetry stays empty and zero-traffic ratios remain undefined.",
+    "metadata": {
+      "unit": "%",
+      "serviceLabel": "Uptime: otel_scope_name; Brandbrain: service_name",
+      "dataset": "Uptime: service=telesis; Brandbrain: job=brandbrain-api, service=brandbrain",
+      "rateWindow": "5m",
+      "coverage": "HTTP metrics and traces for uptime-api and brandbrain-api; missing telemetry is not replaced with zero."
+    }
+  },
+  "service-http-latency-p95": {
+    "query": "(histogram_quantile(0.95, sum by (le) (rate(http_request_duration_milliseconds_bucket{otel_scope_name={{service}},service=\"telesis\"}[5m])))) or (1000 * histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m]))))",
+    "description": "Estimated p95 HTTP latency over five minutes. Uptime buckets are milliseconds; Brandbrain stable OTel buckets are seconds and the resulting quantile is multiplied by 1000. No observations leave the quantile undefined.",
+    "metadata": {
+      "unit": "ms",
+      "serviceLabel": "Uptime: otel_scope_name; Brandbrain: service_name",
+      "dataset": "Uptime: service=telesis; Brandbrain: job=brandbrain-api, service=brandbrain",
+      "rateWindow": "5m",
+      "coverage": "HTTP metrics and traces for uptime-api and brandbrain-api; missing telemetry is not replaced with zero."
+    }
+  },
+  "service-http-latency-percentiles": {
+    "query": "(label_replace(((histogram_quantile(0.5, sum by (le) (rate(http_request_duration_milliseconds_bucket{otel_scope_name={{service}},service=\"telesis\"}[5m])))) or (1000 * histogram_quantile(0.5, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m]))))), \"quantile\", \"p50\", \"\", \"\")) or (label_replace(((histogram_quantile(0.95, sum by (le) (rate(http_request_duration_milliseconds_bucket{otel_scope_name={{service}},service=\"telesis\"}[5m])))) or (1000 * histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m]))))), \"quantile\", \"p95\", \"\", \"\")) or (label_replace(((histogram_quantile(0.99, sum by (le) (rate(http_request_duration_milliseconds_bucket{otel_scope_name={{service}},service=\"telesis\"}[5m])))) or (1000 * histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m]))))), \"quantile\", \"p99\", \"\", \"\"))",
+    "description": "Estimated p50, p95 and p99 HTTP latency in milliseconds over five minutes. Uptime uses native milliseconds; Brandbrain stable OTel seconds are converted after quantile calculation. No observations leave the quantile undefined.",
+    "metadata": {
+      "unit": "ms",
+      "serviceLabel": "Uptime: otel_scope_name; Brandbrain: service_name",
+      "dataset": "Uptime: service=telesis; Brandbrain: job=brandbrain-api, service=brandbrain",
+      "rateWindow": "5m",
+      "coverage": "HTTP metrics and traces for uptime-api and brandbrain-api; missing telemetry is not replaced with zero."
+    }
+  },
+  "service-http-request-rate": {
+    "query": "(sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m]))) or (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])))",
+    "description": "HTTP requests per second over five minutes. Uses Uptime custom request counters or Brandbrain stable OTel HTTP histogram counts, selected by service identity and the owning scrape dataset. Missing telemetry stays empty; overlapping schemas are not added together.",
+    "metadata": {
+      "unit": "req/s",
+      "serviceLabel": "Uptime: otel_scope_name; Brandbrain: service_name",
+      "dataset": "Uptime: service=telesis; Brandbrain: job=brandbrain-api, service=brandbrain",
+      "rateWindow": "5m",
+      "coverage": "HTTP metrics and traces for uptime-api and brandbrain-api; missing telemetry is not replaced with zero."
+    }
+  },
+  "service-http-server-error-ratio": {
+    "query": "(100 * (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\",status_code=~\"5..\"}[5m])) or (sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m])) * 0)) / sum(rate(http_request_count_total{otel_scope_name={{service}},service=\"telesis\"}[5m]))) or (100 * (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\",http_response_status_code=~\"5..\"}[5m])) or (sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])) * 0)) / sum(rate(http_server_request_duration_seconds_count{service_name={{service}},job=\"brandbrain-api\",service=\"brandbrain\"}[5m])))",
+    "description": "Percentage of observed HTTP requests returning 5xx, using five-minute rates. Missing 5xx series are treated as zero only when request traffic exists. Missing telemetry stays empty; zero-traffic ratios remain undefined.",
+    "metadata": {
+      "unit": "%",
+      "serviceLabel": "Uptime: otel_scope_name; Brandbrain: service_name",
+      "dataset": "Uptime: service=telesis; Brandbrain: job=brandbrain-api, service=brandbrain",
+      "rateWindow": "5m",
+      "coverage": "HTTP metrics and traces for uptime-api and brandbrain-api; missing telemetry is not replaced with zero."
+    }
+  }
+}

@@ -36,9 +36,16 @@ type NotificationSender struct {
 
 // NewNotificationSender creates a sender with a sensible default timeout.
 func NewNotificationSender() *NotificationSender {
+	// Give each sender its own connection pool. Sharing http.DefaultTransport
+	// lets another client close its idle connections while a webhook is using
+	// them, which can abort HTTP/1.x requests in parallel controller tests.
+	base := http.DefaultTransport
+	if transport, ok := base.(*http.Transport); ok {
+		base = transport.Clone()
+	}
 	return &NotificationSender{
 		HTTPClient: &http.Client{
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Transport: otelhttp.NewTransport(base),
 			Timeout:   defaultHTTPTimeout,
 		},
 	}

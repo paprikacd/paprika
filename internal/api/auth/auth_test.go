@@ -427,16 +427,24 @@ func newOIDCProviderFixture(t *testing.T) *oidcProviderFixture {
 }
 
 func (f *oidcProviderFixture) signIDToken(t *testing.T) string {
+	return f.signIDTokenClaims(t, nil)
+}
+
+func (f *oidcProviderFixture) signIDTokenClaims(t *testing.T, overrides map[string]interface{}) string {
 	t.Helper()
 	header, err := json.Marshal(map[string]interface{}{"alg": "RS256", "kid": "test-key", "typ": "JWT"})
 	require.NoError(t, err)
-	claims, err := json.Marshal(map[string]interface{}{
+	values := map[string]interface{}{
 		"iss": f.server.URL,
 		"sub": "test-user",
 		"aud": testOIDCClientID,
 		"iat": time.Now().Add(-time.Minute).Unix(),
 		"exp": time.Now().Add(time.Hour).Unix(),
-	})
+	}
+	for key, value := range overrides {
+		values[key] = value
+	}
+	claims, err := json.Marshal(values)
 	require.NoError(t, err)
 
 	unsigned := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(claims)

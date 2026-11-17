@@ -1,0 +1,48 @@
+.plotBackground { fill: var(--gamma-bg); stroke: var(--gamma-border); stroke-width: 1; }
+.gridLine { stroke: var(--gamma-border); stroke-width: .5; opacity: .7; }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 10px;
+  line-height: 1.4;
+}
+.ramp {
+  flex: none;
+  width: 120px;
+  height: 8px;
+  border-radius: 2px;
+}
+.key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.key > i { flex: none; }
+.quantileSwatch { flex: none; overflow: visible; }
+.quantile {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.4;
+}
+.window { display: grid; gap: 6px; margin-top: 8px; }
+.windowList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--widget-text, var(--gamma-muted));
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.windowList li { display: grid; grid-template-columns: 62px minmax(40px, 1fr) auto; align-items: center; gap: 8px; }
+.windowList li[aria-current="true"] { color: var(--gamma-ink); font-weight: 600; }
+.windowLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.windowTrack { display: block; height: 8px; border-radius: 2px; overflow: hidden; background: var(--gamma-chart-empty); }
+.windowTrack > i { display: block; height: 100%; }
+.windowValue { font-weight: inherit; white-space: nowrap; }
+.quantileNote { margin: 0; color: var(--widget-text, var(--gamma-muted)); font-size: 11px; line-height: 1.4; }
+.dataError { display: grid; align-content: center; gap: 6px; height: 100%; padding: 12px; color: var(--gamma-ink); font-size: 12px; line-height: 1.5; }
+.dataError p { margin: 0; color: var(--gamma-muted); }

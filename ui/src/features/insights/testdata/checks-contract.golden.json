@@ -1,0 +1,123 @@
+{
+  "save": {
+    "error": "threshold color must be a six-digit hex color",
+    "issues": [
+      {
+        "ruleId": "schema.widget.options",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "latency",
+        "pointer": "/widgets/1/options/thresholds/1/color",
+        "message": "threshold color must be a six-digit hex color",
+        "fix": ""
+      },
+      {
+        "ruleId": "schema.widget.layout",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "requests",
+        "pointer": "/widgets/0/layout/w",
+        "message": "widget layout is outside the dashboard grid",
+        "fix": "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets)."
+      }
+    ],
+    "total": 2,
+    "truncated": false,
+    "errorCount": 2,
+    "warningCount": 0,
+    "infoCount": 0
+  },
+  "dryRun": {
+    "issues": [
+      {
+        "ruleId": "schema.widget.options",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "latency",
+        "pointer": "/widgets/1/options/thresholds/1/color",
+        "message": "threshold color must be a six-digit hex color",
+        "fix": ""
+      },
+      {
+        "ruleId": "schema.widget.layout",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_SCHEMA",
+        "widgetId": "requests",
+        "pointer": "/widgets/0/layout/w",
+        "message": "widget layout is outside the dashboard grid",
+        "fix": "Keep x and y at least 0, y at most 1000, w from 1 to 12 with x + w at most 12, and h from 2 to 12 (1 for stat widgets)."
+      }
+    ],
+    "total": 2,
+    "truncated": false,
+    "errorCount": 2,
+    "warningCount": 0,
+    "infoCount": 0
+  },
+  "lintDryRun": {
+    "issues": [
+      {
+        "ruleId": "layout.overlap",
+        "severity": "SEVERITY_ERROR",
+        "source": "SOURCE_LINT",
+        "widgetId": "b",
+        "pointer": "/widgets/1/layout",
+        "message": "\"Widget b\" (b) overlaps \"Widget a\" (a)",
+        "fix": "Move or resize one of the two widgets so their grid rectangles do not intersect."
+      }
+    ],
+    "total": 1,
+    "truncated": false,
+    "errorCount": 1,
+    "warningCount": 0,
+    "infoCount": 0
+  },
+  "checkedSave": {
+    "schemaVersion": 1,
+    "id": "warn",
+    "title": "Checks",
+    "timeRange": "1h",
+    "refreshInterval": 30,
+    "widgets": [
+      {
+        "id": "a",
+        "title": "Widget a",
+        "type": "timeseries",
+        "providerId": "prometheus",
+        "query": "up",
+        "unit": "req/s",
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 2
+        },
+        "type": "stat",
+        "options": {
+          "showStatBar": true,
+          "min": 0,
+          "max": 100,
+          "showSparkline": true
+        }
+      }
+    ],
+    "checks": {
+      "issues": [
+        {
+          "ruleId": "stat.density",
+          "severity": "SEVERITY_WARNING",
+          "source": "SOURCE_LINT",
+          "widgetId": "a",
+          "pointer": "/widgets/0/options/showStatBar",
+          "message": "\"Widget a\" (a) is at most two grid rows tall and stacks a bar on a sparkline",
+          "fix": "Keep one trend on a stat with layout h<=2: remove either showStatBar or the sparkline, or give the stat layout h of at least 3."
+        }
+      ],
+      "total": 1,
+      "truncated": false,
+      "errorCount": 0,
+      "warningCount": 1,
+      "infoCount": 0
+    }
+  }
+}

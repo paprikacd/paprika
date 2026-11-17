@@ -1,0 +1,507 @@
+{
+  "description": "Shared threshold conformance cases. Each case is run through the Zod widget schema (ui schema-conformance.test.ts), the Go validateDashboard path and the embedded dashboard JSON Schema (internal/insights/schema_conformance_test.go). All three must agree with valid on every case. Label length counts Unicode code points in all three. A case with jsonSchemaGap names a rule the published JSON Schema cannot express (strictly increasing values, which JSON Schema has no keyword for); the embedded schema must accept that case, which the Go test pins.",
+  "cases": [
+    {
+      "name": "status only",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "critical"
+        }
+      ]
+    },
+    {
+      "name": "every status level in ascending order",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "unknown"
+        },
+        {
+          "value": 1,
+          "status": "critical"
+        },
+        {
+          "value": 2,
+          "status": "warning"
+        },
+        {
+          "value": 3,
+          "status": "info"
+        },
+        {
+          "value": 4,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "status with a label",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "Healthy"
+        }
+      ]
+    },
+    {
+      "name": "legacy hex colour without a status",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "color": "#b64a3a",
+          "label": "Unhealthy"
+        },
+        {
+          "value": 1,
+          "color": "#53876a"
+        }
+      ]
+    },
+    {
+      "name": "status with a hue override",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "color": "#20cba3"
+        }
+      ]
+    },
+    {
+      "name": "uppercase hex colour",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "color": "#B64A3A"
+        }
+      ]
+    },
+    {
+      "name": "mixed legacy colour and status entries",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "color": "#e8554e"
+        },
+        {
+          "value": 25,
+          "status": "warning"
+        }
+      ]
+    },
+    {
+      "name": "empty list",
+      "valid": true,
+      "thresholds": []
+    },
+    {
+      "name": "negative and fractional values",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": -1.5,
+          "status": "critical"
+        },
+        {
+          "value": 0.25,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "label of exactly 80 characters",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+        }
+      ]
+    },
+    {
+      "name": "twelve thresholds",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok"
+        },
+        {
+          "value": 1,
+          "status": "info"
+        },
+        {
+          "value": 2,
+          "status": "warning"
+        },
+        {
+          "value": 3,
+          "status": "critical"
+        },
+        {
+          "value": 4,
+          "status": "unknown"
+        },
+        {
+          "value": 5,
+          "status": "ok"
+        },
+        {
+          "value": 6,
+          "status": "info"
+        },
+        {
+          "value": 7,
+          "status": "warning"
+        },
+        {
+          "value": 8,
+          "status": "critical"
+        },
+        {
+          "value": 9,
+          "status": "unknown"
+        },
+        {
+          "value": 10,
+          "status": "ok"
+        },
+        {
+          "value": 11,
+          "status": "info"
+        }
+      ]
+    },
+    {
+      "name": "neither status nor colour",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "label": "Healthy"
+        }
+      ]
+    },
+    {
+      "name": "value only",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "unknown status name",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "danger"
+        }
+      ]
+    },
+    {
+      "name": "status with different case",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "Critical"
+        }
+      ]
+    },
+    {
+      "name": "empty status",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": ""
+        }
+      ]
+    },
+    {
+      "name": "null status",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": null
+        }
+      ]
+    },
+    {
+      "name": "severity field instead of status",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "name": "three-digit hex colour",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "color": "#fff"
+        }
+      ]
+    },
+    {
+      "name": "named colour",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "color": "red"
+        }
+      ]
+    },
+    {
+      "name": "eight-digit hex colour",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "color": "#b64a3a80"
+        }
+      ]
+    },
+    {
+      "name": "unknown status with a hue override",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "danger",
+          "color": "#20cba3"
+        }
+      ]
+    },
+    {
+      "name": "null colour beside a status",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "color": null
+        }
+      ]
+    },
+    {
+      "name": "null label",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": null
+        }
+      ]
+    },
+    {
+      "name": "label of 81 characters",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    {
+      "name": "missing value",
+      "valid": false,
+      "thresholds": [
+        {
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "string value",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": "0",
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "values out of order",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 5,
+          "status": "ok"
+        },
+        {
+          "value": 1,
+          "status": "critical"
+        }
+      ],
+      "jsonSchemaGap": "ordering"
+    },
+    {
+      "name": "duplicate values",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 1,
+          "status": "ok"
+        },
+        {
+          "value": 1,
+          "status": "critical"
+        }
+      ],
+      "jsonSchemaGap": "ordering"
+    },
+    {
+      "name": "thirteen thresholds",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok"
+        },
+        {
+          "value": 1,
+          "status": "ok"
+        },
+        {
+          "value": 2,
+          "status": "ok"
+        },
+        {
+          "value": 3,
+          "status": "ok"
+        },
+        {
+          "value": 4,
+          "status": "ok"
+        },
+        {
+          "value": 5,
+          "status": "ok"
+        },
+        {
+          "value": 6,
+          "status": "ok"
+        },
+        {
+          "value": 7,
+          "status": "ok"
+        },
+        {
+          "value": 8,
+          "status": "ok"
+        },
+        {
+          "value": 9,
+          "status": "ok"
+        },
+        {
+          "value": 10,
+          "status": "ok"
+        },
+        {
+          "value": 11,
+          "status": "ok"
+        },
+        {
+          "value": 12,
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "name": "null entry",
+      "valid": false,
+      "thresholds": [
+        null
+      ]
+    },
+    {
+      "name": "empty label",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": ""
+        }
+      ]
+    },
+    {
+      "name": "forty emoji label: 40 code points, 80 UTF-16 units",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "forty-one emoji label: 41 code points, 82 UTF-16 units",
+      "valid": true,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "eighty-one emoji label",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "ok",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    },
+    {
+      "name": "legacy success status name",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "name": "legacy danger status name",
+      "valid": false,
+      "thresholds": [
+        {
+          "value": 0,
+          "status": "danger"
+        }
+      ]
+    }
+  ]
+}

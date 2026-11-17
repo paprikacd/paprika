@@ -23,10 +23,12 @@ spec:
     port: 8081
     protocol: TCP
     targetPort: 8081
+  {{- if ne .Values.deploymentMode "split" }}
   - name: api
     port: 3000
     protocol: TCP
     targetPort: 3000
+  {{- end }}
   - name: metrics
     port: 8080
     protocol: TCP

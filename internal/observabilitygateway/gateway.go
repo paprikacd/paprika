@@ -19,8 +19,11 @@ import (
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/loki"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/mock"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/otlp"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/postgresql"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/prometheus"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/shorted"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/tempo"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/uptime"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/vultrmonitoring"
 )
 
@@ -45,6 +48,9 @@ var connectors = map[string]func() connector.Connector{
 	connector.ProviderLoki:                 loki.New,
 	connector.ProviderTempo:                tempo.New,
 	connector.ProviderOTLP:                 otlp.New,
+	connector.ProviderShorted:              shorted.New,
+	connector.ProviderUptime:               uptime.New,
+	connector.ProviderPostgreSQL:           postgresql.New,
 	connector.ProviderGCPCloudLogging:      gcpcloudlogging.New,
 	connector.ProviderGCPCloudMonitoring:   gcpcloudmonitoring.New,
 	connector.ProviderGCPCloudTrace:        gcpcloudtrace.New,

@@ -66,7 +66,8 @@ func TestConsentHandlerServesPage(t *testing.T) {
 	// The dither texture is the Bayer-ordered 8x8 SVG tile layered over
 	// the paprika gradient.
 	require.Contains(t, page, "width='8' height='8'")
-	require.Contains(t, page, "paprika_return_to")
+	require.Contains(t, page, `sessionStorage.setItem("paprika_return_to"`)
+	require.NotContains(t, page, `localStorage.setItem("paprika_return_to"`)
 }
 
 func TestConsentHandlerRidCannotBreakOutOfScript(t *testing.T) {

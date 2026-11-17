@@ -107,6 +107,9 @@ spec:
                 - aws-cloudtrail
                 - vultr-monitoring
                 - mock
+                - shorted
+                - uptime
+                - postgresql
                 type: string
             required:
             - type

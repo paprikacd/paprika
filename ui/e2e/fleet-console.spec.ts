@@ -48,6 +48,7 @@ test("serves the compiled shell with exact links that all resolve", async ({ pag
     ["Overview", "/dashboard/"],
     ["Applications", "/dashboard/applications/"],
     ["Fleet map", "/dashboard/map/"],
+    ["Insights", "/dashboard/insights/"],
     ["Pipelines", "/dashboard/pipelines/"],
     ["Rollouts", "/dashboard/rollouts/"],
     ["Sync & diff", "/dashboard/diff/"],
@@ -57,7 +58,7 @@ test("serves the compiled shell with exact links that all resolve", async ({ pag
     ["Observability", "/dashboard/observability/"],
   ] as const
 
-  // The rail carries these ten destinations, in this order, and nothing else:
+  // The rail carries these destinations, in this order, and nothing else:
   // an extra, missing or reordered entry fails here.
   await expect
     .poll(() =>
@@ -223,6 +224,46 @@ test("loads the next cursor page without replacing existing applications", async
     testInfo,
   )
   await expect(sentinel).toContainText("200 loaded / 250 indexed")
+})
+
+test("keeps the fleet-wide instrument summary truthful and readable on desktop and mobile", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto("/dashboard")
+  const strip = page.getByRole("region", { name: "Fleet signals" })
+  await expect(strip).toBeVisible()
+  await expect(strip).toHaveAttribute("aria-busy", "false")
+  await expect(strip.locator("[data-fleet-signal]")).toHaveCount(4)
+  await expect(strip).toContainText("Whole-fleet index")
+  await expect(strip.getByText("Indexed applications")).toBeVisible()
+  await expect(strip.getByText("Healthy", { exact: true })).toBeVisible()
+  await expect(strip.getByText("Progressing", { exact: true })).toBeVisible()
+  await expect(strip.getByText("Needs attention", { exact: true })).toBeVisible()
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
+    const geometry = await strip.evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return {
+        left: rect.left, right: rect.right,
+        overflow: element.scrollWidth > element.clientWidth + 1,
+        cells: [...element.querySelectorAll("[data-fleet-signal]")].map(cell => {
+          const bounds = cell.getBoundingClientRect()
+          const value = cell.querySelector("[aria-label]")?.getBoundingClientRect()
+          return { left: bounds.left, right: bounds.right, numberLeft: value?.left, numberRight: value?.right }
+        }),
+      }
+    })
+    expect(geometry.overflow, "signal strip overflow at viewport " + width).toBe(false)
+    for (const cell of geometry.cells) {
+      expect(cell.left).toBeGreaterThanOrEqual(geometry.left - 1)
+      expect(cell.right).toBeLessThanOrEqual(geometry.right + 1)
+      expect(cell.numberLeft).toBeGreaterThanOrEqual(cell.left - 1)
+      expect(cell.numberRight).toBeLessThanOrEqual(cell.right + 1)
+    }
+    await testInfo.attach("fleet-signals-" + width + "px", {
+      body: await strip.screenshot({ animations: "disabled" }),
+      contentType: "image/png",
+    })
+  }
 })
 
 test("opens a real Application deep link from highest-impact attention", async ({

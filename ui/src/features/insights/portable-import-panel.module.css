@@ -1,0 +1,201 @@
+.panel {
+  min-width: 0;
+  margin-top: 22px;
+  color: var(--gamma-ink);
+}
+.panel h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.panel h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.panel p {
+  margin: 8px 0 12px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 14px 0;
+  font-size: 12px;
+}
+.panel label > button {
+  width: 100%;
+}
+.panel textarea {
+  --gamma-field-min-height: 150px;
+  --gamma-field-font: var(--gamma-font-code);
+  font-size: 12px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.actions > button {
+  flex: 1 1 120px;
+}
+.review {
+  border-top: 1px solid var(--gamma-border);
+  padding-top: 18px;
+  margin-top: 18px;
+}
+.documents {
+  padding: 0;
+  margin: 0 0 16px;
+  list-style: none;
+  max-height: 200px;
+  overflow: auto;
+}
+.documents li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gamma-border);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.documents small {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.5;
+  color: var(--gamma-muted);
+}
+.queries {
+  margin: 22px 0 18px;
+}
+.query {
+  padding: 14px;
+  margin: 10px 0;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-panel);
+  background: var(--gamma-bg);
+  min-width: 0;
+}
+.query strong {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.query code {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--gamma-font-code);
+  font-size: 11px;
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.query label {
+  margin-bottom: 0;
+}
+.panel .copyNote {
+  color: var(--gamma-ink);
+  margin-bottom: 0;
+}
+.panel .error {
+  color: var(--gamma-danger);
+  white-space: pre-wrap;
+}
+
+.review > button {
+  margin: 6px 8px 6px 0;
+}
+.warning {
+  padding: 12px;
+  margin: 12px 0;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  background: var(--gamma-surface-2);
+  color: var(--gamma-ink);
+}
+.panel .warning p {
+  margin-bottom: 0;
+  color: var(--gamma-ink);
+}
+.warning ul {
+  padding-inline-start: 18px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.diff {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.diff > li {
+  padding: 12px 0;
+  border-top: 1px solid var(--gamma-border);
+  min-width: 0;
+}
+.diff > li > strong {
+  font-family: var(--gamma-font-code);
+  font-weight: 500;
+  font-size: 11px;
+}
+.changeKind {
+  display: block;
+  color: var(--gamma-muted);
+  margin: 4px 0 9px;
+  font-size: 11px;
+}
+.diffPair {
+  display: grid;
+  gap: 10px;
+}
+.diffValue {
+  min-width: 0;
+}
+.diffValue > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.diffValue small {
+  color: var(--gamma-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.diffValue pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 10px;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control);
+  font-family: var(--gamma-font-code);
+  font-size: 11px;
+  line-height: 1.6;
+  background: var(--gamma-surface);
+  color: var(--gamma-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diffValue pre:focus-visible {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .warning {
+    border-color: Highlight;
+  }
+  .diffValue pre:focus-visible {
+    outline-color: Highlight;
+  }
+}

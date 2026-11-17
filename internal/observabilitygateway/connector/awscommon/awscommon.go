@@ -212,7 +212,7 @@ func decodeEndpoint(value json.RawMessage) (string, error) {
 type credentialsDocument struct {
 	AccessKeyID     string `json:"access_key_id"`
 	SecretAccessKey string `json:"secret_access_key"`
-	SessionToken    string `json:"session_token,omitempty"`
+	SessionToken    string `json:"session_token,omitempty"` // #nosec G117 -- Private decode-only credential document; this field never enters an API response.
 }
 
 // CredentialsDecoder parses the credential document into a static provider.

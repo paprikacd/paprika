@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   Activity,
   Boxes,
+  ChartNoAxesCombined,
   GitBranch,
   GitCompareArrows,
   LayoutGrid,
@@ -43,6 +44,7 @@ const navigationSections: NavigationSection[] = [
       { label: "Overview", href: "/dashboard/", icon: LayoutGrid },
       { label: "Applications", href: "/dashboard/applications/", icon: Boxes },
       { label: "Fleet map", href: "/dashboard/map/", icon: Map },
+      { label: "Insights", href: "/dashboard/insights/", icon: ChartNoAxesCombined },
     ],
   },
   {

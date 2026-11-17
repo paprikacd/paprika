@@ -145,16 +145,11 @@ func reportedNodePools(r *satellite.Report) []clusters.ClusterNodePool {
 	return pools
 }
 
-// reportedPolicies records the ceiling the control plane will enforce. The
-// Cluster's spec wins because the control plane is the side that refuses a
-// write; the satellite's own claim is only used when the spec is silent, which
-// is what a registration created by auto-enrolment carries.
-func reportedPolicies(cluster *clusters.Cluster, r *satellite.Report) []clusters.ManagementPolicy {
-	if cluster.Spec.ManagementPolicies != nil {
-		return paprikav1.IntersectManagementPolicies(
-			cluster.Spec.ManagementPolicies, paprikav1.DefaultManagementPolicies())
-	}
-	return paprikav1.IntersectManagementPolicies(r.Policies, paprikav1.DefaultManagementPolicies())
+// reportedPolicies retains the last satellite claim independently from the
+// Cluster ceiling. Legacy reports that omit policies inherit the default, but
+// an explicit empty array remains an empty claim.
+func reportedPolicies(r *satellite.Report) []clusters.ManagementPolicy {
+	return append([]clusters.ManagementPolicy{}, paprikav1.NormalizeManagementPolicies(r.Policies)...)
 }
 
 // reportedOperatingState prefers what the satellite said. A disabled cluster is
@@ -172,7 +167,9 @@ func applyReportStatus(cluster *clusters.Cluster, r *satellite.Report, state *cl
 	state.Capacity = reportedCapacity(r, now)
 	state.NodePools = reportedNodePools(r)
 	state.ProviderType = r.ProviderType
-	state.EffectivePolicies = reportedPolicies(cluster, r)
+	claim := reportedPolicies(r)
+	state.ReportedPolicies = &claim
+	state.EffectivePolicies = paprikav1.IntersectManagementPolicies(cluster.Spec.ManagementPolicies, claim)
 	state.OperatingState = reportedOperatingState(cluster, r)
 	cluster.Status.Satellite = state
 	cluster.Status.Inventory = r.Inventory.DeepCopy()

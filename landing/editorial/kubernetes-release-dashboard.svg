@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+<title id="title">Kubernetes release dashboard signals</title><desc id="desc">Conceptual technical illustration for Paprika engineering notes; all signals are illustrative, not production readings.</desc>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102335"/><stop offset=".55" stop-color="#213a51"/><stop offset="1" stop-color="#102233"/></linearGradient>
+ <pattern id="mesh" width="45" height="45" patternUnits="userSpaceOnUse"><path d="M45 0H0V45" stroke="#b3ccde" stroke-opacity=".13" fill="none" stroke-width="1"/></pattern>
+</defs>
+<rect width="1200" height="675" fill="url(#bg)"/><rect width="1200" height="675" fill="url(#mesh)"/>
+<path d="M54 114H1146M54 583H1146" stroke="#88a9bf" stroke-opacity=".44"/>
+<path d="M54 58H104" stroke="#9bd6bd" stroke-width="4"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e7f1f7">
+ <text x="54" y="86" font-size="18" font-weight="700" letter-spacing="3">04 / RELEASE HEALTH</text>
+ <text x="1146" y="86" font-size="13" letter-spacing="3" text-anchor="end" fill="#b1c9d8">PAPRIKA ENGINEERING</text>
+ 
+ <text x="76" y="155" font-size="15" letter-spacing="3" fill="#b7cede">RELEASE EVIDENCE / CONCEPTUAL</text>
+ <g transform="translate(68 202)">
+  <rect width="1064" height="315" fill="#142d43" stroke="#6b90aa" stroke-width="2"/>
+  <path d="M0 58H1064" stroke="#7092a9" stroke-opacity=".75"/>
+  <text x="30" y="37" font-size="21" font-weight="700">REVISION</text><text x="810" y="36" font-size="15" letter-spacing="2" fill="#b9cbd7">IDENTITY → EVIDENCE</text>
+  <g transform="translate(28 91)">
+   <rect width="224" height="166" fill="#274760" stroke="#88b0c7"/>
+   <text x="20" y="31" font-size="14" letter-spacing="2" fill="#b4d2e5">01 / SOURCE</text>
+   <text x="20" y="80" font-size="33" font-weight="700" fill="#eef6fb">Git</text>
+   <path d="M22 106h180" stroke="#8eabc0"/><text x="22" y="137" font-size="17">Pinned SHA</text>
+  </g>
+  <g transform="translate(285 91)">
+   <rect width="224" height="166" fill="#274760" stroke="#88b0c7"/>
+   <text x="20" y="31" font-size="14" letter-spacing="2" fill="#b4d2e5">02 / WORKLOAD</text>
+   <g fill="#94d8bf"><rect x="20" y="59" width="43" height="43"/><rect x="73" y="59" width="43" height="43"/><rect x="126" y="59" width="43" height="43"/></g>
+   <text x="20" y="137" font-size="17">Readiness</text>
+  </g>
+  <g transform="translate(542 91)">
+   <rect width="224" height="166" fill="#274760" stroke="#88b0c7"/>
+   <text x="20" y="31" font-size="14" letter-spacing="2" fill="#b4d2e5">03 / DRIFT</text>
+   <path d="M23 80h71m-71 25h71" stroke="#a4c5db" stroke-width="8"/>
+   <path d="M122 80h71m-71 25h46" stroke="#edc18a" stroke-width="8"/>
+   <text x="20" y="137" font-size="17">Desired / live</text>
+  </g>
+  <g transform="translate(799 91)">
+   <rect width="237" height="166" fill="#274760" stroke="#88b0c7"/>
+   <text x="20" y="31" font-size="14" letter-spacing="2" fill="#b4d2e5">04 / SERVICE</text>
+   <path d="M22 102l35-27 42 14 39-41 36 26 35-22" fill="none" stroke="#9bd6bd" stroke-width="4"/>
+   <text x="20" y="137" font-size="17">Query evidence</text>
+  </g>
+  <g stroke="#9fbbcf" stroke-width="2"><path d="M252 174h33M509 174h33M766 174h33"/></g>
+  <path d="M266 166l11 8-11 8M523 166l11 8-11 8M780 166l11 8-11 8" stroke="#9fbbcf" stroke-width="2" fill="none"/>
+  <text x="29" y="295" font-size="13" letter-spacing="2" fill="#aec6d7">OBSERVED STATES ARE DISTINCT. A GREEN PANEL CANNOT PROVE THE NEXT ONE.</text>
+ </g>
+ <text x="54" y="627" font-size="14" letter-spacing="3" fill="#a8c1d1">SOURCE / SIGNAL / DECISION</text>
+ <path d="M1002 622H1146" stroke="#9bd6bd" stroke-opacity=".75" stroke-width="2"/>
+</g>
+</svg>

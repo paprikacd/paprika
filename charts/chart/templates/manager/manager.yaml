@@ -88,6 +88,7 @@ spec:
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- $splitMode := eq .Values.deploymentMode "split" }}
       containers:
       - args:
         {{- if .Values.metrics.enable }}
@@ -108,8 +109,14 @@ spec:
         # installed, so a tenant able to create a namespace by that name in an
         # install that lives elsewhere would inherit fleet-wide Global scope.
         - --operator-namespace={{ .Release.Namespace }}
-        {{- if eq .Values.deploymentMode "split" }}
+        {{- if $splitMode }}
         - --mode=operator
+        # The split-mode manager serves no console and no inline webhook. The
+        # api-server serves the console, the API, the satellite link and the token
+        # exchange; the webhook-receiver deployment serves /webhook.
+        {{- with include "paprika.managerSplitListenerArgs" . | trim }}
+        {{- . | nindent 8 }}
+        {{- end }}
         {{- else }}
         - --mode={{ .Values.mode }}
         {{- end }}
@@ -128,8 +135,9 @@ spec:
         - --satellite-dispatch-addr=http://{{ include "paprika.resourceName" (dict "suffix" "api-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.satellite.internalDispatch.port }}
         - --satellite-dispatch-token-file={{ .Values.satellite.internalDispatch.tokenFile }}
         {{- end }}
-        {{- range .Values.manager.args }}
-        - {{ . }}
+        {{- /* In split mode, manager.args cannot re-enable the console or the inline webhook. */}}
+        {{- with include "paprika.managerArgs" . | trim }}
+        {{- . | nindent 8 }}
         {{- end }}
         command:
         - /manager
@@ -202,7 +210,11 @@ spec:
             readOnly: true
           {{- end }}
         env:
+        {{- include "paprika.insightsEnv" . | nindent 8 }}
         {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- /* The controller's local fallback renderer resolves git sources with
+        the same code as the repo server. */}}
+        {{- include "paprika.repoServerGitEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
         {{- include "paprika.githubActionsTokenExchangeEnv" . | nindent 8 }}
         {{- if eq .Values.deploymentMode "monolith" }}

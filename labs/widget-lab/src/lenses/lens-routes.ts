@@ -1,0 +1,28 @@
+export const lensRoutes = [
+ {id:'finance',label:'Finance',group:'Core'},
+ {id:'website',label:'Website',group:'Core'},
+ {id:'infrastructure',label:'Infrastructure',group:'Core'},
+ {id:'market-risk',label:'Market Risk',group:'Operations'},
+ {id:'inference-fleet',label:'Inference Fleet',group:'Operations'},
+ {id:'incident-room',label:'Incident Room',group:'Operations'},
+ {id:'grid-operations',label:'Grid Operations',group:'Operations'},
+ {id:'query-atlas',label:'Query Atlas',group:'New studies'},
+ {id:'journey-retention',label:'Journey & Retention',group:'New studies'},
+ {id:'logistics-control',label:'Logistics Control',group:'New studies'},
+ {id:'factory-quality',label:'Factory Quality',group:'New studies'},
+ {id:'threat-hunt',label:'Threat Hunt',group:'New studies'},
+ {id:'experiment-studio',label:'Experiment Studio',group:'New studies'},
+ {id:'spectrum-observatory',label:'Spectrum Observatory',group:'New studies'},
+ {id:'coastal-observatory',label:'Coastal Observatory',group:'New studies'},
+ {id:'production-planner',label:'Production Planner',group:'New studies'},
+ {id:'materials-lab',label:'Materials Lab',group:'New studies'},
+ {id:'grid-balance',label:'Grid Balance',group:'Domain studies'},
+ {id:'trial-evidence',label:'Trial Evidence',group:'Domain studies'},
+ {id:'wafer-intelligence',label:'Wafer Intelligence',group:'Domain studies'},
+ {id:'orbital-contact',label:'Orbital Contact',group:'Domain studies'},
+ {id:'kubernetes-fleet',label:'Kubernetes Fleet',group:'SRE investigations'},
+ {id:'performance-workbench',label:'Performance Workbench',group:'SRE investigations'},
+ {id:'distributed-systems',label:'Distributed Systems',group:'SRE investigations'},
+] as const;
+export type LensId=typeof lensRoutes[number]['id'];
+export const isLensRoute=(route:string)=>lensRoutes.some(lens=>route===`#${lens.id}`);

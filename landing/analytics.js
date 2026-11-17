@@ -1,77 +1,110 @@
-(function (root) {
-  "use strict";
-  const KEY = "paprika-website-analytics-v1";
-  const PAGES = { "/paprika/": "Home", "/paprika/index.html": "Home" };
-  function eligible(config, location, navigator) {
-    return config && config.enabled === true && config.gaPrivacyReviewed === true &&
-      /^G-[A-Z0-9]+$/.test(config.gaMeasurementId || "") &&
-      /^https:\/\/[^/?#]+$/.test(config.origin || "") && location.origin === config.origin &&
-      Object.hasOwn(PAGES, location.pathname) && !location.search && !location.hash &&
-      navigator.doNotTrack !== "1" && navigator.globalPrivacyControl !== true;
+/*
+ * Flaggr analytics for the public Paprika site. The issued site ID is public;
+ * credentials never belong in this file or its script tag.
+ *
+ * a.js owns pageviews, Web Vitals, errors and scroll depth. It collects the
+ * current URL, including documentation ?q= searches. This adapter adds only
+ * fixed conversion names; it does not make the vendor's collection path-only.
+ */
+(() => {
+  'use strict';
+
+  const siteId = document.currentScript?.dataset?.siteId;
+  if (typeof siteId !== 'string' || siteId !== siteId.trim() || !/^site_[A-Za-z0-9_-]{1,123}$/.test(siteId)) return;
+
+  try {
+    if (location.origin !== 'https://paprikacd.github.io' || !location.pathname.startsWith('/paprika/')) return;
+    if (window.top !== window.self || navigator.doNotTrack === '1') return;
+  } catch {
+    return;
   }
-  function boot(win, doc, config) {
-    if (!eligible(config, win.location, win.navigator) || doc.getElementById("paprika-analytics-choice")) return;
-    let choice = "denied";
-    try { choice = win.sessionStorage.getItem(KEY) || "denied"; } catch { return; }
-    const panel = doc.createElement("section");
-    panel.id = "paprika-analytics-choice";
-    panel.className = "shell analytics-choice";
-    panel.setAttribute("aria-label", "Optional website analytics");
-    const description = doc.createElement("p");
-    description.textContent = "Optional website analytics: Google Analytics can measure this public landing-page visit using cookies and browser/network information. No cluster, console, account or application data is shared. Your choice lasts for this tab. You can turn it off here.";
-    const accept = doc.createElement("button");
-    accept.type = "button"; accept.className = "button secondary"; accept.textContent = "Allow website analytics";
-    const decline = doc.createElement("button");
-    decline.type = "button"; decline.className = "button secondary"; decline.textContent = "Keep analytics off";
-    const status = doc.createElement("p");
-    status.setAttribute("role", "status");
-    const privacy = doc.createElement("a");
-    privacy.href = "https://policies.google.com/privacy";
-    privacy.textContent = "Google privacy policy";
-    privacy.rel = "noopener noreferrer";
-    panel.append(description, privacy, accept, decline, status);
-    doc.body.append(panel);
-    let loaded = false;
-    function render() {
-      status.textContent = choice === "granted" ? "Analytics allowed for this tab." : "Analytics are off.";
-      accept.disabled = choice === "granted";
-      decline.textContent = choice === "granted" ? "Turn analytics off" : "Keep analytics off";
+
+  const installed = '__paprikaFlaggrAdapter';
+  if (window[installed] || !document.head) return;
+  // A separately installed vendor tag already owns collection. Do not inject
+  // another instance or assume that its loading/configuration belongs to us.
+  if (Array.from(document.scripts).some((script) => {
+    if (!script.src) return false;
+    try {
+      const url = new URL(script.src, location.href);
+      return url.origin === 'https://cdn.flaggr.dev' && /^\/a(?:-[^/]+)?\.js$/.test(url.pathname);
+    } catch {
+      return false;
     }
-    function start() {
-      if (loaded || choice !== "granted" || !eligible(config, win.location, win.navigator)) return;
-      loaded = true;
-      win["ga-disable-" + config.gaMeasurementId] = false;
-      win.dataLayer = win.dataLayer || [];
-      function gtag() { win.dataLayer.push(arguments); }
-      win.gtag = gtag;
-      const safeLocation = config.origin + "/paprika/";
-      gtag("consent", "default", { analytics_storage: "granted", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" });
-      gtag("js", new Date());
-      gtag("config", config.gaMeasurementId, { send_page_view: false, cookie_prefix: "paprika", cookie_path: "/paprika/", cookie_domain: "none", allow_google_signals: false,
-        allow_ad_personalization_signals: false, page_location: safeLocation, page_referrer: "", page_title: "Paprika " + PAGES[win.location.pathname] });
-      gtag("event", "page_view", { send_to: config.gaMeasurementId });
-      const script = doc.createElement("script");
-      script.id = "paprika-ga-script"; script.async = true; script.referrerPolicy = "no-referrer";
-      script.src = "https://www.googletagmanager.com/gtag/js?id=" + config.gaMeasurementId;
-      doc.head.append(script);
+  })) return;
+  window[installed] = true;
+
+  const allowed = new Set([
+    'get_started', 'cli_download', 'docs_open', 'demo_open', 'blog_open',
+    'mcp_copy', 'code_copy', 'docs_search',
+  ]);
+  const queued = [];
+  const maxQueued = 20;
+  let state = 'loading';
+  let timeout;
+  const sdk = document.createElement('script');
+
+  function emit(name) {
+    try {
+      window.dispatchEvent(new CustomEvent('flaggr:conversion', { detail: { name } }));
+    } catch {
+      // Analytics cannot interrupt navigation or a successful product action.
     }
-    accept.addEventListener("click", () => {
-      try { win.sessionStorage.setItem(KEY, "granted"); } catch { return; }
-      choice = "granted"; render(); start();
-    });
-    decline.addEventListener("click", () => {
-      // Deny before any reload, including when the async vendor script is still pending.
-      win["ga-disable-" + config.gaMeasurementId] = true;
-      win.dataLayer = [];
-      let persisted = false;
-      try { win.sessionStorage.setItem(KEY, "denied"); persisted = true; }
-      catch { try { win.sessionStorage.removeItem(KEY); persisted = true; } catch { /* Never reload into a stale grant. */ } }
-      choice = "denied"; render();
-      if (!persisted) status.textContent = "Analytics are off on this page. Browser storage is unavailable; close this tab to discard its previous choice.";
-      if (loaded && persisted) win.location.reload();
-    });
-    render(); start();
   }
-  if (typeof module !== "undefined" && module.exports) module.exports = { eligible, boot };
-  else boot(root, root.document, root.PAPRIKA_ANALYTICS);
-})(typeof window === "undefined" ? globalThis : window);
+
+  function record(name) {
+    if (typeof name !== 'string' || !allowed.has(name) || state === 'stopped') return;
+    if (state === 'ready') emit(name);
+    else if (queued.length < maxQueued) queued.push(name);
+  }
+
+  function onClick(event) {
+    if (event.defaultPrevented || (typeof event.button === 'number' && event.button !== 0)) return;
+    const target = event.target?.nodeType === 3 ? event.target.parentElement : event.target;
+    const element = target?.closest?.('[data-analytics-event]');
+    record(element?.getAttribute('data-analytics-event'));
+  }
+
+  function onSignal(event) {
+    // Explicit actions (successful copy/search submission) use paprika:analytics. Extra detail,
+    // search terms, code text and arbitrary DOM text/URLs are never forwarded.
+    record(event.detail?.name);
+  }
+
+  function stop() {
+    if (state !== 'loading') return;
+    state = 'stopped';
+    queued.length = 0;
+    window.clearTimeout(timeout);
+    document.removeEventListener('click', onClick);
+    window.removeEventListener('paprika:analytics', onSignal);
+    sdk.remove();
+  }
+
+  sdk.src = 'https://cdn.flaggr.dev/a-0.1.9.js';
+  sdk.integrity = 'sha384-UbokEwOv+WfuKvg33yULNZRqXEMFKfrK39J4QItWznOG1IXviooN+w65ec5D6izH';
+  sdk.crossOrigin = 'anonymous';
+  sdk.async = true;
+  sdk.setAttribute('data-site-id', siteId);
+  sdk.setAttribute('data-track-clicks', 'false');
+  sdk.setAttribute('data-track-errors', 'true');
+  sdk.setAttribute('data-track-scroll', 'true');
+  sdk.setAttribute('data-respect-dnt', 'true');
+  sdk.addEventListener('load', () => {
+    if (state !== 'loading') return;
+    state = 'ready';
+    window.clearTimeout(timeout);
+    for (const name of queued.splice(0)) emit(name);
+  }, { once: true });
+  sdk.addEventListener('error', stop, { once: true });
+  document.addEventListener('click', onClick);
+  window.addEventListener('paprika:analytics', onSignal);
+  // A slow or blocked CDN gets no retries and retains at most 20 conversions.
+  // Navigation never waits for it; late load events cannot flush a timed-out queue.
+  timeout = window.setTimeout(stop, 10000);
+  try {
+    document.head.appendChild(sdk);
+  } catch {
+    stop();
+  }
+})();

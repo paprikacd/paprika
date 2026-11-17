@@ -34,17 +34,18 @@ type workflowRunStep struct {
 var pinnedActionRevisions = map[string]string{
 	"actions/checkout":                   "3d3c42e5aac5ba805825da76410c181273ba90b1",
 	"anchore/sbom-action/download-syft":  "a930d0ac434e3182448fe678398ba5713717112a",
-	"actions/upload-artifact":            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+	"actions/upload-artifact":            "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
 	"actions/setup-go":                   "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
 	"actions/setup-node":                 "820762786026740c76f36085b0efc47a31fe5020",
-	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
+	"hashicorp/setup-terraform":          "dfe3c3f87815947d99a8997f908cb6525fc44e9e",
+	"azure/setup-helm":                   "9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310",
 	"docker/build-push-action":           "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
-	"docker/login-action":                "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
+	"docker/login-action":                "81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
 	"docker/setup-buildx-action":         "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
 	"google-github-actions/auth":         "7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
 	"google-github-actions/setup-gcloud": "aa5489c8933f4cc7a4f7d45035b3b1440c9c10db",
-	"go-task/setup-task":                 "70f2430ad412f838533de8c0515c749ffb2b8bd3",
-	"goreleaser/goreleaser-action":       "f06c13b6b1a9625abc9e6e439d9c05a8f2190e94",
+	"go-task/setup-task":                 "a00fbb05ce67b35648be3c78cbc9fd85354c757e",
+	"goreleaser/goreleaser-action":       "a4f02ab5355a589de60d917a659ce617ed19b3de",
 	"peaceiris/actions-gh-pages":         "84c30a85c19949d7eee79c4ff27748b70285e453",
 }
 
@@ -105,13 +106,14 @@ func testCanonicalCIValidation(t *testing.T) {
 		t.Errorf("ci.yml push.branches = %v, want exactly [master]", branches)
 	}
 
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"terraform", "go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
 		if _, ok := workflow.jobs[jobID]; !ok {
 			t.Errorf("ci.yml is missing required job ID %q", jobID)
 		}
 	}
 
 	contracts := []validationJobContract{
+		{id: "terraform", commands: []string{"bash hack/test-terraform.sh"}},
 		{id: "go-test", commands: []string{
 			"make test-race",
 			"bash hack/test-check-vke-pod-conditions.sh",
@@ -176,7 +178,7 @@ func testCanonicalCIActionPins(t *testing.T) {
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"terraform", "go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "cluster-integration", "publish"} {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		timeout, ok := job["timeout-minutes"].(int)
 		if !ok || timeout < 5 || timeout > 30 {
@@ -196,7 +198,7 @@ func testCanonicalCICuttlefishRouting(t *testing.T) {
 		nodeCache        = `runner.environment == 'github-hosted' && 'npm' || ''`
 	)
 	workflow := loadWorkflow(t, "ci.yml")
-	portable := []string{"go-test", "go-lint", "ui", "mcp-console", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
+	portable := []string{"terraform", "go-test", "go-lint", "ui", "mcp-console", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke"}
 	for _, jobID := range portable {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		if got := normalizeExpression(scalarString(job["runs-on"])); got != cuttlefishRunsOn {
@@ -436,8 +438,12 @@ func assertJobTimeout(t *testing.T, workflowName, jobID string, job map[string]a
 func assertExactImageReferenceInput(t *testing.T, trigger map[string]any, context string) {
 	t.Helper()
 	inputs := requireMappingValue(t, trigger, "inputs", context)
-	if got := sortedKeys(inputs); !exactly(got, "image_ref") {
-		t.Errorf("%s inputs = %v, want exactly [image_ref]", context, got)
+	if got := sortedKeys(inputs); !sameStrings(got, []string{"image_ref", "render_worker_image_ref"}) {
+		t.Errorf("%s inputs = %v, want exactly [image_ref render_worker_image_ref]", context, got)
+	}
+	renderer := requireMappingValue(t, inputs, "render_worker_image_ref", context+" inputs")
+	if scalarString(renderer["type"]) != "string" || renderer["required"] != false {
+		t.Errorf("%s renderer digest input must be optional so manual deployments can retain the existing worker", context)
 	}
 	imageReference := requireMappingValue(t, inputs, "image_ref", context+" inputs")
 	description := strings.ToLower(scalarString(imageReference["description"]))
@@ -530,8 +536,8 @@ func testPublication(t *testing.T) {
 		t.Errorf("ci.yml publish job must have packages: write permission")
 	}
 
-	buildPush, ok := findFailureEnforcingUsesStep(publish, "docker/build-push-action@")
-	if !ok {
+	buildPush := requireNamedStep(t, publish, "Build and push", "ci.yml publish job")
+	if !strings.HasPrefix(scalarString(buildPush["uses"]), "docker/build-push-action@") || !stepFailureEnforcing(buildPush) {
 		t.Fatal("ci.yml publish job must contain an unconditional docker/build-push-action step that enforces failure")
 	}
 	if id := scalarString(buildPush["id"]); id != "build-push" {
@@ -905,7 +911,7 @@ func testDownstreamActionPins(t *testing.T) {
 	const (
 		checkoutRevision    = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 		setupGoRevision     = "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
-		setupHelmRevision   = "59b1c81c6280f5abebb1fb1bc585696daa7dfb42"
+		setupHelmRevision   = "9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"
 		setupBuildxRevision = "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c"
 		buildPushRevision   = "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a"
 	)
@@ -1861,21 +1867,6 @@ func containsActiveShellLine(script, want string) bool {
 		}
 	}
 	return false
-}
-
-func findFailureEnforcingUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
-	var matched map[string]any
-	for _, value := range anyList(job["steps"]) {
-		step, ok := value.(map[string]any)
-		if !ok || !strings.HasPrefix(scalarString(step["uses"]), actionPrefix) {
-			continue
-		}
-		if !stepFailureEnforcing(step) {
-			return nil, false
-		}
-		matched = step
-	}
-	return matched, matched != nil
 }
 
 func stepFailureEnforcing(step map[string]any) bool {

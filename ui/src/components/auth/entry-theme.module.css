@@ -1,0 +1,54 @@
+.scope {
+  color-scheme: light;
+  --primary: #416180;
+  --primary-foreground: #ffffff;
+  --entry-inset: #f5f5f8;
+  --entry-alert: #fbe9e8;
+  --entry-alert-text: #9c3f39;
+  --entry-alert-line: #dd9490;
+  color: var(--foreground);
+}
+
+.scope[data-entry-theme="dark"] {
+  color-scheme: dark;
+  --background: #14191e;
+  --foreground: #edf0f3;
+  --card: #1c232b;
+  --card-foreground: #edf0f3;
+  --primary: #42678a;
+  --primary-foreground: #ffffff;
+  --muted-foreground: #aab7c3;
+  --rule: #43515e;
+  --rule-soft: #34414d;
+  --rule-strong: #718697;
+  --ring: #94bce3;
+  --entry-inset: #222d36;
+  --entry-alert: #392725;
+  --entry-alert-text: #ffc0b8;
+  --entry-alert-line: #80554f;
+}
+
+/* Preserve the system palette in the static frame before hydration. */
+@media (prefers-color-scheme: dark) {
+  .scope[data-entry-theme="system"] {
+    color-scheme: dark;
+    --background: #14191e;
+    --foreground: #edf0f3;
+    --card: #1c232b;
+    --card-foreground: #edf0f3;
+    --primary: #42678a;
+    --primary-foreground: #ffffff;
+    --muted-foreground: #aab7c3;
+    --rule: #43515e;
+    --rule-soft: #34414d;
+    --rule-strong: #718697;
+    --ring: #94bce3;
+    --entry-inset: #222d36;
+    --entry-alert: #392725;
+    --entry-alert-text: #ffc0b8;
+    --entry-alert-line: #80554f;
+  }
+}
+
+.scope :global(.bg-inset), .scope :global(.hover\:bg-inset:hover) { background-color: var(--entry-inset); }
+.scope :global([role="alert"]) { background-color: var(--entry-alert); color: var(--entry-alert-text); border-color: var(--entry-alert-line); }

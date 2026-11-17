@@ -1,0 +1,58 @@
+{{- /* The per-component switch renders this policy alone. The global switch
+still renders it with the other components' policies. dig keeps a null
+insights.networkPolicy (helm --set insights.networkPolicy=null) from failing
+the render. */}}
+{{- $insightsNP := dig "networkPolicy" "enabled" false .Values.insights }}
+{{- if and .Values.insights.enabled (or .Values.networkPolicy.enabled $insightsNP) }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "insights" "context" .) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: insights
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: api-server
+        {{- /* The controller-manager is admitted only in monolith mode, where it serves
+        the console. In split mode the API server serves it. */}}
+        {{- if eq .Values.deploymentMode "monolith" }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              control-plane: controller-manager
+        {{- end }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: observability-gateway
+      ports:
+        - { protocol: TCP, port: 8090 }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- if .Values.observabilityGateway.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: observability-gateway
+      ports:
+        - { protocol: TCP, port: 8090 }
+    {{- end }}
+    {{- with (dig "networkPolicy" "egress" nil .Values.insights) }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

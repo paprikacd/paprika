@@ -225,12 +225,45 @@ The optional `paprika-setup` skill verifies access with `fleet_status` after log
 
 ## Observability gateway
 
+### Install Paprika Observe through the plugin
+
+Node.js 20+ can install the complete Codex or Claude Code plugin from the
+GitHub repository without a manual clone:
+
+```sh
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client claude
+```
+
+The npx distribution bundles the marketplace, plugin manifests, MCP URL and
+Observe skill. It stages a managed marketplace under
+`~/.paprika/plugin-marketplace`, uses the selected client's plugin commands,
+and then asks the user to finish native OAuth. It does not create a duplicate
+direct MCP entry or capture credentials. Rerun the command to refresh the
+staged marketplace, then restart or refresh the client.
+
+**First connection:** grant `paprika:observe` read access, start a new
+conversation, and call `list_observability_providers`. Select an actual
+provider and run a small query before claiming that live data is available.
+Authoring is opt-in: explicitly reconnect with
+`paprika:observe,paprika:insights:write` and retain Insights RBAC.
+
+**ChatGPT:** npx cannot register a ChatGPT custom MCP app or provide an
+interactive Connect control. Register
+`https://paprika.benebsworth.com/observe/mcp` as a custom MCP app, complete
+browser OAuth, and verify its tools. A private ChatGPT plugin can wrap that
+registered app using the real app ID in `.app.json`; do not commit a personal
+app ID to this public repository or invent a binding.
+
+
 The optional [`paprika-observe`](../../plugins/paprika-observe/README.md) package
 connects the separate `/observe/mcp` endpoint and bundles an observability skill.
 Its portable manifest uses `streamable-http` and per-server OpenAI OAuth
-configuration with DCR and `paprika:observe`; its supported Codex and Claude
-compatibility manifests use `.mcp.json` with `type: "http"`. It advertises only
-Read capability. The existing fleet package still connects only `/mcp`.
+configuration with DCR and `paprika:observe` as the default read scope;
+`paprika:insights:write` requires separate authoring consent; its supported Codex and Claude compatibility
+manifests use `.mcp.json` with `type: "http"`. Version 0.3.0 advertises Read and
+Write capabilities for telemetry reads and saved-query/dashboard authoring.
+The existing fleet package still connects only `/mcp`.
 
 After the user explicitly approves configuring persistent access to the exact
 deployment, install `paprika-observe@paprika` from this repository marketplace
@@ -249,6 +282,19 @@ For Claude Code:
 claude mcp add --transport http paprika_observe https://YOUR_VERIFIED_PAPRIKA_HOST/observe/mcp
 ```
 
+For saved-query and dashboard authoring, request a fresh consent grant with
+both scopes (and retain the user's existing Insights write permission):
+
+```sh
+codex mcp login paprika_observe --scopes paprika:observe,paprika:insights:write
+```
+
+Existing read-only tokens stay read-only on refresh. An OAuth request without
+scopes keeps the read-only default; compatibility clients need to request the
+authoring scope explicitly. The deployment advertises that scope only when
+Insights is configured. Authoring does not grant provider configuration or
+fleet writes.
+
 Then complete sign-in through `/mcp` in Claude Code. Use native OAuth consent;
 never supply copied fleet tokens or provider credentials. Each deployment and
 surface has its own OAuth connection. The packaged hosted origin is a default,
@@ -260,6 +306,16 @@ Use that provider's query syntax, a short explicit time range and a small limit.
 Inspect state, reason, truncation and continuation fields. Provider-specific
 limitations and empty results remain visible. `validate_provider` is an offline
 configuration check; only a real bounded provider query validates connectivity.
+
+Paprika Insights can also consume this same Observe MCP endpoint as its data
+source. With the gateway configured for Insights, open **Data sources** to see
+the **Paprika Observe MCP** connection and discovered Prometheus/Tempo providers,
+then choose **Explore**. PromQL and TraceQL requests run through `query_metrics`
+and `query_traces`; dashboard variables, saved-query parameters and tooltip
+bindings are resolved before the tool call. `list_metric_series` supplies a
+bounded series sample for label/cardinality inspection. The UI uses the
+signed-in Paprika user's delegated read permissions, independently of an AI
+client's native OAuth connection. See the [Insights integration](../design/insights/README.md#shared-observability-mcp-providers).
 
 The observe resource advertises the authorization-server issuer
 `https://HOST/observe`. RFC 8414 discovery therefore resolves
@@ -281,14 +337,13 @@ include `Retry-After`. Package tests and local protocol tests establish server
 contracts; they do not prove installed-client OAuth, deployed ingress, or live
 provider access.
 
-Two deployment limitations remain: DCR registrations are held in the server
-process, so a restart requires re-registration and replicas cannot share those
-registrations. Keep the gateway at one replica until registration storage is
-shared. Self-signed OAuth access tokens preserve subject/email/display name but
-currently reconstruct only the `users` group; group-based RBAC grants cannot
-rely on original OIDC group memberships. Use an already approved exact subject
-rule or implement group-claim preservation separately; do not broaden RBAC to
-work around a denied query.
+With `mcp.oauth.persistClients` enabled (the chart default), the gateway's DCR
+registry persists in its resource-bound ConfigMap and survives restarts.
+Without persistent registration storage, clients must re-register after a
+restart. OAuth access/refresh grants and internal console delegation preserve
+the authenticated user's exact groups, including an explicitly empty set;
+subject and group RBAC apply without substituting a service identity. Never
+broaden RBAC to work around a denied query or document write.
 
 Validate without installation or new credentials:
 
@@ -410,6 +465,14 @@ not establish health or zero drift. The current detailed drift backend returns
 
 For more detail, use `get_application`, `get_resource_tree` with `detailed=true`,
 `investigate` on an exact selected resource, or `get_logs` with `tail_lines`.
+`get_logs` reads only pods in the application's resource tree. `investigate`
+returns or uses only objects in that tree. Secret values are redacted from the
+Secret's own manifest and diff text, including copies in its annotations and in
+a List that holds it. A value that another object copies, such as a Deployment
+environment value, is not redacted. A Secret key whose value changed shows
+`<redacted: desired value differs>` on the desired side of the diff and
+`<redacted: live value differs>` on the live side, so the change is visible
+without the value.
 The investigator's findings are advisory: its current API does not report each
 source collection failure. Empty findings or missing logs are not proof of an
 absence of errors. Pipeline run-history collection is currently unavailable;

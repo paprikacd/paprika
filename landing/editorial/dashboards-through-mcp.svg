@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="art-title art-desc">
+<title id="art-title">Discover, query and verify dashboards through MCP</title><desc id="art-desc">Provider-backed metrics, logs and traces reach a verified observability dashboard via MCP.</desc>
+<defs>
+ <linearGradient id="night" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102334"/><stop offset=".62" stop-color="#1d3449"/><stop offset="1" stop-color="#112334"/></linearGradient>
+ <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#81a6c1" stroke-width=".8" stroke-opacity=".13"/></pattern>
+ <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#9bbbed" stop-opacity=".35"/><stop offset="1" stop-color="#9bbbed" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="1200" height="675" fill="url(#night)"/>
+<rect width="1200" height="675" fill="url(#grid)"/>
+<path d="M0 121H1200M0 590H1200" stroke="#6f90a8" stroke-opacity=".45"/>
+<path d="M70 64H124M1090 64H1130" stroke="#9bbbed" stroke-width="4"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#dce9f2">
+ <text x="70" y="86" font-size="19" font-weight="700" letter-spacing="4">03 / OBSERVABILITY</text>
+ <text x="1130" y="86" font-size="13" letter-spacing="3" text-anchor="end" fill="#91afc4">PAPRIKA / ENGINEERING</text>
+ 
+ <text x="75" y="183" font-size="14" letter-spacing="3" fill="#a1c1d7">TELEMETRY SOURCES</text>
+ <g font-size="19" font-weight="700">
+  <rect x="74" y="216" width="305" height="72" fill="#26465d" stroke="#7c9db5"/><circle cx="113" cy="252" r="12" fill="#92c6e6"/><text x="145" y="258">METRICS</text>
+  <rect x="74" y="305" width="305" height="72" fill="#26465d" stroke="#7c9db5"/><path d="M101 327h27m-27 12h27m-27 12h27" stroke="#92c6e6" stroke-width="3"/><text x="145" y="347">LOGS</text>
+  <rect x="74" y="394" width="305" height="72" fill="#26465d" stroke="#7c9db5"/><path d="M101 430h15v-14h14m-14 14v14h14" fill="none" stroke="#92c6e6" stroke-width="3"/><text x="145" y="435">TRACES</text>
+ </g>
+ <path d="M379 252H450V341H514M379 341H514M379 430H450V341" fill="none" stroke="#84afcc" stroke-width="2.5"/>
+ <circle cx="563" cy="341" r="70" fill="#355775" stroke="#c4dfef" stroke-width="2.5"/>
+ <circle cx="563" cy="341" r="56" fill="none" stroke="#87b4d2" stroke-width="1" stroke-dasharray="5 6"/>
+ <text x="563" y="335" text-anchor="middle" font-size="27" font-weight="700" fill="#edf6fc">MCP</text>
+ <text x="563" y="359" text-anchor="middle" font-size="13" letter-spacing="2" fill="#bfd8e9">READ / WRITE</text>
+ <path d="M633 341H717" stroke="#a4c8e0" stroke-width="3"/>
+ <path d="M704 331l13 10-13 10" fill="none" stroke="#a4c8e0" stroke-width="3"/>
+ <rect x="748" y="177" width="382" height="359" fill="#1a3249" stroke="#8caabf" stroke-width="2"/>
+ <path d="M748 226H1130" stroke="#7da0b9"/>
+ <circle cx="780" cy="201" r="6" fill="#91d3bf"/><text x="800" y="207" font-size="15" letter-spacing="2">VERIFIED DASHBOARD</text>
+ <rect x="772" y="247" width="334" height="112" fill="#284760" stroke="#638ca6"/>
+ <path d="M791 333l42-28 36 12 40-39 37 17 41-32 36 23 40-15" fill="none" stroke="#9dceec" stroke-width="4" stroke-linecap="square"/>
+ <path d="M791 339H1089M791 267H1089" stroke="#6b8ba4" stroke-opacity=".5"/>
+ <rect x="772" y="378" width="158" height="129" fill="#284760" stroke="#638ca6"/>
+ <rect x="945" y="378" width="161" height="129" fill="#284760" stroke="#638ca6"/>
+ <g fill="#a6d0eb"><rect x="791" y="467" width="19" height="23"/><rect x="820" y="444" width="19" height="46"/><rect x="849" y="421" width="19" height="69"/><rect x="878" y="452" width="19" height="38"/></g>
+ <g stroke="#9ac4e1" stroke-width="4" fill="none"><path d="M965 465l28-22 25 10 23-30 36-8"/><circle cx="1077" cy="415" r="6" fill="#9ac4e1"/></g>
+ <g font-size="16" fill="#d8e8f2"><text x="78" y="558">DISCOVER</text><text x="270" y="558">QUERY</text><text x="475" y="558">SAVE</text><text x="651" y="558">VERIFY</text></g>
+ <path d="M178 553H254M348 553H459M535 553H635" stroke="#8bb4ce" stroke-width="2" stroke-dasharray="5 6"/>
+
+ <text x="70" y="630" font-size="13" letter-spacing="3" fill="#9eb8c9">SOURCE / STAGE / RELEASE</text>
+ <path d="M1000 626H1130" stroke="#9bbbed" stroke-opacity=".7" stroke-width="2"/>
+</g>
+</svg>

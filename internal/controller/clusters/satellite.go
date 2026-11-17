@@ -57,15 +57,20 @@ func (r *ClusterReconciler) reconcileSatellite(ctx context.Context, key types.Na
 // It runs on every health reconcile rather than only on report acceptance, so a
 // spec edit (a narrowed policy ceiling, a cluster set to disabled) is reflected
 // without waiting for the next heartbeat — and so a cluster whose satellite has
-// gone silent still reports the ceiling the control plane would enforce if it
-// came back.
+// gone silent still reports the last accepted claim under the current ceiling.
 func applySatelliteStatus(cluster *clustersv1alpha1.Cluster) {
 	state := cluster.Status.Satellite
 	if state == nil {
 		return
 	}
-	state.EffectivePolicies = paprikav1.IntersectManagementPolicies(
-		cluster.Spec.ManagementPolicies, paprikav1.DefaultManagementPolicies())
+	// A registration created before this field was introduced has no known
+	// claim until its next report. Do not infer satellite permissions from the
+	// cluster ceiling alone.
+	state.EffectivePolicies = nil
+	if state.ReportedPolicies != nil {
+		state.EffectivePolicies = paprikav1.IntersectManagementPolicies(
+			cluster.Spec.ManagementPolicies, *state.ReportedPolicies)
+	}
 	if cluster.Spec.Disabled {
 		state.OperatingState = clustersv1alpha1.SatelliteOperatingDisabled
 	}

@@ -429,8 +429,11 @@ func TestNewConnectorRegistry(t *testing.T) {
 		"loki",
 		"mock",
 		"otlp",
+		"postgresql",
 		"prometheus",
+		"shorted",
 		"tempo",
+		"uptime",
 		"vultr-monitoring",
 	}, reg.Names())
 }

@@ -16,6 +16,19 @@ type ResolveResult struct {
 	LocalPath string
 	Hash      string
 	Revision  string
+	// release ends the lease that keeps LocalPath from being evicted.
+	release func()
+}
+
+// Release tells the cache the caller has finished reading LocalPath, which
+// may then be evicted. A caller that reads the files (a render) calls it once
+// it has; one that needs only Hash and Revision calls it at once. Unreleased,
+// a git checkout stays on disk until the process exits. It is safe on a nil
+// result and to call more than once.
+func (r *ResolveResult) Release() {
+	if r != nil && r.release != nil {
+		r.release()
+	}
 }
 
 // ComputeFileHash computes the SHA256 hash of a file.

@@ -57,10 +57,10 @@ func TestDynamicClientRegistrationSurvivesServerReplacementWithoutGrantingAccess
 	replacement := newTestServer(t)
 	replacement.clientRegistry = restoredRegistry
 	require.Empty(t, replacement.dynClients)
-	assert.True(t, replacement.clientIDAllowed(t.Context(), id))
+	assert.True(t, testClientIDAllowed(t, replacement, id))
 	assert.True(t, replacement.isRegisteredRedirect(t.Context(), id, redirect))
 	assert.False(t, replacement.isRegisteredRedirect(t.Context(), id, redirect+"/other"))
-	assert.False(t, replacement.clientIDAllowed(t.Context(), "unregistered"))
+	assert.False(t, testClientIDAllowed(t, replacement, "unregistered"))
 
 	mux := http.NewServeMux()
 	replacement.RegisterOAuthRoutes(mux)

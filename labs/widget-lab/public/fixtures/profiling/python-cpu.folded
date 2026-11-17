@@ -1,0 +1,12 @@
+threading._bootstrap;worker.run;forecast.predict;features.build;pandas.DataFrame.groupby;pandas.GroupBy.aggregate;numpy.core._multiarray_umath.reduce 292
+threading._bootstrap;worker.run;forecast.predict;features.build;pandas.DataFrame.groupby;pandas.GroupBy.aggregate;numpy.core._multiarray_umath.reduce;PyObject_Malloc 202
+threading._bootstrap;worker.run;forecast.predict;features.build;pandas.DataFrame.merge;pandas._libs.join.inner_join 227
+threading._bootstrap;worker.run;forecast.predict;features.build;pandas.read_parquet;pyarrow.parquet.read_table 270
+threading._bootstrap;worker.run;forecast.predict;features.build;pandas.to_datetime;pandas._libs.tslibs.strptime.array_strptime 237
+threading._bootstrap;worker.run;forecast.predict;features.validate;numpy.isfinite 254
+threading._bootstrap;worker.run;forecast.predict;model.transform;numpy.dot;cblas_dgemm 181
+threading._bootstrap;worker.run;forecast.predict;model.transform;numpy.linalg.solve;dgesv;dgetrf 274
+threading._bootstrap;worker.run;forecast.predict;model.transform;numpy.linalg.solve;dgesv;dgetrs 228
+threading._bootstrap;worker.run;forecast.predict;serialize.write;json.dumps;json.encoder.iterencode;_json.make_encoder 219
+threading._bootstrap;worker.run;forecast.predict;serialize.write;requests.Session.post;urllib3.connectionpool.urlopen 273
+threading._bootstrap;worker.run;queue.consume;json.loads;json.decoder.raw_decode 223

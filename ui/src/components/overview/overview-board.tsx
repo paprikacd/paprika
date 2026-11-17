@@ -6,6 +6,8 @@ import { useId, type ReactNode } from "react"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { cn } from "@/lib/utils"
 
+import instrument from "./overview-instrument.module.css"
+
 import type { BoardId } from "./overview-layout"
 
 /**
@@ -48,7 +50,7 @@ function OverviewBoard({
     <Blueprint
       data-board={id}
       aria-label={`${index} ${title}`}
-      className={cn("min-w-0", className)}
+      className={cn("min-w-0", instrument.board, className)}
     >
       <BoardHeader
         index={index}

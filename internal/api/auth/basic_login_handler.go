@@ -20,6 +20,7 @@ type BasicLoginRequest struct {
 // POST /auth/basic-login
 func BasicLoginHandler(cfg BasicAuthConfig, tokenSecret []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		noStore(w)
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

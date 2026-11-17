@@ -1,0 +1,55 @@
+{{/* The hook creates storage once; subsequent upgrades never render its mutable data. */}}
+{{- define "paprika.mcpSessionStore" -}}
+{{- $ctx := .context -}}
+{{- $name := include "paprika.resourceName" (dict "suffix" .suffix "context" $ctx) -}}
+{{- $resource := printf "%s%s" (trimSuffix "/" $ctx.Values.mcp.publicURL) .path -}}
+{{- $existing := lookup "v1" "Secret" $ctx.Release.Namespace $name -}}
+{{- if and $existing (ne (get ($existing.data | default dict) "resource") ($resource | b64enc)) -}}
+{{- fail "An existing MCP session Secret belongs to a different resource" -}}
+{{- end }}
+{{- if not $existing }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/resource-policy: keep
+type: Opaque
+data:
+  resource: {{ $resource | b64enc | quote }}
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ $name | quote }}]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ctx.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .serviceAccount }}
+    namespace: {{ $ctx.Release.Namespace }}
+{{- end -}}
+{{- if and .Values.mcp.oauth.persistSessions .Values.mcp.enabled }}
+{{ include "paprika.mcpSessionStore" (dict "context" . "suffix" "mcp-sessions" "path" "/mcp" "serviceAccount" (include "paprika.serviceAccountName" .)) }}
+{{- end }}
+{{- if and .Values.observabilityGateway.persistSessions .Values.observabilityGateway.enabled }}
+---
+{{ include "paprika.mcpSessionStore" (dict "context" . "suffix" "observe-mcp-sessions" "path" "/observe/mcp" "serviceAccount" (.Values.observabilityGateway.serviceAccountName | default (include "paprika.serviceAccountName" .))) }}
+{{- end }}

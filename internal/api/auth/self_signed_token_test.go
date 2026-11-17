@@ -172,3 +172,23 @@ func TestSelfSignedAuthenticateCacheExpiresWithToken(t *testing.T) {
 	_, err = a.Authenticate(ctxWithBearer(token))
 	require.Error(t, err, "expired token must not be served from a stale cache entry")
 }
+
+func TestDelegatedTokenPreservesExactGroups(t *testing.T) {
+	secret := []byte("delegation-test-secret")
+	for _, groups := range [][]string{nil, {}, {"metrics-readers", "team-a"}} {
+		token, err := IssueTokenWithOptions(TokenOptions{Subject: "reader", Groups: groups, Audience: "paprika-observability", Scope: "paprika:observe", TTL: 30 * time.Second, Secret: secret})
+		require.NoError(t, err)
+		verifier, err := NewSelfSignedAuthenticatorForAudience(secret, "paprika-observability", "")
+		require.NoError(t, err)
+		p, err := verifier.Authenticate(ctxWithBearer(token))
+		require.NoError(t, err)
+		expected := groups
+		if groups == nil {
+			expected = []string{"users"}
+		}
+		assert.Equal(t, expected, p.Groups)
+		claims, err := verifySelfSigned(token, secret)
+		require.NoError(t, err)
+		assert.Equal(t, int64(30), claims.Exp-claims.IAT)
+	}
+}

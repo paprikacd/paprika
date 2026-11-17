@@ -1,0 +1,35 @@
+/* The lab's family content inside production's observation panel. The panel owns position, size and scrolling. */
+.lab-chart-tooltip > div { padding: 12px; }
+.lab-chart-tooltip [data-tooltip-content] {
+  overflow-wrap: anywhere;
+  color: var(--gamma-ink);
+  font: inherit;
+}
+.lab-chart-tooltip [data-tooltip-content] > header {
+  min-width: 0;
+  gap: 10px;
+}
+.lab-chart-tooltip [data-tooltip-content] > header > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lab-chart-tooltip [data-tooltip-content] > header button {
+  min-width: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+}
+.lab-chart-tooltip [data-tooltip-content] :is(dl, dd, dt, strong) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lab-chart-tooltip [data-tooltip-content] :is(svg, table) { max-width: 100%; }
+
+.lab-chart-tooltip :is(button, a, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--gamma-chart-1);
+  outline-offset: 3px;
+}
+.lab-chart-tooltip [data-tooltip-content] > header button {
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}

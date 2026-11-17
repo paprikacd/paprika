@@ -31,7 +31,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -o manager ./cmd
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates && \
+# git (the 2.54 series; the CLI backend needs >= 2.44): the cluster image's repo
+# server and manager fetch git sources with the git CLI as a blobless partial
+# clone, so only the files under a source's path are downloaded
+# (internal/source/gitcli.go). Without it they fall back to go-git, which
+# downloads every blob of the tip tree. The release image (Dockerfile.goreleaser)
+# deliberately ships no git and uses go-git.
+RUN apk add --no-cache ca-certificates "git~2.54" && \
     addgroup -S -g 65532 nonroot && \
     adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager /manager

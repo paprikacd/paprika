@@ -1,0 +1,87 @@
+{
+  "description": "Shared dashboard attention cases. Each case gives widgets reduced to the facts that attention reads, and the expected rollup. A widget is counted once, under its most severe reason, in this order: critical, warning, failed, stale. Only author-declared statuses count: a threshold band counts when it is matched and its status is critical or warning, and a time series counts when its breaches summary has a critical or warning level with at least one interval or sample. failure is none, planning (the widget could not be planned) or provider (its signal failed). signal is ok, partial, empty or none (no signal). A widget is checked when it has no failure and its signal is ok. freshness is null (no freshness reported), fresh, stale, no_threshold or unknown; only stale counts. The rollup is counts only and is never a health verdict. The Go port (internal/insights/dashboard_attention.go) and any later UI port must produce exactly these results.",
+  "cases": [
+    {
+      "name": "fresh data with no declared status needs no attention and is checked",
+      "widgets": [
+        { "id": "rate", "failure": "none", "signal": "ok", "threshold": null, "breaches": null, "freshness": "fresh" },
+        { "id": "trend", "failure": "none", "signal": "ok", "threshold": null, "breaches": null, "freshness": "no_threshold" }
+      ],
+      "expected": { "widgets": 2, "checked": 2, "critical": 0, "warning": 0, "failed": 0, "stale": 0, "attention": {} }
+    },
+    {
+      "name": "a matched critical band counts as critical, even when the data is also stale",
+      "widgets": [
+        { "id": "errors", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "critical" }, "breaches": null, "freshness": "stale" }
+      ],
+      "expected": { "widgets": 1, "checked": 1, "critical": 1, "warning": 0, "failed": 0, "stale": 0, "attention": { "errors": "critical" } }
+    },
+    {
+      "name": "a matched warning band counts as warning",
+      "widgets": [
+        { "id": "latency", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "warning" }, "breaches": null, "freshness": "fresh" }
+      ],
+      "expected": { "widgets": 1, "checked": 1, "critical": 0, "warning": 1, "failed": 0, "stale": 0, "attention": { "latency": "warning" } }
+    },
+    {
+      "name": "informational, unknown and colour-only bands never count",
+      "widgets": [
+        { "id": "info", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "info" }, "breaches": null, "freshness": null },
+        { "id": "unknown-status", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "unknown" }, "breaches": null, "freshness": null },
+        { "id": "colour", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "" }, "breaches": null, "freshness": null },
+        { "id": "ok-band", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "ok" }, "breaches": null, "freshness": null }
+      ],
+      "expected": { "widgets": 4, "checked": 4, "critical": 0, "warning": 0, "failed": 0, "stale": 0, "attention": {} }
+    },
+    {
+      "name": "an unknown band has no declared status and does not count",
+      "widgets": [
+        { "id": "missing-sample", "failure": "none", "signal": "ok", "threshold": { "state": "unknown", "status": "" }, "breaches": null, "freshness": "unknown" }
+      ],
+      "expected": { "widgets": 1, "checked": 1, "critical": 0, "warning": 0, "failed": 0, "stale": 0, "attention": {} }
+    },
+    {
+      "name": "provider and planning failures count as failed and are not checked",
+      "widgets": [
+        { "id": "provider", "failure": "provider", "signal": "error", "threshold": null, "breaches": null, "freshness": null },
+        { "id": "planning", "failure": "planning", "signal": "none", "threshold": null, "breaches": null, "freshness": null }
+      ],
+      "expected": { "widgets": 2, "checked": 0, "critical": 0, "warning": 0, "failed": 2, "stale": 0, "attention": { "provider": "failed", "planning": "failed" } }
+    },
+    {
+      "name": "empty and partial widgets are unchecked but not failed",
+      "widgets": [
+        { "id": "empty", "failure": "none", "signal": "empty", "threshold": null, "breaches": null, "freshness": "unknown" },
+        { "id": "partial", "failure": "none", "signal": "partial", "threshold": null, "breaches": null, "freshness": null }
+      ],
+      "expected": { "widgets": 2, "checked": 0, "critical": 0, "warning": 0, "failed": 0, "stale": 0, "attention": {} }
+    },
+    {
+      "name": "stale data counts as stale only when it is stale",
+      "widgets": [
+        { "id": "old", "failure": "none", "signal": "ok", "threshold": null, "breaches": null, "freshness": "stale" },
+        { "id": "current", "failure": "none", "signal": "ok", "threshold": null, "breaches": null, "freshness": "fresh" }
+      ],
+      "expected": { "widgets": 2, "checked": 2, "critical": 0, "warning": 0, "failed": 0, "stale": 1, "attention": { "old": "stale" } }
+    },
+    {
+      "name": "a time series counts by the breaches in its window, critical over warning",
+      "widgets": [
+        { "id": "flapping", "failure": "none", "signal": "ok", "threshold": null, "breaches": { "summary": [{ "level": "warning", "intervals": 2, "samples": 0 }, { "level": "critical", "intervals": 0, "samples": 1 }] }, "freshness": null },
+        { "id": "warned", "failure": "none", "signal": "ok", "threshold": null, "breaches": { "summary": [{ "level": "warning", "intervals": 1, "samples": 0 }] }, "freshness": null },
+        { "id": "clear", "failure": "none", "signal": "ok", "threshold": null, "breaches": { "summary": [] }, "freshness": null }
+      ],
+      "expected": { "widgets": 3, "checked": 3, "critical": 1, "warning": 1, "failed": 0, "stale": 0, "attention": { "flapping": "critical", "warned": "warning" } }
+    },
+    {
+      "name": "a widget with several reasons is counted once, and every bucket is reported",
+      "widgets": [
+        { "id": "a", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "warning" }, "breaches": null, "freshness": "stale" },
+        { "id": "b", "failure": "provider", "signal": "error", "threshold": null, "breaches": null, "freshness": null },
+        { "id": "c", "failure": "none", "signal": "ok", "threshold": null, "breaches": null, "freshness": "stale" },
+        { "id": "d", "failure": "none", "signal": "ok", "threshold": { "state": "matched", "status": "critical" }, "breaches": null, "freshness": null }
+      ],
+      "expected": { "widgets": 4, "checked": 3, "critical": 1, "warning": 1, "failed": 1, "stale": 1, "attention": { "a": "warning", "b": "failed", "c": "stale", "d": "critical" } }
+    }
+  ]
+}

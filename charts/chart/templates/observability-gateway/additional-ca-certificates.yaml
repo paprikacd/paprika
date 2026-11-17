@@ -1,0 +1,20 @@
+{{- if and .Values.observabilityGateway.enabled .Values.observabilityGateway.additionalCACertificates }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "observability-ca" "context" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: observability-gateway
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+data:
+  {{- range $filename, $certificate := .Values.observabilityGateway.additionalCACertificates }}
+  {{ $filename | quote }}: |
+    {{- $certificate | trim | nindent 4 }}
+  {{- end }}
+{{- end }}

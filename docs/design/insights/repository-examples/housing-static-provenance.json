@@ -1,0 +1,14 @@
+{
+  "revision": "af0e5d03ab5ebb9a0bcd12ac2a95af19206f8d0b",
+  "sources": [
+    {
+      "path": "web/src/@/components/features/housing/data/series.ts",
+      "sha256": "a89a92163a9ed497155fc02281655d06931d6b1d4c4ca686355e76bbac11757c"
+    },
+    {
+      "path": "web/src/@/components/news/mdx/data/bank-basket-series.ts",
+      "sha256": "7a269d8084591ae8e35ff265a1ae575e3cd23539977c6c9d7586c090e7fac727"
+    }
+  ],
+  "semantics": "Exact source annual/bank rows with null gaps. Borrowing power enumerates source model (6-rate)*28 or *17; not a forecast. Aligned country series rebases source points to source peak year."
+}

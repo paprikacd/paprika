@@ -345,7 +345,10 @@ func (r *Runtime) stop(workerDone <-chan error) {
 	}
 	r.queue.ShutDownWithDrain()
 	if workerDone != nil {
-		<-workerDone
+		// Run already returned a worker failure. After cancellation, Run
+		// returns nil, so stop only waits for the worker to exit.
+		workerErr := <-workerDone
+		_ = workerErr
 	}
 }
 

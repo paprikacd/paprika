@@ -23,8 +23,11 @@ import (
 // and the console resource extensions are off. It exists so these tests pin
 // the exact shape the gateway relies on — a regression here is a regression
 // in the gateway's public contract.
-func newObservabilityTestServer(t *testing.T, r *Registry, redirectURIs []string) *Server {
+func newObservabilityTestServer(t *testing.T, r *Registry, redirectURIs []string, scopes ...Scope) *Server {
 	t.Helper()
+	if len(scopes) == 0 {
+		scopes = []Scope{ScopeObserve}
+	}
 	if r == nil {
 		r = NewRegistry()
 	}
@@ -52,7 +55,7 @@ func newObservabilityTestServer(t *testing.T, r *Registry, redirectURIs []string
 		RoutePrefix:             "/observe",
 		ProtocolPath:            "/observe/mcp",
 		Audience:                ObservabilityTokenAudience,
-		SupportedScopes:         []Scope{ScopeObserve},
+		SupportedScopes:         scopes,
 		DisableConsoleResources: true,
 	})
 	require.NoError(t, err)

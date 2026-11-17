@@ -154,7 +154,9 @@ kubectl -n paprika-e2e rollout status \
 ```
 
 This approach is fast but bypasses Helm. The deployment's image field will
-diverge from the Helm release values.
+diverge from the Helm release values. In split mode, the image must come from a
+build that understands the chart's manager arguments; see Manager Listeners
+before rolling back the image alone.
 
 ### Production (Helm)
 
@@ -253,6 +255,86 @@ List-valued keys (`--mcp-oauth-redirect-uris`,
 `github-actions-token-exchange-allowed-*`) accept comma-separated strings
 in env vars and YAML lists in the config file.
 
+### Manager Listeners
+
+In `operator` mode the manager can open these listeners besides the probe and
+metrics ports:
+
+| Flag | Default | Serves |
+|------|---------|--------|
+| `--ui-bind-address` | `:3000` | The console and the API, with the satellite link and the GitHub Actions token exchange. |
+| `--inline-webhook-bind-address` | `:8080` | `/webhook`, served by the webhook receiver without cache or repo-server invalidation. After a push, the inline receiver does not invalidate the caches or refresh the repo server; the webhook-receiver deployment does both. |
+| `--pprof-bind-address` | empty (off) | `/debug/pprof/*`. |
+| `--internal-bind-address` | empty (off) | Component-to-component routes. Needs `--internal-token-file`. |
+
+The admission webhook server on port 9443 runs when `webhook.enabled` is true.
+
+An empty address disables that listener. The chart sets both the console and
+the inline webhook to empty on the split-mode controller-manager. In split
+mode the api-server serves the console, the API, the satellite link and the
+token exchange, and the webhook-receiver deployment serves `/webhook`. A
+`manager.args` entry in the `--flag=value` form that names one of those two
+listeners is dropped in split mode, so it cannot turn the listener back on. The
+two-item form (`--ui-bind-address` followed by a separate value) makes the chart
+fail to render, because dropping the flag alone would leave its value behind as
+a positional argument. Remove both items.
+
+Bind pprof to loopback, for example `--pprof-bind-address=127.0.0.1:6060`.
+Processes in the pod can still reach it, and so can `kubectl port-forward`.
+No Service or Gateway routes to it.
+
+Operator and api mode log an error when the console runs with authentication
+disabled on a non-loopback address. To clear it, enable auth with
+`--auth-enabled=true` and a provider, or bind `--ui-bind-address` to
+`127.0.0.1` or `[::1]`. The console still starts. The chart's default
+monolith install runs with auth off, and so does the api-server of a default
+split install. So do `make run` and the kind e2e suite.
+
+In split mode this chart passes `--inline-webhook-bind-address=` to the manager,
+so this chart revision needs a manager image that knows that flag. A manager
+image built before that flag existed rejects it at startup, so the manager exits
+and reconciliation stops until a compatible image is deployed. To return to an
+older chart, run `helm rollback`, which restores the chart and the image
+together. Do not roll back the image alone with `kubectl set image` or an older
+`image_ref`, because an image built before that flag and this chart's arguments
+no longer match.
+
+### Controller-Manager Network Policy
+
+Set `manager.networkPolicy.enabled=true` to render an ingress-only
+NetworkPolicy for the controller-manager pods. It admits:
+
+- the health probe port, 8081;
+- the admission webhook port, 9443, when `webhook.enabled` is true;
+- the metrics port, when `metrics.enable` is true.
+
+Those ports admit any source. The kube-apiserver calls the admission webhook
+from outside the release namespace, and metrics scrapers usually run there too,
+so a source restriction would block them. The policy does not restrict health
+probes either, because traffic from the kubelet on the pod's own node is not
+reliably matched by a NetworkPolicy. In `monolith` mode the policy also admits
+the console port (3000) and the inline webhook port (8080) from the release
+namespace only.
+
+The policy restricts ingress only. Egress is left to the global template below.
+
+The global `networkPolicy.enabled` template governs ingress and egress for
+every component, and it also admits the admission webhook port when
+`webhook.enabled` is true. Its egress rules allow:
+
+- TCP 443 and 80 to any destination;
+- TCP and UDP 53 to the `kube-system` namespace;
+- TCP 6443 to pods in the release namespace;
+- TCP 8090 to the Insights pods, when `insights.enabled` is true.
+
+The 6443 rule matches pods in the release namespace only. A managed control
+plane whose API server endpoint lies outside the pod network may not match it.
+Before enabling the global template on such a cluster, confirm that the
+controller-manager can reach the API server under these rules.
+
+Follow-up: make the API-server egress rule configurable, with CIDR blocks and a
+port, for managed control planes. Until then, that check is manual.
+
 ## Tuning Reconcile Rates
 
 The manager exposes reconcile scheduling as flags (or `manager.reconcile.*`
@@ -263,6 +345,7 @@ Helm values — the same names rendered as args). Defaults are tuned for a
 |---|---|---|---|
 | `transientRequeue` | `--application-transient-requeue` | `5s` | In-flight Application states (pending/building/releasing) and the steady-state poll fallback. |
 | `sourceResolveTTL` | `--application-source-resolve-ttl` | `1m` | How long a source resolve (git fetch) is reused by the steady-state poll. `0s` resolves every poll; sync triggers bypass the cache. |
+| `repoServerTimeout` | `--application-repo-server-timeout` | `1m` | Upper bound on each repo-server call (source resolve, drift render) the Application controller makes. A timed-out call is retried on a later reconcile and never repeated with the local renderer, because the repo server finishes its fetch after the client gives up. Release rendering keeps `repoServer.clientTimeout`. |
 | `cacheResyncPeriod` | `--cache-resync-period` | `1h` | Full informer resync. Rarely worth lowering; explicit `RequeueAfter` values drive the real cadence. |
 | `maxConcurrentReconciles.application` | `--application-max-concurrent-reconciles` | `8` | Application worker pool. Raise when queue delay grows under a burst. |
 | `maxConcurrentReconciles.release` | `--release-max-concurrent-reconciles` | `5` | Release worker pool. |

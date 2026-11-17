@@ -23,6 +23,7 @@ const (
 	pathLabelValues = "/api/v1/label/%s/values" // one fmt slot: the label name
 	pathLabels      = "/api/v1/labels"
 	pathMetadata    = "/api/v1/metadata"
+	pathSeries      = "/api/v1/series"
 	exploreMaxNames = 5000
 )
 
@@ -44,6 +45,8 @@ func (Prometheus) Explore(ctx context.Context, req connector.ExploreRequest) (*c
 	}
 	if plan.filterNames {
 		data = filterNames(data, plan.prefix, plan.limit)
+	} else if req.Kind == connector.ExploreMetricSeries {
+		data = httphelp.LimitDiscoveryArray(data, "data", plan.limit)
 	}
 	return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
 }
@@ -59,11 +62,11 @@ type explorePlan struct {
 }
 
 func exploreRequestShape(req *connector.ExploreRequest) (plan explorePlan, reason string) {
-	limit := httphelp.ClampLimit(req.Limit, 1000, exploreMaxNames)
-	plan = explorePlan{params: url.Values{"limit": []string{strconv.Itoa(limit)}}, limit: limit, filterNames: true}
-	if req.Metric != "" {
-		plan.params.Set("match[]", req.Metric)
+	if reason = exploreShapeError(req); reason != "" {
+		return explorePlan{}, reason
 	}
+	limit := httphelp.ClampLimit(req.Limit, 1000, exploreMaxNames)
+	plan = explorePlan{params: exploreRequestParams(req, limit), limit: limit, filterNames: true}
 	switch req.Kind {
 	case connector.ExploreMetricNames:
 		plan.path = fmt.Sprintf(pathLabelValues, "__name__")
@@ -74,23 +77,55 @@ func exploreRequestShape(req *connector.ExploreRequest) (plan explorePlan, reaso
 		plan.path = pathLabels
 		return plan, ""
 	case connector.ExploreLabelValues:
-		if req.Label == "" {
-			return explorePlan{}, "a label name is required"
-		}
 		plan.path = fmt.Sprintf(pathLabelValues, url.PathEscape(req.Label))
 		return plan, ""
 	case connector.ExploreMetricMetadata:
-		if req.Metric == "" {
-			return explorePlan{}, "a metric name is required"
-		}
 		plan.path = pathMetadata
 		plan.params = url.Values{"metric": []string{req.Metric}, "limit": []string{"1"}, "limit_per_metric": []string{strconv.Itoa(limit)}}
+		plan.filterNames = false
+		return plan, ""
+	case connector.ExploreMetricSeries:
+		plan.path = pathSeries
 		plan.filterNames = false
 		return plan, ""
 	case connector.ExploreTraceServices:
 		// Trace discovery is intentionally unsupported.
 	}
 	return explorePlan{}, fmt.Sprintf("exploration kind %q is not served by the prometheus connector", req.Kind)
+}
+
+func exploreShapeError(req *connector.ExploreRequest) string {
+	switch req.Kind {
+	case connector.ExploreLabelValues:
+		if req.Label == "" {
+			return "a label name is required"
+		}
+	case connector.ExploreMetricMetadata:
+		if req.Metric == "" {
+			return "a metric name is required"
+		}
+	case connector.ExploreMetricSeries:
+		if req.Metric == "" || req.Range.Start.IsZero() || req.Range.End.IsZero() {
+			return "a metric selector and bounded time range are required"
+		}
+	case connector.ExploreMetricNames, connector.ExploreLabelNames, connector.ExploreTraceServices:
+		// These kinds need no additional input validation.
+	}
+	return ""
+}
+
+func exploreRequestParams(req *connector.ExploreRequest, limit int) url.Values {
+	params := url.Values{"limit": []string{strconv.Itoa(limit + 1)}}
+	if !req.Range.Start.IsZero() {
+		params.Set("start", strconv.FormatInt(req.Range.Start.Unix(), 10))
+	}
+	if !req.Range.End.IsZero() {
+		params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
+	}
+	if req.Metric != "" {
+		params.Set("match[]", req.Metric)
+	}
+	return params
 }
 
 func setMetricNamePrefix(params url.Values, prefix string) {
@@ -117,7 +152,7 @@ func filterNames(data json.RawMessage, prefix string, limit int) json.RawMessage
 			continue
 		}
 		filtered = append(filtered, name)
-		if limit > 0 && len(filtered) >= limit {
+		if limit > 0 && len(filtered) > limit {
 			break
 		}
 	}
@@ -130,7 +165,7 @@ func filterNames(data json.RawMessage, prefix string, limit int) json.RawMessage
 	if err != nil {
 		return data
 	}
-	return out
+	return httphelp.LimitDiscoveryArray(out, "data", limit)
 }
 
 // exploreUnsupported builds the result — and error — for an exploration kind

@@ -10,11 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -96,14 +98,12 @@ func TestForwardLogLines_LongLinesDoNotBreak(t *testing.T) {
 	require.Equal(t, "short", sink.chunks[1].Line)
 }
 
-// Integration-style test that exercises the full resolver → kube stream → sink
-// path against an httptest server standing in for the kube apiserver.
+// TestStreamResourceLogs_EndToEnd_NoDynamicClientError checks that the resolver
+// refuses an unsupported kind with CodeInvalidArgument, which the stream handler
+// returns unchanged. The full stream path is covered by the handler tests in
+// resource_logs_scope_test.go.
 func TestStreamResourceLogs_EndToEnd_NoDynamicClientError(t *testing.T) {
-	// The end-to-end "real" test is gated by the kube-integration-tests
-	// harness. Here we cover the resolveLogsPod error path: an unsupported
-	// kind surfaces as a connect-style error from the handler.
 	ctx := context.Background()
-	scheme := streamingTestScheme(t)
 	app := &pipelinesv1alpha1.Application{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-app", Namespace: "paprika-e2e"},
 		Status: pipelinesv1alpha1.ApplicationStatus{
@@ -112,21 +112,15 @@ func TestStreamResourceLogs_EndToEnd_NoDynamicClientError(t *testing.T) {
 			},
 		},
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).WithStatusSubresource(&pipelinesv1alpha1.Application{}).Build()
-	srv := NewPaprikaServer(c, nil)
-
-	// resolveLogsPod returns an error for ConfigMap; the handler wraps it in
-	// connect.NewError(CodeFailedPrecondition). Verify by calling the public
-	// resolver directly (since the handler binds to *connect.ServerStream and
-	// can't be invoked from unit tests).
-	_, err := resolveLogsPod(ctx, srv.k8sClient, "ConfigMap", "demo-cm", "paprika-e2e")
-	require.Error(t, err)
+	_, err := resolveApplicationLogsPod(ctx, k8sfake.NewSimpleClientset(), app, "ConfigMap", "demo-cm", "paprika-e2e")
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	require.Contains(t, err.Error(), "Pod")
 }
 
-// TestStreamResourceLogs_StreamWrapsRealKubeServer confirms the handler wires
-// httptest-backed kube clientset through resolveLogsPod + corev1.GetLogs.
-// Stream(). end-to-end: 4 log lines emitted over 40ms, 4 chunks captured.
+// TestStreamResourceLogs_StreamWrapsRealKubeServer runs resolveApplicationLogsPod,
+// the kube log stream and forwardLogLines in sequence against an httptest kube
+// server, in the order the handler does. 4 log lines are emitted over 40ms, and
+// 4 chunks are captured.
 func TestStreamResourceLogs_StreamWrapsRealKubeServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -170,11 +164,10 @@ func TestStreamResourceLogs_StreamWrapsRealKubeServer(t *testing.T) {
 	// forwarder directly, which is all the handler does around the kube stream.
 	_ = fake.NewClientBuilder().WithScheme(scheme).WithObjects(app).WithStatusSubresource(&pipelinesv1alpha1.Application{}).Build()
 
-	// Open the kube log stream directly (mirroring what the handler does) and
-	// pump it through forwardLogLines via a real *connect.ServerStream is
-	// impossible from unit tests. Instead we verify the kube stream + the
-	// forwarder wiring by running them sequentially.
-	pod, err := resolveLogsPod(ctx, k8s, "Pod", "demo-pod", ns)
+	// Open the kube log stream directly, as the handler does, and pump it through
+	// forwardLogLines with an in-memory sink. The handler over connect is covered
+	// in resource_logs_scope_test.go.
+	pod, err := resolveApplicationLogsPod(ctx, k8s, app, "Pod", "demo-pod", ns)
 	require.NoError(t, err)
 
 	kubeStream, err := k8s.CoreV1().Pods(ns).GetLogs(pod.Name, &corev1.PodLogOptions{}).Stream(ctx)

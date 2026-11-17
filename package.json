@@ -1,0 +1,23 @@
+{
+  "name": "paprika-plugins",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Install Paprika fleet and Observe MCP plugins in Codex or Claude Code from GitHub.",
+  "type": "module",
+  "bin": {
+    "paprika-plugins": "bin/paprika-plugins.mjs"
+  },
+  "files": [
+    "bin/paprika-plugins.mjs",
+    ".agents/plugins/marketplace.json",
+    ".claude-plugin/marketplace.json",
+    "plugins/paprika",
+    "plugins/paprika-observe"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:plugin-installer": "node --test test/paprika-plugin-installer.test.mjs"
+  }
+}

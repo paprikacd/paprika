@@ -78,6 +78,7 @@ type k8sBackend struct {
 	client               client.Client
 	budget               *executionBudget
 	budgetOnce           sync.Once
+	budgetConfig         BudgetConfig // zero value means DefaultBudgetConfig
 	credentialAuthorizer auth.Authorizer
 
 	// newConnector builds the Connector for a provider type. It exists so
@@ -99,13 +100,25 @@ func NewBackend(client client.Client) Backend {
 func (b *k8sBackend) executionBudget() *executionBudget {
 	b.budgetOnce.Do(func() {
 		if b.budget == nil {
-			b.budget = newExecutionBudget(maxConcurrentQuery, queryTimeout)
+			cfg := b.budgetConfig
+			if cfg == (BudgetConfig{}) {
+				cfg = DefaultBudgetConfig()
+			}
+			b.budget = newExecutionBudgetFromConfig(cfg, queryTimeout)
 		}
 	})
 	return b.budget
 }
 
-// NewConnectorRegistry registers the twelve built-in connectors. It is the
+// NewAuthorizedBackendWithBudget is NewAuthorizedBackend with an execution
+// budget sized by the caller. The caller validates cfg; a zero cfg means
+// DefaultBudgetConfig.
+func NewAuthorizedBackendWithBudget(k8sClient client.Client, authorizer auth.Authorizer, cfg BudgetConfig) Backend {
+	inner := &k8sBackend{client: k8sClient, credentialAuthorizer: authorizer, budgetConfig: cfg}
+	return &authorizedBackend{backend: inner, authorizer: authorizer}
+}
+
+// NewConnectorRegistry registers the built-in connectors. It is the
 // wiring used by cmd/webhook (which validates spec.config with the same
 // per-type switch New uses) and by unit tests; the query path itself goes
 // through New per call rather than through this registry.
@@ -116,6 +129,9 @@ func NewConnectorRegistry() *connector.Registry {
 		connector.ProviderLoki,
 		connector.ProviderTempo,
 		connector.ProviderOTLP,
+		connector.ProviderShorted,
+		connector.ProviderUptime,
+		connector.ProviderPostgreSQL,
 		connector.ProviderGCPCloudLogging,
 		connector.ProviderGCPCloudMonitoring,
 		connector.ProviderGCPCloudTrace,
@@ -132,7 +148,7 @@ func NewConnectorRegistry() *connector.Registry {
 			panic(fmt.Sprintf("observabilitygateway: built-in connector %q: %v", providerType, err))
 		}
 		if err := reg.Register(conn); err != nil {
-			// Unreachable: the twelve built-ins advertise distinct names.
+			// Unreachable: the built-ins advertise distinct names.
 			panic(fmt.Sprintf("observabilitygateway: register built-in connector %q: %v", providerType, err))
 		}
 	}
@@ -142,7 +158,7 @@ func NewConnectorRegistry() *connector.Registry {
 // ListProviders implements Backend. Status fields the CR does not carry stay
 // empty strings — this layer never invents a state.
 func (b *k8sBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
-	ctx, done, err := b.executionBudget().begin(ctx)
+	ctx, done, err := b.executionBudget().begin(ctx, "catalog")
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +197,7 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 	if err := boundQuery(&req); err != nil {
 		return nil, err
 	}
-	ctx, done, err := b.executionBudget().begin(ctx)
+	ctx, done, err := b.executionBudget().begin(ctx, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +222,8 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 		Query:       req.Query,
 		TraceID:     req.TraceID,
 		Range:       req.Range,
+		Step:        req.Step,
+		Instant:     req.Instant,
 		Limit:       req.Limit,
 		PageToken:   req.PageToken,
 		Config:      cr.Spec.Config.Raw,
@@ -214,6 +232,7 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 	if contextErr := contextError(ctx); contextErr != nil {
 		return nil, contextErr
 	}
+	result = boundedRecordResult(req.Signal, result)
 	return finishQuery(log, provider, cr.Spec.Type, result, err)
 }
 
@@ -228,7 +247,7 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 	if err := boundExplore(&req); err != nil {
 		return nil, err
 	}
-	ctx, done, err := b.executionBudget().begin(ctx)
+	ctx, done, err := b.executionBudget().begin(ctx, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +276,7 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 		Metric:      req.Metric,
 		Label:       req.Label,
 		Prefix:      req.Prefix,
+		Range:       req.Range,
 		Limit:       req.Limit,
 		Params:      req.Params,
 		Config:      cr.Spec.Config.Raw,
@@ -312,6 +332,25 @@ func boundExplore(req *connector.ExploreRequest) error {
 	req.Limit = limit
 	if len(req.Metric) > maxQueryBytes || len(req.Label) > maxQueryBytes || len(req.Prefix) > maxQueryBytes {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration filter exceeds its size limit"))
+	}
+	if err := validateExploreParams(req.Params); err != nil {
+		return err
+	}
+	if req.Kind == connector.ExploreMetricSeries || !req.Range.Start.IsZero() || !req.Range.End.IsZero() {
+		defaultWindow(&req.Range)
+		return validateWindow(req.Range)
+	}
+	return nil
+}
+
+func validateExploreParams(params map[string]string) error {
+	if len(params) > 16 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration parameters exceed their size limit"))
+	}
+	for key, value := range params {
+		if len(key) > 128 || len(value) > 4096 {
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration parameters exceed their size limit"))
+		}
 	}
 	return nil
 }

@@ -25,6 +25,18 @@ namespace. Adding or expanding application RBAC requires approval independently
 of Kubernetes permissions. A legacy manual `PAPRIKA_AUTH_RBAC_RULES` extraEnv
 entry remains supported only when `auth.rbac` is empty; combining both is rejected.
 
+For durable OAuth sessions on a standalone gateway, first install the separate
+`charts/mcp-session-store` release in the same namespace. Supply its public
+resource URL, the exact gateway service account, and the Secret name rendered
+by the add-on (`<addon-release>-observe-mcp-sessions`, subject to Helm's name
+length limit). Review its retained Secret and the Role/RoleBinding granting only
+`get` and `update` on that Secret. Then set
+`observabilityGateway.persistSessions: true` in the add-on's nonsecret values
+before rendering it. The add-on still creates no Secret or RBAC itself; keeping
+the session store in a separate release prevents later add-on upgrades from
+removing those prerequisites. See [MCP session persistence](mcp-client-setup.md#persist-oauth-sessions-across-restarts)
+for encryption, backup and first-enablement behavior.
+
 Preconfigured OAuth clients are optional for the gateway. For dynamic client
 registration only, leave both `mcp.oauth.clientId` and
 `mcp.oauth.redirectUris` empty; the renderer omits both static-client arguments,

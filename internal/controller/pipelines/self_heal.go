@@ -78,6 +78,11 @@ func (r *ApplicationReconciler) reconcileSelfHeal(ctx context.Context, app *papr
 	}
 
 	if app.Spec.SelfHeal.AutoRevertOnHealthFailure && app.Status.Health == paprikav1.HealthDegraded {
+		if !healthFailureThresholdReached(app, r.currentTime()) {
+			r.setSelfHealCondition(app, metav1.ConditionFalse, "HealthFailureThresholdPending",
+				fmt.Sprintf("Waiting for %d consecutive failed observations of one health check", app.Spec.SelfHeal.HealthFailureThreshold))
+			return nil
+		}
 		return r.selfHealHealthRevert(ctx, app)
 	}
 
@@ -165,12 +170,16 @@ func (r *ApplicationReconciler) selfHealDriftSync(ctx context.Context, app *papr
 	if release.Status.Phase != paprikav1.ReleaseComplete {
 		return nil
 	}
+	if _, pending := release.Annotations[rollbackAnnotation]; pending {
+		r.setSelfHealCondition(app, metav1.ConditionFalse, "ActionPending", "A rollback request is already pending for this release")
+		return nil
+	}
 	if _, ok := release.Annotations[resyncAnnotation]; ok {
 		r.setSelfHealCondition(app, metav1.ConditionTrue, "DriftDetected", "Out-of-sync resources detected; triggered re-sync")
 		return nil
 	}
 
-	patch := client.MergeFrom(release.DeepCopy())
+	patch := client.MergeFromWithOptions(release.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	if release.Annotations == nil {
 		release.Annotations = map[string]string{}
 	}
@@ -199,17 +208,18 @@ func (r *ApplicationReconciler) selfHealHealthRevert(ctx context.Context, app *p
 		return fmt.Errorf("fetching release for health revert: %w", err)
 	}
 
-	if release.Status.Phase != paprikav1.ReleaseComplete {
+	if !releaseAllowsHealthRevert(&release) {
 		return nil
 	}
-	if release.Spec.OnFailure == nil || release.Spec.OnFailure.Action != rollbackAction {
+	if _, pending := release.Annotations[resyncAnnotation]; pending {
+		r.setSelfHealCondition(app, metav1.ConditionFalse, "ActionPending", "A re-sync request is already pending for this release")
 		return nil
 	}
 	if _, ok := release.Annotations[rollbackAnnotation]; ok {
 		return nil
 	}
 
-	patch := client.MergeFrom(release.DeepCopy())
+	patch := client.MergeFromWithOptions(release.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	if release.Annotations == nil {
 		release.Annotations = map[string]string{}
 	}
@@ -223,6 +233,10 @@ func (r *ApplicationReconciler) selfHealHealthRevert(ctx context.Context, app *p
 	r.recordEvent(app, "Warning", "SelfHealRevert", "Application health degraded; requested rollback")
 	r.setSelfHealCondition(app, metav1.ConditionTrue, "HealthDegraded", "Application health degraded; requested rollback")
 	return nil
+}
+
+func releaseAllowsHealthRevert(release *paprikav1.Release) bool {
+	return release.Status.Phase == paprikav1.ReleaseComplete && release.Spec.OnFailure != nil && release.Spec.OnFailure.Action == rollbackAction
 }
 
 func (r *ApplicationReconciler) setSelfHealCondition(app *paprikav1.Application, status metav1.ConditionStatus, reason, message string) {

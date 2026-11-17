@@ -14,9 +14,14 @@ metadata:
   name: {{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
-  {{- with .Values.repoServer.strategy }}
+  {{- if .Values.repoServer.strategy }}
   strategy:
-    {{- toYaml . | nindent 4 }}
+    {{- toYaml .Values.repoServer.strategy | nindent 4 }}
+  {{- else if include "paprika.repoServerCachePersistent" . }}
+  # The git cache volume is ReadWriteOnce: stop the old pod before the new one
+  # attaches it.
+  strategy:
+    type: Recreate
   {{- end }}
   {{- with .Values.revisionHistoryLimit }}
   revisionHistoryLimit: {{ . }}
@@ -71,6 +76,9 @@ spec:
       containers:
       - args:
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+        {{- if include "paprika.repoServerCachePersistent" . }}
+        - --repo-workdir={{ .Values.repoServer.cache.persistence.mountPath | default "/tmp/paprika-repo" }}
+        {{- end }}
         {{- range .Values.repoServer.args }}
         - {{ . }}
         {{- end }}
@@ -121,6 +129,10 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.repoServer.extraVolumeMounts | nindent 10 }}
+          {{- if include "paprika.repoServerCachePersistent" . }}
+          - name: git-cache
+            mountPath: {{ .Values.repoServer.cache.persistence.mountPath | default "/tmp/paprika-repo" }}
+          {{- end }}
           {{- if .Values.mtls.enabled }}
           - name: mtls-cert
             mountPath: /etc/paprika/tls
@@ -128,6 +140,7 @@ spec:
           {{- end }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- include "paprika.repoServerGitEnv" . | nindent 8 }}
         {{- if .Values.mtls.enabled }}
         - name: PAPRIKA_MTLS_ENABLED
           value: "true"
@@ -152,6 +165,11 @@ spec:
       {{- end }}
       volumes:
         {{- toYaml .Values.repoServer.extraVolumes | nindent 8 }}
+        {{- if include "paprika.repoServerCachePersistent" . }}
+        - name: git-cache
+          persistentVolumeClaim:
+            claimName: {{ include "paprika.repoServerCacheClaim" . }}
+        {{- end }}
         {{- if .Values.mtls.enabled }}
         - name: mtls-cert
           secret:

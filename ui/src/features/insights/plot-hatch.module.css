@@ -1,0 +1,39 @@
+/*
+ * HTML and CSS hatching. Stripes run 135deg (bottom-left to top-right), 1.5px wide on a 6px pitch,
+ * matching the SVG patterns in plot-hatch.tsx. Use `.hatch` or `.hatchWarning` for the fill; add
+ * `.swatch` for a 10px legend key.
+ */
+.hatch {
+  background-color: var(--gamma-chart-empty);
+  background-image: repeating-linear-gradient(135deg, var(--gamma-chart-hatch) 0 1.5px, transparent 1.5px 6px);
+}
+
+.hatchWarning {
+  background-color: var(--gamma-chart-empty);
+  background-image: repeating-linear-gradient(135deg, var(--gamma-warning) 0 1.5px, transparent 1.5px 6px);
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--gamma-chart-hatch);
+  border-radius: 2px;
+}
+
+.hatchWarning.swatch {
+  border-color: var(--gamma-warning);
+}
+
+.emptySwatch {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 2px;
+  background-color: var(--gamma-chart-empty);
+}

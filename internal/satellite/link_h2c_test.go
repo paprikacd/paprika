@@ -11,11 +11,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/httpx"
 )
 
 // TestLinkSenderSpeaksH2CToALoopbackEndpoint pins the transport a cleartext
@@ -33,7 +32,8 @@ func TestLinkSenderSpeaksH2CToALoopbackEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.SatelliteLink/", handler)
 
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
+	server := httptest.NewUnstartedServer(mux)
+	httpx.WithH2C(server.Config)
 	server.Start()
 	t.Cleanup(func() {
 		server.CloseClientConnections()

@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@plugin "@tailwindcss/typography";
 
 /* The console is a light-only surface. The variant is kept so `dark:`
    utilities still compile while they are being removed file by file. */

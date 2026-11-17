@@ -18,7 +18,18 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
 
-// StreamResourceLogs streams log chunks from a managed resource's pod. When
+// streamLogsPassThrough lists the resolve failures the stream returns unchanged:
+// outside the tree, a malformed request, and a caller that went away or ran out
+// of time. Every other failure is a failed precondition.
+var streamLogsPassThrough = map[connect.Code]bool{
+	connect.CodeNotFound:         true,
+	connect.CodeInvalidArgument:  true,
+	connect.CodeCanceled:         true,
+	connect.CodeDeadlineExceeded: true,
+}
+
+// StreamResourceLogs streams log chunks from a pod in the application's
+// resource tree; a resource outside the tree returns CodeNotFound. When
 // `follow` is true the kubelet log stream stays open and lines are forwarded
 // as they arrive; when false the stream is read once until EOF and the
 // connection closes.
@@ -50,8 +61,11 @@ func (s *PaprikaServer) StreamResourceLogs(
 		ns = app.Namespace
 	}
 
-	pod, err := resolveLogsPod(ctx, typed, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
+	pod, err := resolveApplicationLogsPod(ctx, typed, &app, req.Msg.ResourceKind, req.Msg.ResourceName, ns)
 	if err != nil {
+		if streamLogsPassThrough[connect.CodeOf(err)] {
+			return err
+		}
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 

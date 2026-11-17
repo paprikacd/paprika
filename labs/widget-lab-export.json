@@ -1,0 +1,2276 @@
+{
+  "destination": "labs/widget-lab",
+  "excluded_paths": [
+    ".openai/hosting.json"
+  ],
+  "files": {
+    ".gitignore": {
+      "bytes": 59,
+      "mode": "100644",
+      "sha256": "174707e57384b6cabc0b8d7b0fc8d6929f85371cebba75f9abe2ab2f7daf5153"
+    },
+    "DESIGN.md": {
+      "bytes": 24239,
+      "mode": "100644",
+      "sha256": "a88c6b316458ea459919f761a4f11ce1807fb2a14678be59cc38243e74ae2bea"
+    },
+    "README.md": {
+      "bytes": 31866,
+      "mode": "100644",
+      "sha256": "527b5a33499c836aee9f08d91146c1cf545d8f343c6c1de1c4f8e5d6a03c2440"
+    },
+    "UX-CONTRACT.md": {
+      "bytes": 34066,
+      "mode": "100644",
+      "sha256": "799e74c2119c7b41c63ff4bef2b9400a98ce367d069dabf751915b76a318e2e1"
+    },
+    "docs/chart-capabilities.md": {
+      "bytes": 51353,
+      "mode": "100644",
+      "sha256": "3ab7f51d70df1a8873c71145a0ab6957b9a25093c9d409c093cecb8a972da877"
+    },
+    "docs/chart-catalog-provenance.md": {
+      "bytes": 3986,
+      "mode": "100644",
+      "sha256": "e75b7652ad0aa6426179de07a365e753295d0e15c5f9e7c7350797a6d8a251bf"
+    },
+    "docs/data-contract.md": {
+      "bytes": 4049,
+      "mode": "100644",
+      "sha256": "294abca31d67882f9a15953abd607aa77cb70940e6a3af72be0a2e78e58a99e0"
+    },
+    "docs/evaluation-report.md": {
+      "bytes": 7121,
+      "mode": "100644",
+      "sha256": "febeaf78cc8af6a566ea7122cdd28c2f6608012078f44620ae6bc5af1761c3f1"
+    },
+    "docs/framework-stack.md": {
+      "bytes": 11450,
+      "mode": "100644",
+      "sha256": "3f97fc6502bb9347e996b2d6085d52ee06e554086529012a65dc3577b62a6ed2"
+    },
+    "docs/iteration-02.md": {
+      "bytes": 15452,
+      "mode": "100644",
+      "sha256": "478b3bcacbea364c095b06b626108d2e8f080f90460a2c86a7e513644be7f6ff"
+    },
+    "docs/iteration-03.md": {
+      "bytes": 8147,
+      "mode": "100644",
+      "sha256": "3c3624f56075498824077491c2b4976143f7425fe6aeb73d5b24d12dd0cb132e"
+    },
+    "docs/iteration-04-pixel-reproduction.md": {
+      "bytes": 10330,
+      "mode": "100644",
+      "sha256": "75f5072fa34fe861acee6f9275b6d8dae55c1d16c1a91a4b5209fd9e56a5f689"
+    },
+    "docs/iteration-05-reusable-charts.md": {
+      "bytes": 6259,
+      "mode": "100644",
+      "sha256": "8c3b1083bf99b2bf89155b16b1389bfe45a8ea15ff85c7f5f92a7a858f010781"
+    },
+    "docs/iteration-06-interaction.md": {
+      "bytes": 11677,
+      "mode": "100644",
+      "sha256": "255b7e609c28fca506ce0aa783ad8cbf7af19e639fbec53113d572e139c393b9"
+    },
+    "docs/iteration-07-complex-lenses.md": {
+      "bytes": 26020,
+      "mode": "100644",
+      "sha256": "36399c1fd2200ecad13944232da7bab8a2db538b308b131f99337d956eb2ccd1"
+    },
+    "docs/iteration-08-chart-expansion.md": {
+      "bytes": 26668,
+      "mode": "100644",
+      "sha256": "2da94cbe10735bdc1b0eb4f0be20f0c944e952629d59f3709bbd4f046cfb6e50"
+    },
+    "docs/iteration-09-domain-and-sre.md": {
+      "bytes": 14538,
+      "mode": "100644",
+      "sha256": "7e331951b5fcdfe4c3fcdbf6bf0058c35e5ff101ae70f1e50eb79f2647a0fae8"
+    },
+    "docs/iteration-10-authoring-and-domain-widgets.md": {
+      "bytes": 11850,
+      "mode": "100644",
+      "sha256": "89265223e5818ec526906fcf6adfb7313d32d92ad027638befb9f98fdb421829"
+    },
+    "docs/iteration-10-wafer-transect.md": {
+      "bytes": 4394,
+      "mode": "100644",
+      "sha256": "5bfa522fce5d533ab4f31722c51083666e6d725a611bf07b14724265bdf25a8b"
+    },
+    "docs/iteration-11-responsive-reference-dashboards.md": {
+      "bytes": 7658,
+      "mode": "100644",
+      "sha256": "36cb3353260e45b95142d3f8f012c5bdc19dc413abce8052f41c076e861f0cd3"
+    },
+    "docs/paprika-reference-renderer.patch": {
+      "bytes": 102710,
+      "mode": "100644",
+      "sha256": "66e2736d5d452541c57723685dca81f41551f84b700898462f9626c83bb229e6"
+    },
+    "docs/paprika-source.md": {
+      "bytes": 15100,
+      "mode": "100644",
+      "sha256": "71bf3ef532d64d1a38504ea57b6d5936be2ce6f99de86f6b485f834258626011"
+    },
+    "docs/premium-audit-iteration-02.json": {
+      "bytes": 697,
+      "mode": "100644",
+      "sha256": "2a5dc40db332d44021448bc6b2b7f5a3cef0104e99aaac9fb346abf47c1552c0"
+    },
+    "docs/premium-audit-iteration-03.json": {
+      "bytes": 697,
+      "mode": "100644",
+      "sha256": "2a5dc40db332d44021448bc6b2b7f5a3cef0104e99aaac9fb346abf47c1552c0"
+    },
+    "docs/premium-audit-iteration-10-domain.config.json": {
+      "bytes": 490,
+      "mode": "100644",
+      "sha256": "a148fdc9c6e55c16cdd0a60b649c6bf603fd3d97c72f069689cf26d5f6043650"
+    },
+    "docs/premium-audit-iteration-10-domain.json": {
+      "bytes": 247,
+      "mode": "100644",
+      "sha256": "1ebd1c818168d2bc3450b5e386fcaa9effe7cfa2ae94414e1c2ea16d9b72dd79"
+    },
+    "docs/premium-audit-iteration-10-editor.config.json": {
+      "bytes": 400,
+      "mode": "100644",
+      "sha256": "6c2512304707ec90a0693ef4b2907b6c1e876146319be467140b3289ff89eb9a"
+    },
+    "docs/premium-audit-iteration-10-editor.json": {
+      "bytes": 247,
+      "mode": "100644",
+      "sha256": "1ebd1c818168d2bc3450b5e386fcaa9effe7cfa2ae94414e1c2ea16d9b72dd79"
+    },
+    "docs/premium-audit-iteration-10-notes.md": {
+      "bytes": 10408,
+      "mode": "100644",
+      "sha256": "91c731b85374fa9eca84a364cfdd9486bbd5a6da63f78b916035c88dc35d8d5f"
+    },
+    "docs/premium-audit-iteration-10.json": {
+      "bytes": 19574,
+      "mode": "100644",
+      "sha256": "c89eaecbd2744f0408c21917a6955c85b9032809159992b00f4416520dda03f1"
+    },
+    "docs/premium-audit-notes.md": {
+      "bytes": 3043,
+      "mode": "100644",
+      "sha256": "3ca9212daedf48578821c69d2c203bc5d43de9d4b2ea6d17fe29a12a3b873137"
+    },
+    "docs/premium-audit.config.json": {
+      "bytes": 393,
+      "mode": "100644",
+      "sha256": "f59537301137ce15a6bc39ce3e6020add37aac03676e032e1d2b5069f4ef09b7"
+    },
+    "docs/premium-audit.json": {
+      "bytes": 697,
+      "mode": "100644",
+      "sha256": "2a5dc40db332d44021448bc6b2b7f5a3cef0104e99aaac9fb346abf47c1552c0"
+    },
+    "docs/qa/iteration-11-browser-evidence.json": {
+      "bytes": 9793,
+      "mode": "100644",
+      "sha256": "bc2c66132ec7e93024c0e817b9f6eaa05234e34aa35843d41044c07ef8ab0724"
+    },
+    "docs/qa/responsive.html": {
+      "bytes": 4127,
+      "mode": "100644",
+      "sha256": "604d696b89bd738357fc06ec3d9a62a635e19dcbd2121ddc86b53525e565fe08"
+    },
+    "docs/reference-asset-provenance.md": {
+      "bytes": 6588,
+      "mode": "100644",
+      "sha256": "629415fa4615b771d6bff3c1964fbf4d15366fa846c731fbda86508a8fdb74f2"
+    },
+    "docs/reference-register.md": {
+      "bytes": 11656,
+      "mode": "100644",
+      "sha256": "fc72f9d463ca49063fc0d50dd05e0c6e3341963e760edf50a9b375a14ae6d712"
+    },
+    "docs/reference/edge-geometry.json": {
+      "bytes": 1222,
+      "mode": "100644",
+      "sha256": "251e4299ad3d44bb9f34b4161679de488df3cc7c1f307392bdaa261f7d726065"
+    },
+    "docs/reference/edge-watch.png": {
+      "bytes": 2474763,
+      "mode": "100644",
+      "sha256": "7ebe883c90ce7268416833f73a9476764d36f908fb190576e01839ea31192eb6"
+    },
+    "docs/reference/reliability-geometry.json": {
+      "bytes": 1013,
+      "mode": "100644",
+      "sha256": "fcb352be54a3691be78d69bdf79832fae16bcbf2b795b260903b875004cc122a"
+    },
+    "docs/reference/reliability-room.png": {
+      "bytes": 2614568,
+      "mode": "100644",
+      "sha256": "389173443f4f686d1eef84850b83bbd50d088170030461d84d95da41a7de9a15"
+    },
+    "docs/references/distributed-systems-concept.png": {
+      "bytes": 1785043,
+      "mode": "100644",
+      "sha256": "a3757f27b80d824fbee042de1fdf224f068ad0467cdbb353d1f3a87b362caec0"
+    },
+    "docs/references/grid-balance-concept.png": {
+      "bytes": 1614506,
+      "mode": "100644",
+      "sha256": "c77ab92ade5b6078e346ce1ae621634a658362ac3a4d27b99ef065a07e39255d"
+    },
+    "docs/references/grid-operations-concept.png": {
+      "bytes": 1833754,
+      "mode": "100644",
+      "sha256": "6439438194afb8675c5387d66f468ed47f69bbf88ebf522c40d273880cdc4258"
+    },
+    "docs/references/incident-room-concept.png": {
+      "bytes": 1751211,
+      "mode": "100644",
+      "sha256": "71c1bc2fa7caea03d1364a6a46c06de654363135d23e1f5313c48833a4666585"
+    },
+    "docs/references/inference-fleet-concept.png": {
+      "bytes": 1847939,
+      "mode": "100644",
+      "sha256": "7ef17d0ce0c09b0515103dd794155c9481e45c9c68c1d883c804d6ca2e120ec9"
+    },
+    "docs/references/infrastructure-reference.png": {
+      "bytes": 552643,
+      "mode": "100644",
+      "sha256": "e4c7641d8893350d625418c36f022e344ea4acfe5ff41654c0237fce46a07511"
+    },
+    "docs/references/kubernetes-fleet-concept.png": {
+      "bytes": 1824984,
+      "mode": "100644",
+      "sha256": "5f63a1d5691778255a0a14068c2f8f5a421e90db15bc989076e5be27240147b0"
+    },
+    "docs/references/market-risk-concept.png": {
+      "bytes": 1829149,
+      "mode": "100644",
+      "sha256": "adc1b1131b0ade3bf0f2e179feb216e33af4b3a82390da421422dc579d014630"
+    },
+    "docs/references/orbital-contact-concept.png": {
+      "bytes": 1809509,
+      "mode": "100644",
+      "sha256": "7cdb529290d4ed24e664cb019f7293dd391fc963ed6a16c8d12a99b65dbd3f78"
+    },
+    "docs/references/panel-editor-table-reference.png": {
+      "bytes": 281667,
+      "mode": "100644",
+      "sha256": "ac7ff0111946d5edf2ab6542ce48f4af8d51ee40c8c337fac44e6b68fefe0093"
+    },
+    "docs/references/panel-editor-timeseries-reference.png": {
+      "bytes": 210506,
+      "mode": "100644",
+      "sha256": "8136393ade31cdd7117a35be4b9632a307155f545547dd79391dc767c8e8046f"
+    },
+    "docs/references/performance-workbench-concept.png": {
+      "bytes": 1749726,
+      "mode": "100644",
+      "sha256": "0d7ca0eebb1a8affadaedf7dcea4435c22f1e0c9e3d1230970585f109d0870e6"
+    },
+    "docs/references/trial-evidence-concept.png": {
+      "bytes": 1618171,
+      "mode": "100644",
+      "sha256": "7a5805f169520bb8507dff5979e419aa3a28d1454e7d903ac8321df97d195129"
+    },
+    "docs/references/wafer-intelligence-concept.png": {
+      "bytes": 1809018,
+      "mode": "100644",
+      "sha256": "f5d3844dc54d593f70b7370f93a09f078db40dab55866de6dad59955d048edfd"
+    },
+    "docs/references/website-overview-reference.png": {
+      "bytes": 636288,
+      "mode": "100644",
+      "sha256": "4d58b182e6f95e4a904942a3ea72b33f7b4bbe5d50195491a5d46893f8da03fa"
+    },
+    "docs/regenerate-paprika-provenance.py": {
+      "bytes": 8070,
+      "mode": "100644",
+      "sha256": "3861b35eb4c73b3e91626fd93e275ed9d60ce851983c23d4a25a1d6f7f8b99d9"
+    },
+    "docs/screenshots/iteration-04-edge.jpg": {
+      "bytes": 168771,
+      "mode": "100644",
+      "sha256": "6730705233fb0d185e254c8ea7edaa51d49e408a89cee0dba03836550641ab2c"
+    },
+    "docs/screenshots/iteration-04-reliability.jpg": {
+      "bytes": 187382,
+      "mode": "100644",
+      "sha256": "5221d7af83aca92cca36216fd3785764bfa3d3110b8190ab37b51e88b1aafbfa"
+    },
+    "docs/screenshots/iteration-05-chart-library-map.jpg": {
+      "bytes": 95298,
+      "mode": "100644",
+      "sha256": "a4af4157daa2ac02fbed46a17d218355a4d51ecd79e8727d3b2152e6476df522"
+    },
+    "docs/screenshots/iteration-05-edge-map-zoom.jpg": {
+      "bytes": 168259,
+      "mode": "100644",
+      "sha256": "bf0b941910a5bbcdd5245147b3cc53ea0cf45d4d4429e411e0f36d82e8cc7386"
+    },
+    "docs/screenshots/iteration-05-map-light-narrow.jpg": {
+      "bytes": 71753,
+      "mode": "100644",
+      "sha256": "c92148bc43bac7cfae7634051d1be14633068796e1a0ccc2ab4fb98ad1241fd8"
+    },
+    "docs/screenshots/iteration-06-editor.jpg": {
+      "bytes": 83299,
+      "mode": "100644",
+      "sha256": "307ff6b7d6b1439b706151be4f4f6bf403cede063173aae332bf870efacf8693"
+    },
+    "docs/screenshots/iteration-06-finance-mobile.jpg": {
+      "bytes": 59168,
+      "mode": "100644",
+      "sha256": "608680af4ca1da12e972d235c0330340a6c7efd030d65b0f0bd54b8c3c357274"
+    },
+    "docs/screenshots/iteration-06-finance.jpg": {
+      "bytes": 100233,
+      "mode": "100644",
+      "sha256": "8c5b34c53dedb8e280f49c23c979e615a54c2d026afe4917cee3a4f9e6ea9c3b"
+    },
+    "docs/screenshots/iteration-06-infrastructure.jpg": {
+      "bytes": 127688,
+      "mode": "100644",
+      "sha256": "9764b1756a7585814393b86c349ddec1cd3bff09d99cf48dceac68627eefa1ff"
+    },
+    "docs/screenshots/iteration-06-map-wheel.jpg": {
+      "bytes": 99417,
+      "mode": "100644",
+      "sha256": "d82eeb1f57b6b2125aa8e4d5d60e7708e6f6b32e92c6e48b415d62c6a4f1c510"
+    },
+    "docs/screenshots/iteration-06-responsive-window.jpg": {
+      "bytes": 56009,
+      "mode": "100644",
+      "sha256": "8665cd34b01a524fa3f4fbec093ef5ee49ff5c630c569d669d1415eebb678c57"
+    },
+    "docs/screenshots/iteration-06-rich-inspector.jpg": {
+      "bytes": 100404,
+      "mode": "100644",
+      "sha256": "1d9e4c0f91901c60dadb6fbdb62fe936cba107ac8f93a7bb529b3e6085453cff"
+    },
+    "docs/screenshots/iteration-06-visible-navigation.jpg": {
+      "bytes": 162391,
+      "mode": "100644",
+      "sha256": "c25466afbf8d11f3ca8e227f49114d0455c141c2e7dcfd16c6c091898bb6dc8d"
+    },
+    "docs/screenshots/iteration-06-website.jpg": {
+      "bytes": 137485,
+      "mode": "100644",
+      "sha256": "b66b4ff73c6ffdac262ae5a41ea154647689408e3c7027757350c70bac6473a2"
+    },
+    "docs/screenshots/iteration-07-market-risk-runtime.jpg": {
+      "bytes": 134241,
+      "mode": "100644",
+      "sha256": "0d5d442aac78f63e86d1549c691fe34debd06249d433cdd7b289c4a2ed8fe9c3"
+    },
+    "docs/screenshots/iteration-08-coastal.jpg": {
+      "bytes": 105342,
+      "mode": "100644",
+      "sha256": "b6f688417b9565aa5a89532797fc0d0be9c93dd733eae6fe2e424bff22cc2617"
+    },
+    "docs/screenshots/iteration-08-editor.jpg": {
+      "bytes": 129580,
+      "mode": "100644",
+      "sha256": "7cfe22882ef897bff0cac4823a623067d1cda2fa4a63e0ea32ab74ae43acd141"
+    },
+    "docs/screenshots/iteration-08-materials-final.jpg": {
+      "bytes": 117671,
+      "mode": "100644",
+      "sha256": "5139c5dd9dc4acf94f016d01f72379f339877315f7db586096625fcfcbcd40dc"
+    },
+    "docs/screenshots/iteration-08-planner.jpg": {
+      "bytes": 123375,
+      "mode": "100644",
+      "sha256": "9ba1afd9014bcb5401d123116a3bdec77d7a1fb0ad9909dcdf0608000c59912b"
+    },
+    "docs/screenshots/iteration-08-profiling-overview.jpg": {
+      "bytes": 116949,
+      "mode": "100644",
+      "sha256": "fa4c2b64ba04c0715cfb9f545737813e49fe6fc9f91fcac3127de648011c71c2"
+    },
+    "docs/screenshots/iteration-08-profiling.jpg": {
+      "bytes": 134262,
+      "mode": "100644",
+      "sha256": "04e08d5806d36cd556e7a08bce09bd8e2e58e20aa150afa6ce1f5d9985678338"
+    },
+    "docs/screenshots/iteration-08-spectrum.jpg": {
+      "bytes": 156725,
+      "mode": "100644",
+      "sha256": "650ca3f0118fd6eed09292ce77210495f62ba658ad2463d09c35a23c1a74e18d"
+    },
+    "docs/screenshots/iteration-09-distributed-systems.jpg": {
+      "bytes": 120462,
+      "mode": "100644",
+      "sha256": "8738b7a2b8151e9dc15b08701b4b0d7ce5a35a898e7d5153ee37ed38783308b5"
+    },
+    "docs/screenshots/iteration-09-kubernetes-fleet.jpg": {
+      "bytes": 148886,
+      "mode": "100644",
+      "sha256": "667ef3d46bd5a06215b9cca93d9c9c5513e4154a50bf39585d791f823e2de4f8"
+    },
+    "docs/screenshots/iteration-09-performance-workbench.jpg": {
+      "bytes": 138830,
+      "mode": "100644",
+      "sha256": "fd98641926c8219f8d596188bb2aadc49b6cd045795d0ab98bbf7201b449d037"
+    },
+    "docs/screenshots/iteration-10-editor.jpg": {
+      "bytes": 127621,
+      "mode": "100644",
+      "sha256": "ab3f6dd95375d2c5402f402270c2328b00f8edd125c93f057b2fa2d4a16cde80"
+    },
+    "docs/screenshots/iteration-10-grid.jpg": {
+      "bytes": 118993,
+      "mode": "100644",
+      "sha256": "e8700fb95443f84da090d62753e1eb66c9ed378dce1e121da361daffea3a0816"
+    },
+    "docs/screenshots/iteration-10-reserve.jpg": {
+      "bytes": 107621,
+      "mode": "100644",
+      "sha256": "9fef15612603aa1ac0027f91ef28307375dac0e6cb5d9b55930a065ecd8e77ae"
+    },
+    "docs/screenshots/iteration-11-edge-desktop.jpg": {
+      "bytes": 261875,
+      "mode": "100644",
+      "sha256": "a2da91edad6d37c25d7af097414b3dd9e3dc5d2d84ff76709dbd8168c8881ef7"
+    },
+    "docs/screenshots/iteration-11-edge-map-390.jpg": {
+      "bytes": 69921,
+      "mode": "100644",
+      "sha256": "82fc1a3b5c40cabc49bc89b032e0c20a1af6704aa37cd2fb91b3ef12b5ae3a2c"
+    },
+    "docs/screenshots/iteration-11-edge-risk-390.jpg": {
+      "bytes": 61994,
+      "mode": "100644",
+      "sha256": "630ab68bef6ce37a09b2b4d1bdefe6d33fbba064256b9a5eedef27b7c8bd6884"
+    },
+    "docs/screenshots/iteration-11-reliability-320.jpg": {
+      "bytes": 64964,
+      "mode": "100644",
+      "sha256": "86b14928be401c7eb7dad2ace1b45ce27d21927e2be352a84b9051d8a52e2c11"
+    },
+    "docs/screenshots/iteration-11-reliability-desktop.jpg": {
+      "bytes": 262314,
+      "mode": "100644",
+      "sha256": "a27b605a23410eaa3382d22675d231cdf1cba0bf7dfdb15b59f4cd02cfc762cb"
+    },
+    "docs/screenshots/paprika-edge-inspector-iteration-03-review.jpg": {
+      "bytes": 162898,
+      "mode": "100644",
+      "sha256": "749c67d96d6c64243ba2a35cfcaf073a030b597c84525b2a7fee60bdb31f01f5"
+    },
+    "docs/screenshots/paprika-edge-watch-iteration-02.jpg": {
+      "bytes": 177389,
+      "mode": "100644",
+      "sha256": "0b4ff69a5cf995dad537d34bbf3a06b8b8cec99f10a1049cb48973c81e3198a1"
+    },
+    "docs/screenshots/paprika-edge-watch-iteration-03.jpg": {
+      "bytes": 156911,
+      "mode": "100644",
+      "sha256": "25df75b471a7a76bdae6c343ab9010302cef90dfb9276da0cb8f98d9239c5d0e"
+    },
+    "docs/screenshots/paprika-reliability-room-iteration-02.jpg": {
+      "bytes": 170575,
+      "mode": "100644",
+      "sha256": "985a04b14c13036d582a0e4dedfbdd4830d2af52bb4295c9f858b1aeed111217"
+    },
+    "docs/screenshots/paprika-reliability-room-iteration-03.jpg": {
+      "bytes": 158796,
+      "mode": "100644",
+      "sha256": "c8a4ec2cf4223518cf4674cf20135afe35bf794db4eb5add774a7a5cfe609692"
+    },
+    "docs/screenshots/paprika-rich-inspector-iteration-02.jpg": {
+      "bytes": 134577,
+      "mode": "100644",
+      "sha256": "70b22024ed119c91d78bba861ff16dc19ceec690ea05d01a0b6f3594d8737e99"
+    },
+    "docs/screenshots/paprika-rich-inspector-iteration-03.jpg": {
+      "bytes": 167557,
+      "mode": "100644",
+      "sha256": "3b1947b2ffd7418b181ea92bfaa674c0ce64b21bf98ee5db990f1a5259d9114a"
+    },
+    "docs/screenshots/paprika-widget-lab-light.jpg": {
+      "bytes": 174614,
+      "mode": "100644",
+      "sha256": "6e1183eed21971fd77a176cd2ff6af4f431655172e0cbf0f91b9aefab2d74f45"
+    },
+    "index.html": {
+      "bytes": 527,
+      "mode": "100644",
+      "sha256": "5d68921b2cca3b5fe038404ec8fed1573291d0dc2e1e1707eee61cd96dc927cf"
+    },
+    "package-lock.json": {
+      "bytes": 95133,
+      "mode": "100644",
+      "sha256": "3d6e31bb1ee6aba91f65cfac5263d955e740b0e2a17050c1858cecf971320f73"
+    },
+    "package.json": {
+      "bytes": 873,
+      "mode": "100644",
+      "sha256": "217861169fe52b0da8b3f8feb7fd685952af3662b06dbdd5b86cf856c46c268d"
+    },
+    "public/fixtures/profiling/README.md": {
+      "bytes": 1891,
+      "mode": "100644",
+      "sha256": "ba67fce930fa26937f651e6dce441654f852666b6f0976d710aa2785e6916428"
+    },
+    "public/fixtures/profiling/go-alloc.flamebearer.json": {
+      "bytes": 3500,
+      "mode": "100644",
+      "sha256": "59669886da39aaba302ae6bbe17be73222c1fcac9cd906da819252a69e6a7fcb"
+    },
+    "public/fixtures/profiling/go-cpu.flamebearer.json": {
+      "bytes": 3277,
+      "mode": "100644",
+      "sha256": "7c14d9abbb0915401f18dd9374629a9eb977f88a94cfded3812e8e37cd147d7e"
+    },
+    "public/fixtures/profiling/go-cpu.folded": {
+      "bytes": 1961,
+      "mode": "100644",
+      "sha256": "faca6f3d53a619807f988281b64aa22a7837c36d96b8c5cf02e7152943b4c672"
+    },
+    "public/fixtures/profiling/go-cpu.speedscope.json": {
+      "bytes": 46606,
+      "mode": "100644",
+      "sha256": "76c198f7c1e160eedfc42a2f2ece09514a5ec9f313358a8bbc1f21c5043a76c7"
+    },
+    "public/fixtures/profiling/manifest.json": {
+      "bytes": 1450,
+      "mode": "100644",
+      "sha256": "76137b858c43624e2404f799b60a2607e90296c4e9539f34791a63944086dbff"
+    },
+    "public/fixtures/profiling/postgres-cpu.flamebearer.json": {
+      "bytes": 2809,
+      "mode": "100644",
+      "sha256": "d62ea1d95e0a7c06f25ebd7becaa4a854ceb767dfe560fb76214114f3383beb3"
+    },
+    "public/fixtures/profiling/postgres-cpu.folded": {
+      "bytes": 1269,
+      "mode": "100644",
+      "sha256": "1dcc6ed8fd6fff20fb7c6b1760cb92cfce4a66e15cfd0538f18e7055c5a047ba"
+    },
+    "public/fixtures/profiling/postgres-cpu.speedscope.json": {
+      "bytes": 49852,
+      "mode": "100644",
+      "sha256": "5e4b1eb2ac72ff986471d6cbb7146c7df136afd8ebee17197de0366fc5a4e184"
+    },
+    "public/fixtures/profiling/python-cpu.flamebearer.json": {
+      "bytes": 2942,
+      "mode": "100644",
+      "sha256": "8e86aed8bfa9366bf50f76026caca0a6a8ce628ed1498965286062624c01437e"
+    },
+    "public/fixtures/profiling/python-cpu.folded": {
+      "bytes": 1399,
+      "mode": "100644",
+      "sha256": "3211b75c8b401ca1fd940065b8db23c8dc98288d5b70896ab24553818b904b7b"
+    },
+    "public/fixtures/profiling/python-cpu.speedscope.json": {
+      "bytes": 44155,
+      "mode": "100644",
+      "sha256": "76d88b0ec1925998cd6992c5fb0148350d75f610d31f8119d7ae59aa9d64106e"
+    },
+    "public/fonts/Barlow-Medium.ttf": {
+      "bytes": 103536,
+      "mode": "100644",
+      "sha256": "f8906f762cb73dca441da034bc363b2d8e2e68bc10d5c05e58717646c20cc4b4"
+    },
+    "public/fonts/Barlow-Regular.ttf": {
+      "bytes": 104068,
+      "mode": "100644",
+      "sha256": "95aa02c7c43096e0dd44d787ba6216864a67157e402adab59b35572e0c1577ea"
+    },
+    "public/fonts/Barlow-SemiBold.ttf": {
+      "bytes": 108348,
+      "mode": "100644",
+      "sha256": "86577cb32f8abe3673db53ca0f4221e6856751a4f6730c867e00f720f8bb1fc5"
+    },
+    "public/fonts/OFL.txt": {
+      "bytes": 4377,
+      "mode": "100644",
+      "sha256": "186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f"
+    },
+    "public/fonts/Roboto-OFL.txt": {
+      "bytes": 4394,
+      "mode": "100644",
+      "sha256": "061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41"
+    },
+    "public/fonts/Roboto-Variable.ttf": {
+      "bytes": 488584,
+      "mode": "100644",
+      "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134"
+    },
+    "public/fonts/RobotoCondensed-OFL.txt": {
+      "bytes": 4393,
+      "mode": "100644",
+      "sha256": "0e4cc6ece88573545be2ed25835363662a6182ba4a4c1b5c8feda52add30e8a6"
+    },
+    "public/fonts/RobotoCondensed-Variable.ttf": {
+      "bytes": 371616,
+      "mode": "100644",
+      "sha256": "dace262afcee68a5276f200d8026c57221735c0118ab5fda8c2c0d3dc409a8d0"
+    },
+    "public/reference/edge-watch.png": {
+      "bytes": 2474763,
+      "mode": "100644",
+      "sha256": "7ebe883c90ce7268416833f73a9476764d36f908fb190576e01839ea31192eb6"
+    },
+    "public/reference/reliability-room.png": {
+      "bytes": 2614568,
+      "mode": "100644",
+      "sha256": "389173443f4f686d1eef84850b83bbd50d088170030461d84d95da41a7de9a15"
+    },
+    "scripts/build-profile-fixtures.mjs": {
+      "bytes": 1925,
+      "mode": "100644",
+      "sha256": "2c19c2fe6fc34ef005d3ed8f8d6739afebbdf14d8130fcd00256356279805c09"
+    },
+    "scripts/trace-reference-mini-profiles.py": {
+      "bytes": 1888,
+      "mode": "100644",
+      "sha256": "7e43999d486da41b088c553b06ea3d059101df8ce21e52be38daad44530790eb"
+    },
+    "scripts/trace-reference-profiles.py": {
+      "bytes": 2518,
+      "mode": "100644",
+      "sha256": "0e44119fd1ecd53c5546133b1b3b32711f4c9bae140b520498bef3c99d57942f"
+    },
+    "src/App.tsx": {
+      "bytes": 9462,
+      "mode": "100644",
+      "sha256": "4613cd3b51f1ec9a16a9d77d77144e52519625a24069d74a7d9db9ebec26ff8c"
+    },
+    "src/BaselineApp.tsx": {
+      "bytes": 15443,
+      "mode": "100644",
+      "sha256": "7e3ca924a97122171a47ca3e5cef318bda08d09ada3c8fcbaef818e4c99b3fcf"
+    },
+    "src/catalog/ChartCatalog.css": {
+      "bytes": 13135,
+      "mode": "100644",
+      "sha256": "adc8d2e669ba8aae27e65883ee664f6287b956c414aa9912dd3995de55ec5325"
+    },
+    "src/catalog/ChartCatalog.tsx": {
+      "bytes": 9434,
+      "mode": "100644",
+      "sha256": "b32e87343b22edb078db24f6d297e3d725bcbb8ee9e90a2ee174d165d4169f1f"
+    },
+    "src/catalog/ConnectionMap.tsx": {
+      "bytes": 5123,
+      "mode": "100644",
+      "sha256": "2d2dfad03cd4bab9e2bbed3f1b87e839e658c33f88f3f646b5e813109d50d652"
+    },
+    "src/catalog/analytics-fixtures.ts": {
+      "bytes": 6497,
+      "mode": "100644",
+      "sha256": "48209997f7ac2e78c2cb724243b21919b43388ab374a172a303a4e07023ed01f"
+    },
+    "src/catalog/chart-fixtures.ts": {
+      "bytes": 18204,
+      "mode": "100644",
+      "sha256": "e7705e3b738e8db7d27005d3b8a980093de89648c350b776e4e7fcd79383f7e1"
+    },
+    "src/catalog/concept-fixtures.ts": {
+      "bytes": 12056,
+      "mode": "100644",
+      "sha256": "61796eefe8dff4efdcd3a90e0d09e35a02742fd462c6b706a1e226d2e0179e76"
+    },
+    "src/catalog/exploration-fixtures.ts": {
+      "bytes": 8055,
+      "mode": "100644",
+      "sha256": "f02ce8c474a9c41a188a96440ccbaa72b12c596ab69cf5a6ac0a165e098a4de8"
+    },
+    "src/catalog/profiling-fixtures.ts": {
+      "bytes": 2972,
+      "mode": "100644",
+      "sha256": "f0c20e3bf3a73c35d19a59f7470ecf6655c6d927475fafcc1f604a4021c75782"
+    },
+    "src/catalog/spatial-fixtures.ts": {
+      "bytes": 6736,
+      "mode": "100644",
+      "sha256": "164ed8cefe9babf292fad08c49d6ec0fe85157d476ccf45baba1206c12d7c05c"
+    },
+    "src/charts/analytics/AnalyticsCharts.tsx": {
+      "bytes": 30558,
+      "mode": "100644",
+      "sha256": "104edf3b3101d1f066b14281f5d8f516e2c1dbd4307595746e11140d724ef08c"
+    },
+    "src/charts/analytics/analytics-charts.css": {
+      "bytes": 2357,
+      "mode": "100644",
+      "sha256": "be3700277f3d0ac200d9a17e4a57f89f1fae07f881e5b77ccf664cd4d4243721"
+    },
+    "src/charts/analytics/data.ts": {
+      "bytes": 11503,
+      "mode": "100644",
+      "sha256": "b75992688df60f9a6c17c7f2a05e0c2be24394f95ace5c9152becff88a6cd8c6"
+    },
+    "src/charts/analytics/register.ts": {
+      "bytes": 4118,
+      "mode": "100644",
+      "sha256": "23cf14b372231bc55b0f12e3ce359b900e66a5b9b6043efb8e98417720908575"
+    },
+    "src/charts/clinical/ClinicalCharts.tsx": {
+      "bytes": 27289,
+      "mode": "100644",
+      "sha256": "a0b24e6a21c24c0b43b39c49cdb25fc46c7ec806573055227167043a6d5da8b0"
+    },
+    "src/charts/clinical/FollowupDistribution.tsx": {
+      "bytes": 9939,
+      "mode": "100644",
+      "sha256": "114db7b5dd5a2b8b7cf003a7bb378498d84d4d1df7d0b7e784c25393e9326bdc"
+    },
+    "src/charts/clinical/catalog.ts": {
+      "bytes": 5931,
+      "mode": "100644",
+      "sha256": "aa66b85fa1c9c73cc4531c485986ccf6391ffd53c19b0d95f69376bd23c34878"
+    },
+    "src/charts/clinical/clinical.css": {
+      "bytes": 4265,
+      "mode": "100644",
+      "sha256": "d90be1ec1d2a4b2d2335c0f994bfde1878e6b26a1d8f1f9f4d64e0769c379233"
+    },
+    "src/charts/clinical/model.ts": {
+      "bytes": 16105,
+      "mode": "100644",
+      "sha256": "d4044e4aa9b7b6c1daa003ddc966db6d209ea583e7e9d64d29d0fa0b937dc4b2"
+    },
+    "src/charts/clinical/register.ts": {
+      "bytes": 10024,
+      "mode": "100644",
+      "sha256": "81ee1068374e0b09f9e7413c736d22dcb70f6ed665e77277a2e8ed66889c098f"
+    },
+    "src/charts/distributed/PeerLatencyMatrix.tsx": {
+      "bytes": 5548,
+      "mode": "100644",
+      "sha256": "dd58debd407c5047e4ce4603a65121d21e4565aa5aa1273e6d96ae252ace16ff"
+    },
+    "src/charts/distributed/QuorumTopology.tsx": {
+      "bytes": 8365,
+      "mode": "100644",
+      "sha256": "ea5a2cf66a347006431974cc80497fd485ae2dc446573de04694f578eca1c7ea"
+    },
+    "src/charts/distributed/README.md": {
+      "bytes": 4499,
+      "mode": "100644",
+      "sha256": "57ce65bc47c15c7f00cc78ad7a49ebd5b095fffe0f8e8f100cf76d8c2d073acc"
+    },
+    "src/charts/distributed/ReplicationTracks.tsx": {
+      "bytes": 13429,
+      "mode": "100644",
+      "sha256": "1f20a02d0be858fcf1d9a6acd0f4a792be5063e8622ea366b6a115dd9f461863"
+    },
+    "src/charts/distributed/ShardMovement.tsx": {
+      "bytes": 9033,
+      "mode": "100644",
+      "sha256": "848a0fc00a0cd90a491e4b7a2697ec19296e22da261a16ced50494b264aee5d9"
+    },
+    "src/charts/distributed/catalog.ts": {
+      "bytes": 4440,
+      "mode": "100644",
+      "sha256": "24c922928749e2a0150b26a3251dae37d1761900a086f4660c4ca6b6169c9167"
+    },
+    "src/charts/distributed/distributed.css": {
+      "bytes": 5731,
+      "mode": "100644",
+      "sha256": "a11d0325726903c079a7f98e0575bb37aac3bc47acf414c4639eb9acf0780b88"
+    },
+    "src/charts/distributed/model.ts": {
+      "bytes": 17530,
+      "mode": "100644",
+      "sha256": "0670499579ee5ea97ccc5b21ed104f5f83a2400350b431a3b1da5471a74d5e1d"
+    },
+    "src/charts/distributed/register.ts": {
+      "bytes": 3340,
+      "mode": "100644",
+      "sha256": "a607344152a5c522914b798793391caf8b4bd7dd1a28118a196fba51cc3635ac"
+    },
+    "src/charts/distributed/shared.tsx": {
+      "bytes": 3113,
+      "mode": "100644",
+      "sha256": "98596aa9e43c421ca6ba289c509e08399c93c914d3ac310cf9c77c8b334c6c46"
+    },
+    "src/charts/energy/EnergyCharts.tsx": {
+      "bytes": 19509,
+      "mode": "100644",
+      "sha256": "3b68361e3475d19d5951f0852fec149823a436a2c650fec3e70cb623ba2d0d88"
+    },
+    "src/charts/energy/ReserveEnvelope.tsx": {
+      "bytes": 12327,
+      "mode": "100644",
+      "sha256": "90d47cba34a514682d79aacebd67d58dc7d74c5594d6c49225b8a4780b64af6f"
+    },
+    "src/charts/energy/energy.css": {
+      "bytes": 4361,
+      "mode": "100644",
+      "sha256": "940c2f45c10b80731af32353d3dad6bad0515fe2808a53f9462d6fdbab6eeb01"
+    },
+    "src/charts/energy/model.ts": {
+      "bytes": 8399,
+      "mode": "100644",
+      "sha256": "b5ea2519a8d77a1e27c6eddf7bf34c163be1b579e6c10a43fd40beeb9e77fb91"
+    },
+    "src/charts/energy/register.ts": {
+      "bytes": 6055,
+      "mode": "100644",
+      "sha256": "c5478451540ac23558f0553a7ad2c414913638d39eefab2f42c48a56c1099911"
+    },
+    "src/charts/energy/reserve-model.ts": {
+      "bytes": 5311,
+      "mode": "100644",
+      "sha256": "46dfee8ed5ac3ec855152ab242742e7eecaa85b4aedd68c05a82acafdef08a73"
+    },
+    "src/charts/exploration/MaterialCharts.tsx": {
+      "bytes": 19583,
+      "mode": "100644",
+      "sha256": "142ab6c1504d2d42bcd20cbce58865f41e79cbf8cc471c6abc5cfa1b7344c2c8"
+    },
+    "src/charts/exploration/ScheduleCharts.tsx": {
+      "bytes": 15064,
+      "mode": "100644",
+      "sha256": "af65bc190cecdab0d8ea0edd53366dd75ffca398e711615e95a29dee6642fe35"
+    },
+    "src/charts/exploration/ThreatCharts.tsx": {
+      "bytes": 16638,
+      "mode": "100644",
+      "sha256": "c011edb563b4bbd356d62a668c272b47d6df49dea778b14280874524f967ae5c"
+    },
+    "src/charts/exploration/exploration.css": {
+      "bytes": 4303,
+      "mode": "100644",
+      "sha256": "89b33fb8d46841119dacd882958fd5172da14af22dc6ae105238257c91f3e787"
+    },
+    "src/charts/exploration/model.ts": {
+      "bytes": 12477,
+      "mode": "100644",
+      "sha256": "bc3fa335ccce132225c107847c339c1cd99430a6a9072131cf42759652860cc9"
+    },
+    "src/charts/exploration/register.ts": {
+      "bytes": 5127,
+      "mode": "100644",
+      "sha256": "5084d98c0491c5a470e67865512df86872d54aa2ea3a2806c1c06a40fd6a9b27"
+    },
+    "src/charts/exploration/shared.tsx": {
+      "bytes": 2067,
+      "mode": "100644",
+      "sha256": "0166e8811b719b0ce3b5360e71726aa05659f8deeb2c39fd29e775af2bbd138c"
+    },
+    "src/charts/geo/GeoMap.css": {
+      "bytes": 11088,
+      "mode": "100644",
+      "sha256": "aa6b48cc118e22504b119f200735767cfa1f117b1a99a938e4dfbc8a2cdc6bfd"
+    },
+    "src/charts/geo/GeoMap.tsx": {
+      "bytes": 27109,
+      "mode": "100644",
+      "sha256": "6d4b610a009f11779c04ab43aecafc39c9aafdecdd7ee90c001dbcf438b9ffb9"
+    },
+    "src/charts/geo/geo-data.ts": {
+      "bytes": 2059,
+      "mode": "100644",
+      "sha256": "5a0fa8449f9168fa4ef00d5e42ebf0fa35fddcbd223438b4a8e5c15dbbf6c748"
+    },
+    "src/charts/geo/geo-viewport.ts": {
+      "bytes": 5154,
+      "mode": "100644",
+      "sha256": "a19d0f2e41901c2de76139c46130dafc04627f08a23990091a028a07e334ada9"
+    },
+    "src/charts/grid/ForecastBands.tsx": {
+      "bytes": 12150,
+      "mode": "100644",
+      "sha256": "0b4c676f91da420f4857aaa28d93a28ab474eb61964b34bb1f54f442e3c382b2"
+    },
+    "src/charts/grid/GridNetworkMap.tsx": {
+      "bytes": 16864,
+      "mode": "100644",
+      "sha256": "d7a25d2645ee810fa33e26c19aa876d9a6dafa22eb93b8119495e2518f092ce3"
+    },
+    "src/charts/grid/grid-charts.css": {
+      "bytes": 6130,
+      "mode": "100644",
+      "sha256": "5d671e6e3e4a82399cb2632f6eea5962ff48181e9c1b21d6c6e0d1fe7ea09a5e"
+    },
+    "src/charts/grid/grid-model.ts": {
+      "bytes": 5838,
+      "mode": "100644",
+      "sha256": "8dbcd87444d7fa13fc6f0716e89d7a73236594f8bc2752bd98a91bdd543a4c9c"
+    },
+    "src/charts/grid/register.ts": {
+      "bytes": 1733,
+      "mode": "100644",
+      "sha256": "eb81700ebd4ae8d9bb37e70c701eed5a0719b67ab6ee9407187d91ccabc273af"
+    },
+    "src/charts/incident/IncidentCharts.css": {
+      "bytes": 7785,
+      "mode": "100644",
+      "sha256": "a62a952a4b4c4051eb4c2c1d6940c5dce774db8def79b9dc79e4439a273bac92"
+    },
+    "src/charts/incident/IncidentCharts.tsx": {
+      "bytes": 33523,
+      "mode": "100644",
+      "sha256": "313594b5a7fa624e9e43cf25b7c3e087cab83f0051bfd747ebdeb81960addad3"
+    },
+    "src/charts/incident/incident-model.ts": {
+      "bytes": 9259,
+      "mode": "100644",
+      "sha256": "e9f876437324cc0d44651981884a9c0f0a6fd4767a4f8d2e0bb15f2703be2841"
+    },
+    "src/charts/incident/register.ts": {
+      "bytes": 2164,
+      "mode": "100644",
+      "sha256": "7e8f4d7a3d190e13722b528dc3b3bede33ca237f7dafecb2190ecebacd605639"
+    },
+    "src/charts/inference/InferenceCharts.tsx": {
+      "bytes": 21820,
+      "mode": "100644",
+      "sha256": "e04fecef68ff9260d5bfb75cedd677172c153715d8fe06f4b0c67e153f3b64c5"
+    },
+    "src/charts/inference/data.ts": {
+      "bytes": 7210,
+      "mode": "100644",
+      "sha256": "c7b0423c02bd824e576e09ca3627b05484b61bf4f22d535326fd06d1cc769b03"
+    },
+    "src/charts/inference/inference-charts.css": {
+      "bytes": 7384,
+      "mode": "100644",
+      "sha256": "208f0afa3d81e108c14f5efb714d8ecbf88b255f22daecb67dffab4ad2f9fdbc"
+    },
+    "src/charts/inference/register.ts": {
+      "bytes": 1941,
+      "mode": "100644",
+      "sha256": "1ac0f6a6c4263e0b676c28acfba9b967fb1a4f656bd568a73072f6affc2ef1fd"
+    },
+    "src/charts/intrinsic-chart-families.ts": {
+      "bytes": 922,
+      "mode": "100644",
+      "sha256": "f48ab5c877e137126a1ac0123badf492ede0340eca34a8040e0f5eb09df4eadb"
+    },
+    "src/charts/kubernetes/KubernetesCharts.tsx": {
+      "bytes": 20745,
+      "mode": "100644",
+      "sha256": "e820a957699dc3fce624c2dfef7551bdaea0761aa0acf84b449196e6215431b3"
+    },
+    "src/charts/kubernetes/PlacementChart.tsx": {
+      "bytes": 9588,
+      "mode": "100644",
+      "sha256": "e3a3060aa04e77c73513055a16a35c6eb0e7ed0c441e6c97a89af5db3041a1e5"
+    },
+    "src/charts/kubernetes/catalog.ts": {
+      "bytes": 4054,
+      "mode": "100644",
+      "sha256": "e2f0a3a84d4083a7c489442aadf1466c9d94e2ff4b7c2b22188f908faf8e686a"
+    },
+    "src/charts/kubernetes/kubernetes.css": {
+      "bytes": 1520,
+      "mode": "100644",
+      "sha256": "ffdf83a91705087c8d88f90cc7e5051e8c08286995799d32ce7f2785888251b3"
+    },
+    "src/charts/kubernetes/model.ts": {
+      "bytes": 17446,
+      "mode": "100644",
+      "sha256": "2d290633208f2420fc12db4d5eb30edbcac31e20d90f5ba3f591250050b1324b"
+    },
+    "src/charts/kubernetes/register.ts": {
+      "bytes": 4154,
+      "mode": "100644",
+      "sha256": "09ccfd0decb43dfc7b5303d366468c23256fd81f6e8300bae7942eb6b24bba49"
+    },
+    "src/charts/market-risk/MarketCharts.css": {
+      "bytes": 2723,
+      "mode": "100644",
+      "sha256": "634857c82a51a7f040a91e6da74253ca9b30262fd8cfea69b68fe8add3eee0d5"
+    },
+    "src/charts/market-risk/MarketCharts.tsx": {
+      "bytes": 19367,
+      "mode": "100644",
+      "sha256": "616e71d8c13fcd506c8016c6f6901340a95e506966c01d088001975126bb360b"
+    },
+    "src/charts/market-risk/market-chart-data.ts": {
+      "bytes": 6705,
+      "mode": "100644",
+      "sha256": "77448757ebaddecec33ef440b21588d1924a3e7684f75a80b5a79364252a4278"
+    },
+    "src/charts/market-risk/register.ts": {
+      "bytes": 2213,
+      "mode": "100644",
+      "sha256": "1c85df0fce3be448de27de5c9f6da4e52d6971d174139be66c53608af4a6659b"
+    },
+    "src/charts/orbital/OrbitalCharts.tsx": {
+      "bytes": 39058,
+      "mode": "100644",
+      "sha256": "87924e2d6f82eb913e2a51b4725680daff4c09de5e525ebe9a85386f4ecf6276"
+    },
+    "src/charts/orbital/OrbitalPassProfile.tsx": {
+      "bytes": 13478,
+      "mode": "100644",
+      "sha256": "cfef285bfefe148814c225a07e078a23d454df1e957943be784d4dc5ed84ddf7"
+    },
+    "src/charts/orbital/README.md": {
+      "bytes": 3531,
+      "mode": "100644",
+      "sha256": "9d5147913f9ad36d6efaa07b1b213b8e63e340f1a8016db9c01acbb8bdb3e0b6"
+    },
+    "src/charts/orbital/catalog.ts": {
+      "bytes": 5006,
+      "mode": "100644",
+      "sha256": "bfe6c9cbcf8db2d7c0de3d43879978bca7f5d2bb560011379c6ba648b7d1a668"
+    },
+    "src/charts/orbital/model.ts": {
+      "bytes": 10602,
+      "mode": "100644",
+      "sha256": "480bbba3870d4c6320e71ceb948a9dcdb68638323105d4614ae4eeff8d12d394"
+    },
+    "src/charts/orbital/orbital.css": {
+      "bytes": 7090,
+      "mode": "100644",
+      "sha256": "483e57fb42fac2fe0415e67272646a6100eab5a2e4077971e663fa1519a0d095"
+    },
+    "src/charts/orbital/pass-profile-model.ts": {
+      "bytes": 9629,
+      "mode": "100644",
+      "sha256": "ae32d2a88dfdfa3accd7cd80db4cae2eea53407e03ab86a8219d9171638b7fe9"
+    },
+    "src/charts/orbital/register.ts": {
+      "bytes": 5880,
+      "mode": "100644",
+      "sha256": "c0d52daa5445ac4b79cd18c57caa985cf6d96e6e7b0f0d3de31348ded3afb565"
+    },
+    "src/charts/performance/PerformanceDensity.tsx": {
+      "bytes": 11005,
+      "mode": "100644",
+      "sha256": "ab17da589a1248c6357b0919dc84def453b72a83dfc8861f0f3dcd7398c793c2"
+    },
+    "src/charts/performance/PerformanceEvidence.tsx": {
+      "bytes": 5615,
+      "mode": "100644",
+      "sha256": "68232b0f9bfca2b267565814de815cf6209104e072eaa4675e9020c2b60cb1c9"
+    },
+    "src/charts/performance/PerformanceProfile.tsx": {
+      "bytes": 8902,
+      "mode": "100644",
+      "sha256": "7234523d250a0867c7ca16a5f1c0269849907c4533e47addf716e9a9a40fa59c"
+    },
+    "src/charts/performance/PerformanceTrace.tsx": {
+      "bytes": 9208,
+      "mode": "100644",
+      "sha256": "9233740a669fc9e7eedea47ac14af372b77543194b5a73e63ba11f798c459ae3"
+    },
+    "src/charts/performance/catalog.ts": {
+      "bytes": 4045,
+      "mode": "100644",
+      "sha256": "909a23c18d6eaed9d8b7986ad3c6dcdc01db4d76fc58147a07d93640c1dd6d43"
+    },
+    "src/charts/performance/model.ts": {
+      "bytes": 14728,
+      "mode": "100644",
+      "sha256": "73929722dbcae8b850bf09f7bba239d994c3557b8f858ffdca592c756edf2cbd"
+    },
+    "src/charts/performance/performance.css": {
+      "bytes": 9386,
+      "mode": "100644",
+      "sha256": "d1fa4fc7610d34d89cbe85b9f546636d9112eb2dbb261638e9fe277248934eba"
+    },
+    "src/charts/performance/register.ts": {
+      "bytes": 4538,
+      "mode": "100644",
+      "sha256": "699e3eaacc31df6f0dea7f80cd2cd3f0d06bec6c3bc0c32d1cb91d31cc2c7a2c"
+    },
+    "src/charts/profiling/ProfileCharts.tsx": {
+      "bytes": 17426,
+      "mode": "100644",
+      "sha256": "b5f07d634975e2c4e7d19d4432c82b7becde423d471a981b264d4cd01479e8bd"
+    },
+    "src/charts/profiling/QueryPlan.tsx": {
+      "bytes": 5573,
+      "mode": "100644",
+      "sha256": "9f484029864b98ad2d341a769777afecb1945923592b389e26c2a3da53e433b1"
+    },
+    "src/charts/profiling/profile-charts.css": {
+      "bytes": 5677,
+      "mode": "100644",
+      "sha256": "49d14fb9ffef3d8dd1a75e99dd31a942444f11e3070b65167852afa885563aae"
+    },
+    "src/charts/profiling/profile-model.ts": {
+      "bytes": 19044,
+      "mode": "100644",
+      "sha256": "ad8f828d4df583f63b88b61ff69f2e5025f56dd91fe310490f499c2940f28c35"
+    },
+    "src/charts/profiling/register.ts": {
+      "bytes": 2271,
+      "mode": "100644",
+      "sha256": "3cef216bf8487b8c4f5104d741df9a16d301bf2257584d9de39f54f2505c033a"
+    },
+    "src/charts/register-concept-charts.ts": {
+      "bytes": 1577,
+      "mode": "100644",
+      "sha256": "2ca77f23a665cb9cab509ccea63da9c713fe5cb0ba596e1d9b0904be7db0b431"
+    },
+    "src/charts/register-lab-charts.ts": {
+      "bytes": 280,
+      "mode": "100644",
+      "sha256": "da1c7cab165034adf491f13b6d128a030273644ecbd0e51f8fc4b75e6df79ff6"
+    },
+    "src/charts/shared/inspection.ts": {
+      "bytes": 2442,
+      "mode": "100644",
+      "sha256": "2c3351899e5ebdb4c134b96507d00628dc207f117df0a211c087e998973da870"
+    },
+    "src/charts/spatial/DistributionCharts.tsx": {
+      "bytes": 15256,
+      "mode": "100644",
+      "sha256": "30bd637a577354299337f02cfe9d7918a6665791c9af8c4dea991b5ff68cf71f"
+    },
+    "src/charts/spatial/FieldCharts.tsx": {
+      "bytes": 16233,
+      "mode": "100644",
+      "sha256": "6927b24cb0ef422c1b6d043ad692f788aaa1b4149b88c2edcaa8d4b29bab937c"
+    },
+    "src/charts/spatial/Maps.tsx": {
+      "bytes": 14378,
+      "mode": "100644",
+      "sha256": "491c8b68d1e334eae931d52e33aebe68090700b6cfdf183bc80514fe26bb9862"
+    },
+    "src/charts/spatial/model.ts": {
+      "bytes": 10674,
+      "mode": "100644",
+      "sha256": "909d383069984efc22a1998e8d014246081134166bfe7488078acf0e36f384c5"
+    },
+    "src/charts/spatial/register.ts": {
+      "bytes": 3094,
+      "mode": "100644",
+      "sha256": "750a51de5e696323f81dd29afc8f0ef65ebefd71f65960fb18530e5472129e13"
+    },
+    "src/charts/spatial/shared.tsx": {
+      "bytes": 1529,
+      "mode": "100644",
+      "sha256": "40b4b21bb8042a0820973083c8a13415e59269ad793736020b343ca3f2e1a903"
+    },
+    "src/charts/spatial/spatial.css": {
+      "bytes": 4073,
+      "mode": "100644",
+      "sha256": "1d4f46b7b193accf53e7c1be3465ae3e3f52f2976f166df55461705f65b87cf2"
+    },
+    "src/charts/wafer/WaferCharts.tsx": {
+      "bytes": 19107,
+      "mode": "100644",
+      "sha256": "68f02922156313e78ab6d6bf7111ae80040d1b2ce32be01ef0d5003dc2101865"
+    },
+    "src/charts/wafer/WaferMap.tsx": {
+      "bytes": 19698,
+      "mode": "100644",
+      "sha256": "87f0d0fff0aaed1d383f5285cb90af216dad32c3bd980204580c10260c8dd5ea"
+    },
+    "src/charts/wafer/WaferTransect.tsx": {
+      "bytes": 12796,
+      "mode": "100644",
+      "sha256": "270cc4509c09c546b9fa96189c9cfd6a93dca9c124dba3d93f8745ee9eeffe87"
+    },
+    "src/charts/wafer/catalog.ts": {
+      "bytes": 5614,
+      "mode": "100644",
+      "sha256": "0d527df5275250df8c442b1fdaab0d0d17127897d6c4e0fb02203335c83d4c65"
+    },
+    "src/charts/wafer/model.ts": {
+      "bytes": 21787,
+      "mode": "100644",
+      "sha256": "9e8b7f11615f0f2b9811fc56a0f2785d94e4501bc888c09a9d0ebe49108fc364"
+    },
+    "src/charts/wafer/register.ts": {
+      "bytes": 8214,
+      "mode": "100644",
+      "sha256": "b654c536f77137d3f6c02b69b9d7ad6175ff2ff8938150bbe977ff37187faed6"
+    },
+    "src/charts/wafer/wafer.css": {
+      "bytes": 6538,
+      "mode": "100644",
+      "sha256": "83d0733e37a1878d6f49c204dbfec5692f3c8bd83d91dd6dc7989c7b7f8f9faf"
+    },
+    "src/components/DashboardNavigation.css": {
+      "bytes": 3695,
+      "mode": "100644",
+      "sha256": "c6eeb442593e5cf0b190c3a39f397be8f948e6f62dfc8a4e240933153aff9bd9"
+    },
+    "src/components/DashboardNavigation.tsx": {
+      "bytes": 3158,
+      "mode": "100644",
+      "sha256": "40316638411c045d9710103b19513b84724f92e9a3e62ce7588d05e6aaa6181b"
+    },
+    "src/components/ExactData.tsx": {
+      "bytes": 1251,
+      "mode": "100644",
+      "sha256": "b7b9d77693735f976cc0f3afe20ef629b9b9faa9c1ed8f3ec11ae2e1c785b7fa"
+    },
+    "src/components/ObservationBar.tsx": {
+      "bytes": 1505,
+      "mode": "100644",
+      "sha256": "24177fe15f9a92d8cb56178b5b339cf20e45022bde438e6cfdcd1eee431ec63d"
+    },
+    "src/components/Panel.tsx": {
+      "bytes": 498,
+      "mode": "100644",
+      "sha256": "2fe921dcf5dc426e6ee331db7a0611ad95bf2354c22a13648000a68dc4297e75"
+    },
+    "src/components/RegionalLatency.module.css": {
+      "bytes": 5155,
+      "mode": "100644",
+      "sha256": "85db518d1f8ae8530c8fdd06fe9caf6864b72842459d55fce4166c98ca220ed1"
+    },
+    "src/components/RegionalLatency.tsx": {
+      "bytes": 8270,
+      "mode": "100644",
+      "sha256": "5058f5036cef1a1ee8c83d006a672a163124ec445d8eb1b21fe898da665b09bc"
+    },
+    "src/components/lab/DomainPrimitives.css": {
+      "bytes": 8058,
+      "mode": "100644",
+      "sha256": "de6be11a47f3d8b7f9564160f7c6a5bc19bf4d0fd8f522015526403428cb5b4f"
+    },
+    "src/components/lab/DomainPrimitives.tsx": {
+      "bytes": 4590,
+      "mode": "100644",
+      "sha256": "1793cb00e0a91bebd34bc366a7b044808a6fd4a2221c9252044bda9420842ad7"
+    },
+    "src/components/lab/StudyPrimitives.css": {
+      "bytes": 5375,
+      "mode": "100644",
+      "sha256": "705327768e9009aaf88f4d30206fffaa4eb58a77b50b6a47c2050b7862bc07ca"
+    },
+    "src/components/lab/StudyPrimitives.tsx": {
+      "bytes": 7308,
+      "mode": "100644",
+      "sha256": "ca16c3772c484cfa2f1619b879e5dd019898fcadf9165d8205b05937ec14e54f"
+    },
+    "src/components/lab/domain-widget.ts": {
+      "bytes": 783,
+      "mode": "100644",
+      "sha256": "16849feb66d1aaa98849871343805ee38b90667d9c613a5bbfd0546468183237"
+    },
+    "src/components/lab/motion.tsx": {
+      "bytes": 3406,
+      "mode": "100644",
+      "sha256": "e47641e8f860f77923fc2d0b48fa16725fe9c91c7e42cdbee7043e16b79d8153"
+    },
+    "src/data/chart-adapter.ts": {
+      "bytes": 2712,
+      "mode": "100644",
+      "sha256": "b95515954084f638d0972668ecbeaad0945c02b22405d2f74f34837021836ba4"
+    },
+    "src/data/edge-telemetry.ts": {
+      "bytes": 15376,
+      "mode": "100644",
+      "sha256": "7d718b85364f8e0c116906d686ef1874e707edfb5cbad1b6459db15fd64cba59"
+    },
+    "src/data/reliability.ts": {
+      "bytes": 13381,
+      "mode": "100644",
+      "sha256": "d12ed0b8156161d3fb946f443f9f3c33d455d7e3ca79dab3b2fa54e91146b2a0"
+    },
+    "src/data/telemetry.ts": {
+      "bytes": 15631,
+      "mode": "100644",
+      "sha256": "20aabf2697aabceda98daa63f50c34f11d04810c58c018087492f0f2f556a2a5"
+    },
+    "src/editor/FieldMapping.tsx": {
+      "bytes": 5802,
+      "mode": "100644",
+      "sha256": "7bc3f50b47b051d26b8c720adc21e9944d88ff4c774e7d19c36d25abf45f2dee"
+    },
+    "src/editor/WidgetEditor.css": {
+      "bytes": 16924,
+      "mode": "100644",
+      "sha256": "a01f37fadbb74ac3a484c0920b6b0786f03599fb101397d8b87e86fd7a06fbde"
+    },
+    "src/editor/WidgetEditor.tsx": {
+      "bytes": 25341,
+      "mode": "100644",
+      "sha256": "289c707799af640db945ddbcdbdecb698fe222ce23c75f68166121db05f83f43"
+    },
+    "src/editor/editor-model.ts": {
+      "bytes": 7917,
+      "mode": "100644",
+      "sha256": "9365ab88036aeef36a1b165546cdc8b7a730cd15b8889ae015941f5182165afd"
+    },
+    "src/editor/field-bindings.ts": {
+      "bytes": 3375,
+      "mode": "100644",
+      "sha256": "86973a7ab7bc621a01175c5b8d1defe86b57b1928d3da996c572f93acae6f6b7"
+    },
+    "src/format.ts": {
+      "bytes": 1234,
+      "mode": "100644",
+      "sha256": "bc291d2ec6f4064e0c4d28d4f46b3da036daa9afbe9388b036dd9722493da7f7"
+    },
+    "src/lenses/FinanceLens.css": {
+      "bytes": 14248,
+      "mode": "100644",
+      "sha256": "6d0a5494a90b4294ae92b0b7872845f11c3bca107c91e2b86be1d0d2ab7be84d"
+    },
+    "src/lenses/FinanceLens.tsx": {
+      "bytes": 21101,
+      "mode": "100644",
+      "sha256": "5924dfa4699c6594cd7581848b670fc491a3be6b0f9cfe941a90d9c3ee33770e"
+    },
+    "src/lenses/GridOperationsLens.css": {
+      "bytes": 9003,
+      "mode": "100644",
+      "sha256": "676fbf94fde7a04337310ae73d2994d4d81ef1bbbbcacd4cfe721d92efbb672c"
+    },
+    "src/lenses/GridOperationsLens.tsx": {
+      "bytes": 7510,
+      "mode": "100644",
+      "sha256": "c987ba93fec9cbbb35863c2ab36ec2ff3162f45e011a79ea13cf13851320b799"
+    },
+    "src/lenses/IncidentRoomLens.css": {
+      "bytes": 11251,
+      "mode": "100644",
+      "sha256": "a681bafcc8d6ae965b66e2e6963977254c4d67c7534c2e767d7d920077df8276"
+    },
+    "src/lenses/IncidentRoomLens.tsx": {
+      "bytes": 10112,
+      "mode": "100644",
+      "sha256": "dc72a275c9df09ba5b98531e7fb58762cfb7c49178e67d9b99d1463dff84b77f"
+    },
+    "src/lenses/InferenceFleetLens.css": {
+      "bytes": 6595,
+      "mode": "100644",
+      "sha256": "db8689ea4b9b9c69607df1a710315bb60a2bf86192bc0f2939115c8a55a111ab"
+    },
+    "src/lenses/InferenceFleetLens.tsx": {
+      "bytes": 15751,
+      "mode": "100644",
+      "sha256": "61664de2023d4fd12bfc3810210de2a7f2bc52258109f55609b1fceb61ae0e03"
+    },
+    "src/lenses/LensStudio.css": {
+      "bytes": 1574,
+      "mode": "100644",
+      "sha256": "511f1a04db85c7397c034dddc9d48e376205f3b1654792af23b2a2ee221fe51f"
+    },
+    "src/lenses/LensStudio.tsx": {
+      "bytes": 6750,
+      "mode": "100644",
+      "sha256": "81f2756103019b9ea763341e841b0608b84a278ead3bdd6eee40e38863e3c765"
+    },
+    "src/lenses/MarketRiskLens.css": {
+      "bytes": 10259,
+      "mode": "100644",
+      "sha256": "49358e3654797b2cdc46505ec30662a8e3c2fe090a48b5bb922d49fa14afb06e"
+    },
+    "src/lenses/MarketRiskLens.tsx": {
+      "bytes": 9996,
+      "mode": "100644",
+      "sha256": "19d9e1a3d496e50a0809d872a7367a71c9f25e6128c0ad64419e2cb76fd06b7a"
+    },
+    "src/lenses/OperationsLenses.css": {
+      "bytes": 9235,
+      "mode": "100644",
+      "sha256": "efddafa22eeac8c32f14c0a5b8960c55945fc75663cb2e8b27b080ab317bd1b3"
+    },
+    "src/lenses/OperationsLenses.tsx": {
+      "bytes": 6558,
+      "mode": "100644",
+      "sha256": "71df16f1f55fe273c26bbace8f91213b0caff33fb7dc2de21f0620c07b3ed0ba"
+    },
+    "src/lenses/analytics/AnalyticsLenses.tsx": {
+      "bytes": 17706,
+      "mode": "100644",
+      "sha256": "187159f8c8b4d64e2657b7f6325da5e22e7cf40330c4a7443abdfdd2c3e2670f"
+    },
+    "src/lenses/analytics/analytics-data.ts": {
+      "bytes": 9972,
+      "mode": "100644",
+      "sha256": "39c57c465259693676dbdc69e68566adce77c47021bbe930a789f706abdf6b61"
+    },
+    "src/lenses/analytics/analytics-lenses.css": {
+      "bytes": 8166,
+      "mode": "100644",
+      "sha256": "be996422553d6056cf58c87c2d6b9b7e5e6e811a2e8a20fbadb2a5a0573e0196"
+    },
+    "src/lenses/clinical/TrialEvidenceLens.tsx": {
+      "bytes": 5330,
+      "mode": "100644",
+      "sha256": "663ce3531820d4bdbe8c7feb3bc9cd5e674c9751d9bc5effa035562ee05a675e"
+    },
+    "src/lenses/clinical/clinical-lens.css": {
+      "bytes": 1672,
+      "mode": "100644",
+      "sha256": "04c4509e687188914bd8b9bc4a85d38c27ccb640370c8cb023d7d7f926030fb3"
+    },
+    "src/lenses/clinical/fixtures.ts": {
+      "bytes": 8133,
+      "mode": "100644",
+      "sha256": "d40fbace68f51fe6a48df4c598615dd4f7d19c2e74abd4bbebac09010f8323b7"
+    },
+    "src/lenses/distributed/DistributedSystemsLens.tsx": {
+      "bytes": 15963,
+      "mode": "100644",
+      "sha256": "34f3075f5e310361dff93c7e5824e8dd31ec3c9a0b8602d32e72e6c068602acc"
+    },
+    "src/lenses/distributed/distributed-lens.css": {
+      "bytes": 4745,
+      "mode": "100644",
+      "sha256": "70b54dfeaa05069b3a49cdade8d4c58140e883e9c26ac7fc11c626007dc13e89"
+    },
+    "src/lenses/distributed/fixtures.ts": {
+      "bytes": 10273,
+      "mode": "100644",
+      "sha256": "b0da2a4227b4e151ed13f32a13c8404e85f330d3925669aec45c19fb9d751ae2"
+    },
+    "src/lenses/energy/GridBalanceLens.tsx": {
+      "bytes": 6298,
+      "mode": "100644",
+      "sha256": "4f8ab7d869a27e3f7cb47d64f96a5fd37a6befaaf07024770aef039bfe5fe3e5"
+    },
+    "src/lenses/energy/fixtures.ts": {
+      "bytes": 9999,
+      "mode": "100644",
+      "sha256": "f8f3b06392fa584c6ecf83826b5a888a27eecfadfb2887be98ddfe63d8d8170a"
+    },
+    "src/lenses/exploration/MaterialsLabLens.tsx": {
+      "bytes": 11434,
+      "mode": "100644",
+      "sha256": "fc4a06cf3b1fba31986ac200c07adda90950c4c31b681e47b1ba0bc48d994cac"
+    },
+    "src/lenses/exploration/ProductionPlannerLens.tsx": {
+      "bytes": 8116,
+      "mode": "100644",
+      "sha256": "362edc6414bc9497ac3a2149c45ed8a956c22d1b8d0a255e2ca4cea0b5ccd9de"
+    },
+    "src/lenses/exploration/Shared.tsx": {
+      "bytes": 2309,
+      "mode": "100644",
+      "sha256": "f7f1a2882bb00461afe487f976e14d1068c5ca98118e72ee9b72cf4f8c52c855"
+    },
+    "src/lenses/exploration/ThreatHuntLens.tsx": {
+      "bytes": 6995,
+      "mode": "100644",
+      "sha256": "67f219681f1f020d2cadfade9f866da3bfe5a3313d9ee3df2d54824351ca7308"
+    },
+    "src/lenses/exploration/data.ts": {
+      "bytes": 7035,
+      "mode": "100644",
+      "sha256": "83d5e6f434f4889fd867089c5a3535d1142f9bcac21f33a9d6bfdca6f9a8dcad"
+    },
+    "src/lenses/exploration/index.ts": {
+      "bytes": 171,
+      "mode": "100644",
+      "sha256": "fc2d3e4ffe1f9d3b9873bb40eff00d8a30d9c8608fe4cca0be1d21db712993cc"
+    },
+    "src/lenses/exploration/lenses.css": {
+      "bytes": 11949,
+      "mode": "100644",
+      "sha256": "36a12563e775c27cbf4fdd0e40e076107feaf1795f597deb24b11c01e2d7da9d"
+    },
+    "src/lenses/finance-data.ts": {
+      "bytes": 9930,
+      "mode": "100644",
+      "sha256": "cd87f37a662d46dd986253d46899a5400f6b8f3b0624b42e30f9ba316c795ec8"
+    },
+    "src/lenses/grid-operations-data.ts": {
+      "bytes": 10512,
+      "mode": "100644",
+      "sha256": "8e8ab745c3192faa57e9574b8bcf12a4310caa69de55b16e4332fefb38c78483"
+    },
+    "src/lenses/incident-room-data.ts": {
+      "bytes": 8584,
+      "mode": "100644",
+      "sha256": "b431956d5f814529cfcbb8c5fa5b7f889b3c14f56700998ffd86762cde82cf39"
+    },
+    "src/lenses/inference-fleet-data.ts": {
+      "bytes": 13435,
+      "mode": "100644",
+      "sha256": "cab80081ac0c0af5d589aca693bd864e939365700f6018ce6d9a469e5080efa8"
+    },
+    "src/lenses/kubernetes/KubernetesFleetLens.tsx": {
+      "bytes": 11997,
+      "mode": "100644",
+      "sha256": "72243f14f93944b298dae326548d33590a30eb01071aa855a642593acd60de24"
+    },
+    "src/lenses/kubernetes/fixtures.ts": {
+      "bytes": 10862,
+      "mode": "100644",
+      "sha256": "18e5c7cdcab87e8711dd696c42a240c0f645294efe494911016cdf7564c57a99"
+    },
+    "src/lenses/kubernetes/kubernetes-lens.css": {
+      "bytes": 4993,
+      "mode": "100644",
+      "sha256": "c9eccd3ae06bb32ac790ae48a31902cd14bab0b3895cda8431f9353bfe5ecfca"
+    },
+    "src/lenses/lens-routes.ts": {
+      "bytes": 1835,
+      "mode": "100644",
+      "sha256": "2a24d6fb00574515812830e2f62610a644d8da66151cddb60de349514bb06be5"
+    },
+    "src/lenses/market-risk-data.ts": {
+      "bytes": 13395,
+      "mode": "100644",
+      "sha256": "b6152322cc226171336e073df3c6e7565091adc5083949909f644afd1a587705"
+    },
+    "src/lenses/operations-data.ts": {
+      "bytes": 12309,
+      "mode": "100644",
+      "sha256": "133695f8279cd711c83ddea349e8b5e640a5042fa24342e4a473b56a4e0a9b58"
+    },
+    "src/lenses/orbital/OrbitalContactLens.tsx": {
+      "bytes": 6387,
+      "mode": "100644",
+      "sha256": "6cf1e76db819999b8fafd6f9770957a84c6a4938b47fc795024a9f515ae328e3"
+    },
+    "src/lenses/orbital/fixtures.ts": {
+      "bytes": 6092,
+      "mode": "100644",
+      "sha256": "fb8435b9c109bc1e310c5d8ef722095e855d6fdb2e13d9a38167757bcab430d7"
+    },
+    "src/lenses/orbital/orbital-lens.css": {
+      "bytes": 1377,
+      "mode": "100644",
+      "sha256": "b2a680bad1badd309ed98e68282c68502a80fd86b5f1549105a5ca93eac1bc15"
+    },
+    "src/lenses/performance/PerformanceWorkbenchLens.tsx": {
+      "bytes": 11525,
+      "mode": "100644",
+      "sha256": "41016b448246747c8be94c8b3037df9c3fb9aaf72f111d3f77d940ee9c538c56"
+    },
+    "src/lenses/performance/fixtures.ts": {
+      "bytes": 13516,
+      "mode": "100644",
+      "sha256": "357a26dea29661eb6169017acdc1fc8cf36547941d72fbd900fde59416e4f3b3"
+    },
+    "src/lenses/profiling/QueryAtlasLens.css": {
+      "bytes": 7633,
+      "mode": "100644",
+      "sha256": "ea15e5197dd144d4d76abfaa7569a776d6d910917ca15cfb758b6511e66f0b36"
+    },
+    "src/lenses/profiling/QueryAtlasLens.tsx": {
+      "bytes": 12172,
+      "mode": "100644",
+      "sha256": "e4adf600f1962ef89fd09bc04fd2a386c3437c1256cf7e4a127c457ebc38c135"
+    },
+    "src/lenses/profiling/profile-fixtures.ts": {
+      "bytes": 11563,
+      "mode": "100644",
+      "sha256": "d7295a23f456d0872deeb361d0e14d2df1e1575039b61c9cae96994fa34dadba"
+    },
+    "src/lenses/spatial/SpatialLenses.tsx": {
+      "bytes": 13545,
+      "mode": "100644",
+      "sha256": "2a57ff770388c620789444cc74e69333ee5e67f5dac67f3b47b36badd9f12557"
+    },
+    "src/lenses/spatial/fixtures.ts": {
+      "bytes": 9926,
+      "mode": "100644",
+      "sha256": "bd34515b95922f7d82d8a844a6d71dfc03fc31528eabe6c54a682c455adc3a46"
+    },
+    "src/lenses/spatial/spatial-lenses.css": {
+      "bytes": 6537,
+      "mode": "100644",
+      "sha256": "5dcdf8d824889273cc52e541338682f755ffe357d412690428cfdcbbaf34ffc1"
+    },
+    "src/lenses/wafer/WaferIntelligenceLens.tsx": {
+      "bytes": 5492,
+      "mode": "100644",
+      "sha256": "37c1da9d677f7d5c389142335df04f66cdf58b3ee9c4f2a9b39d46b6dd96562f"
+    },
+    "src/lenses/wafer/fixtures.ts": {
+      "bytes": 7919,
+      "mode": "100644",
+      "sha256": "e7a8ba87d49595bae5901e11a3cdb81ea4b499e0034b06a17842e3faa7589f67"
+    },
+    "src/lenses/wafer/wafer-lens.css": {
+      "bytes": 1973,
+      "mode": "100644",
+      "sha256": "f22852eb93026134c478eb26fc7f79fcfb7fe414a9a6a4ab1cce17461ae30c69"
+    },
+    "src/main.tsx": {
+      "bytes": 223,
+      "mode": "100644",
+      "sha256": "81df18e0d166e771fab98938d62cf02d971bc58c08bb368bb1d035a45b3b06ca"
+    },
+    "src/observatory.css": {
+      "bytes": 9103,
+      "mode": "100644",
+      "sha256": "39a500636cbfdce692593b2dc3d395fff5833f07267622b16c18c89a7b5ad1d0"
+    },
+    "src/reference/EdgeSupporting.css": {
+      "bytes": 8397,
+      "mode": "100644",
+      "sha256": "153efe8b78789afcefa4efdceec64064ac6b71321e9c17fbbb8f1201a28ba4ed"
+    },
+    "src/reference/EdgeSupporting.tsx": {
+      "bytes": 12742,
+      "mode": "100644",
+      "sha256": "02036bc65e6f544a846625a413cc8ad81ddcec29d4d6006b6b090cdcf9d44167"
+    },
+    "src/reference/ReferenceCharts.css": {
+      "bytes": 10451,
+      "mode": "100644",
+      "sha256": "53eb3f79fc03032a15d403ffeff7e2e00edb800ed6e2cd134b3f8e5055a48232"
+    },
+    "src/reference/ReferenceCharts.tsx": {
+      "bytes": 23709,
+      "mode": "100644",
+      "sha256": "b3af79a2aa9c289ea70afce9066ef51cc42d4aee43f4d9443b0790c690fcf069"
+    },
+    "src/reference/ReferenceCompare.css": {
+      "bytes": 2294,
+      "mode": "100644",
+      "sha256": "b4cd9eedf2a1050a36409432ed06725a638737cf842690ff7570a3f27e72f12b"
+    },
+    "src/reference/ReferenceCompare.tsx": {
+      "bytes": 2801,
+      "mode": "100644",
+      "sha256": "9e4c8a5b3584d651ee684a5f643d1e0c3ed737cb8f52a2ffa30b993285b21871"
+    },
+    "src/reference/ReferenceEdge.css": {
+      "bytes": 5798,
+      "mode": "100644",
+      "sha256": "5e9b6d3b4be710ae63faf3694e503ce482d1bd684190127bdcaae06802131ba2"
+    },
+    "src/reference/ReferenceEdge.tsx": {
+      "bytes": 7782,
+      "mode": "100644",
+      "sha256": "ea367d3fccf771b10e3d501c909bc0e6354898fdd93f8ed503b5d15410f21866"
+    },
+    "src/reference/ReferenceReliability.css": {
+      "bytes": 16779,
+      "mode": "100644",
+      "sha256": "50f85621da3c657dbae9d5ae67b208b218c73ce8f576b6131ef8ff992b796131"
+    },
+    "src/reference/ReferenceReliability.tsx": {
+      "bytes": 25358,
+      "mode": "100644",
+      "sha256": "12918c596d1511b2d33996bae4c6c34f7a2473fe8a5b88ee11c594f1202b0cb7"
+    },
+    "src/reference/ReferenceShared.tsx": {
+      "bytes": 4028,
+      "mode": "100644",
+      "sha256": "55f829e3e3bf12863ba0e08ccc7ce266e805d24ca34db88adf3da3aeda8bb412"
+    },
+    "src/reference/ReferenceStudio.tsx": {
+      "bytes": 9779,
+      "mode": "100644",
+      "sha256": "c53c29a82034029d39b187dc12a70a4722ee0cd92708fef0b537c67beb50a4a7"
+    },
+    "src/reference/edge-geography-fixture.ts": {
+      "bytes": 4242,
+      "mode": "100644",
+      "sha256": "78b15811b35dbc60063e9b4f54dd4a4643449fe1fa852ab6802a4b45accd37f6"
+    },
+    "src/reference/edge-supporting-layout.ts": {
+      "bytes": 1166,
+      "mode": "100644",
+      "sha256": "683d635c1e98d29908077845b5317268b6e4acce986f062e9c0e914add35c099"
+    },
+    "src/reference/reference-base.css": {
+      "bytes": 9968,
+      "mode": "100644",
+      "sha256": "e9849aa094cd9e27af0711ddfbad32902e531d54684ea01658d79c659f9d64d5"
+    },
+    "src/reference/reference-chart-layout.ts": {
+      "bytes": 2225,
+      "mode": "100644",
+      "sha256": "1f63df1efc14ad55441532c48296fc0609a89e3c8ee5a992ad920b6fde2f94d7"
+    },
+    "src/reference/reference-mini-profiles.ts": {
+      "bytes": 7506,
+      "mode": "100644",
+      "sha256": "e11f7ced6349bf9136c48675a3721fa1bdf4af30377d92bac82b7889bd0e48e3"
+    },
+    "src/reference/reference-profiles.ts": {
+      "bytes": 9507,
+      "mode": "100644",
+      "sha256": "4811484edd0ba0a980c7351f11b9fb4f71f33dbfb9c38128321cac25ea3cdd01"
+    },
+    "src/reference/reference-reliability-profiles.ts": {
+      "bytes": 4823,
+      "mode": "100644",
+      "sha256": "910fdf9fd8ee17833c284d69cd63d7fbceeb9111f0bf4a47994b2eeb3c90b669"
+    },
+    "src/reference/reference-responsive.css": {
+      "bytes": 25354,
+      "mode": "100644",
+      "sha256": "d7a1594c026705ad5577e1894a6d0c5ac746c80fed9716753e40427df0ca5456"
+    },
+    "src/reference/reference-timeline-profile.ts": {
+      "bytes": 5234,
+      "mode": "100644",
+      "sha256": "afd6a740962aa70827dbd679059e527434ab37fc4c64a1152b4a5873cfb20fa0"
+    },
+    "src/reference/world-geometry.ts": {
+      "bytes": 131360,
+      "mode": "100644",
+      "sha256": "ddb292397408197def740af78a46d3a9a20457cae8478f54924db53d29631726"
+    },
+    "src/studies/EdgeWatch.module.css": {
+      "bytes": 11659,
+      "mode": "100644",
+      "sha256": "9d489b570ef79f1ac6272e1f67a357994d3aea8965ac2e15624c641d2d873448"
+    },
+    "src/studies/EdgeWatch.tsx": {
+      "bytes": 20551,
+      "mode": "100644",
+      "sha256": "7eed19ac920dfeb194728fb775d43ab3f9b5cbad50419830a20e53dca0337bd2"
+    },
+    "src/studies/ReliabilityRoom.module.css": {
+      "bytes": 15090,
+      "mode": "100644",
+      "sha256": "7713033f93f3e0b324f5f10a47ab54083d2144b3d40e10440cfb30be411a1ba5"
+    },
+    "src/studies/ReliabilityRoom.tsx": {
+      "bytes": 26404,
+      "mode": "100644",
+      "sha256": "781f0d7a6f702c1fb105cd9f130efde5dfa9c42271fd1af8daebc21afc0aa9a8"
+    },
+    "src/styles.css": {
+      "bytes": 12976,
+      "mode": "100644",
+      "sha256": "ea1e7516ff831718fc4c3858985f43e0200b5a9f1fabdfc8dababf08364091b8"
+    },
+    "src/vendor/paprika/DESIGN.md": {
+      "bytes": 7759,
+      "mode": "100644",
+      "sha256": "1b1800ce1b58ee7c89f245f7e2de7c2ef00456ab95b5fa94f18e08e3d88590b3"
+    },
+    "src/vendor/paprika/LICENSE": {
+      "bytes": 11357,
+      "mode": "100644",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "src/vendor/paprika/PROVENANCE.json": {
+      "bytes": 27365,
+      "mode": "100644",
+      "sha256": "5521e108c4abe3cd0dcbd57e5dbc3060119eb6f8013db7fdd0a2045e81d43d80"
+    },
+    "src/vendor/paprika/docs/design/insights/UX-CONTRACT.md": {
+      "bytes": 6408,
+      "mode": "100644",
+      "sha256": "7fc0aa207e806b51ab640840fda0a239c721a53d04fd04b1e66d1e44277ea2f2"
+    },
+    "src/vendor/paprika/docs/design/insights/gamma-source-catalogue.json": {
+      "bytes": 38467,
+      "mode": "100644",
+      "sha256": "d7b88943f8c7fc8586720574e12174d49aa0a5214bd25e8429ccbff4bd8ad4bc"
+    },
+    "src/vendor/paprika/ui/src/features/insights/appearance.ts": {
+      "bytes": 1347,
+      "mode": "100644",
+      "sha256": "4a8dd9ed160c41fedc46cb51b64357ef3d062d5d16088f69cc93934445f88046"
+    },
+    "src/vendor/paprika/ui/src/features/insights/chart-cursor.tsx": {
+      "bytes": 2059,
+      "mode": "100644",
+      "sha256": "6ed93b0d324f0c5c83746a28200b561cfead37dbaaa105e933fe32a19087f8ed"
+    },
+    "src/vendor/paprika/ui/src/features/insights/chart-data.ts": {
+      "bytes": 7197,
+      "mode": "100644",
+      "sha256": "e862e33394c0cf20bbb2b4ecf3bfe3684fb82675a9f4de09715fad1294c75e0e"
+    },
+    "src/vendor/paprika/ui/src/features/insights/chart-presentation.ts": {
+      "bytes": 2954,
+      "mode": "100644",
+      "sha256": "f8de29f8463a1ca3d58346cb52c9294455200607fb5a0285e3fe8bc0bb3ed36c"
+    },
+    "src/vendor/paprika/ui/src/features/insights/chart-renderers.tsx": {
+      "bytes": 81891,
+      "mode": "100644",
+      "sha256": "c0affb0c86d0862a1b0a79004fdbbc47450382689eeb5227fec908d0207dae8b"
+    },
+    "src/vendor/paprika/ui/src/features/insights/chart-styles.module.css": {
+      "bytes": 18960,
+      "mode": "100644",
+      "sha256": "3c483dd248268aab57ad6bb1faafd53177d56a566cd8297d39451b530cddbfda"
+    },
+    "src/vendor/paprika/ui/src/features/insights/charts.module.css": {
+      "bytes": 8638,
+      "mode": "100644",
+      "sha256": "ea7004c201229df7f4a6fbd19f574349985a019d0c7e46c5abf4b60da2a7c63b"
+    },
+    "src/vendor/paprika/ui/src/features/insights/charts.tsx": {
+      "bytes": 5147,
+      "mode": "100644",
+      "sha256": "c69e3b5c731ae63a72a788717abbd82d0f3384031a447c3799f8274f1a2107f7"
+    },
+    "src/vendor/paprika/ui/src/features/insights/drilldown.ts": {
+      "bytes": 10484,
+      "mode": "100644",
+      "sha256": "2650703789c0749e89a5a90f1ca3781b5569685676b572b069430bacaeb1b1ca"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/README.md": {
+      "bytes": 8354,
+      "mode": "100644",
+      "sha256": "874296affe5cf742bc0221b9cf5d25c5fb193d1d0856e6412a2b6a0ad427c370"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/button.tsx": {
+      "bytes": 1338,
+      "mode": "100644",
+      "sha256": "681d155b52dd84102e64958b48a4fdc7a27178a0a6f8ce824f8274ffabd7e93d"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/controls.module.css": {
+      "bytes": 10245,
+      "mode": "100644",
+      "sha256": "927de3f6e12ce7b739e56207b59b749ad81f90371cc3778f452c49b396906301"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/gamma-theme.module.css": {
+      "bytes": 4005,
+      "mode": "100644",
+      "sha256": "e0b40a21ef8b2a85f4edb3c134ffdbc10328916bdd79ea62d2de08026ac0e2a8"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/gamma.module.css": {
+      "bytes": 9956,
+      "mode": "100644",
+      "sha256": "ffc641d60dd2ba915b4534e693e7adb586bf749f329420ca7c2188892a2c4b94"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/inherit-theme.ts": {
+      "bytes": 996,
+      "mode": "100644",
+      "sha256": "bbdabd8dccaeb64f6ea9969f21e7a6635cf8889b6dcdda848b7476272b21091a"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/input.tsx": {
+      "bytes": 1110,
+      "mode": "100644",
+      "sha256": "44c2cecb4bd67be4e49b679cf562e5d57074df4896e6f84349dd539b4e26dd46"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/native-control-disabled.ts": {
+      "bytes": 621,
+      "mode": "100644",
+      "sha256": "9408ea5b15db6c79eedabe3af1ba276af5eb62396a9eb5d250bf89b6c770a73b"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/scroll-lock.ts": {
+      "bytes": 583,
+      "mode": "100644",
+      "sha256": "794034c9080f49df17eace4788e7446b7a47442f7056a7c725d95c2b7c99fdcf"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/select.tsx": {
+      "bytes": 12279,
+      "mode": "100644",
+      "sha256": "30fbea2b41c11e34026576d66b83e3fe03a06a2aee24e5efe9d2cadc739c0dce"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/switch.tsx": {
+      "bytes": 739,
+      "mode": "100644",
+      "sha256": "0e3073f8af97081ad6cfd6c0a3cd4a719d77cbc042a4dc6b67da54993c084edf"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/tabs.tsx": {
+      "bytes": 1935,
+      "mode": "100644",
+      "sha256": "7cca238b3121d8460222843e7b7403c8eb839eca62a0d492885c551f241f3acf"
+    },
+    "src/vendor/paprika/ui/src/features/insights/gamma/use-floating-panel.ts": {
+      "bytes": 3935,
+      "mode": "100644",
+      "sha256": "7742667a9a31d37c1ec4a5d6c35bd9e3564deec873a9de1d2b406830e39b097b"
+    },
+    "src/vendor/paprika/ui/src/features/insights/insights-theme.tsx": {
+      "bytes": 2614,
+      "mode": "100644",
+      "sha256": "43ec1325ba88d74ef9be52ea50b76032c6f555fa70933589afaf32ea44da997a"
+    },
+    "src/vendor/paprika/ui/src/features/insights/observation-inspector-data.ts": {
+      "bytes": 5406,
+      "mode": "100644",
+      "sha256": "c59719f84d6c4f5e288717db632101b258bad2c37a4ea1130c133c065031e352"
+    },
+    "src/vendor/paprika/ui/src/features/insights/observation-inspector.tsx": {
+      "bytes": 8875,
+      "mode": "100644",
+      "sha256": "736b6a52d8a4b5ad60aca38c474d0ce194a7e14ac152e12ab6c166f9c9cb77e8"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plot-tooltip.tsx": {
+      "bytes": 10667,
+      "mode": "100644",
+      "sha256": "60db84957d895d160410f46d2985d6ebfd29ac8ef0b01b2383e0ba6cd22634ff"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/capacity-meter.module.css": {
+      "bytes": 8259,
+      "mode": "100644",
+      "sha256": "a17f45cc8be26bbb2c2f1bfa4a01a528a45ee2adc6bb6dbfeab923fe3476d4d8"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/metric-distributions.tsx": {
+      "bytes": 5789,
+      "mode": "100644",
+      "sha256": "ce9f58380c3056bbb2595d265378d45fa9261bec8f18b99dbed87cef3a0b8d54"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/operational-records-data.ts": {
+      "bytes": 14464,
+      "mode": "100644",
+      "sha256": "d91377090d9294f55c1fbd6605cc7f319d901153322cafb7270f286c1df01660"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/operational-records.module.css": {
+      "bytes": 8624,
+      "mode": "100644",
+      "sha256": "0694eb88b9c4858143cd623963de129cc00bfdfcaf941f497d30d34c8d7539bb"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/operational-records.tsx": {
+      "bytes": 19484,
+      "mode": "100644",
+      "sha256": "3032014f4ef259e52a1b42b972acc3eed9708cd339a3ae394c93e0629e014526"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/record-charts.tsx": {
+      "bytes": 10522,
+      "mode": "100644",
+      "sha256": "ce9b55e63b9b67f2caf584010bb870d3a74e89f69f0b3fbc4c3626e1136b6729"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/record-table-cells.tsx": {
+      "bytes": 7461,
+      "mode": "100644",
+      "sha256": "67d4c3cdaa02a064135e543ac81ef32a36940f4c54747017fa08a2e8a4412ac3"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/records.module.css": {
+      "bytes": 6148,
+      "mode": "100644",
+      "sha256": "1fd48eacf5e820243039a64f6c2651b5b0b371b4336c1a5ec201bec59f9d6b5d"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/records.tsx": {
+      "bytes": 21054,
+      "mode": "100644",
+      "sha256": "3efa1fc7435067619061d75202e4fc02924f9056dc8b83536f7932bda8d00a79"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics-data.ts": {
+      "bytes": 11131,
+      "mode": "100644",
+      "sha256": "cd1d89add7cc5e38f95e26d54522410affff394b5e108c82a7a04b87df5cde0e"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.module.css": {
+      "bytes": 5373,
+      "mode": "100644",
+      "sha256": "c3c0621856601213600116107fc643a661a2253a4b84bc4606f4eff1cc999773"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/rich-metrics.tsx": {
+      "bytes": 36581,
+      "mode": "100644",
+      "sha256": "fb84b28a1f0c8283aa08f141fa20feb3add5f9cfda25e7e185dad4e1149cf4cd"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/status-history.module.css": {
+      "bytes": 95,
+      "mode": "100644",
+      "sha256": "2476660a4050563cc36364d44c46056c41352501b8381061301422c362ccec4b"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/threshold-gauge.tsx": {
+      "bytes": 19225,
+      "mode": "100644",
+      "sha256": "9fe3cc1066637617e0cfd4a821b952ad5d31dca21481eb4bcfdc8764b6fa95f4"
+    },
+    "src/vendor/paprika/ui/src/features/insights/plugins/world-land.ts": {
+      "bytes": 59715,
+      "mode": "100644",
+      "sha256": "e35054c6df1c90519d75caf9aaa7be22f5b5cdd03a2c9084040fadb53bd756c7"
+    },
+    "src/vendor/paprika/ui/src/features/insights/provider-query-template.ts": {
+      "bytes": 2717,
+      "mode": "100644",
+      "sha256": "b9465661655f1aadeaa0581171782d587ea2882f689c87930c3d6494a3043d2a"
+    },
+    "src/vendor/paprika/ui/src/features/insights/query.ts": {
+      "bytes": 10524,
+      "mode": "100644",
+      "sha256": "e1bafcd81880469941d2b30e272435965b6586e1b6dd1326d78ca6fa90289d60"
+    },
+    "src/vendor/paprika/ui/src/features/insights/record-data.ts": {
+      "bytes": 2290,
+      "mode": "100644",
+      "sha256": "5bb1ff51848e759d72482af5c47c3ce0d9f74ec224f01973b1594e37b707b094"
+    },
+    "src/vendor/paprika/ui/src/features/insights/saved-queries.ts": {
+      "bytes": 6114,
+      "mode": "100644",
+      "sha256": "bb72ade22c64c46a1f95f98b44791b291bc0c3e489b6a22bc1f41991e0701949"
+    },
+    "src/vendor/paprika/ui/src/features/insights/saved-query-context.tsx": {
+      "bytes": 986,
+      "mode": "100644",
+      "sha256": "d56a0129461c59c11ab66c44851a194024cdb35cc2f1068398ea84c6a2ad7d72"
+    },
+    "src/vendor/paprika/ui/src/features/insights/schema.ts": {
+      "bytes": 25095,
+      "mode": "100644",
+      "sha256": "40b2c402f5133086f9a754394c2460504d11a9474d2f05d47cf77bae13482a42"
+    },
+    "src/vendor/paprika/ui/src/features/insights/stat-sparkline.module.css": {
+      "bytes": 984,
+      "mode": "100644",
+      "sha256": "485a37a0cbfa348457f0b19b07824f8072e7be0e10472e1f90f2772a538965da"
+    },
+    "src/vendor/paprika/ui/src/features/insights/stat-sparkline.tsx": {
+      "bytes": 5737,
+      "mode": "100644",
+      "sha256": "0175e18ff3ec5a9beda875667b5f099ee4d181d545b68710e75d0791c5f26535"
+    },
+    "src/vendor/paprika/ui/src/features/insights/time-window-controls.tsx": {
+      "bytes": 11694,
+      "mode": "100644",
+      "sha256": "e4a79c09f8c6a6aabf4b2622d71b4829e8fbbba141a396dd37f4052062ae1a18"
+    },
+    "src/vendor/paprika/ui/src/features/insights/time-window.module.css": {
+      "bytes": 3173,
+      "mode": "100644",
+      "sha256": "4558bbbaa65a48e9dc7e3bfbe228a54b13298ec6b601039360e6c474352126bc"
+    },
+    "src/vendor/paprika/ui/src/features/insights/time-window.ts": {
+      "bytes": 4095,
+      "mode": "100644",
+      "sha256": "fc23e30cc3e29ffadc7aa8a8192adf7444f67f644f29f629e4d5da6974cc14ea"
+    },
+    "src/vendor/paprika/ui/src/features/insights/tooltip-context.ts": {
+      "bytes": 2095,
+      "mode": "100644",
+      "sha256": "60a7fb45d3d1ae29c709e4066907423af1c1fd0857facb51c81ff3fb0f4032f8"
+    },
+    "src/vendor/paprika/ui/src/features/insights/tooltip-query.tsx": {
+      "bytes": 7097,
+      "mode": "100644",
+      "sha256": "a34592592514d1c9c82ca2e2162edfa5d18939a58a2f21bf4a7725b1fdd41499"
+    },
+    "src/vendor/paprika/ui/src/features/insights/tooltip-widget-data.tsx": {
+      "bytes": 689,
+      "mode": "100644",
+      "sha256": "91f7777f45f8e5fc7b430fefe37a84c5548cf9543fa780564092cdcfee5ca43a"
+    },
+    "src/vendor/paprika/ui/src/features/insights/tooltip-widgets.module.css": {
+      "bytes": 2997,
+      "mode": "100644",
+      "sha256": "1a9533ed4d4c55f016e10377e58b733c4f4cf5c9da1828a607964fd84d87b973"
+    },
+    "src/vendor/paprika/ui/src/features/insights/tooltip-widgets.tsx": {
+      "bytes": 23838,
+      "mode": "100644",
+      "sha256": "702cb292ec273c42c7216979a20ca35429d0688da3586e8a4955fcfb34d2b169"
+    },
+    "src/vendor/paprika/ui/src/features/insights/widget-context.module.css": {
+      "bytes": 1216,
+      "mode": "100644",
+      "sha256": "a0c02924720c505536dbd3074244da25fd0bcf20aba9e538de7a6524b4e92d6e"
+    },
+    "src/vendor/paprika/ui/src/features/insights/widget-context.ts": {
+      "bytes": 3223,
+      "mode": "100644",
+      "sha256": "e1af3b042953b7d31fa97301fc8e996222472a4d533925d2c56ba6011a3145b3"
+    },
+    "src/vendor/paprika/ui/src/features/insights/widget-presentation.tsx": {
+      "bytes": 768,
+      "mode": "100644",
+      "sha256": "2f34ca9d20e7d0fa389c4616c4262af7672c0183360b441887c155345c49033b"
+    },
+    "src/vendor/paprika/ui/src/features/insights/widget-registry.tsx": {
+      "bytes": 5984,
+      "mode": "100644",
+      "sha256": "ff9f9b393da662825f8a9630725e8d17e9af80b5ce29b19805877efb7291fe1a"
+    },
+    "tests/analytics-lenses.test.ts": {
+      "bytes": 8717,
+      "mode": "100644",
+      "sha256": "09465097eb52aca527930ded6a08e4d042b5427a9839a90a81fba155a1bcf2e7"
+    },
+    "tests/chart-adapter.test.ts": {
+      "bytes": 2129,
+      "mode": "100644",
+      "sha256": "dbe32a4a5406c4a6baf9bdf659293804fbaea88f5a49bc0c7fdc0b193d07d3ab"
+    },
+    "tests/chart-catalog.test.ts": {
+      "bytes": 9510,
+      "mode": "100644",
+      "sha256": "1bac66df2993139ee1be575ac6c5d99c658bb7fe03a831a7148c3787b5d26905"
+    },
+    "tests/chart-presentation.test.ts": {
+      "bytes": 8498,
+      "mode": "100644",
+      "sha256": "46a249193e8827abf8b2009084778d0a2091e1028c4bc8689fbf925282778cbd"
+    },
+    "tests/clinical-lenses.test.ts": {
+      "bytes": 17864,
+      "mode": "100644",
+      "sha256": "4b84fc8d6da88d81d48598d2c821c55ee25461be53bcaeb9b347d397d649f86f"
+    },
+    "tests/concept-catalog.test.ts": {
+      "bytes": 5979,
+      "mode": "100644",
+      "sha256": "84d8173893a13971a4ac0f4fafe0abe08b640b08ecd2a35a57b35209d25aa7b2"
+    },
+    "tests/distributed-systems.test.ts": {
+      "bytes": 15372,
+      "mode": "100644",
+      "sha256": "510dbb8bae8104e366598dd12253172e75fa3d6c2d27861f592d60b1be70b22d"
+    },
+    "tests/domain-editor-contract.test.ts": {
+      "bytes": 2098,
+      "mode": "100644",
+      "sha256": "d484d0d73503d7db24f5fc1c389243349fa5564c3173c5679ed9d9e7fd5ae1d9"
+    },
+    "tests/domain-widget.test.ts": {
+      "bytes": 3387,
+      "mode": "100644",
+      "sha256": "bd6679d3d5de8cc2e6d2cccfaafa3c35ed39003ebbc4bb8ec43d0b6bbebfafc8"
+    },
+    "tests/edge-telemetry.test.ts": {
+      "bytes": 10811,
+      "mode": "100644",
+      "sha256": "0857a1f02a69629a3fe19413a822d1e68b272e22cb54cfd245f8d550ff0d3858"
+    },
+    "tests/energy-contract-review.test.ts": {
+      "bytes": 5747,
+      "mode": "100644",
+      "sha256": "074611322fedcaa53ee8976887f2c23b521d03362bee6c2696b496344139d015"
+    },
+    "tests/energy-reserve.test.ts": {
+      "bytes": 10441,
+      "mode": "100644",
+      "sha256": "e6f5afdf6e377afbef98ecf29c3e1ae9eac7c71934403b1e7b15c0d14f6b43e5"
+    },
+    "tests/exploration-lenses.test.ts": {
+      "bytes": 12743,
+      "mode": "100644",
+      "sha256": "cc0e739dbbfd6ba3efc0fd0cfdf17da0f9db253846af9a52e45a614584aa8cbe"
+    },
+    "tests/field-bindings.test.ts": {
+      "bytes": 6365,
+      "mode": "100644",
+      "sha256": "398da0059ab65b0a2160d957024ca5500ce5321936a9bd045234af54b2ad3889"
+    },
+    "tests/finance-lens.test.ts": {
+      "bytes": 6344,
+      "mode": "100644",
+      "sha256": "405d8c21d22b053e9842994deeb256580693bd17243c3ca30954b7dc9b935b44"
+    },
+    "tests/geo-viewport.test.ts": {
+      "bytes": 16903,
+      "mode": "100644",
+      "sha256": "5a4578e49089342030025f4cb015289959f0fa55a8466858be11e1ff932244d6"
+    },
+    "tests/grid-operations.test.ts": {
+      "bytes": 7563,
+      "mode": "100644",
+      "sha256": "aa5f7799fc2b264c3a330bf3649754071f5b66afbb592a1e96f567714609024a"
+    },
+    "tests/incident-room.test.ts": {
+      "bytes": 9548,
+      "mode": "100644",
+      "sha256": "cabc1f9965ef7b7d31673925125dce28e046d72f4214e4e153dfb5f7dc58d4aa"
+    },
+    "tests/inference-fleet.test.ts": {
+      "bytes": 10666,
+      "mode": "100644",
+      "sha256": "db214319482669394ef8fe8655232f0042a84803d6e444cda33fc31fbc72e1ab"
+    },
+    "tests/kubernetes-model.test.ts": {
+      "bytes": 12960,
+      "mode": "100644",
+      "sha256": "d8cefb7a48da5d4cc7c3471acede20e19532d2a7ceb31755b7736e22896ebd44"
+    },
+    "tests/kubernetes-renderers.test.ts": {
+      "bytes": 4200,
+      "mode": "100644",
+      "sha256": "340a4d3ed1bb604ee2ffff47ed1bf5192f4e8a4b205905ae9215c59e111bfd21"
+    },
+    "tests/lens-entry-registration.test.ts": {
+      "bytes": 1953,
+      "mode": "100644",
+      "sha256": "bf3c062075df2d8d72663b20f73c2b9342d6400f1ec062530472baff0acc08de"
+    },
+    "tests/market-risk.test.ts": {
+      "bytes": 8595,
+      "mode": "100644",
+      "sha256": "0c67b0416d26d2c035cac28dd78911a9cd4466b722aaada04e9b9fc670f8b472"
+    },
+    "tests/observation-inspector.test.ts": {
+      "bytes": 10225,
+      "mode": "100644",
+      "sha256": "918e6d46267d77778137100a7f8ee427d3a3b3496622dcd78d551ec0e616905d"
+    },
+    "tests/operations-lenses.test.ts": {
+      "bytes": 4753,
+      "mode": "100644",
+      "sha256": "a8c2c610ee6b7d5d1dc314055f52f023765b99f440615e5ce4cbdf73f6eba093"
+    },
+    "tests/orbital-contact.test.ts": {
+      "bytes": 9987,
+      "mode": "100644",
+      "sha256": "35deb1415f03e6bff0561e454b71ce57c207252031e19821b5dc9c2d96a7c243"
+    },
+    "tests/orbital-pass-profile.test.ts": {
+      "bytes": 10959,
+      "mode": "100644",
+      "sha256": "b11a4d1967b85821055a75e9db930d2dbb083273419d46ba16c9d4770064a195"
+    },
+    "tests/performance-workbench.test.ts": {
+      "bytes": 15674,
+      "mode": "100644",
+      "sha256": "e91e7c7e99fd7b90c683ba4bd29064c1deead6fa1b86fcb9ff98253642bd04f6"
+    },
+    "tests/profile-model.test.ts": {
+      "bytes": 23700,
+      "mode": "100644",
+      "sha256": "e7a0db67d80dc59b831f2df8a1568dc79a16c068a734cb7211b800662e7d287c"
+    },
+    "tests/reference-chart-layout.test.ts": {
+      "bytes": 2798,
+      "mode": "100644",
+      "sha256": "a3f76acab4e200469844f68086d1a15713f3c6cacea3993910922488b57972cb"
+    },
+    "tests/reference-chart.test.ts": {
+      "bytes": 10743,
+      "mode": "100644",
+      "sha256": "27d60fa0ba2ec51b3a7cf945984c8e1e2b3a14b989a9267bb3559a97b5ab0871"
+    },
+    "tests/reference-reliability.test.ts": {
+      "bytes": 1340,
+      "mode": "100644",
+      "sha256": "3c1beee525fb4af96d93e2c297ec287ca7577eb1607a32a8849df1560567690f"
+    },
+    "tests/reference-supporting-responsive.test.ts": {
+      "bytes": 5762,
+      "mode": "100644",
+      "sha256": "975139a14bf0997ca9800d2c98c92300f2300c343e2c92e9c5a267f34e1624fc"
+    },
+    "tests/reliability.test.ts": {
+      "bytes": 9723,
+      "mode": "100644",
+      "sha256": "992582ef656917c2d42850926ce7a03533e2932ffbc6064e6592e651b5f49217"
+    },
+    "tests/spatial-lenses.test.ts": {
+      "bytes": 11122,
+      "mode": "100644",
+      "sha256": "ea642f36f116cea2d25793422eea4f20a2924b8325c8184738245838b641b9b2"
+    },
+    "tests/telemetry.test.ts": {
+      "bytes": 9354,
+      "mode": "100644",
+      "sha256": "ea7db9ac253b0ec63f9e1922d35e804fe589eada94059afa1b3b8828ab86a402"
+    },
+    "tests/time-window.test.ts": {
+      "bytes": 5512,
+      "mode": "100644",
+      "sha256": "6a34736c4c91317ba7a77d39b4ccd802a80c1a0a0430409d99e4ba5d1532a92c"
+    },
+    "tests/wafer-model.test.ts": {
+      "bytes": 8030,
+      "mode": "100644",
+      "sha256": "ad4222bedbd5958d776b4b9777151e918be82bfa0bbb63e44f0dca2aa0829e59"
+    },
+    "tests/wafer-renderers.test.ts": {
+      "bytes": 6069,
+      "mode": "100644",
+      "sha256": "838b970dab7f97cd254c00e10f092c458c8d53fa9ebba1f043fe03319fd0afe8"
+    },
+    "tests/wafer-transect.test.ts": {
+      "bytes": 8424,
+      "mode": "100644",
+      "sha256": "593f9ede98fc166a6c6deb0ba240dab714c3ff0cbd549c26e27083f23182f992"
+    },
+    "tests/widget-editor.test.ts": {
+      "bytes": 9501,
+      "mode": "100644",
+      "sha256": "8d049728586eb13334820ee08d20aa12c66285b8cea88bad926ea53aab65df52"
+    },
+    "tsconfig.json": {
+      "bytes": 502,
+      "mode": "100644",
+      "sha256": "5a649df3fe817c9e4c1b6a623ce28d60d5edd6237daa100415b4b7a8d9cbabcf"
+    },
+    "vite.config.ts": {
+      "bytes": 273,
+      "mode": "100644",
+      "sha256": "88af766dc05ba6505ad66e4fff3b87d25b005d179f896441c4b75e670b0371d7"
+    }
+  },
+  "project": "paprika-widget-lab",
+  "source_commit": "29b22f4c919e7f821f18d64b96baa71b0966ca42",
+  "source_dirty": false
+}

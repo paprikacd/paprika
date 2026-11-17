@@ -40,6 +40,42 @@
         }
       }
     },
+    "observabilityGateway": {
+      "type": "object",
+      "properties": {
+        "persistSessions": {"type": "boolean"},
+        "capacity": {
+          "description": "Query-path capacity per gateway process. null omits a flag so the gateway built-in applies; an explicit zero is passed as set. The gateway validates the combination at startup and names the value to change.",
+          "type": "object",
+          "properties": {
+            "queryConcurrency": {"type": ["integer", "null"], "minimum": 1, "maximum": 1024},
+            "queryProviderConcurrency": {"type": ["integer", "null"], "minimum": 0, "maximum": 1024},
+            "queryQueue": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "queryProviderQueue": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "queryQueueWait": {"type": ["string", "null"], "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"},
+            "httpWorkSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpCatalogSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpDashboardSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpIntakeSlots": {"type": ["integer", "null"], "minimum": 0, "maximum": 65536},
+            "httpAdmissionWait": {"description": "A duration with a unit, such as 1s. YAML 0 or \"0s\" rejects at once. A bare integer other than 0 is refused: it would mean nanoseconds.", "anyOf": [{"const": 0}, {"type": "string", "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$"}, {"type": "null"}]}
+          }
+        },
+        "additionalCACertificates": {
+          "description": "Additional public CA certificates, one PEM certificate per filename; never private keys or credentials.",
+          "type": ["object", "null"],
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 253,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.(crt|pem)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 32768,
+            "pattern": "^-----BEGIN CERTIFICATE-----[\\r\\n]+[A-Za-z0-9+/=\\r\\n]+[\\r\\n]-----END CERTIFICATE-----[\\r\\n]*$"
+          }
+        }
+      }
+    },
     "metrics": {
       "type": "object",
       "properties": {
@@ -57,6 +93,7 @@
           "properties": {
             "transientRequeue": {"$ref": "#/$defs/goDuration"},
             "sourceResolveTTL": {"$ref": "#/$defs/goDuration"},
+            "repoServerTimeout": {"$ref": "#/$defs/goDuration"},
             "cacheResyncPeriod": {"$ref": "#/$defs/goDuration"},
             "maxConcurrentReconciles": {
               "type": "object",
@@ -77,6 +114,12 @@
               }
             }
           }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"}
+          }
         }
       }
     },
@@ -91,6 +134,8 @@
         "oauth": {
           "type": "object",
           "properties": {
+            "persistSessions": {"type": "boolean"},
+            "persistClients": {"type": "boolean"},
             "clientId": {"type": ["string", "null"]},
             "redirectUris": {"type": "array", "items": {"type": "string"}}
           }

@@ -68,6 +68,9 @@ func (VultrMonitoring) Explore(ctx context.Context, req connector.ExploreRequest
 	case connector.ExploreMetricMetadata:
 		return exploreMetricDescription(req.Metric)
 
+	case connector.ExploreMetricSeries:
+		return exploreUnsupported("vultr-monitoring does not enumerate metric series")
+
 	case connector.ExploreTraceServices:
 		return exploreUnsupported("vultr-monitoring does not supply trace services")
 
@@ -88,7 +91,7 @@ func invalidExploreRequest(req *connector.ExploreRequest) string {
 		if req.Metric == "" {
 			return "a metric name is required"
 		}
-	case connector.ExploreTraceServices:
+	case connector.ExploreTraceServices, connector.ExploreMetricSeries:
 		return fmt.Sprintf("exploration kind %q is not served by the vultr-monitoring connector", req.Kind)
 	default:
 		return fmt.Sprintf("exploration kind %q is not served by the vultr-monitoring connector", req.Kind)

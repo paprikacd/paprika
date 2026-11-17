@@ -1,0 +1,106 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-panel);
+  padding: 16px;
+  background: var(--gamma-bg);
+}
+.editor legend {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.removeWidget {
+  align-self: flex-end;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--gamma-ink);
+}
+.field > input,
+.field > textarea,
+.field > button {
+  width: 100%;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.row > .field {
+  flex: 1 1 100px;
+}
+.row > button {
+  align-self: end;
+}
+.query {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--gamma-border);
+}
+.editor .code {
+  --gamma-field-min-height: calc(5lh + 20px);
+  --gamma-field-font: var(--gamma-font-code);
+  --gamma-field-font-size: 12px;
+  tab-size: 2;
+}
+.hint,
+.error {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--gamma-muted);
+  overflow-wrap: anywhere;
+}
+.hint code {
+  font-family: var(--gamma-font-code);
+  font-size: inherit;
+}
+.error {
+  color: var(--gamma-danger);
+}
+.bindingHeading,
+.bindingTop {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.bindingHeading {
+  font-size: 11px;
+}
+.bindingHeading > span {
+  color: var(--gamma-muted);
+  font-variant-numeric: tabular-nums;
+}
+.bindingTop {
+  align-items: end;
+}
+.bindingTop > .field {
+  flex: 1;
+}
+.binding {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--gamma-border);
+}
+@media (max-width: 700px) {
+  .editor {
+    padding: 14px;
+  }
+}

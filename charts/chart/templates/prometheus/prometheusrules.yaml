@@ -46,8 +46,31 @@ spec:
             summary: Paprika reconcile latency is high
             description: Controller {{ "{{ $labels.controller }}" }} 95th percentile latency exceeds 30s.
 
+        # Transition counters are created lazily: a series first appears at 1,
+        # so increase() alone misses the first transition. Three branches:
+        # - increase() catches a transition in the last five minutes.
+        # - A series with no sample in the hour before the last five minutes is
+        #   new: a first failure, or a counter under a new pod label after a
+        #   Deployment restart. Counters restart from zero, so old failures under
+        #   the old pod label do not reappear. Range selectors skip staleness
+        #   markers, so a scrape gap shorter than the lookback does not make an
+        #   old series look new.
+        # - The last branch catches a value above the last sample from before the
+        #   last five minutes: an increment hidden by a Prometheus outage.
+        # Blind spot: after an in-place container restart (same pod name and label
+        #   set), the first failure of a release that the previous container
+        #   exported within the past hour is not reported. The new counter starts
+        #   at 1, which is not above the old value, and the old samples count as
+        #   history. Later failures alert through increase(). Only a drop from a
+        #   higher value seen within about three minutes of the old container's
+        #   last scrape alerts, briefly.
         - alert: PaprikaReleaseFailed
-          expr: increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
+          expr: |
+            increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
+            or
+            paprika_release_phase_total{phase="Failed"} unless last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
+            or
+            paprika_release_phase_total{phase="Failed"} > last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
           for: 1m
           labels:
             severity: critical
@@ -55,59 +78,78 @@ spec:
             summary: Paprika release failed
             description: Release {{ "{{ $labels.release }}" }} in namespace {{ "{{ $labels.namespace }}" }} failed.
 
+        # Current state, not a transition count: the gauge is per pod with the
+        # same cluster-wide value, so max() collapses the replicas.
         - alert: PaprikaApplicationDegraded
-          expr: increase(paprika_application_phase_total{phase="Degraded"}[5m]) > 0
-          for: 1m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika application degraded
-            description: Application {{ "{{ $labels.application }}" }} in namespace {{ "{{ $labels.namespace }}" }} is degraded.
-
-        - alert: PaprikaClusterUnhealthy
-          expr: paprika_cluster_phase{phase="Unhealthy"} == 1
+          expr: max(paprika_applications_by_phase_ratio{phase="Degraded"}) > 0
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: Paprika registered cluster is unhealthy
-            description: Cluster {{ "{{ $labels.cluster }}" }} in namespace {{ "{{ $labels.namespace }}" }} is unhealthy.
+            summary: Paprika applications are degraded
+            description: "{{ "{{ $value }}" }} application(s) are in the Degraded phase. The gauge has no application label; list them with kubectl get applications -A."
 
+        # Rollbacks use the same three branches and have the same blind spot as
+        # PaprikaReleaseFailed above, on the application counter.
+        - alert: PaprikaApplicationRolledBack
+          expr: |
+            increase(paprika_application_phase_total{phase="RolledBack"}[5m]) > 0
+            or
+            paprika_application_phase_total{phase="RolledBack"} unless last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+            or
+            paprika_application_phase_total{phase="RolledBack"} > last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika application rolled back
+            description: Application {{ "{{ $labels.application }}" }} in namespace {{ "{{ $labels.namespace }}" }} was rolled back.
+
+        - alert: PaprikaReleasesStuck
+          expr: max(paprika_releases_stuck) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika releases are stuck
+            description: "{{ "{{ $value }}" }} non-terminal releases are older than the stuck-release threshold (30m)."
+
+        - alert: PaprikaReleaseRetriesExhausted
+          expr: max(paprika_applications_release_retries_exhausted) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Paprika application release retries exhausted
+            description: "{{ "{{ $value }}" }} applications hold the ReleaseRetriesExhausted condition. The gauge has no application label; find them with kubectl get applications -A."
+
+        - alert: PaprikaFleetIndexDegraded
+          expr: max(paprika_fleet_index_degraded) == 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika fleet index is degraded
+            description: The installed fleet index health is degraded; fleet queries may be serving stale data.
+
+        # Depends on cAdvisor, not on Paprika: container_oom_events_total is
+        # exported by the kubelet's cAdvisor endpoint and only reaches the
+        # user's own Prometheus. The container names are the chart's
+        # long-running containers: manager, api-server, repo-server,
+        # webhook-receiver, observability-gateway (its dashboard-renderer
+        # sidecar), insights, agent (the agent DaemonSet) and redis (the
+        # extras Redis). Sidecars such as istio-proxy stay out.
         - alert: PaprikaOOMKilled
-          expr: rate(container_memory_failures_total{container=~".*paprika.*", failure_type="oom"}[5m]) > 0
+          expr: |
+            sum by (namespace, pod, container) (
+              increase(container_oom_events_total{namespace="{{ .Release.Namespace }}", pod=~"{{ include "paprika.resourceName" (dict "suffix" "" "context" $) }}-.*", container=~"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis"}[5m])
+            ) > 0
           for: 1m
           labels:
             severity: critical
           annotations:
             summary: Paprika container OOM killed
             description: Container {{ "{{ $labels.container }}" }} in pod {{ "{{ $labels.pod }}" }} was OOM killed.
-
-        - alert: PaprikaCacheUnreachable
-          expr: paprika_cache_errors_total > 100
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika cache error rate is high
-            description: Cache errors exceeded 100. Redis may be unreachable.
-
-        - alert: PaprikaWebhookErrors
-          expr: rate(paprika_webhook_errors_total[5m]) > 0.1
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika webhook processing errors
-            description: Webhook error rate is elevated ({{ "{{ $value | humanizePercentage }}" }}).
-
-        - alert: PaprikaRateLimitExceeded
-          expr: rate(paprika_ratelimit_denials_total[5m]) > 10
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: Paprika rate limit denials
-            description: Rate limit denials exceeded 10 req/s.
 
         - alert: PaprikaApiServerHighRequestLatency
           expr: histogram_quantile(0.95, rate(paprika_api_request_duration_seconds_bucket[5m])) > 5

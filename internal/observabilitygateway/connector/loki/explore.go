@@ -50,7 +50,7 @@ func exploreRequestPath(req *connector.ExploreRequest) (path, reason string) {
 			return "", "a label name is required"
 		}
 		return fmt.Sprintf(pathLabelValues, url.PathEscape(req.Label)), ""
-	case connector.ExploreMetricNames, connector.ExploreMetricMetadata, connector.ExploreTraceServices:
+	case connector.ExploreMetricNames, connector.ExploreMetricMetadata, connector.ExploreMetricSeries, connector.ExploreTraceServices:
 		// These known exploration kinds are unsupported.
 	}
 	return "", fmt.Sprintf("exploration kind %q is not served by the loki connector", req.Kind)

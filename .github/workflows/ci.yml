@@ -19,6 +19,28 @@ permissions:
 # kind or registry/cluster credentials stay hosted. See
 # docs/guides/cuttlefish-ci.md.
 jobs:
+  terraform:
+    name: Terraform offline plans
+    runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reclaim self-hosted runner disk
+        uses: ./.github/actions/reclaim-runner-disk
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.14.6"
+          terraform_wrapper: false
+
+      - name: Validate and test isolated Terraform configuration
+        run: bash hack/test-terraform.sh
+
   go-test:
     name: Go race tests
     runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
@@ -45,6 +67,7 @@ jobs:
 
       - name: Test deployment helpers
         run: |
+          bash hack/test-dashboard-renderer.sh
           bash hack/test-check-vke-pod-conditions.sh
           bash hack/test-github-actions-oidc-token.sh
           bash hack/test-github-actions-vke-token.sh
@@ -104,12 +127,20 @@ jobs:
         run: npm test
         working-directory: ui
 
+      - name: Browser-render worker and visual probe tests
+        run: node --test render-worker.test.mjs dashboard-probe.test.mjs e2e/fixtures/visual-matrix-diff.test.mjs
+        working-directory: ui
+
       - name: Lint
         run: npm run lint
         working-directory: ui
 
       - name: Build
         run: npm run build
+        working-directory: ui
+
+      - name: Check Insights first-view size budget
+        run: node scripts/check-insights-budget.mjs
         working-directory: ui
 
   mcp-console:
@@ -207,6 +238,18 @@ jobs:
           git status --porcelain --untracked-files=all
           test -z "$(git status --porcelain --untracked-files=all)"
 
+      - name: Lint Insights dashboard documents
+        # Checks the repository examples catalog, the served schema examples, the first-party
+        # starters, the gallery export and the reference e2e fixtures with the save-path rules. Error findings fail the step;
+        # warnings are printed and do not.
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf -- "$work"' EXIT
+          node --experimental-strip-types demo/insights-gallery/export-documents.mjs "$work/gallery"
+          node --experimental-strip-types ui/e2e/fixtures/export-reference-documents.mjs "$work/reference"
+          go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json internal/insights/starters "$work/gallery" "$work/reference"
+
   chart:
     name: Helm chart
     runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
@@ -221,12 +264,12 @@ jobs:
         uses: ./.github/actions/reclaim-runner-disk
 
       - name: Set up Helm
-        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
         with:
           version: v3.21.2
 
       - name: Set up Task
-        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
 
       - name: Verify OIDC Secret rendering
         run: bash hack/test-oidc-secret-rendering.sh
@@ -291,7 +334,7 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           install-only: true
           version: v2.16.0
@@ -349,15 +392,23 @@ jobs:
         uses: ./.github/actions/reclaim-runner-disk
 
       - name: Install Task
-        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+        uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
           version: 3.52.0
+
+      - name: Set up Node for plugin distribution tests
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
+          cache-dependency-path: labs/widget-lab/package-lock.json
 
       - name: Verify distribution entrypoints
         run: |
           bash hack/test-cli-install.sh
           bash hack/test-taskfile-contract.sh
           bash hack/test-landing-install.sh
+          node --test test/paprika-plugin-installer.test.mjs
 
   fleet-ui-smoke:
     name: Fleet console browser smoke
@@ -413,15 +464,155 @@ jobs:
         run: npm run test:e2e -- fleet-console.spec.ts
         working-directory: ui
 
+      - name: Run real console session browser smoke
+        timeout-minutes: 5
+        run: npm run test:e2e:session
+        working-directory: ui
+        env:
+          SESSION_E2E_STATIC: "1"
+
+      - name: Run Insights MCP and dashboard browser smoke
+        timeout-minutes: 15
+        run: >-
+          node e2e/run-insights.mjs
+          e2e/insights-dashboard-query.e2e.mjs
+          e2e/insights-observe-authoring.e2e.mjs
+          e2e/insights-render-worker.e2e.mjs
+          e2e/insights-tooltip-peers.e2e.mjs
+          e2e/insights-compact-stat.e2e.mjs
+          e2e/insights-status-history-axis.e2e.mjs
+          e2e/insights-dashboard-polish.e2e.mjs
+          e2e/insights-presentation.e2e.mjs
+          e2e/insights-variable-filter.e2e.mjs
+          e2e/insights-repository-examples.e2e.mjs
+          e2e/insights-record-charts.e2e.mjs
+          e2e/insights-rich-charts.e2e.mjs
+          e2e/insights-chart-system.e2e.mjs
+          e2e/insights-editor-focus.e2e.mjs
+          e2e/insights-edit-performance.e2e.mjs
+          e2e/insights-tooltip-structure.e2e.mjs
+          e2e/insights-tooltip-motion.e2e.mjs
+          e2e/insights-hex-contour.e2e.mjs
+        working-directory: ui
+        env:
+          INSIGHTS_POLISH_OUTPUT: ${{ github.workspace }}/artifacts/insights/dashboard-polish
+          INSIGHTS_PRESENTATION_OUTPUT: ${{ github.workspace }}/artifacts/insights/presentation
+
+      - name: Generate reference dashboards through the UI
+        timeout-minutes: 10
+        run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs
+        working-directory: ui
+
+      - name: Check Insights visual structure baseline
+        timeout-minutes: 10
+        run: node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs
+        working-directory: ui
+
       - name: Upload browser diagnostics
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fleet-ui-smoke
           path: |
             ui/playwright-report
             ui/test-results
+            artifacts/insights/dashboard-query
+            artifacts/insights/observe-authoring
+            artifacts/insights/render-worker
+            artifacts/insights/tooltip-peers
+            artifacts/insights/variable-filter
+            artifacts/insights/repository-examples/browser
+            artifacts/insights/record-charts
+            artifacts/insights/rich-charts
+            artifacts/insights/editor-focus
+            artifacts/insights/chart-system
+            artifacts/insights/edit-performance
+            artifacts/insights/tooltip-structure
+            artifacts/insights/tooltip-motion
+            artifacts/insights/hex-contour
+            artifacts/insights/dashboard-polish
+            artifacts/insights/presentation
+            artifacts/insights/reference-dashboards
+            artifacts/insights/visual-matrix
           if-no-files-found: ignore
+          retention-days: 14
+
+  application-records:
+    name: Application records integration
+    # Hosted: PostgreSQL service containers require a Linux Docker server.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: auto
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: paprika-local-test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui
+
+      - name: Verify PostgreSQL reader boundaries against a real database
+        env:
+          PAPRIKA_POSTGRES_TEST_DSN: postgres://postgres:paprika-local-test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres?sslmode=disable
+        run: go test -race ./internal/observabilitygateway/connector/postgresql -count=1 -timeout=90s
+
+      - name: Verify service queries with Prometheus and enforce live coverage
+        run: node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
+
+      - name: Verify independent source requirements in the example gallery
+        run: node e2e/run-insights.mjs e2e/insights-source-provenance.e2e.mjs
+        working-directory: ui
+
+      - name: Verify authenticated application records through MCP and the browser
+        env:
+          PAPRIKA_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          PAPRIKA_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: node e2e/run-insights.mjs e2e/insights-application-records.e2e.mjs
+        working-directory: ui
+
+      - name: Upload application records evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: application-records-integration
+          path: |
+            artifacts/insights/application-records
+            artifacts/insights/source-provenance
+          if-no-files-found: warn
           retention-days: 14
 
   fleet-scale:
@@ -440,7 +631,7 @@ jobs:
 
       - name: Upload fleet scale evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fleet-scale
           path: artifacts/fleet-scale
@@ -468,7 +659,7 @@ jobs:
           cache: true
 
       - name: Set up Helm
-        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
         with:
           version: v3.21.2
 
@@ -533,6 +724,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       digest: ${{ steps.build-push.outputs.digest }}
+      render_worker_digest: ${{ steps.render-worker.outputs.digest }}
     needs:
       - go-test
       - go-lint
@@ -542,6 +734,7 @@ jobs:
       - release-contract
       - distribution-contracts
       - fleet-ui-smoke
+      - application-records
       - fleet-scale
       - cluster-integration
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -558,7 +751,7 @@ jobs:
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -584,6 +777,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Publish isolated dashboard renderer
+        id: render-worker
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ui/Dockerfile.render-worker
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/paprikacd/paprika-render-worker:sha-${{ github.sha }}
+          cache-from: type=gha,scope=dashboard-renderer
+          cache-to: type=gha,scope=dashboard-renderer,mode=max
+
   deploy-vke:
     name: Deploy published image to VKE
     needs: publish
@@ -594,6 +799,7 @@ jobs:
     uses: ./.github/workflows/deploy-vke.yml
     with:
       image_ref: ghcr.io/paprikacd/paprika@${{ needs.publish.outputs.digest }}
+      render_worker_image_ref: ghcr.io/paprikacd/paprika-render-worker@${{ needs.publish.outputs.render_worker_digest }}
     secrets:
       VKE_AUTH_TOKEN_SECRET: ${{ secrets.VKE_AUTH_TOKEN_SECRET }}
       VKE_BASIC_PASSWORD_HASH: ${{ secrets.VKE_BASIC_PASSWORD_HASH }}

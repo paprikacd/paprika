@@ -195,6 +195,13 @@ func (r *PipelineReconciler) handlePipelineDeletion(ctx context.Context, pipelin
 	if !controllerutil.ContainsFinalizer(pipeline, pipelineFinalizer) {
 		return nil
 	}
+	deleted, err := r.deleteStepJobs(ctx, pipeline)
+	if err != nil {
+		return err
+	}
+	if deleted > 0 {
+		logf.FromContext(ctx).Info("Deleted pipeline step jobs", "pipeline", pipeline.Name, "jobs", deleted)
+	}
 	controllerutil.RemoveFinalizer(pipeline, pipelineFinalizer)
 	if err := r.client.Update(ctx, pipeline); err != nil {
 		return fmt.Errorf("removing pipeline finalizer: %w", err)

@@ -1,0 +1,387 @@
+/* Gamma's semantic token contract, with Paprika's compact workspace styling. */
+.scope {
+  --gamma-bg: #ffffff;
+  --gamma-surface: #f5f7f7;
+  --gamma-surface-2: #eaf0f1;
+  --gamma-ink: #223139;
+  --gamma-muted: #52636f;
+  --gamma-border: #d9e2e5;
+  --gamma-accent: #b65332;
+  --gamma-accent-text: #a24628;
+  --gamma-accent-ink: #ffffff;
+  --gamma-accent-soft: #faeee8;
+  --gamma-success: #327959;
+  --gamma-success-soft: #eaf4ed;
+  --gamma-danger: #b4473d;
+  --gamma-danger-soft: #fff0ec;
+  --gamma-warning: #886827;
+  --gamma-warning-soft: #faf5e8;
+  /* Status marks, tints, text and on-fill ink. See status-tokens.json. */
+  --gamma-status-ok: #4b9864;
+  --gamma-status-ok-soft: #eaf4ed;
+  --gamma-status-ok-text: #2a6a43;
+  --gamma-status-ok-on: #000000;
+  --gamma-status-info: #3f72b4;
+  --gamma-status-info-soft: #e9f0fa;
+  --gamma-status-info-text: #2c5c94;
+  --gamma-status-info-on: #ffffff;
+  --gamma-status-warning: #986111;
+  --gamma-status-warning-soft: #faf5e8;
+  --gamma-status-warning-text: #6e4a0d;
+  --gamma-status-warning-on: #ffffff;
+  --gamma-status-critical: #7f0a12;
+  --gamma-status-critical-soft: #fff0ec;
+  --gamma-status-critical-text: #7f0a12;
+  --gamma-status-critical-on: #ffffff;
+  --gamma-status-unknown: #4d5d68;
+  --gamma-status-unknown-soft: #eef2f3;
+  --gamma-status-unknown-text: #3a4852;
+  --gamma-status-unknown-on: #ffffff;
+  --gamma-page: #f2f5f5;
+  --gamma-sidebar: #eaf0f1;
+  --gamma-sage: #517e66;
+  /* Categorical series palette, slots 1-8. series-palette.ts mirrors these values for canvas and SVG uses.
+     --gamma-chart-N repeats slot N for consumers that predate the series tokens. */
+  --gamma-series-1: #003d75;
+  --gamma-series-2: #0c9a93;
+  --gamma-series-3: #887fd0;
+  --gamma-series-4: #127a8b;
+  --gamma-series-5: #a75fa7;
+  --gamma-series-6: #61516f;
+  --gamma-series-7: #b77080;
+  --gamma-series-8: #86885b;
+  --gamma-chart-1: #003d75;
+  --gamma-chart-2: #0c9a93;
+  --gamma-chart-3: #887fd0;
+  --gamma-chart-4: #127a8b;
+  --gamma-chart-5: #a75fa7;
+  --gamma-chart-6: #61516f;
+  --gamma-chart-7: #b77080;
+  --gamma-chart-8: #86885b;
+  /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+     kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+  --gamma-syntax-keyword: #a24628;
+  --gamma-syntax-function: #245a94;
+  --gamma-syntax-string: #2a6a43;
+  --gamma-syntax-number: #7a5210;
+  /* Semantic series roles name a slot, so a rule can say "server errors" without a hex value. They are aliases:
+     the colour follows the active block's slot on this same element. Roles never carry status meaning. */
+  --gamma-series-traffic: var(--gamma-series-1);
+  --gamma-series-success: var(--gamma-series-2);
+  --gamma-series-client-error: var(--gamma-series-3);
+  --gamma-series-server-error: var(--gamma-series-7);
+  --gamma-series-p50: var(--gamma-series-4);
+  --gamma-series-p95: var(--gamma-series-6);
+  --gamma-series-p99: var(--gamma-series-5);
+  --gamma-chart-grid: #e4ebed;
+  --gamma-chart-axis: #52636f;
+  --gamma-chart-empty: #f8fafb;
+  --gamma-chart-hatch: #75858e;
+  --gamma-map-land: #e5edef;
+  --gamma-map-coast: #8a9ea8;
+  --gamma-density-0: #13a0ab;
+  --gamma-density-1: #119ca5;
+  --gamma-density-2: #0f979f;
+  --gamma-density-3: #0d939a;
+  --gamma-density-4: #0a8f94;
+  --gamma-density-5: #088a8e;
+  --gamma-density-6: #068689;
+  --gamma-density-7: #078187;
+  --gamma-density-8: #087d84;
+  --gamma-density-9: #087881;
+  --gamma-density-10: #09747e;
+  --gamma-density-11: #096f7b;
+  --gamma-density-12: #096a79;
+  --gamma-density-13: #086576;
+  --gamma-density-14: #076073;
+  --gamma-density-15: #065b70;
+  --gamma-density-16: #05556d;
+  --gamma-density-17: #03506b;
+  --gamma-density-18: #034b67;
+  --gamma-density-19: #024663;
+  --gamma-density-20: #02415f;
+  --gamma-density-21: #013d5b;
+  --gamma-density-22: #013857;
+  --gamma-density-23: #003353;
+  --gamma-color-scheme: light;
+  --gamma-radius-small: 4px;
+  --gamma-radius-control: 5px;
+  --gamma-radius-button: 5px;
+  --gamma-radius-panel: 6px;
+  --gamma-radius-pill: 999px;
+  --gamma-hairline: 1px;
+  --gamma-duration-fast: 130ms;
+  --gamma-duration-base: 200ms;
+  --gamma-duration-slow: 360ms;
+  /* One-time chart draw-in; chart-entrance.ts keeps CHART_REVEAL_MS equal to this. */
+  --gamma-duration-reveal: 600ms;
+  --gamma-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --gamma-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Keep Gamma's token contract, with smooth deceleration in Paprika. */
+  --gamma-ease-spring: var(--gamma-ease-emphasized);
+  --gamma-font-ui: var(--font-sans, ui-sans-serif), system-ui, sans-serif;
+  --gamma-font-code: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --gamma-shadow-low: none;
+  --gamma-shadow-mid: 0 4px 14px rgb(28 36 48 / 10%);
+  --gamma-shadow-high: 0 8px 24px rgb(28 36 48 / 14%);
+  --gamma-focus-ring: 0 0 0 3px rgb(182 83 50 / 18%);
+  /* Outline colour for keyboard focus; it follows the palette accent in every block. */
+  --gamma-focus: var(--gamma-accent);
+  color-scheme: var(--gamma-color-scheme);
+  font-family: var(--gamma-font-ui);
+}
+.scope[data-insights-theme="dark"] {
+  --gamma-bg: #182127;
+  --gamma-surface: #1d2931;
+  --gamma-surface-2: #26353e;
+  --gamma-ink: #edf3f5;
+  --gamma-muted: #a8bac6;
+  --gamma-border: #2c3c46;
+  --gamma-accent: #e78d6b;
+  --gamma-accent-text: #f0a98c;
+  --gamma-accent-ink: #241810;
+  --gamma-accent-soft: #3c2b25;
+  --gamma-success: #83b69b;
+  --gamma-success-soft: #22382c;
+  --gamma-danger: #f29c8e;
+  --gamma-danger-soft: #422b28;
+  --gamma-warning: #dec48b;
+  --gamma-warning-soft: #3b3525;
+  /* Status marks, tints, text and on-fill ink. See status-tokens.json. */
+  --gamma-status-ok: #498a5c;
+  --gamma-status-ok-soft: #22382c;
+  --gamma-status-ok-text: #83b69b;
+  --gamma-status-ok-on: #000000;
+  --gamma-status-info: #5b93d6;
+  --gamma-status-info-soft: #1d2c40;
+  --gamma-status-info-text: #9fc3f2;
+  --gamma-status-info-on: #000000;
+  --gamma-status-warning: #cb9742;
+  --gamma-status-warning-soft: #3b3525;
+  --gamma-status-warning-text: #dec48b;
+  --gamma-status-warning-on: #000000;
+  --gamma-status-critical: #ffd4cc;
+  --gamma-status-critical-soft: #422b28;
+  --gamma-status-critical-text: #f29c8e;
+  --gamma-status-critical-on: #000000;
+  --gamma-status-unknown: #aab7bf;
+  --gamma-status-unknown-soft: #26353e;
+  --gamma-status-unknown-text: #b8c6cd;
+  --gamma-status-unknown-on: #000000;
+  --gamma-page: #10171b;
+  --gamma-sidebar: #121c22;
+  --gamma-sage: #83b69b;
+  --gamma-series-1: #21ccfe;
+  --gamma-series-2: #32dcd5;
+  --gamma-series-3: #ae7ecf;
+  --gamma-series-4: #29a1a3;
+  --gamma-series-5: #d76fa1;
+  --gamma-series-6: #a5a1c9;
+  --gamma-series-7: #e7a5c4;
+  --gamma-series-8: #999a66;
+  --gamma-chart-1: #21ccfe;
+  --gamma-chart-2: #32dcd5;
+  --gamma-chart-3: #ae7ecf;
+  --gamma-chart-4: #29a1a3;
+  --gamma-chart-5: #d76fa1;
+  --gamma-chart-6: #a5a1c9;
+  --gamma-chart-7: #e7a5c4;
+  --gamma-chart-8: #999a66;
+  /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+     kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+  --gamma-syntax-keyword: #f0a98c;
+  --gamma-syntax-function: #9fc3f2;
+  --gamma-syntax-string: #83b69b;
+  --gamma-syntax-number: #dec48b;
+  --gamma-chart-grid: #26343d;
+  --gamma-chart-axis: #a8bac6;
+  --gamma-chart-empty: #11171b;
+  --gamma-chart-hatch: #6f808a;
+  --gamma-map-land: #263c46;
+  --gamma-map-coast: #4d6a79;
+  --gamma-density-0: #0e8299;
+  --gamma-density-1: #0e889c;
+  --gamma-density-2: #0e8da0;
+  --gamma-density-3: #0d93a3;
+  --gamma-density-4: #0d99a6;
+  --gamma-density-5: #0b9faa;
+  --gamma-density-6: #0ba5ac;
+  --gamma-density-7: #0eabaa;
+  --gamma-density-8: #0fb1a8;
+  --gamma-density-9: #0eb7a7;
+  --gamma-density-10: #0cbda5;
+  --gamma-density-11: #07c4a3;
+  --gamma-density-12: #30c99e;
+  --gamma-density-13: #55cd97;
+  --gamma-density-14: #6dd18f;
+  --gamma-density-15: #81d688;
+  --gamma-density-16: #93da80;
+  --gamma-density-17: #a3de77;
+  --gamma-density-18: #b2e17c;
+  --gamma-density-19: #c1e385;
+  --gamma-density-20: #cfe68e;
+  --gamma-density-21: #dde898;
+  --gamma-density-22: #eaeaa1;
+  --gamma-density-23: #f8ecaa;
+  --gamma-color-scheme: dark;
+  --gamma-shadow-low: none;
+  --gamma-shadow-mid: 0 4px 14px rgb(0 0 0 / 22%);
+  --gamma-shadow-high: 0 8px 24px rgb(0 0 0 / 32%);
+  --gamma-focus-ring: 0 0 0 3px rgb(231 141 107 / 26%);
+  --gamma-focus: var(--gamma-accent);
+}
+/* The supplied Edge Watch / Reliability Room direction is an opt-in reading
+   density, not a replacement for the standard or light workspace. */
+@media (min-width: 1024px) {
+  .scope[data-insights-theme="dark"][data-density="compact"] {
+    --gamma-bg: #0b1b22;
+    --gamma-surface: #10232b;
+    --gamma-surface-2: #182f39;
+    /* Status marks, tints, text and on-fill ink. See status-tokens.json. */
+    --gamma-status-ok: #3e8357;
+    --gamma-status-ok-soft: #10291e;
+    --gamma-status-ok-text: #7fcc9d;
+    --gamma-status-ok-on: #000000;
+    --gamma-status-info: #6aa9ee;
+    --gamma-status-info-soft: #132a40;
+    --gamma-status-info-text: #9ccbff;
+    --gamma-status-info-on: #000000;
+    --gamma-status-warning: #d0993c;
+    --gamma-status-warning-soft: #2b2412;
+    --gamma-status-warning-text: #f2b84b;
+    --gamma-status-warning-on: #000000;
+    --gamma-status-critical: #ffc6bc;
+    --gamma-status-critical-soft: #35201e;
+    --gamma-status-critical-text: #ffb8ac;
+    --gamma-status-critical-on: #000000;
+    --gamma-status-unknown: #8a9ca6;
+    --gamma-status-unknown-soft: #182f39;
+    --gamma-status-unknown-text: #b9c9d2;
+    --gamma-status-unknown-on: #000000;
+    --gamma-page: #07141b;
+    --gamma-sidebar: #091920;
+    --gamma-ink: #e7f0f5;
+    --gamma-muted: #a9becd;
+    --gamma-border: #243d49;
+    --gamma-accent: #20c8dc;
+    --gamma-accent-text: #60dbea;
+    --gamma-accent-ink: #071a20;
+    --gamma-accent-soft: #10343e;
+    --gamma-series-1: #14c2e8;
+    --gamma-series-2: #00d8cf;
+    --gamma-series-3: #b499aa;
+    --gamma-series-4: #1fa6a9;
+    --gamma-series-5: #cf7abf;
+    --gamma-series-6: #9e9ed1;
+    --gamma-series-7: #ff92b7;
+    --gamma-series-8: #8f9e54;
+    --gamma-chart-1: #14c2e8;
+    --gamma-chart-2: #00d8cf;
+    --gamma-chart-3: #b499aa;
+    --gamma-chart-4: #1fa6a9;
+    --gamma-chart-5: #cf7abf;
+    --gamma-chart-6: #9e9ed1;
+    --gamma-chart-7: #ff92b7;
+    --gamma-chart-8: #8f9e54;
+    /* Query-editor syntax on --gamma-surface (at least 4.5:1); keyword, function, string and number are
+       kept at least 15 dE2000 apart by insights-theme.test.tsx. Property names share the function token. */
+    --gamma-syntax-keyword: #60dbea;
+    --gamma-syntax-function: #9ccbff;
+    --gamma-syntax-string: #7fcc9d;
+    --gamma-syntax-number: #f2b84b;
+    --gamma-chart-grid: #1c3440;
+    --gamma-chart-axis: #a9becd;
+    --gamma-chart-empty: #060e12;
+    --gamma-chart-hatch: #5f7884;
+    --gamma-density-0: #0e8299;
+    --gamma-density-1: #0e889c;
+    --gamma-density-2: #0e8da0;
+    --gamma-density-3: #0d93a3;
+    --gamma-density-4: #0d99a6;
+    --gamma-density-5: #0b9faa;
+    --gamma-density-6: #0ba5ac;
+    --gamma-density-7: #0eabaa;
+    --gamma-density-8: #0fb1a8;
+    --gamma-density-9: #0eb7a7;
+    --gamma-density-10: #0cbda5;
+    --gamma-density-11: #07c4a3;
+    --gamma-density-12: #30c99e;
+    --gamma-density-13: #55cd97;
+    --gamma-density-14: #6dd18f;
+    --gamma-density-15: #81d688;
+    --gamma-density-16: #93da80;
+    --gamma-density-17: #a3de77;
+    --gamma-density-18: #b2e17c;
+    --gamma-density-19: #c1e385;
+    --gamma-density-20: #cfe68e;
+    --gamma-density-21: #dde898;
+    --gamma-density-22: #eaeaa1;
+    --gamma-density-23: #f8ecaa;
+    --gamma-focus-ring: 0 0 0 3px rgb(32 200 220 / 30%);
+    --gamma-focus: var(--gamma-accent);
+  }
+}
+
+.scope,
+.scope *,
+.scope *::before,
+.scope *::after {
+  box-sizing: border-box;
+}
+.scope ::selection {
+  background: var(--gamma-accent-soft);
+  color: var(--gamma-ink);
+}
+/* Colour only: unstyled Insights focusables take the Insights ring colour, and no
+   control gains an outline it did not already have. Modules with their own focus
+   rules keep their outline style and offset. */
+:where(.scope) :focus-visible {
+  outline-color: var(--gamma-focus);
+}
+@media (prefers-reduced-motion: reduce) {
+  .scope {
+    --gamma-duration-fast: 0ms;
+    --gamma-duration-base: 0ms;
+    --gamma-duration-slow: 0ms;
+    --gamma-duration-reveal: 0ms;
+  }
+  /* The main shell's universal 0.01ms override activates the CSS initial
+     transition-property: all, even on chart marks with no transition. A
+     density/theme change then dispatches thousands of transition events.
+     Reduced motion in this independently scoped app means no transitions. */
+  .scope, .scope *, .scope *::before, .scope *::after {
+    transition: none !important;
+  }
+}
+/* An explicit reduced-motion scope (data-motion="reduced") zeroes every duration, as the OS setting does. */
+.scope[data-motion="reduced"] {
+  --gamma-duration-fast: 0ms;
+  --gamma-duration-base: 0ms;
+  --gamma-duration-slow: 0ms;
+  --gamma-duration-reveal: 0ms;
+}
+.scope[data-motion="reduced"],
+.scope[data-motion="reduced"] *,
+.scope[data-motion="reduced"] *::before,
+.scope[data-motion="reduced"] *::after {
+  transition: none !important;
+}
+
+.scope,
+.scope * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gamma-muted) transparent;
+  caret-color: var(--gamma-accent);
+  text-underline-offset: 0.18em;
+}
+@media (forced-colors: active) {
+  .scope,
+  .scope * {
+    scrollbar-color: auto;
+    caret-color: auto;
+  }
+  .scope ::selection {
+    background: Highlight;
+    color: HighlightText;
+  }
+}

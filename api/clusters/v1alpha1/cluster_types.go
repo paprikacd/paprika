@@ -149,9 +149,18 @@ type SatelliteStatus struct {
 	// +kubebuilder:validation:Enum=Connecting;Connected;Autonomous;OverrideHeld;Disabled
 	OperatingState SatelliteOperatingState `json:"operatingState,omitempty"`
 
-	// EffectivePolicies is the ceiling the satellite is enforcing, with the
-	// wildcard expanded. An empty list grants nothing: the registration exists
-	// and Paprika neither reads from nor writes to the cluster.
+	// ReportedPolicies is the latest policy claim received from the satellite.
+	// An absent field means that no claim has been recorded yet; an explicit
+	// empty list claims no actions. A legacy report with no policies means the
+	// default wildcard. This is an observation, not a permission grant.
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	ReportedPolicies *[]ManagementPolicy `json:"reportedPolicies,omitempty"`
+
+	// EffectivePolicies is the intersection of the latest satellite claim and
+	// the Cluster ceiling, with the wildcard expanded. It describes the
+	// satellite transport, not direct-transport permissions. It is unknown
+	// until a claim is recorded. An empty list indicates no claimed actions.
 	// +optional
 	// +kubebuilder:validation:MaxItems=8
 	EffectivePolicies []ManagementPolicy `json:"effectivePolicies,omitempty"`

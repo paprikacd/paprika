@@ -116,7 +116,7 @@ func exchangeLoginCode(ctx context.Context, client *http.Client, server string, 
 }
 
 func doBoundedRequest(client *http.Client, req *http.Request) (body []byte, status int, requestErr error) {
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- The CLI contacts the operator-selected, validateServerURL-checked server; newLoginHTTPClient disables redirects.
 	if err != nil {
 		return nil, 0, fmt.Errorf("perform login HTTP request: %w", err)
 	}

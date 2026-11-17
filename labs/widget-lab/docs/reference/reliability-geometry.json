@@ -1,0 +1,68 @@
+{
+  ".ref-inspector": {
+    "height": 243,
+    "width": 214,
+    "x": 602,
+    "y": 307
+  },
+  ".ref-outer-frame": {
+    "height": 917,
+    "width": 1499,
+    "x": 78,
+    "y": 65
+  },
+  ".ref-rail": {
+    "height": 917,
+    "width": 66,
+    "x": 12,
+    "y": 65
+  },
+  ".ref-rel-achieved": {
+    "height": 143,
+    "width": 464,
+    "x": 90,
+    "y": 121
+  },
+  ".ref-rel-budget": {
+    "height": 143,
+    "width": 531,
+    "x": 1034,
+    "y": 121
+  },
+  ".ref-rel-burn": {
+    "height": 306,
+    "width": 935,
+    "x": 90,
+    "y": 273
+  },
+  ".ref-rel-calendar": {
+    "height": 229,
+    "width": 531,
+    "x": 1034,
+    "y": 589
+  },
+  ".ref-rel-incidents": {
+    "height": 156,
+    "width": 1475,
+    "x": 90,
+    "y": 826
+  },
+  ".ref-rel-services": {
+    "height": 306,
+    "width": 531,
+    "x": 1034,
+    "y": 273
+  },
+  ".ref-rel-target": {
+    "height": 143,
+    "width": 462,
+    "x": 563,
+    "y": 121
+  },
+  ".ref-rel-timeline": {
+    "height": 229,
+    "width": 935,
+    "x": 90,
+    "y": 589
+  }
+}

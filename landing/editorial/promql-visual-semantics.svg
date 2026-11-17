@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+<title id="title">Prometheus chart choices</title><desc id="description">Labelled synthetic explanatory dashboard composition for an engineering article; not production telemetry.</desc>
+<defs><linearGradient id="background" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#12283b"/><stop offset="1" stop-color="#203b52"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" stroke="#85a4b9" stroke-opacity=".08" fill="none"/></pattern></defs>
+<rect width="1200" height="675" fill="url(#background)"/><rect width="1200" height="675" fill="url(#grid)"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#e8f2f7">
+<text x="54" y="67" font-size="16" letter-spacing="3" font-weight="700">PAPRIKA / PROMQL / DIFFERENT DATA TYPES</text>
+<text x="1145" y="67" font-size="13" text-anchor="end" fill="#9cc2d8" letter-spacing="2">ILLUSTRATIVE / NOT LIVE</text>
+<path d="M54 89H1146M54 604H1146" stroke="#66869e" stroke-opacity=".8"/>
+
+<g transform="translate(64 126)">
+<rect width="328" height="431" fill="#1a364b" stroke="#678ca8"/><text x="24" y="37" font-size="20" font-weight="700">COUNTER / RATE</text><text x="24" y="66" font-size="15" fill="#a9c7d8">Change per unit time</text>
+<path d="M27 331H302M27 100V331" stroke="#678da9" stroke-width="2"/><path d="M36 306L81 270L124 286L168 208L210 243L251 178L294 211" fill="none" stroke="#92cee9" stroke-width="5"/><text x="24" y="389" font-size="15" fill="#c4dfe9">rate(errors_total[5m])</text>
+</g>
+<g transform="translate(436 126)">
+<rect width="328" height="431" fill="#1a364b" stroke="#678ca8"/><text x="24" y="37" font-size="20" font-weight="700">GAUGE</text><text x="24" y="66" font-size="15" fill="#a9c7d8">Current observed state</text>
+<path d="M27 331H302M27 100V331" stroke="#678da9" stroke-width="2"/><path d="M36 273H88V236H139V257H192V184H244V223H294" fill="none" stroke="#a7dec5" stroke-width="5"/><text x="24" y="389" font-size="15" fill="#c4dfe9">paprika_out_of_sync</text>
+</g>
+<g transform="translate(808 126)">
+<rect width="328" height="431" fill="#1a364b" stroke="#678ca8"/><text x="24" y="37" font-size="20" font-weight="700">HISTOGRAM</text><text x="24" y="66" font-size="15" fill="#a9c7d8">Aggregate before p95</text>
+<path d="M27 331H302M27 100V331" stroke="#678da9" stroke-width="2"/>
+<g fill="#7fb3d5"><rect x="41" y="290" width="28" height="41"/><rect x="78" y="249" width="28" height="82"/><rect x="115" y="196" width="28" height="135"/><rect x="152" y="164" width="28" height="167"/><rect x="189" y="229" width="28" height="102"/><rect x="226" y="285" width="28" height="46"/><rect x="263" y="314" width="28" height="17"/></g><path d="M33 153H296" stroke="#e6be8e" stroke-width="3" stroke-dasharray="5 7"/>
+<text x="24" y="389" font-size="15" fill="#c4dfe9">histogram_quantile()</text>
+</g>
+<text x="55" y="638" font-size="13" letter-spacing="2" fill="#91b1c5">ENGINEERING NOTES / EVIDENCE BEFORE INTERPRETATION</text>
+</g></svg>

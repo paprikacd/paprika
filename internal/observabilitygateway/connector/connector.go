@@ -24,6 +24,8 @@ const (
 	SignalMetrics Signal = "metrics"
 	// SignalTraces is the distributed-trace data plane.
 	SignalTraces Signal = "traces"
+	// SignalRecords is a bounded frame of typed scalar application or SQL data.
+	SignalRecords Signal = "records"
 )
 
 // State is the outcome vocabulary of one query, in the values a caller can
@@ -57,6 +59,9 @@ const (
 	ProviderLoki       = "loki"
 	ProviderTempo      = "tempo"
 	ProviderOTLP       = "otlp"
+	ProviderShorted    = "shorted"
+	ProviderUptime     = "uptime"
+	ProviderPostgreSQL = "postgresql"
 
 	// Google Cloud connectors. Credentials are a Google credential JSON
 	// (service_account, external_account or impersonated_service_account —
@@ -150,6 +155,10 @@ type QueryRequest struct {
 	TraceID string
 	// Range bounds the query in absolute time.
 	Range TimeRange
+	// Step overrides the provider's derived metric sampling interval.
+	Step time.Duration
+	// Instant asks a metrics provider for one value evaluated at Range.End.
+	Instant bool
 	// Limit caps the number of returned entries; interpretation and
 	// clamping are the connector's own.
 	Limit int
@@ -226,6 +235,8 @@ const (
 	// ExploreMetricMetadata describes one metric: its type, help text and
 	// unit. ExploreRequest.Metric is required.
 	ExploreMetricMetadata ExploreKind = "metric_metadata"
+	// ExploreMetricSeries enumerates bounded label sets for metric cardinality.
+	ExploreMetricSeries ExploreKind = "metric_series"
 	// ExploreTraceServices enumerates the service names a trace backend
 	// has spans for.
 	ExploreTraceServices ExploreKind = "trace_services"
@@ -245,6 +256,8 @@ type ExploreRequest struct {
 	// substring (the backend's own prefix/regex API is used where one
 	// exists; otherwise the connector filters the response).
 	Prefix string
+	// Range bounds schema discovery when the provider supports time filtering.
+	Range TimeRange
 	// Limit caps the number of returned entries; interpretation and
 	// clamping are the connector's own.
 	Limit int

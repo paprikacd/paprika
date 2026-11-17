@@ -5,6 +5,111 @@
 Operate and improve Paprika on the VKE cluster. Fix bugs, add features,
 deploy changes safely, and keep the shared `paprika-e2e` namespace healthy.
 
+## Dashboard Design
+
+For Insights dashboards, charts, maps, tooltips, responsive layouts, and panel
+editing, read the repository's
+[Paprika Dashboard Design skill](.agents/skills/paprika-dashboard-design/SKILL.md)
+before designing or implementing changes. Its bundled references, visual
+fixtures, review templates, and contract checker guide the work alongside the
+current `DESIGN.md` and applicable directory instructions.
+
+**Authoring procedure and gates.** Build or change a dashboard with the Paprika Observe
+skill procedure (`plugins/paprika-observe/skills/paprika-observe/SKILL.md`). Composition rules
+are served by `get_insights_schema` and the observe server instructions; this file does not restate them.
+
+- Lint: `go run ./cmd/paprika-insights lint --served-schema-examples ui/src/features/insights/repository-examples/catalog.json internal/insights/starters`.
+  CI also lints the gallery export and the reference fixtures.
+- Visual matrix: `ui/e2e/insights-visual-matrix-linux.sh` (Docker; `--update` records the baseline).
+- Playground: `cd ui && npm run insights:lab` (hot-reloading, synthetic fixtures).
+- Local loop: `docs/guides/local-dashboard-polish.md`. `render_dashboard` needs
+  `PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET`; see `docs/guides/observe-browser-renderer.md`.
+- Dated evidence lives in `docs/design/insights/receipts/`, not here.
+
+### Repairing a live dashboard
+
+Repair drifted dashboards with the tested toolkit before writing new queries:
+`hack/dashboard-presentation/patches.json` (reviewed widget edits, applied with
+`patch_dashboard` after the UI release is deployed), `hack/service-overview/`
+(exact-ETag query patches; `migrate.mjs` previews, then applies through an authenticated
+Observe MCP client), `hack/shorted-queries/` (Shorted query fixtures), the coverage gate
+`ui/e2e/service-overview-coverage.mjs`, and the promtool PromQL fixtures. CI runs the hack
+and coverage tests in one step. Missing telemetry stays empty. An absent error-class series
+may become zero only against observed request traffic, and zero-traffic ratios stay
+undefined. The full
+section is in the design skill, and the source requirements are in
+[dashboard data coverage](docs/guides/dashboard-data-coverage.md).
+
+## Get changes live and prove Paprika Observe works
+
+This is the **execution checklist**, not a claim about the current deployment.
+Follow it when the user asks to deploy Paprika, reconnect MCP, create a live
+dashboard, or verify a release. The detailed cluster constraints below still
+apply.
+
+1. **Source → validated PR.** Work in a feature branch, open a PR and inspect
+   the required CI outcomes, especially Go lint/race tests, MCP contracts,
+   Insights/browser smoke, integration, Helm, and distribution checks.
+   Read the job failure logs and fix the cause; a source merge, a green unit
+   test, or successful GitHub Pages publishing is **not** a VKE deployment.
+2. **Merge → immutable image → VKE.** On `master`, inspect the matching
+   `.github/workflows/ci.yml` GitHub Actions run. Confirm `Publish image`
+   succeeded and `Deploy published image to VKE / Deploy and validate on VKE`
+   succeeded for the **same commit SHA**. Record the immutable
+   `ghcr.io/paprikacd/paprika@sha256:…` image digest, Helm release
+   `paprika-e2e`, namespace `paprika-e2e` and revision. Before a manual
+   cluster write, confirm `kubectl config current-context`. Preserve the
+   existing Insights PVC (`paprika-e2e-insights`, phase `Bound`); never replace
+   its retained contents as a side effect of deployment.
+3. **Inspect live workloads.** The API server, controller manager, Insights,
+   observability gateway, repo server and webhook receiver should be
+   running and Ready, with restart counts examined. Check the deployed
+   `/healthz`, `/readyz`, UI and `/metrics` endpoints (HTTP 200) through the
+   intended authenticated/port-forward route. Prefer GitHub's VKE deployment
+   receipts and `kubectl` evidence, not assumptions from `master`.
+   Healthy pods do **not** establish that a dashboard has fresh data.
+4. **Connect the correct MCP surface.** Fleet MCP is `/mcp`; observability
+   MCP is `https://paprika.benebsworth.com/observe/mcp`. Select the existing
+   **Paprika Observe** app in ChatGPT or connect via the client's native
+   OAuth flow; it requires `paprika:observe` for read and additionally
+   `paprika:insights:write` plus human Insights RBAC for saved-query/dashboard
+   authoring. The audiences are separate. A GitHub-backed CLI plugin install
+   (`npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex`,
+   or `--client claude`) does **not** register a ChatGPT custom MCP app.
+   If tools are absent, verify that the authenticated app is selected in a
+   fresh conversation. Do not create another plugin, invent app IDs, paste
+   bearer tokens or commit account-specific `.app.json` bindings.
+5. **Author and prove the dashboard.** Follow the Paprika Observe skill's
+   "Build or change a dashboard" procedure. A successful save is not a working
+   dashboard: read it back, and `query_dashboard` must show its signals. Visual QA
+   is a separate `render_dashboard` check and may report NOT RUN. Do not burst
+   parallel dashboard reads; the skill's rate-limit section says how to back off.
+
+## Core fleet console: adapt demo quality without synthetic data
+
+The production fleet overview, rollouts, clusters and observability screens
+are separate from the Insights builder and the Widget Lab reference artboards.
+Promote the demos' hierarchy, measured spacing, chart anatomy and useful
+interactions into maintained core owners, not into parallel fixtures.
+
+The main console uses Tailwind/Blueprint and a light-only shell; Insights
+uses independently scoped Gamma light/dark/compact tokens. Never blindly
+copy demo CSS or synthetic observations into the core shell. Reuse existing
+status-tone, data-state, navigation and auth components. Only add a sparkline
+when a real, time-indexed signal exists. Avoid decorative percent bars.
+
+GetSystemStatus returns whole-fleet totals/health/attention; its request
+does not accept the current fleet URL filters. QueryApplications does apply
+the URL scope. Label server status totals as whole-fleet, never as per-project
+or filtered values; missing responses remain unavailable rather than zero.
+
+For each main-console adaptation, test 1440px desktop and 390px mobile,
+capture Playwright screenshots, verify overflow/reading density/selection,
+and keep actual-data semantics independent from style. A successful unit
+test or a sample screenshot cannot establish live deployment or demo parity.
+The first production adaptation is core overview PR #193, which adds a
+whole-fleet instrument strip and measured board-header styling.
+
 ## Constraints & Preferences
 
 - OTel SDK with Prometheus exporter for metrics (not direct Prometheus client
@@ -118,31 +223,70 @@ helm upgrade paprika-e2e charts/chart/ \
   discovery API with caching, pluralization fallback. The resolver is
   `CachedGVRResolver` in `internal/engine/gvr_resolver.go`.
 - Release renders pin the resolved commit SHA into the template spec
-  (`stampTemplateSourceIdentity`) for reproducibility. The repo-server git
-  mirror is depth-1 shallow on an `emptyDir` — pod restarts wipe it, and a
-  rebuilt shallow mirror can't resolve below-boundary pinned commits without
-  the exact-commit fetch recovery in `internal/source/git.go`
-  (`fetchPinnedCommit` + `refs/paprika-pinned/`). Never force-push over
+  (`stampTemplateSourceIdentity`) for reproducibility. Never force-push over
   commits a release has pinned; upstream-unreachable SHAs permanently fail
-  that release's renders. Only the first clone is shallow: fetches into an
-  existing mirror run at depth 0 (`incrementalDepth`), and what that leaves
-  out below the boundary is re-fetched at depth 1 by `repairDanglingRefs` (a
-  ref on a missing commit) and `refetchTip` (a tip missing a tree or blob).
-- Git resolve is pure go-git — no `git` binary and no second worktree repo:
-  the mirror fetches the minimal refspec for the revision (`+HEAD:` for
-  default, `+refs/heads/<rev>` for branches, `+<sha>:refs/paprika-pinned/`
-  for pinned commits with an all-heads fallback when the server lacks
-  allowAnySHA1InWant), and `checkoutTree` materializes files straight from
-  mirror objects into `git-clones/` (subtree-scoped when `path` is set —
-  sparse for monorepos — plus a sibling `.rev` marker that skips
-  re-materialization on re-resolve). Knobs on `source.git`:
-  `shallow` (default true), `depth`, `fetchAllRefs`, `fetchTtl` (e.g. "30s" —
-  warm mirrors skip the remote inside the TTL; a `.lastfetch` sibling file
-  is the clock, go-git writes no FETCH_HEAD). Pinned SHA resolves skip the
-  remote entirely once the object is mirrored — commits are immutable.
-  Mirror corruption discovered during object reads triggers the protected
-  rebuild (see `isRecoverableGitCacheError` — errors naming the remote URL
-  never reset).
+  that release's renders ("the remote has no such commit").
+- Git resolve has two backends (`internal/source`, `GitSource.backend`,
+  `PAPRIKA_GIT_BACKEND=auto|cli|go-git`, chart `repoServer.git.backend`).
+  `auto` uses the git CLI (`gitcli*.go`) when git >= 2.44 is installed (the
+  cluster image built from `Dockerfile` ships the pinned 2.54 series; the
+  release image `Dockerfile.goreleaser` deliberately ships none, see
+  `hack/test-cli-release-contract.sh`) and go-git (`git.go`) otherwise. Only
+  `http(s)://` repositories resolve: `source.ValidateGitRepoURL` is enforced
+  by the Application, Template and Repository webhooks and again on every
+  resolve, because a `file://` URL or local path would render another
+  repository cached on the repo server (tests opt in with
+  `allowLocalGitRepos`).
+  - CLI: one bare blobless partial clone per repository and credential at
+    `<workdir>/git-cache/mirrors/<key>.git`. A branch/tag/default resolves
+    with `ls-remote` (protocol v2, one round trip, shared by concurrent
+    requests; `fetchTtl` bounds how old an answer may be, and 0, as a sync
+    trigger sends, reuses no answer from before the request); the commit is
+    fetched by SHA at
+    depth 1 with `--filter=blob:none` (commit + trees, about 1 MB for
+    brandbrain's 22,795-file tip), then only the blobs under `path` that the
+    mirror lacks, in one `fetch --stdin`. Checkouts are immutable and
+    content-addressed (`git-cache/checkouts/<key>/<tree>-<pathhash>/<path>`,
+    complete once a `.done` marker holds the dir hash), so nothing a render
+    is reading is rewritten; a resolve leases its checkout until the caller
+    calls `ResolveResult.Release()` (the engine does after loading the chart
+    or building the kustomization), and eviction skips leased checkouts.
+    Every fetched object is fsck-checked; checkouts refuse symlinks that
+    resolve outside the source path and entries beneath a symlink, in both
+    backends. A server that refuses objects by ID (protocol v0 without
+    `allowAnySHA1InWant`) gets the ref, or for a pinned SHA every branch,
+    refetched unfiltered. Fetches of one commit and checkouts of one tree
+    are single-flight and run detached from the request (bounded by
+    `PAPRIKA_GIT_FETCH_TIMEOUT`, default 10m; the git process group is
+    killed at it, and its orphans are reaped in-process because `/manager`
+    is PID 1 with no init); writes to one mirror are serialized and hold one of
+    `PAPRIKA_GIT_MAX_CONCURRENT_FETCHES` (default 4) process-wide slots, so
+    a slow repository never blocks another. `PAPRIKA_GIT_CACHE_MAX_BYTES`
+    bounds the cache with LRU eviction (entries used within
+    `PAPRIKA_GIT_CACHE_MIN_AGE` are kept). A mirror that cannot be read is
+    removed and rebuilt once (`localGitError`). Credentials reach git only
+    through an env-backed credential helper scoped to the repository host.
+    `shallow` and `fetchAllRefs` do not apply; `depth` > 1 does.
+  - go-git (fallback, distroless images, SSH URLs): a depth-1 mirror in
+    `git-mirrors/` that downloads every blob of the fetched tree (8.9 GB and
+    13 minutes for brandbrain's tip, 2026-10-29) and, cold, a pinned SHA's
+    whole history. Only the first clone is shallow: fetches into an existing
+    mirror run at depth 0 (`incrementalDepth`), and what that leaves out is
+    re-fetched at depth 1 by `repairDanglingRefs` and `refetchTip`; a pinned
+    commit below the boundary goes through `fetchPinnedCommit`.
+    `checkoutTree` materializes the `path` subtree into `git-clones/` in
+    place. `fetchTtl` uses a `.lastfetch` clock. Corruption during object
+    reads triggers the protected rebuild (`isRecoverableGitCacheError`).
+  - Rollout: go-git now checks out executable files, so a deploy of this code
+    changes the source hash once for apps with a 100755 file in their path.
+    Take that on `repoServer.git.backend: go-git` first (omega pins it in
+    `deploy/omega-values.yaml`), then flip to `auto` in a separate upgrade:
+    the CLI's hashes match go-git's.
+  - Metrics: `paprika_git_fetch_duration_seconds{op,result}`,
+    `paprika_git_fetch_received_bytes_total{op}`,
+    `paprika_git_fetch_inflight`, `paprika_git_fetch_waiting`,
+    `paprika_git_cache_lookups_total{layer,result}`,
+    `paprika_git_cache_size_bytes{dir}`, `paprika_git_cache_evictions_total{kind}`.
 - All Kubernetes clients share `negotiateProtobuf` (cmd/protobuf.go), which
   composes `kube.WithProtobufResponses` + `kube.WithRetryTransport`: GET/
   HEAD/OPTIONS retry up to 3 attempts on connection resets / mid-response
@@ -247,8 +391,11 @@ helm upgrade paprika-e2e charts/chart/ \
   rejection cleans the secret up), and the MCP tools `list_provider_types`/
   `describe_provider_type`/`validate_provider`. It mints/verifies the
   `paprika-observability` audience
-  (distinct from `paprika-api` and `paprika-mcp`) and grants only the
-  `paprika:observe` scope; the shared `mcp.Server` was generalized with
+  (distinct from `paprika-api` and `paprika-mcp`) and grants
+  `paprika:observe`, plus explicit `paprika:insights:write` consent when
+  Insights is configured. Authoring reuses the UI's authenticated Insights
+  proxy and exact document ETags; it grants no provider or fleet writes.
+  Existing read-only grants stay read-only. The shared `mcp.Server` uses
   RoutePrefix/ProtocolPath/Audience/SupportedScopes so both surfaces run
   from one implementation. Admission validation (webhook
   `rejectInlineCredentials` + per-connector `ValidateConfig`) lives in
@@ -502,7 +649,7 @@ E2E_SKIP_IMAGE_BUILD=true E2E_SKIP_IMAGE_LOAD=true \
   go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m
 
 # Local perf/profiling stack (kind paprika-perf: full split chart,
-# MCP + basic auth admin/admin123, pprof on :6060, metrics-server).
+# MCP + basic auth admin/admin123, pprof on 127.0.0.1:6060, metrics-server).
 # All knobs are env/CLI vars (PERF_CLUSTER, PERF_PORT, PERF_IMG, ... —
 # see the perf:* section of Taskfile.yml):
 task perf:up        # build image (native arch), kind load, helm install
@@ -547,9 +694,10 @@ skip with `E2E_SKIP_METRICS_SERVER=true`.
 ### Debug
 
 ```sh
-# pprof: enable with --pprof-bind-address=:6060 (flag exists on every mode,
-# patched into paprika-e2e api-server + controller-manager args). Reach it
-# only through port-forward — no Service/Ingress exposes 6060.
+# pprof: enable with --pprof-bind-address=127.0.0.1:6060 in the component's
+# args (flag exists on every mode; deploy/test-values.yaml sets it for the
+# manager and api-server). Loopback only: reach it through port-forward, since
+# no Service/Ingress routes to 6060.
 kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 16060:6060 &
 mkdir -p /tmp/paprika-perf/vke
 curl -sf http://localhost:16060/debug/pprof/heap -o /tmp/paprika-perf/vke/heap.pprof

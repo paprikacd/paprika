@@ -26,7 +26,7 @@ func TestListProviderTypesTool(t *testing.T) {
 	require.True(t, ok, "response is a map, got %T", out)
 	types, ok := m["types"].([]catalog.TypeSummary)
 	require.True(t, ok, "types is a []catalog.TypeSummary, got %T", m["types"])
-	require.Len(t, types, 13)
+	require.Len(t, types, 16)
 	// The catalog's deterministic order is Vendor then DisplayName.
 	assert.Equal(t, connector.ProviderAWSCloudTrail, types[0].Type)
 	requireObservedAt(t, out)

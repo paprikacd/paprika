@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile, realpath } from "node:fs/promises";
+import { readdir, readFile, realpath } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const root = new URL("../../../../../", import.meta.url);
 const plugin = new URL("plugins/paprika-observe/", root);
@@ -14,11 +17,11 @@ test("observe is an optional separate package with consistent supported manifest
   assert.equal(portable.$schema, "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
   for (const manifest of [portable, codex, claude]) {
     assert.equal(manifest.name, "paprika-observe");
-    assert.equal(manifest.version, "0.1.0");
+    assert.equal(manifest.version, "0.3.0");
     assert.equal(manifest.description, portable.description);
   }
   assert.deepEqual(codex.interface, portable.extensions["com.openai"].interface);
-  assert.deepEqual(codex.interface.capabilities, ["Read"]);
+  assert.deepEqual(codex.interface.capabilities, ["Read", "Write"]);
   for (const manifest of [codex, claude]) {
     assert.equal(manifest.mcpServers, "./.mcp.json");
     assert.equal(manifest.skills, "./skills/");
@@ -28,7 +31,7 @@ test("observe is an optional separate package with consistent supported manifest
   assert.deepEqual(Object.keys(mcp.mcpServers), ["paprika_observe"]);
   assert.deepEqual(mcp.mcpServers.paprika_observe, {
     type: "streamable-http", url: endpoint,
-    extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" }, baseScopes: ["paprika:observe"] } } },
+    extensions: { "com.openai": { auth: { type: "oauth", client: { mode: "dcr" }, baseScopes: ["paprika:observe"], defaultScopes: ["paprika:observe"] } } },
   });
   const fleet = JSON.parse(await readFile(new URL("plugins/paprika/.mcp.json", root), "utf8"));
   assert.deepEqual(Object.keys(fleet.mcpServers), ["paprika_hosted"], "updating the fleet package must not attach a new connection");
@@ -44,21 +47,97 @@ test("marketplaces expose observe as an independent opt-in plugin", async () => 
   }
 });
 
+test("only the canonical Observe package declares the paprika-observe skill name", async () => {
+  // Two same-named skills would both load on install. Walk the repository source tree,
+  // skipping dependency, build and worktree directories, and collect every SKILL.md
+  // whose frontmatter declares name: paprika-observe.
+  const skipped = new Set(["node_modules", "dist", "out", "coverage", "artifacts", ".git", ".worktrees", ".next"]);
+  const declaring: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        // Dot directories such as .kimi-code are walked too; only VCS, worktree and build output is skipped.
+        if (skipped.has(entry.name)) continue;
+        await walk(join(directory, entry.name));
+      } else if (entry.isFile() && entry.name === "SKILL.md") {
+        const text = await readFile(join(directory, entry.name), "utf8");
+        // The name may be bare or quoted in the frontmatter.
+        if (/^name:\s*["']?paprika-observe["']?\s*$/m.test(text)) declaring.push(relative(fileURLToPath(root), join(directory, entry.name)));
+      }
+    }
+  };
+  await walk(fileURLToPath(root));
+  assert.deepEqual(declaring.sort(), ["plugins/paprika-observe/skills/paprika-observe/SKILL.md"]);
+});
+
+test("no shipped SKILL.md body contains a dollar sign followed by a digit or $ARGUMENTS", async () => {
+  // Claude Code substitutes $ARGUMENTS, $ARGUMENTS[N] and the shorthand $0, $1, $2, ... with the
+  // caller's arguments when a skill loads, so a literal PostgreSQL $1 in prose or examples is corrupted.
+  const shipped: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules") await walk(path);
+      } else if (entry.isFile() && entry.name === "SKILL.md") {
+        shipped.push(path);
+      }
+    }
+  };
+  await walk(fileURLToPath(new URL("plugins/", root)));
+  assert.ok(shipped.length >= 3, "the paprika, paprika-setup and paprika-observe skills must be found");
+  for (const path of shipped) {
+    const text = await readFile(path, "utf8");
+    assert.doesNotMatch(
+      text,
+      /\$(?:\d|ARGUMENTS)/,
+      `${relative(fileURLToPath(root), path)} contains a dollar sign followed by a digit or $ARGUMENTS. Claude Code substitutes these with the caller's arguments when the skill loads, corrupting the body. Describe positional parameters in words and move literal examples to a references/ file, which is read on demand and not substituted.`,
+    );
+  }
+});
+
+test("the merged records and SQL guidance stays in the canonical Observe skill", async () => {
+  // Pins the typed-records and SQL binding text ported from the removed fleet copy.
+  const skill = await readFile(new URL("skills/paprika-observe/SKILL.md", plugin), "utf8");
+  assert.match(skill, /`query_records` returns bounded `columns` and `rows`/);
+  assert.match(skill, /Records\s+never accept a metric projection/);
+  assert.match(skill, /the SQL text stays fixed/);
+  assert.match(skill, /unquoted\s+`\{\{service\}\}` placeholder/);
+  assert.match(skill, /\{"range":"start"\}/);
+  // The literal positional example lives in a reference file: read on demand, never substituted.
+  assert.match(skill, /\[worked example\]\(references\/postgresql-bindings\.md\)/);
+  const bindings = await readFile(new URL("skills/paprika-observe/references/postgresql-bindings.md", plugin), "utf8");
+  assert.match(bindings, /WHERE service=\$1","parameters":\[\{\{service\}\}\]\}/);
+  assert.match(skill, /verify-full TLS and an unprivileged\s+reader role/);
+  assert.match(skill, /the Uptime connector rejects more than 100 rows/);
+  assert.match(skill, /`Forbidden` means the backend refused the supplied credentials/);
+});
+
 test("observe skill examples match real gateway schemas and preserve secure handoff boundaries", async () => {
   const source = await readFile(new URL("internal/observabilitygateway/tools.go", root), "utf8");
+  const rangeSource = await readFile(new URL("internal/observabilitygateway/tools_explore_range.go", root), "utf8");
   const schemas = new Map<string, any>();
-  for (const match of source.matchAll(/\bName:\s*"([^"]+)"(?:(?!\bName:\s*")[\s\S])*?\bInputSchema:\s*json\.RawMessage\(\s*`([^`]+)`\s*\)/g)) {
+  for (const match of (source + rangeSource).matchAll(/\bName:\s*"([^"]+)"(?:(?!\bName:\s*")[\s\S])*?\bInputSchema:\s*json\.RawMessage\(\s*`([^`]+)`\s*\)/g)) {
     schemas.set(match[1], JSON.parse(match[2]));
   }
   // query_metrics and query_logs are built by nativeQueryTool, whose tool name
   // is derived from the signal rather than a literal Name field.
   const nativeSource = source.slice(source.indexOf("func nativeQueryTool"), source.indexOf("func queryTracesTool"));
-  const nativeSchema = nativeSource.match(/InputSchema:\s*json\.RawMessage\(\s*`([^`]+)`\s*\)/);
-  if (nativeSchema) {
-    const schema = JSON.parse(nativeSchema[1]);
-    schemas.set("query_metrics", schema);
-    schemas.set("query_logs", schema);
-  }
+  const nativeSchema = nativeSource.match(/InputSchema:\s*json\.RawMessage\(fmt\.Sprintf\(\s*`([^`]+)`\s*,\s*metricFields\s*\)\)/);
+  const metricFields = nativeSource.match(/metricFields\s*=\s*`([^`]+)`/);
+  assert.ok(nativeSchema, "native query schema template must exist");
+  assert.ok(metricFields, "metric-specific query options must exist");
+  schemas.set("query_metrics", JSON.parse(nativeSchema[1].replace("%s", metricFields[1])));
+  schemas.set("query_logs", JSON.parse(nativeSchema[1].replace("%s", "")));
+  const insightsSource = await readFile(new URL("internal/observabilitygateway/insights_tools.go", root), "utf8");
+  const querySource = await readFile(new URL("internal/observabilitygateway/insights_query.go", root), "utf8");
+  const idSchema = insightsSource.match(/const insightsIDSchema = `([^`]+)`/);
+  const dashboardSchema = querySource.match(/const dashboardQueryInputSchema = ([\s\S]+?)\n\n/);
+  assert.ok(idSchema && dashboardSchema, "dashboard query schema must exist");
+  schemas.set("query_dashboard", JSON.parse(dashboardSchema[1].replaceAll("` + insightsIDSchema + `", idSchema[1]).slice(1, -1)));
+  assert.equal(schemas.get("query_metrics").properties.step_seconds.type, "number");
+  assert.equal(schemas.get("query_metrics").properties.instant.type, "boolean");
+  assert.ok(!Object.hasOwn(schemas.get("query_logs").properties, "step_seconds"));
   const skill = await readFile(new URL("skills/paprika-observe/SKILL.md", plugin), "utf8");
   const examples = [...skill.matchAll(/```json\n([\s\S]*?)\n```/g)];
   assert.ok(examples.length >= 4);
@@ -70,7 +149,14 @@ test("observe skill examples match real gateway schemas and preserve secure hand
       for (const [name, value] of Object.entries(args)) {
         assert.ok(Object.hasOwn(schema.properties, name), `${tool}.${name} must exist`);
         const field = schema.properties[name];
-        assert.equal(typeof value, field.type === "integer" ? "number" : field.type);
+        if (field.anyOf) {
+          assert.ok(field.anyOf.some((variant: any) => variant.const === value ||
+            (variant.type === "integer" && Number.isInteger(value) && (value as number) >= variant.minimum && (value as number) <= variant.maximum)));
+        } else if (field.type === "array") {
+          assert.ok(Array.isArray(value));
+        } else {
+          assert.equal(typeof value, field.type === "integer" ? "number" : field.type);
+        }
         if (field.maximum !== undefined) assert.ok((value as number) <= field.maximum);
         if (field.minimum !== undefined) assert.ok((value as number) >= field.minimum);
       }
@@ -81,4 +167,43 @@ test("observe skill examples match real gateway schemas and preserve secure hand
   assert.match(skill, /offline; it does not test backend connectivity/);
   assert.match(skill, /do not invent pagination/);
   assert.match(skill, /Empty successful results/);
+  assert.match(skill, /paprika:insights:write/);
+  assert.match(skill, /refresh cannot add authoring/);
+  assert.match(skill, /exact\s+ETag/);
+  assert.match(skill, /never silently overwrite/);
+  assert.match(skill, /retaining unsaved local/);
+  assert.match(skill, /structuredContent.*authoritative/);
+  assert.match(skill, /state.*data availability, never service health/);
+  assert.match(skill, /Overrides apply only to this call, never to saved defaults/);
+});
+
+
+test("Observe consent renders only requested scopes and keeps legacy requests read-only", async () => {
+  const source = await readFile(new URL("internal/observabilitygateway/consent.go", root), "utf8");
+  const start = source.indexOf("function render(rec) {");
+  const end = source.indexOf("function checkedScopes()", start);
+  assert.ok(start > 0 && end > start);
+  for (const requested of ["", "paprika:observe", "paprika:observe paprika:insights:write"]) {
+    function element() {
+      return { children: [] as any[], textContent: "", type: "", name: "", value: "", checked: false,
+        appendChild(child: any) { this.children.push(child); }, addEventListener() {} };
+    }
+    const nodes = new Map<string, ReturnType<typeof element>>();
+    const get = (id: string) => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id)!; };
+    runInNewContext(source.slice(start, end) + "\nrender(rec);", {
+      rec: { client_id: "<script>untrusted-client</script>", scope: requested }, consentEl: { hidden: true },
+      document: { createElement: element, createTextNode: (textContent: string) => ({ textContent }), getElementById: get },
+    });
+    const checkboxes = get("scopes").children.map(label => label.children[0]);
+    assert.deepEqual(checkboxes.map(box => box.value), requested ? requested.split(" ") : ["paprika:observe"]);
+    assert.ok(checkboxes.every(box => box.checked));
+    const description = get("access-description").textContent;
+    if (requested.includes("paprika:insights:write")) {
+      assert.match(description, /create and update saved queries and dashboards/);
+      assert.match(description, /cannot configure providers or change fleet applications/);
+    } else {
+      assert.match(description, /cannot create or update/);
+    }
+    assert.equal(get("client-line").children[0].textContent, "<script>untrusted-client</script>");
+  }
 });

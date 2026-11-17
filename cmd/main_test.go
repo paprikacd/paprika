@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -235,6 +236,79 @@ func TestFleetCacheDisabled(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for runAPIMode to exit")
 	}
+}
+
+// TestAPIModeConsoleAuthWarning runs runAPIMode and checks the console
+// authentication warning on the real startup path. The warning is logged before
+// the API server listens, so the test waits for the server's start log first.
+func TestAPIModeConsoleAuthWarning(t *testing.T) {
+	t.Parallel()
+
+	const warning = logAuthDisabledFlag
+	if got := apiModeConsoleLogs(t, ":0"); !strings.Contains(got, warning) {
+		t.Fatalf("wildcard console with auth disabled: warning missing from logs: %q", got)
+	}
+	if got := apiModeConsoleLogs(t, "127.0.0.1:0"); strings.Contains(got, warning) {
+		t.Fatalf("loopback console with auth disabled: unexpected warning in logs: %q", got)
+	}
+}
+
+// apiModeConsoleLogs starts runAPIMode with auth disabled and uiAddr as the
+// console address, waits until the API server reports its start, and returns
+// everything the manager logged.
+func apiModeConsoleLogs(t *testing.T, uiAddr string) string {
+	t.Helper()
+
+	fakeK8s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{}`)); err != nil {
+			t.Errorf("Failed to write fake Kubernetes response: %v", err)
+		}
+	}))
+	t.Cleanup(fakeK8s.Close)
+
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("fake-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	logs := &operatorLogBuffer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runAPIMode(ctx, &cliConfig{
+			Mode:            "api",
+			K8sAPIServer:    fakeK8s.URL,
+			K8sTokenFile:    tokenFile,
+			UIAddr:          uiAddr,
+			ProbeAddr:       ":0",
+			APICacheEnabled: false,
+		}, newScheme(), funcr.New(logs.add, funcr.Options{}), make(chan string, 1))
+	}()
+
+	deadline := time.After(10 * time.Second)
+	for !strings.Contains(logs.String(), "Starting API server") {
+		select {
+		case err := <-errCh:
+			t.Fatalf("runAPIMode exited before the API server started: %v", err)
+		case <-deadline:
+			t.Fatalf("timeout waiting for the API server to start; logs: %q", logs.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("runAPIMode returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for runAPIMode to exit")
+	}
+	return logs.String()
 }
 
 func TestRepoServerHealthEndpoint(t *testing.T) {
@@ -899,6 +973,7 @@ func TestValidateControllerTuning(t *testing.T) {
 			StageMaxConcurrentReconciles:    3,
 			PipelineMaxConcurrentReconciles: 3,
 			AppTransientRequeue:             5 * time.Second,
+			AppRepoServerTimeout:            time.Minute,
 			CacheResyncPeriod:               time.Hour,
 			ReconcileGlobalRate:             100,
 			ReconcileGlobalBurst:            200,
@@ -922,6 +997,14 @@ func TestValidateControllerTuning(t *testing.T) {
 		cfg := valid()
 		cfg.AppTransientRequeue = 100 * time.Millisecond
 		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("unbounded or sub-second repo-server timeout rejected", func(t *testing.T) {
+		for _, timeout := range []time.Duration{0, 500 * time.Millisecond, 2 * time.Hour} {
+			cfg := valid()
+			cfg.AppRepoServerTimeout = timeout
+			require.Error(t, validateControllerTuning(cfg), "timeout %s", timeout)
+		}
 	})
 
 	t.Run("global rate <= 0 disables limiting and relaxes app rate", func(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -85,12 +86,211 @@ func TestBackendConcurrencyLimitAndRecovery(t *testing.T) {
 		first <- err
 	}()
 	<-started
-	_, err := b.Explore(context.Background(), "obs/prom", connector.ExploreRequest{Kind: connector.ExploreMetricNames})
-	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err), "queries and discovery share the same work cap")
+	second := make(chan error, 1)
+	go func() {
+		_, err := b.Explore(context.Background(), "obs/prom", connector.ExploreRequest{Kind: connector.ExploreMetricNames})
+		second <- err
+	}()
+	select {
+	case err := <-second:
+		t.Fatalf("queued exploration returned before capacity was released: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
 	close(release)
 	require.NoError(t, <-first)
-	_, err = b.Query(context.Background(), "obs/prom", connector.QueryRequest{Query: "up"})
+	require.NoError(t, <-second, "discovery should wait and use the shared work slot")
+	_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Query: "up"})
 	require.NoError(t, err, "a completed query frees capacity")
+}
+
+func TestExecutionBudgetPerProviderIsolation(t *testing.T) {
+	b := newExecutionBudget(2, time.Second)
+	b.perProvider = 1
+	_, doneFirst, err := b.begin(t.Context(), "obs/hot")
+	require.NoError(t, err)
+	waiting := make(chan error, 1)
+	go func() {
+		_, done, waitErr := b.begin(t.Context(), "obs/hot")
+		if done != nil {
+			done()
+		}
+		waiting <- waitErr
+	}()
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		slots := b.providers["obs/hot"]
+		return slots != nil && len(slots.waiting) == 1
+	}, time.Second, time.Millisecond)
+	_, doneOther, err := b.begin(t.Context(), "obs/independent")
+	require.NoError(t, err, "a hot provider cannot take every global execution slot")
+	doneOther()
+	doneFirst()
+	require.NoError(t, <-waiting)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	require.Empty(t, b.providers, "finished work must release provider bulkheads")
+}
+
+func TestExecutionBudgetQueueBoundedAndCancellation(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.perProvider = 1
+	b.perProviderWaiting = 1
+	b.queueTimeout = time.Second
+	_, done, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	waiting := make(chan error, 1)
+	go func() {
+		_, cleanup, waitErr := b.begin(ctx, "obs/prom")
+		if cleanup != nil {
+			cleanup()
+		}
+		waiting <- waitErr
+	}()
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		slots := b.providers["obs/prom"]
+		return slots != nil && len(slots.waiting) == 1
+	}, time.Second, time.Millisecond)
+	_, _, err = b.begin(t.Context(), "obs/prom")
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err),
+		"overflow rejects new work rather than growing unbounded")
+	cancel()
+	require.Equal(t, connect.CodeCanceled, connect.CodeOf(<-waiting))
+	done()
+	b.mu.Lock()
+	require.Empty(t, b.providers)
+	b.mu.Unlock()
+	_, cleanup, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err, "cancellation must free all queued and active permits")
+	cleanup()
+}
+
+func TestExecutionBudgetGlobalAdmissionCoversProviderWaiters(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.admitted = make(chan struct{}, 2) // one executing, one waiting in any provider
+	b.perProvider = 1
+	_, doneFirst, err := b.begin(t.Context(), "obs/hot")
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	waiting := make(chan error, 1)
+	go func() {
+		_, done, waitErr := b.begin(ctx, "obs/hot")
+		if done != nil {
+			done()
+		}
+		waiting <- waitErr
+	}()
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		slots := b.providers["obs/hot"]
+		return slots != nil && len(slots.waiting) == 1
+	}, time.Second, time.Millisecond)
+	_, _, err = b.begin(t.Context(), "obs/other")
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err),
+		"provider-specific waiting must count against global admission too")
+	cancel()
+	require.Equal(t, connect.CodeCanceled, connect.CodeOf(<-waiting))
+	doneFirst()
+	require.Empty(t, b.admitted)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	require.Empty(t, b.providers)
+}
+
+// retryDelayOf returns the RetryInfo delay a Connect error carries, if any.
+func retryDelayOf(t *testing.T, err error) (time.Duration, bool) {
+	t.Helper()
+	var ce *connect.Error
+	require.ErrorAs(t, err, &ce)
+	for _, detail := range ce.Details() {
+		message, valueErr := detail.Value()
+		require.NoError(t, valueErr)
+		if info, ok := message.(*errdetails.RetryInfo); ok {
+			return info.GetRetryDelay().AsDuration(), true
+		}
+	}
+	return 0, false
+}
+
+// A queue wait that expires while the caller still has budget is a busy
+// provider, so it answers resource_exhausted with a one-second retry hint.
+func TestExecutionBudgetQueueTimeout(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.perProvider = 1
+	b.queueTimeout = 20 * time.Millisecond
+	_, done, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err)
+	defer done()
+	started := time.Now()
+	_, _, err = b.begin(t.Context(), "obs/prom")
+	require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
+	delay, ok := retryDelayOf(t, err)
+	require.True(t, ok, "queue expiry names a retry delay")
+	require.Equal(t, time.Second, delay)
+	require.Less(t, time.Since(started), time.Second)
+	require.Len(t, b.admitted, 1, "only the holder keeps admission; the failed wait released its own")
+}
+
+// The caller's own deadline ending the wait keeps deadline_exceeded, even when
+// the queue timer would have fired later.
+func TestExecutionBudgetCallerDeadlineStaysDeadlineExceeded(t *testing.T) {
+	b := newExecutionBudget(1, time.Second)
+	b.perProvider = 1
+	b.queueTimeout = 5 * time.Second
+	_, done, err := b.begin(t.Context(), "obs/prom")
+	require.NoError(t, err)
+	defer done()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	_, _, err = b.begin(ctx, "obs/prom")
+	require.Equal(t, connect.CodeDeadlineExceeded, connect.CodeOf(err))
+	_, ok := retryDelayOf(t, err)
+	require.False(t, ok, "a spent caller budget is not retryable by delay")
+}
+
+// Scenario G from the live investigation: four parallel widget queries share one
+// provider, and each takes 6 s. Two run; the two queued behind them outlive the
+// 5 s queue wait. Those two must get a retryable resource_exhausted, never
+// deadline_exceeded, and the two that ran must succeed.
+func TestParallelWidgetQueriesQueuedPastWaitAreRetryable(t *testing.T) {
+	t.Parallel()
+	b := budgetBackend(t, newExecutionBudgetFromConfig(DefaultBudgetConfig(), queryTimeout), func(ctx context.Context) error {
+		select {
+		case <-time.After(6 * time.Second):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	const widgets = 4
+	results := make(chan error, widgets)
+	for range widgets {
+		go func() {
+			_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up"})
+			results <- err
+		}()
+	}
+	var succeeded, busy int
+	for range widgets {
+		err := <-results
+		if err == nil {
+			succeeded++
+			continue
+		}
+		require.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err),
+			"a queued widget query must not time out at the queue: %v", err)
+		busy++
+		delay, ok := retryDelayOf(t, err)
+		require.True(t, ok, "a queued widget query names a retry delay")
+		require.Equal(t, time.Second, delay)
+	}
+	require.Equal(t, 2, succeeded, "two queries run within the per-provider limit")
+	require.Equal(t, 2, busy, "the two queued past the queue wait get resource_exhausted")
 }
 
 func TestExecutionBudgetKeepsEarlierDeadline(t *testing.T) {
@@ -99,7 +299,7 @@ func TestExecutionBudgetKeepsEarlierDeadline(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	parent, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	ctx, done, err := b.begin(parent)
+	ctx, done, err := b.begin(parent, "obs/prom")
 	require.NoError(t, err)
 	defer done()
 	actual, ok := ctx.Deadline()
@@ -156,13 +356,16 @@ func TestUnsupportedProviderRejectsPageTokenBeforeCredentialRead(t *testing.T) {
 
 func TestToolsEnforceIntegerLimitsAndStablePaginationRange(t *testing.T) {
 	t.Parallel()
-	for _, tool := range []string{"query_metrics", "query_logs", "query_traces"} {
-		for _, suffix := range []string{`,"limit":1.5`, `,"limit":1001`, `,"limit":-1`, `,"limit":"10"`, `,"page_token":"next"`, `,"start":"2026-10-15T01:00:00Z","end":"2026-10-15T00:00:00Z"`, `,"start":"2026-10-13T00:00:00Z","end":"2026-10-15T00:00:00Z"`} {
+	for _, tool := range []string{"query_metrics", "query_logs", "query_traces", "query_records"} {
+		for _, suffix := range []string{`,"limit":1.5`, `,"limit":1001`, `,"limit":-1`, `,"limit":"10"`, `,"page_token":"next"`, `,"start":"2026-10-15T01:00:00Z","end":"2026-10-15T00:00:00Z"`, `,"start":"2026-09-13T00:00:00Z","end":"2026-10-15T00:00:00Z"`} {
 			b := &fakeBackend{}
 			reg := newRegisteredTools(t, b)
 			_, err := invokeTool(t, reg, tool, `{"provider":"obs/prom","query":"up"`+suffix+`}`)
 			require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), tool+suffix)
 			require.Empty(t, b.lastProvider, "invalid input is rejected before backend work")
+		}
+		if tool == "query_records" {
+			continue // Application/SQL frames do not expose provider-native pagination tokens.
 		}
 		b := &fakeBackend{queryResult: &connector.QueryResult{State: connector.StateOK}}
 		reg := newRegisteredTools(t, b)

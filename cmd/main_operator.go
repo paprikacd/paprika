@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -261,8 +262,12 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.AuditLogEnabled, gov.capacityProviders, deps.satelliteHub, setupLog); err != nil {
-		return fmt.Errorf("start UI server: %w", err)
+	if operatorConsoleEnabled(cfg.UIAddr) {
+		if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.AuditLogEnabled, gov.capacityProviders, deps.satelliteHub, setupLog); err != nil {
+			return fmt.Errorf("start UI server: %w", err)
+		}
+	} else {
+		setupLog.Info("Operator console disabled", "reason", "--ui-bind-address is empty; the api-server serves the console, API, satellite link and token exchange in split mode")
 	}
 	// The internal listener follows the hub, not the mode: a single-process
 	// deployment that is asked to serve component-to-component routes serves
@@ -271,8 +276,12 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return err
 	}
 
-	if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.WebhookSecret, setupLog); err != nil {
-		return fmt.Errorf("start inline webhook server: %w", err)
+	if operatorInlineWebhookEnabled(cfg.InlineWebhookAddr) {
+		if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.InlineWebhookAddr, cfg.WebhookSecret, setupLog); err != nil {
+			return fmt.Errorf("start inline webhook server: %w", err)
+		}
+	} else {
+		setupLog.Info("Inline webhook receiver disabled", "reason", "--inline-webhook-bind-address is empty; /webhook is served by the webhook-receiver deployment in split mode")
 	}
 
 	registerGauges(setupLog, mgr.GetClient())
@@ -551,7 +560,59 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
+// errConsoleAuthDisabled is logged when the operator console serves the API
+// with authentication disabled on an address other than loopback.
+var errConsoleAuthDisabled = errors.New("operator console serves the API with authentication disabled on a non-loopback address")
+
+// operatorConsoleEnabled reports whether operator mode serves the console. An
+// empty --ui-bind-address disables it. Split-mode managers run this way: the
+// api-server serves the console, the API and the satellite endpoints there.
+func operatorConsoleEnabled(uiAddr string) bool {
+	return uiAddr != ""
+}
+
+// operatorInlineWebhookEnabled reports whether operator mode starts its inline
+// /webhook receiver. An empty --inline-webhook-bind-address disables it.
+func operatorInlineWebhookEnabled(addr string) bool {
+	return addr != ""
+}
+
+// authDisabledBeyondLoopback reports whether a console on uiAddr would serve
+// the API with authentication disabled to something other than this host.
+func authDisabledBeyondLoopback(uiAddr string, authEnabled bool) bool {
+	return !authEnabled && !isLoopbackListenAddr(uiAddr)
+}
+
+// warnConsoleAuthDisabled logs an error when a console on uiAddr serves the API
+// with authentication disabled on an address other than loopback. Operator mode
+// and api mode both serve the console, so both call it. It never stops the
+// process: the chart's monolith default (auth.enabled=false), `make run` and the
+// kind e2e suite run this way on :3000.
+func warnConsoleAuthDisabled(log logr.Logger, uiAddr string, authEnabled bool) {
+	if authDisabledBeyondLoopback(uiAddr, authEnabled) {
+		log.Error(errConsoleAuthDisabled,
+			"Operator console has authentication disabled and listens beyond loopback. Enable it with --auth-enabled=true and a provider (basic or OIDC), or bind --ui-bind-address to 127.0.0.1 or [::1] for local use.",
+			"ui-bind-address", uiAddr)
+	}
+}
+
+// isLoopbackListenAddr reports whether a listen address only accepts loopback
+// connections. An empty host (":3000") listens on every interface and is not
+// loopback; "localhost" resolves to loopback.
+func isLoopbackListenAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, satelliteHub *satellitecontrol.Hub, setupLog logr.Logger) error {
+	warnConsoleAuthDisabled(setupLog, cfg.UIAddr, authCfg.Enabled)
 	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, capacityRegistry, satelliteHub, setupLog)
 	if err != nil {
 		return fmt.Errorf("build operator UI server: %w", err)
@@ -564,8 +625,8 @@ func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig
 	return nil
 }
 
-func startInlineWebhookServer(ctx context.Context, c client.Client, webhookSecret string, setupLog logr.Logger) error {
-	webhookSrv := buildInlineWebhookServer(c, webhookSecret)
+func startInlineWebhookServer(ctx context.Context, c client.Client, addr, webhookSecret string, setupLog logr.Logger) error {
+	webhookSrv := buildInlineWebhookServer(c, addr, webhookSecret)
 	go func() {
 		if srvErr := runHTTPServer(ctx, webhookSrv, "inline webhook receiver", setupLog, nil, true, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Inline webhook receiver exited with error")
@@ -574,12 +635,12 @@ func startInlineWebhookServer(ctx context.Context, c client.Client, webhookSecre
 	return nil
 }
 
-func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
+func buildInlineWebhookServer(c client.Client, addr, secret string) *http.Server {
 	handler := webhookreceiver.NewHandler(c, secret)
 	webhookMux := http.NewServeMux()
 	webhookMux.Handle("/webhook", handler)
 	return &http.Server{
-		Addr:              ":8080",
+		Addr:              addr,
 		Handler:           webhookMux,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       apiServerIdleTimeout,
@@ -626,7 +687,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 
-	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
+	authHandlers, err := buildOperatorAuthHandlers(ctx, cfg, k8sClient, authCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -642,8 +703,8 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if err != nil {
 		return nil, err
 	}
-	githubExchangeHandlers = append(githubExchangeHandlers, satelliteRegistrar)
-	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
+	authHandlers = append(authHandlers, satelliteRegistrar)
+	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, authHandlers...)
 
 	return httpx.WithH2C(&http.Server{
 		Addr:              cfg.UIAddr,
@@ -652,6 +713,18 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		IdleTimeout:       apiServerIdleTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}), nil
+}
+
+func buildOperatorAuthHandlers(ctx context.Context, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config) ([]func(*http.ServeMux), error) {
+	handlers, err := buildAuthHandlers(ctx, authCfg, cfg)
+	if err != nil {
+		return nil, err
+	}
+	githubHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
+	if err != nil {
+		return nil, err
+	}
+	return append(handlers, githubHandlers...), nil
 }
 
 func buildOperatorUIMux(

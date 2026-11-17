@@ -1,0 +1,18 @@
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--gamma-bg);
+  color: var(--gamma-ink);
+  border: var(--gamma-hairline) solid var(--gamma-border);
+  border-radius: var(--gamma-radius-panel);
+  font-family: var(--gamma-font-ui);
+}
+.dialog::backdrop { background: color-mix(in srgb, var(--gamma-ink) 32%, transparent); }
+.dialog h2 { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 12px; }
+.dialog p { font-size: 13px; line-height: 1.6; color: var(--gamma-muted); margin: 0; overflow-wrap: anywhere; }
+.actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+@media (pointer: coarse) { .actions button { min-height: 44px; } }

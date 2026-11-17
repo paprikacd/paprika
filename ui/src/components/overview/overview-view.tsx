@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 
 import { AttentionBoard } from "./attention-board"
 import { ClustersBoard } from "./clusters-board"
+import { FleetSignalStrip } from "./fleet-signal-strip"
 import { StaleBadge, UnavailableNote } from "./data-notice"
 import {
   dataSourceFor,
@@ -216,6 +217,8 @@ export function OverviewView({
           </button>
         </div>
       ) : null}
+
+      <FleetSignalStrip status={status} />
 
       {showLifecycle ? (
         <OverviewBoard

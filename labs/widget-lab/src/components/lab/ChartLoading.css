@@ -1,0 +1,113 @@
+.chart-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 120px;
+  width: 100%;
+  padding: 14px 8px 8px;
+  color: var(--gamma-muted);
+  font: 12px/1.4 var(--font-sans, Barlow, sans-serif);
+}
+
+.chart-loading-visual {
+  position: relative;
+  display: grid;
+  grid-template: minmax(0, 1fr) 8px / 24px minmax(0, 1fr);
+  gap: 8px 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--gamma-border);
+}
+
+/* One sweep covers the entire placeholder; individual marks never animate. */
+.chart-loading-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 25%, color-mix(in srgb, var(--gamma-muted) 8%, transparent) 50%, transparent 75%);
+  transform: translateX(-100%);
+}
+
+.chart-loading[data-motion=auto] .chart-loading-visual::after {
+  animation: chart-loading-sweep 1.6s linear infinite;
+}
+
+.chart-loading-axis { display: flex; flex-direction: column; justify-content: space-between; padding-block: 1px; }
+.chart-loading-axis i, .chart-loading-ticks i { display: block; height: 4px; border-radius: 2px; background: var(--gamma-border); }
+.chart-loading-axis i { width: 18px; }
+.chart-loading-ticks { grid-column: 2; display: flex; justify-content: space-between; gap: 8px; }
+.chart-loading-ticks i { width: 28px; }
+.chart-loading-plot { position: relative; min-width: 0; min-height: 0; border-block-end: 1px solid var(--gamma-border); border-inline-start: 1px solid var(--gamma-border); }
+.chart-loading-plot::before { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent calc(100% - 1px), color-mix(in srgb, var(--gamma-border) 45%, transparent) 1px); background-size: 100% 33.333%; pointer-events: none; }
+.chart-loading-plot > svg { display: block; width: 100%; height: 100%; }
+.chart-loading-line path { fill: none; stroke: color-mix(in srgb, var(--gamma-muted) 32%, var(--gamma-border)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.chart-loading-line .chart-loading-area { fill: color-mix(in srgb, var(--gamma-border) 45%, transparent); stroke: none; }
+.chart-loading-bars { position: absolute; inset: 7% 4% 0; display: flex; align-items: end; gap: clamp(5px, 3%, 18px); }
+.chart-loading-bars i { flex: 1; height: var(--placeholder-height); background: color-mix(in srgb, var(--gamma-border) 65%, transparent); border-block-start: 1px solid color-mix(in srgb, var(--gamma-muted) 28%, var(--gamma-border)); border-radius: 3px 3px 0 0; }
+.chart-loading-table { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); height: 100%; }
+.chart-loading-table > div { display: grid; grid-template-columns: 1.4fr 1fr .6fr .6fr; align-items: center; gap: 18px; padding: 0 10px; border-block-end: 1px solid var(--gamma-border); }
+.chart-loading-table i { height: 5px; width: 70%; border-radius: 2px; background: var(--gamma-border); }
+.chart-loading-table i:first-child { width: 90%; }
+.chart-loading-table i:nth-last-child(-n+2) { justify-self: end; width: 50%; }
+.chart-loading-matrix { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); gap: 4px; height: 100%; }
+.chart-loading-matrix i { background: color-mix(in srgb, var(--gamma-border) 58%, transparent); border-radius: 2px; }
+.chart-loading-matrix i:nth-child(3n) { background: var(--gamma-border); }
+.chart-loading-topology path { fill: none; stroke: var(--gamma-border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.chart-loading-topology rect { fill: var(--gamma-surface); stroke: var(--gamma-border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.chart-loading[data-variant=table] .chart-loading-plot, .chart-loading[data-variant=matrix] .chart-loading-plot, .chart-loading[data-variant=topology] .chart-loading-plot { border: 0; }
+.chart-loading[data-variant=table] .chart-loading-plot::before, .chart-loading[data-variant=matrix] .chart-loading-plot::before, .chart-loading[data-variant=topology] .chart-loading-plot::before { display: none; }
+.chart-loading[data-variant=table] .chart-loading-visual, .chart-loading[data-variant=topology] .chart-loading-visual { grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.chart-loading[data-variant=table] .chart-loading-axis, .chart-loading[data-variant=table] .chart-loading-ticks, .chart-loading[data-variant=topology] .chart-loading-axis, .chart-loading[data-variant=topology] .chart-loading-ticks { display: none; }
+.chart-loading-label { display: flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; overflow-wrap: anywhere; }
+.chart-loading-label > i { display: block; width: 5px; height: 5px; border: 1px solid currentColor; border-radius: 50%; }
+
+.chart-refreshing {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: calc(100% - 16px);
+  padding: 4px 7px;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-control, 5px);
+  background: var(--gamma-surface);
+  color: var(--gamma-ink);
+  pointer-events: none;
+  font: 12px/1.4 var(--font-sans, Barlow, sans-serif);
+}
+.chart-refreshing > svg { flex: 0 0 14px; overflow: visible; fill: none; stroke-width: 1.5; }
+.chart-refreshing circle { stroke: var(--gamma-border); }
+.chart-refreshing path { stroke: var(--gamma-chart-1); stroke-linecap: round; }
+.chart-refreshing[data-motion=auto] > svg { animation: chart-refreshing-turn 1s linear infinite; }
+.chart-refreshing > span { overflow-wrap: anywhere; }
+
+@keyframes chart-loading-sweep { to { transform: translateX(100%); } }
+@keyframes chart-refreshing-turn { to { transform: rotate(360deg); } }
+
+.chart-loading[data-motion=paused] .chart-loading-visual::after,
+.chart-loading[data-motion=reduced] .chart-loading-visual::after { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-loading[data-motion=auto] .chart-loading-visual::after { animation: none; display: none; }
+  .chart-refreshing[data-motion=auto] > svg { animation: none; }
+}
+
+@media (forced-colors: active) {
+  .chart-loading-visual { opacity: .6; }
+  .chart-loading-visual::after { display: none; }
+  .chart-loading-plot { border-color: CanvasText; }
+  .chart-loading-line path, .chart-loading-topology path, .chart-loading-topology rect { stroke: CanvasText; }
+  .chart-loading-topology rect { fill: Canvas; }
+  .chart-loading-line .chart-loading-area { fill: none; stroke: none; }
+  .chart-loading-bars i, .chart-loading-matrix i, .chart-loading-table i, .chart-loading-axis i, .chart-loading-ticks i { background: CanvasText; }
+  .chart-refreshing { border-color: CanvasText; background: Canvas; color: CanvasText; }
+  .chart-refreshing path { stroke: CanvasText; }
+}

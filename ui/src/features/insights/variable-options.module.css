@@ -1,0 +1,15 @@
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 8px;
+}
+.options > legend { padding: 0 4px; font-size: 11px; color: var(--gamma-muted); }
+.options > button { align-self: flex-start; }
+.row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.row > input { flex: 1; min-width: 0; }
+.row > button { flex-shrink: 0; }

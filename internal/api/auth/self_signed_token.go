@@ -33,14 +33,15 @@ var jwtHeader = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ
 
 // selfSignedClaims are the claims embedded in a self-signed token.
 type selfSignedClaims struct {
-	Subject  string `json:"sub"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Issuer   string `json:"iss,omitempty"`
-	Audience string `json:"aud,omitempty"`
-	Scope    string `json:"scope,omitempty"`
-	IAT      int64  `json:"iat"`
-	Exp      int64  `json:"exp"`
+	Subject  string    `json:"sub"`
+	Email    string    `json:"email"`
+	Name     string    `json:"name"`
+	Issuer   string    `json:"iss,omitempty"`
+	Audience string    `json:"aud,omitempty"`
+	Scope    string    `json:"scope,omitempty"`
+	Groups   *[]string `json:"groups,omitempty"`
+	IAT      int64     `json:"iat"`
+	Exp      int64     `json:"exp"`
 }
 
 // SelfSignedAuthenticator validates self-signed HMAC-SHA256 tokens.
@@ -121,11 +122,15 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 // principalFromClaims materializes the immutable Principal cached on a
 // verified token.
 func principalFromClaims(claims *selfSignedClaims) *Principal {
+	groups := []string{"users"}
+	if claims.Groups != nil {
+		groups = append([]string{}, (*claims.Groups)...)
+	}
 	return &Principal{
 		Subject: claims.Subject,
 		Email:   claims.Email,
 		Name:    claims.Name,
-		Groups:  []string{"users"},
+		Groups:  groups,
 		Scopes:  strings.Fields(claims.Scope),
 		Claims: map[string]interface{}{
 			"sub":    claims.Subject,
@@ -211,11 +216,13 @@ func issueLegacyAudlessToken(subject, email, name string, secret []byte) (string
 // TokenOptions configures a self-signed token minted via IssueTokenWithOptions.
 type TokenOptions struct {
 	Subject, Email, Name string
-	Audience             string
-	Issuer               string
-	Scope                string
-	TTL                  time.Duration
-	Secret               []byte
+	// Groups preserves a delegated caller exactly. Nil retains legacy login behavior; an empty slice grants no groups.
+	Groups   []string
+	Audience string
+	Issuer   string
+	Scope    string
+	TTL      time.Duration
+	Secret   []byte
 }
 
 // IssueTokenWithOptions mints an audience-bound, scoped token.
@@ -225,7 +232,13 @@ func IssueTokenWithOptions(opts TokenOptions) (string, error) { //nolint:gocriti
 		ttl = tokenExpiry
 	}
 	now := time.Now()
+	var groups *[]string
+	if opts.Groups != nil {
+		clonedGroups := append([]string{}, opts.Groups...)
+		groups = &clonedGroups
+	}
 	return encodeClaims(selfSignedClaims{
+		Groups:   groups,
 		Subject:  opts.Subject,
 		Email:    opts.Email,
 		Name:     opts.Name,

@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "id": "paprika-control-plane",
+  "title": "Paprika control plane",
+  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, and how applications and releases sit across phases. Exhausted release retries turn critical above zero; stale applications, stuck releases and a degraded fleet index turn warning above zero.",
+  "timeRange": "6h",
+  "refreshInterval": 30,
+  "widgets": [
+    {
+      "id": "stale-applications",
+      "title": "Stale applications",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "max(paprika_applications_stale)",
+      "unit": "",
+      "options": {
+        "decimals": 0,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning" }
+        ]
+      },
+      "layout": { "x": 0, "y": 0, "w": 3, "h": 2 }
+    },
+    {
+      "id": "retries-exhausted",
+      "title": "Retries exhausted",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "max(paprika_applications_release_retries_exhausted)",
+      "unit": "",
+      "options": {
+        "decimals": 0,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "critical" }
+        ]
+      },
+      "layout": { "x": 3, "y": 0, "w": 3, "h": 2 }
+    },
+    {
+      "id": "stuck-releases",
+      "title": "Stuck releases",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "max(paprika_releases_stuck)",
+      "unit": "",
+      "options": {
+        "decimals": 0,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning" }
+        ]
+      },
+      "layout": { "x": 6, "y": 0, "w": 3, "h": 2 }
+    },
+    {
+      "id": "fleet-index-degraded",
+      "title": "Fleet index degraded",
+      "type": "stat",
+      "providerId": "metrics-provider-id",
+      "query": "max(paprika_fleet_index_degraded)",
+      "unit": "",
+      "options": {
+        "decimals": 0,
+        "showSparkline": true,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning" }
+        ]
+      },
+      "layout": { "x": 9, "y": 0, "w": 3, "h": 2 }
+    },
+    {
+      "id": "controller-liveness",
+      "title": "Controller liveness",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "max(time() - max by (controller) (paprika_controller_last_reconcile_timestamp_seconds{result=\"success\"}))",
+      "unit": "s",
+      "description": "Seconds since the slowest controller last finished a reconcile successfully. Past five minutes the line enters the warning band.",
+      "options": {
+        "min": 0,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 300, "status": "warning" }
+        ]
+      },
+      "layout": { "x": 0, "y": 2, "w": 8, "h": 5 }
+    },
+    {
+      "id": "reconcile-lag",
+      "title": "Reconcile lag by application",
+      "type": "table",
+      "providerId": "metrics-provider-id",
+      "query": "topk(5, max by (application) (paprika_application_reconcile_lag))",
+      "unit": "",
+      "description": "The five applications furthest behind their latest spec, across namespaces. Zero means the application has reconciled.",
+      "options": { "decimals": 0 },
+      "layout": { "x": 8, "y": 2, "w": 4, "h": 5 }
+    },
+    {
+      "id": "reconcile-throughput",
+      "title": "Reconciles per second",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "sum by (result) (rate(paprika_reconcile_total[5m]))",
+      "unit": "/s",
+      "description": "Controller reconciliations per second, split by outcome. Error and fail outcomes appear beside success.",
+      "options": { "min": 0 },
+      "layout": { "x": 0, "y": 7, "w": 6, "h": 4 }
+    },
+    {
+      "id": "applications-by-phase",
+      "title": "Applications by phase",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "max by (phase) (paprika_applications_by_phase_ratio)",
+      "unit": "",
+      "description": "Number of applications in each phase at each sample.",
+      "options": { "min": 0, "decimals": 0 },
+      "layout": { "x": 6, "y": 7, "w": 6, "h": 4 }
+    },
+    {
+      "id": "releases-by-phase",
+      "title": "Releases by phase",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "max by (phase) (paprika_releases_by_phase_ratio)",
+      "unit": "",
+      "description": "Number of releases in each phase at each sample.",
+      "options": { "min": 0, "decimals": 0 },
+      "layout": { "x": 0, "y": 11, "w": 6, "h": 4 }
+    },
+    {
+      "id": "stale-history",
+      "title": "Stale applications over time",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "max(paprika_applications_stale)",
+      "unit": "",
+      "description": "Applications behind their spec over the selected range. Shaded stretches mark a non-zero count.",
+      "options": {
+        "min": 0,
+        "decimals": 0,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning" }
+        ]
+      },
+      "layout": { "x": 6, "y": 11, "w": 6, "h": 4 }
+    }
+  ]
+}

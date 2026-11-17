@@ -21,6 +21,11 @@
 # priorityClassName: production-high
 
 ## NetworkPolicy configuration.
+## The global switch renders each component's policy: agent, api-server,
+## controller-manager, observability-gateway and repo-server always; webhook-receiver
+## in split mode when webhookReceiver.enabled (the default); insights when
+## insights.enabled is true. Insights can also be isolated alone with
+## insights.networkPolicy.enabled (see internal/insights/README.md "Network policy").
 ##
 networkPolicy:
   enabled: false
@@ -80,6 +85,12 @@ manager:
     ## triggers always bypass the cache.
     ##
     sourceResolveTTL: ""
+    ## Upper bound on each repo-server call the Application controller makes
+    ## (binary default 1m). A timed-out call is retried on a later reconcile,
+    ## never repeated with a local clone. Release rendering keeps
+    ## repoServer.clientTimeout.
+    ##
+    repoServerTimeout: ""
     ## Full resync period for the manager's informer cache.
     ##
     cacheResyncPeriod: ""
@@ -103,8 +114,26 @@ manager:
 
   ## Arguments (added in both operator and api modes)
   ##
+  ## In split mode, --flag=value entries that name --ui-bind-address or
+  ## --inline-webhook-bind-address are dropped, and the two-item form (the bare flag
+  ## followed by a value) fails to render. The split-mode manager runs with both
+  ## listeners off.
   args:
     - --ui-bind-address=:3000
+
+  ## Per-component ingress policy for the controller-manager pods. Off by default.
+  ## When on, the policy admits only:
+  ##   - the health probe port (8081), from any source; the policy does not restrict probes,
+  ##     because a NetworkPolicy does not reliably match kubelet traffic from the pod's node;
+  ##   - the admission webhook port (9443) when webhook.enabled, from any source,
+  ##     because the kube-apiserver calls it;
+  ##   - the metrics port (metrics.port) when metrics.enable, from any source;
+  ##   - in monolith mode only, the console (3000) and inline webhook (8080) ports
+  ##     from the release namespace.
+  ## The policy restricts ingress only. Egress stays with the global networkPolicy
+  ## template.
+  networkPolicy:
+    enabled: false
 
   ## Image pull secrets
   ##
@@ -373,6 +402,13 @@ apiServer:
   ##
   ingress:
     enabled: false
+    ## Gateway API request timeout for the /api/insights/ prefix (gateway-api
+    ## only). The Insights proxy ends a UI query at 28 s, so this must stay above
+    ## 28 s, or the edge cuts a query before the console returns its partial
+    ## answer. The "/" rule sets no explicit timeout, so Envoy Gateway's 15 s default applies to it.
+    ## Must be a single-unit Go duration between 29s and 119s (Cloudflare's
+    ## 125 s default proxy read timeout is the outer bound). Chart-validated.
+    insightsRequestTimeout: "35s"
     ## Type of ingress resource: "ingress" or "gateway-api"
     ##
     # type: ingress
@@ -579,6 +615,64 @@ repoServer:
   # -- Client timeout used by controllers/webhooks when calling the repo server.
   clientTimeout: 5m
 
+  ## Git fetching (PAPRIKA_GIT_* env vars, also set on the manager, whose
+  ## local fallback renderer resolves sources the same way). With the git CLI
+  ## the repo server
+  ## resolves a branch with ls-remote (one round trip), fetches the commit at
+  ## depth 1 as a blobless partial clone (the commit and its trees), then
+  ## fetches only the blobs under the source's path: brandbrain's 102 KB chart
+  ## costs about 1 MB and 3 s cold, where go-git downloaded its 8.9 GB tip in
+  ## 13 minutes. Concurrent resolves of one commit share one fetch.
+  git:
+    # -- auto uses the git CLI when the image ships git (the cluster image built
+    # from Dockerfile does; the release image does not) and go-git otherwise.
+    # go-git downloads every blob of the tip tree. Upgrading an existing
+    # install: this release makes go-git check out executable files, which
+    # changes the source hash of apps with one in their path, so first deploy
+    # with go-git, let those apps' one Release of the same commit settle, then
+    # set auto (hash-neutral) in a separate upgrade.
+    backend: auto
+    # -- Git fetches the repo server runs at once across all repositories.
+    # Fetches into one repository are serialized, so a slow repository holds
+    # at most one slot and never blocks the others.
+    maxConcurrentFetches: 4
+    # -- Upper bound on one git fetch. At it the git process and every process
+    # it started are killed.
+    fetchTimeout: 10m
+
+  ## Git cache on disk: <work dir>/git-cache holds one blobless mirror per
+  ## repository and the checked-out source paths. maxSize and minAge apply to
+  ## each work dir (the manager's fallback renderer has two).
+  cache:
+    # -- Size bound. Above it the least recently used mirrors and checkouts
+    # are evicted. Keep it below the volume holding the cache (the /tmp
+    # emptyDir's sizeLimit, or persistence.size). "" or 0 disables eviction.
+    maxSize: 20Gi
+    # -- Entries used more recently than this are never evicted: a render may
+    # still be reading them.
+    minAge: 15m
+    ## Keep the cache across restarts on a PersistentVolumeClaim mounted at the
+    ## repo server's work dir.
+    ##
+    ## Trade-off: a ReadWriteOnce volume needs one replica and a strategy that
+    ## stops the old pod first (Recreate, rendered when repoServer.strategy is
+    ## unset, or RollingUpdate with maxSurge 0), so every rollout leaves the
+    ## repo server unavailable while the volume detaches and attaches (tens of
+    ## seconds on Vultr block storage); the controller renders locally if it
+    ## cannot reach the repo server. With the git CLI backend a cold cache
+    ## costs about one commit's trees plus the source path's files per
+    ## repository, so persistence pays off mainly for whole-repository sources
+    ## (no path) and for the go-git backend.
+    persistence:
+      enabled: false
+      # -- Use an existing claim instead of creating one.
+      existingClaim: ""
+      size: 30Gi
+      storageClassName: ""
+      accessMode: ReadWriteOnce
+      # -- Mount path; the repo server's --repo-workdir is set to it.
+      mountPath: /tmp/paprika-repo
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)
@@ -667,13 +761,12 @@ repoServer:
   #   periodSeconds: 10
   #   failureThreshold: 6
 
-  ## /tmp holds the git mirror cache. sizeLimit bounds it: past it the kubelet
-  ## evicts the pod, which restarts with an empty cache, instead of the cache
-  ## filling the node's disk (117 GB of one repository's packs did, 2026-10-11).
-  ## A shallow source of a large, often-pushed repository still adds a pack per
-  ## push, so expect evictions for one; `shallow: false` on its Template stops
-  ## that. Overriding repoServer.extraVolumes replaces this list and drops the
-  ## limit.
+  ## /tmp holds the git cache unless repoServer.cache.persistence is enabled.
+  ## sizeLimit bounds it: past it the kubelet evicts the pod, which restarts
+  ## with an empty cache, instead of the cache filling the node's disk (117 GB
+  ## of one repository's go-git packs did, 2026-10-11). repoServer.cache.maxSize
+  ## keeps the cache itself below it. Overriding repoServer.extraVolumes
+  ## replaces this list and drops the limit.
   extraVolumes:
     - emptyDir:
         sizeLimit: 50Gi
@@ -717,6 +810,9 @@ repoServer:
 ##
 observabilityGateway:
   enabled: false
+  # -- Retain Observe OAuth sessions in a separate Kubernetes Secret.
+  # Enabling this on an existing in-memory installation needs a fresh grant.
+  persistSessions: false
   replicas: 1
 
   ## How often the gateway probes every registered provider and writes the
@@ -724,8 +820,56 @@ observabilityGateway:
   ## status. 0 disables status writes.
   probeInterval: 5m
 
-  # The OAuth dynamic client registry is process-local. Prevent overlapping
-  # pods during upgrades; users must re-register after a process restart.
+  ## Query-path capacity per gateway process. Each value is passed to the
+  ## gateway only when set: null (the default) omits its flag, so the gateway's
+  ## built-in value applies, and an older gateway image still starts. An
+  ## explicit 0 or "0s" is passed as set. The gateway validates the
+  ## combination at startup and refuses to start on one that cannot work,
+  ## naming the value to change. Durations need a unit ("5s"); "0s" rejects at
+  ## once. Docs: docs/guides/observability-gateway.md ("End-to-end capacity").
+  capacity:
+    ## Queries executing at once across all providers (1-1024). Built-in: 4.
+    ## Also the default for httpWorkSlots, and the cap on httpDashboardSlots.
+    queryConcurrency: null
+    ## Queries executing at once per provider (1 to queryConcurrency). Built-in:
+    ## 0, which means min(2, queryConcurrency). Provider listing shares this
+    ## per-provider bulkhead, so 1 also serialises listings.
+    queryProviderConcurrency: null
+    ## Queries waiting for a slot across all providers (0-65536). Built-in: 32.
+    ## With 0, set queryProviderQueue to 0 as well.
+    queryQueue: null
+    ## Queries waiting for one provider's slot. Must not exceed queryQueue.
+    ## Built-in: 8.
+    queryProviderQueue: null
+    ## Longest a query waits for a slot. Above 0 and below the 30s request
+    ## timeout. The sum of httpAdmissionWait, the 2s MCP rate queue, this wait
+    ## and the 30s execution budget must not exceed 40s, which leaves 5s before
+    ## the 45s write timeout. Durations below 1ms are refused. Built-in: 5s.
+    queryQueueWait: null
+    ## HTTP slots for MCP data-tool requests (0-65536). Built-in: 0, which means
+    ## queryConcurrency. Explicit values may go up to queryConcurrency +
+    ## queryQueue. Up to queryQueue requests may wait at the edge for a slot, so
+    ## the edge admits the same burst the budget can queue (4 running + 32
+    ## waiting at defaults).
+    httpWorkSlots: null
+    ## HTTP slots for provider discovery and MCP handshakes. Built-in: 0, which
+    ## follows httpWorkSlots.
+    httpCatalogSlots: null
+    ## HTTP slots for orchestration tools, query_dashboard and render_dashboard,
+    ## which run nested data requests (0-65536). Built-in: 0, which means
+    ## min(2, queryConcurrency). Explicit values may go up to queryConcurrency.
+    ## Not tied to queryProviderConcurrency.
+    httpDashboardSlots: null
+    ## Slots held only while a body is read and classified (0-65536). Built-in:
+    ## 0, which means twice httpWorkSlots. Not a cap on all in-flight requests.
+    httpIntakeSlots: null
+    ## One deadline per request, shared by its intake and pool waits. At most
+    ## 5s; "0s" refuses at once. Must not exceed queryQueueWait. A refused
+    ## request gets 429 with Retry-After: 1. Built-in: 1s.
+    httpAdmissionWait: null
+
+  # Avoid overlapping gateways unless every component's state has been
+  # configured and verified for the intended replica count.
   strategy:
     type: Recreate
 
@@ -742,6 +886,13 @@ observabilityGateway:
   # providers (for example a Prometheus podSelector and TCP port 9090).
   # Empty does not grant access to nonstandard backend ports.
   additionalEgress: []
+
+  # Additional public CA certificates for provider TLS verification, keyed by
+  # filename (.crt or .pem; one PEM certificate per file). Helm mounts these
+  # read-only and restarts the gateway when they change. System trust remains
+  # available; do not also set SSL_CERT_DIR in extraEnv when using this map.
+  # Never put private keys or provider credentials here.
+  additionalCACertificates: {}
 
   image:
     repository: controller
@@ -791,11 +942,34 @@ observabilityGateway:
   ingress:
     enabled: false
     annotations: {}
+    ## Gateway API request timeout for the /observe route. Envoy Gateway's
+    ## default is 15 s, which cut a six-read query_dashboard at 15.00 s with a
+    ## 504. Keep it above the gateway's 45 s HTTP write timeout (so the gateway,
+    ## not the edge, decides a slow query's outcome) and below Cloudflare's
+    ## 125 s default proxy read timeout. Must be a single-unit Go duration between 46s and
+    ## 119s; chart-validated. Edge bounds: docs/guides/observability-gateway.md.
+    requestTimeout: "50s"
 
   extraEnv: []
   extraEnvFrom: []
   extraVolumes: []
   extraVolumeMounts: []
+
+  # Optional, isolated screenshot worker for read-only render_dashboard.
+  # Never enable before publishing and testing the pinned renderer image.
+  renderWorker:
+    enabled: false
+    image: "" # exact ghcr.io/paprikacd/paprika-render-worker@sha256:<digest>
+    uiOrigin: "" # trusted in-cluster Paprika API UI origin
+    secretName: "" # pre-existing K8s Secret, never checked into values
+    secretKey: secret
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
 
   hpa:
     enabled: false
@@ -919,6 +1093,71 @@ agent:
 
 ## API server authentication and authorization
 ##
+## Independent observability query and dashboard component. Available in both
+## deployment modes through the authenticated /api/insights/ proxy.
+insights:
+  enabled: false
+  # Uses the main Paprika image, which includes /insights. Override when needed.
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  token:
+    # Required when enabled; use the same >=32-character token in both services.
+    existingSecretName: ""
+    existingSecretKey: token
+  # With observabilityGateway.enabled, Insights also discovers authorized
+  # Prometheus/Tempo ObservabilityProvider CRs used by paprika-observe MCP.
+  # Shared providers use the signed-in caller's namespace RBAC and Secrets stay
+  # in the gateway. The local list below is optional for standalone providers.
+  # Provider URLs and credential environment-variable names are administrator
+  # configuration. Actual credentials belong in Secrets via extraEnv/extraEnvFrom.
+  providers: []
+  # - id: prometheus
+  #   name: Production metrics
+  #   type: prometheus
+  #   url: http://prometheus.monitoring.svc.cluster.local:9090
+  # - id: tempo
+  #   name: Production traces
+  #   type: tempo
+  #   url: http://tempo.monitoring.svc.cluster.local:3200
+  #   headersEnv:
+  #     X-Scope-OrgID: TEMPO_TENANT
+  extraEnv: []
+  extraEnvFrom: []
+  persistence:
+    enabled: true
+    existingClaim: ""
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # Per-component NetworkPolicy switch for Insights only. It renders the Insights
+  # policy alone, and only when insights.enabled is true. The policies of the other
+  # components follow networkPolicy.enabled, which also renders the Insights policy.
+  # Ingress on :8090 comes from the api-server and the observability-gateway. The
+  # controller-manager is admitted only in monolith mode, where it serves the console.
+  # In split mode the api-server serves the console.
+  # Egress goes to DNS, to the observability-gateway when enabled, and to the extras below.
+  # See internal/insights/README.md "Network policy".
+  networkPolicy:
+    enabled: false
+    # Egress extras. Provider ports beyond these need an entry here, or queries to
+    # those providers time out. Each entry has no `to`, so it reaches any
+    # destination on its ports. Add a `to` with namespace or pod selectors to narrow it.
+    egress:
+      - ports:
+          - { protocol: TCP, port: 80 }
+          - { protocol: TCP, port: 443 }
+          - { protocol: TCP, port: 9090 }
+          - { protocol: TCP, port: 3200 }
+
 auth:
   # -- Enable authentication and authorization for the API server
   enabled: false
@@ -954,7 +1193,8 @@ auth:
   ## RBAC authorization rules
   ## Subjects may be user names or "group:<group-name>".
   ## Actions: read, write, admin (or * for all).
-  ## Resources: applications, pipelines, releases, stages, templates, artifacts (or *).
+  ## Resources: applications, pipelines, releases, stages, templates, artifacts, insights (or *).
+  ## Insights is global: its RBAC rules must use namespaces: ["*"].
   ## Namespaces: specific namespace or * for all.
   ##
   rbac: []
@@ -1007,6 +1247,9 @@ mcp:
     # ConfigMaps across pod replacement. This does not store OAuth tokens or
     # make the remaining in-memory authorization/refresh cache durable.
     persistClients: true
+    # -- Store fleet MCP OAuth state and rotating refresh grants in a retained,
+    # resource-bound Secret. Observe uses observabilityGateway.persistSessions.
+    persistSessions: false
     # -- Statically registered OAuth client ID accepted by the MCP
     # authorization server. Required for the fleet when mcp.enabled=true;
     # the gateway permits both OAuth fields empty for dynamic registration only.

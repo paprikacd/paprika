@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,6 +214,35 @@ func TestNotificationSender(t *testing.T) {
 				t.Errorf("call() error = %v", err)
 			}
 		})
+	}
+}
+
+// Independently created notification senders must not share the process-wide
+// HTTP connection pool. Otherwise cleanup by an unrelated client can interrupt
+// an in-flight webhook, especially when the controller tests run with -race.
+func TestNotificationSenderTransportIsolation(t *testing.T) {
+	var connections atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connections.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+
+	first, second := NewNotificationSender(), NewNotificationSender()
+	defer first.HTTPClient.CloseIdleConnections()
+	defer second.HTTPClient.CloseIdleConnections()
+	for _, sender := range []*NotificationSender{first, second} {
+		if err := sender.sendWebhook(context.Background(), server.URL, &events.EventPayload{}, nil, nil); err != nil {
+			t.Fatalf("send webhook: %v", err)
+		}
+	}
+	if got := connections.Load(); got != 2 {
+		t.Errorf("independent senders established %d TCP connections; want 2 isolated transport pools", got)
 	}
 }
 

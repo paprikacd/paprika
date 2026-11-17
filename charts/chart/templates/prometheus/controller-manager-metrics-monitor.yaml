@@ -21,6 +21,10 @@ spec:
     {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
     scrapeTimeout: {{ . }}
     {{- end }}
+    # The controller exports per-application series with an application
+    # namespace label. Keep it instead of letting the target's namespace
+    # (the release namespace) win and rename it to exported_namespace.
+    honorLabels: true
     path: /metrics
     port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
     scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}

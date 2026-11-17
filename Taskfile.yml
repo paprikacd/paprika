@@ -105,6 +105,12 @@ tasks:
       - npm run build
     dir: ui
 
+  insights:lab:
+    desc: Start the Insights design playground (next dev + harness) and print one browser link.
+    cmds:
+      - npm run insights:lab
+    dir: ui
+
   docker:build:
     desc: Build the container image.
     env:
@@ -127,7 +133,7 @@ tasks:
   # --- Local perf / profiling stack (kind) ---
   #
   # Full split-mode deploy on an isolated kind cluster: controller-manager,
-  # api-server (MCP + basic auth admin/admin123, pprof on :6060),
+  # api-server (MCP + basic auth admin/admin123, pprof on 127.0.0.1:6060),
   # repo-server, webhook-receiver, redis, metrics-server. Ports are
   # deliberately distinct from the e2e suite.
   #
@@ -217,9 +223,9 @@ tasks:
           --set metrics.enable=true \
           --set metrics.secure=false \
           --set metrics.bindAddress=:8080 \
-          --set 'manager.args[0]=--pprof-bind-address=:6060' \
-          --set 'apiServer.args[0]=--pprof-bind-address=:6060' \
-          --set 'observabilityGateway.args[0]=--pprof-bind-address=:6060' \
+          --set 'manager.args[0]=--pprof-bind-address=127.0.0.1:6060' \
+          --set 'apiServer.args[0]=--pprof-bind-address=127.0.0.1:6060' \
+          --set 'observabilityGateway.args[0]=--pprof-bind-address=127.0.0.1:6060' \
           --set 'apiServer.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'apiServer.extraEnv[0].value=perf-token-secret' \
           --set auth.enabled=true \
@@ -549,10 +555,10 @@ tasks:
         if ! kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' get deploy \
             {{.PERF_RELEASE}}-observability-gateway -o jsonpath='{.spec.template.spec.containers[0].args}' \
             | grep -q 'pprof-bind-address'; then
-          echo "==> enabling gateway pprof (:6060)"
+          echo "==> enabling gateway pprof (127.0.0.1:6060)"
           kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' patch deploy \
             {{.PERF_RELEASE}}-observability-gateway --type=json -p \
-            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--pprof-bind-address=:6060"}]'
+            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--pprof-bind-address=127.0.0.1:6060"}]'
         fi
         kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' rollout status \
           deploy/{{.PERF_RELEASE}}-observability-gateway --timeout=180s
@@ -695,10 +701,44 @@ tasks:
           if ! out="$(helm template paprika charts/chart --namespace paprika-system "$@" 2>&1)"; then
             echo "FAIL[$name]: render errored: $out"; rc=1; return
           fi
-          if echo "$out" | grep -nE '^[[:space:]]*- --[A-Za-z0-9-]+=$'; then
+          # An empty value is the disable switch for the console and the inline
+          # webhook, so those two are allowed to render empty on the controller-manager
+          # workloads only. Any other empty --flag= fails in every document.
+          empty_args="$(printf '%s\n' "$out" | awk '
+            BEGIN { RS = "\n---\n" }
+            {
+              mgr = ($0 ~ /kind: (Deployment|StatefulSet)/ && index($0, "\n  name: paprika-controller-manager\n"))
+              n = split($0, lines, "\n")
+              for (i = 1; i <= n; i++) {
+                if (lines[i] ~ /^[[:space:]]*- --[A-Za-z0-9-]+=$/) {
+                  if (mgr && lines[i] ~ /--(ui-bind-address|inline-webhook-bind-address)=$/) continue
+                  print lines[i]
+                }
+              }
+            }')"
+          if [ -n "$empty_args" ]; then
+            printf '%s\n' "$empty_args"
             echo "FAIL[$name]: empty --flag= args rendered"; rc=1
           else
             echo "ok[$name]"
+          fi
+          # Deploy stacks must keep pprof on loopback; kubectl port-forward still reaches it.
+          case "$*" in
+            *deploy/*-values.yaml*)
+              pprof_bad="$(printf '%s\n' "$out" | grep -E -- '--pprof-bind-address=.' | grep -vE -- '--pprof-bind-address=(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$' || true)"
+              if [ -n "$pprof_bad" ]; then
+                printf '%s\n' "$pprof_bad"
+                echo "FAIL[$name]: pprof rendered on a non-loopback address"; rc=1
+              fi
+              ;;
+          esac
+          if [ "$name" = insights-shared ]; then
+            gateway_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR')"
+            issuer_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_MCP_PUBLIC_URL')"
+            insights_count="$(printf '%s\n' "$out" | grep -c 'name: PAPRIKA_INSIGHTS_URL')"
+            if [ "$gateway_count" -ne 2 ] || [ "$issuer_count" -ne 2 ] || [ "$insights_count" -ne 3 ]; then
+              echo "FAIL[$name]: API, Insights and gateway must share destination, authoring and issuer wiring"; rc=1
+            fi
           fi
           if [ "$name" = namespace-scoped ]; then
             count="$(printf '%s\n' "$out" | grep -c -- '--api-namespace=review-samples')"
@@ -706,6 +746,39 @@ tasks:
               echo "FAIL[$name]: both API and gateway must receive the namespace bound"; rc=1
             fi
           fi
+          case "$name" in
+            omega-git|omega-git-rollback)
+              want=auto; if [ "$name" = omega-git-rollback ]; then want=go-git; fi
+              count="$(printf '%s\n' "$out" | grep -A1 -- '- name: PAPRIKA_GIT_BACKEND' | grep -c "value: \"$want\"")"
+              if [ "$count" -ne 2 ]; then
+                echo "FAIL[$name]: repo server and manager must both render PAPRIKA_GIT_BACKEND=$want (got $count)"; rc=1
+              fi
+              ;;
+          esac
+          if [ "$name" = repo-server-cache ]; then
+            rs="$(printf '%s\n' "$out" | awk 'BEGIN { RS="---" } /component: repo-server/ && (/kind: Deployment/ || /kind: PersistentVolumeClaim/) { print }')"
+            for want in 'kind: PersistentVolumeClaim' 'type: Recreate' '--repo-workdir=/tmp/paprika-repo' 'claimName: paprika-repo-server-git-cache' 'name: PAPRIKA_GIT_CACHE_MAX_BYTES'; do
+              if ! printf '%s\n' "$rs" | grep -qF -- "$want"; then
+                echo "FAIL[$name]: persistent git cache render lacks: $want"; rc=1
+              fi
+            done
+          fi
+          case "$name" in
+            insights-persistent|insights-existing|omega-insights)
+              pvc="$(printf '%s\n' "$out" | awk 'BEGIN { RS="---" } /kind: PersistentVolumeClaim/ && /name: paprika-insights/ { print }')"
+              if [ "$name" = insights-persistent ]; then
+                if [ -z "$pvc" ] || ! printf '%s\n' "$pvc" | grep -q '^    helm.sh/resource-policy: keep$'; then
+                  echo "FAIL[$name]: chart-created Insights storage must survive removal from a release"; rc=1
+                fi
+              else
+                expected_claim=restored-insights
+                if [ "$name" = omega-insights ]; then expected_claim=paprika-e2e-insights; fi
+                if [ -n "$pvc" ] || ! printf '%s\n' "$out" | grep -q "claimName: $expected_claim$"; then
+                  echo "FAIL[$name]: Insights must mount the existing claim without creating replacement storage"; rc=1
+                fi
+              fi
+              ;;
+          esac
         }
         expect_fail() { # name, extra set-args...
           name="$1"; shift
@@ -743,6 +816,167 @@ tasks:
           --set mcp.publicURL=https://review.example.com \
           --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
+        check_render insights-shared --set deploymentMode=split --set apiServer.enabled=true \
+          --set insights.enabled=true --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
+        check_render insights-persistent --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test
+        check_render insights-existing --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set insights.persistence.existingClaim=restored-insights
+        check_render gateway-capacity --set deploymentMode=split \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.queryConcurrency=8 \
+          --set observabilityGateway.capacity.queryQueueWait=3s \
+          --set observabilityGateway.capacity.httpAdmissionWait=0s
+        gw_args="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set observabilityGateway.enabled=true --set auth.enabled=true --set mcp.publicURL=https://capacity.example.com --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' --set 'observabilityGateway.extraEnv[0].value=test-token-secret' --set observabilityGateway.capacity.queryConcurrency=8 --set observabilityGateway.capacity.queryQueueWait=3s --set observabilityGateway.capacity.httpAdmissionWait=0s 2>&1)"
+        for want in '--observability-query-concurrency=8' '--observability-query-queue-wait=3s' '--observability-http-admission-wait=0s'; do
+          if ! printf '%s\n' "$gw_args" | grep -qF -- "$want"; then
+            echo "FAIL[gateway-capacity]: rendered gateway lacks $want"; rc=1
+          fi
+        done
+        # Unset capacity values must not reach the binary: an older gateway image
+        # rejects an unknown flag and crash-loops. Explicit zeros are still passed.
+        gw_default="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set observabilityGateway.enabled=true --set auth.enabled=true --set mcp.publicURL=https://capacity.example.com --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' --set 'observabilityGateway.extraEnv[0].value=test-token-secret' 2>&1)"
+        if printf '%s\n' "$gw_default" | grep -qE -- '--observability-(query|http)-'; then
+          echo "FAIL[gateway-capacity-default]: unset capacity values must omit their flags"; rc=1
+        else
+          echo "ok[gateway-capacity-default] (no capacity flags)"
+        fi
+        gw_zero="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set observabilityGateway.enabled=true --set auth.enabled=true --set mcp.publicURL=https://capacity.example.com --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' --set 'observabilityGateway.extraEnv[0].value=test-token-secret' --set observabilityGateway.capacity.queryProviderConcurrency=0 --set observabilityGateway.capacity.httpWorkSlots=0 --set observabilityGateway.capacity.httpAdmissionWait=0s 2>&1)"
+        for want in '--observability-query-provider-concurrency=0' '--observability-http-work-slots=0' '--observability-http-admission-wait=0s'; do
+          if ! printf '%s\n' "$gw_zero" | grep -qF -- "$want"; then
+            echo "FAIL[gateway-capacity-explicit-zero]: explicit zero must still be passed: $want"; rc=1
+          fi
+        done
+        echo "ok[gateway-capacity-explicit-zero]"
+        check_render omega-insights -f deploy/test-values.yaml -f deploy/omega-values.yaml \
+          -f deploy/insights-omega-values.yaml
+        # Insights NetworkPolicy checks (internal/insights/README.md "Network policy").
+        # The policy's ingress and egress must equal the expected paths in
+        # charts/chart/tests/insights-netpol/, so a wider peer, port or rule fails the diff.
+        np_dir=charts/chart/tests/insights-netpol
+        np_tmp="$(mktemp -d)"
+        render() { helm template paprika charts/chart --namespace paprika-system "$@"; }
+        np_names() { awk 'BEGIN { RS="---" } /kind: NetworkPolicy/ { n=split($0,a,"\n"); for(i=1;i<=n;i++) if (a[i] ~ /^  name:/) print a[i] }' | sed 's/^  name: //' | sort | tr '\n' ' '; }
+        np_doc() { awk 'BEGIN { RS="---" } /kind: NetworkPolicy/ && /\n  name: paprika-insights\n/' | grep -v '^[[:space:]]*$' || true; }
+        # np_exact LABEL INGRESS_FIXTURE EGRESS_FIXTURE: reads the rendered output on stdin.
+        # The whole spec (selector, policyTypes, ingress, egress) must equal spec-head.txt
+        # plus the two fixtures, and the policy must live in the release namespace.
+        np_exact() {
+          np_bad=0
+          np_doc > "$np_tmp/doc"
+          sed -n '/^spec:/,$p' "$np_tmp/doc" > "$np_tmp/got-spec"
+          cat "$np_dir/spec-head.txt" "$np_dir/$2" "$np_dir/$3" > "$np_tmp/want-spec"
+          if ! diff -u "$np_tmp/want-spec" "$np_tmp/got-spec" > "$np_tmp/spec.diff"; then
+            echo "FAIL[$1]: spec differs from spec-head.txt + $2 + $3"; sed 's/^/  /' "$np_tmp/spec.diff"; np_bad=1
+          fi
+          if [ "$(grep -c '^  namespace: paprika-system$' "$np_tmp/doc")" -ne 1 ]; then
+            echo "FAIL[$1]: the policy must be in namespace paprika-system"; np_bad=1
+          fi
+          return "$np_bad"
+        }
+        ins_set='--set insights.enabled=true --set insights.token.existingSecretName=insights-test'
+        ins_only='--set insights.networkPolicy.enabled=true'
+        glob_split='--set deploymentMode=split --set apiServer.enabled=true --set repoServer.enabled=true --set webhookReceiver.enabled=true'
+        all_seven='paprika-agent paprika-api-server paprika-controller-manager paprika-insights paprika-observability-gateway paprika-repo-server paprika-webhook-receiver '
+        if ! np_out="$(render $ins_set 2>&1)"; then
+          echo "FAIL[insights-netpol-default]: render errored"; rc=1
+        elif [ -n "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-default]: default render must not add a NetworkPolicy"; rc=1
+        else
+          echo "ok[insights-netpol-default]"
+        fi
+        printf '%s\n' 'insights:' '  enabled: true' '  token:' '    existingSecretName: insights-test' '  networkPolicy: null' > "$np_tmp/null-values.yaml"
+        if ! np_out="$(render -f "$np_tmp/null-values.yaml" 2>&1)"; then
+          echo "FAIL[insights-netpol-null]: a null insights.networkPolicy must render"; rc=1
+        elif [ -n "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-null]: a null insights.networkPolicy must not add a NetworkPolicy"; rc=1
+        else
+          echo "ok[insights-netpol-null]"
+        fi
+        if ! np_out="$(render -f "$np_tmp/null-values.yaml" --set networkPolicy.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-null-global]: a null insights.networkPolicy must render under the global switch"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_names | grep -qw paprika-insights; then
+          echo "FAIL[insights-netpol-null-global]: the global switch must still render the Insights policy"; rc=1
+        else
+          echo "ok[insights-netpol-null-global]"
+        fi
+        if ! np_out="$(render $glob_split $ins_set $ins_only 2>&1)"; then
+          echo "FAIL[insights-netpol-switch]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-switch]: switch must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-switch ingress-api-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-switch]"
+        fi
+        if ! np_out="$(render $ins_set $ins_only --set deploymentMode=monolith 2>&1)"; then
+          echo "FAIL[insights-netpol-monolith]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-monolith]: monolith with auth.enabled=false must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-monolith ingress-api-manager-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-monolith]"
+        fi
+        if ! np_out="$(render $ins_set $ins_only --set deploymentMode=monolith --set auth.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-monolith-auth]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-insights " ]; then
+          echo "FAIL[insights-netpol-monolith-auth]: monolith with auth must render only the Insights policy"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-monolith-auth ingress-api-manager-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-monolith-auth]"
+        fi
+        if ! np_out="$(render -f deploy/test-values.yaml -f deploy/omega-values.yaml -f deploy/insights-omega-values.yaml 2>&1)"; then
+          echo "FAIL[insights-netpol-omega]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-controller-manager-ingress paprika-insights " ]; then
+          echo "FAIL[insights-netpol-omega]: the omega stack must render only the Insights and manager ingress policies"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-omega ingress-api-gateway.txt egress-dns-gateway.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-omega]"
+        fi
+        if ! np_out="$(render $glob_split $ins_set --set networkPolicy.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-global]: render errored"; rc=1
+        elif [ "$(printf '%s\n' "$np_out" | np_names)" != "$all_seven" ]; then
+          echo "FAIL[insights-netpol-global]: the global switch must still render all seven policies"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-global ingress-api-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-global]"
+        fi
+        if ! np_out="$(render $ins_set --set networkPolicy.enabled=true --set deploymentMode=monolith 2>&1)"; then
+          echo "FAIL[insights-netpol-global-monolith]: render errored"; rc=1
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-global-monolith ingress-api-manager-gateway.txt egress-dns-extras.txt; then
+          rc=1
+        else
+          echo "ok[insights-netpol-global-monolith]"
+        fi
+        if ! np_out="$(render $ins_only --set insights.enabled=false 2>&1)"; then
+          echo "FAIL[insights-netpol-disabled]: render errored"; rc=1
+        elif [ -n "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-disabled]: insights.enabled=false must render no NetworkPolicy"; rc=1
+        else
+          echo "ok[insights-netpol-disabled]"
+        fi
+        if ! np_out="$(render $glob_split --set insights.enabled=false --set networkPolicy.enabled=true 2>&1)"; then
+          echo "FAIL[insights-netpol-global-disabled]: render errored"; rc=1
+        elif [ -z "$(printf '%s\n' "$np_out" | np_names)" ]; then
+          echo "FAIL[insights-netpol-global-disabled]: the global switch must still render the other policies"; rc=1
+        elif printf '%s\n' "$np_out" | np_names | grep -qw paprika-insights; then
+          echo "FAIL[insights-netpol-global-disabled]: insights.enabled=false must render no Insights NetworkPolicy under the global switch"; rc=1
+        else
+          echo "ok[insights-netpol-global-disabled]"
+        fi
+        rm -rf "$np_tmp"
         expect_fail invalid-namespace-scope --set apiServer.namespaceScope=Review/production
         expect_fail namespace-scope-in-monolith --set apiServer.namespaceScope=review-samples
         check_render reconcile-zero \
@@ -752,6 +986,18 @@ tasks:
           --set manager.reconcile.sourceResolveTTL=45s \
           --set manager.reconcile.rateLimit.appRate=25
         check_render test-values -f deploy/test-values.yaml
+        check_render omega-git -f deploy/test-values.yaml -f deploy/omega-values.yaml
+        check_render omega-git-rollback -f deploy/test-values.yaml -f deploy/omega-values.yaml \
+          --set repoServer.git.backend=go-git
+        check_render repo-server-cache --set repoServer.enabled=true --set repoServer.replicas=1 \
+          --set repoServer.cache.persistence.enabled=true
+        check_render repo-server-cache-omega -f deploy/test-values.yaml -f deploy/omega-values.yaml \
+          --set repoServer.cache.persistence.enabled=true
+        expect_fail repo-server-cache-replicas --set repoServer.enabled=true \
+          --set repoServer.cache.persistence.enabled=true --set repoServer.replicas=2
+        expect_fail repo-server-cache-surge --set repoServer.enabled=true --set repoServer.replicas=1 \
+          --set repoServer.cache.persistence.enabled=true --set repoServer.strategy.type=RollingUpdate \
+          --set repoServer.strategy.rollingUpdate.maxSurge=1
 
         expect_fail basic-missing-creds \
           --set auth.enabled=true --set auth.basic.enabled=true
@@ -759,14 +1005,259 @@ tasks:
           --set auth.enabled=true --set auth.oidc.enabled=true
         expect_fail mcp-missing-oauth \
           --set mcp.enabled=true
+        expect_fail mcp-session-nonboolean \
+          --set-string mcp.oauth.persistSessions=true
+        expect_fail observe-session-nonboolean \
+          --set-string observabilityGateway.persistSessions=true
         expect_fail bad-duration \
           --set manager.reconcile.transientRequeue=bogus
         expect_fail bad-mode \
           --set deploymentMode=weird
         expect_fail bad-port \
           --set metrics.port=99999
+        check_render gateway-capacity-zero-integer --set deploymentMode=split \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.httpAdmissionWait=0
+        expect_fail capacity-zero-concurrency \
+          --set observabilityGateway.capacity.queryConcurrency=0
+        expect_fail capacity-bare-duration \
+          --set observabilityGateway.capacity.queryQueueWait=5
+        expect_fail capacity-bare-admission-wait \
+          --set observabilityGateway.capacity.httpAdmissionWait=5
+        expect_fail capacity-nonnumeric-pool \
+          --set observabilityGateway.capacity.httpWorkSlots=many
 
+        # HTTPRoute request timeouts. Envoy Gateway's default is 15 s, so the
+        # /observe route and the /api/insights rule must carry their own bound.
+        route_render() { # extra set-args...: renders the gateway-api HTTPRoutes
+          helm template paprika charts/chart --namespace paprika-system \
+            --set deploymentMode=split --set apiServer.enabled=true \
+            --set apiServer.ingress.enabled=true --set apiServer.ingress.type=gateway-api \
+            --set apiServer.ingress.gateway.gatewayRef.name=paprika \
+            --set apiServer.ingress.gateway.gatewayRef.namespace=envoy-gateway-system \
+            --set apiServer.ingress.gateway.hostname=paprika.example.com \
+            --set observabilityGateway.enabled=true --set observabilityGateway.ingress.enabled=true \
+            --set auth.enabled=true --set mcp.publicURL=https://paprika.example.com \
+            --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+            --set 'observabilityGateway.extraEnv[0].value=test-token-secret' "$@"
+        }
+        expect_route_fail() { # name, extra set-args...
+          name="$1"; shift
+          if msg="$(route_render "$@" 2>&1)"; then
+            echo "FAIL[$name]: expected render failure but succeeded"; rc=1
+          elif printf '%s\n' "$msg" | grep -qE 'Timeout must be between|single-unit Go duration'; then
+            echo "ok[$name] (rejected as expected)"
+          else
+            echo "FAIL[$name]: rejected, but not by the timeout guard: $msg"; rc=1
+          fi
+        }
+        if ! route_out="$(route_render 2>&1)"; then
+          echo "FAIL[route-timeouts]: render errored: $route_out"; rc=1
+        else
+          for want in 'request: "50s"' 'request: "35s"'; do
+            if [ "$(printf '%s\n' "$route_out" | grep -cF -- "$want")" -ne 1 ]; then
+              echo "FAIL[route-timeouts]: expected exactly one rule with $want"; rc=1
+            fi
+          done
+          api_rt="$(printf '%s\n' "$route_out" | awk 'BEGIN { RS="\n---\n" } /kind: HTTPRoute/ && /component: api-server/ { print }')"
+          if [ "$(printf '%s\n' "$api_rt" | grep -c 'timeouts:')" -ne 1 ] \
+            || ! printf '%s\n' "$api_rt" | grep -B2 -A8 'request: "35s"' | grep -qF 'value: /api/insights'; then
+            echo "FAIL[route-timeouts]: only the /api/insights rule may carry a timeout"; rc=1
+          else
+            echo "ok[route-timeouts] (50s on /observe, 35s on /api/insights, none on /)"
+          fi
+        fi
+        if route_render --set observabilityGateway.ingress.requestTimeout=46s >/dev/null 2>&1; then
+          echo "ok[route-timeout-min] (46s accepted)"
+        else
+          echo "FAIL[route-timeout-min]: 46s must be accepted"; rc=1
+        fi
+        if route_render --set observabilityGateway.ingress.requestTimeout=1m >/dev/null 2>&1; then
+          echo "ok[route-timeout-1m] (1m, a Go duration in range, accepted)"
+        else
+          echo "FAIL[route-timeout-1m]: 1m (60s) must be accepted"; rc=1
+        fi
+        if route_render --set observabilityGateway.ingress.requestTimeout=119s >/dev/null 2>&1; then
+          echo "ok[route-timeout-max] (119s accepted)"
+        else
+          echo "FAIL[route-timeout-max]: 119s must be accepted"; rc=1
+        fi
+        expect_route_fail route-timeout-under-write --set observabilityGateway.ingress.requestTimeout=45s
+        expect_route_fail route-timeout-over-cloudflare --set observabilityGateway.ingress.requestTimeout=120s
+        expect_route_fail route-timeout-compound --set observabilityGateway.ingress.requestTimeout=1m30s
+        expect_route_fail route-timeout-insights-low --set apiServer.ingress.insightsRequestTimeout=28s
+        expect_route_fail route-timeout-insights-high --set apiServer.ingress.insightsRequestTimeout=2m
+
+        # Manager listeners and policy. The split-mode manager opens no console or
+        # inline webhook listener, its pprof listener is loopback-only, and its
+        # ingress policy is off unless manager.networkPolicy.enabled is set.
+        mgr_deploy() { # extra set-args...: the controller-manager Deployment
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: Deployment/ && index($0, "\n  name: paprika-controller-manager\n") { print }'
+        }
+        mgr_sts() { # extra set-args...: the sharded controller-manager StatefulSet
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: StatefulSet/ && index($0, "\n  name: paprika-controller-manager\n") { print }'
+        }
+        mgr_policy() { # extra set-args...: the per-component manager NetworkPolicy
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: NetworkPolicy/ && index($0, "\n  name: paprika-controller-manager-ingress\n") { print }'
+        }
+        global_policy() { # extra set-args...: the global controller-manager NetworkPolicy
+          helm template paprika charts/chart --namespace paprika-system "$@" 2>&1 \
+            | awk 'BEGIN { RS="\n---\n" } /kind: NetworkPolicy/ && index($0, "\n  name: paprika-controller-manager\n") { print }'
+        }
+        policy_ports() { # reads a NetworkPolicy on stdin, prints its admitted ports
+          grep -E '^ +port: [0-9]+$' | awk '{ print $2 }' | sort -n | tr '\n' ' '
+        }
+        check_split_listeners() { # label, rendered manager workload: no console, no inline webhook, loopback pprof
+          label="$1"; doc="$2"; before=$rc
+          if [ -z "$doc" ]; then
+            echo "FAIL[$label]: no manager workload rendered"; rc=1; return
+          fi
+          for want in '        - --ui-bind-address=' '        - --inline-webhook-bind-address=' '        - --pprof-bind-address=127.0.0.1:6060'; do
+            if ! printf '%s\n' "$doc" | grep -qxF -- "$want"; then
+              echo "FAIL[$label]: split manager lacks exact arg: $want"; rc=1
+            fi
+          done
+          if printf '%s\n' "$doc" | grep -qE -- '--(ui-bind-address|inline-webhook-bind-address)=.'; then
+            echo "FAIL[$label]: split manager renders a console or inline webhook listener"; rc=1
+          fi
+          pprof_bad="$(printf '%s\n' "$doc" | grep -E -- '--pprof-bind-address=.' | grep -vE -- '--pprof-bind-address=(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$' || true)"
+          if [ -n "$pprof_bad" ]; then
+            echo "FAIL[$label]: split manager renders pprof beyond loopback: $pprof_bad"; rc=1
+          fi
+          for absent in 'containerPort: 3000' 'containerPort: 8080'; do
+            if printf '%s\n' "$doc" | grep -qF -- "$absent"; then
+              echo "FAIL[$label]: split manager declares $absent"; rc=1
+            fi
+          done
+          if printf '%s\n' "$doc" | grep -qF -- '--mode=api'; then
+            echo "FAIL[$label]: split manager must run as operator"; rc=1
+          fi
+          if [ "$rc" -eq "$before" ]; then echo "ok[$label] (no console, no inline webhook, pprof on loopback)"; fi
+        }
+        split_args='["--pprof-bind-address=127.0.0.1:6060","--ui-bind-address=:3000","--inline-webhook-bind-address=:8080"]'
+        check_split_listeners split-manager-args "$(mgr_deploy --set deploymentMode=split --set webhook.enabled=true \
+          --set-json "manager.args=$split_args")"
+        check_split_listeners split-sharded-manager-args "$(mgr_sts --set deploymentMode=split --set webhook.enabled=true \
+          --set manager.sharding.enabled=true --set-json "manager.args=$split_args")"
+        before=$rc
+        mono_mgr="$(mgr_deploy)"
+        for want in '        - --ui-bind-address=:3000' '        - --mode=operator'; do
+          if ! printf '%s\n' "$mono_mgr" | grep -qxF -- "$want"; then
+            echo "FAIL[monolith-manager-args]: monolith lacks $want"; rc=1
+          fi
+        done
+        if printf '%s\n' "$mono_mgr" | grep -qE -- '--inline-webhook-bind-address|--ui-bind-address=$'; then
+          echo "FAIL[monolith-manager-args]: monolith must keep the default listeners"; rc=1
+        fi
+        if [ "$rc" -eq "$before" ]; then echo "ok[monolith-manager-args] (console and inline webhook at defaults)"; fi
+        # A bare listener flag (two-item form) must fail in split mode: dropping only the
+        # flag would leave its value as a positional argument.
+        expect_fail split-bare-ui-flag --set deploymentMode=split \
+          --set-json 'manager.args=["--ui-bind-address",":3000"]'
+        expect_fail split-bare-inline-webhook-flag --set deploymentMode=split \
+          --set-json 'manager.args=["--inline-webhook-bind-address",":8080"]'
+        # The bare form stays valid in monolith mode.
+        check_render monolith-bare-ui-flag --set-json 'manager.args=["--ui-bind-address",":3000"]'
+        # Leading whitespace in a manager.args item must not defeat the split-mode filter:
+        # the item is trimmed first, so the console listener is still dropped.
+        leading_doc="$(mgr_deploy --set deploymentMode=split --set webhook.enabled=true \
+          --set-json 'manager.args=[" --ui-bind-address=:3000","--pprof-bind-address=127.0.0.1:6060"]')"
+        check_split_listeners split-manager-leading-space-arg "$leading_doc"
+        # A null manager.args item has no flag to pass; it is refused rather than rendered as "<nil>".
+        expect_fail manager-args-null-item --set-json 'manager.args=[null]'
+        # The enabled switch is a boolean. A string "false" is truthy in a template, so it is refused.
+        expect_fail manager-networkpolicy-string-enabled --set-string manager.networkPolicy.enabled=false
+        # Split mode with mode=api: the manager Service keeps health and metrics, but not the api port.
+        split_api_svc="$(helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set mode=api 2>&1 \
+          | awk 'BEGIN { RS="\n---\n" } /kind: Service/ && index($0, "\n  name: paprika-manager-api-service\n") { print }')"
+        if [ -z "$split_api_svc" ]; then
+          echo "FAIL[split-api-service]: manager Service not rendered"; rc=1
+        elif printf '%s\n' "$split_api_svc" | grep -qE 'port: 3000$'; then
+          echo "FAIL[split-api-service]: split-mode manager Service routes the console port 3000"; rc=1
+        elif ! printf '%s\n' "$split_api_svc" | grep -qE 'port: 8081$'; then
+          echo "FAIL[split-api-service]: split-mode manager Service lost the health port"; rc=1
+        else
+          echo "ok[split-api-service] (no console port, health kept)"
+        fi
+        if [ -n "$(mgr_policy)" ]; then
+          echo "FAIL[manager-policy-default]: manager.networkPolicy must be off by default"; rc=1
+        else
+          echo "ok[manager-policy-default] (absent)"
+        fi
+        split_policy="$(mgr_policy --set deploymentMode=split --set webhook.enabled=true --set manager.networkPolicy.enabled=true)"
+        if [ -z "$split_policy" ]; then
+          echo "FAIL[manager-policy-split]: enabled policy not rendered"; rc=1
+        else
+          if printf '%s\n' "$split_policy" | grep -qE '^ +- Egress$|from:'; then
+            echo "FAIL[manager-policy-split]: manager policy must be ingress-only, with no source restriction in split mode"; rc=1
+          fi
+          if ! printf '%s\n' "$split_policy" | grep -qxF '    - Ingress'; then
+            echo "FAIL[manager-policy-split]: policyTypes must list Ingress"; rc=1
+          fi
+          got="$(printf '%s\n' "$split_policy" | policy_ports)"
+          if [ "$got" != "8081 8443 9443 " ]; then
+            echo "FAIL[manager-policy-split]: admitted ports were '$got', want '8081 8443 9443 '"; rc=1
+          else
+            echo "ok[manager-policy-split] (ingress-only: 8081 8443 9443)"
+          fi
+        fi
+        metrics_off_policy="$(mgr_policy --set deploymentMode=split --set webhook.enabled=true --set metrics.enable=false --set manager.networkPolicy.enabled=true)"
+        got="$(printf '%s\n' "$metrics_off_policy" | policy_ports)"
+        if [ "$got" != "8081 9443 " ]; then
+          echo "FAIL[manager-policy-metrics-off]: admitted ports were '$got', want '8081 9443 '"; rc=1
+        else
+          echo "ok[manager-policy-metrics-off] (no metrics port when metrics.enable=false)"
+        fi
+        # A values stack that omits manager.networkPolicy (or sets it to null) must still render.
+        if ! helm template paprika charts/chart --namespace paprika-system --set manager.networkPolicy=null >/dev/null 2>&1; then
+          echo "FAIL[manager-policy-null]: a null manager.networkPolicy must render"; rc=1
+        else
+          echo "ok[manager-policy-null]"
+        fi
+        mono_policy="$(mgr_policy --set manager.networkPolicy.enabled=true --set webhook.enabled=true)"
+        got="$(printf '%s\n' "$mono_policy" | policy_ports)"
+        if [ "$got" != "3000 8080 8081 8443 9443 " ]; then
+          echo "FAIL[manager-policy-monolith]: admitted ports were '$got'"; rc=1
+        elif ! printf '%s\n' "$mono_policy" | grep -qF 'kubernetes.io/metadata.name: paprika-system'; then
+          echo "FAIL[manager-policy-monolith]: console and webhook ports must be limited to the release namespace"; rc=1
+        else
+          echo "ok[manager-policy-monolith] (console and webhook from the release namespace only)"
+        fi
+        if [ -n "$(mgr_policy --set manager.networkPolicy.enabled=true --set webhook.enabled=false --set deploymentMode=split | grep -E '^ +port: 9443$')" ]; then
+          echo "FAIL[manager-policy-no-webhook]: 9443 admitted with webhook.enabled=false"; rc=1
+        else
+          echo "ok[manager-policy-no-webhook]"
+        fi
+        # The global template admits the admission port when webhooks are on. The
+        # kube-apiserver is not in the release namespace, so this rule has no source
+        # restriction; without it failurePolicy Ignore skips admission silently.
+        global_on="$(global_policy --set networkPolicy.enabled=true --set webhook.enabled=true)"
+        if [ "$(printf '%s\n' "$global_on" | grep -c 'port: 9443$')" -ne 1 ]; then
+          echo "FAIL[global-policy-webhook]: global controller-manager policy must admit 9443 once"; rc=1
+        elif [ "$(printf '%s\n' "$global_on" | awk '/^  ingress:/ { f = 1 } /^  egress:/ { f = 0 } f' | grep -c 'from:')" -ne 1 ]; then
+          # Exactly one ingress rule (the existing console/API rule) carries a source
+          # restriction; the 9443 rule must not.
+          echo "FAIL[global-policy-webhook]: the 9443 rule must not be limited to a source namespace"; rc=1
+        else
+          echo "ok[global-policy-webhook] (9443 admitted from any source)"
+        fi
+        if [ -n "$(global_policy --set networkPolicy.enabled=true --set webhook.enabled=false | grep 'port: 9443$')" ]; then
+          echo "FAIL[global-policy-no-webhook]: 9443 admitted with webhook.enabled=false"; rc=1
+        else
+          echo "ok[global-policy-no-webhook]"
+        fi
         exit $rc
+
+  chart:rules:
+    desc: Render the PrometheusRule and run promtool check rules and promtool test rules (pinned prom/prometheus image; PROMTOOL=/path overrides docker; HELM_BIN selects helm).
+    cmds:
+      - bash charts/chart/tests/prometheus/run.sh
 
   # ---------------------------------------------------------------------------
   # Multi-cluster fleet rig (task fleet:*). Three kind clusters: a management

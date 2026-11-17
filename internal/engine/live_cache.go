@@ -107,6 +107,28 @@ func (c *LiveResourceCache) getInformer(ctx context.Context, gvr schema.GroupVer
 		c.mu.Unlock()
 		return inf, nil
 	}
+	c.mu.Unlock()
+
+	// A cluster-wide watch that RBAC denies never syncs. Client-go then
+	// retries the list for the whole sync timeout and logs each failure. Ask
+	// the API server first, so a controller limited to some namespaces skips
+	// the informer at once and callers fall back to namespaced reads.
+	if c.clusterWatchDenied(ctx, gvr) {
+		c.mu.Lock()
+		c.unsynced[key] = struct{}{}
+		c.mu.Unlock()
+		return nil, fmt.Errorf("informer for %s is not allowed at cluster scope", gvr)
+	}
+
+	c.mu.Lock()
+	if _, failed := c.unsynced[key]; failed {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("informer for %s has not synced", gvr)
+	}
+	if inf, ok = c.factories[key]; ok {
+		c.mu.Unlock()
+		return inf, nil
+	}
 
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(c.dynClient, c.resyncPeriod, metav1.NamespaceAll, nil)
 	inf = factory.ForResource(gvr)
@@ -131,6 +153,41 @@ func (c *LiveResourceCache) getInformer(ctx context.Context, gvr schema.GroupVer
 		return nil, fmt.Errorf("informer for %s did not sync", gvr)
 	}
 	return inf, nil
+}
+
+var selfSubjectAccessReviewGVR = schema.GroupVersionResource{Group: "authorization.k8s.io", Version: "v1", Resource: "selfsubjectaccessreviews"}
+
+// clusterWatchDenied reports whether the API server explicitly denies this
+// identity list or watch of gvr in every namespace. It returns false when the
+// review fails or its answer has no status, so the informer path stays the
+// default and decides as before.
+func (c *LiveResourceCache) clusterWatchDenied(ctx context.Context, gvr schema.GroupVersionResource) bool {
+	for _, verb := range []string{"list", "watch"} {
+		review := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "authorization.k8s.io/v1",
+			"kind":       "SelfSubjectAccessReview",
+			"spec": map[string]interface{}{
+				"resourceAttributes": map[string]interface{}{
+					"group":    gvr.Group,
+					"version":  gvr.Version,
+					"resource": gvr.Resource,
+					"verb":     verb,
+				},
+			},
+		}}
+		answer, err := c.dynClient.Resource(selfSubjectAccessReviewGVR).Create(ctx, review, metav1.CreateOptions{})
+		if err != nil || answer == nil {
+			return false
+		}
+		allowed, found, err := unstructured.NestedBool(answer.Object, "status", "allowed")
+		if err != nil || !found {
+			return false
+		}
+		if !allowed {
+			return true
+		}
+	}
+	return false
 }
 
 // Stop halts all informers.

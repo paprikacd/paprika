@@ -1,0 +1,50 @@
+{{- if and (dig "networkPolicy" "enabled" false .Values.manager) (or (not (hasKey .Values.manager "enabled")) .Values.manager.enabled) }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager-ingress" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      control-plane: controller-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    # Admission calls come from the kube-apiserver and metrics scrapes from
+    # monitoring, and neither is a pod in this release's namespace, so these
+    # ports admit any source. The policy does not restrict health probes: a
+    # NetworkPolicy does not reliably match kubelet traffic from the pod's node.
+    - ports:
+        - protocol: TCP
+          port: 8081
+        {{- if .Values.webhook.enabled }}
+        - protocol: TCP
+          port: 9443
+        {{- end }}
+        {{- if .Values.metrics.enable }}
+        - protocol: TCP
+          port: {{ .Values.metrics.port }}
+        {{- end }}
+    {{- if eq .Values.deploymentMode "monolith" }}
+    # The console and the inline webhook are reached from inside the release namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+{{- end }}

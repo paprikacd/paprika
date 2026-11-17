@@ -1,0 +1,182 @@
+{
+  "description": "Shared series colour rule conformance cases. Each case is a widgets[].options.seriesColors value run through the Zod widget schema (ui series-rules-conformance.test.ts), the Go validateDashboard path and the embedded dashboard JSON Schema (internal/insights/series_conformance_test.go). All three must agree with valid on every case. roles lists the series-role vocabulary that the TypeScript, Go and published schema must each accept. A case with jsonSchemaGap names a rule the published JSON Schema cannot express (unique label and value pairs); the embedded schema must accept that case, which the Go test pins.",
+  "roles": [
+    "traffic",
+    "success",
+    "client-error",
+    "server-error",
+    "p50",
+    "p95",
+    "p99"
+  ],
+  "cases": [
+    {
+      "name": "hex colour only",
+      "valid": true,
+      "seriesColors": [
+        {
+          "label": "window",
+          "value": "1h",
+          "color": "#348cf0"
+        }
+      ]
+    },
+    {
+      "name": "every role, one rule each",
+      "valid": true,
+      "seriesColors": [
+        {
+          "label": "outcome",
+          "value": "traffic",
+          "role": "traffic"
+        },
+        {
+          "label": "outcome",
+          "value": "success",
+          "role": "success"
+        },
+        {
+          "label": "outcome",
+          "value": "client-error",
+          "role": "client-error"
+        },
+        {
+          "label": "outcome",
+          "value": "server-error",
+          "role": "server-error"
+        },
+        {
+          "label": "outcome",
+          "value": "p50",
+          "role": "p50"
+        },
+        {
+          "label": "outcome",
+          "value": "p95",
+          "role": "p95"
+        },
+        {
+          "label": "outcome",
+          "value": "p99",
+          "role": "p99"
+        }
+      ]
+    },
+    {
+      "name": "role on a percentile label",
+      "valid": true,
+      "seriesColors": [
+        {
+          "label": "quantile",
+          "value": "p95",
+          "role": "p95"
+        }
+      ]
+    },
+    {
+      "name": "colour and role together",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "window",
+          "value": "1h",
+          "color": "#348cf0",
+          "role": "traffic"
+        }
+      ]
+    },
+    {
+      "name": "neither colour nor role",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "window",
+          "value": "1h"
+        }
+      ]
+    },
+    {
+      "name": "unknown role",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "code",
+          "value": "500",
+          "role": "error-5xx"
+        }
+      ]
+    },
+    {
+      "name": "status level is not a series role",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "code",
+          "value": "500",
+          "role": "critical"
+        }
+      ]
+    },
+    {
+      "name": "role is case sensitive",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "quantile",
+          "value": "p95",
+          "role": "P95"
+        }
+      ]
+    },
+    {
+      "name": "null role",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "quantile",
+          "value": "p95",
+          "role": null
+        }
+      ]
+    },
+    {
+      "name": "non-string role",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "quantile",
+          "value": "p95",
+          "role": 5
+        }
+      ]
+    },
+    {
+      "name": "short hex colour",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "window",
+          "value": "1h",
+          "color": "#fff"
+        }
+      ]
+    },
+    {
+      "name": "duplicate label and value with roles",
+      "valid": false,
+      "seriesColors": [
+        {
+          "label": "quantile",
+          "value": "p95",
+          "role": "p95"
+        },
+        {
+          "label": "quantile",
+          "value": "p95",
+          "role": "p50"
+        }
+      ],
+      "jsonSchemaGap": "uniqueness"
+    }
+  ]
+}

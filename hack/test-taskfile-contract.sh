@@ -184,6 +184,12 @@ make_injection_one=$temp_dir/make-injected-one
 make_injection_two=$temp_dir/make-injected-two
 make_injection_three=$temp_dir/make-injected-three
 make_injection_four=$temp_dir/make-injected-four
+# Exported command-line variables must remain literal even for a target that
+# has no image-specific assignment. New GNU Make versions export to $(shell).
+make_parse_injection=$temp_dir/make-parse-injected
+"$real_make" --silent -C "$repo_root" help \
+  IMG="ghcr.io/paprikacd/paprika:bad\$(shell touch $make_parse_injection)" >/dev/null
+[[ ! -e "$make_parse_injection" ]] || fail 'Makefile parsing expanded IMG before image validation'
 invalid_imgs=(
   "ghcr.io/paprikacd/paprika:bad; touch $make_injection_one"
   "ghcr.io/paprikacd/paprika:bad\$(touch $make_injection_two)"

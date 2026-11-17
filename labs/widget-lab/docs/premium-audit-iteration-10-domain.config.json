@@ -1,0 +1,21 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": [
+    "src/charts/clinical",
+    "src/charts/energy",
+    "src/charts/orbital",
+    "src/charts/wafer"
+  ],
+  "locale": "en",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Scrollbar"],
+  "ownership": {
+    "Select/Listbox": "native"
+  },
+  "requiredCommands": ["unit", "typecheck", "build"],
+  "commands": {
+    "unit": "npm test",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build"
+  }
+}

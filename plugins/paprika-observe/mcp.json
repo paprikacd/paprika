@@ -11,9 +11,8 @@
             "client": {
               "mode": "dcr"
             },
-            "baseScopes": [
-              "paprika:observe"
-            ]
+            "baseScopes": ["paprika:observe"],
+            "defaultScopes": ["paprika:observe"]
           }
         }
       }

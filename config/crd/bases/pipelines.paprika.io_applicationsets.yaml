@@ -974,6 +974,17 @@ spec:
                         description: Cooldown between self-heal actions. Defaults
                           to 5m.
                         type: string
+                      healthFailureThreshold:
+                        default: 1
+                        description: |-
+                          HealthFailureThreshold is the number of consecutive, distinct Degraded
+                          observations of one current health check required before automatic rollback.
+                          Omitted or 1 preserves immediate rollback. Cached results do not count;
+                          recovery, unknown health, changed checks, and observation gaps reset the streak.
+                        format: int32
+                        maximum: 10
+                        minimum: 1
+                        type: integer
                     type: object
                   source:
                     description: Source defines where the application code/chart lives.

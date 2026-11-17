@@ -550,9 +550,10 @@ spec:
                     type: string
                   effectivePolicies:
                     description: |-
-                      EffectivePolicies is the ceiling the satellite is enforcing, with the
-                      wildcard expanded. An empty list grants nothing: the registration exists
-                      and Paprika neither reads from nor writes to the cluster.
+                      EffectivePolicies is the intersection of the latest satellite claim and
+                      the Cluster ceiling, with the wildcard expanded. It describes the
+                      satellite transport, not direct-transport permissions. It is unknown
+                      until a claim is recorded. An empty list indicates no claimed actions.
                     items:
                       description: |-
                         ManagementPolicy names one capability Paprika may exercise against a target
@@ -646,6 +647,33 @@ spec:
                     type: string
                   reportDigest:
                     type: string
+                  reportedPolicies:
+                    description: |-
+                      ReportedPolicies is the latest policy claim received from the satellite.
+                      An absent field means that no claim has been recorded yet; an explicit
+                      empty list claims no actions. A legacy report with no policies means the
+                      default wildcard. This is an observation, not a permission grant.
+                    items:
+                      description: |-
+                        ManagementPolicy names one capability Paprika may exercise against a target
+                        cluster. The vocabulary follows Crossplane's managementPolicies: a policy set
+                        is an allow-list, so a nil set means "unspecified" and defaults to full
+                        management, while an explicitly empty set grants nothing.
+
+                        The set is evaluated per action, not per resource: a release that may Apply
+                        but not Prune leaves removed manifests in the cluster rather than deleting
+                        them, which is what an operator adopting an existing cluster needs.
+                      enum:
+                      - Observe
+                      - Apply
+                      - Prune
+                      - Delete
+                      - SelfHeal
+                      - Rollout
+                      - '*'
+                      type: string
+                    maxItems: 8
+                    type: array
                   retiredSessions:
                     items:
                       type: string

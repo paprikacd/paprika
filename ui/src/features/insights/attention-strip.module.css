@@ -1,0 +1,172 @@
+/*
+ * The dashboard attention strip has a fixed height, so nothing inside it can move the widgets below. Wide canvases
+ * (1040 px and wider) keep one row: the text, the chips and the counts. Narrower canvases stack two rows, each one line:
+ * the text, then the chips with the counts after them. Nothing wraps. The text ends in an ellipsis, the chips scroll
+ * sideways without a visible scrollbar, and the counts keep one line, so the height does not depend on the copy or on
+ * how many chips there are.
+ */
+.strip {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  box-sizing: border-box;
+  height: 36px;
+  margin: 0 0 12px;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--gamma-border);
+  color: var(--gamma-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.age { color: var(--gamma-ink); }
+.sample,
+.refresh { color: var(--gamma-muted); }
+/* The separators are text in the DOM (aria-hidden), so copy and innerText read as one sentence. */
+.separator { color: var(--gamma-muted); }
+.chips {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+.clear {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gamma-muted);
+  white-space: nowrap;
+}
+.counts {
+  flex: none;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gamma-muted);
+  white-space: nowrap;
+}
+/* The compact count shows below a 480 px canvas; from there the full count is visible. */
+.countsCompact { display: none; }
+.countsFull { display: inline; }
+
+/* Chips that step through widgets are outlined and carry an arrow; the tile chips are static labels. */
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 6px 2px 2px;
+  border: 1px solid var(--gamma-border);
+  border-radius: 999px;
+  background: var(--gamma-bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--gamma-accent); }
+.chip { flex: none; }
+/* The focus ring sits inside the chip: the chip row clips its overflow, so an outside ring would be cut off. */
+.chip:focus-visible { outline: 2px solid var(--gamma-accent); outline-offset: -2px; }
+.chipArrow { flex: none; color: var(--gamma-muted); }
+
+/*
+ * When the chip row overflows, its right edge fades out, so a partly shown chip reads as "more to the right". A focused
+ * chip is never faded: keyboard focus keeps the chip 8px inside the edge, and the fade would dim its focus ring.
+ */
+.chips[data-overflow-end] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.chips[data-overflow-end]:has(:focus-visible) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/*
+ * A coarse pointer's hit area reaches 10px above and below each chip. The row's block padding holds it inside the scroll
+ * container, which clips it, and the equal negative block margin keeps the row's height and the chips' position. The
+ * hit area's 4px sides are not padded, so they stay inside the row's own edges.
+ */
+@media (pointer: coarse) {
+  .chips { padding-block: 10px; margin-block: -10px; }
+  .chip::before { content: ""; position: absolute; inset: -10px -4px; }
+}
+
+/* A transient notice: a reveal or an unreachable tile. It sits over the strip, so it moves no layout. */
+.notice {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  z-index: 2;
+  max-width: 100%;
+  margin: 0;
+  font-size: 11px;
+}
+.notice:not(:empty) {
+  padding: 3px 8px;
+  border: 1px solid var(--gamma-border);
+  border-radius: var(--gamma-radius-small, 4px);
+  background: var(--gamma-surface-2, var(--gamma-bg));
+  color: var(--gamma-ink);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Below 1040 px: two rows, each one line. The text takes the first row; the chips and counts share the second. */
+@container insights-canvas (width < 1040px) {
+  .strip { height: 56px; }
+  .text { flex: 0 0 100%; }
+  /* The chips keep at least half of the second row, so they are never crowded out by the counts. */
+  .chips { min-width: 50%; }
+  .counts { flex: 0 1 auto; }
+}
+/* Below 480 px the counts are the compact form; the full text stays for assistive technology, outside the layout. */
+@container insights-canvas (width < 480px) {
+  .countsCompact { display: inline; }
+  .countsFull {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* A chip's widget is outlined briefly after the chip reveals it. Set by attention-strip.tsx. */
+:global([data-attention-target]) {
+  outline: 2px solid var(--gamma-accent);
+  outline-offset: -2px;
+  transition: outline-color 300ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  :global([data-attention-target]) { transition: none; }
+}

@@ -1,0 +1,21 @@
+{
+  "count": 16,
+  "ids": [
+    "shorted-operations",
+    "shorted-stealth-scraping",
+    "shorted-grafana-metrics",
+    "shorted-postgres-exporter",
+    "shorted-prometheus-stats",
+    "shorted-per-stock",
+    "shorted-shorts-overview",
+    "shorted-my-dashboard",
+    "shorted-widget-catalog",
+    "shorted-housing-feature",
+    "shorted-industry-intelligence",
+    "shorted-admin-dashboard",
+    "uptime-overview",
+    "uptime-slo",
+    "uptime-reliability",
+    "paprika-signal-features"
+  ]
+}

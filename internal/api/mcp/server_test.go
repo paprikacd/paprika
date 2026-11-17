@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -35,7 +36,9 @@ func TestInitializeAdvertisesTools(t *testing.T) {
 	var out struct {
 		Result struct {
 			Tools []struct {
-				Name        string `json:"name"`
+				Name string `json:"name"`
+				//nolint:tagliatelle // _meta is the MCP wire-protocol key, not an application naming convention.
+				Meta        sdkmcp.Meta `json:"_meta"`
 				Annotations struct {
 					ReadOnlyHint    bool `json:"readOnlyHint"`
 					DestructiveHint bool `json:"destructiveHint"`
@@ -52,6 +55,47 @@ func TestInitializeAdvertisesTools(t *testing.T) {
 	}
 	assert.True(t, byName["fleet_status"], "read tools carry readOnlyHint")
 	assert.False(t, byName["rollback_release"], "write tools must not")
+	for _, tool := range out.Result.Tools {
+		if tool.Name == "fleet_status" {
+			assert.Equal(t, []any{map[string]any{"type": "oauth2", "scopes": []any{"paprika:read"}}}, tool.Meta["securitySchemes"])
+		}
+	}
+}
+
+func TestToolOAuthSchemeAdvertisedPerToolAndPreservesMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	readMeta := srv.toolAuthMeta(&Tool{
+		Name: "fleet_status", Scope: ScopeRead,
+		Meta: sdkmcp.Meta{"ui": map[string]any{"resourceUri": "ui://paprika/fleet"}},
+	})
+	ui, ok := readMeta["ui"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "ui://paprika/fleet", ui["resourceUri"])
+	assert.Equal(t, []map[string]any{{"type": "oauth2", "scopes": []string{"paprika:read"}}}, readMeta["securitySchemes"])
+	// The SDK should not mutate an existing tool's metadata in-place.
+	original := sdkmcp.Meta{"existing": "preserved"}
+	_ = srv.toolAuthMeta(&Tool{Scope: ScopeRead, Meta: original})
+	assert.NotContains(t, original, "securitySchemes")
+	srv.disableConsoleResources = true
+	observe := srv.toolAuthMeta(&Tool{Name: "query_metrics", Scope: ScopeObserve})
+	assert.Equal(t, []map[string]any{{"type": "oauth2", "scopes": []string{"paprika:observe"}}}, observe["securitySchemes"])
+	author := srv.toolAuthMeta(&Tool{Name: "patch_dashboard", Scope: ScopeInsightsWrite})
+	assert.Equal(t, []map[string]any{{"type": "oauth2", "scopes": []string{"paprika:observe", "paprika:insights:write"}}}, author["securitySchemes"])
+}
+
+func TestObserveInsufficientScopeProvidesChatGPTOAuthChallenge(t *testing.T) {
+	srv := newObservabilityTestServer(t, nil, nil, ScopeObserve, ScopeInsightsWrite)
+	result, err := srv.mapInvokeError(t.Context(), "query_dashboard", ErrScopeDenied)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	header, ok := result.Meta["mcp/www_authenticate"].([]string)
+	require.True(t, ok)
+	require.Len(t, header, 1)
+	assert.Contains(t, header[0], `resource_metadata="https://paprika.example/observe/.well-known/oauth-protected-resource"`)
+	assert.Contains(t, header[0], `error="insufficient_scope"`)
+	assert.Contains(t, header[0], "error_description=")
+	assert.NotEmpty(t, result.Content)
 }
 
 func TestHandlerCompressesWhenClientAcceptsGzip(t *testing.T) {
@@ -141,6 +185,16 @@ func TestNewServerRequiresRegistryAuthenticatorCacheAndSecret(t *testing.T) {
 		cfg := valid()
 		cfg.Secret = nil
 		_, err := NewServer(cfg)
+		require.Error(t, err)
+	})
+	t.Run("negative token lifetimes", func(t *testing.T) {
+		cfg := valid()
+		cfg.RefreshTTL = -time.Second
+		_, err := NewServer(cfg)
+		require.Error(t, err)
+		cfg = valid()
+		cfg.AccessTTL = -time.Second
+		_, err = NewServer(cfg)
 		require.Error(t, err)
 	})
 	t.Run("empty public URL", func(t *testing.T) {

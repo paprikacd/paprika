@@ -1,0 +1,17 @@
+import { getWidgetDefinition, registerWidgetPlugin } from '@insights/widget-registry';
+import { DistributedQuorumTopology } from './QuorumTopology';
+import { DistributedPeerLatency } from './PeerLatencyMatrix';
+import { DistributedReplicationTracks } from './ReplicationTracks';
+import { DistributedShardMovement } from './ShardMovement';
+import { ownershipPaths, peerCells, peerLatencyConfig, quorumTopologyConfig, replicaSamples, replicationTracksConfig, shardMovementConfig } from './model';
+import { checkedInput } from '../../renderer-extensions/input-issues';
+
+export function registerDistributedCharts() {
+  const definitions = [
+    { id: 'distributed-quorum-topology', label: 'Voting replica topology', description: 'Fixed-membership topology with independently validated quorum reachability and log-index evidence', render: DistributedQuorumTopology, schema: quorumTopologyConfig, validate: replicaSamples, fields: [{ key: 'showAddresses', label: 'Show replica addresses', kind: 'boolean' as const }, { key: 'showRegions', label: 'Show region groups', kind: 'boolean' as const }, { key: 'showIndices', label: 'Show commit-lag edge labels', kind: 'boolean' as const }] },
+    { id: 'distributed-peer-latency', label: 'Directed peer latency matrix', description: 'Exact directed peer observations, separate unknown/unavailable cells and reversible units', render: DistributedPeerLatency, schema: peerLatencyConfig, validate: peerCells, fields: [{ key: 'showValues', label: 'Show cell values', kind: 'boolean' as const }, { key: 'metric', label: 'Peer measurement', kind: 'select' as const, options: [{ value: 'rtt', label: 'Round-trip latency · ms' }, { value: 'throughput', label: 'Transfer rate · MB/s' }] }, { key: 'warnAboveMs', label: 'RTT warning threshold · ms', kind: 'number' as const, min: 1, max: 10000, step: 1 }] },
+    { id: 'distributed-replication-tracks', label: 'Replication index tracks', description: 'Common-scale received/applied progress with supplied leader commit, exact time inspection and local time zoom', render: DistributedReplicationTracks, schema: replicationTracksConfig, validate: replicaSamples, fields: [{ key: 'showReceived', label: 'Show received-index tracks', kind: 'boolean' as const }, { key: 'showCommitted', label: 'Show supplied leader commit', kind: 'boolean' as const }, { key: 'showLag', label: 'Show aligned commit-lag plot', kind: 'boolean' as const }] },
+    { id: 'distributed-shard-movement', label: 'Shard ownership flow', description: 'Conserved exclusive-ownership paths with supplied transfer intervals and unknown owner states', render: DistributedShardMovement, schema: shardMovementConfig, validate: ownershipPaths, fields: [{ key: 'showValues', label: 'Show ownership counts', kind: 'boolean' as const }, { key: 'showStable', label: 'Show stable ownership paths', kind: 'boolean' as const }] },
+  ];
+  for (const d of definitions) if (!getWidgetDefinition('plugin', d.id)) registerWidgetPlugin({ id: d.id, label: d.label, description: d.description, dataKind: 'records', render: d.render, defaultConfig: d.schema.parse({}), parseConfig: value => d.schema.parse(value ?? {}), configFields: d.fields, styleControls: ['tooltips', 'legend'], sizing: { mode: 'intrinsic', minWidth: 280, minHeight: 220 }, validateInput: (result, config) => checkedInput(() => { d.schema.parse(config ?? {}); d.validate(result.records); }) });
+}

@@ -5,19 +5,46 @@ them for monitoring and alerting.
 
 ## Accessing Metrics
 
-The controller-manager exposes metrics on port 8443 over HTTP (not HTTPS —
-the controller uses `--metrics-secure=false`):
+The controller-manager metrics port defaults to `8443`. The transport follows
+the Helm chart's `metrics.secure` value, not the port number:
+
+| Chart setting | Transport and access |
+| --- | --- |
+| `metrics.secure: true` (default) | HTTPS with authentication and authorization. The scraper needs permission to `get` the `/metrics` non-resource URL. |
+| `metrics.secure: false` | HTTP; the chart passes `--metrics-secure=false` to the controller. |
+
+Use the setting from your installed release. For HTTPS, configure the scraper's
+bearer credential and certificate trust; the chart creates a
+`<release>-metrics-reader` ClusterRole that can be bound to the scraper's ServiceAccount.
+A local port-forward does not bypass authorization.
+
+If Prometheus Operator is installed, `prometheus.enable: true` renders a
+ServiceMonitor whose port name and scheme follow `metrics.secure`. Review the
+[chart's ServiceMonitor template](../../charts/chart/templates/prometheus/controller-manager-metrics-monitor.yaml)
+for its certificate and bearer-token configuration, and the
+[metrics-reader role](../../charts/chart/templates/rbac/metrics-reader.yaml)
+for the permission it grants.
+
+### Local HTTP example
+
+The following example applies only to an installation explicitly configured
+with `metrics.secure: false`. It uses the release `paprika` in namespace
+`paprika-system`; substitute your own release and namespace. Keep this command
+running in one terminal:
 
 ```sh
-kubectl -n paprika-e2e port-forward \
-  svc/paprika-e2e-controller-manager-metrics-service 8443:8443 &
-
-curl -s http://localhost:8443/metrics
+kubectl -n paprika-system port-forward \
+  svc/paprika-controller-manager-metrics-service 8443:8443
 ```
 
-For Prometheus scraping, add a ServiceMonitor or PodMonitor targeting the
-`paprika-e2e-controller-manager-metrics-service` on port 8443 with scheme
-`http`.
+Then query it from another terminal:
+
+```sh
+curl --fail --silent --show-error http://localhost:8443/metrics
+```
+
+An HTTP ServiceMonitor or PodMonitor must also use the `http` scheme. Do not
+copy that scrape configuration to a release using secure metrics.
 
 ## Metric Reference
 
@@ -77,8 +104,9 @@ Useful queries:
 
 ```promql
 # Controllers that have not completed a reconcile in five minutes.
+# Controllers record result="success", "error", or "fail" (releases only); only success counts.
 time() - max by (controller) (
-  paprika_controller_last_reconcile_timestamp_seconds{result=~"success|requeue_after"}
+  paprika_controller_last_reconcile_timestamp_seconds{result="success"}
 ) > 300
 
 # Applications with unreconciled spec changes.
@@ -92,6 +120,10 @@ max by (controller) (workqueue_longest_running_processor_seconds) > 60
 # Releases that have not reached a terminal phase.
 paprika_releases_stuck > 0
 ```
+
+A ready-made Insights dashboard charts these gauges with the same `max()`
+semantics as the alert rules: the `paprika-control-plane` starter in
+`internal/insights/starters/`.
 
 `workqueue_*` and `controller_runtime_reconcile_*` are supplied by
 controller-runtime; the Paprika-specific gauges above add the per-application
@@ -148,7 +180,7 @@ not crossed the alert threshold yet; the series is absent when no link exists.
 # A satellite that has not reported in five minutes.
 paprika_satellite_report_age_seconds > 300
 # Link churn: more than three detaches in ten minutes.
-sum by (cluster) (increase(paprika_satellite_link_events_total{event="detached"}[10m])) > 3
+sum(increase(paprika_satellite_link_events_total{event="detached"}[10m])) > 3
 # Refused handshakes mean a credential or cluster-identity problem.
 increase(paprika_satellite_link_events_total{event="refused"}[15m]) > 0
 ```
@@ -188,29 +220,59 @@ are 5/10, which throttles uncached calls under load).
 
 ## Alerting Rules
 
+The alerts Paprika ships are in
+[`prometheusrules.yaml`](../../charts/chart/templates/prometheus/prometheusrules.yaml),
+enabled with `prometheus.rules.enabled`. That template is the source of truth.
+Its expressions are checked by promtool unit tests in
+[`charts/chart/tests/prometheus`](../../charts/chart/tests/prometheus), and the
+PromQL in this guide is checked against the Go instrument definitions by
+`internal/metrics`. The drift, prune, sync, render, git and info examples below
+are illustrations, not shipped rules.
+
+Counters are created on their first increment, so a bare `increase()` misses
+that first event. The phase alerts below pair `increase()` with a check for a
+series with no sample in the hour before the last five minutes, and a rise above
+the value from before the last five minutes. The other `increase()` examples in
+the Info, Warning and Drift sections do not, and can miss a first error or first
+prune. Current state comes from the `*_by_phase_ratio` gauges.
+
+The phase alerts have one known blind spot. After an in-place container restart
+(same pod name and label set), the first failure of a release that the previous
+container exported within the past hour is not reported. The new counter starts
+at 1, which is not above the old value, and the old samples count as history.
+Later failures alert through `increase()`. Only a drop from a higher value seen
+within about three minutes of the old container's last scrape alerts, briefly.
+
 ### Critical Alerts
 
 ```yaml
 groups:
   - name: paprika-critical
     rules:
-      # Application stuck in a failure state
-      - alert: PaprikaApplicationDegraded
-        expr: paprika_application_phase_total{phase="Degraded"} > 0
+      # A release failed: a transition counter, transition-aware for the first event.
+      - alert: PaprikaReleaseFailed
+        expr: |
+          increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
+          or
+          paprika_release_phase_total{phase="Failed"} unless last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
+          or
+          paprika_release_phase_total{phase="Failed"} > last_over_time(paprika_release_phase_total{phase="Failed"}[1h] offset 5m)
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Application {{ $labels.application }} is Degraded"
+          summary: "Release {{ $labels.release }} in namespace {{ $labels.namespace }} failed"
 
-      # Release retries exhausted
+      # Release retries exhausted. The gauge counts applications holding the
+      # condition; it is unlabelled, so the alert cannot name the application.
+      # max() collapses the same value reported by each manager pod.
       - alert: PaprikaReleaseRetriesExhausted
-        expr: paprika_application_phase_total{phase="RolledBack"} > 0
+        expr: max(paprika_applications_release_retries_exhausted) > 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Application {{ $labels.application }} release retries exhausted"
+          summary: "{{ $value }} application(s) hold the ReleaseRetriesExhausted condition"
 ```
 
 ### Warning Alerts
@@ -219,6 +281,29 @@ groups:
 groups:
   - name: paprika-warning
     rules:
+      # Current state from the phase gauge, debounced for five minutes.
+      - alert: PaprikaApplicationDegraded
+        expr: max(paprika_applications_by_phase_ratio{phase="Degraded"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} application(s) are Degraded"
+
+      # Rolled back: a transition counter, transition-aware for the first event.
+      - alert: PaprikaApplicationRolledBack
+        expr: |
+          increase(paprika_application_phase_total{phase="RolledBack"}[5m]) > 0
+          or
+          paprika_application_phase_total{phase="RolledBack"} unless last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+          or
+          paprika_application_phase_total{phase="RolledBack"} > last_over_time(paprika_application_phase_total{phase="RolledBack"}[1h] offset 5m)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Application {{ $labels.application }} in namespace {{ $labels.namespace }} was rolled back"
+
       # Drift detected and persisting
       - alert: PaprikaDriftDetected
         expr: paprika_out_of_sync > 0

@@ -1,0 +1,12 @@
+runtime.goexit;net/http.(*conn).serve;crypto/tls.(*Conn).Read;crypto/tls.(*Conn).readRecordOrCCS;crypto/aes.(*gcmAsm).Open 223
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;checkout.(*Service).Persist;pgx.(*Conn).Exec;pgconn.(*PgConn).ExecParams;pgproto3.(*Bind).Encode 274
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;checkout.(*Service).Persist;pgx.(*Conn).Exec;pgconn.(*PgConn).receiveMessage;pgproto3.(*Backend).Receive 181
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;checkout.(*Service).Quote;pricing.Calculate;decimal.(*Decimal).Mul;math/big.nat.mul 292
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;checkout.(*Service).Quote;pricing.Calculate;decimal.(*Decimal).Mul;math/big.nat.mul;runtime.memmove 228
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;checkout.(*Service).Quote;pricing.Calculate;decimal.(*Decimal).Round 227
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;encoding/json.(*Decoder).Decode;encoding/json.(*decodeState).object;reflect.New 270
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;encoding/json.(*Encoder).Encode;encoding/json.mapEncoder.encode;sort.Slice 219
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;encoding/json.(*Encoder).Encode;encoding/json.structEncoder.encode;encoding/json.stringEncoder 237
+runtime.goexit;net/http.(*conn).serve;net/http.serverHandler.ServeHTTP;checkout.(*Handler).Create;runtime.mallocgc;runtime.nextFreeFast 273
+runtime.goexit;runtime.gcBgMarkWorker;runtime.gcDrain;runtime.greyobject 202
+runtime.goexit;runtime.gcBgMarkWorker;runtime.gcDrain;runtime.scanobject;runtime.findObject 254

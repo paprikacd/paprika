@@ -33,6 +33,8 @@ type OIDCConfig struct {
 
 // OIDCAuthenticator validates OIDC bearer tokens.
 type OIDCAuthenticator struct {
+	issuer       string
+	sessions     *browserSessions
 	provider     *oidc.Provider
 	verifier     *oidc.IDTokenVerifier
 	oauth2Config oauth2.Config
@@ -80,6 +82,7 @@ func NewOIDCAuthenticator(ctx context.Context, cfg *OIDCConfig) (*OIDCAuthentica
 	)
 
 	return &OIDCAuthenticator{
+		issuer:       cfg.IssuerURL,
 		provider:     provider,
 		verifier:     verifier,
 		oauth2Config: oauth2Config,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -22,14 +23,18 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/guidance"
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/version"
 )
@@ -104,7 +109,7 @@ type ServerConfig struct {
 
 	// SupportedScopes is the set of scopes this authorization server grants
 	// and advertises in discovery metadata. Empty defaults to read+write. The
-	// observability gateway grants only ScopeObserve.
+	// observability gateway grants ScopeObserve, plus optional ScopeInsightsWrite.
 	SupportedScopes []Scope
 
 	// DisableConsoleResources suppresses registration of the interactive
@@ -282,6 +287,9 @@ func validateServerConfig(cfg *ServerConfig) error {
 	if len(cfg.Secret) == 0 {
 		return errors.New("mcp: ServerConfig.Secret is required")
 	}
+	if cfg.AccessTTL < 0 || cfg.RefreshTTL < 0 {
+		return errors.New("mcp: token lifetimes cannot be negative")
+	}
 	if err := validatePublicURL(cfg.PublicURL); err != nil {
 		return err
 	}
@@ -368,7 +376,7 @@ func resolveGrants(cfg *ServerConfig) (string, []Scope, error) {
 		supportedScopes = []Scope{ScopeRead, ScopeWrite}
 	}
 	for _, sc := range supportedScopes {
-		if sc != ScopeRead && sc != ScopeWrite && sc != ScopeObserve {
+		if !isKnownScope(sc) {
 			return "", nil, fmt.Errorf("mcp: ServerConfig.SupportedScopes contains unknown scope %q", sc)
 		}
 	}
@@ -416,12 +424,7 @@ func validatePublicURL(publicURL string) error {
 // matches this package's request/response tool-call model and lets a caller
 // invoke a tool without first running the initialize handshake.
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
-	description := "Application delivery, fleet health, drift, and deployment diagnostics."
-	instructions := "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
-	if s.disableConsoleResources {
-		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
-		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
-	}
+	description, instructions := serverDescriptionAndInstructions(s.disableConsoleResources, s.supportedScopes)
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:        implementationName,
 		Title:       "Paprika",
@@ -458,7 +461,7 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 			Description:  tool.Description,
 			InputSchema:  tool.InputSchema,
 			OutputSchema: outputSchema,
-			Meta:         tool.Meta,
+			Meta:         s.toolAuthMeta(tool),
 			Icons:        tool.Icons,
 			Annotations: &sdkmcp.ToolAnnotations{
 				ReadOnlyHint:    tool.Scope == ScopeRead || tool.Scope == ScopeObserve,
@@ -475,6 +478,59 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 		func(*http.Request) *sdkmcp.Server { return sdkSrv },
 		&sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, PropagateRequestCancellation: true},
 	)
+}
+
+// toolAuthMeta explicitly advertises the OAuth scope each tool requires.
+// ChatGPT uses the securitySchemes descriptor alongside OAuth resource
+// discovery to decide when to show a Connect or reauthorization prompt.
+// Retain existing MCP App metadata instead of replacing it.
+func (s *Server) toolAuthMeta(tool *Tool) sdkmcp.Meta {
+	meta := make(sdkmcp.Meta, len(tool.Meta)+1)
+	for key, value := range tool.Meta {
+		meta[key] = value
+	}
+	scopes := []string{string(tool.Scope)}
+	// The Observe gateway requires observe read access to reach its tools.
+	// Authoring adds a separate permission, not a replacement for read access.
+	if s.disableConsoleResources && tool.Scope == ScopeInsightsWrite {
+		scopes = []string{string(ScopeObserve), string(ScopeInsightsWrite)}
+	}
+	meta["securitySchemes"] = []map[string]any{{
+		"type":   "oauth2",
+		"scopes": scopes,
+	}}
+	return meta
+}
+
+// observeAuthoringInstructions orders the observe rules by importance. Claude
+// Code keeps only the first 4096 characters of MCP server instructions, so scope
+// and safety come first, then the dashboard workflow, then a compact composition
+// summary. The full composition rules are in the get_insights_schema notes, which
+// have no length limit. TestServedInstructionsFitClaudeCodeLimit enforces the bound.
+// Clients such as ChatGPT receive no skill text, so the dashboard rules travel in
+// this initialize response.
+func observeAuthoringInstructions() string {
+	return strings.Join([]string{
+		"Prefer query_dashboard when a saved dashboard covers the question: list_dashboards finds its ID, get_dashboard its variables, and a variables map sets shared filters. One call collects all main-widget signals over one range and executes identical queries once. Read structuredContent for exact values, states and ETags; text is a synopsis. It needs paprika:observe and Insights and provider read access, not authoring consent.",
+		"Preserve provider errors, unavailable signals and truncation; empty results do not establish health. For standalone provider queries, discover authorized providers and signal capabilities, then metric names, labels and trace services; use an explicit namespace and name, a short range and a small limit.",
+		"Writes also need explicit paprika:insights:write consent and Insights write permission; they grant no provider configuration or fleet delivery writes. Read current documents first, then create with a new ID or prefer patch_saved_query or patch_dashboard with widget_edits by widget ID and the exact ETag just read. Reread conflicts; unsaved drafts stay protected.",
+		"Dashboard workflow: " + strings.Join(guidance.MCPDashboardWorkflow(), " "),
+		"Composition: " + strings.Join(guidance.MCPDashboardComposition(), " ") + " Before authoring, read get_insights_schema (kind dashboard or widget) and list_insights_providers; its notes hold the full composition rules.",
+	}, " ")
+}
+
+func serverDescriptionAndInstructions(disableConsoleResources bool, supportedScopes []Scope) (description, instructions string) {
+	description = "Application delivery, fleet health, drift, and deployment diagnostics."
+	instructions = "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow."
+	if disableConsoleResources {
+		description = "Read-only discovery and bounded queries for observability providers, logs, metrics, and traces."
+		instructions = "Discover authorized providers and their signal capabilities before querying. Use an explicit provider namespace and name, a short time range, and a small result limit. Discover metric names, labels, and trace services before constructing queries. Preserve provider errors, unavailable signals, and truncation; empty results do not establish health. This surface requires paprika:observe and has no fleet delivery tools."
+		if slices.Contains(supportedScopes, ScopeInsightsWrite) {
+			description = "Observability discovery, compact dashboard query bundles, and authorized saved-query and dashboard authoring."
+			instructions = observeAuthoringInstructions()
+		}
+	}
+	return description, instructions
 }
 
 // Handler returns the http.Handler that serves the MCP protocol. It
@@ -509,8 +565,8 @@ const consoleCredentialTTL = 30 * time.Second
 
 // mintConsoleCredential mints a short-lived, unscoped self-signed token for
 // the in-process Connect request tools/call issues, carrying p's real
-// subject/email/name so the audit trail records the actual acting user
-// rather than a service identity. Its audience is auth.ConsoleAPIAudience,
+// subject/email/name and exact groups so the audit trail records the acting
+// user rather than a service identity. Its audience is auth.ConsoleAPIAudience,
 // distinct from this server's own MCP-audience tokens (MCPTokenAudience) —
 // see transport.go's internalCredentialKey doc comment for why forwarding
 // the caller's own MCP-audience token instead would defeat the console
@@ -526,6 +582,7 @@ func (s *Server) mintConsoleCredential(p *auth.Principal) (string, error) {
 		Subject:  p.Subject,
 		Email:    p.Email,
 		Name:     p.Name,
+		Groups:   append([]string{}, p.Groups...),
 		Audience: auth.ConsoleAPIAudience,
 		TTL:      consoleCredentialTTL,
 		Secret:   s.secret,
@@ -571,9 +628,15 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = auth.WithPrincipal(ctx, principal)
 
-	if !s.rateLimit.Allow(principal.Subject) {
-		w.Header().Set("Retry-After", "1")
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	// Allow a brief, bounded queue wait for bursts. Every waiting request
+	// retains its caller's cancellation; no work runs after disconnect.
+	if err := s.rateLimit.Wait(ctx, principal.Subject); err != nil {
+		if errors.Is(err, errRateQueueCapacity) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limit queue is full; retry shortly", http.StatusTooManyRequests)
+			return
+		}
+		http.Error(w, "request canceled while queued", http.StatusRequestTimeout)
 		return
 	}
 
@@ -848,8 +911,8 @@ func (s *Server) invoke(ctx context.Context, p *auth.Principal, name string, arg
 //   - *ConfirmationRequiredError becomes a SUCCESSFUL tool result carrying
 //     the preview and token, not a protocol error — the model needs to see
 //     it to act on it, which an error response would hide.
-//   - ErrScopeDenied becomes a JSON-RPC error naming the missing scope, at
-//     an application-defined code outside the JSON-RPC reserved range.
+//   - ErrScopeDenied returns an MCP error result with an OAuth challenge on
+//     Observe and the historical JSON-RPC error on the fleet surface.
 //   - ErrToolNotFound becomes a standard JSON-RPC method-not-found error.
 //     In practice the SDK's own dispatcher rejects an unregistered tool name
 //     before callTool ever runs (every registered handler corresponds to a
@@ -868,6 +931,21 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 	}
 	switch {
 	case errors.Is(err, ErrScopeDenied):
+		// Preserve the historical fleet MCP protocol error; Observe also
+		// provides the per-tool OAuth challenge ChatGPT needs to reconnect.
+		if s.disableConsoleResources {
+			challenge := fmt.Sprintf(
+				`Bearer resource_metadata="%s%s/.well-known/oauth-protected-resource", error="insufficient_scope", error_description="Reauthorize Paprika Observe to grant the required scope"`,
+				s.publicURL, s.routePrefix,
+			)
+			return &sdkmcp.CallToolResult{
+				Meta: sdkmcp.Meta{"mcp/www_authenticate": []string{challenge}},
+				Content: []sdkmcp.Content{&sdkmcp.TextContent{
+					Text: s.scopeDeniedMessage(name),
+				}},
+				IsError: true,
+			}, nil
+		}
 		return nil, &sdkjsonrpc.Error{Code: codeScopeDenied, Message: s.scopeDeniedMessage(name)}
 	case errors.Is(err, ErrToolNotFound):
 		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeMethodNotFound, Message: err.Error()}
@@ -879,29 +957,188 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 	return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
 }
 
-// toolErrorResult renders domain-level failures (entity missing, bad
-// arguments, conflicts) as a CallToolResult with IsError=true and the real
-// message — the model gets "application X not found", not an opaque
-// -32603. Only Connect codes that carry caller-actionable detail map;
-// anything else still falls to the internal-error path.
+// toolErrorResult preserves human-readable domain errors for MCP clients and
+// adds only a fixed machine code for data consumers. Operational errors carry
+// fixed text too: upstream endpoints, credentials and diagnostics stay private.
+// A failed dashboard call also lists its issues and any retry delay, all bounded
+// and printed in the same wire form the HTTP API uses.
 func toolErrorResult(err error) *sdkmcp.CallToolResult {
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
+	ce := toolConnectError(err)
+	if ce == nil {
 		return nil
 	}
-	if !toolActionableCode(ce.Code()) {
+	text, operational := operationalToolErrorText[ce.Code()]
+	if toolActionableCode(ce.Code()) {
+		// The headline can echo upstream text, so it is escaped like every other
+		// producer string: a newline or a bidirectional override cannot reach the agent.
+		text = ce.Error()
+		if inner := ce.Unwrap(); inner != nil {
+			text = inner.Error()
+		}
+		text = checkwire.Printable(text)
+	} else if !operational {
 		return nil
 	}
-	text := ce.Error()
-	if inner := ce.Unwrap(); inner != nil {
-		text = inner.Error()
+	errorBody := map[string]any{"code": ce.Code().String()}
+	lines := []string{text}
+	report, retryAfter := connectErrorDetails(ce)
+	if report != nil {
+		list, listErr := newIssueList(report)
+		if listErr == nil {
+			lines = append(lines, list.lines...)
+			errorBody["issues"] = list.structured
+			errorBody["total"] = list.total
+			errorBody["truncated"] = list.truncated
+		}
+	}
+	if retryAfter > 0 {
+		seconds := int64(retryAfter / time.Second)
+		lines = append(lines, fmt.Sprintf("Retry after %d seconds.", seconds))
+		errorBody["retryAfterSeconds"] = seconds
 	}
 	return &sdkmcp.CallToolResult{
-		IsError: true,
-		Content: []sdkmcp.Content{
-			&sdkmcp.TextContent{Text: text},
-		},
+		IsError:           true,
+		StructuredContent: map[string]any{"error": errorBody},
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: strings.Join(lines, "\n")}},
 	}
+}
+
+// connectErrorDetails reads the details an upstream attached to a Connect error:
+// a dashboard CheckReport and a RetryInfo delay. Other details are ignored, so
+// nothing else reaches the tool result.
+func connectErrorDetails(ce *connect.Error) (*insightsv1.CheckReport, time.Duration) {
+	var report *insightsv1.CheckReport
+	var retryAfter time.Duration
+	for _, detail := range ce.Details() {
+		message, err := detail.Value()
+		if err != nil {
+			continue
+		}
+		switch value := message.(type) {
+		case *insightsv1.CheckReport:
+			if report == nil {
+				report = value
+			}
+		case *errdetails.RetryInfo:
+			retryAfter = value.GetRetryDelay().AsDuration()
+		}
+	}
+	return report, retryAfter
+}
+
+// issueList is the agent-facing rendering of a CheckReport: text lines that
+// name each issue's severity, widget and pointer, and the same issues as
+// structured JSON. Producer text is bounded and printed with control characters
+// escaped, so a submitted key cannot add lines or hide text.
+type issueList struct {
+	lines      []string
+	structured []json.RawMessage
+	total      uint32
+	truncated  bool
+}
+
+func newIssueList(report *insightsv1.CheckReport) (issueList, error) {
+	var shown []*insightsv1.CheckFinding
+	for _, finding := range report.GetIssues() {
+		if len(shown) == checkwire.MaxIssues {
+			break
+		}
+		shown = append(shown, checkwire.Bound(finding))
+	}
+	total := max(report.GetTotal(), checkwire.Count(len(report.GetIssues())))
+	list := issueList{total: total, truncated: total > checkwire.Count(len(shown))}
+	list.lines = append(list.lines, fmt.Sprintf("Issues (%d of %d shown):", len(shown), total))
+	sharedFixText, sharedOK := sharedFix(shown)
+	printed := make(map[string]bool)
+	for _, finding := range shown {
+		list.lines = append(list.lines, issueLine(finding))
+		raw, err := checkwire.Marshal(finding)
+		if err != nil {
+			return issueList{}, fmt.Errorf("mcp: marshal issue: %w", err)
+		}
+		list.structured = append(list.structured, raw)
+		if sharedOK || finding.GetFix() == "" {
+			continue
+		}
+		// A fix sits directly under the first issue that carries it, so it reads as
+		// that issue's fix. A later issue with the same rule and fix adds nothing;
+		// the same rule with a different fix still prints.
+		key := finding.GetRuleId() + "\x00" + finding.GetFix()
+		if printed[key] {
+			continue
+		}
+		printed[key] = true
+		list.lines = append(list.lines, fmt.Sprintf("  Fix (%s): %s", checkwire.Printable(finding.GetRuleId()), checkwire.Printable(finding.GetFix())))
+	}
+	if sharedOK {
+		list.lines = append(list.lines, "Fix for all shown issues: "+checkwire.Printable(sharedFixText))
+	}
+	return list, nil
+}
+
+// issueLine renders one issue as "- error /widgets/0/layout (widget w): message".
+// The severity word is prose, so it is lowercase; the wire form stays
+// SEVERITY_ERROR.
+func issueLine(finding *insightsv1.CheckFinding) string {
+	location := checkwire.Printable(finding.GetPointer())
+	if location == "" {
+		location = "document"
+	}
+	line := fmt.Sprintf("- %s %s", severityWord(finding.GetSeverity()), location)
+	if finding.GetWidgetId() != "" {
+		line += fmt.Sprintf(" (widget %s)", checkwire.Printable(finding.GetWidgetId()))
+	}
+	return line + ": " + checkwire.Printable(finding.GetMessage())
+}
+
+func severityWord(severity insightsv1.Severity) string {
+	switch severity {
+	case insightsv1.Severity_SEVERITY_ERROR:
+		return "error"
+	case insightsv1.Severity_SEVERITY_WARNING:
+		return "warning"
+	case insightsv1.Severity_SEVERITY_INFO:
+		return "info"
+	case insightsv1.Severity_SEVERITY_UNSPECIFIED:
+		return "issue"
+	default:
+		return "issue"
+	}
+}
+
+// sharedFix returns the fix text when every shown issue repeats the same one.
+func sharedFix(findings []*insightsv1.CheckFinding) (string, bool) {
+	if len(findings) == 0 || findings[0].GetFix() == "" {
+		return "", false
+	}
+	for _, finding := range findings[1:] {
+		if finding.GetFix() != findings[0].GetFix() {
+			return "", false
+		}
+	}
+	return findings[0].GetFix(), true
+}
+
+func toolConnectError(err error) *connect.Error {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, err)
+	default:
+		return nil
+	}
+}
+
+var operationalToolErrorText = map[connect.Code]string{
+	connect.CodeResourceExhausted: "tool execution capacity is exhausted; retry later.",
+	connect.CodeDeadlineExceeded:  "tool execution timed out",
+	connect.CodeCanceled:          "tool execution was canceled",
+	connect.CodeUnauthenticated:   "tool authentication is required",
 }
 
 // toolActionableCode reports whether a Connect error code carries a
@@ -915,6 +1152,7 @@ var actionableCodes = map[connect.Code]struct{}{
 	connect.CodeNotFound:           {},
 	connect.CodeInvalidArgument:    {},
 	connect.CodeAlreadyExists:      {},
+	connect.CodeAborted:            {},
 	connect.CodeFailedPrecondition: {},
 	connect.CodePermissionDenied:   {},
 }
@@ -973,6 +1211,119 @@ func toolResult(v any) (*sdkmcp.CallToolResult, error) {
 		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: string(data)}},
 		StructuredContent: json.RawMessage(data),
 	}, nil
+}
+
+// CheckedResult renders a successful dashboard write or check. structuredContent
+// is the payload with a checks member holding the report, and content[0] is that
+// same JSON, as the MCP spec expects, so a client that drops structuredContent
+// can still parse content[0]. content[1] is the checks verdict and the bounded
+// issue list as text. A nil payload makes the checks object the whole result
+// (validate_dashboard). A nil report on a write leaves the payload as toolResult
+// renders it, for a service that does not send checks.
+func CheckedResult(payload any, report *insightsv1.CheckReport) (*sdkmcp.CallToolResult, error) {
+	if report == nil && payload != nil {
+		return toolResult(payload)
+	}
+	if report == nil {
+		report = &insightsv1.CheckReport{}
+	}
+	section, structured, err := renderCheckSection(report)
+	if err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return checksOnlyResult(section, structured)
+	}
+	return checkedWriteResult(payload, section, structured)
+}
+
+// checksOnlyResult is the validate_dashboard result: the report as structured
+// content and as its JSON text, then the verdict and issue lines.
+func checksOnlyResult(section string, structured map[string]any) (*sdkmcp.CallToolResult, error) {
+	data, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checks: %w", err)
+	}
+	return checkedContent(data, section), nil
+}
+
+// checkedWriteResult is a successful write: the payload object with a checks
+// member, as structured content and as its JSON text, then the verdict and
+// issue lines. checks sits beside the document and never inside it.
+func checkedWriteResult(payload any, section string, structured map[string]any) (*sdkmcp.CallToolResult, error) {
+	data, err := marshalToolResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || fields == nil {
+		return nil, errors.New("mcp: checked result payload must be a JSON object")
+	}
+	checks, err := json.Marshal(structured)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checks: %w", err)
+	}
+	fields["checks"] = checks
+	withChecks, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: marshal checked result: %w", err)
+	}
+	return checkedContent(withChecks, section), nil
+}
+
+// checkedContent pairs the structured JSON, repeated as the first text block,
+// with the checks section as the second.
+func checkedContent(structuredJSON []byte, section string) *sdkmcp.CallToolResult {
+	return &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: string(structuredJSON)},
+			&sdkmcp.TextContent{Text: section},
+		},
+		StructuredContent: json.RawMessage(structuredJSON),
+	}
+}
+
+// renderCheckSection is the agent-facing checks section: a verdict line, then
+// the same bounded, escaped issue list a failed save renders. The verdict counts
+// come from the report's severity counts, which cover findings past the cap.
+func renderCheckSection(report *insightsv1.CheckReport) (section string, structured map[string]any, err error) {
+	list, err := newIssueList(report)
+	if err != nil {
+		return "", nil, err
+	}
+	errorsCount, warnings, infos := report.GetErrorCount(), report.GetWarningCount(), report.GetInfoCount()
+	verdict := fmt.Sprintf("Checks: %s, %s", countWord(errorsCount, "error"), countWord(warnings, "warning"))
+	if errorsCount == 0 && warnings == 0 {
+		verdict = "Checks passed"
+	}
+	if infos > 0 {
+		verdict += " (" + countWord(infos, "info note") + ")"
+	}
+	lines := []string{verdict}
+	if len(list.structured) > 0 {
+		lines = append(lines, list.lines...)
+	}
+	issues := list.structured
+	if issues == nil {
+		issues = []json.RawMessage{}
+	}
+	structured = map[string]any{
+		"errorCount":   errorsCount,
+		"warningCount": warnings,
+		"infoCount":    infos,
+		"total":        list.total,
+		"truncated":    list.truncated,
+		"issues":       issues,
+	}
+	return strings.Join(lines, "\n"), structured, nil
+}
+
+// countWord writes a count with its word, pluralised for anything but one.
+func countWord(n uint32, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // PreviewToolResult is toolResult for tools whose payload can be large (the

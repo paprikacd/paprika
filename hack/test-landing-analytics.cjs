@@ -1,6 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { eligible, boot } = require('../landing/analytics.js');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const context = { module: { exports: {} } };
+vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../landing/google-analytics.js'), 'utf8'), context);
+const { eligible, boot } = context.module.exports;
 const config = { enabled: true, origin: 'https://site.example', gaMeasurementId: 'G-TEST123', gaPrivacyReviewed: true };
 function fixture(options = {}) {
   const elements = [];

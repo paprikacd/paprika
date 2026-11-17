@@ -68,7 +68,7 @@ func TestQueryRange(t *testing.T) {
 	require.Equal(t, "up", capture.query.Get("query"))
 	require.Equal(t, strconv.FormatInt(start.Unix(), 10), capture.query.Get("start"))
 	require.Equal(t, strconv.FormatInt(end.Unix(), 10), capture.query.Get("end"))
-	require.Equal(t, "20s", capture.query.Get("step"))
+	require.Equal(t, "20", capture.query.Get("step"))
 	require.Equal(t, "100", capture.query.Get("limit"))
 }
 
@@ -132,11 +132,12 @@ func TestRangeStepClamping(t *testing.T) {
 		span time.Duration
 		want string
 	}{
-		{name: "below minimum", span: 5 * time.Second, want: "10s"},
-		{name: "at minimum", span: 2500 * time.Second, want: "10s"},
-		{name: "proportional", span: 10000 * time.Second, want: "40s"},
-		{name: "at maximum", span: 250 * time.Hour, want: "1h0m0s"},
-		{name: "above maximum", span: 500 * time.Hour, want: "1h0m0s"},
+		{name: "below minimum", span: 5 * time.Second, want: "10"},
+		{name: "at minimum", span: 2500 * time.Second, want: "10"},
+		{name: "proportional", span: 10000 * time.Second, want: "40"},
+		{name: "fractional", span: 3875 * time.Second, want: "15.5"},
+		{name: "at maximum", span: 250 * time.Hour, want: "3600"},
+		{name: "above maximum", span: 500 * time.Hour, want: "3600"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -259,7 +260,7 @@ func TestQueryRangeStepOverride(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, connector.StateOK, res.State)
-	require.Equal(t, "30s", capture.query.Get("step"))
+	require.Equal(t, "30", capture.query.Get("step"))
 }
 
 func TestQueryRangeStepOverrideNotSentOnInstantQuery(t *testing.T) {

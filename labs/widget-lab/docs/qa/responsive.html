@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Responsive dashboard browser checks</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#18212a;color:#e6eff5;font:14px system-ui,sans-serif}header{position:sticky;top:0;z-index:10;display:flex;align-items:end;flex-wrap:wrap;gap:12px;padding:12px 16px;background:#101b25;border-bottom:1px solid #456}label{display:grid;gap:5px;font-size:12px}select,button{min-height:34px;background:#213846;color:inherit;border:1px solid #607989;border-radius:4px;padding:5px 9px;font:inherit}p{margin:0;color:#a9bfce;font-size:12px;flex:1 1 180px}main{padding:14px;overflow:auto}iframe{box-sizing:content-box;display:block;border:1px solid #536e80;width:1280px;height:780px;background:#05151e}output{display:block;white-space:pre-wrap;padding:14px;font:12px/1.5 monospace}
+  </style>
+</head>
+<body>
+  <header>
+    <label>Dashboard<select id="route"><option value="edge">Edge Watch</option><option value="reliability">Reliability Room</option></select></label>
+    <label>Browser viewport width<select id="width"><option>320</option><option>390</option><option>640</option><option>768</option><option>1024</option><option selected>1280</option><option>1592</option><option>1920</option></select></label>
+    <label>Browser viewport height<select id="height"><option>600</option><option selected>780</option><option>900</option></select></label>
+    <label>Show panel<select id="panel"><option value=".ref-page-title">Dashboard</option><option value=".ref-chart">Main chart</option><option value=".edge-support-geography">Connection geography</option><option value=".edge-support-outcomes">Request outcomes</option><option value=".edge-support-risk">Risk by source</option><option value=".ref-rel-timeline">Service timeline</option><option value=".ref-rel-calendar">Incident calendar</option><option value=".ref-edge-events, .ref-rel-incidents">Recent records</option></select></label>
+    <button id="measure">Measure layout</button>
+    <p>Development QA: each size is a real iframe viewport. Changing width keeps the same document and selected evidence.</p>
+  </header>
+  <main><iframe title="Dashboard viewport" src="/#edge"></iframe></main>
+  <output aria-label="Layout measurements"></output>
+  <script type="module">
+    const frame=document.querySelector('iframe');
+    const width=document.querySelector('#width'),height=document.querySelector('#height');
+    const size=()=>{frame.style.width=`${width.value}px`;frame.style.height=`${height.value}px`;};
+    width.addEventListener('change',size);height.addEventListener('change',size);
+    document.querySelector('#route').addEventListener('change',event=>{frame.src=`/#${event.target.value}`;document.querySelector('#panel').value='.ref-page-title';});
+    document.querySelector('#panel').addEventListener('change',event=>{const panel=frame.contentDocument.querySelector(event.target.value);if(panel)frame.contentWindow.scrollTo({top:panel.getBoundingClientRect().top+frame.contentWindow.scrollY-70,behavior:'instant'});});
+    document.querySelector('#measure').addEventListener('click',()=>{
+      const doc=frame.contentDocument,win=frame.contentWindow,app=doc.querySelector('.ref-app');
+      const bounds=element=>{const rect=element.getBoundingClientRect();return {width:Math.round(rect.width*100)/100,height:Math.round(rect.height*100)/100};};
+      document.querySelector('output').textContent=JSON.stringify({viewport:{width:win.innerWidth,height:win.innerHeight,contentWidth:doc.documentElement.clientWidth,documentWidth:doc.documentElement.scrollWidth},layout:app?.dataset.layout,density:app?.dataset.density,transform:app&&win.getComputedStyle(app).transform,app:app&&bounds(app),panels:[...doc.querySelectorAll('.ref-panel')].map(panel=>({title:panel.querySelector('h2')?.textContent,...bounds(panel)})),plots:[...doc.querySelectorAll('.ref-chart-svg')].map(plot=>({label:plot.getAttribute('aria-label'),viewBox:plot.getAttribute('viewBox'),...bounds(plot)}))},null,2);
+    });
+  </script>
+</body>
+</html>

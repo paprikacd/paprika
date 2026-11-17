@@ -1,38 +1,43 @@
 "use client"
 
-import { clearBrowserQueryCache } from "@/lib/query-provider"
-
 import { createConnectTransport } from "@connectrpc/connect-web"
+import { sessionFetch, sessionIdentity } from "./session-request"
+import { ensureValidSession } from "./browser-session"
 
-const AUTH_TOKEN_KEY = "paprika_id_token"
-const AUTH_USER_KEY = "paprika_auth_user"
+// Explicit read-only RPCs, reviewed against PaprikaService. New methods default
+// to no replay, including streaming calls and anything that can apply changes.
+const renewableReads = new Set([
+  "ListPipelines", "ListReleases", "ListStages", "ListApplications", "ListPolicies",
+  "ListApplicationSets", "GetApplicationSet", "ListNotificationConfigs", "GetApplication",
+  "ListGateStatus", "ListRollouts", "GetRollout", "ListAnalysisRuns", "GetAnalysisRun",
+  "GetPipeline", "GetArtifact", "ListArtifacts", "GetStepLogs", "GetResource",
+  "GetResourceTree", "GetResourceLogs", "GetResourceTreeDetailed", "ListInvestigatorPlugins",
+  "QueryApplications", "QueryFleetMap", "QueryFleetMatrix", "GetSystemStatus", "GetDataSources",
+  "ListClusters", "GetCluster", "QueryApplicationSignals", "QueryCost", "ListSourceEvents",
+  "ListRolloutHistory", "ListPipelineRuns", "GetPipelineRun", "GetRevisionInfo",
+  "GetApplicationOwnership", "ListDriftDetails", "GetApplicationLifecycle", "GetRolloutHold",
+  "ListObservabilityProviders", "GetObservabilityUsage", "ListObservabilityProviderTypes",
+  "GetObservabilityProviderType", "GetSystemHealth",
+])
 
-let clearingAuth = false
-
-function clearStaleAuth() {
-  clearBrowserQueryCache()
-  localStorage.removeItem(AUTH_TOKEN_KEY)
-  localStorage.removeItem(AUTH_USER_KEY)
-  if (!clearingAuth && window.location.pathname !== "/login/") {
-    clearingAuth = true
-    window.location.href = "/login/"
-  }
+export function isRenewableRead(input: RequestInfo | URL): boolean {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+  const path = new URL(url, "http://localhost").pathname
+  const prefix = "/paprika.v1.PaprikaService/"
+  return path.startsWith(prefix) && renewableReads.has(path.slice(prefix.length))
 }
 
 export function createTransport() {
   return createConnectTransport({
     baseUrl: "",
-    fetch: async (input, init) => {
-      const headers = new Headers(init?.headers)
-      const token = localStorage.getItem(AUTH_TOKEN_KEY)
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`)
-      }
-      const res = await fetch(input, { ...init, headers })
-      if (res.status === 401) {
-        clearStaleAuth()
-      }
-      return res
-    },
+    interceptors: [(next) => async (request) => {
+      await ensureValidSession()
+      const principal = sessionIdentity()
+      const response = await next(request)
+      // Unary decoding may finish after the fetch returned headers.
+      if (sessionIdentity() !== principal) throw new Error("Your session changed. Refresh before continuing.")
+      return response
+    }],
+    fetch: (input, init) => sessionFetch(input, init, isRenewableRead(input)),
   })
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
@@ -34,11 +35,23 @@ func (Tempo) Explore(ctx context.Context, req connector.ExploreRequest) (*connec
 	if err != nil {
 		return nil, fmt.Errorf("tempo: %w", err)
 	}
-	data, err := httphelp.Get(ctx, cfg, path, nil, req.Credentials)
+	limit := httphelp.ClampLimit(req.Limit, 100, 1000)
+	params := url.Values{"limit": []string{strconv.Itoa(limit + 1)}}
+	if !req.Range.Start.IsZero() {
+		params.Set("start", strconv.FormatInt(req.Range.Start.Unix(), 10))
+	}
+	if !req.Range.End.IsZero() {
+		params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
+	}
+	data, err := httphelp.Get(ctx, cfg, path, params, req.Credentials)
 	if err != nil {
 		return exploreError(err), nil
 	}
-	return &connector.ExploreResult{State: connector.StateOK, Data: data}, nil
+	key := "tagValues"
+	if req.Kind == connector.ExploreLabelNames {
+		key = "tagNames"
+	}
+	return &connector.ExploreResult{State: connector.StateOK, Data: httphelp.LimitDiscoveryArray(data, key, limit)}, nil
 }
 
 // exploreRequestPath validates the exploration shape before configuration or
@@ -54,7 +67,7 @@ func exploreRequestPath(req *connector.ExploreRequest) (path, reason string) {
 			return "", "a tag name is required"
 		}
 		return fmt.Sprintf(pathSearchTagValue, url.PathEscape(req.Label)), ""
-	case connector.ExploreMetricNames, connector.ExploreMetricMetadata:
+	case connector.ExploreMetricNames, connector.ExploreMetricMetadata, connector.ExploreMetricSeries:
 		// These known exploration kinds are unsupported.
 	}
 	return "", fmt.Sprintf("exploration kind %q is not served by the tempo connector", req.Kind)

@@ -105,23 +105,38 @@ func queryRequestShape(req *connector.QueryRequest, override time.Duration) (pat
 		"query": []string{req.Query},
 		"limit": []string{strconv.Itoa(httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit))},
 	}
-	path = pathInstantQuery
-	if !req.Range.Start.IsZero() && !req.Range.End.IsZero() {
-		step := rangeStep(req.Range)
-		if override > 0 {
-			step = override
+	if req.Instant || req.Range.Start.IsZero() || req.Range.End.IsZero() {
+		if !req.Range.End.IsZero() {
+			params.Set("time", strconv.FormatInt(req.Range.End.Unix(), 10))
 		}
-		if req.Range.End.Before(req.Range.Start) || req.Range.End.Sub(req.Range.Start)/step >= maxRangePoints {
-			return "", nil, "query range and step exceed the maximum of 11000 points per series"
-		}
-		path = pathRangeQuery
-		params.Set("start", strconv.FormatInt(req.Range.Start.Unix(), 10))
-		params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
-		params.Set("step", step.String())
-	} else if !req.Range.End.IsZero() {
-		params.Set("time", strconv.FormatInt(req.Range.End.Unix(), 10))
+		return pathInstantQuery, params, ""
 	}
-	return path, params, ""
+	if reason = queryRangeParams(req, override, params); reason != "" {
+		return "", nil, reason
+	}
+	return pathRangeQuery, params, ""
+}
+
+func queryRangeParams(req *connector.QueryRequest, override time.Duration, params url.Values) string {
+	step := rangeStep(req.Range)
+	if override > 0 {
+		step = override
+	}
+	if req.Step > 0 {
+		step = req.Step
+	}
+	if req.Step < 0 || req.Step > 31*24*time.Hour {
+		return "query step is outside its supported range"
+	}
+	if req.Range.End.Before(req.Range.Start) || req.Range.End.Sub(req.Range.Start)/step >= maxRangePoints {
+		return "query range and step exceed the maximum of 11000 points per series"
+	}
+	params.Set("start", strconv.FormatInt(req.Range.Start.Unix(), 10))
+	params.Set("end", strconv.FormatInt(req.Range.End.Unix(), 10))
+	// Prometheus accepts fractional seconds as a number; duration strings
+	// such as "15.5s" are not supported by every compatible backend.
+	params.Set("step", strconv.FormatFloat(step.Seconds(), 'f', -1, 64))
+	return ""
 }
 
 // parseConfig decodes the prometheus connector configuration: the shared

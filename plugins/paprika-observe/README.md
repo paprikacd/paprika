@@ -1,7 +1,38 @@
 # Paprika Observe plugin
 
-An optional read-only plugin for Paprika's separate observability gateway.
-It bundles provider discovery and bounded logs, metrics, and traces workflows.
+## One-command install (Codex / Claude Code)
+
+Requires Node.js 20+ and an installed Codex or Claude Code CLI. This GitHub-backed
+npx command installs the complete plugin and its skill, not just an MCP URL:
+
+```sh
+npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex
+# Or use --client claude, or --client both
+```
+
+The installer stages the marketplace at `~/.paprika/plugin-marketplace`, registers
+it with the selected client, and installs `paprika-observe@paprika`. Rerun the
+command to refresh the staged package; restart the client or refresh its plugin.
+It never copies OAuth tokens or silently registers a second direct MCP entry.
+
+Complete sign-in in your client. First grant `paprika:observe` for read-only
+telemetry and dashboards; for Insights authoring, reconnect with
+`paprika:observe,paprika:insights:write` and your existing Insights RBAC.
+Verify access with `list_observability_providers`, then `list_dashboards` and
+`query_dashboard`. Successful installation alone is not proof of connection.
+
+**ChatGPT:** npx configures Codex or Claude Code; it cannot register a ChatGPT
+custom MCP app or initiate browser consent on the user's behalf. In ChatGPT,
+add `https://paprika.benebsworth.com/observe/mcp` as a custom MCP app and
+complete OAuth there. To bundle that registered app into a private ChatGPT
+plugin, use its actual app ID in `.app.json` and reference it from
+`extensions.com.openai.apps`; never guess that ID or copy another user's app
+binding into this public repository.
+
+
+An optional plugin for Paprika's separate observability gateway. It bundles
+provider discovery, bounded telemetry queries, dashboard query bundles, and
+saved-query/dashboard authoring.
 It does not add a connection to the existing fleet plugin automatically.
 
 The packaged endpoint is `https://paprika.benebsworth.com/observe/mcp`.
@@ -24,8 +55,15 @@ claude plugin marketplace add .
 claude plugin install paprika-observe@paprika --scope user
 ```
 
-Complete native OAuth for this connection with `paprika:observe`. Never copy
-fleet tokens, service-account keys, or provider credentials into a manifest.
+Complete native OAuth for this connection with `paprika:observe` for reads and
+explicitly consent to `paprika:insights:write` to create or update saved queries
+and dashboards. Authoring also requires your existing Insights write permission.
+The server advertises the authoring scope only when Insights is configured.
+Existing read-only tokens stay read-only, including on refresh: update the
+plugin and reconnect through native OAuth to request the new scope. Clients
+using the compatibility manifest must request `paprika:insights:write` in their
+OAuth authorization flow; a request with no scope keeps the read-only default.
+Never copy fleet tokens, service-account keys, or provider credentials into a manifest.
 Then discover tools, call `list_observability_providers`, select an actual
 provider identity, and run a small discovery/query. Native client sign-in,
 real tool discovery, and real backend queries require independent validation.
@@ -41,3 +79,64 @@ Portable `mcp.json` uses `streamable-http` and the OpenAI per-server OAuth
 extension; compatibility `.mcp.json` uses `http`. The Codex and Claude overlays
 point to the compatibility file. No background hooks or credential scripts
 are included.
+
+## Read a dashboard query bundle
+
+For an existing dashboard, call `list_dashboards` to discover its ID, then
+`query_dashboard` to collect its live signals in one request:
+
+```json
+{
+  "name": "query_dashboard",
+  "arguments": {
+    "id": "service-overview",
+    "variables": { "service": "uptime-api" }
+  }
+}
+```
+
+The gateway resolves the dashboard's saved queries and parameter bindings,
+applies one shared time range and filter set, and executes identical queries
+once. Its compact `structuredContent` includes widget-to-signal references,
+exact readings, units, timestamps, range summaries and a small trace sample.
+A short text synopsis presents the bundle without duplicating the full JSON.
+Missing data, failed queries and truncation remain explicit. Under the 130 KiB
+result cap, optional detail can be dropped: the result's `omitted` array names
+what was dropped, in order, and `widget_ids` narrows the query to get it back. Attention
+counts, declared bands and signals are never dropped; a dashboard whose kept facts still
+exceed the cap is refused.
+
+This is read-only: it requires `paprika:observe` plus existing Insights/provider
+permissions, and never changes the dashboard's defaults. Clients do not need to
+fetch each saved query and execute it separately. To inspect a small trend, add
+`"widget_ids": ["request-rate"]` and `"history_points": 12`. The default uses
+the saved dashboard range; pass both `start` and `end` for a fixed interval.
+Tooltip-only queries still need a hovered observation. See the
+[dashboard query contract](../../docs/design/insights/dashboard-query.md) for
+limits, result interpretation and live validation.
+
+## Authoring flow
+
+Discover `list_insights_providers` for the actual provider IDs used by the UI.
+Use `get_insights_schema` with `kind: dashboard`, `widget`, or `saved_query`
+for the deployed schema, examples and semantic constraints.
+Read existing documents with `list_saved_queries`, `get_saved_query`,
+`list_dashboards`, and `get_dashboard`. Create saved queries before dashboards
+that reference them, using `create_saved_query` and `create_dashboard`.
+Targeted edits use `patch_saved_query` and `patch_dashboard`: nested objects
+merge, `null` removes a field, and arrays replace. Dashboard `widget_edits`
+add, update or remove widgets by stable ID in one atomic save. Full-document
+replacements remain available through `update_saved_query` and
+`update_dashboard`. Every edit requires the exact ETag
+returned by the last read. A conflict requires a fresh read and review of both
+changes; do not retry an overwrite with a wildcard ETag. Query provider/kind
+identity and existing dashboard parameter bindings remain protected by the
+same service that handles UI edits.
+
+These tools edit the shared Insights documents. An open UI refreshes external
+changes while preserving unsaved local drafts. Returned dashboard links open
+the saved workspace. Authoring grants no fleet writes, provider configuration,
+credential management, or deletion tools.
+
+See the [targeted authoring contract](../../docs/design/insights/targeted-authoring.md)
+for patch examples, immutable fields and limits.

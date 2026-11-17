@@ -1,0 +1,11 @@
+# Existing omega-ha nodes only. Helm release/namespace paprika-mcp-review.
+# Layer over its current release values, preserving every credential reference.
+# Record this selector for future upgrades of the installed paprika 0.3.3.
+# The release has custom rendered policies; a UID/resource-version-bound
+# Deployment patch applied only this placement, preserving those policies.
+# Review any complete chart upgrade separately rather than replaying defaults.
+# Keep the isolated review API's 128Mi reservation off larger runner nodes.
+# The existing rolling strategy keeps the previous API ready until replacement.
+apiServer:
+  nodeSelector:
+    kubernetes.io/hostname: core-05d9658519fd

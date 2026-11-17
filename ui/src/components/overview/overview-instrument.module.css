@@ -1,0 +1,10 @@
+/* Shared operational frames are quieter than the historic blueprint chrome.
+   This is scoped to the fleet overview; data and source states are untouched. */
+.board {
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgb(18 39 53 / 4%);
+}
+.board > :global(.corner) { display: none; }
+.board :global([data-slot="board-header"]) {
+  background: color-mix(in srgb, var(--card) 86%, var(--primary) 14%);
+}

@@ -106,7 +106,7 @@ func (r *FeatureFlagBindingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.client.Status().Update(ctx, &binding); err != nil {
 		if apierrors.IsConflict(err) {
 			log.Info("Conflict updating FeatureFlagBinding status; will retry", "binding", binding.Name)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("updating featureflagbinding status: %w", err)
 	}

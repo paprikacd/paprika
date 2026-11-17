@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	otelzap "go.opentelemetry.io/contrib/bridges/otelzap"
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	gozap "go.uber.org/zap"
@@ -64,13 +65,32 @@ func TestOTelZapBridgeForwardsRecordsWithTraceCorrelation(t *testing.T) {
 	require.NotEmpty(t, wantTrace, "span must be sampled for a valid TraceID")
 
 	// otelzap reads the active span from a context.Context-typed zap field.
-	logger.Info("reconciling resource", gozap.Any("context", ctx))
+	logger.Info("reconciling resource",
+		gozap.Any("context", ctx),
+		gozap.String("controller", "application"),
+		gozap.Int("attempt", 2),
+		gozap.Bool("ready", true),
+		gozap.Any("labels", map[string]string{"environment": "production"}),
+	)
 
 	require.Len(t, mem.records, 1, "exactly one log record should be forwarded")
 	rec := mem.records[0]
 	assert.Equal(t, "reconciling resource", rec.Body().AsString(), "record body is the log message")
 	assert.Equal(t, wantTrace, rec.TraceID().String(), "forwarded record carries the span TraceID")
 	assert.Equal(t, wantSpan, rec.SpanID().String(), "forwarded record carries the span SpanID")
+	// The stable OTel Logs API uses attribute.Value for scalar and nested
+	// fields. Prove the bridge preserves their types across the upgrade.
+	attributes := make(map[string]attribute.Value)
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+		attributes[string(kv.Key)] = kv.Value
+		return true
+	})
+	assert.Equal(t, map[string]attribute.Value{
+		"controller": attribute.StringValue("application"),
+		"attempt":    attribute.Int64Value(2),
+		"ready":      attribute.BoolValue(true),
+		"labels":     attribute.MapValue(attribute.String("environment", "production")),
+	}, attributes)
 }
 
 type discardWriter struct{}

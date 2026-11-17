@@ -125,6 +125,10 @@ spec:
         - --mcp-client-registry-configmap={{ include "paprika.resourceName" (dict "suffix" "mcp-clients" "context" $) }}
         - --mcp-client-registry-namespace={{ .Release.Namespace }}
         {{- end }}
+        {{- if .Values.mcp.oauth.persistSessions }}
+        - --mcp-session-secret={{ include "paprika.resourceName" (dict "suffix" "mcp-sessions" "context" $) }}
+        - --mcp-session-namespace={{ .Release.Namespace }}
+        {{- end }}
         {{- end }}
         {{- range .Values.apiServer.args }}
         - {{ . }}
@@ -188,6 +192,7 @@ spec:
             readOnly: true
           {{- end }}
         env:
+        {{- include "paprika.insightsEnv" . | nindent 8 }}
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
         {{- include "paprika.githubActionsTokenExchangeEnv" . | nindent 8 }}
@@ -219,7 +224,7 @@ spec:
         - name: PAPRIKA_TLS_KEY
           value: /etc/paprika/tls/tls.key
         {{- end }}
-        {{- if .Values.mcp.enabled }}
+        {{- if or .Values.mcp.enabled .Values.observabilityGateway.enabled }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
         {{- end }}

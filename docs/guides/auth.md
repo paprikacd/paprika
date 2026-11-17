@@ -250,3 +250,28 @@ and provider status probing, registering only a synthetic mock provider. Use a
 durable MCP client registry in the sample namespace for both MCP surfaces.
 Validate real login, discovery, a sample read and denied foreign-namespace access
 through each exposed endpoint before supplying its credentials for review.
+
+### Resuming MCP consent after sign-in
+
+Observe's `/observe/consent?rid=...` handler saves an opaque pending-request
+return path before sending an unauthenticated browser to `/login/`. Starting
+Google sign-in from that page must preserve the saved destination. The return
+path is stored in the current tab's session storage, alongside its PKCE state,
+so another tab's login or dashboard redirect cannot replace or consume it. Both the
+OIDC callback and basic-login success consume it once through the same
+same-origin path validator. An already signed-in visitor to the login page
+also resumes it; React effect replay must not consume it twice.
+
+The Observe consent route is a Go handler, not a Next static page: do not append
+a slash to `/observe/consent`. Fleet `/mcp/consent/` and dashboard pages retain
+the static export's trailing-slash convention. Authentication routes, external
+URLs, protocol-relative URLs and backslash variants are never return targets.
+This navigation fix does not change OAuth scopes, PKCE, token validation or
+server-side pending-request expiry. Expired requests must be restarted from
+the original MCP client, not reconstructed or automatically approved.
+
+Deploy this change with the full image build (which rebuilds the embedded UI),
+not the Go-only fast build against older checked-in static assets. Verify a
+logged-out Observe connect through sign-in back to consent, then a bounded
+read after explicit approval. Local UI tests do not establish live OAuth or
+cluster rollout success.

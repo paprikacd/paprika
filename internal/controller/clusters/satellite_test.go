@@ -2,6 +2,7 @@ package clusters
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -127,5 +128,61 @@ func TestSatelliteObservationsCoverTheRegistrationsThatMatter(t *testing.T) {
 	}
 	if connectingState.HasReport {
 		t.Fatal("a registration that never reported must not carry an age")
+	}
+}
+
+// A policy edit and a later health reconcile must never widen the latest
+// satellite claim, even if the target goes quiet. Widening a previously
+// narrowed Cluster ceiling must recover the original reported claim.
+func TestSatellitePolicyStatusSurvivesHealthReconcileAndSpecChanges(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	if err := clustersv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	claim := []clustersv1alpha1.ManagementPolicy{clustersv1alpha1.ManagementPolicyObserve, clustersv1alpha1.ManagementPolicyApply}
+	now := metav1.Now()
+	cluster := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "east", Namespace: "paprika-system"},
+		Spec:       clustersv1alpha1.ClusterSpec{Mode: clustersv1alpha1.ClusterModeDirect, Satellite: &clustersv1alpha1.SatelliteSpec{TokenSecretRef: clustersv1alpha1.SecretRef{Name: "token"}}, ManagementPolicies: []clustersv1alpha1.ManagementPolicy{clustersv1alpha1.ManagementPolicyObserve}},
+		Status:     clustersv1alpha1.ClusterStatus{Satellite: &clustersv1alpha1.SatelliteStatus{ClusterUID: "target", SessionID: "session", Sequence: 1, LastSeen: &now, ReportedPolicies: &claim}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&clustersv1alpha1.Cluster{}).WithObjects(cluster).Build()
+	r := &ClusterReconciler{client: c, Scheme: scheme}
+	key := client.ObjectKeyFromObject(cluster)
+	reconcile := func(want []clustersv1alpha1.ManagementPolicy) {
+		t.Helper()
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+			t.Fatal(err)
+		}
+		var got clustersv1alpha1.Cluster
+		if err := c.Get(context.Background(), key, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got.Status.Satellite.EffectivePolicies, want) {
+			t.Fatalf("effective = %v, want %v", got.Status.Satellite.EffectivePolicies, want)
+		}
+		if got.Status.Satellite.ReportedPolicies == nil || !slices.Equal(*got.Status.Satellite.ReportedPolicies, claim) {
+			t.Fatalf("claim changed: %v", got.Status.Satellite.ReportedPolicies)
+		}
+	}
+	reconcile([]clustersv1alpha1.ManagementPolicy{clustersv1alpha1.ManagementPolicyObserve})
+	var updated clustersv1alpha1.Cluster
+	if err := c.Get(context.Background(), key, &updated); err != nil {
+		t.Fatal(err)
+	}
+	updated.Spec.ManagementPolicies = []clustersv1alpha1.ManagementPolicy{clustersv1alpha1.ManagementPolicyAll}
+	if err := c.Update(context.Background(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(claim)
+}
+
+func TestSatellitePolicyStatusDoesNotGuessMissingClaim(t *testing.T) {
+	t.Parallel()
+	cluster := &clustersv1alpha1.Cluster{Status: clustersv1alpha1.ClusterStatus{Satellite: &clustersv1alpha1.SatelliteStatus{EffectivePolicies: []clustersv1alpha1.ManagementPolicy{clustersv1alpha1.ManagementPolicyApply}}}}
+	applySatelliteStatus(cluster)
+	if cluster.Status.Satellite.EffectivePolicies != nil {
+		t.Fatalf("missing claim produced policies %v", cluster.Status.Satellite.EffectivePolicies)
 	}
 }

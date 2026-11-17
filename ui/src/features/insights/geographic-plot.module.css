@@ -1,0 +1,26 @@
+.surface {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  padding: 6px;
+  background: var(--widget-background, var(--gamma-bg));
+  border: 1px solid var(--gamma-chart-grid);
+  border-radius: var(--gamma-radius-small);
+  overflow: hidden;
+}
+.surface[data-coordinates] { padding: 18px 28px 24px 34px; }
+.plane { position: relative; width: min(100cqw, 200cqh); height: min(50cqw, 100cqh); aspect-ratio: 2 / 1; }
+.plane > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.land { fill: var(--gamma-map-land); stroke: var(--gamma-map-coast); stroke-width: .6; vector-effect: non-scaling-stroke; }
+.grid { stroke: var(--gamma-chart-grid); stroke-width: .6; vector-effect: non-scaling-stroke; }
+.coordinate { position: absolute; color: var(--widget-text, var(--gamma-chart-axis)); font-size: 10px; pointer-events: none; }
+.north { top: -5px; left: -29px; }
+.south { bottom: -5px; left: -29px; }
+.west { left: 0; bottom: -19px; }
+.east { right: 0; bottom: -19px; }
+.equator { top: 50%; left: -21px; transform: translateY(-50%); }
+@media (forced-colors: active) { .land { fill: Canvas; stroke: CanvasText; } .grid { stroke: GrayText; } }

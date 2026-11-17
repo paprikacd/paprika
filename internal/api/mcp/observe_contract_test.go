@@ -106,7 +106,7 @@ func TestObserveResourceIndicatorRejectsCrossSurfaceBeforeConsumingToken(t *test
 	assert.False(t, srv.validResource([]string{"https://paprika.example/observe/mcp#fragment"}))
 	assert.False(t, srv.validResource([]string{"https://paprika.example/observe/mcp", "https://paprika.example/mcp"}))
 	rec := httptest.NewRecorder()
-	srv.issueTokenPair(t.Context(), rec, "test", "user", "", "", "paprika:observe")
+	srv.issueTokenPair(t.Context(), rec, "test", "user", "", "", "paprika:observe", []string{})
 	var pair tokenResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &pair))
 	mux := http.NewServeMux()
@@ -217,8 +217,12 @@ func TestProtocolRequestContextRestoresAlreadyCancelledCarrier(t *testing.T) {
 	srv := newObservabilityTestServer(t, registry, nil)
 	srv.linkRequestCancellation = true
 	sdk = auth.WithPrincipal(sdk, &auth.Principal{Subject: "observe-user", Scopes: []string{string(ScopeObserve)}})
-	_, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
-	require.Error(t, err)
+	result, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	encoded, err := json.Marshal(result.StructuredContent)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"error":{"code":"canceled"}}`, string(encoded))
 	require.False(t, invoked, "already cancelled calls must not dispatch provider work")
 }
 
@@ -291,10 +295,16 @@ func TestProtocolRequestContextCompletionRemovesCarrierCallback(t *testing.T) {
 			require.NoError(t, registry.Register(tool))
 			srv := newObservabilityTestServer(t, registry, nil)
 			srv.linkRequestCancellation = true
-			_, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
-			if outcome == "success" {
+			result, err := srv.callTool(sdk, &sdkmcp.CallToolRequest{Params: &sdkmcp.CallToolParamsRaw{Name: "query_metrics", Arguments: json.RawMessage(`{}`)}})
+			switch outcome {
+			case "success":
 				require.NoError(t, err)
-			} else {
+				require.False(t, result.IsError)
+			case "scope denied":
+				require.NoError(t, err)
+				require.True(t, result.IsError)
+				require.Contains(t, result.Meta, "mcp/www_authenticate")
+			default:
 				require.Error(t, err)
 			}
 			if outcome != "scope denied" {

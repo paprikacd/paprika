@@ -261,6 +261,12 @@ func probeQuery(providerType string) string {
 		return `{app="paprika"}`
 	case connector.ProviderTempo:
 		return "{}"
+	case connector.ProviderShorted:
+		return `{"operation":"top_shorts","args":{"limit":1}}`
+	case connector.ProviderUptime:
+		return `{"operation":"services","args":{"limit":1}}`
+	case connector.ProviderPostgreSQL:
+		return "SELECT 1 AS value"
 	default:
 		return ""
 	}

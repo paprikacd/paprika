@@ -1,0 +1,23 @@
+{{- if and .Values.repoServer.enabled (include "paprika.repoServerCachePersistent" .) (not .Values.repoServer.cache.persistence.existingClaim) }}
+# The repo server's git cache. A cache: removing it costs a re-fetch, so it is
+# not kept when the release is uninstalled.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: repo-server
+  name: {{ include "paprika.repoServerCacheClaim" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  accessModes: [{{ .Values.repoServer.cache.persistence.accessMode | default "ReadWriteOnce" | quote }}]
+  {{- with .Values.repoServer.cache.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.repoServer.cache.persistence.size | default "30Gi" }}
+{{- end }}

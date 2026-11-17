@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 const defaultTemplateType = "helm"
@@ -123,6 +124,11 @@ func (v *TemplateCustomValidator) validateTemplateCreate(t *pipelinesv1alpha1.Te
 	}
 
 	allErrs = append(allErrs, v.validateHelmChart(specPath, t)...)
+	if t.Spec.Git != nil && t.Spec.Git.RepoURL != "" {
+		if err := source.ValidateGitRepoURL(t.Spec.Git.RepoURL); err != nil {
+			allErrs = append(allErrs, field.Invalid(specPath.Child("git").Child("repoUrl"), t.Spec.Git.RepoURL, err.Error()))
+		}
+	}
 
 	return allErrs
 }

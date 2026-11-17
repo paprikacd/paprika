@@ -151,6 +151,8 @@ func (Mock) Query(ctx context.Context, req connector.QueryRequest) (*connector.Q
 		return &connector.QueryResult{State: connector.StateOK, Data: logPayload(rng, cfg, start, end, req.Limit)}, nil
 	case connector.SignalTraces:
 		return &connector.QueryResult{State: connector.StateOK, Data: tracePayload(rng, cfg, start, end, req.Limit)}, nil
+	case connector.SignalRecords:
+		fallthrough // Record fixtures require a typed application frame, not synthetic telemetry.
 	default:
 		return &connector.QueryResult{
 			State:  connector.StateNotAvailable,
@@ -467,7 +469,7 @@ func traceID(rng *rand.Rand) string {
 	const hex = "0123456789abcdef"
 	var id [32]byte
 	for i := range id {
-		id[i] = hex[rng.Uint64()%16]
+		id[i] = hex[rng.Uint64()%16] // #nosec G602 -- i ranges over id and modulo 16 bounds the index to the 16-character alphabet.
 	}
 	return string(id[:])
 }

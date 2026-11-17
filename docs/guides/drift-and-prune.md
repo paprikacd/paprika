@@ -150,6 +150,12 @@ This is useful for:
 
 ### Metrics
 
+This local scrape example assumes a release named `paprika-e2e` in the
+`paprika-e2e` namespace with `metrics.secure: false` explicitly configured.
+Substitute your release and namespace. The chart defaults to authenticated
+HTTPS; follow the [metrics access guide](metrics.md#accessing-metrics) for
+the transport and credentials matching your installation.
+
 ```sh
 kubectl -n paprika-e2e port-forward \
   svc/paprika-e2e-controller-manager-metrics-service 8443:8443 &

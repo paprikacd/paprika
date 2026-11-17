@@ -75,7 +75,7 @@ func requireObservedAt(t *testing.T, v any) string {
 	return raw
 }
 
-func TestRegisterToolsRegistersAllThirteen(t *testing.T) {
+func TestRegisterToolsRegistersAllFifteen(t *testing.T) {
 	t.Parallel()
 
 	reg := newRegisteredTools(t, &fakeBackend{})
@@ -85,10 +85,12 @@ func TestRegisterToolsRegistersAllThirteen(t *testing.T) {
 		"query_metrics",
 		"query_logs",
 		"query_traces",
+		"query_records",
 		"list_provider_types",
 		"describe_provider_type",
 		"validate_provider",
 		"list_metric_names",
+		"list_metric_series",
 		"list_label_names",
 		"list_label_values",
 		"get_metric_metadata",

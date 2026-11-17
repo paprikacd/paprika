@@ -102,6 +102,8 @@ expected_targets = {
     "mcp-codex-command": "codex mcp add paprika --url https://paprika.example.com/mcp codex mcp login paprika",
     "mcp-claude-command": "claude mcp add --scope user --transport http paprika https://paprika.example.com/mcp claude mcp login paprika",
     "mcp-endpoint-command": "https://paprika.example.com/mcp",
+    "observe-codex-command": "npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client codex",
+    "observe-claude-command": "npx --yes --package=github:paprikacd/paprika -- paprika-plugins install observe --client claude",
 }
 
 for target, command in expected_targets.items():
@@ -120,18 +122,18 @@ for button in buttons:
         fail(f"copy target {target!r} must be expected and unique")
     button_targets.add(target)
     describedby = button.attrs.get("aria-describedby")
-    family = "mcp" if target.startswith("mcp-") else "install"
+    family = "mcp" if target.startswith("mcp-") else ("observe" if target.startswith("observe-") else "install")
     if describedby != f"{family}-copy-guidance" or button.attrs.get("data-copy-feedback") != f"{family}-copy-feedback":
         fail(f"copy control for {target!r} must reference its section fallback guidance")
 
-for region_id in ("install-copy-feedback", "mcp-copy-feedback"):
+for region_id in ("install-copy-feedback", "mcp-copy-feedback", "observe-copy-feedback"):
     region = ids.get(region_id)
     if not region or not visible(region) or region.attrs.get("role") != "status" or region.attrs.get("aria-live") != "polite":
         fail(f"{region_id} must be a polite visible status region")
     if "sr-only" in region.classes:
         fail(f"{region_id} must be visually available")
 
-for guidance_id in ("install-copy-guidance", "mcp-copy-guidance"):
+for guidance_id in ("install-copy-guidance", "mcp-copy-guidance", "observe-copy-guidance"):
     guidance = ids.get(guidance_id)
     if not guidance or not visible(guidance) or "select" not in guidance.text().lower() or "copy" not in guidance.text().lower():
         fail(f"{guidance_id} must give visible manual-copy recovery guidance")

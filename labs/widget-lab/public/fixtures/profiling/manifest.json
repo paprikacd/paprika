@@ -1,0 +1,63 @@
+{
+  "description": "Deterministic Paprika mock profiles. No live or captured production data.",
+  "profiles": [
+    {
+      "id": "postgres-cpu",
+      "label": "orders-db · PostgreSQL CPU",
+      "synthetic": true,
+      "unit": "samples",
+      "sampleRate": 100,
+      "total": 2880,
+      "frames": 33,
+      "samples": 360,
+      "files": [
+        "postgres-cpu.flamebearer.json",
+        "postgres-cpu.speedscope.json",
+        "postgres-cpu.folded"
+      ]
+    },
+    {
+      "id": "go-cpu",
+      "label": "checkout-api · Go CPU",
+      "synthetic": true,
+      "unit": "samples",
+      "sampleRate": 100,
+      "total": 2880,
+      "frames": 35,
+      "samples": 360,
+      "files": [
+        "go-cpu.flamebearer.json",
+        "go-cpu.speedscope.json",
+        "go-cpu.folded"
+      ]
+    },
+    {
+      "id": "python-cpu",
+      "label": "forecast-worker · Python CPU",
+      "synthetic": true,
+      "unit": "samples",
+      "sampleRate": 100,
+      "total": 2880,
+      "frames": 33,
+      "samples": 360,
+      "files": [
+        "python-cpu.flamebearer.json",
+        "python-cpu.speedscope.json",
+        "python-cpu.folded"
+      ]
+    },
+    {
+      "id": "go-alloc",
+      "label": "checkout-api · Go allocations",
+      "synthetic": true,
+      "unit": "bytes",
+      "sampleRate": 100,
+      "total": 61831168,
+      "frames": 35,
+      "samples": 0,
+      "files": [
+        "go-alloc.flamebearer.json"
+      ]
+    }
+  ]
+}

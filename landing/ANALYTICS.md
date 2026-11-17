@@ -1,6 +1,9 @@
 # Optional public landing analytics
 
-Status: **disabled**, with no measurement ID or production origin configured.
+GA status: **disabled**, with no measurement ID or production origin configured.
+The existing upstream Flaggr adapter is separate and already configured by the
+site builder. This GA draft neither disables nor changes that tracking.
+
 This draft does not create a Google Analytics property, connect OpenSEO, deploy a
 script, or enable tracking. It adds no telemetry to the Paprika console/operator,
 cluster, workloads, CLI, demo tour, or other GitHub Pages projects.
@@ -23,7 +26,7 @@ cluster, workloads, CLI, demo tour, or other GitHub Pages projects.
    in `analytics-config.js` only after these checks and release review. These are
    public configuration, not secrets. No fictional IDs are included.
 6. Verify in a real browser/GA DebugView that only the intended landing page view
-   arrives, denial emits no vendor requests, and withdrawal/reload stops requests.
+   arrives, denial emits no Google requests, and withdrawal/reload stops Google requests.
    Unit tests use a simulated vendor queue and do not validate Google's behavior.
 
 ## Privacy boundary
@@ -46,13 +49,13 @@ This is for static pages, **not an SPA adapter**. Do not reuse in a private app
 runtime, infer sensitive routes, send command text, cluster names, deployment
 IDs, query strings, form contents, user IDs or user-provided event properties.
 
-## Flaggr dependency
+## Flaggr lifecycle gate
 
-Flaggr is not loaded. A verified dedicated `site_...` destination and released,
-version-pinned stop contract from `skunkworq/flaggr#200` must be established before
-adding it. That contract stops transmission, not all collector observers. It is
-not a complete consent lifecycle or a substitute for full navigation into private
-surfaces. Do not load an unverified `latest` CDN script or reuse demo/CLI sites.
+This draft adds no new Flaggr loader, and preserves the already configured
+upstream Flaggr integration unchanged (see reconciliation below). Before any
+combined consent/activation claim, review the deployed version's lifecycle and
+privacy behavior, including the stop work in `skunkworq/flaggr#200`. A transmission
+stop is not full observer teardown. Do not load an unverified `latest` script.
 
 ## Checks
 
@@ -62,3 +65,15 @@ bash hack/test-landing-install.sh
 # After installing the existing UI dev dependencies and Playwright browser:
 node hack/test-landing-analytics-browser.cjs
 ```
+
+## Upstream reconciliation
+
+Current master already includes `analytics.js`, a separate Flaggr adapter, and
+`content/analytics.json` with a real public site ID. Both are preserved unchanged.
+Our adapter is now `google-analytics.js`. The source-only browser harness tests
+GA consent, not the fully built site's existing Flaggr behavior. The existing
+Flaggr adapter collects URLs including documentation search queries and is NOT
+controlled by this GA consent panel. Thus the site's overall analytics are not
+claimed to be off. Before GA activation, align the policy and consent/lifecycle
+behavior across both vendors; do not imply the Google-only switch stops Flaggr.
+Merging landing changes into master automatically publishes GitHub Pages.

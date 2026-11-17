@@ -17,6 +17,8 @@ limitations under the License.
 package policy
 
 import (
+	"time"
+
 	"context"
 	"fmt"
 
@@ -34,6 +36,10 @@ import (
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/policy"
 )
+
+// conflictRequeueDelay is the wait before a reconcile retries after a status
+// update conflict. ctrl.Result.Requeue is deprecated in favor of RequeueAfter.
+const conflictRequeueDelay = 100 * time.Millisecond
 
 const (
 	policyResultSuccess = "success"
@@ -100,7 +106,7 @@ func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ c
 		result = policyResultError
 		if apierrors.IsConflict(err) {
 			log.Info("Conflict updating Policy status; will retry", "policy", pol.Name)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: conflictRequeueDelay}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("updating policy status: %w", err)
 	}

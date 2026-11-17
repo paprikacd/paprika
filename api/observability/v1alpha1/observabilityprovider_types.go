@@ -58,7 +58,7 @@ type ObservabilityProviderSpec struct {
 	// a connector in the observability gateway that knows how to reach and
 	// authenticate against it.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=prometheus;loki;tempo;otlp;gcp-cloudlogging;gcp-cloudmonitoring;gcp-cloudtrace;aws-cloudwatch-logs;aws-cloudwatch-metrics;aws-xray;aws-cloudtrail;vultr-monitoring;mock
+	// +kubebuilder:validation:Enum=prometheus;loki;tempo;otlp;gcp-cloudlogging;gcp-cloudmonitoring;gcp-cloudtrace;aws-cloudwatch-logs;aws-cloudwatch-metrics;aws-xray;aws-cloudtrail;vultr-monitoring;mock;shorted;uptime;postgresql
 	Type string `json:"type"`
 
 	// Config is the connector's own configuration. Each connector supplies
