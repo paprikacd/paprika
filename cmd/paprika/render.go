@@ -33,6 +33,9 @@ func newRenderCmd(ctx context.Context, clientFn func() (v1connect.PaprikaService
 	cmd := &cobra.Command{
 		Use:   "render",
 		Short: "Render a template into manifests",
+		Long: "Render a template into manifests and print them to stdout.\n\n" +
+			"Secret values are redacted: each one is printed as <redacted>, and its keys stay. " +
+			"The output is not meant to be applied with kubectl.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := clientFn()
 			if err != nil {

@@ -433,13 +433,16 @@ selector annotation clears after a successful filtered apply.
 
 `ApplyResourcePatch` patches one live resource owned by an application
 (`app.paprika.io/managed-by=paprika` + `app.paprika.io/name=<app>` guard —
-unmanaged resources are refused). The server always dry-runs the patch first
-and returns the resulting manifest plus a unified diff; `confirm: true`
-executes the real patch. JSON Patch, merge patch, and strategic merge are
-supported. The response `warning` reminds that the change is outside Git and
-will be reverted on next sync. The `restart_workload` MCP tool wraps this
-for rolling restarts (Deployment/StatefulSet/DaemonSet only), behind the
-write confirmation flow.
+unmanaged resources are refused). The target must be a managed root of the
+application: an entry in the application's `status.resources`, matched on
+kind, name and namespace (an empty namespace means the application's
+namespace). Kind `Secret` is refused before the target is read. The server
+always dry-runs the patch first and returns the resulting manifest plus a
+unified diff; `confirm: true` executes the real patch. JSON Patch, merge patch,
+and strategic merge are supported. The response `warning` reminds that the
+change is outside Git and will be reverted on next sync. The `restart_workload`
+MCP tool wraps this for rolling restarts (Deployment/StatefulSet/DaemonSet
+only), behind the write confirmation flow.
 
 ## Values Validation
 

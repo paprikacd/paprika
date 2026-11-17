@@ -443,8 +443,8 @@ func (s *PaprikaServer) Render(
 	}
 	manifests, err = redactSecretManifests(manifests)
 	if err != nil {
-		// The reason is not wrapped: it could be read from the document, and the document may hold a Secret value.
-		return nil, connect.NewError(connect.CodeInternal, errors.New("rendered manifests could not be checked for Secret values"))
+		// The error names the document's position only, never its text.
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewResponse(&paprikav1.RenderResponse{Manifests: manifests}), nil
 }
