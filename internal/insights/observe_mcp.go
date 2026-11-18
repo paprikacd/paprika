@@ -226,13 +226,29 @@ func (c *observeMCPConnection) requireTool(name string) error {
 }
 
 func (c *observeMCPConnection) call(ctx context.Context, name string, args any, limit int64) (payload []byte, failed bool, callErr error) {
+	return c.callMeasured(ctx, name, args, limit, nil)
+}
+
+// callMeasured runs one data tool call. The measurement records dispatch only
+// once the call is about to reach the session: a failed operation before that
+// point is never reported as provider work.
+func (c *observeMCPConnection) callMeasured(ctx context.Context, name string, args any, limit int64, measurement *queryMeasurement) (payload []byte, failed bool, callErr error) {
 	if err := c.requireTool(name); err != nil {
 		return nil, false, err
 	}
-	result, err := c.session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, false, sanitizeObserveMCPError(err)
 	}
+	measurement.dispatch()
+	result, err := c.session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		return nil, false, observeTransportError(err, ctx)
+	}
+	return decodeObserveMCPCallResult(result, limit)
+}
+
+// decodeObserveMCPCallResult turns a tool result into its bounded JSON payload.
+func decodeObserveMCPCallResult(result *sdkmcp.CallToolResult, limit int64) (payload []byte, failed bool, callErr error) {
 	if result == nil || result.StructuredContent == nil {
 		return nil, false, errUpstream
 	}
@@ -331,7 +347,11 @@ func (t *observeMCPTransport) RoundTrip(request *http.Request) (*http.Response, 
 		return nil, errUpstream
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
-	if err != nil || len(body) > maxResponseBytes {
+	if err != nil {
+		// An expired operation can end the body read as well as the request.
+		return nil, observeTransportError(err, request.Context(), t.ctx)
+	}
+	if len(body) > maxResponseBytes {
 		return nil, errUpstream
 	}
 	response.Body = io.NopCloser(bytes.NewReader(body))

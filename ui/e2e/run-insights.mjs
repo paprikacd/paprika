@@ -76,6 +76,7 @@ try {
   }
   const scripts = selected.length ? selected : [
     "e2e/insights.e2e.mjs",
+    "e2e/insights-query-inspector.e2e.mjs",
     "e2e/insights-advanced.e2e.mjs",
     "e2e/insights-responsive.e2e.mjs",
     "e2e/insights-live.e2e.mjs",

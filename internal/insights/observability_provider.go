@@ -314,10 +314,15 @@ func observeHTTPError(status int) error {
 }
 
 func (p *observeProvider) data(ctx context.Context, tool string, request any, limit int64) ([]byte, error) {
+	return p.dataMeasured(ctx, tool, request, limit, nil)
+}
+
+// dataMeasured is data with an optional receipt measurement for the provider call.
+func (p *observeProvider) dataMeasured(ctx context.Context, tool string, request any, limit int64, measurement *queryMeasurement) ([]byte, error) {
 	var body []byte
 	var failed bool
 	err := p.gateway.withConnection(ctx, p.token, func(c *observeMCPConnection, opCtx context.Context) (err error) {
-		body, failed, err = c.call(opCtx, tool, request, maxResponseBytes)
+		body, failed, err = c.callMeasured(opCtx, tool, request, maxResponseBytes, measurement)
 		return err
 	})
 	if err != nil {
@@ -357,7 +362,7 @@ func observeTime(seconds float64) string {
 	return time.Unix(whole, int64((seconds-float64(whole))*1e9)).UTC().Format(time.RFC3339Nano)
 }
 
-func (p *observeProvider) query(ctx context.Context, q *Query) ([]byte, error) {
+func (p *observeProvider) query(ctx context.Context, q *Query, measurement *queryMeasurement) ([]byte, error) {
 	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
 	switch q.Kind {
 	case "metrics":
@@ -372,7 +377,7 @@ func (p *observeProvider) query(ctx context.Context, q *Query) ([]byte, error) {
 		}
 	}
 	tool := "query_" + q.Kind
-	return p.data(ctx, tool, input, maxResponseBytes)
+	return p.dataMeasured(ctx, tool, input, maxResponseBytes, measurement)
 }
 
 // Adapt the existing bounded native metadata decoders to the gateway's typed
@@ -401,27 +406,35 @@ func (p *observeProvider) metadata(ctx context.Context, path string, params url.
 	return p.data(ctx, tool, input, limit)
 }
 
-func writeProviderError(w http.ResponseWriter, err error) {
+// providerErrorResponse maps a failed provider call to its status and fixed
+// message. A deadline outside a query names the request's own budget.
+func providerErrorResponse(err error) (status int, message string) {
 	var remoteErr *observeError
 	switch {
 	case errors.As(err, &remoteErr):
-		if remoteErr.status == http.StatusTooManyRequests {
-			// Forward the gateway's bounded delay; one second when it sent none.
-			retryAfter := remoteErr.retryAfter
-			if retryAfter == 0 {
-				retryAfter = defaultSharedRetryAfter
-			}
-			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
-		}
-		writeError(w, remoteErr.status, remoteErr.message)
+		return remoteErr.status, remoteErr.message
 	case errors.Is(err, ErrNotFound):
-		writeError(w, http.StatusNotFound, "provider not found")
+		return http.StatusNotFound, "provider not found"
 	case errors.Is(err, context.DeadlineExceeded):
 		// The request's own deadline, not a provider fault. Query paths name the query.
-		writeError(w, http.StatusGatewayTimeout, "request exceeded its time budget")
+		return http.StatusGatewayTimeout, "request exceeded its time budget"
 	default:
-		writeError(w, http.StatusBadGateway, errUpstream.Error())
+		return http.StatusBadGateway, errUpstream.Error()
 	}
+}
+
+func writeProviderError(w http.ResponseWriter, err error) {
+	status, message := providerErrorResponse(err)
+	var remoteErr *observeError
+	if errors.As(err, &remoteErr) && status == http.StatusTooManyRequests {
+		// Forward the gateway's bounded delay; one second when it sent none.
+		retryAfter := remoteErr.retryAfter
+		if retryAfter == 0 {
+			retryAfter = defaultSharedRetryAfter
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+	}
+	writeError(w, status, message)
 }
 
 func validObserveCatalogProvider(p observeCatalogProvider) bool {
