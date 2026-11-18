@@ -153,8 +153,8 @@ func TestQueryDiagnosticsTimeoutAndBackendFailureAreDistinctAndSanitized(t *test
 	}{
 		// Only the query's own budget is a timeout: the context expires while the provider call is open.
 		{"query budget", 50 * time.Millisecond, true, nil, http.StatusGatewayTimeout, "timeout", "timeout"},
-		// A provider or client timeout with the query budget unspent is a provider failure.
-		{"client timeout", 0, false, receiptTimeoutError{}, http.StatusBadGateway, "provider_error", "error"},
+		// A provider or client timeout with the query budget unspent is a provider timeout; the HTTP status stays 502.
+		{"client timeout", 0, false, receiptTimeoutError{}, http.StatusBadGateway, "timeout", "timeout"},
 		{"unrelated cancellation", 0, false, context.Canceled, http.StatusBadGateway, "provider_error", "error"},
 		{"backend error", 0, false, errors.New("private-token at https://private.invalid"), http.StatusBadGateway, "provider_error", "error"},
 	} {
@@ -282,9 +282,9 @@ func TestQueryDiagnosticsDoesNotClaimDispatchWhenGatewayConnectionFails(t *testi
 	require.Len(t, result.Diagnostics.Phases, 2, "no provider phase may be attributed before dispatch")
 }
 
-// Without the opt-in header, a capacity failure is byte-for-byte the response
-// Insights has always returned: no code and no receipt.
-func TestQueryReceiptIsOptInAndLeavesErrorBodiesUnchanged(t *testing.T) {
+// Without the opt-in header, a capacity failure keeps the status, Retry-After and
+// text Insights has always returned. Every failure now also carries a code.
+func TestQueryReceiptIsOptInAndLeavesErrorTextUnchanged(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("an unadmitted query reached the provider")
 	}))
@@ -297,7 +297,8 @@ func TestQueryReceiptIsOptInAndLeavesErrorBodiesUnchanged(t *testing.T) {
 	w := request(t, s.Handler(), http.MethodPost, "/api/query", []byte(receiptMetricsRequest), nil)
 	require.Equal(t, http.StatusTooManyRequests, w.Code)
 	require.Equal(t, "1", w.Header().Get("Retry-After"))
-	require.JSONEq(t, `{"error":"too many active queries; retry shortly"}`, w.Body.String())
+	// The code is additive; the status, Retry-After and text are unchanged.
+	require.JSONEq(t, `{"code":"rate_limited","error":"too many active queries; retry shortly"}`, w.Body.String())
 }
 
 type receiptBodyReader func([]byte) (int, error)
@@ -329,7 +330,7 @@ func TestObserveTransportReceiptPreservesOperationDeadlineDuringRequestAndBodyRe
 			}
 			require.Error(t, err)
 			require.NoError(t, req.Context().Err(), "the caller is still active; only the gateway operation expired")
-			failure := queryFailureDetails(err)
+			failure := classifyQueryFailure(err)
 			require.Equal(t, "timeout", failure.Code)
 			status, _ := queryErrorResponse(err)
 			require.Equal(t, http.StatusGatewayTimeout, status)

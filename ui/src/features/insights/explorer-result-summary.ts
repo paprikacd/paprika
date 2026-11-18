@@ -1,4 +1,5 @@
 import type { DataKind, QueryResult } from "./schema"
+import { truncationOf } from "./truncation"
 
 const count = (number: number, singular: string, plural = `${singular}s`) => `${number.toLocaleString()} ${number === 1 ? singular : plural}`
 
@@ -21,5 +22,7 @@ export function summarizeExplorerResult(kind: DataKind, result: QueryResult) {
   } else {
     detail = count(result.traces?.length ?? 0, "trace")
   }
-  return { detail, partial: !!result.truncated || !!result.records?.truncated }
+  // A row cap is a neutral fact in the chart, so the summary does not call it partial.
+  const truncation = truncationOf(result)
+  return { detail, partial: truncation !== "none" && truncation !== "limit", ...(truncation === "limit" ? { limited: true } : {}) }
 }

@@ -107,7 +107,15 @@ describe("geo heatmap", () => {
     const tooltip = screen.getByRole("tooltip")
     expect(within(tooltip).getByText("Place 1")).toBeInTheDocument()
     expect(within(tooltip).queryByText("Place 10")).not.toBeInTheDocument()
-    expect(within(tooltip).getByText(/Partial result/)).toBeInTheDocument()
+    expect(within(tooltip).getByText("Provider response may be incomplete")).toBeInTheDocument()
     expect(fetcher).not.toHaveBeenCalled()
+  })
+})
+describe("geo heatmap truncation", () => {
+  it("names a row cap with the neutral source limit instead of a partial source", () => {
+    const capped: QueryResult = { records: { ...result.records!, truncated: true }, truncated: true, truncation: { reason: "row_limit", limit: 5, unit: "rows" } }
+    render(<GeoHeatmap widget={{ ...widget, config: { ...widget.config, mode: "grid" } }} result={capped} />)
+    expect(screen.getByText("Source row limit reached · narrow the query to see others")).toBeInTheDocument()
+    expect(screen.queryByText("Partial source response")).not.toBeInTheDocument()
   })
 })

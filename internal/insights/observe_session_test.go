@@ -763,7 +763,7 @@ func TestObserveQueryBudgetCapsEveryPhase(t *testing.T) {
 			w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
 			elapsed := time.Since(started)
 			assert.Equal(t, http.StatusGatewayTimeout, w.Code, w.Body.String())
-			assert.JSONEq(t, `{"error":"query exceeded its time budget"}`, w.Body.String())
+			assert.JSONEq(t, `{"code":"timeout","error":"query exceeded its time budget"}`, w.Body.String())
 			assert.Less(t, elapsed, 2*time.Second, "the query outlived its budget")
 		})
 	}
@@ -895,5 +895,5 @@ func TestDeadlineMessageIsNotQueryScopedOutsideQueries(t *testing.T) {
 	assert.JSONEq(t, `{"error":"request exceeded its time budget"}`, recorder.Body.String())
 	queryRecorder := httptest.NewRecorder()
 	writeQueryError(queryRecorder, context.DeadlineExceeded)
-	assert.JSONEq(t, `{"error":"query exceeded its time budget"}`, queryRecorder.Body.String())
+	assert.JSONEq(t, `{"code":"timeout","error":"query exceeded its time budget"}`, queryRecorder.Body.String())
 }

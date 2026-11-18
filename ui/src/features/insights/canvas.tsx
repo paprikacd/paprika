@@ -211,7 +211,7 @@ const Tile = memo(function Tile({
   const awaitingSources = waitingOn !== null;
   // A shared tile stays busy while the shared catalog reloads, even though it still queries.
   const busyOnSources = waitingOn === "pending" || (sourceStatus === "pending" && provider?.source === "observability");
-  const { data, loading, error, refresh } = useWidgetQuery(widget, {
+  const { data, loading, error, errorCode, refresh } = useWidgetQuery(widget, {
     fetcher,
     start,
     end,
@@ -341,6 +341,8 @@ const Tile = memo(function Tile({
     },
     [contextScope, data, widget, onSelection, selectionEnabled],
   );
+  // A stable callback keeps the memoised visualization from re-rendering on every tile render in edit mode.
+  const editQuery = useCallback(() => onSelect(widget.id), [onSelect, widget.id]);
   // Capture runs before the focused control's own arrow handling (a sparkline or a selector), so Alt+Arrow
   // edits the layout whichever control in the tile has focus. Plain arrows and text fields keep their keys.
   const layoutKey = (event: KeyboardEvent<HTMLElement>) => {
@@ -478,6 +480,9 @@ const Tile = memo(function Tile({
             deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
             sourceState={!savedQueryLoading && waitingOn ? { status: waitingOn, label: waitingOn === "pending" ? "Waiting for data sources…" : sourceWaitMessage(waitingOn) } : undefined}
             error={visibleError}
+            errorCode={error ? errorCode ?? undefined : undefined}
+            providerName={provider?.name}
+            onEditQuery={editing ? editQuery : undefined}
             onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
             onContextChange={
               (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined

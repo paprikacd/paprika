@@ -155,7 +155,7 @@ try {
     for (const widget of dashboard.widgets) {
       const tile = page.locator(`[data-widget-id="${widget.id}"]`)
       await tile.scrollIntoViewIfNeeded()
-      if (widget.query.includes("fixture_metric_8")) await tile.getByText(/query exceeded its time budget/i).waitFor()
+      if (widget.query.includes("fixture_metric_8")) await tile.getByText(/The query timed out/i).waitFor()
       else await tile.locator("[data-metric-value]").first().waitFor()
     }
     const trigger = page.getByRole("button", { name: "Query inspector", exact: true })

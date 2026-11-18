@@ -185,7 +185,7 @@ func TestDashboardQueryRecordsContractAndCompactText(t *testing.T) {
 	content, ok := wire.Content[0].(*sdkmcp.TextContent)
 	require.True(t, ok)
 	require.Contains(t, content.Text, "returned records=7 (bounded page)")
-	require.Contains(t, content.Text, "record preview truncated; omitted columns=1; partial source response")
+	require.Contains(t, content.Text, "record preview truncated; omitted columns=1; source truncated (reason not reported)")
 	require.Contains(t, content.Text, `first record (3/4 columns): "service"="api", "requests"=0, "active"=false`)
 	require.NotContains(t, content.Text, "worker", "later record rows belong only in structuredContent")
 	require.LessOrEqual(t, len(content.Text), dashboardQueryTextBytes)
@@ -258,7 +258,7 @@ func TestDashboardQueryTextDistinguishesIncompleteEmptySource(t *testing.T) {
 	fixture := `{"schemaVersion":1,"dashboard":{"id":"example"},"widgets":[{"id":"limited","title":"Limited","signalId":"q1"},{"id":"empty","title":"Empty","signalId":"q2"}],"signals":[{"id":"q1","state":"partial","providerTruncated":true,"truncated":true},{"id":"q2","state":"empty"}],"state":"partial"}`
 	text, err := dashboardQueryText(json.RawMessage(fixture))
 	require.NoError(t, err)
-	require.Contains(t, text, `q1 "Limited": partial; partial source response`)
+	require.Contains(t, text, `q1 "Limited": partial; source truncated (reason not reported)`)
 	require.Contains(t, text, `q2 "Empty": empty`)
 	require.NotContains(t, text, `q1 "Limited": empty`)
 	require.Contains(t, dashboardQueryOutputSchema, "source-limited response without usable observations is partial")
@@ -346,8 +346,8 @@ func TestDashboardQueryCompactTextDistinguishesMissingTailAndTruncation(t *testi
 	text, err := dashboardQueryText(json.RawMessage(fixture))
 	require.NoError(t, err)
 	require.Contains(t, text, `latest valid=0 "req/s" at 1793008740000 ms; latest observation missing`)
-	require.Contains(t, text, `series preview truncated; partial source response`)
-	require.Contains(t, text, `returned traces=100 (bounded sample); trace preview truncated; partial source response`)
+	require.Contains(t, text, `series preview truncated; source truncated (reason not reported)`)
+	require.Contains(t, text, `returned traces=100 (bounded sample); trace preview truncated; source truncated (reason not reported)`)
 	require.NotContains(t, text, "latest=0", "A missing tail must not be described as a current value")
 }
 
@@ -531,7 +531,8 @@ func TestDashboardQueryCompactTextIncludesBoundedSeriesCounts(t *testing.T) {
 	text, err := dashboardQueryText(raw)
 	require.NoError(t, err)
 	require.Contains(t, text, "returned series=10 (bounded response), omitted summaries=7")
-	require.Contains(t, text, "partial source response")
+	require.Contains(t, text, "source truncated (reason not reported)")
+	require.NotContains(t, text, "partial source response", "a source that reports no reason must not be named partial")
 	var schema map[string]any
 	require.NoError(t, json.Unmarshal([]byte(dashboardQueryOutputSchema), &schema))
 	signal := requireDashboardTextMap(t, requireDashboardTextMap(t, requireDashboardTextMap(t, requireDashboardTextMap(t, schema["properties"])["signals"])["items"])["properties"])
@@ -745,4 +746,35 @@ func TestDashboardQueryStatusBandsValidateAndDescribeInText(t *testing.T) {
 	require.Error(t, resolved.Validate(fixture), "only the published statuses are accepted")
 	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "unknown", "status": "ok"}
 	require.Error(t, resolved.Validate(fixture), "an unknown band cannot claim a status")
+}
+
+// The text line names the source's truncation reason so an agent can tell a
+// row cap from a partial or warned response.
+func TestDashboardTextNamesProviderTruncationReason(t *testing.T) {
+	cases := []struct {
+		reason string
+		want   string
+	}{
+		{"row_limit", "; source row limit"},
+		{"partial", "; provider partial"},
+		{"provider_warning", "; provider partial"},
+		{"", "; source truncated (reason not reported)"},
+	}
+	for _, tc := range cases {
+		text := dashboardSignalText(&dashboardTextSignal{ID: "q1", State: "ok", ProviderTruncated: true, ProviderTruncation: tc.reason, Truncated: true}, nil)
+		if !strings.Contains(text, tc.want) {
+			t.Fatalf("reason %s: text %q lacks %q", tc.reason, text, tc.want)
+		}
+		if tc.reason == "row_limit" && strings.Contains(text, "partial") {
+			t.Fatalf("a row cap is not a partial source: text %q", text)
+		}
+		// The reason names the partial source once, not twice.
+		if tc.reason != "row_limit" && strings.Contains(text, "partial source response") {
+			t.Fatalf("reason %s: text %q repeats the partial wording", tc.reason, text)
+		}
+		// Without a reason the source is not known to be partial, so it must not be named one.
+		if tc.reason == "" && strings.Contains(text, "partial") {
+			t.Fatalf("a reason-free truncation is not known to be partial: text %q", text)
+		}
+	}
 }

@@ -17,6 +17,7 @@ import { formatRecordValue } from "../units"
 import { TooltipDetail, TooltipFact, TooltipHint } from "../tooltip-content"
 import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
+import { truncationNote, type TruncationSource } from "../truncation"
 import styles from "./records.module.css"
 import { StyledRecordCell, parseRecordHistory, tableCellStyleError, tableCellStylesSchema, tableTextPalette } from "./record-table-cells"
 import { useInsightsTheme } from "../insights-theme"
@@ -120,15 +121,18 @@ function labels(frame: RecordFrame, row: RecordFrame["rows"][number]) {
 }
 function Note({
   frame,
+  result,
   children,
 }: {
   frame: RecordFrame
+  result: TruncationSource
   children?: React.ReactNode
 }) {
+  const note = frame.truncated ? truncationNote(result) : undefined
   return (
     <div className={styles.note} role="status">
       {children}
-      {frame.truncated && <span>Partial result · source limit reached</span>}
+      {note && <span>{note}</span>}
     </div>
   )
 }
@@ -378,7 +382,7 @@ export function RecordTable({
           {activeCell.pinned && <GammaButton size="sm" variant="quiet" type="button" onClick={() => { activeCell.anchor.focus({ preventScroll: true }); hideCell() }}>Close</GammaButton>}
         </TooltipDetail>
       </ObservationTooltip>}
-      {(frame.truncated || !embedded && rows.length > pageSize) && <Note frame={frame}>
+      {(frame.truncated || !embedded && rows.length > pageSize) && <Note frame={frame} result={result}>
         {!embedded && rows.length > pageSize && (
           <>
             <GammaButton size="sm" variant="quiet"
@@ -477,7 +481,7 @@ export function RecordList({
           })}
         </ul>
       </div>
-      <Note frame={frame}>
+      <Note frame={frame} result={result}>
         {frame.rows.length > limit && (
           <span>
             Showing {limit} of {frame.rows.length} loaded records
@@ -674,7 +678,7 @@ export function RecordTreemap({
         {colorValues.length > 0 ? <><span>{formatRecordValue(colorMin, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), widget.options?.decimals)}</span><span className={styles.treeColorGradient} aria-hidden="true" /><span>{formatRecordValue(colorMax, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), widget.options?.decimals)}</span></> : <span>No numeric color values</span>}
         {colorMissing && <span className={styles.treeMissingKey}><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`} aria-hidden="true" />No data</span>}
       </div>}
-      <Note frame={frame}>
+      <Note frame={frame} result={result}>
         {positive.length < frame.rows.length && (
           <span>
             {frame.rows.length - positive.length} zero, missing or negative
@@ -789,7 +793,7 @@ export function RecordMatrix({
           </tbody>
         </ChartTable>
       </div>
-      <Note frame={frame}>
+      <Note frame={frame} result={result}>
         <span>
           Scale {min}–{max} · missing cells —
         </span>

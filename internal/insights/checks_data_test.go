@@ -481,7 +481,7 @@ func TestDryRunGatewayAndUnavailableStatusesAreTransient(t *testing.T) {
 
 	putReadDashboard(t, s, queryReadWidget("busy", "unavailable"))
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
-	require.Equal(t, "provider_error", result.Signals[0].Error.Code, "query_dashboard keeps the code it reported before")
+	require.Equal(t, "timeout", result.Signals[0].Error.Code, "query_dashboard classifies a 503 timeout as /api/query does")
 }
 
 func TestDryRunStaleCoversStatAndTimeseriesOnly(t *testing.T) {

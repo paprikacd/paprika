@@ -228,7 +228,8 @@ describe("operational record renderers",()=>{
   })
   it("keeps source truncation and configured coordinate limits visible",()=>{
     render(<ConnectionMap widget={{...widget,config:{maxPoints:1}}} result={{records:{...locations.records!,rows:[["A",0,0,0,"api"],["B",1,1,1,"api"]],truncated:true}}}/>)
-    expect(screen.getByText("Partial result · source limit reached")).toBeInTheDocument()
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
+    expect(screen.queryByText(/Partial/)).not.toBeInTheDocument()
     expect(screen.getByText("1 additional locations omitted by the point limit")).toBeInTheDocument()
   })
 })

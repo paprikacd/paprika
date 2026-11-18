@@ -67,7 +67,7 @@ describe("metric distributions",()=>{
     fireEvent.keyDown(screen.getByRole("button",{name:"api: 2.35"}),{key:" "})
     expect(select).toHaveBeenCalledWith({labels:{service:"api"},value:2.345,series:"api",timestamp:Date.UTC(2026,9,27,0,1)})
     expect(screen.getByText("3 zero, missing or negative latest values have no slice area")).toBeInTheDocument()
-    expect(screen.getByText("Partial source response")).toBeInTheDocument()
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
   })
   it("inspects the exact pie observation without selecting on hover and retains the pinned context",()=>{
     const select=vi.fn(), current:QueryResult={series:[series("api",[1,2.5]),series("worker",[1,7.5])]}
@@ -196,7 +196,12 @@ describe("metric distributions",()=>{
     expect(screen.getByRole("button",{name:/100.00/})).toBeInTheDocument()
     expect(screen.getByRole("button",{name:/5.00/})).toBeInTheDocument()
     expect(screen.getByText("Sampled view · 1 of 2 series")).toBeInTheDocument()
-    expect(screen.getByText("Partial source response")).toBeInTheDocument()
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
+  })
+  it("names a row cap in the neutral limit wording, not as a partial source, in status history",()=>{
+    render(<StatusHistory widget={widget} result={{series:[series("api",[1,2])],truncated:true,truncation:{reason:"row_limit",limit:100,unit:"series"}}}/>)
+    expect(screen.getByText("Source row limit reached · narrow the query to see others")).toBeInTheDocument()
+    expect(screen.queryByText("Partial source response")).toBeNull()
   })
   it("keeps all six compact lanes individually labeled and selects the final lane's exact observation",()=>{
     const select=vi.fn()

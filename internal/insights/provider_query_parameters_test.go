@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+// The metrics limit is maxSeries+1 so an over-limit response is detected and
+// reported as row_limit rather than silently cut.
 func TestProviderQueryParametersPreserveWireContract(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -13,7 +15,7 @@ func TestProviderQueryParametersPreserveWireContract(t *testing.T) {
 		path   string
 		params url.Values
 	}{
-		{"metrics", Query{Kind: "metrics", Query: "up", Start: 100.5, End: 200.5, Step: 5}, "/api/v1/query_range", url.Values{"start": {"100.5"}, "end": {"200.5"}, "query": {"up"}, "step": {"5"}, "timeout": {"15s"}, "limit": {"100"}}},
+		{"metrics", Query{Kind: "metrics", Query: "up", Start: 100.5, End: 200.5, Step: 5}, "/api/v1/query_range", url.Values{"start": {"100.5"}, "end": {"200.5"}, "query": {"up"}, "step": {"5"}, "timeout": {"15s"}, "limit": {"101"}}},
 		{"trace detail ignores search window", Query{Kind: "traces", TraceID: "abc", Start: 100.5, End: 200.5}, "/api/traces/abc", url.Values{}},
 	}
 	for _, tc := range cases {

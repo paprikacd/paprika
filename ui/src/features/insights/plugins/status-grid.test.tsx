@@ -48,7 +48,7 @@ describe("monitor status grid", () => {
     render(<StatusGrid widget={{...widget,config:{maxSeries:2}}} result={{series:[series("one",[1]),series("two",[0]),series("three",[1])],truncated:true}} />);
     expect(screen.getAllByRole("button")).toHaveLength(2);
     expect(screen.getByText("Showing 2 of 3")).toBeInTheDocument();
-    expect(screen.getByText("Partial source response")).toBeInTheDocument();
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument();
   });
   it("supports a single tab stop, arrow navigation, exact pinned details and Escape", () => {
     const result = {series:[series("api",[1]),series("worker",[0]),series("cron",[null])]};

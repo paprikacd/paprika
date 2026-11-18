@@ -76,8 +76,8 @@ var queryCodeText = map[string]string{
 	"invalid_bindings":             "the saved query's parameters or bindings are missing or invalid",
 	"incompatible_saved_query":     "the saved query does not provide this widget's data kind",
 	"incompatible_provider":        "the provider does not support this widget's data kind",
-	"provider_not_found":           "the query provider is not configured",
-	"forbidden":                    "the caller cannot access the query provider",
+	"provider_not_found":           "the query provider is unavailable or not configured",
+	"forbidden":                    "the query provider refused access or its credentials",
 	"invalid_annotation_columns":   "the event query does not return the configured columns",
 	"annotation_columns_truncated": "a configured event column sits beyond the first 12 columns",
 	"provider_error":               "the provider query could not be completed",
@@ -296,10 +296,22 @@ func checkDataSeriesCap(widgets []dataWidget) []dataHit {
 	for i := range widgets {
 		widget := &widgets[i]
 		if signal := widget.signal; signal != nil && signal.Error == nil && signal.ProviderTruncated {
-			hits = append(hits, newDataHit(widget, queryPointer(widget), dataLabel(widget)+" query result was truncated by the provider, so its values may be incomplete"))
+			hits = append(hits, newDataHit(widget, queryPointer(widget), dataLabel(widget)+" "+providerTruncationMessage(signal.ProviderTruncation)))
 		}
 	}
 	return hits
+}
+
+// providerTruncationMessage names the source's reason, so a row cap is not
+// described as an incomplete response.
+func providerTruncationMessage(reason string) string {
+	switch reason {
+	case truncationRowLimit:
+		return "query result stopped at the source row limit, so later rows are missing"
+	case truncationPartial, truncationProviderWarning:
+		return "query result came from a partial or warned source response, so its values may be incomplete"
+	}
+	return "query result was truncated by the provider, so its values may be incomplete"
 }
 
 // checkDataManySeries fires for a metrics widget that returned more than eight

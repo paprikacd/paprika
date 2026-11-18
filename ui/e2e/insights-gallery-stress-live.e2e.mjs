@@ -24,13 +24,18 @@ try {
       const monitors = page.locator('[data-widget-id="stress-monitors"]')
       const records = page.locator('[data-widget-id="stress-records"]')
       const traces = page.locator('[data-widget-id="stress-traces"]')
-      await monitors.getByText("Provider response may be incomplete. Narrow the query or check the data source.").waitFor()
+      // A row cap is a neutral fact, so the tiles name the cap rather than warn.
+      // Plugin tiles print their own neutral footer; the host adds no amber notice or fact for them.
+      await monitors.getByText("100 monitors", { exact: true }).waitFor()
+      for (const tile of [monitors, records]) assert.equal(await tile.locator("[data-truncation='partial'], [data-truncation='warning'], [data-truncation='unknown']").count(), 0, "A row-capped plugin tile must not show amber")
       await records.scrollIntoViewIfNeeded()
-      await records.getByText("Provider response may be incomplete. Narrow the query or check the data source.").waitFor()
+      await records.getByText(/Source row limit reached/).waitFor()
       await records.getByText("sample-0001").waitFor()
       await traces.scrollIntoViewIfNeeded()
       await traces.getByText(/checkout/i).first().waitFor()
-      await traces.getByText("Provider response may be incomplete. Narrow the query or check the data source.").waitFor()
+      await traces.getByText(/Showing the first 100 traces/).waitFor()
+      // Search results carry no trace status, so the Status column is absent.
+      assert.equal(await traces.getByRole("columnheader", { name: "Status" }).count(), 0, "A trace list without reported status must hide its Status column")
       // Searching is scoped to the fetched page. Check that the null record
       // remains null rather than a fabricated zero, and an actual zero remains.
       await records.scrollIntoViewIfNeeded()

@@ -9,6 +9,7 @@ import { DashboardWindowProvider } from "../dashboard-window"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
 import { formatTimeTick } from "../chart-data"
 import { displaySeriesNames, fallbackIdentityTitle } from "../series-display"
+import { truncationNote } from "../truncation"
 import { TimeWindowLens } from "../time-window-lens"
 import { assignSeriesColors } from "../series-colors"
 import { seriesSlot } from "../series-palette"
@@ -192,7 +193,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
       {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":String(value).length>128?`${String(value).slice(0,128)}…`:String(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
       <div className={tooltipStyles.tooltipFooter}><small>{current.pinned?"Pinned · press Escape to close":"Move across the chart or use arrow keys · Enter to pin"}</small></div></div>
   </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colorOf(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
-  {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{frame.truncated&&<span>Partial source response</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
+  {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{truncationNote(result)&&<span>{truncationNote(result)}</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>
 export const RecordBar=(props:WidgetRendererProps)=><RecordChart {...props} bar/>

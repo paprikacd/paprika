@@ -165,7 +165,7 @@ describe("record charts", () => {
     render(<RecordLine widget={{...widget,config:{x:"at",y:["value"],group:"group"}}} result={result} />)
     expect(screen.getAllByRole("img")).toHaveLength(2)
     expect(screen.getByText("1 observations have no x coordinate")).toBeInTheDocument()
-    expect(screen.getByText("Partial source response")).toBeInTheDocument()
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
   })
   it("compares timestamp records locally with ordered samples, mixed units and gaps", () => {
     const first="2026-10-27T01:00:00Z", middle="2026-10-27T02:00:00Z", last="2026-10-27T03:00:00Z"

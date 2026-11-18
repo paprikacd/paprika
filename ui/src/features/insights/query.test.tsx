@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createQueryScheduler, createResolvedQueryFetcher, useWidgetQuery } from "./query";
+import { InsightsQueryError } from "./client";
+import { createQueryScheduler, createResolvedQueryFetcher, useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import type { QueryRequest, QueryResult, Widget } from "./schema";
 
 const widget: Widget = {
@@ -247,6 +248,20 @@ describe("widget query lifecycle", () => {
       value: { ...widget, query: "a_different_metric" },
     });
     await waitFor(() => expect(result.current.data).toBeUndefined());
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a failed query's class across a remount, so the error frame still names it", async () => {
+    const kept: { current?: RetainedQuery } = {};
+    const retention: QueryRetention = { read: () => kept.current, write: (next) => { kept.current = next; } };
+    const message = "The data source rejected this query. Check the expression and time bounds.";
+    const fetcher = vi.fn().mockRejectedValue(new InsightsQueryError(message, 502, null, "invalid_query"));
+    const first = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    await waitFor(() => expect(first.result.current.errorCode).toBe("invalid_query"));
+    first.unmount();
+    const second = renderHook(() => useWidgetQuery(widget, { ...bounds, fetcher, retention }));
+    await waitFor(() => expect(second.result.current.error).toBe(message));
+    expect(second.result.current.errorCode).toBe("invalid_query");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 

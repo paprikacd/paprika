@@ -57,6 +57,7 @@ import { widgetAttention, useWidgetAttentionContext } from "./widget-attention";
 import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
 import { displaySeriesNames } from "./series-display";
+import { sourceNotice, truncationOf } from "./truncation";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
 export { BarChart } from "./bar-chart";
 export { ChartDataInspector } from "./chart-data-inspector";
@@ -70,6 +71,12 @@ export {
 type Trace = NonNullable<QueryResult["traces"]>[number];
 
 const MAX_ROWS = 100;
+
+/** The API's "unknown" means a search result did not report a status. */
+function statusReported(status: string | undefined): boolean {
+  const value = (status ?? "").trim().toLowerCase();
+  return value !== "" && value !== "unknown";
+}
 
 /** Heatmap cells take the critical frame only; warning cells keep their fill and label. */
 function critical(threshold: Threshold | undefined) {
@@ -175,6 +182,8 @@ function Stat({
   const colourBandName = colourBandOwnLabel || (colourBandFirst && colourBandNext ? `below ${colourBandNext}`
     : colourBandFirst ? `${readingBelowBand ? "below" : "from"} ${colourBandValue}`
     : `≥ ${colourBandValue}`);
+  // A row-capped result shows its first N by design, so it is not a partial reading.
+  const statTruncation = truncationOf(result);
   const chip = <>
     {band?.status === "warning" || band?.status === "critical"
       ? <StatusChip status={band.status} color={band.color} label={band.label} className={styles.statChip} data-stat-chip={band.status} />
@@ -182,7 +191,7 @@ function Stat({
         ? <StatBandChip color={colourBand.color} text={colourBandText} name={colourBandName} />
         : null}
     {stale && <StatNoticeChip visible={`Stale · ${sampleAge}`} full={`Last valid sample: ${sampleAge} before range end.`} dataAttribute="data-stale-observation" />}
-    {attention.partial && <StatNoticeChip visible="Partial" full="Provider response may be incomplete. Narrow the query or check the data source." dataAttribute="data-partial-observation" />}
+    {attention.partial && statTruncation !== "limit" && <StatNoticeChip visible="Partial" full={sourceNotice(statTruncation)} dataAttribute="data-partial-observation" />}
   </>;
   return (
     // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
@@ -508,6 +517,8 @@ function TraceList({
     setSelected(contextKey(context));
     onContextChange?.(context);
   };
+  // Search results carry no trace status, so the column is shown only when a row reports one.
+  const reportsStatus = traces.some((trace) => statusReported(trace.status));
   const maximum = Math.max(
     1,
     ...traces
@@ -531,7 +542,7 @@ function TraceList({
           <tr>
             <th scope="col">Service / operation</th>
             <th scope="col">Duration</th>
-            <th scope="col">Status</th>
+            {reportsStatus && <th scope="col">Status</th>}
             <th scope="col" className={styles.numeric}>
               Started
             </th>
@@ -609,9 +620,11 @@ function TraceList({
                               ? formatMetricDetails(trace.durationMs, "ms", widget.options?.decimals)
                               : "No data"}
                           </strong>
-                          <span className={configStyles.tooltipStatus}>
-                            {trace.status || "Unknown"}
-                          </span>
+                          {statusReported(trace.status) && (
+                            <span className={configStyles.tooltipStatus}>
+                              {trace.status}
+                            </span>
+                          )}
                         </div>
                         <div className={configStyles.tooltipLabels}>
                           <dl>
@@ -674,13 +687,15 @@ function TraceList({
                     />
                   </div>
                 </td>
-                <td>
-                  <span
-                    className={`${styles.status} ${statusClass}`}
-                  >
-                    {trace.status || "Unknown"}
-                  </span>
-                </td>
+                {reportsStatus && (
+                  <td>
+                    <span
+                      className={`${styles.status} ${statusClass}`}
+                    >
+                      {trace.status || "Unknown"}
+                    </span>
+                  </td>
+                )}
                 <td className={styles.numeric}>
                   {validTimestamp(trace.startTime) ? (
                     <time
@@ -707,6 +722,11 @@ function TraceList({
         </p>
       )}
     </div>
+    {!reportsStatus && (
+      <p className={styles.traceScrollHint} data-trace-status="hidden">
+        {fetchTrace ? "Status is shown in the waterfall" : "Search results do not report trace status"}
+      </p>
+    )}
     {overflow && <p ref={hintElement} id={hintId} className={styles.traceScrollHint}>
       {overflow === "both" ? "Scroll to see all traces and columns" : overflow === "vertical" ? "Scroll to see all traces" : "Scroll horizontally to see more columns"}
     </p>}

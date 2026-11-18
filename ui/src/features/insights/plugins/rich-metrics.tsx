@@ -29,6 +29,7 @@ import { readTooltipPlacement } from "../tooltip-position";
 import { WidgetTooltipProvider } from "../tooltip-interaction";
 import { seriesInWindow, type ObservationWindow } from "../time-window";
 import type { QueryResult } from "../schema";
+import { truncationNote, type TruncationSource } from "../truncation";
 import { metricPriorPeriod } from "./metric-prior-period";
 import { heatmapColumnAt, heatmapColumnLimit, heatmapColumns, heatmapDensityLevel, heatmapGaps, quantileLine } from "./distribution-heatmap-layout";
 import heatmapStyles from "./distribution-heatmap.module.css";
@@ -191,8 +192,9 @@ function timeTicks(timestamps: number[], width: number) {
   return [...new Set(Array.from({ length: Math.min(count, timestamps.length) }, (_, index) => Math.round(index * (timestamps.length - 1) / Math.max(1, Math.min(count, timestamps.length) - 1))))];
 }
 
-function Notices({ children, truncated }: { children?: ReactNode; truncated?: boolean }) {
-  return <div className={styles.notices}>{children}{truncated && <span>Partial source response</span>}</div>;
+function Notices({ children, source }: { children?: ReactNode; source?: TruncationSource }) {
+  const note = truncationNote(source);
+  return <div className={styles.notices}>{children}{note && <span>{note}</span>}</div>;
 }
 
 function LegendName({ name, display }: { name: string; display: string }) {
@@ -329,7 +331,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
     const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
       : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
-      : "Non-cumulative bucket observation. Input must already be a rate when using a per-second unit.";
+      : undefined;
     return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: SERIES_PALETTE[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
   };
   // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
@@ -427,7 +429,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         p95 above shown buckets
       </span>}
     </div>}
-    <Notices truncated={result.truncated}>{data.groups > 1 && <span>Sum of {data.groups} compatible histograms</span>}{data.invalidCells > 0 && <span>{data.invalidCells} non-monotonic or negative bucket observations shown hatched, not drawn as density</span>}{data.omittedBuckets > 0 && <span>{data.omittedBuckets} higher buckets not shown</span>}{data.sampled && <span>Sampled observations · column width does not show duration</span>}</Notices>
+    <Notices source={result}>{data.groups > 1 && <span>Sum of {data.groups} compatible histograms</span>}{data.invalidCells > 0 && <span>{data.invalidCells} non-monotonic or negative bucket observations shown hatched, not drawn as density</span>}{data.omittedBuckets > 0 && <span>{data.omittedBuckets} higher buckets not shown</span>}{data.sampled && <span>Sampled observations · column width does not show duration</span>}</Notices>
     </div>
   </div>;
 }
@@ -674,7 +676,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.truncated && <p>Event source response is partial.</p>}
-    <Notices truncated={result.truncated}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
+    <Notices source={result}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
     </div>
   </div>;
 }

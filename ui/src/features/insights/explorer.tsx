@@ -33,6 +33,7 @@ import {
 } from "./saved-queries";
 import { QueryBuilder } from "./query-builder";
 import { summarizeExplorerResult } from "./explorer-result-summary";
+import { limitFact } from "./truncation";
 import { assertProviderQueryTemplate } from "./provider-query-template";
 import { WidgetVisualization } from "./charts";
 import { EXPLORER_PREVIEW_WIDGET_ID } from "./series-display";
@@ -761,6 +762,7 @@ export function Explorer({
                 {resultSummary && <div className={styles.resultSummary} role="status" aria-label="Result summary">
                   <span>{resultSummary.detail} returned</span>
                   {resultSummary.partial && <span>Partial provider response · data may be incomplete.</span>}
+                  {resultSummary.limited && <span>{limitFact(executed.result)}</span>}
                 </div>}
                 {executed.query.kind === "records" && !!previewFields.length && <div className={styles.testValues} aria-label="Record preview columns">
                   {previewFields.map(field => <label className={styles.field} key={field.key}>

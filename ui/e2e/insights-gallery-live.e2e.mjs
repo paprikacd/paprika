@@ -155,7 +155,7 @@ try {
         }
         await page.waitForLoadState("networkidle");
         assert.equal(await page.getByText("Widget could not render", { exact: false }).count(), 0, `${board}: widget render error`);
-        assert.equal(await page.getByText("observability provider does not support this request", { exact: false }).count(), 0, `${board}: provider error`);
+        assert.equal(await page.locator("[data-query-failure]").count(), 0, `${board}: no widget may show a query failure`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${board}: page overflow`);
         await page.screenshot({ path: resolve(output, `${board}-${theme}.png`), fullPage: true, animations: "disabled" });
         console.log(`PASS ${theme} ${board}: all visible widgets on live local providers`);

@@ -40,7 +40,10 @@ type DashboardSignal struct {
 	PrimarySeries     *int                     `json:"primarySeries,omitempty"`
 	Truncated         bool                     `json:"truncated,omitempty"`
 	ProviderTruncated bool                     `json:"providerTruncated,omitempty"`
-	SeriesTruncated   bool                     `json:"seriesTruncated,omitempty"`
+	// ProviderTruncation is the source's reason (row_limit, partial or
+	// provider_warning) when ProviderTruncated is set.
+	ProviderTruncation string `json:"providerTruncation,omitempty"`
+	SeriesTruncated    bool   `json:"seriesTruncated,omitempty"`
 	// These counts describe the bounded provider response, never the source's
 	// total cardinality. Pointers preserve zero for a successful empty query.
 	SeriesReturned *int `json:"seriesReturned,omitempty"`
@@ -137,6 +140,9 @@ type DashboardTraceExample struct {
 func summarizeDashboardResult(result *QueryResult, options DashboardSummaryOptions) DashboardSignal {
 	options = boundedDashboardSummaryOptions(options)
 	signal := DashboardSignal{State: "empty", ProviderTruncated: result.Truncated, Truncated: result.Truncated}
+	if result.Truncation != nil {
+		signal.ProviderTruncation = result.Truncation.Reason
+	}
 	primary := primaryDashboardSeries(result.Series)
 	if primary >= 0 {
 		signal.PrimarySeries, signal.State = &primary, "ok"

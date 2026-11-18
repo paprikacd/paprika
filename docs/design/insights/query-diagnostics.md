@@ -28,6 +28,7 @@ caller header.
 | `totalMs` | Monotonic elapsed time from service admission through normalized result or failure. |
 | `counts` | Returned series, points, traces, spans and record rows. Absent on failure; actual empty results contain zeros. |
 | `truncated` | The normalized result's existing partial/truncation flag. Warnings and omitted data retain the same conservative behavior. |
+| `truncationReason` | Present only when `truncated` is true: `row_limit` (the cap was reached; the first N are shown), `partial` (the source reported an incomplete response) or `provider_warning` (the source reported warnings). The outcome stays `partial`. |
 
 The service receipt deliberately omits query text, variable values, raw upstream
 messages and response headers. The authenticated browser already owns its
@@ -99,12 +100,17 @@ the nested provider phase.
 Codes use the dashboard reader's public error vocabulary: `canceled`,
 `timeout`, `rate_limited`, `forbidden`, `invalid_query`, `provider_not_found` and
 `provider_error`. The receipt spells its cancellation outcome `cancelled`.
-The receipt code is finer than the dashboard reader's for two statuses. A direct
-provider that answers 408, 504 or 429 is `timeout` or `rate_limited` on the
-receipt, where the dashboard reader reports `provider_error`. A gateway 408 is
-`canceled` on the receipt, where the dashboard reader reports `timeout`. The HTTP
-status and fixed message are the same either way, so a client that branches on
-`code` should treat it as diagnostic.
+The receipt, `/api/query`, `query_dashboard` and the dry-run checks share one
+classifier (`classifyQueryFailure`), so they report the same code for the same
+failure. A direct provider's 400 or 422 is `invalid_query`, as is a 200 whose
+`status` is `error` with an `errorType` of `bad_data` or `execution`. A 401 or 403
+is `forbidden`, a 408 or 504 and a transport timeout are `timeout`, a 429 is
+`rate_limited`, and a 503 whose `errorType` is `timeout` is `timeout`. Other direct
+failures are `provider_error`. A shared gateway's 503 (a provider that is not configured or cannot
+serve the request) is `provider_not_found`. A gateway 408 is `timeout`. The classifier reads an
+HTTP status and a bounded `errorType` enum only, never the provider's text. The
+HTTP status and fixed message are unchanged, and a failed query always carries
+`code`, with or without a receipt.
 HTTP statuses and fixed messages keep the existing query mapping: a query-budget
 deadline returns 504 with `query exceeded its time budget`, exhausted capacity
 returns 429 with `Retry-After: 1`, and gateway permission and availability

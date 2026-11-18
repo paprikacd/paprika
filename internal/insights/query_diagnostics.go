@@ -26,6 +26,9 @@ type QueryDiagnostics struct {
 	TotalMs     float64                `json:"totalMs"`
 	Counts      *QueryResultCounts     `json:"counts,omitempty"`
 	Truncated   bool                   `json:"truncated"`
+	// TruncationReason is the QueryTruncation.Reason of a truncated result. It
+	// is absent when the result is complete.
+	TruncationReason string `json:"truncationReason,omitempty"`
 }
 
 // QueryDiagnosticSource exposes only the authorized public source identity.
@@ -247,7 +250,7 @@ func effectiveQueryBounds(p *providerClient, q *Query, scope string) QueryEffect
 
 func (d *QueryDiagnostics) complete(result *QueryResult, err error) {
 	if err != nil {
-		switch queryFailureDetails(err).Code {
+		switch classifyQueryFailure(err).Code {
 		case "canceled":
 			d.Outcome = "cancelled"
 		case "timeout":
@@ -263,6 +266,9 @@ func (d *QueryDiagnostics) complete(result *QueryResult, err error) {
 	if result.Truncated {
 		d.Outcome = "partial"
 	}
+	if result.Truncation != nil {
+		d.TruncationReason = result.Truncation.Reason
+	}
 	d.Counts = returnedQueryCounts(result)
 }
 
@@ -277,26 +283,9 @@ func returnedQueryCounts(result *QueryResult) *QueryResultCounts {
 	return counts
 }
 
-func queryFailureDetails(err error) *DashboardQueryError {
-	var remote *observeError
-	if errors.As(err, &remote) && remote.status == http.StatusRequestTimeout {
-		return &DashboardQueryError{Code: "canceled", Message: "The provider query was canceled."}
-	}
-	var direct *providerHTTPError
-	if errors.As(err, &direct) {
-		switch direct.status {
-		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-			return &DashboardQueryError{Code: "timeout", Message: "The provider query exceeded its time budget."}
-		case http.StatusTooManyRequests:
-			return &DashboardQueryError{Code: "rate_limited", Message: "Query capacity is currently exhausted; retry shortly."}
-		}
-	}
-	return dashboardProviderError(err)
-}
-
 // writeQueryFailure answers a failed query. The status and fixed message are the
-// ones Insights has always returned. A receipt, when present, adds a machine code
-// and the diagnostics beside the same error text.
+// ones Insights has always returned. Every failure carries its machine code, and
+// a receipt, when present, adds the diagnostics beside the same error text.
 func writeQueryFailure(w http.ResponseWriter, err error, diagnostics *QueryDiagnostics) {
 	status, message := queryErrorResponse(err)
 	if status == http.StatusTooManyRequests {
@@ -312,15 +301,16 @@ func writeQueryFailure(w http.ResponseWriter, err error, diagnostics *QueryDiagn
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 	}
+	code := classifyQueryFailure(err).Code
 	if diagnostics == nil {
-		writeError(w, status, message)
+		writeJSON(w, status, map[string]string{"error": message, "code": code})
 		return
 	}
 	writeJSON(w, status, struct {
 		Error       string            `json:"error"`
 		Code        string            `json:"code"`
 		Diagnostics *QueryDiagnostics `json:"diagnostics"`
-	}{Error: message, Code: queryFailureDetails(err).Code, Diagnostics: diagnostics})
+	}{Error: message, Code: code, Diagnostics: diagnostics})
 }
 
 // queryErrorResponse maps a failed query phase to its status and message. The

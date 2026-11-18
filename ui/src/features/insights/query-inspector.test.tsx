@@ -193,6 +193,19 @@ describe("passive query inspector", () => {
     expect(screen.getByRole("button", { name: "Inspect q1, prometheus, Cancelled, 50 ms" })).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("names the truncation reason in the receipt, and keeps the general copy without one", async () => {
+    const rowLimited = { ...backend, outcome: "partial", truncated: true, truncationReason: "row_limit" } as QueryDiagnostics;
+    const fetcher = vi.fn().mockResolvedValueOnce({ series: [], truncated: true, diagnostics: rowLimited }).mockResolvedValueOnce({ series: [], truncated: true });
+    const scheduler = createQueryScheduler(fetcher, { cacheSize: 0 });
+    await scheduler(request, signal());
+    await scheduler(request, signal());
+    render(<QueryInspector store={scheduler.diagnostics} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Inspect q2, prometheus, Partial,/ }));
+    expect(screen.getByText("This response is partial or truncated. A provider warning or result limit can reduce its coverage.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Inspect q1, prometheus, Partial,/ }));
+    expect(screen.getByText("Result limit reached; narrow the query to see the rest.")).toBeInTheDocument();
+  });
+
   it("keeps an observed empty result distinct from a partial result", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce({ series: [] }).mockResolvedValueOnce({ series: [], truncated: true });
     const scheduler = createQueryScheduler(fetcher, { cacheSize: 0 });

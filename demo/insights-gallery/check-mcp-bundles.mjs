@@ -358,7 +358,9 @@ for (const id of ["stress-monitors", "stress-records", "stress-traces"]) {
   assert.equal(signal.providerTruncated, true, `${id}: missing provider truncation signal`);
   const text = stressResponse.content.find(item => item.type === "text")?.text ?? "";
   const line = text.split("\n").find(item => item.startsWith(`${signal.id} `));
-  assert.ok(line?.includes("partial source response"), `${id}: text-only clients must see source truncation`);
+  assert.equal(signal.providerTruncation, "row_limit", `${id}: a row-capped tile must name the row limit, not a partial source`);
+  assert.ok(line?.includes("; source row limit"), `${id}: text-only clients must see the row limit`);
+  assert.ok(!line?.includes("partial source response"), `${id}: a row cap must not read as a partial source`);
 }
 const monitorText = stressResponse.content.find(item => item.type === "text").text.split("\n").find(line => line.startsWith(`${signalFor(stress, "stress-monitors").id} `));
 assert.ok(monitorText?.includes("series preview truncated"), "Compact metric output must disclose omitted series separately");

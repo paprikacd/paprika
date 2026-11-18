@@ -6,6 +6,7 @@ import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderer
 import { formatSharedScale } from "../units";
 import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName, type Point, type Series } from "../chart-data";
 import { validTimestamp } from "../widget-context";
+import { truncationNote } from "../truncation";
 import { compactSeriesLabels } from "../series-display";
 import { widgetSeriesColors } from "../series-colors";
 import { useEmbeddedWidget } from "../widget-presentation";
@@ -154,7 +155,7 @@ export function SmallMultiples({ widget, result, embedded, onContextChange }: Wi
   return <div className={styles.root}><div className={styles.scroll} ref={scroll} role="region" aria-label={`${widget.title} trends`} aria-describedby={overflow ? overflowId : undefined} tabIndex={overflow && !embedded && !parentEmbedded ? 0 : undefined} onKeyDown={scrollKeys}>
     <div className={styles.grid} ref={grid} style={{ "--multiple-columns": config.columns ?? 3 } as CSSProperties}>
       {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} color={colors[index].color} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
-    </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{result.truncated && <span>Partial source response</span>}</div></div>;
+    </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}</div></div>;
 }
 export function registerSmallMultiplesPlugin() {
   if (!getWidgetDefinition("plugin", "small-multiples")) registerWidgetPlugin({ id: "small-multiples", label: "Small multiples", description: "Compare metric series using shared time and value scales", dataKind: "metrics", render: SmallMultiples,

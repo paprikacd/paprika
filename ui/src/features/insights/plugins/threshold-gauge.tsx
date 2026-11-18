@@ -34,6 +34,7 @@ import { thresholdPaint, thresholdText } from "../status";
 import { STATUS_WORDS, StatusChip, bandReading } from "../status-chip";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { compactSeriesLabels } from "../series-display";
+import { truncationNote } from "../truncation";
 import meterStyles from "./capacity-meter.module.css";
 
 export const gaugeConfigSchema = z.strictObject({
@@ -201,7 +202,11 @@ export function ThresholdGauge(props: WidgetRendererProps) {
   if (!Number.isFinite(bounds.min) || !Number.isFinite(bounds.max) || bounds.min >= bounds.max)
     return <p className={meterStyles.bankNotice} role="alert">Choose finite gauge bounds with a maximum greater than the minimum.</p>;
   if (!series.length) return <EmptyState />;
-  if (config.seriesMode !== "all") return <GaugeItem {...props} config={config} series={series[0]} index={0} />;
+  // A single gauge has no bank footer, so a truncated result prints its own note here.
+  if (config.seriesMode !== "all") return <>
+    <GaugeItem {...props} config={config} series={series[0]} index={0} />
+    {truncationNote(props.result) && <p className={meterStyles.bankNotice} role="status">{truncationNote(props.result)}</p>}
+  </>;
   return <GaugeBank {...props} config={config} series={series} />;
 }
 
@@ -251,7 +256,7 @@ function GaugeBank(props: WidgetRendererProps & { config: GaugeConfig; series: G
     <GaugeLegend widget={props.widget} config={config} compactRows={compactRows} />
     {(omitted > 0 || props.result.truncated) && <p className={meterStyles.bankNotice} role="status">
       {omitted > 0 && <span>Showing {selected.length} of {series.length} series</span>}
-      {props.result.truncated && <span>Partial source response</span>}
+      {truncationNote(props.result) && <span>{truncationNote(props.result)}</span>}
     </p>}
   </div>;
 }

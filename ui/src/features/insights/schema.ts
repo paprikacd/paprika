@@ -703,6 +703,7 @@ export const queryDiagnosticsSchema = z.object({
     rows: queryCountSchema,
   }).optional(),
   truncated: z.boolean(),
+  truncationReason: z.enum(["row_limit", "partial", "provider_warning"]).optional().catch(undefined),
 }).superRefine((receipt, context) => {
   if (!receipt.effective.dispatched && (receipt.effective.rangeApplied ||
     receipt.effective.start !== undefined || receipt.effective.end !== undefined || receipt.effective.step !== undefined)) {
@@ -739,6 +740,8 @@ export interface QueryResult {
   diagnostics?: QueryDiagnostics
   records?: RecordFrame
   truncated?: boolean
+  /** Why the result is truncated. Absent from older backends; see truncation.ts. */
+  truncation?: { reason: string; limit?: number; unit?: string }
   spans?: { spanId: string; parentSpanId?: string; service: string; operation: string; startTime: number; durationMs: number; status: string; attributes?: { key: string; value: string }[]; attributesOmitted?: number }[]
   series?: {
     name: string

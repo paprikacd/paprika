@@ -49,7 +49,7 @@ try {
       await results.getByRole("button", { name: "Run query", exact: true }).click()
       const error = results.getByRole("alert")
       await error.waitFor()
-      assert.match(await error.innerText(), /provider query failed/i)
+      assert.match(await error.innerText(), /rejected this query|could not complete this query/i)
       await results.getByText("Latest run failed. Showing the previous result for different inputs.").waitFor()
       await summary.getByText(/1,000 rows · 5 columns/).waitFor()
       await explorer.getByRole("textbox", { name: "Test value for cluster" }).fill("delta")

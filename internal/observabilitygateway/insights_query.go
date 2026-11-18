@@ -74,7 +74,7 @@ const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion"
 "savedQueries":{"type":"array","items":{"type":"object","required":["id","etag"],"properties":{"id":{"type":"string"},"etag":{"type":"string"}}}},
 "signals":{"type":"array","items":{"type":"object","required":["id","state"],"properties":{
 "id":{"type":"string"},"kind":{"enum":["metrics","records","traces"],"description":"Normalized query kind, including empty and failed results."},"providerId":{"type":"string","description":"Resolved provider ID when the caller is authorized to resolve the provider; omitted when its lookup fails."},"state":{"enum":["ok","partial","empty","error"],"description":"Data availability, not health. A source-limited response without usable observations is partial rather than definitively empty; populated limited responses remain ok and disclose providerTruncated."},"error":{"$ref":"#/$defs/error"},"primarySeries":{"type":"integer"},
-"truncated":{"type":"boolean","description":"Some data was omitted from this bounded signal or its compact summary; check providerTruncated and the specific preview flags to distinguish source limits from presentation limits."},"providerTruncated":{"type":"boolean","description":"The provider response hit a source limit or was otherwise partial. State can still be ok when a bounded query succeeded; do not treat returned counts as source-wide totals."},"seriesTruncated":{"type":"boolean","description":"The compact output omitted fetched series; distinct from providerTruncated."},"seriesReturned":{"type":"integer","minimum":0,"description":"Series in the bounded provider response, not source-wide cardinality. Present for successful metric queries, including zero."},"seriesOmitted":{"type":"integer","minimum":0,"description":"Fetched series omitted from the compact summary; independent of source limits disclosed by providerTruncated."},
+"truncated":{"type":"boolean","description":"Some data was omitted from this bounded signal or its compact summary; check providerTruncated and the specific preview flags to distinguish source limits from presentation limits."},"providerTruncated":{"type":"boolean","description":"The provider response hit a source limit or was otherwise partial. State can still be ok when a bounded query succeeded; do not treat returned counts as source-wide totals."},"providerTruncation":{"enum":["row_limit","partial","provider_warning"],"description":"Why the provider response is truncated, when providerTruncated is true. row_limit: the source's row cap was reached and the first rows are shown. partial: the source reported an incomplete response. provider_warning: the source reported warnings."},"seriesTruncated":{"type":"boolean","description":"The compact output omitted fetched series; distinct from providerTruncated."},"seriesReturned":{"type":"integer","minimum":0,"description":"Series in the bounded provider response, not source-wide cardinality. Present for successful metric queries, including zero."},"seriesOmitted":{"type":"integer","minimum":0,"description":"Fetched series omitted from the compact summary; independent of source limits disclosed by providerTruncated."},
 "series":{"type":"array","items":{"$ref":"#/$defs/series"}},"records":{"$ref":"#/$defs/records"},
 "traces":{"type":"object","required":["returned","statusCounts"],"properties":{"returned":{"type":"integer"},"statusCounts":{"type":"object","additionalProperties":{"type":"integer"}},"examplesTruncated":{"type":"boolean"},"metadataTruncated":{"type":"boolean"},"examples":{"type":"array","items":{"type":"object","required":["traceId","status"],"properties":{"traceId":{"type":"string"},"service":{"type":"string"},"operation":{"type":"string"},"durationMs":{"type":"number","description":"Trace duration in milliseconds."},"startTime":{"type":"number","description":"Trace start as Unix milliseconds."},"status":{"type":"string"},"invalidFields":{"type":"boolean"}}}}}}
 }}},
@@ -156,20 +156,21 @@ type dashboardTextSeries struct {
 }
 
 type dashboardTextSignal struct {
-	ID                string                `json:"id"`
-	Kind              string                `json:"kind"`
-	ProviderID        string                `json:"providerId"`
-	State             string                `json:"state"`
-	Error             *dashboardTextError   `json:"error"`
-	PrimarySeries     *int                  `json:"primarySeries"`
-	Series            []dashboardTextSeries `json:"series"`
-	Records           *dashboardTextRecords `json:"records"`
-	Truncated         bool                  `json:"truncated"`
-	ProviderTruncated bool                  `json:"providerTruncated"`
-	SeriesTruncated   bool                  `json:"seriesTruncated"`
-	SeriesReturned    *int                  `json:"seriesReturned"`
-	SeriesOmitted     *int                  `json:"seriesOmitted"`
-	Traces            *dashboardTextTraces  `json:"traces"`
+	ID                 string                `json:"id"`
+	Kind               string                `json:"kind"`
+	ProviderID         string                `json:"providerId"`
+	State              string                `json:"state"`
+	Error              *dashboardTextError   `json:"error"`
+	PrimarySeries      *int                  `json:"primarySeries"`
+	Series             []dashboardTextSeries `json:"series"`
+	Records            *dashboardTextRecords `json:"records"`
+	Truncated          bool                  `json:"truncated"`
+	ProviderTruncated  bool                  `json:"providerTruncated"`
+	ProviderTruncation string                `json:"providerTruncation"`
+	SeriesTruncated    bool                  `json:"seriesTruncated"`
+	SeriesReturned     *int                  `json:"seriesReturned"`
+	SeriesOmitted      *int                  `json:"seriesOmitted"`
+	Traces             *dashboardTextTraces  `json:"traces"`
 }
 
 type dashboardTextTraces struct {
@@ -687,15 +688,32 @@ func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWid
 		}
 		appendDashboardTraceText(&line, signal.Traces)
 	}
-	appendDashboardRecordText(&line, signal.Records, signal.ProviderTruncated)
-	appendDashboardTruncationText(&line, signal)
+	// A row cap is a bounded page, not a partial source, so it names only the
+	// row limit. Partial and warned responses keep the partial wording.
+	sourcePartial := signal.ProviderTruncated && signal.ProviderTruncation != "row_limit"
+	appendDashboardRecordText(&line, signal.Records, sourcePartial, signal.ProviderTruncation)
+	appendDashboardTruncationText(&line, signal, sourcePartial)
 	return line.String()
 }
 
-func appendDashboardTruncationText(line *strings.Builder, signal *dashboardTextSignal) {
-	if signal.Records == nil && signal.ProviderTruncated {
-		line.WriteString("; partial source response")
+// appendDashboardProviderReasonText names the source's truncation reason. A
+// truncated source that reports no reason says only that, so it does not claim
+// a partial response it never reported.
+func appendDashboardProviderReasonText(line *strings.Builder, signal *dashboardTextSignal, sourcePartial bool) {
+	switch signal.ProviderTruncation {
+	case "row_limit":
+		line.WriteString("; source row limit")
+	case "partial", "provider_warning":
+		line.WriteString("; provider partial")
+	default:
+		if signal.Records == nil && sourcePartial {
+			line.WriteString(dashboardUnreportedReasonText)
+		}
 	}
+}
+
+func appendDashboardTruncationText(line *strings.Builder, signal *dashboardTextSignal, sourcePartial bool) {
+	appendDashboardProviderReasonText(line, signal, sourcePartial)
 	recordsExplainTruncation := dashboardRecordsTruncated(signal.Records)
 	tracesExplainTruncation := dashboardTracesTruncated(signal.Traces)
 	if signal.Truncated && !signal.ProviderTruncated && !signal.SeriesTruncated && !recordsExplainTruncation && !tracesExplainTruncation {
@@ -906,7 +924,11 @@ func canonicalDashboardSeriesName(labels map[string]string) string {
 	return name.String()
 }
 
-func appendDashboardRecordText(line *strings.Builder, records *dashboardTextRecords, providerTruncated bool) {
+// dashboardUnreportedReasonText is the text for a truncated source that reports
+// no reason. The reason is unknown, so the text does not name a partial source.
+const dashboardUnreportedReasonText = "; source truncated (reason not reported)"
+
+func appendDashboardRecordText(line *strings.Builder, records *dashboardTextRecords, providerTruncated bool, providerReason string) {
 	if records == nil {
 		return
 	}
@@ -918,7 +940,11 @@ func appendDashboardRecordText(line *strings.Builder, records *dashboardTextReco
 		fmt.Fprintf(line, "; omitted columns=%d", records.ColumnsOmitted)
 	}
 	if providerTruncated {
-		line.WriteString("; partial source response")
+		if providerReason == "partial" || providerReason == "provider_warning" {
+			line.WriteString("; partial source response")
+		} else {
+			line.WriteString(dashboardUnreportedReasonText)
+		}
 	}
 	appendDashboardRecordPreview(line, records)
 }
