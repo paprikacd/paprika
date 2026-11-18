@@ -16,18 +16,17 @@ func TestRecordSavedQueryDashboardMCPAndETags(t *testing.T) {
 	const sql = "SELECT service, uptime FROM summary WHERE service=$1"
 	malicious := `api'); DELETE FROM services; -- {{service}}`
 	calls := 0
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer caller", r.Header.Get("Authorization"))
 		switch r.URL.Path {
 		case "/list_observability_providers":
 			writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: source, Namespace: "team", Type: "postgresql"}}})
 		case "/query_records":
 			calls++
-			//nolint:tagliatelle // MCP wire contract uses snake_case.
 			var input struct {
 				Query string   `json:"query"`
 				Limit int      `json:"limit"`
-				Step  *float64 `json:"step_seconds"`
+				Step  *float64 `json:"stepSeconds"`
 			}
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&input))
 			require.Equal(t, 1000, input.Limit)
@@ -91,7 +90,7 @@ func TestRecordSummaryBoundsAndPartialHonesty(t *testing.T) {
 
 func TestDashboardRejectsSQLStructuralParametersBeforeProviderExecution(t *testing.T) {
 	const source = "team/warehouse"
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/list_observability_providers" {
 			t.Errorf("unsafe query reached provider execution: %s", r.URL.Path)
 			writeError(w, http.StatusBadRequest, "unexpected query")

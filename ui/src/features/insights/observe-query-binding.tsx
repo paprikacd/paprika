@@ -4,10 +4,10 @@ import styles from "./observe-connection.module.css"
 
 export function ObserveQueryBinding({ provider, kind }: { provider?: Provider; kind: DataKind }) {
   if (provider?.transport !== "mcp") return null
-  return <div className={styles.binding} aria-label="Observe MCP query binding">
+  return <div className={styles.binding} aria-label="Paprika Observe query binding">
     <Network size={14} aria-hidden="true" />
     <div>
-      <div className={styles.bindingTitle}><strong>Paprika Observe MCP</strong><code>{kind === "records" ? "query_records" : kind === "metrics" ? "query_metrics" : "query_traces"}</code></div>
+      <div className={styles.bindingTitle}><strong>Paprika Observe</strong><code>POST /observe/api/query</code></div>
       <p>{provider.type === "postgresql"
         ? "Write read-only SQL with separately bound parameters. Filter time in SQL; a metric projection selects numeric and timestamp columns."
         : provider.type === "shorted" || provider.type === "uptime"

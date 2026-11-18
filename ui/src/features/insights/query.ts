@@ -7,6 +7,7 @@ import {
   type QueryResult,
   type Widget,
 } from "./schema";
+import { jitter, REPLAY_DELAY_CAP_MS } from "./replay-timing";
 import {
   createQueryDiagnosticLedger,
   diagnosticFailure,
@@ -79,6 +80,12 @@ interface PendingQuery {
   request: QueryRequest;
   controller: AbortController;
   subscribers: Set<QuerySubscriber>;
+  /** Capacity refusals replayed so far, and the backoff they have cost. */
+  attempts: number;
+  capacityWaitMs: number;
+  /** Set while the entry backs off after a refusal. It stays pending, so identical widgets still share it. */
+  waiting: boolean;
+  retryTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface QuerySchedulerOptions {
@@ -87,6 +94,32 @@ export interface QuerySchedulerOptions {
   cacheSize?: number;
   /** Recent execution receipts retained in memory (1..200, default 100). */
   diagnosticsLimit?: number;
+  /** Capacity refusals replayed per query before the error settles (default 3). */
+  capacityReplays?: number;
+  /** Longest total backoff a query may spend on capacity refusals (default 30 s). */
+  maxCapacityWaitMs?: number;
+}
+
+/** The Retry-After of an admission 429 from the query route, or undefined for any other error. */
+function capacityRefusal(error: unknown): { retryAfter: string | null } | undefined {
+  if (!error || typeof error !== "object" || (error as { status?: unknown }).status !== 429) return undefined;
+  return { retryAfter: (error as { retryAfter?: string | null }).retryAfter ?? null };
+}
+
+/**
+ * The backoff for a refusal, before jitter: the server's Retry-After, or the
+ * exponential default. Undefined when it exceeds the replay cap, so the error
+ * settles rather than the query waiting longer than the browser will replay.
+ */
+function capacityBackoffMs(retryAfter: string | null, attempt: number): number | undefined {
+  let delay = 1000 * 2 ** attempt;
+  const header = retryAfter?.trim();
+  if (header) {
+    const requested = /^\d+$/.test(header) ? Number(header) * 1000 :
+      /^[A-Za-z]{3}, /.test(header) ? Date.parse(header) - Date.now() : NaN;
+    if (!Number.isNaN(requested)) delay = Math.max(100, requested);
+  }
+  return delay <= REPLAY_DELAY_CAP_MS ? delay : undefined;
 }
 
 /**
@@ -107,10 +140,15 @@ export function createQueryScheduler(
     0,
     Math.min(100, Math.floor(options.cacheSize ?? 100)),
   );
+  const capacityReplays = Math.max(0, Math.floor(options.capacityReplays ?? 3));
+  const maxCapacityWaitMs = Math.max(0, options.maxCapacityWaitMs ?? 30_000);
   const pending = new Map<string, PendingQuery>();
   const queue: PendingQuery[] = [];
   const cache = new Map<string, { data: QueryResult; expires: number; executionId: string }>();
   const diagnostics = createQueryDiagnosticLedger(options.diagnosticsLimit);
+  /** Per provider, the Date.now() time until which its queued entries wait after a refusal. */
+  const providerHolds = new Map<string, number>();
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
   let active = 0;
 
   const aborted = () =>
@@ -132,6 +170,7 @@ export function createQueryScheduler(
   }
 
   function settle(entry: PendingQuery, outcome: { data: QueryResult } | { error: unknown }) {
+    clearRetryTimer(entry);
     // Remove before resolving callers: a caller may immediately retry an error
     // before the running request's finally handler releases its slot.
     if (pending.get(entry.key) === entry) pending.delete(entry.key);
@@ -144,9 +183,62 @@ export function createQueryScheduler(
     entry.subscribers.clear();
   }
 
+  function clearRetryTimer(entry: PendingQuery) {
+    if (entry.retryTimer !== undefined) clearTimeout(entry.retryTimer);
+    entry.retryTimer = undefined;
+    entry.waiting = false;
+  }
+
+  /**
+   * A capacity refusal releases the entry's execution slot at once and re-queues
+   * it, at the front, after the jittered backoff. The timer then calls drain. Returns
+   * false when the refusal must settle instead (not a 429, out of replays or time,
+   * or no caller still waits).
+   */
+  function requeueCapacity(entry: PendingQuery, error: unknown): boolean {
+    const refusal = capacityRefusal(error);
+    if (!refusal || entry.finished || entry.controller.signal.aborted || !entry.subscribers.size) return false;
+    if (entry.attempts >= capacityReplays) return false;
+    const backoff = capacityBackoffMs(refusal.retryAfter, entry.attempts);
+    if (backoff === undefined) return false;
+    const delay = jitter(backoff);
+    if (entry.capacityWaitMs + delay > maxCapacityWaitMs) return false;
+    entry.attempts++;
+    entry.capacityWaitMs += delay;
+    entry.waiting = true;
+    // The provider refused, so its other queued entries wait out the same backoff. Other providers keep their slots.
+    const providerId = entry.request.providerId;
+    providerHolds.set(providerId, Math.max(providerHolds.get(providerId) ?? 0, Date.now() + delay));
+    diagnostics.update(entry.receiptId, { state: "queued", attempts: entry.attempts, capacityWaitMs: entry.capacityWaitMs });
+    entry.retryTimer = setTimeout(() => {
+      entry.retryTimer = undefined;
+      entry.waiting = false;
+      if (entry.finished || entry.controller.signal.aborted || !entry.subscribers.size) return;
+      queue.unshift(entry);
+      drain();
+    }, delay);
+    return true;
+  }
+
+  /**
+   * Starts queued entries while slots are free, skipping any whose provider is
+   * holding after a refusal. A timer re-drains when the earliest hold ends.
+   */
   function drain() {
-    while (active < concurrency && queue.length) {
-      const entry = queue.shift()!;
+    let nextRelease = Infinity;
+    while (active < concurrency) {
+      const now = Date.now();
+      let index = -1;
+      for (let i = 0; i < queue.length; i++) {
+        const until = providerHolds.get(queue[i].request.providerId) ?? 0;
+        if (until <= now) {
+          index = i;
+          break;
+        }
+        nextRelease = Math.min(nextRelease, until);
+      }
+      if (index < 0) break;
+      const [entry] = queue.splice(index, 1);
       if (!entry.subscribers.size || entry.controller.signal.aborted) continue;
       active++;
       void Promise.resolve()
@@ -175,13 +267,24 @@ export function createQueryScheduler(
             }
             settle(entry, { data });
           },
-          (error: unknown) => settle(entry, { error }),
+          (error: unknown) => {
+            if (!requeueCapacity(entry, error)) settle(entry, { error });
+          },
         )
         .finally(() => {
           active--;
-          if (pending.get(entry.key) === entry) pending.delete(entry.key);
+          // A backing-off entry stays pending, so identical widgets join it.
+          if (!entry.waiting && pending.get(entry.key) === entry) pending.delete(entry.key);
           drain();
         });
+    }
+    if (holdTimer !== undefined) clearTimeout(holdTimer);
+    holdTimer = undefined;
+    if (nextRelease !== Infinity && queue.length) {
+      holdTimer = setTimeout(() => {
+        holdTimer = undefined;
+        drain();
+      }, Math.max(0, nextRelease - Date.now()));
     }
   }
 
@@ -237,6 +340,9 @@ export function createQueryScheduler(
         request: { ...request },
         controller: new AbortController(),
         subscribers: new Set(),
+        attempts: 0,
+        capacityWaitMs: 0,
+        waiting: false,
       };
       pending.set(key, entry);
       queue.push(entry);
@@ -258,6 +364,7 @@ export function createQueryScheduler(
           diagnostics.update(ownedEntry.receiptId, receipt => ({ cancelledConsumers: receipt.cancelledConsumers + 1 }));
           reject(aborted());
           if (!ownedEntry.subscribers.size) {
+            clearRetryTimer(ownedEntry);
             finish(ownedEntry, diagnosticFailure(aborted()));
             ownedEntry.controller.abort();
             if (pending.get(key) === ownedEntry) pending.delete(key);

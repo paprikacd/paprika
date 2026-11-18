@@ -148,6 +148,7 @@ Provider creation is outside this skill.
 
 - **HTTP 429 on the transport**: this client is throttled. Stop parallel calls, honour
   `Retry-After`, and retry later.
-- **`resource_exhausted` in a tool error**: a capacity limit, such as a full queue. Wait the
-  `retryAfterSeconds` the result carries (its text reads "Retry after N seconds."), then retry
-  serially. A message that something exceeds its size limit will not succeed unchanged.
+- **`resource_exhausted` in a tool error**: a capacity limit, such as a full queue or a busy
+  provider. Every budget refusal carries `retryAfterSeconds` (1 to 10); wait that long (its text
+  reads "Retry after N seconds."), then retry serially. A message that something exceeds its size
+  limit will not succeed unchanged.

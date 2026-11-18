@@ -12,7 +12,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
-import { assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
+import { assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-application-records-"))
@@ -286,7 +286,7 @@ try {
     assert.equal(await bindings.innerText(), "[{{service}}]")
     assert.equal(await explorer().getByRole("textbox", { name: "SQL metric projection", exact: true }).count(), 0)
     assert.equal(await explorer().getByRole("textbox", { name: "PromQL query", exact: true }).count(), 0)
-    await explorer().getByText("query_records", { exact: true }).waitFor()
+    await explorer().getByText("POST /observe/api/query", { exact: true }).waitFor()
     const sqlBody = `SELECT service, uptime + 0.01 AS uptime, observed_at FROM ${schema}.signals WHERE service=$1`
     await sqlEditor.fill("SELECT {{service}}")
     assert.ok(await explorer().getByRole("button", { name: "Run query", exact: true }).isDisabled())
@@ -369,7 +369,8 @@ try {
     return { nativeSQL: true, typedBindings: true, unsafeTemplateBlocked: true, SQLRows: recordResult.records.rows.length, SQLValue: recordResult.records.rows[0][1], addedWidgetKind: added.dataKind, applicationWindowDays: 14, recordColumnMapping: true, themes: ["light", "dark"] }
   })
   const protocol = await readObserveProtocol(fixture.baseURL)
-  assertObserveMCP(protocol, ["query_records", "query_metrics", "create_saved_query", "patch_saved_query", "create_dashboard", "patch_dashboard", "query_dashboard"])
+  assertObserveREST(protocol, ["/observe/api/query"])
+  assertObserveMCP(protocol, ["create_saved_query", "patch_saved_query", "create_dashboard", "patch_dashboard", "query_dashboard"])
   assert.ok(protocol.queries.some(item => item.path === "/uptimeapi.v1.ServiceService/GetSLODashboard"))
   assert.ok(protocol.queries.some(item => item.path === "/shorts.v1alpha1.MarketService/GetTopShorts"))
   await writeFile(join(output, "report.json"), JSON.stringify({ passed: true, reports, liveUptime: !!live, browser: !process.env.INSIGHTS_SKIP_BROWSER, providerQueryMutations: 0 }, null, 2))

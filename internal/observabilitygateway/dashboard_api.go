@@ -8,10 +8,12 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
@@ -263,6 +265,30 @@ func writeDashboardJSON(w http.ResponseWriter, value any) error {
 	return nil
 }
 
+// defaultRetryAfterSeconds is the Retry-After for a refusal that carries no
+// RetryInfo, such as a full admission queue.
+const defaultRetryAfterSeconds = 1
+
+// connectRetryAfterSeconds returns the RetryInfo delay on err, rounded up to whole
+// seconds and kept within 1 to 60, or fallback when err carries no RetryInfo.
+func connectRetryAfterSeconds(err error, fallback int) int {
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		return fallback
+	}
+	for _, detail := range ce.Details() {
+		value, valueErr := detail.Value()
+		if valueErr != nil {
+			continue
+		}
+		if info, ok := value.(*errdetails.RetryInfo); ok && info.GetRetryDelay() != nil {
+			seconds := int(math.Ceil(info.GetRetryDelay().AsDuration().Seconds()))
+			return min(max(seconds, 1), 60)
+		}
+	}
+	return fallback
+}
+
 func writeDashboardError(w http.ResponseWriter, err error) {
 	status, code, description := http.StatusBadGateway, "server_error", "observability provider request failed"
 	switch connect.CodeOf(err) {
@@ -276,7 +302,7 @@ func writeDashboardError(w http.ResponseWriter, err error) {
 		status, code, description = http.StatusNotFound, "not_found", "observability provider was not found"
 	case connect.CodeResourceExhausted:
 		status, code, description = http.StatusTooManyRequests, "temporarily_unavailable", "observability gateway is at its request limit; retry later"
-		w.Header().Set("Retry-After", "1")
+		w.Header().Set("Retry-After", strconv.Itoa(connectRetryAfterSeconds(err, defaultRetryAfterSeconds)))
 	case connect.CodeDeadlineExceeded:
 		status, code, description = http.StatusGatewayTimeout, "temporarily_unavailable", "observability request exceeded its time budget"
 	case connect.CodeCanceled:

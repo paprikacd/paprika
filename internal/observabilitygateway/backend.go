@@ -158,7 +158,7 @@ func NewConnectorRegistry() *connector.Registry {
 // ListProviders implements Backend. Status fields the CR does not carry stay
 // empty strings — this layer never invents a state.
 func (b *k8sBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
-	ctx, done, err := b.executionBudget().begin(ctx, "catalog")
+	ctx, done, err := b.executionBudget().begin(ctx, catalogBudgetProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +208,7 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 	if err != nil {
 		return nil, err
 	}
+	markProviderResolved(ctx)
 	if req.PageToken != "" && !supportsQueryPageToken(cr.Spec.Type) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("this provider does not support query page tokens"))
 	}
@@ -258,6 +259,7 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 	if err != nil {
 		return nil, err
 	}
+	markProviderResolved(ctx)
 	explorer, ok := conn.(connector.Explorer)
 	if !ok {
 		return &connector.ExploreResult{

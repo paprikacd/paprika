@@ -63,16 +63,16 @@ uses that token only as the gateway bearer token, independently of its own
 service authentication. Missing delegation is denied, including in development
 mode. Provider discovery, queries, connection tests, metadata and saved-query
 validation all resolve the current caller's authorized catalog through
-request-local MCP sessions on the configured origin's `/observe/mcp`. One HTTP
-request shares a single session and a single catalog listing across all of its
-operations (a widget query needs one session, not two), and that session closes
-when the response is written. A failed operation discards the session. No
-catalog or session is retained across requests, so removing access takes effect
-on the next request. The adapter discovers read-only tools, calls
-provider/query/exploration tools and requires structured results; it never
-parses the truncated text preview or falls back to REST. Each shared gateway
-operation (session setup, discovery, each tool call) is
-capped at 20 seconds and at the time left on its request's own deadline, so a
+the gateway's REST routes on the configured origin (`observe_rest.go`):
+`GET /observe/api/providers` for the catalog, `POST /observe/api/query` for
+queries and `POST /observe/api/explore` for metadata, each with the caller's
+delegated bearer. One HTTP request shares a single catalog listing across all of
+its operations, so a widget query costs two gateway requests (one listing and one
+data call). No catalog is retained across requests, so removing access takes
+effect on the next request. Redirects are refused, and bodies are bounded before
+decoding. MCP remains only for the Data sources status (`/api/observe-connection`),
+which discovers read-only tools and the protocol version. Each shared gateway
+request is capped at 20 seconds and at the time left on its request's own deadline, so a
 dashboard keeps its 22-second budget. `/providers` has a 20-second budget end to
 end, inside the API proxy's 25-second response-header timeout.
 
@@ -86,8 +86,8 @@ A `/query` has one 22-second budget that every phase draws on, in order:
 
 Each phase is capped by what remains of the budget. A phase that runs out returns
 504 `query exceeded its time budget`. A full waiter queue, or a catalog wait that
-times out, returns 429 with `Retry-After: 1` before any listing. Local queries
-never wait for a catalog phase.
+times out, returns 429 before any listing, with a `Retry-After` that is the pool's
+observed hold time, 1 to 10 seconds. Local queries never wait for a catalog phase.
 
 A busy shared catalog is answered 200 with `sharedCatalog.status: "busy"` and
 `retryAfter` in seconds (the gateway's Retry-After, or 1). That is the only
@@ -99,8 +99,8 @@ costs one client replay cycle and ends in the worker's normal failure, not a
 stacked replay. A listing still busy after the client's replays shows the banner
 with a manual retry.
 
-A `/query` 429 from the gateway forwards its Retry-After, bounded to 60 seconds
-and defaulting to 1 second. A deadline reads as "query exceeded its time budget"
+A `/query` 429 from the gateway forwards its Retry-After when it is 1 to 10 seconds,
+the replay cap, and otherwise defaults to Insights' own estimate, which is at least 1 second. A deadline reads as "query exceeded its time budget"
 on the query path and as "request exceeded its time budget" elsewhere.
 
 Measured at the default timeouts against a gateway that never answers or stalls:
@@ -838,11 +838,36 @@ report and screenshots in `artifacts/insights/`.
 ## Capacity
 
 Insights admits up to 16 query executions at once and holds up to 64 more for
-at most 2 seconds (set in `NewServer`, `internal/insights/server.go`). A query to an
-Observe-backed provider then passes the gateway's HTTP pools and its execution
-budget, so the gateway's own limits, not Insights' 16, usually bind first. At
-defaults a single provider runs 2 queries at once. The full chain, with each
+at most 2 seconds, and admits 4 shared-catalog phases with 16 waiting for up to 5
+seconds. These are the defaults in `internal/insights/capacity.go`. Each one is
+configurable: `--query-concurrency`, `--query-queue`, `--query-queue-wait`,
+`--catalog-concurrency`, `--catalog-queue` and `--catalog-queue-wait` on
+`paprika-insights`, or the chart's `insights.capacity.*` values. A value left
+unset takes the default, and the chart emits a flag only when its value is set.
+Setting queue counts to zero is not possible: zero means the default.
+
+A query to an Observe-backed provider then passes the gateway's HTTP pools and its
+execution budget, so the gateway's own limits, not Insights' 16, usually bind
+first. At defaults a single provider runs 2 queries at once. With the chart,
+`insights.capacity.catalogConcurrency` above the gateway's per-provider concurrency
+plus provider queue, or the effective `queryConcurrency` plus `catalogConcurrency`
+above the gateway's concurrency plus queue, fails the render, because the gateway
+would refuse that load. The two queue waits must also sum to less than the 22 second
+query budget, or the binary refuses to start. The full chain, with each
 hop's default, configuration and what a caller sees when it is full, is in
 [docs/guides/observability-gateway.md](../../docs/guides/observability-gateway.md#end-to-end-capacity).
-Insights' own admission is not yet configurable; the gateway's limits are
-(`--observability-query-*` and `--observability-http-*` flags).
+
+**Cost per widget.** Each widget query makes two gateway requests: one catalog
+listing (`GET /observe/api/providers`) and one data call (`POST /observe/api/query`).
+Over MCP it made four. A board of 12 widgets refreshed every 15 seconds therefore
+sends 96 gateway requests a minute per viewer (12 widgets × 2 × 4 refreshes). Halving
+the refresh interval doubles that. Widgets that share a provider and query share one
+in-flight request, but each refresh still lists the catalog once per request. For
+boards with many widgets, prefer a refresh of 30 seconds or longer; the gateway's
+per-provider limit of 2 running queries is the constraint these numbers protect.
+
+**What bursts measured.** On the local fixture, whose upstream answers in about
+0 to 10 ms, a burst of 36 concurrent queries was admitted in full. With a 1 second
+upstream the gateway's per-provider bulkhead refuses the excess first: 26 of 36
+first attempts got a 429 with Retry-After, with or without the per-widget change.
+Repeat the burst against your real provider before raising any capacity value.

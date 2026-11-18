@@ -271,9 +271,14 @@ try {
     assert.deepEqual(writes, [], "The validator must not save or mutate any document")
     usageAfter = await usage()
     const delta = name => (usageAfter.tools.find(item => item.name === name)?.calls ?? 0) - (usageBefore.tools.find(item => item.name === name)?.calls ?? 0)
-    for (const name of ["query_metrics", "query_traces"]) assert.ok(delta(name) > 0, `Expected actual ${name} MCP usage`)
-    for (const name of ["dashboard_query", "dashboard_explore", "dashboard_list_providers"]) assert.equal(delta(name), 0, "Legacy REST data paths must not execute")
-    return { unchangedDocuments: queries.size + 1, defaultService: variable.defaultValue, toolDeltas: { query_metrics: delta("query_metrics"), query_traces: delta("query_traces") }, legacyDataCalls: 0 }
+    // Insights reads provider data over the gateway's REST routes, so the dashboard counter rises
+    // and the MCP data-tool counters stay flat for the validator's own queries.
+    assert.ok(delta("dashboard_query") > 0, "Expected REST dashboard_query usage")
+    // The gateway's usage counters count every caller. On the isolated fixture the MCP data-tool counters
+    // must stay flat; on the shared live gateway other agents may query through MCP during this window.
+    const legacyChecked = config.environment === "fixture"
+    if (legacyChecked) for (const name of ["query_metrics", "query_traces"]) assert.equal(delta(name), 0, "Insights must not read provider data through MCP")
+    return { unchangedDocuments: queries.size + 1, defaultService: variable.defaultValue, toolDeltas: { dashboard_query: delta("dashboard_query"), query_metrics: delta("query_metrics"), query_traces: delta("query_traces") }, ...(legacyChecked ? { legacyDataCalls: 0 } : {}) }
   })
   assert.deepEqual(pageErrors, [])
   console.log(`PASS ${reports.length} read-only service overview scenarios`)

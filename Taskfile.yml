@@ -827,6 +827,29 @@ tasks:
         check_render insights-existing --set insights.enabled=true \
           --set insights.token.existingSecretName=insights-test \
           --set insights.persistence.existingClaim=restored-insights
+        # Unset Insights capacity emits no flags, so an older image still starts on its built-ins.
+        # Insights renders only in split mode; a monolith render proves nothing here.
+        check_render insights-capacity-unset --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test
+        if helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test 2>&1 | grep -qE -- '--(query|catalog)-[a-z-]+='; then
+          echo "FAIL[insights-capacity-unset]: capacity flags rendered without values"; rc=1
+        fi
+        check_render insights-capacity-set --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set insights.capacity.queryConcurrency=8 --set insights.capacity.catalogQueueWait=3s
+        if ! helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test --set insights.capacity.queryConcurrency=8 \
+          --set insights.capacity.catalogQueueWait=3s 2>&1 | grep -q -- '- --query-concurrency=8$'; then
+          echo "FAIL[insights-capacity-set]: --query-concurrency was not emitted"; rc=1
+        fi
+        check_render insights-capacity-within-gateway --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set insights.capacity.queryConcurrency=26 --set insights.capacity.catalogConcurrency=10
         check_render gateway-capacity --set deploymentMode=split \
           --set observabilityGateway.enabled=true --set auth.enabled=true \
           --set mcp.publicURL=https://capacity.example.com \
@@ -1071,6 +1094,40 @@ tasks:
           --set observabilityGateway.capacity.httpAdmissionWait=0
         expect_fail capacity-zero-concurrency \
           --set observabilityGateway.capacity.queryConcurrency=0
+        expect_fail insights-query-over-gateway --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set insights.capacity.queryConcurrency=37
+        expect_fail insights-catalog-over-gateway --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set insights.capacity.catalogConcurrency=11
+        expect_fail insights-capacity-wait-sum-over-budget --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set insights.capacity.queryQueueWait=20s --set insights.capacity.catalogQueueWait=5s
+        expect_fail insights-capacity-fractional-wait --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test --set insights.capacity.queryQueueWait=1.5s
+        # A zero wait would emit a flag the binary reads as its default, so the schema refuses it.
+        expect_fail insights-capacity-zero-wait-s --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test --set insights.capacity.queryQueueWait=0s
+        expect_fail insights-capacity-zero-wait-ms --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test --set insights.capacity.catalogQueueWait=0ms
+        expect_fail insights-capacity-query-plus-catalog-over-gateway --set deploymentMode=split \
+          --set insights.enabled=true --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://capacity.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set insights.capacity.queryConcurrency=36 --set insights.capacity.catalogConcurrency=10
+        check_render insights-capacity-wait-sum-under-budget --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set insights.capacity.queryQueueWait=1500ms --set insights.capacity.catalogQueueWait=5s
         expect_fail capacity-bare-duration \
           --set observabilityGateway.capacity.queryQueueWait=5
         expect_fail capacity-bare-admission-wait \

@@ -6,6 +6,49 @@
 {{- end }}
 {{- $repository := .Values.insights.image.repository | default $fallbackImage.repository }}
 {{- $tag := .Values.insights.image.tag | default $fallbackImage.tag | default .Chart.AppVersion }}
+{{- $capacity := .Values.insights.capacity }}
+{{- /*
+  The gateway's effective values, from observabilityGateway.capacity and its
+  built-ins. A null value takes the built-in; provider concurrency 0 means
+  min(2, query concurrency), as the gateway reads it.
+*/}}
+{{- if .Values.observabilityGateway.enabled }}
+{{- $gateway := .Values.observabilityGateway.capacity }}
+{{- $gatewayQueryConcurrency := 4 }}
+{{- if not (kindIs "invalid" $gateway.queryConcurrency) }}{{ $gatewayQueryConcurrency = int $gateway.queryConcurrency }}{{ end }}
+{{- $gatewayQueryQueue := 32 }}
+{{- if not (kindIs "invalid" $gateway.queryQueue) }}{{ $gatewayQueryQueue = int $gateway.queryQueue }}{{ end }}
+{{- $gatewayProviderConcurrency := min 2 $gatewayQueryConcurrency }}
+{{- if and (not (kindIs "invalid" $gateway.queryProviderConcurrency)) (gt (int $gateway.queryProviderConcurrency) 0) }}{{ $gatewayProviderConcurrency = int $gateway.queryProviderConcurrency }}{{ end }}
+{{- $gatewayProviderQueue := 8 }}
+{{- if not (kindIs "invalid" $gateway.queryProviderQueue) }}{{ $gatewayProviderQueue = int $gateway.queryProviderQueue }}{{ end }}
+{{- /* Insights' queries and catalog listings both take the gateway's global budget. */}}
+{{- if or (not (kindIs "invalid" $capacity.queryConcurrency)) (not (kindIs "invalid" $capacity.catalogConcurrency)) }}
+{{- $insightsQueryConcurrency := 16 }}
+{{- if not (kindIs "invalid" $capacity.queryConcurrency) }}{{ $insightsQueryConcurrency = int $capacity.queryConcurrency }}{{ end }}
+{{- $insightsCatalogConcurrency := 4 }}
+{{- if not (kindIs "invalid" $capacity.catalogConcurrency) }}{{ $insightsCatalogConcurrency = int $capacity.catalogConcurrency }}{{ end }}
+{{- if gt (add $insightsQueryConcurrency $insightsCatalogConcurrency) (add $gatewayQueryConcurrency $gatewayQueryQueue) }}
+{{- fail (printf "insights.capacity queryConcurrency %d plus catalogConcurrency %d (effective values) exceeds the gateway's queryConcurrency plus queryQueue (%d): the gateway would refuse the extra load" $insightsQueryConcurrency $insightsCatalogConcurrency (add $gatewayQueryConcurrency $gatewayQueryQueue)) }}
+{{- end }}
+{{- end }}
+{{- if not (kindIs "invalid" $capacity.catalogConcurrency) }}
+{{- if gt (int $capacity.catalogConcurrency) (add $gatewayProviderConcurrency $gatewayProviderQueue) }}
+{{- fail (printf "insights.capacity.catalogConcurrency=%d exceeds the gateway's queryProviderConcurrency plus queryProviderQueue (%d): the gateway would refuse the extra catalog reads" (int $capacity.catalogConcurrency) (add $gatewayProviderConcurrency $gatewayProviderQueue)) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* The two waits must sum to less than the Insights query budget (22s), or the
+      binary refuses to start. Waits are whole seconds or milliseconds. */}}
+{{- if or (not (kindIs "invalid" $capacity.queryQueueWait)) (not (kindIs "invalid" $capacity.catalogQueueWait)) }}
+{{- $queryWaitMs := 2000 }}
+{{- if not (kindIs "invalid" $capacity.queryQueueWait) }}{{ $queryWaitMs = include "paprika.insightsWaitMillis" (dict "value" $capacity.queryQueueWait "field" "queryQueueWait") | int }}{{ end }}
+{{- $catalogWaitMs := 5000 }}
+{{- if not (kindIs "invalid" $capacity.catalogQueueWait) }}{{ $catalogWaitMs = include "paprika.insightsWaitMillis" (dict "value" $capacity.catalogQueueWait "field" "catalogQueueWait") | int }}{{ end }}
+{{- if ge (add $queryWaitMs $catalogWaitMs) 22000 }}
+{{- fail (printf "insights.capacity queryQueueWait plus catalogQueueWait (effective %dms + %dms) must be under the 22s query budget" $queryWaitMs $catalogWaitMs) }}
+{{- end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -76,6 +119,25 @@ spec:
             - --listen=:8090
             - --data-dir=/var/lib/paprika-insights
             - --providers=/etc/paprika-insights/providers.json
+            {{- /* Each capacity flag is emitted only when set, so an older image still starts on its built-in. */}}
+            {{- if not (kindIs "invalid" $capacity.queryConcurrency) }}
+            - --query-concurrency={{ $capacity.queryConcurrency }}
+            {{- end }}
+            {{- if not (kindIs "invalid" $capacity.queryQueue) }}
+            - --query-queue={{ $capacity.queryQueue }}
+            {{- end }}
+            {{- if not (kindIs "invalid" $capacity.queryQueueWait) }}
+            - --query-queue-wait={{ $capacity.queryQueueWait }}
+            {{- end }}
+            {{- if not (kindIs "invalid" $capacity.catalogConcurrency) }}
+            - --catalog-concurrency={{ $capacity.catalogConcurrency }}
+            {{- end }}
+            {{- if not (kindIs "invalid" $capacity.catalogQueue) }}
+            - --catalog-queue={{ $capacity.catalogQueue }}
+            {{- end }}
+            {{- if not (kindIs "invalid" $capacity.catalogQueueWait) }}
+            - --catalog-queue-wait={{ $capacity.catalogQueueWait }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8090

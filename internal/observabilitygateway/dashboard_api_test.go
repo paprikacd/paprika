@@ -15,6 +15,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	observabilityv1alpha1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
@@ -240,4 +242,34 @@ func TestDashboardQueryPropagatesCancellation(t *testing.T) {
 	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/observe/api/query", strings.NewReader(dashboardTestQuery))
 	DashboardQueryHandler(&cancelDashboardBackend{}, nil).ServeHTTP(rec, request)
 	require.Equal(t, http.StatusRequestTimeout, rec.Code)
+}
+
+// A 429 from the dashboard routes takes its Retry-After from the error's RetryInfo.
+// Without RetryInfo, the one-second default stands.
+func TestWriteDashboardErrorRetryAfterFromRetryInfo(t *testing.T) {
+	withDelay := func(delay time.Duration) error {
+		err := connect.NewError(connect.CodeResourceExhausted, errors.New("busy"))
+		detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(delay)})
+		require.NoError(t, detailErr)
+		err.AddDetail(detail)
+		return err
+	}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"no RetryInfo keeps the default", connect.NewError(connect.CodeResourceExhausted, errors.New("queue full")), "1"},
+		{"a sub-second delay rounds up to one second", withDelay(300 * time.Millisecond), "1"},
+		{"a computed delay is kept", withDelay(4 * time.Second), "4"},
+		{"a fractional delay rounds up", withDelay(2500 * time.Millisecond), "3"},
+		{"a long delay is capped at a minute", withDelay(10 * time.Minute), "60"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			writeDashboardError(recorder, tc.err)
+			require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+			require.Equal(t, tc.want, recorder.Header().Get("Retry-After"))
+		})
+	}
 }

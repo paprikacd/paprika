@@ -46,7 +46,7 @@ func TestDashboardBundlesAnnotationQueryAndProtectsItsRevision(t *testing.T) {
 	const metrics = "team/metrics"
 	const records = "team/warehouse"
 	var eventCalls int
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/list_observability_providers":
 			providers := []observeCatalogProvider{{Name: metrics, Namespace: "team", Type: "prometheus"}}

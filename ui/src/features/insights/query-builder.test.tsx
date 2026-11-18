@@ -89,7 +89,7 @@ describe("query editor", () => {
     const provider = { id: "app", name: "Uptime", type: "uptime" as const, capabilities: ["records" as const, "metrics" as const], transport: "mcp" as const }
     render(<QueryBuilder widget={{ ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "app", query: '{"operation":"overview"}' }} client={{ query, metadata } as unknown as InsightsClient} provider={provider} onChange={vi.fn()} compact defaultExpanded />)
     expect(screen.getByRole("textbox", { name: "JSON query" })).toBeInTheDocument()
-    expect(screen.getByText("query_records")).toBeInTheDocument()
+    expect(screen.getByText("POST /observe/api/query")).toBeInTheDocument()
     expect(screen.queryByRole("tab", { name: "Builder" })).not.toBeInTheDocument()
     expect(screen.queryByText("Guided query builder")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Run query" }))
@@ -116,16 +116,15 @@ describe("query editor", () => {
   it("identifies the MCP tool and automatic bindings without replacing the language editor", () => {
     const provider = { id: "prod", name: "Shared metrics", type: "prometheus" as const, capabilities: ["metrics" as const], transport: "mcp" as const }
     const { rerender } = render(<QueryBuilder widget={widget} provider={provider} onChange={vi.fn()} compact />)
-    expect(screen.getByText("query_metrics")).toBeInTheDocument()
+    expect(screen.getByText("POST /observe/api/query")).toBeInTheDocument()
     expect(screen.getByText(/provider, time range and query step are bound automatically/)).toBeInTheDocument()
     expect(screen.getByLabelText("PromQL query")).toBeInTheDocument()
     rerender(<QueryBuilder widget={{ ...widget, type: "traces" }} provider={{ ...provider, type: "tempo", capabilities: ["traces"] }} onChange={vi.fn()} compact />)
-    expect(screen.getByText("query_traces")).toBeInTheDocument()
+    expect(screen.getByText("POST /observe/api/query")).toBeInTheDocument()
     expect(screen.getByText(/provider and time range are bound automatically/)).toBeInTheDocument()
     expect(screen.getByLabelText("TraceQL query")).toBeInTheDocument()
-    expect(screen.queryByText("query_metrics")).not.toBeInTheDocument()
     rerender(<QueryBuilder widget={widget} provider={{ ...provider, transport: undefined }} onChange={vi.fn()} />)
-    expect(screen.queryByLabelText("Observe MCP query binding")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Paprika Observe query binding")).not.toBeInTheDocument()
   })
 
   it("gates touched invalid live guidance and releases it on code edits or closing", async () => {

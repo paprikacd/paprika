@@ -10,7 +10,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
-import { assertMetricCall, assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
+import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-observe-e2e-"))
@@ -85,12 +85,12 @@ async function showServiceTooltip(service, width, theme) {
   await value.waitFor({ state: "visible" })
   assert.equal((await value.innerText()).replace(/\s+/g, ""), `${expected.toFixed(2)}req/s`)
   assert.equal(await tooltip.locator("[data-stat-sparkline]").getAttribute("data-sample-count"), "4")
-  const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_metrics"])
+  const calls = assertObserveREST(await readObserveProtocol(fixture.baseURL), ["/observe/api/query"])
   const query = `${template.replace("{{service}}", JSON.stringify(service))} * 2`
   const args = assertMetricCall(calls, { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 12 })
   await page.screenshot({ path: join(output, `tooltip-${theme.toLowerCase()}-${width}.png`), fullPage: false })
   await page.keyboard.press("Escape"); await tooltip.waitFor({ state: "hidden" })
-  return { value: expected, samples: 4, hoveredService: service, mcpArguments: args }
+  return { value: expected, samples: 4, hoveredService: service, restBody: args }
 }
 async function open(width) {
   await context?.close()
@@ -206,8 +206,8 @@ try {
     await page.screenshot({ path: join(output, "shared-data-sources.png"), fullPage: false })
     await card.getByRole("button", { name: `Explore ${metricProvider.name}`, exact: true }).click()
     await explorer().getByRole("heading", { name: "Explore", exact: true }).waitFor()
-    await explorer().getByText("Paprika Observe MCP", { exact: true }).waitFor()
-    await explorer().getByText("query_metrics", { exact: true }).waitFor()
+    await explorer().getByText("Paprika Observe", { exact: true }).waitFor()
+    await explorer().getByText("POST /observe/api/query", { exact: true }).waitFor()
     return { credentialsCopied: false, editControls: false, connected: true, discoveredTools: true, exploredProvider: metricProvider.providerRef }
   })
   await check("PromQL completion and saved-query execution use shared provider metadata", async () => {
@@ -230,11 +230,12 @@ try {
     assert.ok(metadata.series.count >= 2)
     assert.ok(metadata.series.labels.some(label => label.name === "service" && label.cardinality >= 2))
     await page.screenshot({ path: join(output, "shared-promql-editor.png"), fullPage: false })
-    const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["list_metric_names", "list_label_names", "list_label_values", "list_metric_series"])
-    const seriesCall = calls.findLast(item => item.tool === "list_metric_series" && item.arguments?.provider === fixture.providerRef && item.arguments.metric === "http_requests_total")
-    assert.ok(seriesCall && Date.parse(seriesCall.arguments.start) < Date.parse(seriesCall.arguments.end))
-    assert.equal(seriesCall.arguments.limit, 1000)
-    return { resolved: exact, series: metadata.series.count, mcpSeriesArguments: seriesCall.arguments }
+    const calls = assertObserveREST(await readObserveProtocol(fixture.baseURL), ["/observe/api/explore"])
+    for (const kind of ["metric_names", "label_names", "label_values", "metric_series"]) assert.ok(calls.some(item => item.body?.kind === kind), `Expected a REST explore of ${kind}`)
+    const seriesCall = calls.findLast(item => item.path === "/observe/api/explore" && item.body?.kind === "metric_series" && item.body.provider === fixture.providerRef && item.body.metric === "http_requests_total")
+    assert.ok(seriesCall && Date.parse(seriesCall.body.start) < Date.parse(seriesCall.body.end))
+    assert.equal(seriesCall.body.limit, 1000)
+    return { resolved: exact, series: metadata.series.count, restBody: seriesCall.body }
   })
   await check("Metric inspection shows shared series cardinality and creates a label filter", async () => {
     await explorer().getByRole("tab", { name: "Builder", exact: true }).click()
@@ -266,10 +267,10 @@ try {
     await results().getByText("GET /api/orders", { exact: true }).waitFor()
     assert.ok(responses.some(item => item.status === 200 && item.request.providerId === traceProvider.id && item.request.query === query && item.body.traces?.some(trace => trace.service === "api-gateway")))
     await page.screenshot({ path: join(output, "shared-traceql-editor.png"), fullPage: false })
-    const calls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_traces"])
-    const queryCall = calls.findLast(item => item.tool === "query_traces" && item.arguments?.provider === fixture.traceProviderRef && item.arguments.query === query)
-    assert.ok(queryCall && Date.parse(queryCall.arguments.start) < Date.parse(queryCall.arguments.end))
-    return { provider: traceProvider.providerRef, query, mcpArguments: queryCall.arguments }
+    const calls = assertObserveREST(await readObserveProtocol(fixture.baseURL), ["/observe/api/query"])
+    const queryCall = calls.findLast(item => item.path === "/observe/api/query" && item.body?.signal === "traces" && item.body.provider === fixture.traceProviderRef && item.body.query === query)
+    assert.ok(queryCall && Date.parse(queryCall.body.start) < Date.parse(queryCall.body.end))
+    return { provider: traceProvider.providerRef, query, restBody: queryCall.body }
   })
   await check("MCP and dashboard queries return the same samples for the same provider, range and step", async () => {
     await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "paprika-insights-e2e", version: "1" } })
@@ -280,7 +281,7 @@ try {
     const query = template.replace("{{service}}", JSON.stringify(services[1]))
     const start = Date.parse(fixedRange.from) / 1000, end = Date.parse(fixedRange.to) / 1000
     const dashboardResult = (await api("query", { method: "POST", document: { providerId: metricProvider.id, kind: "metrics", query, start, end, step: 60 } })).document
-    const uiCalls = assertObserveMCP(await readObserveProtocol(fixture.baseURL), ["query_metrics"])
+    const uiCalls = assertObserveREST(await readObserveProtocol(fixture.baseURL), ["/observe/api/query"])
     assertMetricCall(uiCalls, { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 60 })
     const call = await rpc("tools/call", { name: "query_metrics", arguments: { provider: fixture.providerRef, query, start: fixedRange.from, end: fixedRange.to, step_seconds: 60 } })
     assert.notEqual(call.isError, true)
@@ -292,7 +293,9 @@ try {
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
   protocol = await readObserveProtocol(fixture.baseURL)
-  assertObserveMCP(protocol, ["list_observability_providers", "query_metrics", "query_traces", "list_metric_names", "list_label_names", "list_label_values", "list_metric_series"])
+  // The suite's own agent calls stay on MCP; every Insights data read is REST.
+  assertObserveMCP(protocol, ["list_observability_providers", "query_metrics"])
+  assertObserveREST(protocol, ["/observe/api/providers", "/observe/api/query", "/observe/api/explore"])
   console.log(`PASS ${reports.length} observability integration scenarios`)
 } catch (error) { console.error(error); if (outputLog) console.error(outputLog); process.exitCode = 1 }
 finally {

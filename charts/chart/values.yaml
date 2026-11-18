@@ -1153,6 +1153,24 @@ insights:
   #   url: http://tempo.monitoring.svc.cluster.local:3200
   #   headersEnv:
   #     X-Scope-OrgID: TEMPO_TENANT
+  # Admission capacity for Insights' own pools (1 to 1024 per count). Each null
+  # omits its flag, so the Insights built-in applies and an older image still
+  # starts. With observabilityGateway.enabled, the render fails when the
+  # effective queryConcurrency plus catalogConcurrency exceeds the gateway's
+  # queryConcurrency plus queryQueue (both are global budget slots), or an
+  # explicit catalogConcurrency exceeds the gateway's queryProviderConcurrency
+  # plus queryProviderQueue. Built-in: queryConcurrency 16, queryQueue 64,
+  # queryQueueWait 2s, catalogConcurrency 4, catalogQueue 16, catalogQueueWait 5s.
+  # Waits are whole seconds (2s) or milliseconds (500ms). queryQueueWait plus
+  # catalogQueueWait must stay under the 22s Insights query budget, or the
+  # render fails and the binary would refuse to start.
+  capacity:
+    queryConcurrency: null
+    queryQueue: null
+    queryQueueWait: null
+    catalogConcurrency: null
+    catalogQueue: null
+    catalogQueueWait: null
   extraEnv: []
   extraEnvFrom: []
   persistence:

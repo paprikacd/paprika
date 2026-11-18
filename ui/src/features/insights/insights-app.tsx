@@ -755,7 +755,8 @@ export default function InsightsApp({
   const scheduledFetcher = useMemo(() => {
     // A refresh or provider edit invalidates cached fixed-range observations too.
     void queryRevision
-    const query = activeExample ? activeExample.repositoryWorkspaceQuery : client.query
+    // The scheduler owns the capacity backoff, so its slot is free while a refused query waits.
+    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false })
     return createQueryScheduler(query)
   }, [client, activeExample, queryRevision])
   // Resolve each authoring scope once, before sharing the bounded scheduler.

@@ -57,7 +57,7 @@ it("opens the selected MCP provider from Data sources and preserves an existing 
   fireEvent.click(screen.getByRole("button", { name: "Explore Traces" }))
   await explorerReady()
   expect(await screen.findByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Traces")
-  expect(screen.getByText("query_traces")).toBeVisible()
+  expect(screen.getByText("POST /observe/api/query")).toBeVisible()
   fireEvent.change(screen.getByLabelText("Query name"), { target: { value: "My trace draft" } })
   fireEvent.click(screen.getByRole("button", { name: "Data sources 2" }))
   fireEvent.click(screen.getByRole("button", { name: "Explore Metrics" }))
@@ -73,7 +73,7 @@ it("opens the selected MCP provider from Data sources and preserves an existing 
   await explorerReady()
   await waitFor(() => expect(screen.getByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Metrics"))
   expect(screen.getByLabelText("Query name")).toHaveValue("")
-  expect(screen.getByText("query_metrics")).toBeVisible()
+  expect(screen.getByText("POST /observe/api/query")).toBeVisible()
   expect(api.query).not.toHaveBeenCalled()
 }, 10000) // Three workspace transitions plus both confirmation paths exceed five seconds on CI.
 
@@ -157,7 +157,7 @@ it("reexecutes a visible saved-query reference when its remote definition change
   store.queries = [{ ...signal, query: "up * 2", etag: '\"q2\"' }]
   fireEvent.focus(window)
   await waitFor(() => expect(screen.getByLabelText("Resolved widget value")).toHaveTextContent("2"))
-  expect(api.query).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up * 2", providerId: "metrics" }), expect.any(AbortSignal))
+  expect(api.query).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up * 2", providerId: "metrics" }), expect.any(AbortSignal), { replayCapacity: false })
   expect(api.save).not.toHaveBeenCalled()
 })
 

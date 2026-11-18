@@ -35,13 +35,51 @@ Typed parameters and dashboard/hover bindings resolve once into native query
 syntax. Queries preserve their absolute time range and metrics step. Metadata
 tools accept explicit ranges, including series enumeration for bounded
 cardinality inspection. Provider and protocol failures remain visible as
-sanitized errors; there is no REST data fallback.
+sanitized errors. The data path is REST as of 2026-11-18; see the decision
+record below.
 
 Data sources displays the actual connection status, supported tools and
 providers, using the current user's access. Provider cards open Explore; the
-native editor explains the MCP tool and automatic bindings. This works without
+native editor explains the REST call and its automatic bindings. This works without
 provider-configuration administrator permissions. Connection metadata stays in
 the editor and Data sources rather than on ordinary widget canvases.
+
+## Decision record: REST data path (2026-11-18)
+
+This supersedes the "no REST data fallback" rule above for Insights' data
+calls. Insights now reads the gateway's dashboard REST routes with the caller's
+delegated bearer:
+
+- `GET /observe/api/providers` lists the caller's shared catalog.
+- `POST /observe/api/query` runs a widget or saved query.
+- `POST /observe/api/explore` serves metadata (metric and label names, label
+  values, series).
+
+MCP stays for the Data sources status (`GET /api/observe-connection`: tools,
+protocol version and provider count) and for agent-facing tools. No Insights
+data call reaches `/observe/mcp`.
+
+Reasons. Over MCP, one widget query made four gateway POSTs: discovery,
+`tools/list`, `list_observability_providers` and `query_metrics`. REST makes two:
+one listing and one data call. The catalog phase dominated the query receipt on
+the local fixture. The REST payloads, states and error codes match the MCP data
+tools, and an unauthorised namespace still gets 403.
+
+Conditions:
+
+- The three routes share the per-subject rate bucket with `/mcp` and are
+  gzipped at level 3. A caller's tabs and agents now draw on one budget.
+- Gateway statuses map as MCP domain codes did. 408 is "observability request
+  was canceled" and 503 is "observability provider is not fully configured".
+  The mapping table test fixes this.
+- Insights' receipts keep the same phases. `dispatched` is set when the
+  connection is ready, so a request that never connects is not dispatched.
+- Version skew is safe: Insights and the gateway ship in one image, and these
+  routes predate this change, so a rollback to MCP-only Insights still works.
+
+Live usage counters move from `query_*` to `dashboard_query`,
+`dashboard_list_providers` and `dashboard_explore`. Any dashboard or check that
+reads the old counters must read the new ones.
 
 ## Concurrency
 
