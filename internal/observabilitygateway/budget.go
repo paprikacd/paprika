@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/benebsworth/paprika/internal/capacityhint"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
@@ -26,11 +28,15 @@ const (
 	maxQueryWindow     = 31 * 24 * time.Hour
 	maxQueryResults    = 1000
 	maxQueryBytes      = 32 << 10
-	// queueRetryDelay is the RetryInfo a queue-wait expiry carries. Insights reads
-	// only the error code and answers 429 with its own one-second Retry-After
-	// default, so keep the two in step; the browser replays the 429.
-	queueRetryDelay = time.Second
+	// maxHoldEstimators bounds the per-provider hold estimators. A provider past
+	// the bound is hinted from the budget-wide estimator, never dropped silently.
+	maxHoldEstimators = 256
 )
+
+// catalogBudgetProvider is the budget class of a provider listing (ListProviders).
+// A listing is a fast catalog read, not a provider query, so its hold times stay
+// out of the estimators that size query refusals.
+const catalogBudgetProvider = "catalog"
 
 // RequestTimeout is the execution budget a query gets once it is admitted: the
 // timer in executionBudget.begin starts after the queue wait. A query's worst
@@ -84,8 +90,20 @@ type executionBudget struct {
 	perProvider        int
 	perProviderWaiting int
 
+	// hold estimates how long a query holds a global execution slot. It sizes
+	// the RetryInfo on refusals, so a busy gateway names a computed retry. Catalog
+	// listings are not observed here (see catalogBudgetProvider).
+	hold capacityhint.Estimator
+
+	// clock reads the time a slot is held for. It is time.Now except in tests.
+	clock func() time.Time
+
 	mu        sync.Mutex
 	providers map[string]*providerWorkSlots
+	// holds estimates how long a query holds a slot of each provider. It outlives
+	// the provider's refs, so a provider that goes idle keeps its own estimate
+	// and does not fall back to the budget-wide average.
+	holds map[string]*capacityhint.Estimator
 }
 
 func newExecutionBudget(concurrency int, timeout time.Duration) *executionBudget {
@@ -119,7 +137,9 @@ func newExecutionBudgetFromConfig(cfg BudgetConfig, timeout time.Duration) *exec
 		queueTimeout:       cfg.QueueWait,
 		perProvider:        providerConcurrency,
 		perProviderWaiting: max(0, cfg.ProviderQueue),
+		clock:              time.Now,
 		providers:          make(map[string]*providerWorkSlots),
+		holds:              make(map[string]*capacityhint.Estimator),
 	}
 }
 
@@ -147,7 +167,85 @@ func (b *executionBudget) releaseProvider(provider string, slots *providerWorkSl
 	}
 }
 
-func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}) error {
+// retryDelay is the RetryInfo delay for a refusal with ahead requests in front
+// of it, computed from the slot hold times observed on est.
+func retryDelay(est *capacityhint.Estimator, ahead, slots int) time.Duration {
+	return time.Duration(est.Seconds(ahead, slots)) * time.Second
+}
+
+// holdFor returns the hold estimator of a provider, creating it on first use. It
+// returns nil once maxHoldEstimators providers have one.
+func (b *executionBudget) holdFor(provider string) *capacityhint.Estimator {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if est := b.holds[provider]; est != nil {
+		return est
+	}
+	if len(b.holds) >= maxHoldEstimators {
+		return nil
+	}
+	est := new(capacityhint.Estimator)
+	b.holds[provider] = est
+	return est
+}
+
+// holdLookup returns the provider's existing hold estimator, or nil. It never
+// creates one, so a refusal that names an unknown provider adds no state.
+func (b *executionBudget) holdLookup(provider string) *capacityhint.Estimator {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.holds[provider]
+}
+
+// observeHold records how long a query held a global slot, globally and for its
+// provider. A catalog listing is skipped (see catalogBudgetProvider).
+func (b *executionBudget) observeHold(provider string, held time.Duration) {
+	if provider == catalogBudgetProvider {
+		return
+	}
+	b.hold.Observe(held)
+	if est := b.holdFor(provider); est != nil {
+		est.Observe(held)
+	}
+}
+
+// holdSample says whether one begin's provider resolved. Only a slot held for a
+// resolved provider feeds the hold estimates: a name that does not resolve would
+// otherwise create an estimator per name, and its fast refusal would pull the
+// budget-wide estimate down.
+type holdSample struct{ resolved atomic.Bool }
+
+type holdSampleKey struct{}
+
+// markProviderResolved records on the context from begin that the provider
+// resolved. Callers call it once resolution succeeds, before the query runs.
+func markProviderResolved(ctx context.Context) {
+	if sample, ok := ctx.Value(holdSampleKey{}).(*holdSample); ok {
+		sample.resolved.Store(true)
+	}
+}
+
+// holdEstimatorFor returns the provider's estimator once it has samples, and the
+// budget-wide one until then, so a new provider is not hinted at the floor.
+func holdEstimatorFor(provider, budget *capacityhint.Estimator) *capacityhint.Estimator {
+	if provider != nil && provider.Average() > 0 {
+		return provider
+	}
+	return budget
+}
+
+// resourceExhaustedWithRetry is a retryable refusal that names its retry delay.
+func resourceExhaustedWithRetry(message string, delay time.Duration) error {
+	err := connect.NewError(connect.CodeResourceExhausted, errors.New(message))
+	if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(delay)}); detailErr == nil {
+		err.AddDetail(detail)
+	}
+	return err
+}
+
+// waitForQuerySlot waits for a slot. When the waiter queue is full it refuses at
+// once, naming fullHint() as its retry delay.
+func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}, fullHint func() time.Duration) error {
 	if err := contextError(ctx); err != nil {
 		return err
 	}
@@ -164,8 +262,7 @@ func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}) error 
 	case waiting <- struct{}{}:
 		defer func() { <-waiting }()
 	default:
-		return connect.NewError(connect.CodeResourceExhausted,
-			errors.New("observability query queue is full; retry shortly"))
+		return resourceExhaustedWithRetry("observability query queue is full; retry shortly", fullHint())
 	}
 	select {
 	case active <- struct{}{}:
@@ -192,15 +289,21 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 	select {
 	case b.admitted <- struct{}{}:
 	default:
-		return nil, nil, connect.NewError(connect.CodeResourceExhausted,
-			errors.New("observability gateway admission queue is full; retry shortly"))
+		return nil, nil, resourceExhaustedWithRetry("observability gateway admission queue is full; retry shortly",
+			retryDelay(&b.hold, len(b.admitted)-cap(b.active), cap(b.active)))
 	}
+	sample := &holdSample{}
+	ctx = context.WithValue(ctx, holdSampleKey{}, sample)
 	queueCtx, stop := context.WithTimeout(ctx, b.queueTimeout)
 	defer stop()
 	slots := b.providerSlots(provider)
 	providerAcquired, globalAcquired := false, false
+	var acquired time.Time
 	release := func() {
 		if globalAcquired {
+			if sample.resolved.Load() {
+				b.observeHold(provider, b.clock().Sub(acquired))
+			}
 			<-b.active
 		}
 		if providerAcquired {
@@ -209,16 +312,20 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 		b.releaseProvider(provider, slots)
 		<-b.admitted
 	}
-	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting); err != nil {
+	providerHint := func() time.Duration {
+		return retryDelay(holdEstimatorFor(b.holdLookup(provider), &b.hold), len(slots.waiting), cap(slots.active))
+	}
+	globalHint := func() time.Duration { return retryDelay(&b.hold, len(b.waiting), cap(b.active)) }
+	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting, providerHint); err != nil {
 		release()
-		return nil, nil, queueWaitError(ctx, queueCtx, err)
+		return nil, nil, queueWaitError(ctx, queueCtx, err, providerHint())
 	}
 	providerAcquired = true
-	if err := waitForQuerySlot(queueCtx, b.active, b.waiting); err != nil {
+	if err := waitForQuerySlot(queueCtx, b.active, b.waiting, globalHint); err != nil {
 		release()
-		return nil, nil, queueWaitError(ctx, queueCtx, err)
+		return nil, nil, queueWaitError(ctx, queueCtx, err, globalHint())
 	}
-	globalAcquired = true
+	globalAcquired, acquired = true, b.clock()
 	bounded, cancel := context.WithTimeout(ctx, b.timeout)
 	if err := contextError(bounded); err != nil {
 		cancel()
@@ -238,16 +345,11 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 // timer ended the wait, the caller still has budget, so the answer is a
 // resource_exhausted with a retry hint: a busy provider, not a spent request. A
 // caller deadline or cancellation keeps the code contextError gave it.
-func queueWaitError(caller, queue context.Context, err error) error {
+func queueWaitError(caller, queue context.Context, err error, delay time.Duration) error {
 	if caller.Err() != nil || !errors.Is(queue.Err(), context.DeadlineExceeded) {
 		return err
 	}
-	queueErr := connect.NewError(connect.CodeResourceExhausted,
-		errors.New("observability query waited too long for a free slot; retry shortly"))
-	if detail, detailErr := connect.NewErrorDetail(&errdetails.RetryInfo{RetryDelay: durationpb.New(queueRetryDelay)}); detailErr == nil {
-		queueErr.AddDetail(detail)
-	}
-	return queueErr
+	return resourceExhaustedWithRetry("observability query waited too long for a free slot; retry shortly", delay)
 }
 
 func contextError(ctx context.Context) error {

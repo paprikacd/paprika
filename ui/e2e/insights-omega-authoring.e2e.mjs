@@ -8,7 +8,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption } from "./gamma-controls.mjs"
-import { assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
+import { assertNoLegacyDataTools, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 assert.ok(process.env.INSIGHTS_OMEGA_AUTHORING_CONFIG, "Set INSIGHTS_OMEGA_AUTHORING_CONFIG to a private JSON file")
@@ -225,7 +225,7 @@ try {
     const card = panel.getByRole("article").filter({ hasText: metricProvider.providerRef })
     await card.getByRole("button", { name: `Explore ${metricProvider.name}`, exact: true }).click()
     const editor = page.getByRole("region", { name: "Data source explorer", exact: true }).last()
-    await editor.getByText("query_metrics", { exact: true }).waitFor()
+    await editor.getByText("POST /observe/api/query", { exact: true }).waitFor()
     await selectGammaOption(page, editor.getByRole("combobox", { name: "Open saved query", exact: true }), new RegExp(queryEntry.document.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
     assert.equal(await editor.getByRole("textbox", { name: "Query description", exact: true }).inputValue(), queryEntry.document.description)
     const metric = config.metricName ?? template.match(/([a-zA-Z_:][a-zA-Z0-9_:]*)\s*\{/)?.[1]
@@ -283,12 +283,18 @@ try {
     await reading(services[0], queryEntry.document.query)
     await page.screenshot({ path: join(output, "mcp-ui-roundtrip.png"), fullPage: false })
     toolUsageAfter = await usageSnapshot()
-    const usedTools = ["list_observability_providers", "query_metrics", "query_traces", "list_metric_names", "list_label_names", "list_label_values", "list_metric_series"]
-    const toolDeltas = Object.fromEntries(usedTools.map(name => [name, usageDelta(toolUsageBefore, toolUsageAfter, name)]))
-    for (const [name, delta] of Object.entries(toolDeltas)) assert.ok(delta > 0, `Dashboard traffic must increment the actual ${name} MCP tool counter`)
-    for (const name of ["dashboard_list_providers", "dashboard_query", "dashboard_explore"]) assert.equal(usageDelta(toolUsageBefore, toolUsageAfter, name), 0, "No legacy Observe REST data fallback may execute")
-    if (config.environment === "fixture") { protocol = await readObserveProtocol(baseURL); assertObserveMCP(protocol, usedTools) }
-    return { restoredReferences: true, uiSaveStatus: response.status(), exactVersionSent: true, uiChangeVisibleThroughMCP: true, transformedResponsesPreservedVersions: versions.filter(item => item.httpETag?.startsWith("W/") && item.documentETag).length, toolDeltas, legacyDataCalls: 0 }
+    // Insights reads provider data over the gateway's REST routes, so those counters rise
+    // and the MCP data-tool counters stay flat for Insights traffic.
+    const restTools = ["dashboard_list_providers", "dashboard_query", "dashboard_explore"]
+    const toolDeltas = Object.fromEntries(restTools.map(name => [name, usageDelta(toolUsageBefore, toolUsageAfter, name)]))
+    for (const [name, delta] of Object.entries(toolDeltas)) assert.ok(delta > 0, `Dashboard traffic must increment the REST ${name} counter`)
+    // The gateway's usage counters count every caller. On the isolated fixture the MCP data-tool counters
+    // must stay flat; on the shared live gateway other agents may query through MCP during this window.
+    if (config.environment === "fixture") {
+      for (const name of ["query_metrics", "query_traces", "list_metric_names", "list_label_names", "list_label_values", "list_metric_series"]) assert.equal(usageDelta(toolUsageBefore, toolUsageAfter, name), 0, "Insights must not read provider data through MCP data tools")
+    }
+    if (config.environment === "fixture") { protocol = await readObserveProtocol(baseURL); assertObserveREST(protocol, ["/observe/api/providers", "/observe/api/query", "/observe/api/explore"]); assertNoLegacyDataTools(protocol) }
+    return { restoredReferences: true, uiSaveStatus: response.status(), exactVersionSent: true, uiChangeVisibleThroughMCP: true, transformedResponsesPreservedVersions: versions.filter(item => item.httpETag?.startsWith("W/") && item.documentETag).length, toolDeltas, ...(config.environment === "fixture" ? { legacyDataCalls: 0 } : {}) }
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
   console.log(`PASS ${reports.length} ${config.environment ?? "live"} MCP authoring scenarios; dashboard ${dashboardId}`)

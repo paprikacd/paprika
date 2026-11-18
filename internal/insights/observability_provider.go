@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/capacityhint"
 )
 
 const observeProviderPrefix = "observe-"
@@ -67,7 +69,7 @@ func newObserveGateway(rawURL string) (*observeGateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	transport.MaxIdleConnsPerHost = 8
+	transport.MaxIdleConnsPerHost = defaultObserveIdleConnsPerHost
 	// Header and client waits equal the per-operation bound, so a read the gateway
 	// is still running is not abandoned early. The uptime connector allows 20 s
 	// per read; each call's deadline, min(operation, remaining budget), ends it.
@@ -106,7 +108,9 @@ type sharedCatalogFailure struct {
 // defaultSharedRetryAfter is used when the gateway gives no Retry-After.
 const defaultSharedRetryAfter = 1
 
-func sharedCatalogFailureFor(err error) *sharedCatalogFailure {
+// sharedCatalogFailureFor classifies a failed listing. A busy listing without a
+// gateway delay takes fallback, the catalog pool's estimate (at least one second).
+func sharedCatalogFailureFor(err error, fallback int) *sharedCatalogFailure {
 	failure := &sharedCatalogFailure{Code: http.StatusBadGateway, Message: errUpstream.Error()}
 	var remote *observeError
 	switch {
@@ -115,12 +119,15 @@ func sharedCatalogFailureFor(err error) *sharedCatalogFailure {
 		failure.RetryAfter = remote.retryAfter
 	case errors.Is(err, ErrNotFound):
 		failure.Code, failure.Message = http.StatusNotFound, "provider not found"
+	case errors.Is(err, context.DeadlineExceeded):
+		// The listing's own request budget ended the call, not the gateway's operation cap.
+		failure.Code, failure.Message = http.StatusGatewayTimeout, "request exceeded its time budget"
 	}
 	switch failure.Code {
 	case http.StatusTooManyRequests:
 		failure.Status = "busy"
 		if failure.RetryAfter == 0 {
-			failure.RetryAfter = defaultSharedRetryAfter
+			failure.RetryAfter = max(fallback, defaultSharedRetryAfter)
 		}
 	case http.StatusForbidden:
 		failure.Status = "forbidden"
@@ -130,13 +137,25 @@ func sharedCatalogFailureFor(err error) *sharedCatalogFailure {
 	return failure
 }
 
+// defaultObserveIdleConnsPerHost is the idle connection pool to the gateway
+// before NewServer sizes it from the admission capacity.
+const defaultObserveIdleConnsPerHost = 8
+
+// idleConnsPerHost sizes the idle connections kept to the gateway.
+func (g *observeGateway) idleConnsPerHost(n int) {
+	if transport, ok := g.client.Transport.(*http.Transport); ok {
+		transport.MaxIdleConnsPerHost = n
+	}
+}
+
 // observeHTTPErrorFor maps a gateway HTTP status and its Retry-After header.
-// Only a whole-second delay between 1 and 60 is kept; anything else is ignored.
+// Only a whole-second delay between 1 and capacityhint.MaxSeconds is kept, so a
+// forwarded hint stays inside the browser's replay cap. Anything else is ignored.
 func observeHTTPErrorFor(status int, retryAfter string) error {
 	err := observeHTTPError(status)
 	var remote *observeError
 	if errors.As(err, &remote) && status == http.StatusTooManyRequests {
-		if seconds, parseErr := strconv.Atoi(strings.TrimSpace(retryAfter)); parseErr == nil && seconds >= 1 && seconds <= 60 {
+		if seconds, parseErr := strconv.Atoi(strings.TrimSpace(retryAfter)); parseErr == nil && seconds >= capacityhint.MinSeconds && seconds <= capacityhint.MaxSeconds {
 			remote.retryAfter = seconds
 		}
 	}
@@ -160,7 +179,7 @@ func (s *Server) listProviders(w http.ResponseWriter, r *http.Request) {
 		shared, err := s.observe.providers(ctx, token)
 		cancel()
 		if err != nil {
-			sharedFailure = sharedCatalogFailureFor(err)
+			sharedFailure = sharedCatalogFailureFor(err, s.catalogRetryAfter())
 		}
 		providers = append(providers, shared...)
 	}
@@ -201,48 +220,25 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 	return nil, ErrNotFound
 }
 
-// providers lists the caller's shared catalog. Within one request the outcome,
-// success or failure, is memoized, so a dashboard lists its catalog once.
+// providers lists the caller's shared catalog over REST. Within one request the
+// outcome, success or failure, is memoized, so a dashboard lists its catalog
+// once. A request without a scope lists without memoizing.
 func (g *observeGateway) providers(ctx context.Context, token string) ([]Provider, error) {
 	scope := observeScopeFor(ctx, token)
 	if scope == nil {
-		var result []Provider
-		err := g.withConnection(ctx, token, func(c *observeMCPConnection, opCtx context.Context) (err error) {
-			result, err = c.providers(opCtx)
-			return err
-		})
-		return result, err
+		return g.listShared(ctx, token)
 	}
 	scope.mu.Lock()
 	defer scope.mu.Unlock()
 	if !scope.catalogLoaded {
 		scope.catalogLoaded = true
-		scope.catalogErr = scope.runLocked(ctx, g, func(c *observeMCPConnection, opCtx context.Context) (err error) {
-			scope.catalog, err = c.providers(opCtx)
-			return err
-		})
+		scope.catalog, scope.catalogErr = g.listShared(ctx, token)
 	}
 	return scope.catalog, scope.catalogErr
 }
 
-// withConnection runs fn on the request's shared session when one exists.
-// Otherwise it opens a private session that closes when fn returns.
-func (g *observeGateway) withConnection(ctx context.Context, token string, fn func(*observeMCPConnection, context.Context) error) error {
-	if scope := observeScopeFor(ctx, token); scope != nil {
-		scope.mu.Lock()
-		defer scope.mu.Unlock()
-		return scope.runLocked(ctx, g, fn)
-	}
-	connection, err := g.connect(ctx, ctx, token)
-	if err != nil {
-		return err
-	}
-	defer connection.close()
-	opCtx, stop := g.operation(ctx, ctx)
-	defer stop()
-	return fn(connection, opCtx)
-}
-
+// providers counts the shared catalog over MCP for the Data sources status. It
+// also requires every data tool the catalog's providers need.
 func (c *observeMCPConnection) providers(ctx context.Context) ([]Provider, error) {
 	body, failed, err := c.call(ctx, "list_observability_providers", map[string]any{}, 1<<20)
 	if err != nil {
@@ -252,25 +248,14 @@ func (c *observeMCPConnection) providers(ctx context.Context) ([]Provider, error
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Provider, 0, len(catalog))
-	seen := make(map[string]bool)
 	for _, p := range catalog {
-		capabilities := observeCapabilities(p.Type)
-		if len(capabilities) == 0 {
-			continue
-		}
-		if !validObserveCatalogProvider(p) || seen[p.Name] {
-			return nil, errUpstream
-		}
-		seen[p.Name] = true
-		for _, capability := range capabilities {
+		for _, capability := range observeCapabilities(p.Type) {
 			if err := c.requireTool("query_" + capability); err != nil {
 				return nil, err
 			}
 		}
-		result = append(result, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: capabilities, Source: "observability", ProviderRef: p.Name, Transport: "mcp"})
 	}
-	return result, nil
+	return sharedProvidersFromCatalog(catalog)
 }
 
 func observeCapabilities(providerType string) []string {
@@ -313,22 +298,14 @@ func observeHTTPError(status int) error {
 	}
 }
 
-func (p *observeProvider) data(ctx context.Context, tool string, request any, limit int64) ([]byte, error) {
-	return p.dataMeasured(ctx, tool, request, limit, nil)
-}
-
-// dataMeasured is data with an optional receipt measurement for the provider call.
-func (p *observeProvider) dataMeasured(ctx context.Context, tool string, request any, limit int64, measurement *queryMeasurement) ([]byte, error) {
-	var body []byte
-	var failed bool
-	err := p.gateway.withConnection(ctx, p.token, func(c *observeMCPConnection, opCtx context.Context) (err error) {
-		body, failed, err = c.callMeasured(opCtx, tool, request, maxResponseBytes, measurement)
-		return err
-	})
+// data is one REST data call. Its body is decoded and checked exactly as the
+// MCP tool result was.
+func (p *observeProvider) data(ctx context.Context, path string, request any, limit int64, measurement *queryMeasurement) ([]byte, error) {
+	body, err := p.gateway.restDo(ctx, p.token, path, request, limit, measurement)
 	if err != nil {
 		return nil, err
 	}
-	return decodeObserveData(body, failed, limit)
+	return decodeObserveData(body, false, limit)
 }
 
 func decodeObserveData(body []byte, failed bool, limit int64) ([]byte, error) {
@@ -363,47 +340,30 @@ func observeTime(seconds float64) string {
 }
 
 func (p *observeProvider) query(ctx context.Context, q *Query, measurement *queryMeasurement) ([]byte, error) {
-	input := map[string]any{"provider": p.reference, "query": q.Query, "start": observeTime(q.Start), "end": observeTime(q.End)}
-	switch q.Kind {
-	case "metrics":
-		input["step_seconds"] = q.Step
-		input["limit"] = maxSeries
-	case "records":
-		input["limit"] = 1000
-	default:
-		input["limit"] = maxTraces
-		if q.TraceID != "" {
-			input["trace_id"] = q.TraceID
-		}
-	}
-	tool := "query_" + q.Kind
-	return p.dataMeasured(ctx, tool, input, maxResponseBytes, measurement)
+	return p.data(ctx, observeRESTQueryPath, observeRESTQueryBody(p, q), maxResponseBytes, measurement)
 }
 
 // Adapt the existing bounded native metadata decoders to the gateway's typed
 // exploration API. No arbitrary upstream URL or credential is ever accepted.
 func (p *observeProvider) metadata(ctx context.Context, path string, params url.Values, limit int64) ([]byte, error) {
-	input := map[string]any{"provider": p.reference, "limit": maxMetadataValues}
-	if err := setObserveMetadataKind(input, path); err != nil {
+	input := observeRESTExplore{Provider: p.reference, Limit: maxMetadataValues}
+	if err := setObserveMetadataKind(&input, path); err != nil {
 		return nil, err
 	}
-	if metricName := params.Get("match[]"); metricName != "" {
-		input["metric"] = metricName
-	}
+	input.Metric = params.Get("match[]")
 	for _, key := range []string{"start", "end"} {
 		seconds, err := strconv.ParseInt(params.Get(key), 10, 64)
 		if err != nil {
 			return nil, errUpstream
 		}
-		input[key] = time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+		value := time.Unix(seconds, 0).UTC().Format(time.RFC3339)
+		if key == "start" {
+			input.Start = value
+		} else {
+			input.End = value
+		}
 	}
-	kind, ok := input["kind"].(string)
-	if !ok {
-		return nil, errUpstream
-	}
-	tool := "list_" + kind
-	delete(input, "kind")
-	return p.data(ctx, tool, input, limit)
+	return p.data(ctx, observeRESTExplorePath, input, limit, nil)
 }
 
 // providerErrorResponse maps a failed provider call to its status and fixed
@@ -442,20 +402,20 @@ func validObserveCatalogProvider(p observeCatalogProvider) bool {
 	return len(parts) == 2 && parts[0] == p.Namespace && parts[0] != "" && parts[1] != "" && len(p.Name) <= 320 && !strings.ContainsAny(p.Name, "\r\n\x00")
 }
 
-func setObserveMetadataKind(input map[string]any, path string) error {
+func setObserveMetadataKind(input *observeRESTExplore, path string) error {
 	switch {
 	case path == "/api/v1/label/__name__/values":
-		input["kind"] = "metric_names"
+		input.Kind = "metric_names"
 	case path == "/api/v1/labels" || path == "/api/search/tags":
-		input["kind"] = "label_names"
+		input.Kind = "label_names"
 	case path == "/api/v1/series":
-		input["kind"] = "metric_series"
+		input.Kind = "metric_series"
 	case strings.HasPrefix(path, "/api/v1/label/") && strings.HasSuffix(path, "/values"):
-		input["kind"] = "label_values"
-		input["label"] = strings.TrimSuffix(strings.TrimPrefix(path, "/api/v1/label/"), "/values")
+		input.Kind = "label_values"
+		input.Label = strings.TrimSuffix(strings.TrimPrefix(path, "/api/v1/label/"), "/values")
 	case strings.HasPrefix(path, "/api/search/tag/") && strings.HasSuffix(path, "/values"):
-		input["kind"] = "label_values"
-		input["label"] = strings.TrimSuffix(strings.TrimPrefix(path, "/api/search/tag/"), "/values")
+		input.Kind = "label_values"
+		input.Label = strings.TrimSuffix(strings.TrimPrefix(path, "/api/search/tag/"), "/values")
 	default:
 		return errUpstream
 	}

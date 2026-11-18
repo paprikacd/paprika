@@ -147,7 +147,7 @@ func TestTempoDetailRejectsWrongTraceAndInvalidTimings(t *testing.T) {
 func TestTraceDetailUsesDelegatedProviderAuthorization(t *testing.T) {
 	const traceID = "00112233445566778899aabbccddeeff"
 	var calls int
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/list_observability_providers":
 			providers := []observeCatalogProvider{}
@@ -161,7 +161,7 @@ func TestTraceDetailUsesDelegatedProviderAuthorization(t *testing.T) {
 				t.Fatal("caller token not forwarded")
 			}
 			var args map[string]any
-			if json.NewDecoder(r.Body).Decode(&args) != nil || args["trace_id"] != traceID {
+			if json.NewDecoder(r.Body).Decode(&args) != nil || args["traceId"] != traceID {
 				t.Fatalf("trace ID not forwarded: %+v", args)
 			}
 			writeJSON(w, 200, map[string]any{"state": "OK", "data": json.RawMessage(traceFixture)})

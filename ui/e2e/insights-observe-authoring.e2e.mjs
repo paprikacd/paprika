@@ -11,7 +11,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
-import { assertObserveMCP, readObserveProtocol } from "./observe-protocol.mjs"
+import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-observe-authoring-"))
@@ -124,8 +124,7 @@ async function unchanged(collection, entry) {
 async function assertQueryCall(query, fromIndex = 0) {
   await until(() => queryResponses.slice(fromIndex).some(({ status, request }) => status === 200 && request.providerId === metricProvider.id && request.query === query && request.start === Date.parse(fixedRange.from) / 1000 && request.end === Date.parse(fixedRange.to) / 1000 && request.step === 12), "The live widget did not execute the exact patched query and dashboard time range")
   const protocol = await readObserveProtocol(fixture.baseURL)
-  const calls = assertObserveMCP(protocol, ["query_metrics"])
-  assert.ok(calls.some(call => call.tool === "query_metrics" && call.arguments.provider === fixture.providerRef && call.arguments.query === query && Date.parse(call.arguments.start) === Date.parse(fixedRange.from) && Date.parse(call.arguments.end) === Date.parse(fixedRange.to) && call.arguments.step_seconds === 12))
+  assertMetricCall(assertObserveREST(protocol, ["/observe/api/query"]), { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 12 })
 }
 async function check(name, action) {
   try { const evidence = await action(); reports.push({ name, passed: true, evidence }); console.log(`PASS ${name}`) }
@@ -629,7 +628,9 @@ try {
   })
   assert.deepEqual(pageErrors, [], "No browser runtime errors")
   const currentProtocol = await readObserveProtocol(fixture.baseURL)
-  assertObserveMCP({ gateway: [...protocolHistory.flatMap(receipt => receipt.gateway), ...currentProtocol.gateway] }, ["list_observability_providers", "query_metrics", "get_insights_schema", "create_saved_query", "update_saved_query", "patch_saved_query", "create_dashboard", "update_dashboard", "patch_dashboard"])
+  const authoringReceipts = { gateway: [...protocolHistory.flatMap(receipt => receipt.gateway), ...currentProtocol.gateway] }
+  assertObserveREST(authoringReceipts, ["/observe/api/providers", "/observe/api/query"])
+  assertObserveMCP(authoringReceipts, ["get_insights_schema", "create_saved_query", "update_saved_query", "patch_saved_query", "create_dashboard", "update_dashboard", "patch_dashboard"])
   console.log(`PASS ${reports.length} MCP authoring scenarios`)
 } catch (error) {
   console.error(error.stack ?? error.message)

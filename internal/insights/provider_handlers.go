@@ -3,6 +3,7 @@ package insights
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -106,7 +107,7 @@ func (s *Server) providerOperation(w http.ResponseWriter, r *http.Request) (prov
 	case s.queries <- struct{}{}:
 		return p, func() { <-s.queries }
 	default:
-		w.Header().Set("Retry-After", "1")
+		w.Header().Set("Retry-After", strconv.Itoa(s.queryHold.Seconds(len(s.queryWaiting), cap(s.queries))))
 		writeError(w, 429, "too many active provider requests; retry shortly")
 		return nil, nil
 	}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -551,6 +552,30 @@ func (s *Server) Handler() http.Handler {
 	return gziphandler.GzipHandler(inner)
 }
 
+// LimitPrincipal applies the same per-subject rate limit as /mcp to next. The
+// request's principal must already be on its context (the caller's observe
+// scope middleware sets it), so REST routes and /mcp draw on one bucket per
+// subject. A request with no principal is refused, never passed unlimited.
+func (s *Server) LimitPrincipal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal := auth.PrincipalFromContext(r.Context())
+		if principal == nil {
+			http.Error(w, "unauthenticated", http.StatusUnauthorized)
+			return
+		}
+		if err := s.rateLimit.Wait(r.Context(), principal.Subject); err != nil {
+			if errors.Is(err, errRateQueueCapacity) {
+				w.Header().Set("Retry-After", strconv.Itoa(rateRetryAfterSeconds(err)))
+				http.Error(w, "rate limit queue is full; retry shortly", http.StatusTooManyRequests)
+				return
+			}
+			http.Error(w, "request canceled while queued", http.StatusRequestTimeout)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // consoleCredentialTTL bounds the lifetime of the internal credential
 // mintConsoleCredential mints for each authenticated MCP request. It never
 // leaves this process — NewInProcessTransport's RoundTrip hands it straight
@@ -632,7 +657,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	// retains its caller's cancellation; no work runs after disconnect.
 	if err := s.rateLimit.Wait(ctx, principal.Subject); err != nil {
 		if errors.Is(err, errRateQueueCapacity) {
-			w.Header().Set("Retry-After", "1")
+			w.Header().Set("Retry-After", strconv.Itoa(rateRetryAfterSeconds(err)))
 			http.Error(w, "rate limit queue is full; retry shortly", http.StatusTooManyRequests)
 			return
 		}

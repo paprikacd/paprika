@@ -38,6 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/NYTimes/gziphandler"
+
 	observev1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
 	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
@@ -201,9 +203,14 @@ func newGatewayHandler(backend observe.Backend, storeCache *cache.Cache, secret 
 	}
 	gatewayMux := http.NewServeMux()
 	protect := observe.RequireObserveScope(verifier, fixtureIssuer, "/observe")
-	gatewayMux.Handle("GET /observe/api/providers", protect(observe.DashboardProvidersHandler(backend, usage)))
-	gatewayMux.Handle("POST /observe/api/query", protect(observe.DashboardQueryHandler(backend, usage)))
-	gatewayMux.Handle("POST /observe/api/explore", protect(observe.DashboardExploreHandler(backend, usage)))
+	// The data routes get the production wrapping (cmd/main_observability_gateway.go):
+	// the per-subject limiter shared with /observe/mcp, then gzip at level 3.
+	dataAPI := func(h http.Handler) http.Handler {
+		return protect(mcpServer.LimitPrincipal(gziphandler.MustNewGzipLevelHandler(3)(h)))
+	}
+	gatewayMux.Handle("GET /observe/api/providers", dataAPI(observe.DashboardProvidersHandler(backend, usage)))
+	gatewayMux.Handle("POST /observe/api/query", dataAPI(observe.DashboardQueryHandler(backend, usage)))
+	gatewayMux.Handle("POST /observe/api/explore", dataAPI(observe.DashboardExploreHandler(backend, usage)))
 	gatewayMux.Handle("GET /observe/api/usage", protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		jsonResponse(w, usage.Snapshot())
 	})))
@@ -594,11 +601,28 @@ type gatewayRequest struct {
 	Method     string          `json:"method,omitempty"`
 	Tool       string          `json:"tool,omitempty"`
 	Arguments  json.RawMessage `json:"arguments,omitempty"`
+	// Body is the JSON request of a REST data call: a DashboardQueryRequest or a
+	// DashboardExploreRequest. The Authorization header is never recorded.
+	Body json.RawMessage `json:"body,omitempty"`
 }
+
+// maxRecordedRESTBody bounds what the recorder reads from one REST data request.
+const maxRecordedRESTBody = 64 << 10
 
 func (f *telemetryFixture) recordGateway(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receipt := gatewayRequest{Path: r.URL.Path, HTTPMethod: r.Method}
+		if (r.URL.Path == "/observe/api/query" || r.URL.Path == "/observe/api/explore") && r.Method == http.MethodPost {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRecordedRESTBody))
+			if err != nil {
+				http.Error(w, "invalid fixture REST request", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if json.Valid(body) {
+				receipt.Body = body
+			}
+		}
 		if r.URL.Path == "/observe/mcp" && r.Method == http.MethodPost {
 			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 			if err != nil {

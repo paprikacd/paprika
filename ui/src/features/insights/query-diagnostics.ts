@@ -37,6 +37,9 @@ export interface QueryExecutionReceipt {
   readonly consumers: number;
   readonly sharedConsumers: number;
   readonly cancelledConsumers: number;
+  /** UI-local, not a wire field: capacity refusals the scheduler replayed, and the backoff they cost. */
+  readonly attempts?: number;
+  readonly capacityWaitMs?: number;
   readonly counts?: QueryResultCounts;
   readonly truncated?: boolean;
   readonly backend?: QueryDiagnostics;

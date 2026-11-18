@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/NYTimes/gziphandler"
 	"github.com/go-logr/logr"
 
 	apiserver "github.com/benebsworth/paprika/internal/api"
@@ -591,9 +592,10 @@ func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthen
 	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/catalog", gatewayAPI(observabilitygateway.CatalogHandler()))
 	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/catalog/{type}", gatewayAPI(observabilitygateway.CatalogTypeHandler()))
 	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/validate", gatewayAPI(observabilitygateway.ValidateHandler()))
-	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/providers", gatewayAPI(observabilitygateway.DashboardProvidersHandler(backend, usage)))
-	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/query", gatewayAPI(observabilitygateway.DashboardQueryHandler(backend, usage)))
-	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/explore", gatewayAPI(observabilitygateway.DashboardExploreHandler(backend, usage)))
+	dataAPI := observabilityDataAPI(srv, gatewayAPI)
+	mux.Handle("GET "+observabilityGatewayRoutePrefix+"/api/providers", dataAPI(observabilitygateway.DashboardProvidersHandler(backend, usage)))
+	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/query", dataAPI(observabilitygateway.DashboardQueryHandler(backend, usage)))
+	mux.Handle("POST "+observabilityGatewayRoutePrefix+"/api/explore", dataAPI(observabilitygateway.DashboardExploreHandler(backend, usage)))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("ok")); err != nil {
@@ -601,6 +603,16 @@ func buildObservabilityMux(srv *mcp.Server, authenticator *auth.SelfSignedAuthen
 		}
 	})
 	return mux
+}
+
+// observabilityDataAPI wraps the dashboard data routes. They share /mcp's
+// per-subject rate bucket and its gzip level, so an Insights tab and an agent
+// draw on one budget for the same caller. The principal is set by gatewayAPI,
+// which must run first; LimitPrincipal refuses a request that has none.
+func observabilityDataAPI(srv *mcp.Server, gatewayAPI func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		return gatewayAPI(srv.LimitPrincipal(gziphandler.MustNewGzipLevelHandler(3)(h)))
+	}
 }
 
 // usageError is the RFC 6749-shaped error body the gateway's API endpoints

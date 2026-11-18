@@ -143,7 +143,8 @@ describe("scheduler execution receipts", () => {
       .mockRejectedValueOnce(Object.assign(new Error(secret), { code: "timeout", diagnostics: { ...backend, outcome: "timeout", counts: undefined } }))
       .mockRejectedValueOnce(Object.assign(new Error(secret), { status: 429 }))
       .mockRejectedValueOnce(new Error(secret));
-    const scheduler = createQueryScheduler(fetcher);
+    // Replays are off here: this test classifies each refusal, and a 429 would otherwise back off.
+    const scheduler = createQueryScheduler(fetcher, { capacityReplays: 0 });
     for (let index = 0; index < 3; index++) await expect(scheduler(request, signal())).rejects.toThrow(secret);
     const receipts = scheduler.diagnostics!.getSnapshot();
     expect(receipts.map(receipt => receipt.state)).toEqual(["timeout", "capacity", "error"]);

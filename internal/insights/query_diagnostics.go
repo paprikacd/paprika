@@ -6,7 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/capacityhint"
 )
 
 // QueryDiagnostics is a bounded execution receipt. It never contains provider
@@ -83,12 +86,12 @@ const queryReceiptHeader = "X-Insights-Diagnostics"
 // time or network transfer is inferred from it.
 type queryMeasurement struct {
 	normalizationStarted time.Time
-	dispatched           bool
+	dispatched           atomic.Bool
 }
 
 func (m *queryMeasurement) dispatch() {
 	if m != nil {
-		m.dispatched = true
+		m.dispatched.Store(true)
 	}
 }
 
@@ -180,7 +183,7 @@ func (r *queryReceipt) finishExecution(p *providerClient, measurement *queryMeas
 	if r == nil {
 		return
 	}
-	if measurement.dispatched {
+	if measurement.dispatched.Load() {
 		r.dispatched = true
 		r.diag.Effective = effectiveQueryBounds(p, r.query, r.diag.Effective.Scope)
 	}
@@ -190,7 +193,7 @@ func (r *queryReceipt) finishExecution(p *providerClient, measurement *queryMeas
 		r.markAt("upstream", measurement.normalizationStarted)
 		r.markAt("normalization", finished)
 	}
-	if measurement.dispatched {
+	if measurement.dispatched.Load() {
 		r.diag.Phases = append(r.diag.Phases, QueryDiagnosticPhase{
 			Name: "provider", Owner: "provider", Clock: "unavailable", Relationship: "nested", Parent: "upstream",
 		})
@@ -297,12 +300,17 @@ func queryFailureDetails(err error) *DashboardQueryError {
 func writeQueryFailure(w http.ResponseWriter, err error, diagnostics *QueryDiagnostics) {
 	status, message := queryErrorResponse(err)
 	if status == http.StatusTooManyRequests {
-		retryAfter := "1"
+		// A gateway's own delay wins; otherwise the local pool's estimate, else the floor.
+		retryAfter := capacityhint.MinSeconds
 		var remote *observeError
-		if errors.As(err, &remote) && remote.retryAfter > 0 {
-			retryAfter = strconv.Itoa(remote.retryAfter)
+		var refusal *capacityRefusal
+		switch {
+		case errors.As(err, &remote) && remote.retryAfter > 0:
+			retryAfter = remote.retryAfter
+		case errors.As(err, &refusal) && refusal.retryAfter > 0:
+			retryAfter = refusal.retryAfter
 		}
-		w.Header().Set("Retry-After", retryAfter)
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 	}
 	if diagnostics == nil {
 		writeError(w, status, message)

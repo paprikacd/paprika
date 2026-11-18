@@ -24,6 +24,22 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 
 {{/* Shared secret and destination for the in-process Insights API proxy. */}}
+{{- /*
+  paprika.insightsWaitMillis converts an insights.capacity wait (a whole number
+  of seconds such as "2s", or of milliseconds such as "500ms") to milliseconds.
+  Other units fail the render, so the wait sum can be checked here.
+*/ -}}
+{{- define "paprika.insightsWaitMillis" -}}
+{{- $v := toString .value -}}
+{{- if regexMatch "^[0-9]+s$" $v -}}
+{{- mul (trimSuffix "s" $v | int) 1000 -}}
+{{- else if regexMatch "^[0-9]+ms$" $v -}}
+{{- trimSuffix "ms" $v | int -}}
+{{- else -}}
+{{- fail (printf "insights.capacity.%s %q must be whole seconds such as 2s or milliseconds such as 500ms" .field $v) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "paprika.insightsEnv" -}}
 {{- if .Values.insights.enabled }}
 - name: PAPRIKA_INSIGHTS_URL

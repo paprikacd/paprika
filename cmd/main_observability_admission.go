@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/benebsworth/paprika/internal/capacityhint"
 	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
@@ -314,12 +316,21 @@ type observabilityHTTPPools struct {
 type observabilityAdmissionPool struct {
 	slots   chan struct{}
 	waiting chan struct{}
+	// hold estimates how long a request holds a slot of this pool. It sizes the
+	// Retry-After on a refusal from this pool.
+	hold *capacityhint.Estimator
 }
 
 // newObservabilityAdmissionPool allows size running requests and up to waiters
 // waiting ones. A waiter beyond that is rejected at once.
 func newObservabilityAdmissionPool(size, waiters int) observabilityAdmissionPool {
-	return observabilityAdmissionPool{slots: make(chan struct{}, size), waiting: make(chan struct{}, waiters)}
+	return observabilityAdmissionPool{slots: make(chan struct{}, size), waiting: make(chan struct{}, waiters), hold: new(capacityhint.Estimator)}
+}
+
+// retryAfter is the Retry-After for a request refused by this pool: the waiters
+// ahead of it, over the pool's slots, times the observed hold time.
+func (p observabilityAdmissionPool) retryAfter() int {
+	return p.hold.Seconds(len(p.waiting), cap(p.slots))
 }
 
 // acquire takes a slot. If none is free it waits until ctx ends, provided fewer
@@ -349,10 +360,10 @@ func (p observabilityAdmissionPool) acquire(ctx context.Context) bool {
 
 func (p observabilityAdmissionPool) release() { <-p.slots }
 
-// rejectObservabilityAdmission answers a request that did not get a slot:
-// 429 with Retry-After: 1 and no-store, as before.
-func rejectObservabilityAdmission(w http.ResponseWriter) {
-	w.Header().Set("Retry-After", "1")
+// rejectObservabilityAdmission answers a request that did not get a slot: 429
+// with the Retry-After the pool estimates, and no-store.
+func rejectObservabilityAdmission(w http.ResponseWriter, retryAfter int) {
+	w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 	w.Header().Set("Cache-Control", "no-store")
 	http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
 }
@@ -417,7 +428,8 @@ func (e *observabilityEdge) middleware(next http.Handler) http.Handler {
 		defer cancel()
 		requestClass, ok := e.classify(admitCtx, r)
 		if !ok {
-			rejectObservabilityAdmission(w)
+			// Intake is refused for the same capacity the work pool serves.
+			rejectObservabilityAdmission(w, e.work.retryAfter())
 			return
 		}
 		pool := e.work
@@ -429,9 +441,11 @@ func (e *observabilityEdge) middleware(next http.Handler) http.Handler {
 		case observabilityWorkRequest:
 		}
 		if !pool.acquire(admitCtx) {
-			rejectObservabilityAdmission(w)
+			rejectObservabilityAdmission(w, pool.retryAfter())
 			return
 		}
+		held := time.Now()
+		defer func() { pool.hold.Observe(time.Since(held)) }()
 		defer pool.release()
 		// Oversized or unclassifiable envelopes may still contain valid small
 		// orchestration arguments. They must not run nested work while holding a

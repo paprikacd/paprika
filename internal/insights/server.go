@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/capacityhint"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
 )
 
@@ -29,6 +31,8 @@ type Config struct {
 	Providers []ProviderConfig `json:"providers"`
 	// ObservabilityURL enables the shared, caller-authorized provider catalog.
 	ObservabilityURL string `json:"observabilityUrl,omitempty"`
+	// Capacity sizes the admission pools. Nil, or a zero field, takes the default.
+	Capacity *Capacity `json:"capacity,omitempty"`
 	// Token authenticates Paprika's API proxy to this service. Never expose it
 	// to browsers. InsecureDev is exclusively for a loopback development server.
 	Token       string `json:"-"`
@@ -36,6 +40,7 @@ type Config struct {
 }
 
 type Server struct {
+	capacity     Capacity
 	store        *Store
 	providers    *providerRegistry
 	savedQueries *savedQueryStore
@@ -56,7 +61,11 @@ type Server struct {
 	catalogWaitTimeout time.Duration
 	// queryBudget bounds one /api/query end to end: every phase (catalog wait,
 	// admission wait, listing, data call) is capped by what remains of it.
-	queryBudget   time.Duration
+	queryBudget time.Duration
+	// queryHold and catalogHold estimate how long a query holds an execution slot
+	// and a catalog phase. They size the Retry-After on refusals from those pools.
+	queryHold     capacityhint.Estimator
+	catalogHold   capacityhint.Estimator
 	queryCount    metric.Int64Counter
 	queryDuration metric.Float64Histogram
 	// checkSlots caps the dry runs and checked saves in flight. A dry run holds its
@@ -87,6 +96,9 @@ type Server struct {
 	uploadRefusals metric.Int64Counter
 }
 
+// defaultQueryBudget bounds one /api/query end to end.
+const defaultQueryBudget = 22 * time.Second
+
 // maxActiveDashboardChecks is the number of dry runs and checked saves that may decode a document at once.
 const maxActiveDashboardChecks = 4
 
@@ -101,9 +113,14 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	capacity := config.Capacity.resolved()
 	observe, err := newObserveGateway(config.ObservabilityURL)
 	if err != nil {
 		return nil, err
+	}
+	// Idle connections to the gateway serve every query and catalog phase at once.
+	if observe != nil {
+		observe.idleConnsPerHost(capacity.QueryConcurrency + capacity.CatalogConcurrency)
 	}
 	if validateErr := validateProviderIDs(registry, observe); validateErr != nil {
 		return nil, validateErr
@@ -112,7 +129,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, 16), queryWaiting: make(chan struct{}, 64), queryWaitTimeout: 2 * time.Second, catalogPhases: make(chan struct{}, 4), catalogWaiting: make(chan struct{}, 16), catalogWaitTimeout: 5 * time.Second, queryBudget: 22 * time.Second, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
+	s := &Server{capacity: capacity, store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, capacity.QueryConcurrency), queryWaiting: make(chan struct{}, capacity.QueryQueue), queryWaitTimeout: capacity.QueryWait, catalogPhases: make(chan struct{}, capacity.CatalogConcurrency), catalogWaiting: make(chan struct{}, capacity.CatalogQueue), catalogWaitTimeout: capacity.CatalogWait, queryBudget: defaultQueryBudget, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
 	if err := s.createInstruments(); err != nil {
 		return nil, err
 	}
@@ -180,7 +197,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
-	mux.Handle("/api/", s.authenticate(s.scopeObserveSessions(api)))
+	mux.Handle("/api/", s.authenticate(s.scopeObserveCatalog(api)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -326,8 +343,24 @@ const catalogBusyProvider = "shared-catalog"
 
 // enterCatalogPhase takes a catalog phase, waiting up to catalogWaitTimeout when
 // all phases are busy. Only catalogWaiting callers may queue; any beyond that
-// fail fast, so a burst of shared work cannot pile up without bound.
+// fail fast, so a burst of shared work cannot pile up without bound. The catalog
+// hold is recorded when the returned release runs, so it covers the whole phase
+// (admission and listing), for every request that got one. A refused wait never
+// took a phase and records nothing.
 func (s *Server) enterCatalogPhase(ctx context.Context) (func(), error) {
+	leave, err := s.takeCatalogPhase(ctx)
+	if err != nil {
+		return nil, err
+	}
+	started := time.Now()
+	return func() {
+		s.catalogHold.Observe(time.Since(started))
+		leave()
+	}, nil
+}
+
+// takeCatalogPhase is enterCatalogPhase without the hold measurement.
+func (s *Server) takeCatalogPhase(ctx context.Context) (func(), error) {
 	leave := func() { <-s.catalogPhases }
 	select {
 	case s.catalogPhases <- struct{}{}:
@@ -369,7 +402,7 @@ func (s *Server) writeCatalogAdmissionError(w http.ResponseWriter, r *http.Reque
 	// otherwise name an unbounded number of series.
 	attributes := metric.WithAttributes(attribute.String("provider", catalogBusyProvider), attribute.String("kind", q.Kind), attribute.String("outcome", "catalog_busy"))
 	s.queryCount.Add(r.Context(), 1, attributes)
-	w.Header().Set("Retry-After", "1")
+	w.Header().Set("Retry-After", strconv.Itoa(s.catalogRetryAfter()))
 	writeError(w, 429, "too many active shared catalog requests; retry shortly")
 }
 
@@ -401,7 +434,7 @@ func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	case s.queryWaiting <- struct{}{}:
 		defer func() { <-s.queryWaiting }()
 	default:
-		return nil, errQueryCapacity
+		return nil, s.queryCapacityRefusal()
 	}
 	timer := time.NewTimer(s.queryWaitTimeout)
 	defer timer.Stop()
@@ -411,7 +444,7 @@ func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("query admission context: %w", ctx.Err())
 	case <-timer.C:
-		return nil, errQueryCapacity
+		return nil, s.queryCapacityRefusal()
 	}
 }
 
@@ -422,8 +455,33 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 		<-s.queries
 		return nil, fmt.Errorf("query admission context: %w", err)
 	}
-	return func() { <-s.queries }, nil
+	started := time.Now()
+	return func() {
+		s.queryHold.Observe(time.Since(started))
+		<-s.queries
+	}, nil
 }
+
+// queryCapacityRefusal is the refusal for a query that could not get an execution
+// slot. Its Retry-After is the wait the query pool's observed hold time implies.
+func (s *Server) queryCapacityRefusal() error {
+	return &capacityRefusal{err: errQueryCapacity, retryAfter: s.queryHold.Seconds(len(s.queryWaiting), cap(s.queries))}
+}
+
+// catalogRetryAfter is the Retry-After for a shared query refused by the catalog pool.
+func (s *Server) catalogRetryAfter() int {
+	return s.catalogHold.Seconds(len(s.catalogWaiting), cap(s.catalogPhases))
+}
+
+// capacityRefusal is a capacity refusal that names its own Retry-After.
+type capacityRefusal struct {
+	err        error
+	retryAfter int
+}
+
+func (e *capacityRefusal) Error() string { return e.err.Error() }
+
+func (e *capacityRefusal) Unwrap() error { return e.err }
 
 // runProviderQuery admits, then executes an already resolved provider. Callers
 // that resolve providers first (dashboards) keep their existing ordering. The
@@ -822,6 +880,9 @@ func validateProviderIDs(registry *providerRegistry, observe *observeGateway) er
 func validateServerConfig(config *Config, store *Store) error {
 	if store == nil {
 		return errors.New("dashboard store is required")
+	}
+	if err := config.Capacity.resolved().validate(defaultQueryBudget); err != nil {
+		return err
 	}
 	if !config.InsecureDev && len(config.Token) < 32 {
 		return errors.New("PAPRIKA_INSIGHTS_TOKEN must contain at least 32 characters")

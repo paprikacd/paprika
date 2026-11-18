@@ -1,10 +1,8 @@
 package insights
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,78 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// Exercise the SDK's legacy negotiation as well as the exact on-wire tool
-// contract. Fixture callbacks see tool names/arguments, never REST gateway URLs.
-func observeMCPTestGateway(t *testing.T, handler http.Handler) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/observe/mcp", r.URL.Path, "no REST fallback is permitted")
-		assert.Equal(t, http.MethodPost, r.Method, "no standalone SSE")
-		var request struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params struct {
-				Name      string          `json:"name"`
-				Arguments json.RawMessage `json:"arguments"`
-			} `json:"params"`
-		}
-		if json.NewDecoder(r.Body).Decode(&request) != nil {
-			t.Error("invalid MCP request")
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		response := map[string]any{"jsonrpc": "2.0", "id": request.ID}
-		switch request.Method {
-		case "server/discover":
-			response["error"] = map[string]any{"code": -32601, "message": "legacy protocol"}
-		case "initialize":
-			response["result"] = map[string]any{"protocolVersion": "2025-11-25", "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "observe-fixture", "version": "1"}}
-		// A client that hits a phase deadline cancels its call and sends notifications/cancelled, which a real
-		// server accepts like any other notification. Slow runners (the race detector) reach that deadline.
-		case "notifications/initialized", "notifications/cancelled":
-			w.WriteHeader(http.StatusAccepted)
-			return
-		case "tools/list":
-			tools := []map[string]any{}
-			for name := range observeDataTools {
-				tools = append(tools, map[string]any{"name": name, "description": "Read data", "inputSchema": map[string]any{"type": "object"}, "annotations": map[string]bool{"readOnlyHint": true}})
-			}
-			response["result"] = map[string]any{"tools": tools}
-		case "tools/call":
-			toolRequest := r.Clone(r.Context())
-			toolRequest.URL.Path = "/" + request.Params.Name
-			toolRequest.Body = http.NoBody
-			if len(request.Params.Arguments) > 0 {
-				toolRequest.Body = io.NopCloser(bytes.NewReader(request.Params.Arguments))
-			}
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, toolRequest)
-			if recorder.Code != http.StatusOK {
-				// The gateway's Retry-After reaches the client transport, as in production.
-				if retryAfter := recorder.Header().Get("Retry-After"); retryAfter != "" {
-					w.Header().Set("Retry-After", retryAfter)
-				}
-				w.WriteHeader(recorder.Code)
-				_, _ = w.Write(recorder.Body.Bytes())
-				return
-			}
-			var value map[string]any
-			if json.Unmarshal(recorder.Body.Bytes(), &value) != nil {
-				t.Errorf("invalid fixture output: %s", recorder.Body)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			failed := value["state"] != nil && value["state"] != "OK"
-			response["result"] = map[string]any{"structuredContent": value, "isError": failed, "content": []any{map[string]any{"type": "text", "text": "truncated text must not be used"}}}
-		default:
-			t.Errorf("unexpected MCP method %q", request.Method)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		writeJSON(w, http.StatusOK, response)
-	}))
-}
 
 func TestObserveMCPConnectionStatusAndRealSDK(t *testing.T) {
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "paprika-observe", Version: "1"}, nil)
@@ -180,19 +106,15 @@ func TestObserveMCPDomainFailuresKeepHTTPStatusThroughSDK(t *testing.T) {
 		{"not_found", 404}, {"deadline_exceeded", 504}, {"canceled", 408}, {"failed_precondition", 503}, {"internal", 502}, {"unknown", 502},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
+			// The data path is REST; the MCP status keeps only the connection status, which lists over MCP.
 			server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "observe", Version: "1"}, nil)
-			for _, name := range []string{"list_observability_providers", "query_metrics"} {
-				server.AddTool(&sdkmcp.Tool{Name: name, InputSchema: map[string]any{"type": "object"}, Annotations: &sdkmcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
-					if req.Params.Name == "list_observability_providers" {
-						return &sdkmcp.CallToolResult{StructuredContent: map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}}}, nil
-					}
-					return &sdkmcp.CallToolResult{IsError: true, StructuredContent: map[string]any{"error": map[string]string{"code": tc.code, "message": "private credential detail"}}, Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "private credential detail"}}}, nil
-				})
-			}
+			server.AddTool(&sdkmcp.Tool{Name: "list_observability_providers", InputSchema: map[string]any{"type": "object"}, Annotations: &sdkmcp.ToolAnnotations{ReadOnlyHint: true}}, func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+				return &sdkmcp.CallToolResult{IsError: true, StructuredContent: map[string]any{"error": map[string]string{"code": tc.code, "message": "private credential detail"}}, Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "private credential detail"}}}, nil
+			})
 			gateway := httptest.NewServer(sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server }, &sdkmcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
 			defer gateway.Close()
 			s := observeTestService(t, gateway.URL)
-			w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
+			w := request(t, s.Handler(), http.MethodGet, "/api/observe-connection", nil, observeHeaders("alice"))
 			assert.Equal(t, tc.status, w.Code, w.Body.String())
 			assert.NotContains(t, w.Body.String(), "private")
 			if tc.status == 429 {

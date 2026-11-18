@@ -242,7 +242,7 @@ func TestQueryDiagnosticsTempoEffectiveBoundsMatchWireRequest(t *testing.T) {
 }
 
 func TestQueryDiagnosticsGatewayDoesNotClaimFinalProviderBounds(t *testing.T) {
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/list_observability_providers" {
 			writeJSON(w, http.StatusOK, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
 			return

@@ -8,6 +8,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { assertNoLegacyDataTools, assertObserveREST } from "./observe-protocol.mjs"
 import { selectGammaOption } from "./gamma-controls.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -225,10 +226,12 @@ try {
     assert.deepEqual(browserWrites, [])
     assert.deepEqual(pageErrors, [])
     const receipts = await protocol()
-    assert.ok(receipts.gateway.some(r => r.tool === "query_dashboard"))
-    for (const name of ["query_metrics", "query_traces"]) assert.ok(receipts.gateway.some(r => r.tool === name))
-    assert.ok(!receipts.gateway.some(r => ["/observe/api/query", "/observe/api/providers", "/observe/api/explore"].includes(r.path)))
-    return { unchangedDocuments: versions.length, browserWrites: 0, legacyDataCalls: 0 }
+    assert.ok(receipts.gateway.some(r => r.tool === "query_dashboard"), "The agent-facing query_dashboard stays on MCP")
+    // Insights reads provider data over REST; no Insights-originated query_* MCP call remains.
+    const rest = assertObserveREST({ gateway: receipts.gateway }, ["/observe/api/query"])
+    assert.ok(rest.some(r => r.body?.signal === "metrics"), "Widget metric reads cross the REST query boundary")
+    assertNoLegacyDataTools({ gateway: receipts.gateway })
+    return { unchangedDocuments: versions.length, browserWrites: 0, restDataCalls: rest.length, legacyDataCalls: 0 }
   })
   await check("The reusable live validator checks the same read-only contract", async () => {
     const tokenFile = join(temporary, "console.token"), mcpTokenFile = join(temporary, "observe.token"), configFile = join(temporary, "live-config.json")

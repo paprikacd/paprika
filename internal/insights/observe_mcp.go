@@ -101,16 +101,14 @@ func (g *observeGateway) connect(lifetime, setup context.Context, token string) 
 
 func (c *observeMCPConnection) close() { c.cancel(); closeReadBody(c.session) }
 
-// observeScope is the one MCP session an HTTP request shares across its
-// gateway operations (catalog listing and data calls). scopeObserveSessions
-// creates it per request and closes it when the response is written. Nothing
-// is stored on Server, so the next request re-checks the caller's grants.
+// observeScope memoizes the shared catalog for one HTTP request, so a request
+// lists it once however many operations resolve or query a shared provider.
+// scopeObserveCatalog creates it per request and stores nothing on Server, so
+// the next request re-checks the caller's grants.
 type observeScope struct {
 	token string
-	ctx   context.Context // the request's context: bounds the session's lifetime
 
 	mu            sync.Mutex
-	connection    *observeMCPConnection
 	catalogLoaded bool
 	catalog       []Provider
 	catalogErr    error
@@ -118,61 +116,22 @@ type observeScope struct {
 
 type observeScopeKey struct{}
 
-func (s *Server) scopeObserveSessions(next http.Handler) http.Handler {
+func (s *Server) scopeObserveCatalog(next http.Handler) http.Handler {
 	if s.observe == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The scope inherits the request's context and therefore any handler
-		// deadline. It adds none, so no shared call outlives its request.
-		scope := &observeScope{token: r.Header.Get(observeTokenHeader), ctx: r.Context()}
-		defer scope.close()
+		scope := &observeScope{token: r.Header.Get(observeTokenHeader)}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), observeScopeKey{}, scope)))
 	})
 }
 
-// observeScopeFor returns the request's scope only for the delegated token that
-// opened it; any other caller gets a private, unshared session.
 func observeScopeFor(ctx context.Context, token string) *observeScope {
 	scope, ok := ctx.Value(observeScopeKey{}).(*observeScope)
 	if !ok || scope.token != token {
 		return nil
 	}
 	return scope
-}
-
-// runLocked opens the scope's session on first use and runs fn on it. The
-// session is bound to the request budget, never to the operation that happened
-// to open it. A failed operation discards the session so a later operation in
-// the same request starts clean. Caller holds s.mu.
-func (s *observeScope) runLocked(ctx context.Context, g *observeGateway, fn func(*observeMCPConnection, context.Context) error) error {
-	if s.connection == nil {
-		connection, err := g.connect(s.ctx, ctx, s.token)
-		if err != nil {
-			return err
-		}
-		s.connection = connection
-	}
-	opCtx, stop := g.operation(ctx, s.ctx)
-	defer stop()
-	if err := fn(s.connection, opCtx); err != nil {
-		s.discardLocked()
-		return err
-	}
-	return nil
-}
-
-func (s *observeScope) discardLocked() {
-	if s.connection != nil {
-		s.connection.close()
-		s.connection = nil
-	}
-}
-
-func (s *observeScope) close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.discardLocked()
 }
 
 func (c *observeMCPConnection) discover(ctx context.Context) error {
@@ -225,21 +184,14 @@ func (c *observeMCPConnection) requireTool(name string) error {
 	return nil
 }
 
+// call runs one MCP tool call for the Data sources status.
 func (c *observeMCPConnection) call(ctx context.Context, name string, args any, limit int64) (payload []byte, failed bool, callErr error) {
-	return c.callMeasured(ctx, name, args, limit, nil)
-}
-
-// callMeasured runs one data tool call. The measurement records dispatch only
-// once the call is about to reach the session: a failed operation before that
-// point is never reported as provider work.
-func (c *observeMCPConnection) callMeasured(ctx context.Context, name string, args any, limit int64, measurement *queryMeasurement) (payload []byte, failed bool, callErr error) {
 	if err := c.requireTool(name); err != nil {
 		return nil, false, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, false, sanitizeObserveMCPError(err)
 	}
-	measurement.dispatch()
 	result, err := c.session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		return nil, false, observeTransportError(err, ctx)
@@ -423,9 +375,9 @@ func observeMCPDomainError(code string) error {
 	case "deadline_exceeded":
 		return observeHTTPError(http.StatusGatewayTimeout)
 	case "canceled":
-		return &observeError{http.StatusRequestTimeout, "observability request was canceled", 0}
+		return observeCanceledError()
 	case "failed_precondition":
-		return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured", 0}
+		return observeNotConfiguredError()
 	default:
 		return errUpstream
 	}

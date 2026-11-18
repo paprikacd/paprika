@@ -38,6 +38,7 @@ func run() error {
 	dataDir := flag.String("data-dir", "./data/insights", "Persistent dashboard directory; one service replica only")
 	providersFile := flag.String("providers", "", "Path to provider configuration JSON")
 	dev := flag.Bool("dev", false, "Disable service authentication on a loopback listener for local development")
+	capacity := registerCapacityFlags(flag.CommandLine)
 	flag.Parse()
 	if *dev {
 		host, _, err := net.SplitHostPort(*listen)
@@ -46,7 +47,8 @@ func run() error {
 			return errors.New("--dev requires an explicit loopback listen address")
 		}
 	}
-	cfg := insights.Config{Token: os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), InsecureDev: *dev, ObservabilityURL: os.Getenv("PAPRIKA_OBSERVABILITY_GATEWAY_ADDR")}
+	admission := capacity.capacity()
+	cfg := insights.Config{Token: os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), InsecureDev: *dev, ObservabilityURL: os.Getenv("PAPRIKA_OBSERVABILITY_GATEWAY_ADDR"), Capacity: &admission}
 	if *providersFile != "" {
 		if configErr := loadProvidersConfig(*providersFile, &cfg); configErr != nil {
 			return configErr
@@ -67,6 +69,9 @@ func run() error {
 	server := &http.Server{Addr: *listen, Handler: service.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	effective := service.Capacity()
+	slog.Info("Insights capacity", "queryConcurrency", effective.QueryConcurrency, "queryQueue", effective.QueryQueue, "queryQueueWait", effective.QueryWait.String(),
+		"catalogConcurrency", effective.CatalogConcurrency, "catalogQueue", effective.CatalogQueue, "catalogQueueWait", effective.CatalogWait.String())
 	slog.Info("Paprika Insights listening", "address", listener.Addr().String(), "providers", len(cfg.Providers), "development", *dev)
 	return serve(ctx, server, listener)
 }

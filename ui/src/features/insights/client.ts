@@ -11,6 +11,7 @@ import {
   type SavedQueryEntry,
 } from "./schema"
 import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
+import { jitter, REPLAY_DELAY_CAP_MS } from "./replay-timing"
 import { dashboardAsSent } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
@@ -98,7 +99,7 @@ export interface InsightsClient {
   listStarters?(signal?: AbortSignal): Promise<StarterSummary[]>
   /** One starter as a portable bundle for the import review. Reading it writes nothing. */
   getStarter?(id: string, signal?: AbortSignal): Promise<DashboardBundle>
-  query(request: QueryRequest, signal: AbortSignal): Promise<QueryResult>
+  query(request: QueryRequest, signal: AbortSignal, options?: QueryCallOptions): Promise<QueryResult>
   providerConfigs(signal?: AbortSignal): Promise<ProviderConfig[]>
   saveProvider(config: ProviderConfig): Promise<void>
   removeProvider(id: string, etag?: string): Promise<void>
@@ -121,6 +122,15 @@ export interface InsightsClient {
 // server's exact document revision for writes; HTTP ETag remains the cache key.
 function documentETag(response: Response): string | undefined {
   return response.headers.get("X-Paprika-Document-ETag") ?? response.headers.get("ETag") ?? undefined
+}
+
+/** Per-call choices for a query. */
+export interface QueryCallOptions {
+  /**
+   * False leaves an admission 429 to the caller, which owns the wait (the query
+   * scheduler releases its slot while it backs off). Defaults to true.
+   */
+  replayCapacity?: boolean;
 }
 
 function canRetryCapacity(requestPath: string, init: RequestInit): boolean {
@@ -151,13 +161,6 @@ function capacityRetryDelay(response: Response, attempt: number): number | undef
   return delay <= REPLAY_DELAY_CAP_MS ? jitter(delay) : undefined
 }
 
-// No replay waits longer than this, however large the server's Retry-After is.
-const REPLAY_DELAY_CAP_MS = 10_000
-
-/** Spreads a replay delay by +-30%, so viewers blocked by one busy spell do not replay in step. */
-function jitter(delay: number): number {
-  return Math.round(delay * (0.7 + 0.6 * Math.random()))
-}
 
 // A busy listing is replayed at most this many times, as a 429 read is.
 const BUSY_LISTING_REPLAYS = 3
@@ -350,7 +353,7 @@ export function createInsightsClient(
     }
     return { bearer, principal }
   }
-  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false, deferSession = false) {
+  async function request(path: string, init: RequestInit = {}, context?: ReturnType<typeof requestContext>, allowNotModified = false, deferSession = false, replayCapacity = true) {
     const current = context ?? requestContext(session ? await session.ensureToken() : token?.() ?? null)
     let bearer = current.bearer
     const send = async () => {
@@ -363,7 +366,7 @@ export function createInsightsClient(
       // it reaches capacity. Replay only explicit 429 rejections, keeping
       // the exact body and conditional revision. Lost responses, 5xx errors and
       // conflicts remain with the importer's read-back reconciliation.
-      for (let attempt = 0; response.status === 429 && attempt < 3 && canRetryCapacity(path, init); attempt++) {
+      for (let attempt = 0; response.status === 429 && replayCapacity && attempt < 3 && canRetryCapacity(path, init); attempt++) {
         if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
         const delay = capacityRetryDelay(response, attempt)
         if (delay === undefined) break
@@ -613,7 +616,7 @@ export function createInsightsClient(
         headers: etag ? { "If-Match": etag } : {},
       })
     },
-    query: async (body, signal) => {
+    query: async (body, signal, options) => {
       if (body.queryRef) throw new Error("Resolve the saved query through the Insights workspace before executing it.")
       const result = await readJSON<QueryResult>(
         await request("/query", {
@@ -621,7 +624,7 @@ export function createInsightsClient(
           body: JSON.stringify(body),
           headers: { "X-Insights-Diagnostics": "1" },
           signal,
-        })
+        }, undefined, false, false, options?.replayCapacity ?? true)
       )
       const diagnostics = parseQueryDiagnostics(result.diagnostics)
       if (body.kind === "records") {
@@ -646,3 +649,5 @@ export function loadProviderCatalog(client: InsightsClient, signal?: AbortSignal
     ? client.providerCatalog(signal)
     : client.providers(signal).then((providers) => ({ providers }))
 }
+
+export { jitter, REPLAY_DELAY_CAP_MS }

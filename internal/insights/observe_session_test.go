@@ -20,8 +20,11 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// observeWireCounts observes the MCP wire without changing the fixtures: each
-// initialize request opens one session, and each tools/call names its tool.
+// observeWireCounts observes the gateway wire without changing the fixtures.
+// Every REST request counts under "request" and "rest:<path>", and under the
+// tool name its fixture sees: "tool:list_observability_providers",
+// "tool:query_<signal>" or "tool:list_<kind>". MCP messages count under
+// "method:<name>", and each MCP initialize under "session".
 type observeWireCounts struct {
 	mu         sync.Mutex
 	operations map[string]int
@@ -33,8 +36,7 @@ func (c *observeWireCounts) count(key string) int {
 	return c.operations[key]
 }
 
-// posts counts every JSON-RPC message the gateway received, including the
-// initialize handshake, the initialized notification and discovery.
+// posts counts every gateway request, REST or MCP, that the fixture received.
 func (c *observeWireCounts) posts() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -44,7 +46,7 @@ func (c *observeWireCounts) posts() int {
 			total += n
 		}
 	}
-	return total
+	return total + c.operations["request"]
 }
 
 func (c *observeWireCounts) record(key string) {
@@ -64,13 +66,18 @@ func countObserveWire(s *Server) *observeWireCounts {
 		base = http.DefaultTransport
 	}
 	s.observe.client.Transport = observeRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body []byte
 		if r.Body != nil {
-			body, err := io.ReadAll(r.Body)
+			var err error
+			body, err = io.ReadAll(r.Body)
 			_ = r.Body.Close()
 			if err != nil {
 				return nil, err
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		countRESTRequest(counts, r.URL.Path, body)
+		if len(body) > 0 {
 			var message struct {
 				Method string `json:"method"`
 				Params struct {
@@ -92,11 +99,35 @@ func countObserveWire(s *Server) *observeWireCounts {
 	return counts
 }
 
+func countRESTRequest(counts *observeWireCounts, path string, body []byte) {
+	switch path {
+	case observeRESTProvidersPath:
+		counts.record("request")
+		counts.record("rest:" + path)
+		counts.record("tool:list_observability_providers")
+	case observeRESTQueryPath, observeRESTExplorePath:
+		var fields struct {
+			Signal string `json:"signal"`
+			Kind   string `json:"kind"`
+		}
+		if json.Unmarshal(body, &fields) != nil {
+			return
+		}
+		counts.record("request")
+		counts.record("rest:" + path)
+		if path == observeRESTQueryPath {
+			counts.record("tool:query_" + fields.Signal)
+		} else {
+			counts.record("tool:list_" + fields.Kind)
+		}
+	}
+}
+
 // observeCatalogAndQueryGateway serves a two-provider catalog and an OK metrics
 // result. The catalog status lets a test simulate gateway saturation.
 func observeCatalogAndQueryGateway(t *testing.T, catalogStatus int) *httptest.Server {
 	t.Helper()
-	return observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/list_observability_providers":
 			if catalogStatus != http.StatusOK {
@@ -113,17 +144,19 @@ func observeCatalogAndQueryGateway(t *testing.T, catalogStatus int) *httptest.Se
 	}))
 }
 
-func TestObserveWidgetQueryUsesOneMCPSession(t *testing.T) {
+func TestObserveWidgetQueryUsesOneListingAndOneQuery(t *testing.T) {
 	gateway := observeCatalogAndQueryGateway(t, http.StatusOK)
 	defer gateway.Close()
 	s := observeTestService(t, gateway.URL)
 	counts := countObserveWire(s)
 	w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	// One session carries both the catalog listing and the data call.
-	assert.Equal(t, 1, counts.count("session"), "MCP sessions per widget query")
-	assert.Equal(t, 1, counts.count("tool:list_observability_providers"), "catalog listings per widget query")
-	assert.Equal(t, 1, counts.count("tool:query_metrics"), "data calls per widget query")
+	// The data path is REST: no MCP session, one catalog listing and one query.
+	assert.Zero(t, counts.count("session"), "MCP sessions per widget query")
+	assert.Zero(t, counts.count("method:tools/call"), "MCP calls per widget query")
+	assert.Equal(t, 1, counts.count("rest:"+observeRESTProvidersPath), "catalog listings per widget query")
+	assert.Equal(t, 1, counts.count("rest:"+observeRESTQueryPath), "data calls per widget query")
+	assert.Equal(t, 2, counts.posts(), "gateway requests per widget query")
 	assert.Zero(t, len(s.queries), "admission slot leaked")
 }
 
@@ -170,7 +203,7 @@ func TestObserveRequestScopeSharesOneSessionAndCatalogAcrossOperations(t *testin
 	s := observeTestService(t, gateway.URL)
 	counts := countObserveWire(s)
 	reference := observeProviderID("prod/prom")
-	handler := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := s.scopeObserveCatalog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A dashboard resolves and queries the same shared provider repeatedly.
 		for range 3 {
 			p, err := s.resolveProvider(r, reference)
@@ -189,14 +222,14 @@ func TestObserveRequestScopeSharesOneSessionAndCatalogAcrossOperations(t *testin
 	}))
 	w := request(t, handler, http.MethodPost, "/", nil, observeHeaders("alice"))
 	require.Equal(t, http.StatusNoContent, w.Code, w.Body.String())
-	assert.Equal(t, 1, counts.count("session"))
+	assert.Zero(t, counts.count("session"))
 	assert.Equal(t, 1, counts.count("tool:list_observability_providers"))
 	assert.Equal(t, 3, counts.count("tool:query_metrics"))
 }
 
-func TestObserveFailedOperationDoesNotPoisonRequestSession(t *testing.T) {
+func TestObserveFailedOperationDoesNotPoisonRequestScope(t *testing.T) {
 	var queries atomic.Int32
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/list_observability_providers" {
 			writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
 			return
@@ -212,7 +245,7 @@ func TestObserveFailedOperationDoesNotPoisonRequestSession(t *testing.T) {
 	counts := countObserveWire(s)
 	reference := observeProviderID("prod/prom")
 	var busy, recovered error
-	handler := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := s.scopeObserveCatalog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := s.resolveProvider(r, reference)
 		if err != nil {
 			t.Errorf("resolve: %v", err)
@@ -230,18 +263,20 @@ func TestObserveFailedOperationDoesNotPoisonRequestSession(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, failure.status)
 	require.NoError(t, recovered, "a failed operation must not break later operations in the same request")
 	assert.Equal(t, 1, counts.count("tool:list_observability_providers"), "the catalog outcome, success or failure, is memoized for the request")
-	assert.Equal(t, 2, counts.count("session"), "the failed session is replaced, not reused")
+	assert.Zero(t, counts.count("session"), "data operations open no MCP session")
+	assert.Equal(t, 2, counts.count("tool:query_metrics"), "a failed data call is not memoized")
 }
 
-// The unscoped path is the pre-change wire shape: every operation opens its own
-// session. The served path shares one session across the same operations.
-func TestObserveWidgetQueryWireCostBeforeAndAfterSharing(t *testing.T) {
+// A widget query costs two gateway requests: one catalog listing and one data
+// call. The unscoped path lists per operation, and the scoped path shares the
+// listing. Neither opens an MCP session.
+func TestObserveWidgetQueryWireCost(t *testing.T) {
 	gateway := observeCatalogAndQueryGateway(t, http.StatusOK)
 	defer gateway.Close()
 	reference := observeProviderID("prod/prom")
 	query := &Query{ProviderID: reference, Kind: "metrics", Query: "up", Start: 1, End: 2, Step: 1}
 
-	t.Run("unscoped operations open a session each", func(t *testing.T) {
+	t.Run("unscoped operations each list and query once", func(t *testing.T) {
 		s := observeTestService(t, gateway.URL)
 		counts := countObserveWire(s)
 		ctx := t.Context()
@@ -251,24 +286,21 @@ func TestObserveWidgetQueryWireCostBeforeAndAfterSharing(t *testing.T) {
 		p := &providerClient{public: providers[0], metadataCache: make(map[string]metadataCacheEntry), remote: &observeProvider{gateway: s.observe, token: "alice", reference: providers[0].ProviderRef}}
 		_, err = p.query(ctx, query)
 		require.NoError(t, err)
-		assert.Equal(t, 2, counts.count("session"))
+		assert.Zero(t, counts.count("session"))
 		assert.Equal(t, 1, counts.count("tool:list_observability_providers"))
 		assert.Equal(t, 1, counts.count("tool:query_metrics"))
-		// Each session: server/discover probe, initialize, initialized, tools/list.
-		assert.Equal(t, 2, counts.count("method:server/discover"))
-		assert.Equal(t, 10, counts.posts(), "POSTs for one widget query before sharing")
+		assert.Equal(t, 2, counts.posts(), "gateway requests for one widget query, unscoped")
 	})
 
-	t.Run("a served widget query shares one session", func(t *testing.T) {
+	t.Run("a served widget query shares its listing", func(t *testing.T) {
 		s := observeTestService(t, gateway.URL)
 		counts := countObserveWire(s)
 		w := request(t, s.Handler(), http.MethodPost, "/api/query", observeQueryBody(t, "prod/prom", "metrics"), observeHeaders("alice"))
 		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-		assert.Equal(t, 1, counts.count("session"))
+		assert.Zero(t, counts.count("session"))
 		assert.Equal(t, 1, counts.count("tool:list_observability_providers"))
 		assert.Equal(t, 1, counts.count("tool:query_metrics"))
-		assert.Equal(t, 1, counts.count("method:server/discover"))
-		assert.Equal(t, 6, counts.posts(), "POSTs for one widget query after sharing")
+		assert.Equal(t, 2, counts.posts(), "gateway requests for one widget query, served")
 	})
 }
 
@@ -276,7 +308,7 @@ func TestObserveWidgetQueryWireCostBeforeAndAfterSharing(t *testing.T) {
 // listing or a query until its gate closes or its request is canceled.
 func observeHeldGateway(t *testing.T, holdCatalog, holdQuery <-chan struct{}, listings *atomic.Int64) *httptest.Server {
 	t.Helper()
-	return observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hold := func(gate <-chan struct{}) bool {
 			if gate == nil {
 				return true
@@ -453,16 +485,16 @@ func TestObserveOperationCapIsMinimumOfOperationAndRemainingBudget(t *testing.T)
 	assert.Contains(t, w.Body.String(), `"sharedCatalog"`)
 }
 
-// A narrow context that opened the session must not poison later operations
-// in the same request: the session belongs to the request budget.
-func TestObserveSessionSurvivesNarrowFirstOperation(t *testing.T) {
+// A narrow context that lists the catalog must not poison later operations in
+// the same request: the memoized catalog belongs to the request budget.
+func TestObserveNarrowFirstOperationDoesNotPoisonRequestScope(t *testing.T) {
 	gateway := observeCatalogAndQueryGateway(t, http.StatusOK)
 	defer gateway.Close()
 	s := observeTestService(t, gateway.URL)
 	counts := countObserveWire(s)
 	reference := observeProviderID("prod/prom")
 	var firstErr, laterErr error
-	h := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := s.scopeObserveCatalog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		narrow, cancel := context.WithCancel(r.Context())
 		_, firstErr = s.observe.providers(narrow, "alice")
 		cancel() // The narrow operation finished; the request continues.
@@ -477,22 +509,23 @@ func TestObserveSessionSurvivesNarrowFirstOperation(t *testing.T) {
 	w := request(t, h, http.MethodGet, "/", nil, observeHeaders("alice"))
 	require.Equal(t, http.StatusNoContent, w.Code)
 	require.NoError(t, firstErr)
-	require.NoError(t, laterErr, "a narrow first operation poisoned the request's session")
-	assert.Equal(t, 1, counts.count("session"))
+	require.NoError(t, laterErr, "a narrow first operation poisoned the request's catalog")
+	assert.Zero(t, counts.count("session"))
+	assert.Equal(t, 1, counts.count("tool:list_observability_providers"), "the catalog is listed once per request")
 }
 
 // The scope never hands one delegated token's session to another caller,
 // even inside the same HTTP request. Each caller's catalog is its own.
-func TestObserveScopeNeverSharesSessionsAcrossTokens(t *testing.T) {
+func TestObserveScopeNeverSharesCatalogAcrossTokens(t *testing.T) {
 	var seen sync.Map
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen.Store(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), true)
 		writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
 	}))
 	defer gateway.Close()
 	s := observeTestService(t, gateway.URL)
 	counts := countObserveWire(s)
-	h := s.scopeObserveSessions(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := s.scopeObserveCatalog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, token := range []string{"alice", "bob", "alice"} {
 			_, err := s.observe.providers(r.Context(), token)
 			assert.NoError(t, err, token)
@@ -500,8 +533,7 @@ func TestObserveScopeNeverSharesSessionsAcrossTokens(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	require.Equal(t, http.StatusNoContent, request(t, h, http.MethodGet, "/", nil, observeHeaders("alice")).Code)
-	assert.Equal(t, 2, counts.count("session"), "alice's scope session plus bob's private session")
-	assert.Equal(t, 2, counts.count("tool:list_observability_providers"), "alice's second lookup is memoized")
+	assert.Equal(t, 2, counts.count("tool:list_observability_providers"), "alice's second lookup is memoized; bob lists privately")
 	_, bob := seen.Load("bob")
 	assert.True(t, bob)
 }
@@ -509,7 +541,7 @@ func TestObserveScopeNeverSharesSessionsAcrossTokens(t *testing.T) {
 // A request canceled while its catalog listing is in flight releases its slot.
 func TestObserveCanceledDuringCatalogReleasesSlot(t *testing.T) {
 	started := make(chan struct{}, 1)
-	gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/list_observability_providers" {
 			started <- struct{}{}
 			<-r.Context().Done()
@@ -661,7 +693,7 @@ func TestObserveProvidersKeepLocalWhenSharedCatalogFails(t *testing.T) {
 		{"unavailable", http.StatusInternalServerError, "unavailable", http.StatusBadGateway},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, tc.status, map[string]any{"error": "private gateway detail"})
 			}))
 			defer gateway.Close()
@@ -758,7 +790,7 @@ func TestObserveBusyListingCarriesRetryAfter(t *testing.T) {
 		{"unusable delay ignored", "soon", defaultSharedRetryAfter},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if tc.retryAfter != "" {
 					w.Header().Set("Retry-After", tc.retryAfter)
 				}
@@ -836,7 +868,7 @@ func TestObserveDataBusyForwardsGatewayRetryAfter(t *testing.T) {
 		{"no delay", "", "1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			gateway := observeMCPTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/list_observability_providers" {
 					writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
 					return

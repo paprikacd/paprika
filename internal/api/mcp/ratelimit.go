@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -25,6 +26,25 @@ const (
 )
 
 var errRateQueueCapacity = errors.New("MCP request rate queue is full or the wait would exceed its budget")
+
+// rateQueueFullError is errRateQueueCapacity with the delay the reservation
+// would have needed. Its Retry-After names that delay, capped at the browser's
+// replay cap, instead of a constant.
+type rateQueueFullError struct{ delay time.Duration }
+
+func (e *rateQueueFullError) Error() string { return errRateQueueCapacity.Error() }
+
+func (e *rateQueueFullError) Is(target error) bool { return target == errRateQueueCapacity }
+
+// rateRetryAfterSeconds is the Retry-After for a limiter refusal: the reservation
+// delay rounded up to whole seconds, within 1 to 10. Any other error gets 1.
+func rateRetryAfterSeconds(err error) int {
+	var full *rateQueueFullError
+	if !errors.As(err, &full) || full.delay <= 0 {
+		return 1
+	}
+	return int(min(max(math.Ceil(full.delay.Seconds()), 1), 10))
+}
 
 type limiterEntry struct {
 	lim      *rate.Limiter
@@ -122,13 +142,13 @@ func (l *principalRateLimiter) reserve(subject string) (*limiterEntry, *rate.Res
 	entry := l.entryLocked(subject)
 	reservation := entry.lim.Reserve()
 	if !reservation.OK() {
-		return nil, nil, 0, errRateQueueCapacity
+		return nil, nil, 0, &rateQueueFullError{}
 	}
 	delay := reservation.Delay()
 	if delay > l.maxWait || (delay > 0 &&
 		(l.waiting >= l.maxWaiting || entry.queued >= l.maxPerSubject)) {
 		reservation.Cancel()
-		return nil, nil, 0, errRateQueueCapacity
+		return nil, nil, 0, &rateQueueFullError{delay: delay}
 	}
 	if delay > 0 {
 		l.waiting++

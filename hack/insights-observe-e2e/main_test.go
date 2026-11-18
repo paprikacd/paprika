@@ -3,12 +3,15 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestLocalFixtureCredentialLifetime(t *testing.T) {
@@ -236,4 +239,31 @@ func TestQueryFixtureFailuresAndTargets(t *testing.T) {
 	if unauthenticated.Code != http.StatusForbidden {
 		t.Fatalf("unauthenticated provider status = %d, want 403", unauthenticated.Code)
 	}
+}
+
+// The protocol receipts keep each REST data body, so the browser suites can
+// assert the exact provider, range and step. Credentials never reach a receipt.
+func TestGatewayRecorderKeepsRESTBodiesWithoutCredentials(t *testing.T) {
+	fixture := &telemetryFixture{}
+	var forwarded string
+	handler := fixture.recordGateway(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		forwarded = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	const body = `{"provider":"observability/prometheus","signal":"metrics","query":"up","start":"2026-11-18T00:00:00Z","end":"2026-11-18T01:00:00Z","stepSeconds":12}`
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/observe/api/query", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer secret-delegated-token")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	require.Equal(t, body, forwarded, "the recorder must not consume the body it forwards")
+	fixture.mu.Lock()
+	defer fixture.mu.Unlock()
+	require.Len(t, fixture.gatewayRequests, 1)
+	receipt := fixture.gatewayRequests[0]
+	require.JSONEq(t, body, string(receipt.Body))
+	serialized, err := json.Marshal(fixture.gatewayRequests)
+	require.NoError(t, err)
+	require.NotContains(t, string(serialized), "secret-delegated-token")
+	require.NotContains(t, string(serialized), "Bearer")
 }

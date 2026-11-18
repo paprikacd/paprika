@@ -154,7 +154,7 @@ describe("Explore query workspace", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Open saved query" }))
     fireEvent.click(await screen.findByRole("option", { name: /SQL records/ }))
     await screen.findByDisplayValue("SQL records")
-    expect(screen.getByText("query_records")).toBeInTheDocument()
+    expect(screen.getByText("POST /observe/api/query")).toBeInTheDocument()
     expect(screen.queryByRole("textbox", { name: "PromQL query" })).not.toBeInTheDocument()
     expect(screen.queryByRole("textbox", { name: "SQL metric projection" })).not.toBeInTheDocument()
     const hostile = "api'); DROP TABLE events; --"

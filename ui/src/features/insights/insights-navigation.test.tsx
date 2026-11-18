@@ -58,7 +58,7 @@ describe("dashboard navigation", () => {
     fireEvent.click(screen.getByText("Run resolved tooltip query"))
     await waitFor(() => expect(api.query).toHaveBeenCalledWith(expect.objectContaining({
       query: `up{service=${JSON.stringify('checkout"\\{{literal}}')}}`,
-    }), expect.any(AbortSignal)))
+    }), expect.any(AbortSignal), { replayCapacity: false }))
   })
   it("carries signal context and fixed time, safely interpolates queries, and preserves the saved target", async () => {
     const api = client()
@@ -70,7 +70,7 @@ describe("dashboard navigation", () => {
     expect(screen.getByTestId("view-range")).toHaveTextContent(JSON.stringify(range))
     expect(screen.getByText("All changes saved")).toBeInTheDocument()
     fireEvent.click(screen.getByText("Run query"))
-    await waitFor(() => expect(api.query).toHaveBeenCalledWith(expect.objectContaining({ query: 'up{service="checkout\\"api"}' }), expect.any(AbortSignal)))
+    await waitFor(() => expect(api.query).toHaveBeenCalledWith(expect.objectContaining({ query: 'up{service="checkout\\"api"}' }), expect.any(AbortSignal), { replayCapacity: false }))
     fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
     fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Target saved" } })
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
