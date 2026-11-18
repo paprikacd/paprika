@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { applicationQueryKey } from "@/lib/use-application-data"
 import { createPromiseClient } from "@connectrpc/connect"
 import { GitCompare } from "lucide-react"
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import { InvestigationPanel } from "@/components/dashboard/investigation-panel"
 import {
@@ -405,14 +405,40 @@ function LogsTab({
   const [error, setError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
-  const [paused, setPaused] = useState(false)
+  // Following drives auto-scroll. Scrolling away from the bottom turns it off, and
+  // scrolling back to the bottom or pressing Follow turns it on.
+  const [following, setFollowing] = useState(true)
+  // Mirrors `following` for the stream loop, which reads it outside render. Only
+  // applyFollowing writes it.
+  const followingRef = useRef(true)
+  // The scroll position at the last scroll event or programmatic scroll. A move up
+  // away from the bottom turns following off, so a scroll that only clamps or
+  // grows the content does not.
+  const lastScrollTopRef = useRef(0)
+  // Lines appended since following last turned off. Lines replayed by a reconnect
+  // are not counted.
+  const [unseenCount, setUnseenCount] = useState(0)
   const [filter, setFilter] = useState("")
   const [lineCount, setLineCount] = useState(0)
   const [firstChunkAt, setFirstChunkAt] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const preRef = useRef<HTMLPreElement | null>(null)
-  const userScrolledAwayRef = useRef(false)
+  const followToggleRef = useRef<HTMLButtonElement | null>(null)
   const filterId = useId()
+
+  const applyFollowing = (next: boolean) => {
+    followingRef.current = next
+    setFollowing(next)
+    if (next) setUnseenCount(0)
+  }
+
+  const scrollToBottom = () => {
+    const pre = preRef.current
+    if (pre) {
+      pre.scrollTop = pre.scrollHeight
+      lastScrollTopRef.current = pre.scrollTop
+    }
+  }
 
   // Reset state when (re)entering the tab or changing resource.
   useEffect(() => {
@@ -426,6 +452,9 @@ function LogsTab({
       setPodName(null)
       setError(null)
       setLineCount(0)
+      followingRef.current = true
+      setFollowing(true)
+      setUnseenCount(0)
       setFirstChunkAt(null)
       setReconnecting(false)
     })
@@ -450,6 +479,11 @@ function LogsTab({
     // pod log from the start (no TailLines or SinceSeconds), so its first chunk must
     // replace the buffer. Until then, InvalidArgument (3) is final.
     let sawChunk = false
+    // Lines in the buffer since its last replacement, and how many lines the last
+    // replacement replays. A line that a replay sends again is not new, so it does not
+    // count toward the Jump to latest count.
+    let shownTotal = 0
+    let replayBaseline = 0
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
     const open = async () => {
@@ -464,6 +498,8 @@ function LogsTab({
       // Whether this stream has sent a chunk yet. It is set on the first chunk of
       // this stream, which may be a replay of the buffered log.
       let streamHasChunk = false
+      // Position of this stream's next chunk, counted from the stream's first chunk.
+      let streamIndex = 0
       try {
         const iter = client.streamResourceLogs({
           applicationNamespace,
@@ -487,11 +523,18 @@ function LogsTab({
             setError(null)
             if (sawChunk) {
               // A reconnect replays the whole log, so drop the lines already shown.
+              // The replay re-sends the lines shown so far before any new ones. A
+              // reconnect during a replay keeps the higher count.
+              replayBaseline = Math.max(replayBaseline, shownTotal)
+              shownTotal = 0
               setLines([])
               setLineCount(0)
               setFirstChunkAt(Date.now())
             }
           }
+          const replayed = streamIndex < replayBaseline
+          streamIndex++
+          shownTotal++
           sawChunk = true
           if (!connected) {
             setConnected(true)
@@ -508,6 +551,7 @@ function LogsTab({
             return next
           })
           setLineCount((c) => c + 1)
+          if (!replayed && !followingRef.current) setUnseenCount((c) => c + 1)
           if (firstChunkAt == null) setFirstChunkAt(Date.now())
         }
         // Normal completion (EOF or end of follow=false): close cleanly.
@@ -639,13 +683,13 @@ function LogsTab({
     return lines.filter((c) => c.line.toLowerCase().includes(f))
   }, [lines, deferredFilter])
 
-  useEffect(() => {
-    if (paused) return
-    if (userScrolledAwayRef.current) return
-    const pre = preRef.current
-    if (!pre) return
-    pre.scrollTop = pre.scrollHeight
-  }, [lineCount, paused])
+  // A layout effect scrolls after each commit, before the browser can dispatch a
+  // scroll event for the previous position against the taller log. It also runs when
+  // the filter changes what is shown, so a followed view stays at the bottom.
+  useLayoutEffect(() => {
+    if (!following) return
+    scrollToBottom()
+  }, [lineCount, following, visible])
 
   if (error && lines.length === 0) {
     return (
@@ -699,43 +743,68 @@ function LogsTab({
             {podName ? ` · pod/${podName}` : ""} · {lineCount} lines
           </span>
           <button
+            ref={followToggleRef}
             type="button"
-            onClick={() => {
-              const next = !paused
-              setPaused(next)
-              if (!next) userScrolledAwayRef.current = false
-            }}
-            data-testid="pause-toggle"
-            className="ml-auto font-mono text-meta text-ink-muted hover:text-ink-on focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-accent"
+            aria-pressed={following}
+            onClick={() => applyFollowing(!following)}
+            data-testid="follow-toggle"
+            className={`ml-auto border px-1.5 py-0.5 font-mono text-meta hover:text-ink-on focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-accent ${
+              following
+                ? "border-ink-accent bg-ink-accent/10 text-ink-accent"
+                : "border-ink-rule text-ink-muted"
+            }`}
           >
-            {paused ? "resume" : "pause"}
+            Follow
           </button>
         </div>
-        <pre
-          ref={preRef}
-          data-testid="logs-output"
-          aria-label="Resource logs"
-          aria-live="off"
-          onScroll={(e) => {
-            const el = e.currentTarget
-            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 16
-            userScrolledAwayRef.current = !atBottom
-          }}
-          className="m-0 max-h-[60vh] min-h-[200px] overflow-auto p-2.5 font-mono text-note leading-[1.7] whitespace-pre-wrap text-log-text"
-        >
-          {visible.length === 0
-            ? firstChunkAt == null
-              ? "Waiting for first log line…"
-              : "No matches."
-            : visible.map((chunk, i) => (
-                <div key={`${chunk.timestampMs}-${i}`} className="flex gap-2">
-                  <span className="flex-none text-ink-kicker tabular-nums select-none">
-                    {formatTimestamp(chunk.timestampMs)}
-                  </span>
-                  <span className="min-w-0 flex-1 break-words">{chunk.line}</span>
-                </div>
-              ))}
-        </pre>
+        <div className="relative">
+          <pre
+            ref={preRef}
+            data-testid="logs-output"
+            aria-label="Resource logs"
+            aria-live="off"
+            onScroll={(e) => {
+              const el = e.currentTarget
+              const top = el.scrollTop
+              const movedUp = top < lastScrollTopRef.current
+              const movedDown = top > lastScrollTopRef.current
+              lastScrollTopRef.current = top
+              const atBottom = el.scrollHeight - top - el.clientHeight < 16
+              // Only a move is a user's scroll. A scroll event for a clamp, or for
+              // content that grew, keeps the follow state.
+              if (movedUp && !atBottom && followingRef.current) applyFollowing(false)
+              else if (movedDown && atBottom && !followingRef.current) applyFollowing(true)
+            }}
+            className="m-0 max-h-[60vh] min-h-[200px] overflow-auto p-2.5 font-mono text-note leading-[1.7] whitespace-pre-wrap text-log-text"
+          >
+            {visible.length === 0
+              ? firstChunkAt == null
+                ? "Waiting for first log line…"
+                : "No matches."
+              : visible.map((chunk, i) => (
+                  <div key={`${chunk.timestampMs}-${i}`} className="flex gap-2">
+                    <span className="flex-none text-ink-kicker tabular-nums select-none">
+                      {formatTimestamp(chunk.timestampMs)}
+                    </span>
+                    <span className="min-w-0 flex-1 break-words">{chunk.line}</span>
+                  </div>
+                ))}
+          </pre>
+          {!following && lines.length > 0 ? (
+            <button
+              type="button"
+              data-testid="jump-to-latest"
+              onClick={() => {
+                // The button unmounts once following is on, so focus moves to Follow first.
+                followToggleRef.current?.focus()
+                applyFollowing(true)
+              }}
+              className="absolute right-2 bottom-2 border border-ink-accent bg-ink-surface px-2 py-1 font-mono text-meta text-ink-accent hover:text-ink-on focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-accent"
+            >
+              Jump to latest{unseenCount > 0 ? ` · ${unseenCount} new` : ""}
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   )
