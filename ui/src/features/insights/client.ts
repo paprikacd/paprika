@@ -1,10 +1,12 @@
 import {
   savedQuerySchema,
   storedDashboardSchema,
+  parseQueryDiagnostics,
   type Dashboard,
   type Provider,
   type QueryRequest,
   type QueryResult,
+  type QueryDiagnostics,
   type SavedQuery,
   type SavedQueryEntry,
 } from "./schema"
@@ -187,6 +189,64 @@ export class InsightsHTTPError extends Error {
   }
 }
 
+/**
+ * A failed query. It is still an InsightsHTTPError, so busy and access handling
+ * is unchanged; the fixed code and the sanitized receipt, when sent, ride along.
+ */
+export class InsightsQueryError extends InsightsHTTPError {
+  constructor(message: string, status: number, retryAfter: string | null, readonly code: string, readonly diagnostics?: QueryDiagnostics) {
+    super(message, status, retryAfter)
+    this.name = "InsightsQueryError"
+  }
+}
+
+const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error"])
+
+// Fallback copy by code, for a failure whose body is not Insights' JSON envelope
+// (a proxy page) or carries no error text. Insights writes its query failures
+// as fixed, safe strings, so the envelope's own text is shown when present.
+const queryFailureMessages: Record<string, string> = {
+  canceled: "The query was cancelled.",
+  timeout: "The query timed out. Narrow the time range or simplify the query and try again.",
+  rate_limited: "Query capacity is busy; retry shortly.",
+  forbidden: "Your account does not have access to this data source. Check its Observability permissions.",
+  invalid_query: "The data source rejected this query. Check the expression and time bounds.",
+  provider_not_found: "The data source is unavailable. Choose a connected source.",
+  provider_error: "The data source is unavailable. Check its connection and query configuration.",
+}
+
+const serviceUnavailableMessage = "Insights is unavailable. Check the service and provider configuration."
+
+// The code for a failure whose body carries none, such as a proxy's own page.
+function defaultQueryFailureCode(status: number): string {
+  switch (status) {
+    case 400: return "invalid_query"
+    case 403: return "forbidden"
+    case 404: return "provider_not_found"
+    case 408: return "canceled"
+    case 429: return "rate_limited"
+    case 504: return "timeout"
+    default: return "provider_error"
+  }
+}
+
+async function queryFailure(response: Response): Promise<InsightsQueryError> {
+  let envelope: Record<string, unknown> = {}
+  try {
+    const body: unknown = await response.json()
+    if (body && typeof body === "object") envelope = body as Record<string, unknown>
+  } catch { /* A proxy may return a non-JSON error. */ }
+  const envelopeCode = typeof envelope.code === "string" && queryErrorCodes.has(envelope.code) ? envelope.code : undefined
+  const code = envelopeCode ?? defaultQueryFailureCode(response.status)
+  // A 403 body is a bare refusal; keep the data-source permission explanation for it.
+  const envelopeText = typeof envelope.error === "string" && envelope.error.trim() !== "" ? envelope.error : ""
+  // A 5xx with no envelope code (an Envoy 503, or a 500/502 during a deploy) says nothing about the
+  // data source, so it gets the service-level copy that master shows. 504 keeps its timeout copy.
+  const serviceFailure = envelopeCode === undefined && response.status >= 500 && response.status !== 504
+  const message = envelopeText && response.status !== 403 ? envelopeText : serviceFailure ? serviceUnavailableMessage : queryFailureMessages[code]
+  return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics))
+}
+
 const SEVERITY_BY_NAME: Record<string, Severity> = {
   SEVERITY_INFO: Severity.INFO,
   SEVERITY_WARNING: Severity.WARNING,
@@ -346,11 +406,18 @@ export function createInsightsClient(
         }
         throw failure("Sign in to access your dashboards.")
       }
+      if (path === "/query") {
+        // A receipt is bound to the principal that asked for it, like a body.
+        if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
+        const failure = await queryFailure(response)
+        if (identity() !== current.principal) throw new Error("Your session changed. Refresh the workspace before continuing.")
+        throw failure
+      }
       if (response.status === 403 && path.startsWith("/provider-configs"))
         throw failure("Managing data sources requires Insights administrator access.")
       if (response.status === 403 && path === "/observe-connection")
         throw failure("Your account does not have access to Paprika Observe. Check your Observability permissions.")
-      if (response.status === 403 && (path === "/query" || path.startsWith("/providers/")))
+      if (response.status === 403 && path.startsWith("/providers/"))
         throw failure("Your account does not have access to this data source. Check its Observability permissions.")
       if (response.status === 403) throw failure("Your account does not have access to Insights.")
       if (response.status === 412 && path.startsWith("/saved-queries/"))
@@ -552,14 +619,20 @@ export function createInsightsClient(
         await request("/query", {
           method: "POST",
           body: JSON.stringify(body),
+          headers: { "X-Insights-Diagnostics": "1" },
           signal,
         })
       )
+      const diagnostics = parseQueryDiagnostics(result.diagnostics)
       if (body.kind === "records") {
         const records = parseRecordFrame(result.records)
-        return { records, truncated: result.truncated || records.truncated }
+        return { records, truncated: result.truncated || records.truncated, ...(diagnostics ? { diagnostics } : {}) }
       }
-      return result
+      // Keep optional diagnostics on an allowlisted contract, including when an
+      // older or custom backend adds unrecognized endpoint/credential fields.
+      const data = { ...result }
+      delete data.diagnostics
+      return diagnostics ? { ...data, diagnostics } : data
     },
   }
 }

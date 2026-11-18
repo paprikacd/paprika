@@ -115,9 +115,9 @@ func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, err
 			pr.SetURL(u)
 			pr.Out.URL.Path = "/api" + strings.TrimPrefix(pr.In.URL.Path, InsightsPrefix)
 			pr.Out.URL.RawPath = ""
-			// Allow only API data and concurrency headers, never end-user secrets.
+			// Allow only API data, concurrency and receipt-opt-in headers, never end-user secrets.
 			pr.Out.Header = make(http.Header)
-			for _, name := range []string{"Content-Type", "If-Match", "If-None-Match"} {
+			for _, name := range []string{"Content-Type", "If-Match", "If-None-Match", "X-Insights-Diagnostics"} {
 				if v := pr.In.Header.Get(name); v != "" {
 					pr.Out.Header.Set(name, v)
 				}

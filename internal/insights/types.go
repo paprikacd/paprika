@@ -100,11 +100,12 @@ type Trace struct {
 }
 
 type QueryResult struct {
-	Series    []Series         `json:"series,omitempty"`
-	Traces    []Trace          `json:"traces,omitempty"`
-	Spans     []TraceSpan      `json:"spans,omitempty"`
-	Records   *dataframe.Frame `json:"records,omitempty"`
-	Truncated bool             `json:"truncated,omitempty"`
+	Series      []Series          `json:"series,omitempty"`
+	Traces      []Trace           `json:"traces,omitempty"`
+	Spans       []TraceSpan       `json:"spans,omitempty"`
+	Records     *dataframe.Frame  `json:"records,omitempty"`
+	Truncated   bool              `json:"truncated,omitempty"`
+	Diagnostics *QueryDiagnostics `json:"diagnostics,omitempty"`
 }
 
 // TraceSpan contains bounded trace topology, timing and safe semantic dimensions.

@@ -256,7 +256,8 @@ async function queryAudit(width) {
     assert.equal(await raw.evaluate(element => getComputedStyle(element).resize), "none")
     faults.query = true
     await panel.getByRole("button", { name: "Run query", exact: true }).click()
-    await panel.getByRole("alert").filter({ hasText: /Prometheus rejected/ }).waitFor()
+    // The chart preview and the query preview can both show this failure. The wait names the query preview on purpose; it is not needed to avoid a race.
+    await panel.getByLabel("Query preview", { exact: true }).getByRole("alert").filter({ hasText: /Prometheus rejected/ }).waitFor()
     assert.equal(documents.get(dashboard.id).widgets[0].query, "http_requests_total")
     assert.equal(await queryEditorValue(raw), generated)
     await capture(page, `query-error-${width}`, panel)

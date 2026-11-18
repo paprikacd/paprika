@@ -220,6 +220,8 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 	// header timeout. Each phase below draws on what remains of it.
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryBudget)
 	defer cancel()
+	receipt := newQueryReceipt(&q, wantsQueryReceipt(r))
+	ctx = withQueryReceipt(ctx, receipt)
 	r = r.WithContext(ctx)
 	var (
 		p       *providerClient
@@ -242,9 +244,10 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	result, err := s.executeProviderQuery(ctx, p, &q)
 	if err != nil {
-		writeQueryError(w, err)
+		writeQueryFailure(w, err, receipt.response())
 		return
 	}
+	result.Diagnostics = receipt.response()
 	writeJSON(w, 200, result)
 }
 
@@ -253,13 +256,14 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 func (s *Server) resolveLocalQuery(w http.ResponseWriter, r *http.Request, q *Query) (*providerClient, bool) {
 	p, err := s.resolveProvider(r, q.ProviderID)
 	if err != nil {
-		writeQueryError(w, err)
+		failQuery(w, r, err)
 		return nil, false
 	}
 	if !p.public.supports(q.Kind) {
 		writeError(w, 400, "provider does not support this query kind")
 		return nil, false
 	}
+	receiptFrom(r.Context()).bind(p)
 	return p, true
 }
 
@@ -267,16 +271,20 @@ func (s *Server) resolveLocalQuery(w http.ResponseWriter, r *http.Request, q *Qu
 // admission failure when none is available.
 func (s *Server) admitQueryRequest(w http.ResponseWriter, r *http.Request) (func(), bool) {
 	release, err := s.acquireQuery(r.Context())
+	receiptFrom(r.Context()).mark("admission")
 	if err != nil {
-		if errors.Is(err, errQueryCapacity) {
-			w.Header().Set("Retry-After", "1")
-			writeError(w, 429, "too many active queries; retry shortly")
-			return nil, false
-		}
-		writeQueryError(w, err)
+		failQuery(w, r, err)
 		return nil, false
 	}
 	return release, true
+}
+
+// failQuery answers a failed query phase. The receipt is returned only when the
+// caller asked for one and the provider was resolved.
+func failQuery(w http.ResponseWriter, r *http.Request, err error) {
+	receipt := receiptFrom(r.Context())
+	receipt.fail(err)
+	writeQueryFailure(w, err, receipt.response())
 }
 
 // admitAndResolveShared runs the shared-catalog path in this order: wait for a
@@ -296,9 +304,10 @@ func (s *Server) admitAndResolveShared(w http.ResponseWriter, r *http.Request, q
 		return nil, nil, false
 	}
 	p, err := s.resolveSharedProvider(r, q.ProviderID)
+	receiptFrom(r.Context()).mark("catalog")
 	if err != nil {
 		release()
-		writeQueryError(w, err)
+		failQuery(w, r, err)
 		return nil, nil, false
 	}
 	if !p.public.supports(q.Kind) {
@@ -306,6 +315,7 @@ func (s *Server) admitAndResolveShared(w http.ResponseWriter, r *http.Request, q
 		writeError(w, 400, "provider does not support this query kind")
 		return nil, nil, false
 	}
+	receiptFrom(r.Context()).bind(p)
 	return p, release, true
 }
 
@@ -342,14 +352,9 @@ func (s *Server) enterCatalogPhase(ctx context.Context) (func(), error) {
 	}
 }
 
-// writeQueryError reports a failed query phase. A deadline here is the query's
-// own budget, so the message names the query; other failures keep the shared text.
+// writeQueryError reports a failed query phase without a receipt.
 func writeQueryError(w http.ResponseWriter, err error) {
-	if errors.Is(err, context.DeadlineExceeded) {
-		writeError(w, http.StatusGatewayTimeout, "query exceeded its time budget")
-		return
-	}
-	writeProviderError(w, err)
+	writeQueryFailure(w, err, nil)
 }
 
 // writeCatalogAdmissionError reports a shared query that could not get a catalog
@@ -357,7 +362,7 @@ func writeQueryError(w http.ResponseWriter, err error) {
 // cancellations. The rejection is counted under the existing query metric.
 func (s *Server) writeCatalogAdmissionError(w http.ResponseWriter, r *http.Request, q *Query, err error) {
 	if !errors.Is(err, errCatalogBusy) {
-		writeQueryError(w, err)
+		failQuery(w, r, err)
 		return
 	}
 	// The provider label is fixed: the caller's id is not resolved yet, so it could
@@ -421,24 +426,39 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 }
 
 // runProviderQuery admits, then executes an already resolved provider. Callers
-// that resolve providers first (dashboards) keep their existing ordering.
+// that resolve providers first (dashboards) keep their existing ordering. The
+// boolean records admission (see below), not provider I/O.
 func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
+	receipt := newQueryReceipt(q, false)
+	receipt.bind(p)
+	ctx = withQueryReceipt(ctx, receipt)
 	release, err := s.acquireQuery(ctx)
+	receipt.mark("admission")
 	if err != nil {
-		return QueryResult{}, false, err
+		receipt.fail(err)
+		return QueryResult{Diagnostics: receipt.diagnostics()}, false, err
 	}
 	defer release()
 	result, err := s.executeProviderQuery(ctx, p, q)
+	// The boolean is admission, as on master: queryCount.executed keeps counting
+	// admitted queries, including those that fail before dispatch. The receipt's
+	// dispatched flag records whether provider I/O actually began.
 	return result, true, err
 }
 
 // executeProviderQuery runs the query under an admission slot the caller holds.
+// Its receipt, when the context carries one, is completed and attached to the result.
 func (s *Server) executeProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, error) {
 	started := time.Now()
-	result, err := p.query(ctx, q)
+	measurement := &queryMeasurement{}
+	result, err := p.queryMeasured(ctx, q, measurement)
+	finished := time.Now()
 	if err != nil && ctx.Err() != nil {
 		err = fmt.Errorf("query execution context: %w", ctx.Err())
 	}
+	receipt := receiptFrom(ctx)
+	receipt.finishExecution(p, measurement, finished, &result, err)
+	result.Diagnostics = receipt.diagnostics()
 	outcome := "success"
 	if err != nil {
 		outcome = "error"

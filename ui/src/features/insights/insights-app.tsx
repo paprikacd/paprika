@@ -21,6 +21,7 @@ import {
   Check,
   ChevronRight,
   CircleHelp,
+  Clock3,
   Database,
   FilePlus2,
   LayoutDashboard,
@@ -144,6 +145,8 @@ function importIdentity(document: Dashboard) {
 }
 
 const Explorer = lazy(() => import("./explorer").then(module => ({ default: module.Explorer })))
+// The inspector is opened on demand, so its code stays out of the first view.
+const QueryInspector = lazy(() => import("./query-inspector").then(module => ({ default: module.QueryInspector })))
 const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
 
 const AIBuilder = lazy(() =>
@@ -266,6 +269,7 @@ export default function InsightsApp({
   const markGalleryMounted = useCallback(() => setGalleryMounted(true), [])
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [exploring, setExploring] = useState(false)
+  const [inspectingQueries, setInspectingQueries] = useState(false)
   const [explorerOpened, setExplorerOpened] = useState(false)
   const [explorerSource, setExplorerSource] = useState<{ providerId?: string; revision: number }>({ revision: 0 })
   const [explorerDirty, setExplorerDirty] = useState(false)
@@ -1840,6 +1844,14 @@ export default function InsightsApp({
             >
               <Braces size={14} />{!compactShell && " Code"}
             </GammaButton>
+            <GammaButton size="sm" variant="quiet"
+              className={inspectingQueries ? styles.activeTool : ""}
+              iconOnly={compactShell} aria-label="Query inspector"
+              aria-haspopup="dialog" aria-expanded={inspectingQueries} aria-controls={inspectingQueries ? "insights-query-inspector" : undefined}
+              title="Inspect query timing, reuse and result bounds"
+              onClick={() => setInspectingQueries(value => !value)}>
+              <Clock3 size={14} />{!compactShell && " Queries"}
+            </GammaButton>
             {canvasMode === "wide" && <>
             <span className={styles.divider} />
             <GammaButton size="sm" variant="quiet" iconOnly={compactShell} aria-label={compactShell ? "Compact view" : undefined} aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
@@ -1918,6 +1930,7 @@ export default function InsightsApp({
             )}
           </div>
         </div>
+        {inspectingQueries && <Suspense fallback={<p role="status" className={styles.loading}>Loading query inspector…</p>}><QueryInspector store={scheduledFetcher.diagnostics} synthetic={mode === "example"} onClose={() => setInspectingQueries(false)} /></Suspense>}
         {returnTo ? (
           <div className={styles.viewContext}>
             <GammaButton size="sm" variant="quiet" onClick={async () => {
