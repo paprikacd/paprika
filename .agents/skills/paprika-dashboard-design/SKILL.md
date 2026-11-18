@@ -84,6 +84,7 @@ Record the following before writing mark geometry:
 
 Apply these invariants:
 
+- A distribution heatmap with a per-second density unit needs an input that is already a rate, such as a query-side `rate()`. The chart differences cumulative buckets but does not rate them, so say so in the widget's editor help, not on every healthy cell in the inspector.
 - Preserve zero, null, absent series, stale data, partial/truncated results, and query errors as different states. Show imputation only when justified and explicitly distinguish it from observations.
 - Apply counter rates before aggregation; derive fleet percentiles from compatible distributions, never averages of per-instance percentiles. Compute ratios from aggregated numerators and denominators where the question calls for population weighting.
 - Preserve semantic values before visual reduction. Resizing, device pixel ratio, and renderer changes must not change a KPI, threshold decision, or exported semantic summary for the same data/window.

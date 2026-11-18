@@ -8,6 +8,7 @@ import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrack
 import type { Point, Series } from "../chart-data";
 import type { QueryResult } from "../schema";
 import { validTimestamp } from "../widget-context";
+import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import styles from "./status-grid.module.css";
@@ -111,7 +112,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
         <span><i className={styles.unknownKey} />Unknown <b>{unknown}</b></span>
       </div>}
       {all.length > cells.length && <span>Showing {cells.length} of {all.length}</span>}
-      {result.truncated && <span>Partial source response</span>}
+      {truncationNote(result) && <span>{truncationNote(result)}</span>}
     </div>
     {current && active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss}
       onEnter={() => { interaction.current.panel = true; clearHide(); }} onLeave={() => { interaction.current.panel = false; scheduleHide(); }}>

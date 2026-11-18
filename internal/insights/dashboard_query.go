@@ -606,14 +606,14 @@ func (s *Server) dashboardQueryProvider(r *http.Request, id string, cache *dashb
 func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders) (DashboardSignal, bool, []dataframe.Column, *QueryResult) {
 	provider, err := s.dashboardQueryProvider(r, query.ProviderID, cache)
 	if err != nil {
-		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, false, nil, nil
+		return DashboardSignal{State: "error", Error: classifyQueryFailure(err)}, false, nil, nil
 	}
 	if !provider.public.supports(query.Kind) {
 		return DashboardSignal{State: "error", Error: &DashboardQueryError{Code: "incompatible_provider", Message: "The provider does not support this widget's data kind."}}, false, nil, nil
 	}
 	raw, executed, err := s.runProviderQuery(r.Context(), provider, query)
 	if err != nil {
-		return DashboardSignal{State: "error", Error: dashboardProviderError(err)}, executed, nil, nil
+		return DashboardSignal{State: "error", Error: classifyQueryFailure(err)}, executed, nil, nil
 	}
 	// Compact before beginning another query; never retain all raw results.
 	var columns []dataframe.Column
@@ -657,48 +657,4 @@ func annotationColumnIndex(columns []dataframe.Column, name string) int {
 
 func validAnnotationColumnType(kind string, timestamp bool) bool {
 	return kind == "string" || (timestamp && (kind == "number" || kind == "timestamp"))
-}
-
-func dashboardProviderError(err error) *DashboardQueryError {
-	switch {
-	case errors.Is(err, context.Canceled):
-		return &DashboardQueryError{Code: "canceled", Message: "Dashboard query execution was canceled."}
-	case errors.Is(err, context.DeadlineExceeded):
-		return &DashboardQueryError{Code: "timeout", Message: "The provider query exceeded its time budget."}
-	case errors.Is(err, errQueryCapacity):
-		return &DashboardQueryError{Code: "rate_limited", Message: "Query capacity is currently exhausted; retry shortly."}
-	case errors.Is(err, ErrNotFound):
-		return &DashboardQueryError{Code: "provider_not_found", Message: "The query provider is unavailable."}
-	}
-	var upstream *observeError
-	if errors.As(err, &upstream) {
-		switch upstream.status {
-		case http.StatusForbidden, http.StatusUnauthorized:
-			return &DashboardQueryError{Code: "forbidden", Message: "The caller cannot access the query provider."}
-		case http.StatusTooManyRequests:
-			return &DashboardQueryError{Code: "rate_limited", Message: "Query capacity is currently exhausted; retry shortly."}
-		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-			return &DashboardQueryError{Code: "timeout", Message: "The provider query exceeded its time budget."}
-		case http.StatusBadRequest:
-			return &DashboardQueryError{Code: "invalid_query", Message: "The provider rejected the resolved query."}
-		}
-	}
-	// A direct provider's HTTP status is not carried in the code. The same
-	// capacity and budget statuses are still marked transient for the dry run.
-	return &DashboardQueryError{Code: "provider_error", Message: "The provider query could not be completed.", transient: directProviderTransient(err)}
-}
-
-// directProviderTransient reports whether a direct provider answered with a
-// capacity, budget or gateway status, which a retry can clear. Prometheus answers
-// 503 when a query times out or is aborted, so that is a retryable condition too.
-func directProviderTransient(err error) bool {
-	var direct *providerHTTPError
-	if !errors.As(err, &direct) {
-		return false
-	}
-	switch direct.status {
-	case http.StatusTooManyRequests, http.StatusRequestTimeout, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return true
-	}
-	return false
 }

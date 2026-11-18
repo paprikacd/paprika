@@ -632,6 +632,7 @@ describe("widget visualizations", () => {
     ["no-error", "neutral"],
     ["failure pending", "neutral"],
   ] as const)("uses an honest %s trace-status tone (%s)", (status, tone) => {
+    // A second row reports a status, so the Status column is shown for the row under test.
     render(
       <WidgetVisualization
         widget={{ ...widget, type: "traces" }}
@@ -643,6 +644,13 @@ describe("widget visualizations", () => {
             durationMs: 12,
             startTime: 1000,
             status,
+          }, {
+            traceId: "reported",
+            service: "checkout",
+            operation: "GET /reported",
+            durationMs: 9,
+            startTime: 2000,
+            status: "error",
           }],
         }}
       />,

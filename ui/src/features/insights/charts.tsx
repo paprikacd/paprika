@@ -25,6 +25,7 @@ import type { DrilldownContext } from "./drilldown";
 import { widgetTextColor } from "./appearance";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { TooltipWidgetDataProvider } from "./tooltip-widget-data";
+import { limitFact, sourceNotice, truncationOf } from "./truncation";
 import { GammaButton } from "./gamma/button";
 import { WidgetInitialLoading, useWidgetLoadingPresentation } from "./widget-loading";
 export {
@@ -34,6 +35,11 @@ export {
   resolveChartDomain,
 } from "./chart-renderers";
 
+// Failures whose source is named in the frame, so the author can tell which connection to check.
+const SOURCE_FAILURES = new Set(["invalid_query", "forbidden", "provider_error", "provider_not_found"]);
+// Failures an author can correct in the query editor. Access and capacity failures are not query faults.
+const EDITABLE_FAILURES = new Set(["invalid_query", "provider_error"]);
+
 export interface WidgetVisualizationProps {
   widget: Widget;
   result?: QueryResult;
@@ -41,6 +47,12 @@ export interface WidgetVisualizationProps {
   naturalHeight?: boolean;
   deferred?: boolean;
   error?: string | null;
+  /** The machine code of a failed query, such as invalid_query; it names the failure's class in the frame. */
+  errorCode?: string;
+  /** The data source's display name, shown on an actionable connection failure. */
+  providerName?: string;
+  /** Opens the widget's query for editing. Offered only in edit mode, for a failure the author can correct. */
+  onEditQuery?: () => void;
   /**
    * The tile needs a shared source that is not loaded yet. "pending" is busy
    * (aria-busy) so the render worker and tests wait for it; the others are final.
@@ -122,6 +134,9 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   error,
   sourceState,
   onRetry,
+  errorCode,
+  providerName,
+  onEditQuery,
   onContextChange,
 }: WidgetVisualizationProps) {
   // Registered plugins may arrive after a host loads an optional bundle.
@@ -144,10 +159,12 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   // A failed widget that reloads keeps its error in place and marks the frame busy, so the alert is not re-inserted on each refresh.
   if (error)
     return (
-      <WidgetStateFrame busy={loading}><div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame busy={loading}><div className={`${styles.state} ${styles.error}`} role="alert" data-query-failure={errorCode}>
         <strong>Query failed</strong>
         <p>{error}</p>
+        {providerName && errorCode && SOURCE_FAILURES.has(errorCode) && <p className={styles.limitFact}>Source: {providerName}</p>}
         {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
+        {onEditQuery && errorCode && EDITABLE_FAILURES.has(errorCode) && <GammaButton size="sm" onClick={onEditQuery} aria-label={`Edit query for ${widget.title}`}>Edit query</GammaButton>}
       </div></WidgetStateFrame>
     );
   if (sourceState && !result) {
@@ -174,6 +191,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
       </WidgetStateFrame>
     );
   const series = result?.series ?? [];
+  const truncation = truncationOf(result);
   const textColor = widgetTextColor(widget.options);
   if (
     !result ||
@@ -200,9 +218,13 @@ export const WidgetVisualization = memo(function WidgetVisualization({
     >
       {loading && loadingPresentation && <div className={styles.refreshNotice}>{loadingPresentation({ widget, phase: "refresh" })}</div>}
       {/* A single value shows a partial response as a chip beside its reading, so a block notice never pushes the reading out. */}
-      {(result?.truncated || result?.records?.truncated) && widget.type !== "stat" && (
-        <p className={styles.limitNotice} role="status">
-          Provider response may be incomplete. Narrow the query or check the data source.
+      {/* A row cap is a neutral fact. Plugins print their own neutral footers for it, so the host adds none for them. */}
+      {widget.type !== "stat" && truncation === "limit" && widget.type !== "plugin" && (
+        <p className={styles.limitFact} data-truncation="limit">{limitFact(result)}</p>
+      )}
+      {widget.type !== "stat" && (truncation === "partial" || truncation === "warning" || truncation === "unknown") && (
+        <p className={styles.limitNotice} role="status" data-truncation={truncation}>
+          {sourceNotice(truncation)}
         </p>
       )}
       <div className={styles.visualizationContent}>

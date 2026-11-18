@@ -278,6 +278,12 @@ provider failures. A provider-limited response with no usable observations is
 `partial`, not a conclusive empty result; a limited response with observations
 is `ok` and separately reports `providerTruncated`. Check `truncated`, `providerTruncated`, `seriesTruncated`,
 `metadataTruncated`, `historyTruncated` and `examplesTruncated` where present.
+`providerTruncation` names the source's reason when `providerTruncated` is set:
+`row_limit` (a row or series cap, shown by design), `partial` or `provider_warning`.
+The text line says `; source row limit` for a row cap, and `; provider partial`
+for a partial or warned source. A row cap never reads as a partial source. A
+truncated source with no `providerTruncation` reason says
+`; source truncated (reason not reported)`, not a partial source.
 Successful metric signals report `seriesReturned` and `seriesOmitted`, including
 zero for an empty response. The former counts the bounded provider response,
 not total source cardinality; the latter counts fetched series omitted from the

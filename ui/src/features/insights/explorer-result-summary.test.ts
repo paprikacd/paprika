@@ -11,6 +11,10 @@ describe("Explore result summary", () => {
   it("describes returned record rows and missing cells without claiming a total", () => {
     expect(summarizeExplorerResult("records", { records: { columns: [{ key: "a", type: "number" }, { key: "b", type: "number" }], rows: [[0, null], [1, 2]], truncated: true } })).toEqual({ detail: "2 rows · 2 columns · 1 missing cell", partial: true })
   })
+  it("does not call a row-capped result partial, but reports the cap as limited", () => {
+    expect(summarizeExplorerResult("traces", { traces: [], truncated: true, truncation: { reason: "row_limit", limit: 100, unit: "traces" } })).toEqual({ detail: "0 traces", partial: false, limited: true })
+    expect(summarizeExplorerResult("traces", { traces: [], truncated: true, truncation: { reason: "partial", unit: "traces" } })).toEqual({ detail: "0 traces", partial: true })
+  })
   it("handles empty and trace results", () => {
     expect(summarizeExplorerResult("metrics", { series: [] })).toEqual({ detail: "0 series · 0 samples", partial: false })
     expect(summarizeExplorerResult("traces", { traces: [] })).toEqual({ detail: "0 traces", partial: false })

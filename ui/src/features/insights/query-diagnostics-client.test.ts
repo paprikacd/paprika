@@ -135,7 +135,14 @@ describe("query diagnostic transport", () => {
     const fetcher = mockFetch(response({ code, error: "Insights fixed message for this failure.", diagnostics: { ...diagnostics, body: "private upstream body" } }, status, { "Retry-After": "11" }))
     const error: unknown = await query().catch(error => error)
     expect(error).toBeInstanceOf(InsightsQueryError)
-    expect(error).toMatchObject({ status, code, diagnostics, message: status === 403 ? "Your account does not have access to this data source. Check its Observability permissions." : "Insights fixed message for this failure." })
+    // A recognised code selects its classified copy; the server's text is kept only when no code is sent.
+    const copy: Record<string, string> = {
+      timeout: "The query timed out. Narrow the time range or simplify the query and try again.",
+      rate_limited: "Query capacity is busy; retry shortly.",
+      canceled: "The query was cancelled.",
+      forbidden: "Access to this data source was refused. Check its Observability permissions or provider credentials.",
+    };
+    expect(error).toMatchObject({ status, code, diagnostics, message: copy[code] });
     expect((error as InsightsQueryError).diagnostics?.counts).toBeUndefined()
     expect(`${String(error)} ${JSON.stringify(error)}`).not.toMatch(/private/)
     expect(fetcher).toHaveBeenCalledOnce()
@@ -174,6 +181,21 @@ describe("query diagnostic transport", () => {
     expect(await query()).toEqual({ series })
   })
 
+  it("classifies a direct provider failure by its code, not the server text", async () => {
+    mockFetch(response({ code: "invalid_query", error: "provider query failed; check the query and provider configuration" }, 502))
+    const rejected: unknown = await query().catch(error => error)
+    expect(rejected).toMatchObject({ status: 502, code: "invalid_query", message: "The data source rejected this query. Check the expression and time bounds." })
+    expect(String(rejected)).not.toContain("provider query failed")
+  })
+
+  it("keeps the server text for a failure with no recognised code", async () => {
+    mockFetch(response({ error: "provider query failed; check the query and provider configuration" }, 400), response({ code: "unknown-code", error: "Gateway says no." }, 400))
+    const plain: unknown = await query().catch(error => error)
+    expect(plain).toMatchObject({ status: 400, message: "provider query failed; check the query and provider configuration" })
+    const unknown: unknown = await query().catch(error => error)
+    expect(unknown).toMatchObject({ status: 400, message: "Gateway says no." })
+  })
+
   it("shows the envelope's own text, and falls back by code for unrecognized codes and proxy pages", async () => {
     mockFetch(response({ code: "private-credential", error: "Query failed at the data source.", diagnostics: { ...receipt(), totalMs: -1 } }, 502), new Response("private proxy body", { status: 504 }))
     const failure: unknown = await query().catch(error => error)
@@ -191,7 +213,7 @@ describe("query diagnostic transport", () => {
     const internal: unknown = await query().catch(error => error)
     expect(internal).toMatchObject({ status: 500, code: "provider_error", message: "Insights is unavailable. Check the service and provider configuration." })
     const coded: unknown = await query().catch(error => error)
-    expect(coded).toMatchObject({ status: 502, code: "provider_error", message: "The data source is unavailable. Check its connection and query configuration." })
+    expect(coded).toMatchObject({ status: 502, code: "provider_error", message: "The data source could not complete this query. Retry, or check its connection." })
   })
 
   it("names a validation error as the request problem, not the data source", async () => {

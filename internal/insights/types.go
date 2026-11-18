@@ -100,12 +100,26 @@ type Trace struct {
 }
 
 type QueryResult struct {
-	Series      []Series          `json:"series,omitempty"`
-	Traces      []Trace           `json:"traces,omitempty"`
-	Spans       []TraceSpan       `json:"spans,omitempty"`
-	Records     *dataframe.Frame  `json:"records,omitempty"`
-	Truncated   bool              `json:"truncated,omitempty"`
+	Series    []Series         `json:"series,omitempty"`
+	Traces    []Trace          `json:"traces,omitempty"`
+	Spans     []TraceSpan      `json:"spans,omitempty"`
+	Records   *dataframe.Frame `json:"records,omitempty"`
+	Truncated bool             `json:"truncated,omitempty"`
+	// Truncation says why Truncated is set. It is present only when Truncated is.
+	Truncation  *QueryTruncation  `json:"truncation,omitempty"`
 	Diagnostics *QueryDiagnostics `json:"diagnostics,omitempty"`
+}
+
+// QueryTruncation names the reason a result is incomplete.
+//
+// Reason is one of "row_limit" (the bounded cap was reached: the first Limit
+// units are shown), "partial" (the source reported an incomplete response) or
+// "provider_warning" (the source reported warnings). Unit is one of "series",
+// "traces", "points" or "rows". Limit is zero when the cap is not known here.
+type QueryTruncation struct {
+	Reason string `json:"reason"`
+	Limit  int    `json:"limit,omitempty"`
+	Unit   string `json:"unit,omitempty"`
 }
 
 // TraceSpan contains bounded trace topology, timing and safe semantic dimensions.

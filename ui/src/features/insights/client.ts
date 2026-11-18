@@ -15,6 +15,7 @@ import { jitter, REPLAY_DELAY_CAP_MS } from "./replay-timing"
 import { dashboardAsSent } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
 import { parseRecordFrame } from "./record-data"
+import { parseTruncation } from "./truncation"
 import { parseDashboardBundle, type DashboardBundle } from "./workspace-transfer"
 
 export interface ProviderConfig {
@@ -212,10 +213,10 @@ const queryFailureMessages: Record<string, string> = {
   canceled: "The query was cancelled.",
   timeout: "The query timed out. Narrow the time range or simplify the query and try again.",
   rate_limited: "Query capacity is busy; retry shortly.",
-  forbidden: "Your account does not have access to this data source. Check its Observability permissions.",
+  forbidden: "Access to this data source was refused. Check its Observability permissions or provider credentials.",
   invalid_query: "The data source rejected this query. Check the expression and time bounds.",
   provider_not_found: "The data source is unavailable. Choose a connected source.",
-  provider_error: "The data source is unavailable. Check its connection and query configuration.",
+  provider_error: "The data source could not complete this query. Retry, or check its connection.",
 }
 
 const serviceUnavailableMessage = "Insights is unavailable. Check the service and provider configuration."
@@ -246,7 +247,11 @@ async function queryFailure(response: Response): Promise<InsightsQueryError> {
   // A 5xx with no envelope code (an Envoy 503, or a 500/502 during a deploy) says nothing about the
   // data source, so it gets the service-level copy that master shows. 504 keeps its timeout copy.
   const serviceFailure = envelopeCode === undefined && response.status >= 500 && response.status !== 504
-  const message = envelopeText && response.status !== 403 ? envelopeText : serviceFailure ? serviceUnavailableMessage : queryFailureMessages[code]
+  // Insights sends a recognised code with every query failure, so its classified copy replaces the server text.
+  // Without a code (a proxy or a custom backend) the server's own text is kept.
+  const message = envelopeCode !== undefined ? queryFailureMessages[envelopeCode]
+    : envelopeText && response.status !== 403 ? envelopeText
+    : serviceFailure ? serviceUnavailableMessage : queryFailureMessages[code]
   return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics))
 }
 
@@ -629,7 +634,13 @@ export function createInsightsClient(
       const diagnostics = parseQueryDiagnostics(result.diagnostics)
       if (body.kind === "records") {
         const records = parseRecordFrame(result.records)
-        return { records, truncated: result.truncated || records.truncated, ...(diagnostics ? { diagnostics } : {}) }
+        const truncation = parseTruncation(result.truncation)
+        return {
+          records,
+          truncated: result.truncated || records.truncated,
+          ...(truncation ? { truncation } : {}),
+          ...(diagnostics ? { diagnostics } : {}),
+        }
       }
       // Keep optional diagnostics on an allowlisted contract, including when an
       // older or custom backend adds unrecognized endpoint/credential fields.

@@ -9,6 +9,7 @@ import { thresholdPaint } from "../status"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps, type WidgetPlugin } from "../widget-registry"
 import type { DrilldownContext } from "../drilldown"
 import type { QueryResult } from "../schema"
+import { truncationNote, type TruncationSource } from "../truncation"
 import {
   buildConnectionMap, buildIncidentCalendar, buildPipelineTopology,
   connectionMapConfig, incidentCalendarConfig, pipelineTopologyConfig, statusTone,
@@ -41,8 +42,9 @@ function Fact({label, children}: {label: string; children: ReactNode}) {
 function Status({value}: {value: string}) {
   return value ? <span className={styles.status} data-tone={statusTone(value)}><i aria-hidden="true"/>{value}</span> : <span className={styles.muted}>Status not supplied</span>
 }
-function Notes({children, truncated}: {children: ReactNode; truncated?: boolean}) {
-  return <div className={styles.notes} role="status">{children}{truncated && <span>Partial result · source limit reached</span>}</div>
+function Notes({children, result, truncated}: {children: ReactNode; result: TruncationSource; truncated?: boolean}) {
+  const note = truncated ? truncationNote(result) : undefined
+  return <div className={styles.notes} role="status">{children}{note && <span>{note}</span>}</div>
 }
 
 function PipelineViewport({children, width, height, embedded}: {children: ReactNode; width: number; height: number; embedded?: boolean}) {
@@ -150,7 +152,7 @@ export function ConnectionMap(props: WidgetRendererProps) {
       </div></details>}
       {density && config.value && widget.options?.showLegend !== false && thresholds.length > 0 && <div className={styles.mapLegend} role="group" aria-label="Location value thresholds">{thresholds.map((threshold,index) => <span key={index}><i style={{background:thresholdPaint(threshold)}}/>{threshold.label || (index === 0 ? thresholds.length === 1 ? "All values" : `Below ${metric(thresholds[1].value,unit,decimals)}` : `≥ ${metric(threshold.value,unit,decimals)}`)}</span>)}</div>}
     </> : <EmptyState/>}
-    <Notes truncated={data.frame.truncated}>{config.value && widget.options?.showLegend !== false && <span>Marker size: absolute observed value</span>}{data.invalid > 0 && <span>{data.invalid} records have missing or invalid coordinates</span>}{data.omitted > 0 && <span>{data.omitted} additional locations omitted by the point limit</span>}</Notes>
+    <Notes result={result} truncated={data.frame.truncated}>{config.value && widget.options?.showLegend !== false && <span>Marker size: absolute observed value</span>}{data.invalid > 0 && <span>{data.invalid} records have missing or invalid coordinates</span>}{data.omitted > 0 && <span>{data.omitted} additional locations omitted by the point limit</span>}</Notes>
   </div>
 }
 
@@ -189,7 +191,7 @@ export function PipelineTopology(props: WidgetRendererProps) {
         </Inspect>)}
       </div></details>
     </> : <EmptyState/>}
-    <Notes truncated={data.frame.truncated}>{data.invalid>0&&<span>{data.invalid} records have missing or invalid stage names</span>}{data.merged>0&&<span>{data.merged} duplicate connections combined</span>}{(data.omittedNodes>0||data.omittedEdges>0)&&<span>Display limit: {data.omittedNodes} stages and {data.omittedEdges} connections omitted</span>}</Notes>
+    <Notes result={result} truncated={data.frame.truncated}>{data.invalid>0&&<span>{data.invalid} records have missing or invalid stage names</span>}{data.merged>0&&<span>{data.merged} duplicate connections combined</span>}{(data.omittedNodes>0||data.omittedEdges>0)&&<span>Display limit: {data.omittedNodes} stages and {data.omittedEdges} connections omitted</span>}</Notes>
   </div>
 }
 
@@ -218,7 +220,7 @@ export function IncidentCalendar(props: WidgetRendererProps) {
       </section>)}
     </div></div> : <EmptyState/>}
     {widget.options?.showLegend!==false&&data.months.length>0&&<div className={styles.calendarLegend}><span><i className={styles.missingSwatch}/>No observations</span>{config.colorMode === "thresholds" ? <><span><i className={styles.unknownSwatch}/>Unknown or unmapped value</span>{thresholds.map((threshold,index)=><span key={index}><i className={styles.thresholdSwatch} style={{"--day-color":thresholdPaint(threshold)} as CSSProperties}/>{thresholdLabel(threshold,index)}</span>)}</> : <><span><i className={styles.recordedSwatch}/>Recorded day</span><span>Color intensity: absolute {config.aggregation === "count" ? "count" : config.aggregation}</span></>}</div>}
-    <Notes truncated={data.frame.truncated}>{data.invalid>0&&<span>{data.invalid} records have missing or invalid dates</span>}{data.outside>0&&<span>{data.outside} observations are outside the displayed months</span>}</Notes>
+    <Notes result={result} truncated={data.frame.truncated}>{data.invalid>0&&<span>{data.invalid} records have missing or invalid dates</span>}{data.outside>0&&<span>{data.outside} observations are outside the displayed months</span>}</Notes>
   </div>
 }
 

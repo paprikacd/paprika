@@ -219,7 +219,7 @@ function ReceiptDetails({ receipt }: { receipt: QueryExecutionReceipt }) {
         </dl>
         <p className={styles.note}>Returned counts describe this response, not input cardinality, scanned storage or billing cost.</p>
       </> : <p className={styles.note}>No completed result counts are available.</p>}
-      {receipt.truncated && <p className={styles.partial}>This response is partial or truncated. A provider warning or result limit can reduce its coverage.</p>}
+      {receipt.truncated && <p className={styles.partial}>{truncationReceiptCopy(receipt.backend?.truncationReason)}</p>}
       {receipt.state === "partial" && !receipt.truncated && <p className={styles.partial}>The service returned a partial result.</p>}
     </section>
   </aside>;
@@ -244,4 +244,16 @@ function Bounds({ receipt, backend }: { receipt: QueryExecutionReceipt; backend?
       </> : <div><dt>Effective bounds</dt><dd>Unknown · no service receipt</dd></div>}
     </dl>
   </details>;
+}
+
+/** Names the reason a receipt is truncated. Without a reason it keeps the general copy. */
+function truncationReceiptCopy(reason: string | undefined): string {
+  // The receipt does not carry the cap, so the copy states no number.
+  if (reason === "row_limit") {
+    return "Result limit reached; narrow the query to see the rest.";
+  }
+  if (reason === "partial" || reason === "provider_warning") {
+    return "The data source reported a partial or warned response.";
+  }
+  return "This response is partial or truncated. A provider warning or result limit can reduce its coverage.";
 }

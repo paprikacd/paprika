@@ -37,7 +37,10 @@ var errUpstream = errors.New("provider query failed; check the query and provide
 
 // Status is retained only for safe internal retry decisions; Error never
 // exposes a provider response, URL, or status detail to a caller.
-type providerHTTPError struct{ status int }
+type providerHTTPError struct {
+	status    int
+	errorType string // a bounded Prometheus errorType, or empty; never provider text
+}
 
 func (e *providerHTTPError) Error() string { return errUpstream.Error() }
 func (e *providerHTTPError) Unwrap() error { return errUpstream }
@@ -143,7 +146,9 @@ func providerQueryParameters(q *Query) (string, url.Values) {
 		params.Set("query", q.Query)
 		params.Set("step", strconv.FormatFloat(q.Step, 'f', -1, 64))
 		params.Set("timeout", "15s")
-		params.Set("limit", strconv.Itoa(maxSeries))
+		// Ask for one more than the bounded result, as Tempo does, so an
+		// over-limit response is detected rather than silently capped.
+		params.Set("limit", strconv.Itoa(maxSeries+1))
 	} else {
 		if q.TraceID != "" {
 			path = "/api/traces/" + q.TraceID
@@ -178,14 +183,21 @@ func (p *providerClient) queryLocal(ctx context.Context, q *Query, measurement *
 	}
 	measurement.normalize()
 	if q.Kind == "metrics" {
-		return decodePrometheus(body)
+		// The direct request asked for maxSeries+1 (see providerQueryParameters).
+		return decodePrometheus(body, maxSeries+1)
 	}
 	if q.TraceID != "" {
 		return decodeTempoDetail(body, q.TraceID)
 	}
-	result, err := decodeTempo(body)
+	// The direct search asked for maxTraces+1; the fallback asked for maxTraces.
+	requested := maxTraces + 1
+	if fallback {
+		requested = maxTraces
+	}
+	result, err := decodeTempo(body, requested)
 	if fallback && len(result.Traces) == maxTraces {
 		result.Truncated = true
+		result.Truncation = &QueryTruncation{Reason: truncationRowLimit, Limit: maxTraces, Unit: "traces"}
 	}
 	return result, err
 }
@@ -198,16 +210,35 @@ func retryTempoSearchLimit(ctx context.Context, q *Query, err error) bool {
 func decodeObserveQuery(kind string, body []byte) (QueryResult, error) {
 	switch kind {
 	case "metrics":
-		return decodePrometheus(body)
+		// The shared path asks the gateway for maxSeries.
+		return decodePrometheus(body, maxSeries)
 	case "records":
 		frame, err := dataframe.Decode(body)
 		if err != nil {
 			return QueryResult{}, errUpstream
 		}
-		return QueryResult{Records: frame, Truncated: frame.Truncated}, nil
+		result := QueryResult{Records: frame, Truncated: frame.Truncated}
+		if frame.Truncated {
+			result.Truncation = recordsTruncation(len(frame.Rows))
+		}
+		return result, nil
 	default:
-		return decodeTempo(body)
+		// The shared path asks the gateway for maxTraces.
+		return decodeTempo(body, maxTraces)
 	}
+}
+
+// recordsTruncation names a truncated records frame. Only a full dataframe.MaxRows
+// page is a known row limit. A records connector also caps at its own query
+// limit (100 by default), and a source can truncate a frame by downsampling it or
+// cutting a cell, so a shorter truncated frame has no known reason. It returns
+// nil, which the UI shows with the general "may be incomplete" notice. Naming it
+// partial would claim a source fault for an ordinary row cap.
+func recordsTruncation(rows int) *QueryTruncation {
+	if rows >= dataframe.MaxRows {
+		return &QueryTruncation{Reason: truncationRowLimit, Limit: dataframe.MaxRows, Unit: "rows"}
+	}
+	return nil
 }
 
 func (p *providerClient) fetch(ctx context.Context, path string, params url.Values, limit int64) ([]byte, error) {
@@ -238,11 +269,11 @@ func (p *providerClient) fetchMeasured(ctx context.Context, path string, params 
 	measurement.dispatch()
 	resp, err := p.client.Do(req) // #nosec G704 -- Local provider endpoints are explicitly operator-configured and redirects are disabled.
 	if err != nil {
-		return nil, errUpstream
+		return nil, transportFailure(ctx, err)
 	}
 	defer closeReadBody(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, &providerHTTPError{status: resp.StatusCode}
+		return nil, &providerHTTPError{status: resp.StatusCode, errorType: providerErrorType(resp.Body)}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
@@ -254,22 +285,33 @@ func (p *providerClient) fetchMeasured(ctx context.Context, path string, params 
 	return body, nil
 }
 
-func decodePrometheus(body []byte) (QueryResult, error) {
+// decodePrometheus decodes a matrix response. requested is the series limit the
+// request asked for; a result that fills it with warnings is still a row cap.
+func decodePrometheus(body []byte, requested int) (QueryResult, error) {
 	response, err := parsePrometheusMatrix(body)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	result := QueryResult{Series: make([]Series, 0, min(len(response.Data.Result), maxSeries)), Truncated: response.Truncated || len(response.Warnings) > 0}
+	result := QueryResult{Series: make([]Series, 0, min(len(response.Data.Result), maxSeries))}
+	facts := truncationFacts{limit: maxSeries, requested: requested, unit: "series", partial: response.Truncated, warned: len(response.Warnings) > 0}
 	total := 0
 	for _, row := range response.Data.Result {
-		if len(result.Series) >= maxSeries || total >= maxTotalPoints {
-			result.Truncated = true
+		if len(result.Series) >= maxSeries {
+			facts.overflow(maxSeries, "series")
+			break
+		}
+		if total >= maxTotalPoints {
+			facts.overflow(maxTotalPoints, "points")
 			break
 		}
 		series := Series{Name: seriesName(row.Metric), Labels: row.Metric, Points: make([]Point, 0, min(len(row.Values), maxPoints))}
 		for _, pair := range row.Values {
 			if len(series.Points) >= maxPoints || total >= maxTotalPoints {
-				result.Truncated = true
+				if len(series.Points) >= maxPoints {
+					facts.overflow(maxPoints, "points")
+				} else {
+					facts.overflow(maxTotalPoints, "points")
+				}
 				break
 			}
 			point, err := decodePrometheusPoint(pair)
@@ -281,6 +323,9 @@ func decodePrometheus(body []byte) (QueryResult, error) {
 		}
 		result.Series = append(result.Series, series)
 	}
+	facts.rows = len(result.Series)
+	result.Truncated = facts.truncated()
+	result.Truncation = facts.classify()
 	return result, nil
 }
 
@@ -306,7 +351,9 @@ func seriesName(labels map[string]string) string {
 	return name
 }
 
-func decodeTempo(body []byte) (QueryResult, error) {
+// decodeTempo decodes a search response. requested is the trace limit the
+// request asked for, used to classify a page that fills it.
+func decodeTempo(body []byte, requested int) (QueryResult, error) {
 	var response struct {
 		Warnings  []string `json:"warnings"`
 		Truncated bool     `json:"truncated"`
@@ -319,10 +366,11 @@ func decodeTempo(body []byte) (QueryResult, error) {
 	if json.Unmarshal(body, &response) != nil {
 		return QueryResult{}, errUpstream
 	}
-	result := QueryResult{Traces: make([]Trace, 0, min(len(response.Traces), maxTraces)), Truncated: response.Truncated || len(response.Warnings) > 0 || response.Metrics.TotalJobs > response.Metrics.CompletedJobs}
+	result := QueryResult{Traces: make([]Trace, 0, min(len(response.Traces), maxTraces))}
+	facts := truncationFacts{limit: maxTraces, requested: requested, unit: "traces", partial: response.Truncated || response.Metrics.TotalJobs > response.Metrics.CompletedJobs, warned: len(response.Warnings) > 0}
 	for _, row := range response.Traces {
 		if len(result.Traces) >= maxTraces {
-			result.Truncated = true
+			facts.overflow(maxTraces, "traces")
 			break
 		}
 		trace, err := decodeTempoTrace(row)
@@ -331,7 +379,62 @@ func decodeTempo(body []byte) (QueryResult, error) {
 		}
 		result.Traces = append(result.Traces, trace)
 	}
+	facts.rows = len(result.Traces)
+	result.Truncated = facts.truncated()
+	result.Truncation = facts.classify()
 	return result, nil
+}
+
+// Truncation reasons on QueryTruncation.Reason.
+const (
+	truncationRowLimit        = "row_limit"
+	truncationPartial         = "partial"
+	truncationProviderWarning = "provider_warning"
+)
+
+// truncationFacts collects what a decoder saw. classify turns it into the
+// single reason shown to a viewer.
+type truncationFacts struct {
+	rows      int    // rows returned after the cap
+	limit     int    // the row cap the decoder enforces for unit
+	requested int    // the limit the request asked for; a page that fills it is a row cap
+	unit      string // series, traces, points or rows
+	partial   bool   // the source reported an incomplete response
+	warned    bool   // the source reported warnings
+	capHit    bool   // more rows or points existed than the cap allowed
+	capLimit  int    // the cap that was hit, when it differs from limit
+	capUnit   string
+}
+
+// overflow records that a cap was reached. The first cap hit names the unit.
+func (f *truncationFacts) overflow(limit int, unit string) {
+	if !f.capHit {
+		f.capLimit, f.capUnit = limit, unit
+	}
+	f.capHit = true
+}
+
+func (f truncationFacts) truncated() bool {
+	return f.capHit || f.partial || f.warned
+}
+
+// classify gives row_limit whenever a cap is reached. A page that fills the
+// requested limit while the source also warned or reported partial jobs is
+// also a row cap: the viewer is shown the first N, whatever else the source
+// said. A direct request asks for one more than the decoder keeps, so a
+// warned page of exactly the kept rows is a warning, not a cap.
+func (f truncationFacts) classify() *QueryTruncation {
+	switch {
+	case f.capHit:
+		return &QueryTruncation{Reason: truncationRowLimit, Limit: f.capLimit, Unit: f.capUnit}
+	case f.requested > 0 && f.rows >= f.requested && (f.partial || f.warned):
+		return &QueryTruncation{Reason: truncationRowLimit, Limit: f.requested, Unit: f.unit}
+	case f.partial:
+		return &QueryTruncation{Reason: truncationPartial, Unit: f.unit}
+	case f.warned:
+		return &QueryTruncation{Reason: truncationProviderWarning, Unit: f.unit}
+	}
+	return nil
 }
 
 func providerHeaders(config *ProviderConfig) (http.Header, error) {
@@ -451,6 +554,7 @@ func validProviderBaseURL(u *url.URL) bool {
 
 type prometheusMatrixResponse struct {
 	Status    string   `json:"status"`
+	ErrorType string   `json:"errorType"`
 	Warnings  []string `json:"warnings"`
 	Truncated bool     `json:"truncated"`
 	Data      struct {
@@ -464,6 +568,14 @@ type prometheusMatrixResponse struct {
 
 func parsePrometheusMatrix(body []byte) (prometheusMatrixResponse, error) {
 	var response prometheusMatrixResponse
+	if json.Unmarshal(body, &response) == nil && response.Status == "error" {
+		// A rejected query answers 200 with status:error. Keep only its class.
+		errorType := response.ErrorType
+		if !providerErrorTypes[errorType] {
+			errorType = ""
+		}
+		return response, &providerHTTPError{status: http.StatusOK, errorType: errorType}
+	}
 	if json.Unmarshal(body, &response) != nil || response.Status != "success" || response.Data.ResultType != "matrix" {
 		return response, errUpstream
 	}

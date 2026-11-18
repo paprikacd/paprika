@@ -331,7 +331,7 @@ func TestObserveNativePartialResultsRemainVisible(t *testing.T) {
 		`{"status":"success","warnings":["secret backend detail"],"data":{"resultType":"matrix","result":[]}}`,
 		`{"status":"success","truncated":true,"data":{"resultType":"matrix","result":[]}}`,
 	} {
-		result, err := decodePrometheus([]byte(body))
+		result, err := decodePrometheus([]byte(body), maxSeries)
 		if err != nil || !result.Truncated {
 			t.Fatalf("Prometheus partial marker lost: %+v %v", result, err)
 		}
@@ -345,12 +345,12 @@ func TestObserveNativePartialResultsRemainVisible(t *testing.T) {
 		`{"traces":[],"truncated":true}`,
 		`{"traces":[],"metrics":{"completedJobs":2,"totalJobs":3}}`,
 	} {
-		result, err := decodeTempo([]byte(body))
+		result, err := decodeTempo([]byte(body), maxTraces)
 		if err != nil || !result.Truncated {
 			t.Fatalf("Tempo partial marker lost: %+v %v", result, err)
 		}
 	}
-	result, err := decodeTempo([]byte(`{"traces":[],"metrics":{"inspectedTraces":1000,"completedJobs":3,"totalJobs":3}}`))
+	result, err := decodeTempo([]byte(`{"traces":[],"metrics":{"inspectedTraces":1000,"completedJobs":3,"totalJobs":3}}`), maxTraces)
 	if err != nil || result.Truncated {
 		t.Fatalf("inspected traces are not evidence of missing data: %+v %v", result, err)
 	}

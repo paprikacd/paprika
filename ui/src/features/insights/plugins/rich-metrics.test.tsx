@@ -243,6 +243,18 @@ describe("rich metric renderers", () => {
     expect(screen.getByLabelText("Color encodes bucket observations/s")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Observation details" }).textContent).toContain("11.00 observations/s");
   });
+  it("does not repeat the rate authoring caveat on a healthy heatmap cell", () => {
+    const histogram: QueryResult = { series: [
+      { name: "bucket", labels: { service: "api", le: "10" }, points: [{ timestamp: 1000, value: 2 }, { timestamp: 2000, value: 5 }] },
+      { name: "bucket", labels: { service: "api", le: "100" }, points: [{ timestamp: 1000, value: 9 }, { timestamp: 2000, value: 16 }] },
+    ] };
+    render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { densityUnit: "observations/s" } }} result={histogram} />);
+    const chart = screen.getByRole("group", { name: /histogram buckets/ });
+    fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowUp" }); fireEvent.keyDown(chart, { key: "Enter" });
+    const inspector = screen.getByRole("region", { name: "Observation details" });
+    expect(inspector.textContent).toContain("11.00 observations/s");
+    expect(inspector.textContent).not.toContain("Input must already be a rate");
+  });
   it("keeps the selected bucket, value and time visible with a friendly heading before and after pinning", () => {
     const histogram: QueryResult = { series: [
       { name: "bucket", labels: { service: "api", le: "10" }, points: [{ timestamp: 1000, value: 2 }, { timestamp: 2000, value: 5 }] },

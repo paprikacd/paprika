@@ -64,7 +64,7 @@ describe("record widgets", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select row 1" }))
     expect(select).toHaveBeenCalledWith({ labels: { service: "web", uptime: "99.9876", active: "true" } })
     expect(screen.getByText("—")).toBeInTheDocument()
-    expect(screen.getByText(/Partial result/)).toBeInTheDocument()
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Service records records" })).toHaveAttribute("tabindex", "0")
   })
   it("exposes guided density and search controls without discarding explicit columns", () => {
@@ -117,7 +117,7 @@ describe("record widgets", () => {
     expect(screen.getByText("0.00%")).toBeInTheDocument()
     expect(screen.getByText("—")).toBeInTheDocument()
     expect(screen.getByText("No")).toBeInTheDocument()
-    expect(screen.getByText(/Partial result/)).toBeInTheDocument()
+    expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Select row 1" }))
     expect(select).toHaveBeenCalledWith({
       labels: { service: "api", uptime: "0", active: "false" },
@@ -254,5 +254,18 @@ describe("record frame transport", () => {
         rows: Array.from({ length: 1001 }, () => result.records!.rows[0]),
       }),
     ).toThrow()
+  })
+})
+
+describe("record truncation notes", () => {
+  it("names a row cap with the neutral source limit, and a partial source as partial", () => {
+    const capped: QueryResult = { ...result, truncation: { reason: "row_limit", limit: 3, unit: "rows" }, truncated: true }
+    const { unmount } = render(<RecordTable widget={widget} result={capped} />)
+    expect(screen.getByText("Source row limit reached · narrow the query to see others")).toBeInTheDocument()
+    expect(screen.queryByText(/Partial/)).not.toBeInTheDocument()
+    unmount()
+    render(<RecordTable widget={widget} result={{ ...result, truncation: { reason: "partial" }, truncated: true }} />)
+    expect(screen.getByText("Partial source response")).toBeInTheDocument()
+    expect(screen.queryByText(/Source row limit/)).not.toBeInTheDocument()
   })
 })

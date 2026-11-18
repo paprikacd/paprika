@@ -130,7 +130,7 @@ A name does not prove recent samples. `NotAvailable` is a provider-type answer.
 first; an unsupported method is not an empty inventory.
 
 **Typed records.** `query_records` returns bounded `columns` and `rows`, with explicit
-truncation. Records never accept a metric projection. The range defaults to 30 minutes
+truncation, and `truncated` is true when a row cap or source warning applies. The gateway tool reports only the flag. The reason is on Insights `/api/query` as `truncation.reason` and on `query_dashboard` signals as `providerTruncation`. `row_limit` means the first N series, traces or rows are shown by design (N is the series or trace cap, or the 1000-row page for records), so narrow the query to see the rest. `partial` or `provider_warning` means the source was incomplete or warned, so check the data before trusting its totals. A truncated records result shorter than 1000 rows has no reason, because a connector's own query limit is below the 1000-row page; treat it as possibly incomplete. Records never accept a metric projection. The range defaults to 30 minutes
 (maximum 31 days) and `limit` to 100 (maximum 1000); the Uptime connector rejects more than 100 rows.
 PostgreSQL does not filter by the dashboard range: bind `{"range":"start"}` or
 `{"range":"end"}` in `parameters` and reference the positional `$n`. In a saved PostgreSQL

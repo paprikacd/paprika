@@ -16,6 +16,15 @@ import {
   type QueryExecutionReceipt,
 } from "./query-diagnostics";
 
+// InsightsQueryError (client.ts) carries the machine code of a failed query. It
+// is read by shape so this module does not import the client and its generated
+// protobuf modules: the widget lab type-checks query.ts without them.
+function queryErrorCodeOf(error: unknown): string | null {
+  if (!(error instanceof Error) || error.name !== "InsightsQueryError") return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
 export type QueryFetcher = ((
   request: QueryRequest,
   signal: AbortSignal,
@@ -405,6 +414,7 @@ export interface RetainedQuery {
   unidentified?: QueryFetcher;
   result?: QueryResult;
   error?: string;
+  errorCode?: string | null;
   /** Only a settled, exactly matching request may suppress a remount fetch. */
   request?: { key: string; revision: QueryFetcher; settledAt: number };
 }
@@ -424,6 +434,8 @@ interface QueryState {
   data: QueryResult | undefined;
   loading: boolean;
   error: string | null;
+  /** The machine code of a failed query, when Insights sent one; see InsightsQueryError in client.ts. */
+  errorCode: string | null;
 }
 
 /**
@@ -470,7 +482,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     const completed = kept?.request;
     const current = completed?.key === key && completed.revision === fetcherRevision;
     const due = refreshInterval > 0 && (!completed || Date.now() >= completed.settledAt + Math.max(5_000, refreshInterval));
-    return { key: completed?.key, fetcher: completed?.revision, series, unidentified, data: kept?.result, error: kept?.error ?? null, loading: enabled && (!current || due) };
+    return { key: completed?.key, fetcher: completed?.revision, series, unidentified, data: kept?.result, error: kept?.error ?? null, errorCode: kept?.errorCode ?? null, loading: enabled && (!current || due) };
   });
   const runRef = useRef<(manual?: boolean) => void>(() => {});
   const previousRequest = useRef<
@@ -499,7 +511,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       // An outcome is applied only to the request that asked for it, with the series it belongs to.
       const owner = { key, series, unidentified, fetcher: fetcherRevision };
       if (!queryRef && (!providerId || !query.trim())) {
-        setState({ ...owner, data: undefined, loading: false, error: null });
+        setState({ ...owner, data: undefined, loading: false, error: null, errorCode: null });
         return;
       }
       if (!enabled) {
@@ -517,7 +529,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
         retentionRef.current?.write({ ...retained, request: undefined });
       // A manual retry clears the error, so the widget shows progress. An automatic refresh keeps the last outcome in
       // place and marks the frame busy instead, so a failing widget does not flash between error and placeholder.
-      setState((previous) => ({ ...previous, loading: true, error: manual ? null : previous.error }));
+      setState((previous) => ({ ...previous, loading: true, error: manual ? null : previous.error, errorCode: manual ? null : previous.errorCode }));
       try {
         const data = await fetcherRef.current(
           {
@@ -532,14 +544,15 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
           signal,
         );
         if (!disposed && !signal.aborted && generation === requestGeneration) {
-          setState({ ...owner, data, loading: false, error: null });
+          setState({ ...owner, data, loading: false, error: null, errorCode: null });
           retentionRef.current?.write({ series, unidentified, result: data, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
         }
       } catch (error) {
         if (!disposed && !signal.aborted && generation === requestGeneration) {
           const message = error instanceof Error ? error.message : "The query could not be completed.";
-          setState({ ...owner, data: undefined, loading: false, error: message });
-          retentionRef.current?.write({ series, unidentified, error: message, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
+          const errorCode = queryErrorCodeOf(error);
+          setState({ ...owner, data: undefined, loading: false, error: message, errorCode });
+          retentionRef.current?.write({ series, unidentified, error: message, errorCode, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
         }
       } finally {
         if (
@@ -570,7 +583,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
             retained.request?.key === key && retained.request.revision === fetcherRevision) {
           const remaining = retained.request.settledAt + Math.max(5_000, refreshInterval) - Date.now();
           if (refreshInterval === 0 || remaining > 0 || document.hidden) {
-            setState({ key, series, unidentified, fetcher: fetcherRevision, data: retained.result, error: retained.error ?? null, loading: false });
+            setState({ key, series, unidentified, fetcher: fetcherRevision, data: retained.result, error: retained.error ?? null, errorCode: retained.errorCode ?? null, loading: false });
             // Resume the original poll deadline; opening/closing the editor must
             // neither refresh early nor postpone the next real refresh.
             if (refreshInterval > 0 && !document.hidden) timer = setTimeout(run, remaining);
@@ -588,6 +601,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
               fetcher: fetcherRevision,
               data: sameSeries ? previous.data : undefined,
               error: sameSeries ? previous.error : null,
+              errorCode: sameSeries ? previous.errorCode : null,
               loading: enabled,
             };
           });
@@ -629,6 +643,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     data: sameSeries ? state.data : undefined,
     loading: current ? state.loading : enabled,
     error: sameSeries ? state.error : null,
+    errorCode: sameSeries ? state.errorCode : null,
     refresh,
   };
 }

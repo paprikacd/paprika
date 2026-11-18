@@ -42,7 +42,9 @@ try {
       assert.equal(signal.providerTruncated, true)
       assert.ok(signal.primarySeries === undefined && !signal.series?.length, "Incomplete empty data must not invent a value")
       const text = result.content.find(item => item.type === "text").text
-      assert.match(text, /partial source response/)
+      // The fixture only warns, so the source reason is a warning or partial, never a row cap.
+      assert.ok(["partial", "provider_warning"].includes(signal.providerTruncation), "Source-limited empty data must not read as a row cap")
+      assert.match(text, /; provider partial/)
       assert.match(text, /"limited": partial/)
     }
     const zero = result.structuredContent.widgets.find(item => item.id === "zero")

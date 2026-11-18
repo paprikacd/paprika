@@ -88,7 +88,7 @@ function metricData(state) {
   // Realistic long service names, enough cells to fill a short tile.
   if (state === "dense") return { series: Array.from({ length: 120 }, (_, index) => ({ name: `checkout-api-production-eu-west-${index + 1}`, labels: { service: `checkout-api-production-eu-west-${index + 1}` }, points: [{ timestamp: stamp, value: [42.56789, -12.5, 0][index % 3] }] })) }
   const count = state === "bounded" ? 120 : 3
-  return { ...(state === "bounded" ? { truncated: true } : {}), series: Array.from({ length: count }, (_, index) => {
+  return { ...(state === "bounded" ? { truncated: true, truncation: { reason: "row_limit", limit: 100, unit: "series" } } : {}), series: Array.from({ length: count }, (_, index) => {
     const name = state === "long" ? `${longName}-${index + 1}` : ["api-east", "worker-west", "queue-zero"][index] ?? `service-${index}`
     const value = state === "zero" ? 0 : state === "negative" ? -12.5 - index : state === "null" ? null : [42.56789, -12.5, 0][index % 3]
     return { name, labels: { service: name, instance: `pod-${index}`, region: "eu-central-1", ...(state === "long" ? { description: "A full label value that should stay inspectable without expanding the page or obscuring another control." } : {}) }, points: state === "history" ? Array.from({ length: 60 }, (_, point) => ({ timestamp: stamp - (59 - point) * 60000, value: point === 29 ? null : point + index + 0.123456789 })) : [
@@ -100,7 +100,7 @@ function metricData(state) {
 }
 function traceData(state) {
   if (["empty", "null"].includes(state)) return { traces: [] }
-  return { ...(state === "bounded" ? { truncated: true } : {}), traces: Array.from({ length: state === "bounded" ? 120 : 3 }, (_, index) => ({
+  return { ...(state === "bounded" ? { truncated: true, truncation: { reason: "row_limit", limit: 100, unit: "traces" } } : {}), traces: Array.from({ length: state === "bounded" ? 120 : 3 }, (_, index) => ({
     traceId: `${index}`.padStart(32, "a"), service: state === "long" ? `${longName}-${index + 1}` : ["api-east", "worker-west", "queue-zero"][index] ?? `service-${index}`,
     operation: state === "long" ? "POST /api/payments/very-long-route/with-customer-context/and-observability-details" : ["GET /checkout", "POST /jobs", "GET /ready"][index % 3],
     durationMs: state === "zero" ? 0 : [72.25, 1200.1234, 0][index % 3], startTime: stamp - index * 1000, status: index % 3 === 1 ? "error" : "ok",
@@ -399,7 +399,16 @@ async function stateAssertions(page, state) {
         if (state === "zero") assert.match(await cells.first().getAttribute("aria-label"), /0\.00 req\/s.*At zero/)
         if (state === "negative") assert.match(await cells.first().getAttribute("aria-label"), /-12\.50 req\/s.*Below target/)
       }
-      if (state === "bounded") assert.ok(text.includes("Provider response may be incomplete."), "A bounded result must keep the provider warning visible")
+      // A row cap is a neutral fact on built-in tiles, not the amber provider warning. A stat shows no partial chip.
+      // A plugin prints its own neutral footer and gets no host fact.
+      if (state === "bounded") {
+        if (["timeseries", "bar", "table", "traces", "heatmap"].includes(kind)) assert.match(text, /Showing the first 100 traces|First 100 series shown/, "A row-capped result must name its cap as a neutral fact")
+        if (kind === "stat") assert.equal(await tile.locator("[data-partial-observation]").count(), 0, "A row-capped stat must not show the partial chip")
+        if (kind === "gauge") {
+          assert.match(text, /Source row limit reached/, "A row-capped plugin keeps its own neutral footer")
+          assert.equal(await tile.locator("[data-truncation]").count(), 0, "A row-capped plugin gets no host notice")
+        }
+      }
       return { state, widget: kind, ...(axes ? { axes } : {}) }
     }, { widget: kind, state, viewport: page.viewportSize().width })
   }

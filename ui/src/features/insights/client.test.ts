@@ -1,3 +1,4 @@
+import { truncationOf } from "./truncation"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -436,6 +437,17 @@ describe("Insights HTTP client", () => {
     expect(fetcher.mock.calls[0][0]).toBe("/api/insights/query")
     expect(fetcher.mock.calls[0][1].signal).toBe(controller.signal)
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual(query)
+  })
+
+  it("keeps a records result's truncation reason so a row cap stays a neutral fact", async () => {
+    mockFetch(response({
+      records: { columns: [{ key: "value", type: "number" }], rows: [[1]], truncated: true },
+      truncated: true,
+      truncation: { reason: "row_limit", unit: "rows" },
+    }))
+    const result = await createInsightsClient().query({ providerId: "records", query: "{}", kind: "records", start: 1000, end: 1100, step: 10 }, new AbortController().signal)
+    expect(result.truncation).toEqual({ reason: "row_limit", unit: "rows" })
+    expect(truncationOf(result)).toBe("limit")
   })
 
   it("returns a useful error for non-JSON gateway failures", async () => {

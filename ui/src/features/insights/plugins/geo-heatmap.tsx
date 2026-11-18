@@ -6,6 +6,7 @@ import { TooltipDetail, TooltipFact } from "../tooltip-content"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
 import { GeographicPlot } from "../geographic-plot"
 import { densityPalette as colors } from "../density-palette"
+import { truncationNote } from "../truncation"
 import { usePlotSize } from "../chart-renderer-shared"
 import hatchStyles from "../plot-hatch.module.css"
 import { buildGeoHeatmap, geoHeatmapConfig } from "./geo-heatmap-data"
@@ -74,7 +75,7 @@ function GeoHeatmapContent({ widget, result, embedded, onContextChange, config, 
     <div className={styles.footer}>
       {widget.options?.showLegend !== false && <div className={styles.legend} aria-label={`${label} color scale`}><span>{label}</span>{Number.isFinite(data.min) && <><span>{formatted(data.min)}</span><span className={styles.ramp}>{colors.map(color => <i key={color} style={{background:color}} />)}</span><span>{formatted(data.max)}</span></>}<span className={styles.unknown}><i className={hatchStyles.hatch}/>Missing</span></div>}
       <span>{config.mode === "map" ? "Hex bins group recorded locations · empty areas are unobserved" : `${data.cells.length} records · one per hexagon`}</span>{config.mode === "grid" && <span className={styles.scrollHint}>Scroll to explore all records</span>}
-      {data.invalid > 0 && <span>{data.invalid} invalid coordinates omitted</span>}{data.omitted > 0 && <span>{data.omitted} records omitted by the display limit</span>}{data.frame.truncated && <span>Partial source response</span>}
+      {data.invalid > 0 && <span>{data.invalid} invalid coordinates omitted</span>}{data.omitted > 0 && <span>{data.omitted} records omitted by the display limit</span>}{data.frame.truncated && truncationNote(result) && <span>{truncationNote(result)}</span>}
     </div>
   </div>
 }

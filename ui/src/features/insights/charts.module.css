@@ -181,6 +181,14 @@
   box-shadow: var(--gamma-shadow-mid);
 }
 .gapDetails > ul:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 2px; }
+/* A row cap is a neutral fact, not a warning: the viewer sees the first N by design. */
+.limitFact {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--widget-text, var(--gamma-muted, #52636f));
+  margin: 0 6px 5px;
+}
 .limitNotice {
   flex: none;
   font-size: 11px;

@@ -223,7 +223,7 @@ describe("multi-series threshold gauges", () => {
     const { rerender } = render(<ThresholdGauge widget={{ ...widget, config: { seriesMode: "all", maxSeries: 3 } }} result={{ ...result, truncated: true }} />);
     expect(screen.getAllByRole("meter")).toHaveLength(3);
     expect(screen.getByRole("status")).toHaveTextContent("Showing 3 of 6 series");
-    expect(screen.getByRole("status")).toHaveTextContent("Partial source response");
+    expect(screen.getByRole("status")).toHaveTextContent("Provider response may be incomplete");
     rerender(<ThresholdGauge widget={{ ...widget, config: { seriesMode: "all", maxSeries: 6 } }} result={result} />);
     expect(screen.getAllByRole("meter")).toHaveLength(6);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
