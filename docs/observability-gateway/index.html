@@ -157,13 +157,13 @@ startup.</p>
 <td>Browser scheduler (<code>createQueryScheduler</code>, <code>ui/src/features/insights/query.ts</code>)</td>
 <td>4 queries in flight per viewer, maximum 16</td>
 <td>Code only</td>
-<td>Nothing is sent; further widgets wait in the local queue</td>
-<td>n/a</td>
+<td>Nothing is sent; further widgets wait in the local queue. A 429 on <code>/query</code> frees the slot and re-queues the query after a jittered Retry-After (at most 3 replays and 30 s in total). Queued queries for the same provider wait out that Retry-After too, so they do not reach the refused provider early; other providers keep starting</td>
+<td>Automatic, by the scheduler</td>
 </tr>
 <tr>
 <td>2</td>
 <td>Browser replay (<code>capacityRetryDelay</code>, <code>ui/src/features/insights/client.ts</code>)</td>
-<td>A 429 on <code>/query</code>, a read or a conditional write is replayed up to 3 times, waiting Retry-After seconds. A wait over 10 s is not retried</td>
+<td>A 429 on a read or a conditional write (not <code>/query</code>, which the scheduler replays) is replayed up to 3 times, waiting Retry-After seconds. A wait over 10 s is not retried</td>
 <td>Code only</td>
 <td>After the replays fail the widget shows &quot;Query failed&quot; with a Retry button (<code>ui/src/features/insights/charts.tsx</code>)</td>
 <td>Manual</td>
@@ -179,9 +179,9 @@ startup.</p>
 <tr>
 <td>4</td>
 <td>Insights admission (<code>acquireQuery</code>, <code>internal/insights/server.go</code>)</td>
-<td>16 executing, 64 waiting, 2 s wait</td>
-<td>Code only; a later slice adds flags</td>
-<td><code>/query</code>: <strong>429</strong> &quot;too many active queries; retry shortly&quot; with <code>Retry-After: 1</code>. Dashboard queries: a per-signal <code>rate_limited</code> error inside a 200 response, not an HTTP 429 (<code>dashboardProviderError</code>)</td>
+<td>16 executing, 64 waiting, 2 s wait. The shared catalog has its own pool: 4 phases, 16 waiting, 5 s</td>
+<td><code>--query-concurrency</code>, <code>--query-queue</code>, <code>--query-queue-wait</code>, <code>--catalog-concurrency</code>, <code>--catalog-queue</code>, <code>--catalog-queue-wait</code>; chart <code>insights.capacity.*</code> (unset values emit no flag)</td>
+<td><code>/query</code>: <strong>429</strong> &quot;too many active queries; retry shortly&quot;. Its <code>Retry-After</code> is the pool's observed hold time, 1 to 10 s (1 s before any sample). A busy catalog is <strong>429</strong> with the same computed hint. Dashboard queries: a per-signal <code>rate_limited</code> error inside a 200 response, not an HTTP 429 (<code>dashboardProviderError</code>)</td>
 <td>Yes, after Retry-After</td>
 </tr>
 <tr>
@@ -189,15 +189,15 @@ startup.</p>
 <td>Gateway HTTP admission (<code>observabilityAdmissionPool</code>, <code>limitObservabilityProtocolRequestsWith</code>)</td>
 <td>Intake 8 (waiters cover all pool capacity), MCP work 4 (up to 32 waiting, the budget queue), catalog 4 and dashboards 2 (each up to its own size waiting). One deadline of 1 s covers the intake and pool waits</td>
 <td><code>--observability-http-*</code> flags; chart <code>observabilityGateway.capacity.http*</code></td>
-<td><strong>429</strong> &quot;observability gateway is at its request limit; retry later&quot;, <code>Retry-After: 1</code>, <code>Cache-Control: no-store</code></td>
+<td><strong>429</strong> &quot;observability gateway is at its request limit; retry later&quot;, <code>Retry-After</code> from the refused pool's observed hold time, 1 to 10 s, <code>Cache-Control: no-store</code></td>
 <td>Yes, after Retry-After</td>
 </tr>
 <tr>
 <td>6</td>
-<td>Gateway MCP rate limit (<code>mcpRatePerSecond</code>, <code>mcpRateBurst</code>, <code>mcpRateQueueWait</code> in <code>internal/api/mcp/ratelimit.go</code>)</td>
-<td>50 requests/s, burst 100 per principal. Queue: 8 per principal, 64 in total, each waiting at most 2 s</td>
+<td>Gateway per-subject rate limit for <code>/observe/mcp</code> and the REST data routes (<code>mcpRatePerSecond</code>, <code>mcpRateBurst</code>, <code>mcpRateQueueWait</code> in <code>internal/api/mcp/ratelimit.go</code>)</td>
+<td>50 requests/s, burst 100 per principal, shared by MCP and the REST data routes. Queue: 8 per principal, 64 in total, each waiting at most 2 s</td>
 <td>Code only</td>
-<td><strong>429</strong> &quot;rate limit queue is full; retry shortly&quot;, <code>Retry-After: 1</code></td>
+<td><strong>429</strong> &quot;rate limit queue is full; retry shortly&quot;, <code>Retry-After</code> from the reservation's delay, rounded up, 1 to 10 s</td>
 <td>Yes, after Retry-After</td>
 </tr>
 <tr>
@@ -205,7 +205,7 @@ startup.</p>
 <td>Gateway execution budget (<code>DefaultBudgetConfig</code>, <code>executionBudget.begin</code>, <code>internal/observabilitygateway/budget.go</code>)</td>
 <td>4 executing across providers, 2 per provider. Queued: 32 across providers, 8 per provider. The admission cap is 36 (concurrency + queue). Per provider, the budget holds 2 running and 8 waiting, so 36 is reachable only across at least four providers (see below). A waiter holds its place for at most 5 s. Each execution has a 30 s budget that starts when it is admitted</td>
 <td><code>--observability-query-*</code> flags; chart <code>observabilityGateway.capacity.query*</code></td>
-<td>A full queue is <code>resource_exhausted</code> with no retry hint. A queue wait that expired while the caller still had budget is <code>resource_exhausted</code> with a one-second <code>RetryInfo</code>. On REST (<code>/observe/api/query</code>) either is <strong>429</strong> <code>temporarily_unavailable</code> with <code>Retry-After: 1</code> (<code>writeDashboardError</code>). On MCP either is an error result with code <code>resource_exhausted</code> and text from <code>operationalToolErrorText</code>; only the queue-wait expiry adds <code>retryAfterSeconds: 1</code>. Insights turns either into a <strong>429</strong> with <code>Retry-After: 1</code>, which the browser replays. Only the caller's own deadline ending the wait, or the 30 s budget used up, is <code>deadline_exceeded</code>: <strong>504</strong> on REST, &quot;tool execution timed out&quot; on MCP</td>
+<td>A full queue and a queue wait that expired while the caller still had budget are both <code>resource_exhausted</code> with a <code>RetryInfo</code> delay computed from the observed hold time, 1 to 10 s (<code>internal/capacityhint</code>, one estimate per budget and per provider, the one-second floor until a sample exists). On REST (<code>/observe/api/query</code>) either is <strong>429</strong> <code>temporarily_unavailable</code> with that delay as <code>Retry-After</code> (<code>writeDashboardError</code>). On MCP either is an error result with code <code>resource_exhausted</code>, text from <code>operationalToolErrorText</code>, and <code>retryAfterSeconds</code> carrying the same delay. Insights forwards a gateway <code>Retry-After</code> of 1 to 10 seconds as its own <strong>429</strong>, which the browser scheduler replays. Only the caller's own deadline ending the wait, or the 30 s budget used up, is <code>deadline_exceeded</code>: <strong>504</strong> on REST, &quot;tool execution timed out&quot; on MCP</td>
 <td>429: yes, after Retry-After. 504: yes, with backoff, since the earlier attempt may have used provider time</td>
 </tr>
 <tr>
@@ -489,12 +489,12 @@ bulkhead, which is sized by the per-provider flag. Setting
 <code>--observability-query-provider-concurrency=1</code> therefore also runs listings one
 at a time.</li>
 <li><strong>Catalog pool</strong> is the work pool's size by default. Each Insights provider
-query opens two MCP connections, resolve and data (<code>observability_provider.go</code>).
-Each connection's <code>initialize</code>, <code>notifications/initialized</code> and <code>tools/list</code>
-requests, and the <code>list_observability_providers</code> call, are classified as
-catalog requests (<code>isObservabilityCatalogEnvelope</code>). Only the data <code>tools/call</code>
-uses the work pool. Keep the catalog pool large enough for handshakes while
-queries run.</li>
+query makes two REST requests (<code>observe_rest.go</code>): the catalog listing,
+<code>GET /observe/api/providers</code>, which is a catalog request, and the data call,
+<code>POST /observe/api/query</code> or <code>/observe/api/explore</code>, which is work. The MCP
+handshake and <code>list_observability_providers</code> calls that the Data sources status
+still makes are catalog requests (<code>isObservabilityCatalogEnvelope</code>). Keep the
+catalog pool large enough for listings while queries run.</li>
 <li><strong>Intake</strong> is held only while a request body is read and classified, then
 released before the pool wait. It is not a cap on all in-flight requests. Its
 default is twice the work pool.</li>
