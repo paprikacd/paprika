@@ -2,7 +2,7 @@
 # and uses build cache mounts for Go modules and build cache.
 # Usage: docker buildx build -f Dockerfile.fast --platform linux/amd64 -t <tag> --push .
 # Compile natively; GOOS/GOARCH below still select the requested target.
-FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 # Build identity stamped into the binary (see Dockerfile).
