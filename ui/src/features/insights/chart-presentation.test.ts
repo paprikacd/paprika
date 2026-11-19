@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { calendarDateTime, calendarTick, calendarTickLabel, calendarTicks, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue, visibleBaseline } from "./chart-presentation";
+import { calendarDateTime, calendarTick, calendarTickLabel, calendarTicks, defaultAreaOpacity, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue, visibleBaseline } from "./chart-presentation";
 
 const DAY = 86_400_000;
 // 2026-01-02T23:30:00Z: late evening in UTC, already the next morning in Tokyo.
 const lateUtc = Date.UTC(2026, 0, 2, 23, 30);
+
+describe("default area opacity", () => {
+  it("keeps the full wash for one or two overlapping series", () => {
+    expect(defaultAreaOpacity(1)).toBe(0.28);
+    expect(defaultAreaOpacity(2)).toBe(0.28);
+  });
+
+  it("lightens the wash once three or more non-stacked fills overlap", () => {
+    expect(defaultAreaOpacity(3)).toBe(0.08);
+    expect(defaultAreaOpacity(5)).toBe(0.08);
+  });
+});
 
 describe("area gradient", () => {
   it("fades a positive-only series from its colour at the top to transparent at zero", () => {

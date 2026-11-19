@@ -30,6 +30,8 @@ try {
       assert.match(await legend.innerText(),/Low.*Medium.*High/s)
       assert.equal(await tile.locator('[data-map-plane] line').count(),0)
       assert.equal(await marker.locator("..").evaluate(element => element.style.getPropertyValue("--point-color")),"#f5ab2f")
+      // DESIGN.md: crisp marks, no glow or blur. The density dot must carry no box-shadow halo.
+      assert.equal(await marker.locator("[data-tone]").first().evaluate(element => getComputedStyle(element).boxShadow),"none")
       await marker.focus()
       const tooltip = page.getByRole("tooltip"); await tooltip.waitFor()
       await tooltip.getByText("144.9600°").waitFor()
@@ -48,7 +50,7 @@ try {
         await mkdir(process.env.INSIGHTS_SCREENSHOT_DIR,{recursive:true})
         await page.screenshot({path:join(process.env.INSIGHTS_SCREENSHOT_DIR,`map-${theme}-${width}.png`),animations:"disabled"})
       }
-      console.log(`PASS ${theme} ${width}px: exact location glow, threshold color, inspection and selection`)
+      console.log(`PASS ${theme} ${width}px: exact compact dots, threshold color, inspection and selection`)
     } finally { await context.close() }
   }
 } finally { await browser.close() }

@@ -116,7 +116,7 @@ export function PluginConfigEditor({ definition, value, onChange, queryFields, r
         ? `Available result fields: ${columns.slice(0, 6).map(column => `${column.key} (${column.type})`).join(", ")}${columns.length > 6 ? ` · ${columns.length - 6} more in suggestions` : ""}${partial ? " · limited result" : ""}.`
         : "Result field suggestions appear after the widget loads. You can also enter a field name directly."}</p>}
       {fields.map(field => {
-        // Legacy maps display their grid and labels; the compact glow view
+        // Legacy maps display their grid and labels; the compact dot view
         // hides them unless explicitly enabled. Reflect the renderer default.
         const fallback = definition?.id === "connection-map" && (field.key === "showGrid" || field.key === "showCoordinates")
           ? config?.display !== "density"

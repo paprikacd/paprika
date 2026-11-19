@@ -123,6 +123,9 @@ export function galleryDocuments(providers) {
       dashboard.widgets.find(widget => widget.id === "availability").title = "Observed up · last hour";
       const states = dashboard.widgets.find(widget => widget.id === "states");
       states.config = { ...states.config, labelField: "component", showTimeAxis: true };
+      // Three non-stacked series (worker, catalog and the selected service). Overlapping 0.12 fills wash into a muddy block,
+      // so this board keeps a near-invisible fill and lets the lines carry the comparison.
+      { const requestHistory = dashboard.widgets.find(widget => widget.id === "request-history"); requestHistory.options = { ...requestHistory.options, fillOpacity: 0.05 }; }
       Object.assign(dashboard.widgets.find(widget => widget.id === "request-history"), { title: "Request rate by service", query: comparisonQuery, queryRef: { id: "local-service-comparison", bindings: [{ parameter: "service", source: "variable", variable: "service" }] },
         annotationSource: { queryRef: { id: "local-ab-reliability-room-incidents", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, timestampColumn: "date", labelColumn: "label", severityColumn: "status" } });
       const serviceChart = dashboard.widgets.find(widget => widget.id === "request-history");
@@ -307,7 +310,7 @@ export function galleryDocuments(providers) {
       delete throughput.pluginId;
       delete throughput.dataKind;
       delete throughput.config;
-      throughput.options = { ...throughput.options, display: "area", showLegend: true, showTooltip: true };
+      throughput.options = { ...throughput.options, display: "area", fillOpacity: 0.05, showLegend: true, showTooltip: true };
       const freshness = dashboard.widgets.find(widget => widget.id === "source-freshness");
       // This demo's five-row gauge needs less height than the original bar
       // composition. Change only newly generated demo documents, not saved views.
@@ -400,7 +403,8 @@ export function galleryDocuments(providers) {
   const rate = structuredClone(service.widgets.find(widget => widget.id === "request-history"));
   Object.assign(rate, { title: "Request rate · selected service and worker", type: "timeseries", query: selectedRate,
     queryRef: { id: "local-signal-rate", bindings: serviceClusterBindings },
-    options: { ...rate.options, display: "area", showLegend: true, showTooltip: true },
+    // Two series (the selected service and worker): keep the authored 0.12 fill, not Service Pulse's three-series 0.05.
+    options: { ...rate.options, display: "area", showLegend: true, showTooltip: true, fillOpacity: 0.12 },
     layout: { x: 0, y: 0, w: 12, h: 6 } });
   // Service Pulse's detail query and destination are scoped to omega. This
   // board has its own cluster selector, so do not inherit those bindings.

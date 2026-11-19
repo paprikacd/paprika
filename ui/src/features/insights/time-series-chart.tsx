@@ -37,7 +37,7 @@ import {
   withGapBreaks,
 } from "./chart-data";
 import { useChartEntrance } from "./chart-entrance";
-import { calendarTickLabel, calendarTicks, DEFAULT_AREA_OPACITY, horizontalPlotBounds, signedAreaGradient, temporalPosition, visibleBaseline } from "./chart-presentation";
+import { calendarTickLabel, calendarTicks, defaultAreaOpacity, horizontalPlotBounds, signedAreaGradient, temporalPosition, visibleBaseline } from "./chart-presentation";
 import {
   EMPTY_OPTIONS,
   MAX_SERIES,
@@ -263,8 +263,12 @@ export function TimeSeriesChart({
   const baseline = visibleBaseline(domain);
   const areaFills = useMemo(() => {
     const gradients = new Map<string, ChartLinearGradient>();
-    const fills = options.display !== "area" ? [] : data.flatMap((entry, index) => observedRuns(entry.plotPoints).map((points, part) => {
-      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), options.fillOpacity ?? DEFAULT_AREA_OPACITY, baseline);
+    // The default lightens only when three or more series actually draw a fill. Empty or all-null series draw nothing.
+    const runs = data.map(entry => observedRuns(entry.plotPoints));
+    const filledSeries = runs.filter(entryRuns => entryRuns.length > 0).length;
+    const opacity = options.fillOpacity ?? defaultAreaOpacity(filledSeries);
+    const fills = options.display !== "area" ? [] : data.flatMap((entry, index) => runs[index].map((points, part) => {
+      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), opacity, baseline);
       const key = JSON.stringify(gradient.stops);
       if (!gradients.has(key)) gradients.set(key, { ...gradient, id: `area-gradient-${gradients.size}` });
       return { series: index, id: `area-${index}-${part}`, gradientId: gradients.get(key)!.id, points };
