@@ -1,0 +1,204 @@
+/* The card fills its cell. The services rows that fit its region are rendered; the footer stays outside. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  min-width: 0;
+  padding: 4px 2px;
+  color: var(--gamma-ink);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.target,
+.muted {
+  color: var(--gamma-muted);
+  font-size: 0.8125rem;
+}
+
+.reading {
+  margin: 0;
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.budget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 48px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--gamma-surface-2);
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--gamma-status-ok);
+}
+
+.overflow {
+  flex: none;
+  color: var(--gamma-status-critical-text);
+}
+
+.overspent {
+  color: var(--gamma-status-critical-text);
+  font-weight: 600;
+}
+
+.burn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.burnChip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--gamma-border);
+}
+
+.burnChip[data-slo-firing][data-slo-severity="critical"] {
+  border-color: var(--gamma-status-critical);
+}
+
+.burnChip[data-slo-firing][data-slo-severity="warning"] {
+  border-color: var(--gamma-status-warning);
+}
+
+.burnTrigger {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: help;
+}
+
+.burnWindow {
+  font-weight: 600;
+}
+
+.scroll {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  /* Rows that do not fit are hidden and counted in the footer, so the region never scrolls. */
+  overflow: hidden;
+}
+
+.footnote {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--gamma-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.denominator {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--gamma-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Narrow cards (a 390px phone): each group is two wrapped lines, the name and status with availability, then budget and
+ * worst burn. Every reading keeps its label inline, so no cell is only a bare value. A row is about 64px (SERVICES_ROW_HEIGHT).
+ */
+@media (max-width: 480px) {
+  .table thead {
+    display: none;
+  }
+  .table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 12px;
+    padding: 4px 0;
+  }
+  .table th[scope="row"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+  }
+  .table td {
+    flex: 0 0 auto;
+    padding: 0;
+    font-size: 0.75rem;
+  }
+  .table td::before {
+    content: attr(data-label) " ";
+    color: var(--gamma-muted);
+  }
+}
+
+/* Phone-width cards are short, so the single objective tightens its type and gaps to keep its burn windows inside the cell. */
+@media (max-width: 480px) {
+  .panel {
+    gap: 6px;
+  }
+  .reading {
+    font-size: 1.5rem;
+  }
+  .burn {
+    gap: 4px;
+    font-size: 0.75rem;
+  }
+  .burnChip {
+    padding: 1px 6px;
+  }
+  .denominator {
+    font-size: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fill {
+    transition: width 200ms ease-out;
+  }
+}

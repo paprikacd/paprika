@@ -30,6 +30,11 @@ export interface WidgetDefinition {
   defaultConfig?: Widget["config"];
   /** Trusted host-owned field descriptions; persisted documents carry values only. */
   configFields?: readonly WidgetConfigField[];
+  /**
+   * false keeps a registered plugin renderable for saved widgets while leaving it out of the widget library, the
+   * visualization switchers and the AI guidance lists. Defaults to true.
+   */
+  listed?: boolean;
   /** Only expose controls the renderer actually implements. */
   styleControls?: readonly ("unit" | "decimals" | "color" | "legend" | "grid" | "tooltips")[];
   parseConfig?: (config: Widget["config"]) => Widget["config"];
@@ -45,6 +50,8 @@ export interface WidgetSizing {
   mode: "intrinsic" | "fill";
   minWidth?: number;
   minHeight?: number;
+  /** A minimum height that depends on the authored config, such as the rows a services card lists. Wins over minHeight. */
+  minHeightFor?: (config: Widget["config"]) => number;
 }
 export interface WidgetInputIssue {
   /** The configuration key the issue concerns, when one applies. */
@@ -109,6 +116,8 @@ function validateSizing(sizing: WidgetSizing | undefined) {
     if (value !== undefined && (!Number.isFinite(value) || value < 0))
       throw new Error(`Widget plugin sizing ${key} must be a finite, nonnegative number`);
   }
+  if (sizing.minHeightFor !== undefined && typeof sizing.minHeightFor !== "function")
+    throw new Error("Widget plugin sizing minHeightFor must be a function");
 }
 
 function validateConfigFields(fields: readonly WidgetConfigField[] | undefined) {
@@ -184,7 +193,7 @@ const subscribe = (listener: () => void) => {
   };
 };
 function publish() {
-  snapshot = Object.freeze([...widgetDefinitions, ...plugins.values()]);
+  snapshot = Object.freeze([...widgetDefinitions, ...[...plugins.values()].filter((plugin) => plugin.listed !== false)]);
   listeners.forEach((listener) => listener());
 }
 
@@ -240,6 +249,11 @@ export function getWidgetDefinition(
 
 export function getWidgetPlugins(): readonly WidgetDefinition[] {
   return snapshot.filter((entry) => entry.type === "plugin");
+}
+
+/** Every registered plugin, listed or not. The built-in plugin list the Go lint reads is this set. */
+export function getRegisteredWidgetPlugins(): readonly WidgetDefinition[] {
+  return [...plugins.values()];
 }
 export function useWidgetDefinitions(): readonly WidgetDefinition[] {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strconv"
 
@@ -48,7 +49,7 @@ const (
 // lintRules is the registry, in report order. A new rule is added to the
 // file for its family and to this list; the drift test then requires its summary
 // in the composition guidance.
-var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules, tableLintRules)
+var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules, sloLintRules, tableLintRules)
 
 // lintDocument is the part of a schema-valid document the rules read. It is
 // decoded once per call, so every rule sees the same snapshot and the cost stays
@@ -56,6 +57,10 @@ var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, v
 type lintDocument struct {
 	variables map[string]bool
 	widgets   []lintWidget
+	// providerTypes maps a provider id to its type, as the server resolved it for this check. An id
+	// that is absent is unknown, and a rule that needs its type does not fire. The CLI check resolves no
+	// providers, so it leaves the map nil.
+	providerTypes map[string]string
 }
 
 type lintWidget struct {
@@ -64,6 +69,7 @@ type lintWidget struct {
 	title       string
 	widgetType  string
 	pluginID    string
+	providerID  string
 	description string
 	unit        string
 	query       string
@@ -82,6 +88,10 @@ type lintWidget struct {
 	variables []lintVariableRef
 	// colorFields lists each authored hex that carries no status or role.
 	colorFields []colorField
+	// config is the plugin config as authored, read by the SLO rules.
+	config json.RawMessage
+	// hasThresholds is true when the widget declares any options.thresholds.
+	hasThresholds bool
 	// thresholds counts the widget's own options.thresholds bands.
 	thresholds int
 	// cellStyles are the record-table column styles, decoded from config.
@@ -113,6 +123,7 @@ type wireWidget struct {
 	Title             string            `json:"title"`
 	Type              string            `json:"type"`
 	PluginID          string            `json:"pluginId"`
+	ProviderID        string            `json:"providerId"`
 	Description       string            `json:"description"`
 	Unit              string            `json:"unit"`
 	Query             string            `json:"query"`
@@ -265,11 +276,17 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 	return doc, true
 }
 
+// setSLOLintFields copies the config and threshold presence the SLO rules read.
+func setSLOLintFields(lw *lintWidget, widget *wireWidget) {
+	lw.config = widget.Config
+	lw.hasThresholds = widget.Options != nil && len(widget.Options.Thresholds) > 0
+}
+
 // lintWidgetOf reads one widget's members for lint. base pointers are rooted at the widget's index.
 func lintWidgetOf(i int, widget *wireWidget) lintWidget {
 	base := widgetBase(i)
 	lw := lintWidget{
-		index: i, id: widget.ID, title: widget.Title, widgetType: widget.Type, pluginID: widget.PluginID,
+		index: i, id: widget.ID, title: widget.Title, widgetType: widget.Type, pluginID: widget.PluginID, providerID: widget.ProviderID,
 		description: widget.Description, unit: widget.Unit, query: widget.Query, hasQueryRef: widget.QueryRef != nil,
 		x: widget.Layout.X, y: widget.Layout.Y, w: widget.Layout.W, h: widget.Layout.H,
 	}
@@ -296,6 +313,7 @@ func lintWidgetOf(i int, widget *wireWidget) lintWidget {
 	lw.cellStyles = tableCellStylesOf(widget.Config)
 	lw.rank, lw.rankErr = tableRankOf(widget.Config)
 	lw.statusBands = widget.Options != nil && hasDeclaredRankThreshold(widget.Options.Thresholds)
+	setSLOLintFields(&lw, widget)
 	return lw
 }
 
@@ -412,7 +430,7 @@ const overlapRuleID = "layout.overlap"
 // finding, errors first. It is the full list the tests and the lint command read.
 func lintFindings(document Dashboard) []*insightsv1.CheckFinding {
 	set := newFindingSet(unboundedFindings)
-	lintInto(set, document, nil)
+	lintInto(set, document, nil, nil)
 	return set.findings()
 }
 
@@ -420,12 +438,14 @@ func lintFindings(document Dashboard) []*insightsv1.CheckFinding {
 // set. Findings are added errors first, then warnings, then info, and in rule and
 // hit order within each severity, so the same document always reports the same
 // list. known names the widget pairs a stored dashboard already overlapped: those
-// overlaps are warnings, not errors. A document the schema rejects is not read.
-func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool) {
+// overlaps are warnings, not errors. providerTypes is the resolved provider types
+// (see lintDocument). A document the schema rejects is not read.
+func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool, providerTypes map[string]string) {
 	doc, ok := decodeLintDocument(document)
 	if !ok {
 		return
 	}
+	doc.providerTypes = providerTypes
 	// Each rule runs once; its hits are sorted into severity groups in rule order.
 	bySeverity := map[insightsv1.Severity][]*insightsv1.CheckFinding{}
 	for _, rule := range lintRules {
@@ -506,18 +526,26 @@ func widgetLabel(widget *lintWidget) string {
 // id, as a full list. Schema findings come first. Lint only reads a document that
 // passed the schema, so it runs only then.
 func saveFindings(id string, document Dashboard) []*insightsv1.CheckFinding {
-	return saveReport(id, document, nil, unboundedFindings).findings()
+	return saveReport(id, document, nil, unboundedFindings, nil).findings()
 }
 
 // saveReport is what a save, or a dry run, reports for a document at the path id.
 // stored is the dashboard the save would replace, or nil for a create. Schema
 // findings come first, and lint reads only a document that passed the schema.
 // keep bounds the widget findings the set materialises; the counts stay exact.
-func saveReport(id string, document, stored Dashboard, keep int) *findingSet {
+// providerTypes resolves the provider types the rules may read. It is called only after the schema passes, so the
+// lint rules never read a rejected document. A save resolves its providers before it takes the mutation lock (see
+// saveDashboard), so a rejected save can still have cost the bounded lookups. Nil means no provider is resolved;
+// see providerTypesOf.
+func saveReport(id string, document, stored Dashboard, keep int, providerTypes func() map[string]string) *findingSet {
 	set := newFindingSet(keep)
 	schemaInto(set, id, document)
 	if set.total == 0 {
-		lintInto(set, document, storedOverlaps(stored))
+		var types map[string]string
+		if providerTypes != nil {
+			types = providerTypes()
+		}
+		lintInto(set, document, storedOverlaps(stored), types)
 	}
 	return set
 }
@@ -525,9 +553,9 @@ func saveReport(id string, document, stored Dashboard, keep int) *findingSet {
 // checkReport is the report of a dry run or a checked save at the path the document
 // names. It reads the stored dashboard at that path, so an overlap the stored
 // version already has is reported the way the save reports it.
-func (s *Server) checkReport(document Dashboard) *findingSet {
+func (s *Server) checkReport(r *http.Request, document Dashboard) *findingSet {
 	id := dryRunID(document)
-	return saveReport(id, document, s.storedDashboard(id), checkwire.MaxIssues)
+	return saveReport(id, document, s.storedDashboard(id), checkwire.MaxIssues, func() map[string]string { return s.providerTypesBounded(r, document) })
 }
 
 // storedDashboard returns the dashboard a save at id would replace, or nil when

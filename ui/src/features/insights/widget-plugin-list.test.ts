@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
-import { getWidgetPlugins } from "./widget-registry"
+import { getRegisteredWidgetPlugins } from "./widget-registry"
 
 // The committed list of built-in widget plugin ids. The Go lint reads the same
 // file (docs/design/insights/schemas.go), so a plugin added or removed here must be
@@ -14,7 +14,7 @@ const listPath = join(process.cwd(), "..", "docs", "design", "insights", "widget
 
 function registeredPluginIds(): string[] {
   registerDefaultWidgetPlugins()
-  return getWidgetPlugins().map(plugin => plugin.id).sort()
+  return getRegisteredWidgetPlugins().map(plugin => plugin.id).sort()
 }
 
 describe("built-in widget plugin list", () => {

@@ -11,7 +11,7 @@ import (
 )
 
 const dashboardAttentionFixture = `{"schemaVersion":1,"dashboard":{"id":"reliability","title":"Reliability","etag":"v1"},"observedAt":"now","range":{"start":"s","end":"e","stepSeconds":12},"variables":{},"state":"partial",` +
-	`"attention":{"basis":"author-declared warning and critical statuses, query failures and staleness only; not a health verdict","widgets":4,"checked":2,"critical":1,"warning":0,"failed":1,"stale":1},` +
+	`"attention":{"basis":"author-declared warning and critical statuses and objectives, query failures and staleness only; not a health verdict","widgets":4,"checked":2,"critical":1,"warning":0,"failed":1,"stale":1},` +
 	`"widgets":[` +
 	`{"id":"burn","title":"Burn rate","type":"timeseries","unit":"x","signalId":"q1","attention":"critical","sample":{"state":"no_threshold","lastTimestamp":3000,"ageSeconds":30},` +
 	`"breaches":{"seriesEvaluated":2,"seriesOmitted":0,"latestLevel":"warning","intervalsOmitted":4,"intervals":[{"series":0,"name":"a","level":"warning","start":1000,"end":2000,"durationMs":1000},{"series":1,"name":"b","level":"critical","start":3000,"end":3000,"durationMs":0}],"summary":[{"level":"critical","intervals":0,"samples":1,"durationMs":0},{"level":"warning","intervals":1,"samples":0,"durationMs":1000}]}},` +

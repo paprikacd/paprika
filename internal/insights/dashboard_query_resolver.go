@@ -117,6 +117,13 @@ func dashboardWidgetKind(widget *dashboardReadWidget) string {
 
 func resolveDashboardWidget(widget *dashboardReadWidget, saved map[string]dashboardSavedSnapshot, variables map[string]string, definitions []dashboardReadVariable) (Query, *DashboardQueryError) {
 	query := Query{ProviderID: widget.ProviderID, Query: widget.Query, Kind: dashboardWidgetKind(widget)}
+	if isSLOSummaryWidget(widget) {
+		compiled, failure := resolveSLOSummaryQuery(widget)
+		if failure != nil {
+			return Query{}, failure
+		}
+		query.Query = compiled
+	}
 	if widget.QueryRef != nil {
 		snapshot, ok := saved[widget.QueryRef.ID]
 		if !ok {
@@ -146,6 +153,23 @@ func resolveDashboardWidget(widget *dashboardReadWidget, saved map[string]dashbo
 	}
 	query.Query = expression
 	return query, nil
+}
+
+// resolveSLOSummaryQuery compiles the query of an slo-summary widget from its config. The stored query text
+// is editor output and is ignored at run time, so a saved query reference is refused.
+func resolveSLOSummaryQuery(widget *dashboardReadWidget) (string, *DashboardQueryError) {
+	if widget.QueryRef != nil {
+		return "", &DashboardQueryError{Code: "invalid_query", Message: "slo-summary widgets take their query from config and cannot use a saved query."}
+	}
+	cfg, err := validateSLOSummaryConfig(widget.Config)
+	if err != nil {
+		return "", &DashboardQueryError{Code: "invalid_query", Message: "The slo-summary configuration is invalid."}
+	}
+	compiled, err := compileSLOQuery(&cfg)
+	if err != nil {
+		return "", &DashboardQueryError{Code: "invalid_query", Message: "The slo-summary query is too long after compilation."}
+	}
+	return compiled, nil
 }
 
 func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadReference, variables map[string]string) (string, error) {

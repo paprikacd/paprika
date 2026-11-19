@@ -18,6 +18,7 @@ export const dashboardCompositionGuidance: readonly string[] = [
   "Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id.",
   "On a stat, set min and max only together with showStatBar, which requires both. A bar that is switched off may keep bounds it already has; do not remove them to tidy the document.",
   "Avoid widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense.",
+  "An slo-summary widget runs the query compiled from its objective config: it takes no queryRef and no options.thresholds, and its query text is editor output that is ignored at run time.",
 ]
 
 export const dashboardWorkflowGuidance: readonly string[] = [

@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { SERIES_COLOR_MODES, seriesColorRulesSchema } from "./series-colors"
 import { statusLevels } from "./status"
+import { sloSummaryConfigSchema } from "./slo-config"
 import { timeZones } from "./time-zones.generated"
 import { parseDocument, stringify } from "yaml"
 
@@ -269,6 +270,18 @@ export const pluginConfigSchema = z
   })
   .pipe(z.record(z.string(), z.json()))
 
+// An slo-summary widget needs an objective config. Its issues are reported under config, as the Go validator reports them.
+function sloConfigIssues(config: unknown, context: z.RefinementCtx) {
+  if (config === undefined) {
+    context.addIssue({ code: "custom", path: ["config"], message: "SLO summaries require an objective config." });
+    return;
+  }
+  const parsed = sloSummaryConfigSchema.safeParse(config);
+  if (!parsed.success)
+    for (const issue of parsed.error.issues)
+      context.addIssue({ code: "custom", path: ["config", ...issue.path], message: issue.message });
+}
+
 // Tooltip query definitions are declarative; only the host may execute them.
 // Renderers receive bounded results and cannot nest tooltip definitions.
 export const tooltipBindingSchema = z.union([
@@ -484,6 +497,7 @@ export const widgetSchema = z
           path: ["dataKind"],
           message: "Plugin widgets require their data kind",
         })
+      if (widget.pluginId === "slo-summary") sloConfigIssues(widget.config, context)
     } else {
       for (const field of ["pluginId", "dataKind", "config"] as const)
         if (widget[field] !== undefined)

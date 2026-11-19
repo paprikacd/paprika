@@ -11,7 +11,7 @@ async function api(path, init) {
   return response
 }
 const queries = (await (await api("/api/insights/saved-queries")).json()).queries
-const saved = queries.find(query => query.id === "local-reliability-attention")
+const saved = queries.find(query => query.id === "local-reliability-events")
 assert.ok(saved)
 const before = await api("/api/insights/dashboards/local-gallery-reliability-room")
 const etag = before.headers.get("x-paprika-document-etag") ?? before.headers.get("etag")
@@ -30,10 +30,11 @@ assert.ok(times.every(Number.isFinite) && times[1] > times[0])
 const bounded = JSON.stringify({ sql: "SELECT DISTINCT observed_at FROM gallery.service_probe_samples WHERE observed_at >= $1::timestamptz AND observed_at <= $2::timestamptz ORDER BY observed_at", parameters: [{ range: "start" }, { range: "end" }] })
 const boundary = await request(bounded, times[0], times[1])
 assert.deepEqual(boundary.rows.map(row => Date.parse(row[0]) / 1000), [times[0], times[1]])
-const present = await request(saved.query, now - 86400, now)
-const historical = await request(saved.query, 1577836800, 1577923200)
+const selectedService = saved.query.replaceAll("{{service}}", JSON.stringify("checkout"))
+const present = await request(selectedService, now - 30 * 86400, now)
+const historical = await request(selectedService, 1577836800, 1577923200)
 assert.ok(present.rows.length > 0)
-assert.equal(historical.rows.length, 0, "A historical range without probes must not return today's summary")
+assert.equal(historical.rows.length, 0, "A historical range without incidents must not return today's records")
 
 // Exercise a real seeded interval at its exact endpoints and in its interior.
 // It has since ended, but should still be active when the selected end falls
@@ -88,7 +89,7 @@ try {
         await page.goto(url.href, { waitUntil: "networkidle" })
         const tile = page.locator('[data-widget-id="services-attention"]')
         await tile.scrollIntoViewIfNeeded()
-        if (empty) await tile.getByText(/no data|no records/i).first().waitFor()
+        if (empty) await tile.getByText(/no data|no traffic|no records/i).first().waitFor()
         else await tile.getByText("checkout", { exact: true }).waitFor()
       }
       assert.deepEqual(errors, [])

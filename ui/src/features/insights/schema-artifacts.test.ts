@@ -26,9 +26,33 @@ function assertAndRemoveSeriesRuleConstraint(widget: Record<string, unknown>) {
 // Zod's JSON Schema exporter cannot emit superRefine's cross-field rule.
 // Check the published rule explicitly before comparing the generated remainder.
 function assertAndRemoveStatHeightConstraint(widget: Record<string, unknown>) {
+  // The widget's allOf holds the stat height rule and the slo-summary config rule. Zod cannot emit either.
   expect(widget.allOf).toEqual([{
     if: { properties: { type: { const: "stat" } }, required: ["type"] },
     else: { properties: { layout: { properties: { h: { minimum: 2 } } } } },
+  }, {
+    if: { properties: { pluginId: { const: "slo-summary" } }, required: ["pluginId"] },
+    then: {
+      required: ["config"],
+      properties: {
+        config: {
+          type: "object",
+          properties: {
+            objective: { type: "number", minimum: 50, maximum: 99.9999 },
+            period: { type: "string", enum: ["1d", "7d", "28d", "30d"] },
+            total: { type: "string", minLength: 1 },
+            bad: { type: "string", minLength: 1 },
+            good: { type: "string", minLength: 1 },
+            burnAlerts: { type: "string", enum: ["multiwindow", "page", "none"] },
+            groupBy: { type: "string", minLength: 1, pattern: "^[A-Za-z_][A-Za-z0-9_]*$" },
+            maxRows: { type: "integer", minimum: 1, maximum: 12 },
+          },
+          required: ["objective", "period", "total"],
+          oneOf: [{ required: ["bad"] }, { required: ["good"] }],
+          additionalProperties: false,
+        },
+      },
+    },
   }, {
     if: { required: ["options"], properties: { options: { required: ["compare"] } } },
     then: { properties: { type: { const: "stat" } } },

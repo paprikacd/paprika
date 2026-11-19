@@ -73,7 +73,7 @@ func TestRecordRankDecodeAcceptsWhatZodAccepts(t *testing.T) {
 func TestRankedRecordTableWithAMistypedRankReportsItsReason(t *testing.T) {
 	frame := &dataframe.Frame{Columns: []dataframe.Column{{Key: "host", Type: "string"}}, Rows: [][]any{{"a"}}}
 	widget := rankedHealthWidget(t, `{"rank":{"status":"host","limit":2.5}}`)
-	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "ok"}, &QueryResult{Records: frame}, 0)
+	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "ok"}, &QueryResult{Records: frame}, 0, 0)
 	require.Nil(t, widget.Threshold)
 	require.NotNil(t, widget.Ranking)
 	require.Contains(t, widget.Ranking.Reason, "rank does not decode")

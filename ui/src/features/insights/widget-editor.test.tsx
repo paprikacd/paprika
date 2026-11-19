@@ -7,6 +7,8 @@ import { WidgetEditor } from "./widget-editor";
 import { SavedQueryLibraryProvider } from "./saved-query-context";
 import { registerWidgetPlugin } from "./widget-registry";
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge";
+import { registerSloSummaryPlugin, SLO_DEFAULT_CONFIG } from "./plugins/slo-summary";
+import { compileSloQuery } from "./slo";
 import type { Dashboard, Provider, Widget, SavedQuery } from "./schema";
 
 const widget: Widget = {
@@ -1420,3 +1422,50 @@ it("offers the stale-sample threshold for time series as well as single values",
   expect(screen.getByLabelText("Warn when last valid sample is older than (seconds)")).toBeInTheDocument();
   expect(screen.queryByLabelText("Hatch after latest sample when older than (seconds)")).toBeNull();
 });
+
+describe("widget inspector SLO objective", () => {
+  it("offers only Prometheus providers as the SLO data source", () => {
+    registerDefaultWidgetPlugins();
+    registerSloSummaryPlugin();
+    const withTempoMetrics: Provider[] = [...providers, { id: "tempo-metrics", name: "Metrics via Tempo", type: "tempo", capabilities: ["metrics"] }];
+    render(<WidgetEditor {...props()} providers={withTempoMetrics} widget={{ ...widget, type: "stat", query: "up" }} />);
+    choose("Visualization", /^SLO objective/);
+    fireEvent.click(screen.getByRole("combobox", { name: "Data source" }));
+    expect(screen.getByRole("option", { name: "Staging Prometheus" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Metrics via Tempo" })).toBeNull();
+  });
+
+  it("switching to the SLO objective from a non-Prometheus provider picks a Prometheus provider", () => {
+    registerDefaultWidgetPlugins();
+    registerSloSummaryPlugin();
+    const callbacks = props();
+    const withTempoMetrics: Provider[] = [{ id: "tempo-metrics", name: "Metrics via Tempo", type: "tempo", capabilities: ["metrics"] }, ...providers];
+    render(<WidgetEditor {...callbacks} providers={withTempoMetrics} widget={{ ...widget, type: "stat", query: "up", providerId: "tempo-metrics" }}
+      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn() }} />);
+    choose("Visualization", /^SLO objective/);
+    fireEvent.change(screen.getByLabelText("Objective percent"), { target: { value: "99.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    const applied = callbacks.onApply.mock.lastCall?.[0] as Widget;
+    expect(applied.pluginId).toBe("slo-summary");
+    expect(applied.providerId).toBe("staging");
+  });
+
+  it("switching a stat with bands to the SLO objective drops the bands and stores the compiled query", () => {
+    registerDefaultWidgetPlugins();
+    registerSloSummaryPlugin();
+    const callbacks = props();
+    const stat: Widget = { ...widget, type: "stat", query: "up", options: { thresholds: [{ value: 180, color: "#bb5037" }] } };
+    render(<WidgetEditor {...callbacks} widget={stat}
+      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn() }} />);
+    choose("Visualization", /^SLO objective/);
+    expect(screen.getByLabelText("Total requests selector")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Objective percent"), { target: { value: "99.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    const applied = callbacks.onApply.mock.lastCall?.[0] as Widget;
+    expect(applied.pluginId).toBe("slo-summary");
+    expect(applied.options?.thresholds).toBeUndefined();
+    expect(applied.query).toBe(compileSloQuery({ ...SLO_DEFAULT_CONFIG, objective: 99.5 }));
+    expect(applied.query).not.toBe("up");
+  });
+});
+

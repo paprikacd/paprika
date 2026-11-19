@@ -39,7 +39,8 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided |
 | `state` | `ok`, `empty` or `partial`; availability, not service health |
 | `attention` | Dashboard-level count of widgets that need attention, with `checked` and the `basis` it counts; see below. Not a health verdict. Optional on the wire, so an older client's schema still accepts the result |
-| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 130 KiB: `breachIntervals`, `breaches`, `bandSeries`, `sample`. Absent when nothing was dropped. The step definitions are under Omitted detail below. Facts that no step drops are listed there too; a result whose never-dropped facts alone exceed 130 KiB is refused with 413, and `omitted` is never present on a refusal |
+| `slo` | Optional, on an `slo-summary` widget only. The authored objective's evaluation: `basis`, `objective`, `period`, `evaluatedAt`, `state` (`meeting`, `at_risk`, `breaching`, `unknown` or `partial`), `reasons`, `counts`, up to `max_series` `groups` with availability, error ratio, budget remaining and burn pairs, and `groupsOmitted`. See SLO objectives below |
+| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 130 KiB: `breachIntervals`, `breaches`, `bandSeries`, `sample`, `sloBurn` (the per-group burn pairs, which keep `state`, `reasons` and `counts`). Absent when nothing was dropped. The step definitions are under Omitted detail below. Facts that no step drops are listed there too; a result whose never-dropped facts alone exceed 130 KiB is refused with 413, and `omitted` is never present on a refusal |
 
 ### Compatibility
 
@@ -82,6 +83,21 @@ too.
 ### Stat comparisons
 
 A stat that declares `options.compare` gets a `comparison` object: the displayed sample against the latest valid sample of the same series in its earlier window (`previous`, `1d` or `7d`). The earlier window is queried after the main queries, within the remaining budget, once per distinct window. A stat with no displayed sample is never queried for its earlier window (`unavailable`, `no_current_sample`). Dry runs (`validate_dashboard` and other `execute: false` paths) plan no earlier query. `queryCount.comparison` counts the earlier-window queries planned and executed. The text synopsis names each change at the widget's decimals. A comparison is never dropped under the 130 KiB cap, and it never changes the result state or attention, and `not_run` never means no change.
+
+### SLO objectives
+
+An `slo-summary` widget evaluates its authored objective (a percent target over
+`period`) against counter selectors. The server compiles its PromQL from the
+config at run time, so the widget's `query` text is a readable copy. The `slo`
+object is built from the raw result and never changes the widget's signal `state`
+or `threshold`. Its basis is "evaluation of the widget's author-declared objective;
+not a health verdict". `state` is `breaching` when the budget is exhausted or a
+critical burn pair fires, `at_risk` when a warning pair fires, `meeting` otherwise,
+and `unknown` for no traffic, no data, or an incomplete result. `partial` is the
+overall state when no evaluated group is worse than meeting but some group is
+unknown or a truncated result may hide groups. A group with no traffic is `unknown`
+and never makes the overall `breaching`. `attention` counts `breaching` as critical
+and `at_risk` as warning. The `sloBurn` omission step drops only the burn arrays.
 
 ### Attention summary
 

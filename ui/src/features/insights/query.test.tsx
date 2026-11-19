@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { InsightsQueryError } from "./client";
 import { createQueryScheduler, createResolvedQueryFetcher, useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import type { QueryRequest, QueryResult, Widget } from "./schema";
+import { parseSloConfig } from "./slo-config";
+import { compileSloQuery, sloStep } from "./slo";
 
 const widget: Widget = {
   id: "latency",
@@ -423,5 +425,31 @@ describe("shared query scheduler", () => {
       schedule(request, signal()).catch(() => schedule(request, signal())),
     ).resolves.toEqual(data);
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("slo-summary widget query", () => {
+  it("sends the query compiled from its objective config over one step that spans the window", async () => {
+    const objective = { objective: 99.9, period: "30d", total: "http_requests_total{service={{service}}}", bad: 'http_requests_total{code="5xx"}', burnAlerts: "none" };
+    const slo: Widget = { ...widget, id: "slo", type: "plugin", pluginId: "slo-summary", dataKind: "metrics", query: "stale text", config: objective };
+    const fetcher = vi.fn().mockResolvedValue(data);
+    const { result } = renderHook(() => useWidgetQuery(slo, { ...bounds, fetcher }));
+    await waitFor(() => expect(result.current.data).toEqual(data));
+    const sent = fetcher.mock.calls[0][0] as QueryRequest;
+    expect(sent.query).toBe(compileSloQuery(parseSloConfig(objective)));
+    expect(sent.query).not.toContain("stale text");
+    expect(sent.step).toBe(sloStep(bounds.start, bounds.end));
+  });
+
+  it("never sends a saved query reference with an SLO widget", async () => {
+    const objective = { objective: 99.9, period: "30d", total: "http_requests_total", bad: 'http_requests_total{code="5xx"}', burnAlerts: "none" };
+    const queryRef = { id: "saved-slo", bindings: [] };
+    const slo: Widget = { ...widget, id: "slo", type: "plugin", pluginId: "slo-summary", dataKind: "metrics", query: "", queryRef, config: objective };
+    const fetcher = vi.fn().mockResolvedValue(data);
+    const { result } = renderHook(() => useWidgetQuery(slo, { ...bounds, fetcher }));
+    await waitFor(() => expect(result.current.data).toEqual(data));
+    const sent = fetcher.mock.calls[0][0] as QueryRequest;
+    expect(sent).not.toHaveProperty("queryRef");
+    expect(sent.query).toBe(compileSloQuery(parseSloConfig(objective)));
   });
 });

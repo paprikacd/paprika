@@ -46,6 +46,7 @@ Insights supports Light, Dark and System independently of the main shell. Warm w
 - **Status words never decorate.** A status word, glyph or status frame appears only where an author-set threshold, a status-badge mapping or an attention count sets that status. Every status mark pairs its colour with a glyph and a word. Warning and critical cells also draw an inset frame of 1px and 2px, skipped on cells too small to keep their fill.
 - **Series roles** are `traffic`, `success`, `client-error`, `server-error`, `p50`, `p95` and `p99`. A series colour comes from an authored rule (a hex colour or a role), then a well-known label (2xx/4xx/5xx, quantiles), then the widget colour for a single series, then a hashed slot.
 - **`seriesColorMode`** is `name` by default, which keys each series to its identity so a colour follows the series; `index` keeps position-based slots.
+- **SLO cards** (`slo-summary`) use the status tokens for their chip and the overflow cue of a negative budget (critical text). The reading stays in ink, and the budget track uses the Gamma surface tokens. The card's state describes its authored objective, not service health (see UX-CONTRACT.md).
 - **Hatching** marks missing data. Invalid source data uses a second, warning-toned hatch (`docs/design/insights/UX-CONTRACT.md`). Status colour never uses hatching. Tool-level throttling and capacity errors are described in `.agents/skills/paprika-dashboard-design/SKILL.md`.
 
 ## Typography

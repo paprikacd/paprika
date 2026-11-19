@@ -4,6 +4,9 @@ import { chartFixtureCollections } from "../../ui/e2e/fixtures/rich-chart-data.t
 // The first-party control-plane starter. The gallery copy keeps its widgets and
 // queries, so it renders the same panels against the synthetic paprika_* series.
 import controlPlaneStarter from "../../internal/insights/starters/paprika-control-plane.json" with { type: "json" };
+// The slo-summary query is compiled from its config by the same function the editor and the server mirror, so the
+// stored text of a gallery card is exactly the text that runs.
+import { compileSloQuery } from "../../ui/src/features/insights/slo.ts";
 
 const sql = (statement, variable) => JSON.stringify({ sql: statement, parameters: ["__PAPRIKA_PARAMETER__"] }).replace('"__PAPRIKA_PARAMETER__"', `{{${variable}}}`);
 // Range values are prepared timestamp parameters, not SQL text substitutions.
@@ -51,9 +54,7 @@ const q = {
     history: sqlRange('SELECT h.observed_at AS day,avg(h.value)::double precision AS short_interest,avg(c.coverage_percent)::double precision AS coverage FROM gallery.company_history h JOIN gallery.companies c ON c.symbol=h.symbol WHERE c.sector=$1 AND h.observed_at >= $2::timestamptz AND h.observed_at <= $3::timestamptz GROUP BY h.observed_at ORDER BY h.observed_at', "sector"),
   },
   "reliability-room": {
-    availability: '100 * avg_over_time(paprika_demo_probe_up{cluster="omega",service={{service}}}[30d])',
-    target: '99.9 + 0 * sum(rate(paprika_demo_requests_total{cluster="omega",service={{service}}}[1h]))',
-    budget: '100 * clamp_min(1 - (1 - avg_over_time(paprika_demo_probe_up{cluster="omega",service={{service}}}[30d])) / 0.001, 0)',
+    // The SLO card and the burn rates read the same request-error SLI, so the readings agree.
     "incident-count": 'sum(1 - paprika_demo_service_up{cluster="omega",service={{service}}})',
     burn: 'label_replace((sum(rate(paprika_demo_requests_total{cluster="omega",service={{service}},code="5xx"}[1h])) / clamp_min(sum(rate(paprika_demo_requests_total{cluster="omega",service={{service}}}[1h])),0.001)) / 0.001,"window","1h","","") or label_replace((sum(rate(paprika_demo_requests_total{cluster="omega",service={{service}},code="5xx"}[6h])) / clamp_min(sum(rate(paprika_demo_requests_total{cluster="omega",service={{service}}}[6h])),0.001)) / 0.001,"window","6h","","")',
     incidents: sqlRange("SELECT started_at AS date,service,summary AS label,(extract(epoch FROM (least(coalesce(ended_at,$3::timestamptz),$3::timestamptz)-started_at))/60.0)::double precision AS value,severity AS status,CASE WHEN ended_at IS NULL OR ended_at>$3::timestamptz THEN 'Active' ELSE 'Resolved' END AS state FROM gallery.incidents i WHERE service=$1 AND to_jsonb(i)->>'cluster'='omega' AND started_at<=$3::timestamptz AND (ended_at IS NULL OR ended_at>=$2::timestamptz) ORDER BY started_at DESC", "service"),
@@ -79,6 +80,9 @@ const variables = {
   "collection-control": ["pipeline", "Cluster", ["omega", "delta"]],
 };
 
+// Reliability Room readings are one slo-summary card and one services card now; these fixture queries feed no card.
+const retiredQueries = { "reliability-room": ["availability", "target", "budget"] };
+
 export function galleryDocuments(providers) {
   const dashboards = [], savedQueries = [];
   for (const collection of chartFixtureCollections) {
@@ -89,7 +93,10 @@ export function galleryDocuments(providers) {
     dashboard.folder = "Local gallery demos"; dashboard.variables = [{ name: variable, label, defaultValue: choices[0], options: choices }];
     dashboard.timeRange = key === "service-pulse" ? "1h" : key === "edge-watch" ? "30m" : key === "reliability-room" ? "30d" : "6h"; dashboard.refreshInterval = 0;
     for (const original of collection.sample.savedQueries) {
-      const keyPart = original.id.slice(`ab-${key}-`.length), query = q[key][keyPart];
+      const keyPart = original.id.slice(`ab-${key}-`.length);
+      // Retired saved queries have no card left. Keeping them would keep their stored text in the gallery store.
+      if (retiredQueries[key]?.includes(keyPart)) continue;
+      const query = q[key][keyPart];
       if (!query) throw Error(`Missing gallery query for ${original.id}`);
       savedQueries.push({ ...original, id: `local-${original.id}`, query, providerId: providers[original.kind],
         description: "Synthetic local provider data; safe for demonstrations.",
@@ -252,33 +259,36 @@ export function galleryDocuments(providers) {
       // The selected request series can be checkout, payments, catalog or
       // worker; all four have synthetic metric and trace samples.
       dashboard.variables[0].options = ["checkout", "payments", "catalog", "worker"];
-      dashboard.widgets = dashboard.widgets.filter(widget => widget.id !== "budget-meter");
-      // Four KPI cards fill one three-row band: the error-budget bar needs layout h of at least 3 (stat.compact-bar).
-      for (const [index, [id, icon]] of [["availability","shield"],["target","target"],["incidents","activity"],["budget","pie"]].entries()) {
-        const widget = dashboard.widgets.find(item => item.id === id);
-        widget.layout = { ...widget.layout, x: index * 3, w: 3, y: 0, h: 3 };
-        widget.options = { ...widget.options, sparklinePlacement: "side", statIcon: icon };
-      }
-      dashboard.widgets.find(widget => widget.id === "availability").title = "Observed availability · 30d";
-      dashboard.widgets.find(widget => widget.id === "target").title = "Target (SLO)";
-      const budgetCard = dashboard.widgets.find(widget => widget.id === "budget");
-      budgetCard.title = "Budget remaining · 30d";
-      budgetCard.options = { ...budgetCard.options, showStatBar: true, min: 0, max: 100, thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 25, status: "warning", label: "At risk" }, { value: 50, status: "ok", label: "Healthy" }] };
-      dashboard.widgets.find(widget => widget.id === "target").options.showSparkline = true;
+      // The availability, target and budget stats are replaced by one SLO card; the table by a services card.
+      dashboard.widgets = dashboard.widgets.filter(widget => !["budget-meter", "availability", "target", "budget", "services-attention"].includes(widget.id));
+      // Both cards use the request-error SLI of the burn rates, a 99.9% objective and the 30-day period of this dashboard.
+      // The total and bad selectors are the only inputs; the stored query is the text compiled from them.
+      // The services card's matcher bounds its groups to the four demo services, so it stays within the series limit.
+      const sloConfig = { objective: 99.9, period: "30d", burnAlerts: "multiwindow", total: 'paprika_demo_requests_total{cluster="omega",service={{service}}}', bad: 'paprika_demo_requests_total{cluster="omega",service={{service}},code="5xx"}' };
+      const servicesConfig = { objective: 99.9, period: "30d", burnAlerts: "multiwindow", total: 'paprika_demo_requests_total{cluster="omega",service=~"checkout|payments|catalog|worker"}', bad: 'paprika_demo_requests_total{cluster="omega",service=~"checkout|payments|catalog|worker",code="5xx"}', groupBy: "service", maxRows: 6 };
+      dashboard.widgets.push(
+        { id: "slo", title: "Availability against 99.9% · 30d", type: "plugin", pluginId: "slo-summary", dataKind: "metrics", providerId: providers.metrics, unit: "%", query: compileSloQuery(sloConfig), config: sloConfig, layout: { x: 0, y: 0, w: 8, h: 4 } },
+        { id: "services-attention", title: "Services against 99.9% · 30d", type: "plugin", pluginId: "slo-summary", dataKind: "metrics", providerId: providers.metrics, unit: "%", query: compileSloQuery(servicesConfig), config: servicesConfig, layout: { x: 6, y: 4, w: 6, h: 5 } },
+      );
+      // The incident count stat takes the top-right corner beside the SLO card.
+      // The burn chart and the services card share a row at half width each; the services rows need the room.
+      const burnChart = dashboard.widgets.find(widget => widget.id === "burn");
+      burnChart.layout = { ...burnChart.layout, w: 6 };
+      const incidentCount = dashboard.widgets.find(widget => widget.id === "incidents");
+      incidentCount.layout = { x: 8, y: 0, w: 4, h: 4 };
+      incidentCount.options = { ...incidentCount.options, sparklinePlacement: "side", statIcon: "activity" };
       const events = sqlRange("SELECT started_at AS date, least(coalesce(ended_at,$3::timestamptz),$3::timestamptz) AS ended_at, summary AS label, severity AS status FROM gallery.incidents i WHERE service=$1 AND to_jsonb(i)->>'cluster'='omega' AND started_at<=$3::timestamptz AND (ended_at IS NULL OR ended_at>=$2::timestamptz) ORDER BY started_at DESC", "service");
       const incidentSeverity = sqlRange("SELECT started_at AS date, summary AS label, severity AS status, CASE severity WHEN 'warning' THEN 1.0 WHEN 'critical' THEN 2.0 ELSE NULL END::double precision AS value FROM gallery.incidents i WHERE service=$1 AND to_jsonb(i)->>'cluster'='omega' AND started_at>=$2::timestamptz AND started_at<=$3::timestamptz UNION ALL SELECT started_at AS date, summary AS label, severity AS status, NULL::double precision AS value FROM gallery.incident_severity_samples s WHERE service=$1 AND to_jsonb(s)->>'cluster'='omega' AND started_at>=$2::timestamptz AND started_at<=$3::timestamptz ORDER BY date DESC", "service");
       const timeline = 'min_over_time(paprika_demo_probe_up{cluster="omega"}[3h])';
-      const attention = JSON.stringify({ sql: `SELECT service, availability, budget, CASE WHEN budget <= 0 THEN 'At risk' ELSE 'Healthy' END AS status FROM (SELECT service, availability, round((100*greatest(0, 1 - (1 - availability/100.0)/0.001))::numeric,1)::double precision AS budget FROM (SELECT service, round((100.0*sum(CASE WHEN up THEN 1 ELSE 0 END)/count(*))::numeric,2)::double precision AS availability FROM gallery.service_probe_samples WHERE observed_at >= $1::timestamptz AND observed_at <= $2::timestamptz GROUP BY service) probes) rated`, parameters: [{ range: "start" }, { range: "end" }] });
       savedQueries.push({ schemaVersion: 1, id: "local-reliability-events", name: "Service incident intervals", kind: "records", providerId: providers.records, query: events, parameters: [{ name: "service", label: "Service", type: "string", defaultValue: "checkout" }] },
         { schemaVersion: 1, id: "local-reliability-severity", name: "Service incident severity", kind: "records", providerId: providers.records, query: incidentSeverity, description: "Synthetic incident severity ranks: warning=1, critical=2; unknown status remains missing.", parameters: [{ name: "service", label: "Service", type: "string", defaultValue: "checkout" }] },
-        { schemaVersion: 1, id: "local-reliability-timeline", name: "Observed service states", kind: "metrics", providerId: providers.metrics, query: timeline, parameters: [] },
-        { schemaVersion: 1, id: "local-reliability-attention", name: "Observed service availability summary", kind: "records", providerId: providers.records, query: attention, parameters: [] });
+        { schemaVersion: 1, id: "local-reliability-timeline", name: "Observed service states", kind: "metrics", providerId: providers.metrics, query: timeline, parameters: [] });
       const burn = dashboard.widgets.find(widget => widget.id === "burn");
       burn.title = "Availability burn rate · request errors";
       // The two windows are palette slots chosen for contrast in both themes (traffic blue, p99 magenta); their names live in the legend.
       burn.options = { ...burn.options, seriesColors: [{ label: "window", value: "1h", role: "traffic" }, { label: "window", value: "6h", role: "p99" }] };
       burn.annotationSource = { queryRef: { id: "local-reliability-events", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, timestampColumn: "date", endColumn: "ended_at", labelColumn: "label", severityColumn: "status" };
-      dashboard.widgets.push({ id: "services-attention", title: "Services needing attention · recorded probes", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: providers.records, query: attention, unit: "", queryRef: { id: "local-reliability-attention", bindings: [] }, config: { columns: ["service", "availability", "budget", "status"], pageSize: 6, density: "compact", showSearch: false, rank: { status: "status", value: "budget", order: "ascending", limit: 6 }, cellStyles: [{ column: "availability", display: "color-text", unit: "%", thresholds: [{ value: 0, status: "critical", label: "Below 99.9% target" }, { value: 99.91, status: "ok", label: "Above 99.9% target" }] }, { column: "budget", display: "bar", min: 0, max: 100, unit: "%", barColorMode: "value" }, { column: "status", display: "status-badge", mappings: [{ value: "At risk", status: "critical" }, { value: "Healthy", status: "ok" }] }] }, options: { thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 25, status: "warning", label: "Low" }, { value: 50, status: "ok", label: "Healthy" }] }, layout: { x: 8, y: 3, w: 4, h: 6 } },
+      dashboard.widgets.push(
         { id: "service-timeline", title: "Service state · worst recorded probe per 3h", type: "plugin", pluginId: "status-history", dataKind: "metrics", providerId: providers.metrics, query: timeline, unit: "", queryRef: { id: "local-reliability-timeline", bindings: [] }, config: { labelField: "service", showTimeAxis: true, segmented: true, maxSeries: 6, maxPoints: 120 }, options: { showLegend: true, showTooltip: true, thresholds: [{ value: 0, status: "critical", label: "Down" }, { value: 1, status: "ok", label: "Up" }] }, layout: { x: 0, y: 9, w: 8, h: 5 } });
       const calendar = dashboard.widgets.find(widget => widget.id === "calendar"); delete calendar.config.endDate;
       Object.assign(calendar, { title: "Incident severity by day · UTC", query: incidentSeverity, unit: "", queryRef: { id: "local-reliability-severity", bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, config: { ...calendar.config, value: "value", status: "status", label: "label", aggregation: "max", colorMode: "thresholds" }, options: { ...calendar.options, thresholds: [{ value: 1, status: "warning", label: "Warning" }, { value: 2, status: "critical", label: "Critical" }] }, layout: { x: 8, y: 9, w: 4, h: 5 } });
@@ -287,7 +297,7 @@ export function galleryDocuments(providers) {
       incidentsList.config = { ...incidentsList.config, density: "compact", showSearch: false, columns: ["date", "service", "label", "value", "state"], timeSelection: { start: "date", duration: "value", durationUnit: "minutes", paddingSeconds: 300 } };
       const serviceTrace = dashboards.find(item => item.id === "local-gallery-service-pulse").widgets.find(item => item.id === "traces");
       dashboard.widgets.push({ ...structuredClone(serviceTrace), id: "incident-traces", title: "Traces in selected window", layout: { x: 0, y: 18, w: 12, h: 6 } });
-      dashboard.description += " Availability and budget describe recorded synthetic 30-day probe samples against a 99.9% target; burn rates describe request errors. The table is a separately seeded synthetic probe set.";
+      dashboard.description += " The SLO card, the services card and the burn rates all describe synthetic request errors against a 99.9% objective over 30 days. Budget remaining can be negative once the objective is overspent.";
     }
     if (key === "collection-control") {
       // Each signal is an independent observed rate. Overlay the series
@@ -329,7 +339,7 @@ export function galleryDocuments(providers) {
     }
     // Reference studies use a compact top row without leaving an empty grid
     // track between the KPIs and the first chart. Reliability Room keeps its
-    // three-row KPI band, which its error-budget bar needs.
+    // top row at its authored height: the SLO card and the incident count.
     for (const widget of dashboard.widgets) {
       if (widget.type === "stat") widget.options = { ...widget.options, sparklinePlacement: "side" };
       if (widget.type === "stat" && widget.layout.y === 0 && widget.layout.h === 3 && key !== "reliability-room") widget.layout.h = 1;
@@ -344,10 +354,10 @@ export function galleryDocuments(providers) {
       [["geo-density", "geo-honeycomb"], 14, 6],
       [["geo-selected-detail"], 20, 3],
     ] : key === "reliability-room" ? [
-      [["burn", "services-attention"], 3, 5],
-      [["service-timeline", "calendar"], 8, 4],
-      [["incidents-list"], 12, 4],
-      [["incident-traces"], 16, 6],
+      [["burn", "services-attention"], 4, 5],
+      [["service-timeline", "calendar"], 9, 4],
+      [["incidents-list"], 13, 4],
+      [["incident-traces"], 17, 6],
     ] : [];
     for (const [ids, y, h] of referenceRows) {
       for (const id of ids) {

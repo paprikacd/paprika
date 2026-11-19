@@ -20,7 +20,7 @@ import ReactGridLayout, {
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { sourceWaitMessage, useSourceStatus } from "./source-status";
-import { useWidgetDefinitions } from "./widget-registry";
+import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import { ChartEntranceContext, type ChartEntranceSlot } from "./chart-entrance";
@@ -605,6 +605,14 @@ const Tile = memo(function Tile({
   return sameFields(beforeContent, afterContent) && beforeLayout.w === afterLayout.w && beforeLayout.h === afterLayout.h;
 });
 
+/** The sizing minimum of each widget's definition, keyed by widget id. Unlisted plugins count too. */
+export function minimumHeightsOf(widgets: readonly Widget[]): Map<string, number> {
+  return new Map(widgets.map(widget => {
+    const sizing = getWidgetDefinition(widget)?.sizing;
+    return [widget.id, sizing?.minHeightFor ? sizing.minHeightFor(widget.config) : sizing?.minHeight ?? 0];
+  }));
+}
+
 export function DashboardCanvas({
   dashboard,
   active = true,
@@ -667,10 +675,12 @@ export function DashboardCanvas({
   if (measured && mode !== shownMode) setShownMode(mode);
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide" && !focus;
+  // Subscribing re-renders the canvas when the registry changes. The heights themselves come from every registered
+  // definition, listed or not: an unlisted plugin still sizes its saved widgets.
   const definitions = useWidgetDefinitions();
-  const minimumHeights = useMemo(() => new Map(dashboard.widgets.map(widget => [widget.id,
-    definitions.find(definition => definition.type === widget.type && definition.id === (widget.pluginId ?? widget.type))?.sizing?.minHeight ?? 0,
-  ])), [dashboard.widgets, definitions]);
+  // definitions is a deliberate dependency: the heights read the registry, so a registry change must recompute them.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const minimumHeights = useMemo(() => minimumHeightsOf(dashboard.widgets), [dashboard.widgets, definitions]);
   const layout = useMemo(
     () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights) : canvasLayout(dashboard.widgets, mode, width, minimumHeights),
     [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights],

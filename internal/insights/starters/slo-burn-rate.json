@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "slo-burn-rate",
   "title": "SLO and burn rate",
-  "description": "99.9% availability error budget over 30 days, with fast burn over 1 and 6 hours. Assumes http_requests_total (service, namespace, code labels); 5xx is failure. Needs 30 days of counter retention. Auto refresh is off: the 30-day budget query is expensive without recording rules. At scale, record per-service rate(http_requests_total[5m]) for all and 5xx requests, then use avg_over_time(errors[30d]) / avg_over_time(total[30d]), and set refresh to 60s. Change 0.001 for another objective.",
+  "description": "99.9% availability objective over 30 days, as one SLO card with availability, error budget and multiwindow burn pairs. Its query is compiled from its config at run time. The burn-rate charts keep the 1-hour and 6-hour burn with the 2x, 6x and 14.4x bands. Assumes http_requests_total (service, namespace, code labels); 5xx is failure. Needs 30 days of counter retention. Auto refresh is 60s. Change the objective in the card's config.",
   "timeRange": "6h",
-  "refreshInterval": 0,
+  "refreshInterval": 60,
   "variables": [
     {
       "name": "service",
@@ -19,102 +19,28 @@
   ],
   "widgets": [
     {
-      "id": "budget-remaining",
-      "title": "Error budget remaining",
-      "type": "stat",
+      "id": "slo-summary",
+      "title": "SLO objective, 30 days",
+      "type": "plugin",
+      "pluginId": "slo-summary",
+      "dataKind": "metrics",
       "providerId": "metrics-provider-id",
-      "query": "100 * (1 - (1 - sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code!~\"5..\"}[30d])) / sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[30d]))) / 0.001)",
+      "query": "label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[5m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[5m])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[5m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[30m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[30m])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[30m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[1h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[1h])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[1h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[2h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[2h])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[2h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[6h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[6h])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[6h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[1d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[1d])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[1d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[3d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[3d])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[3d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[30d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[30d])) or (0 * sum(increase(http_requests_total{service=~{{service}},namespace={{namespace}}}[30d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\")",
       "unit": "%",
-      "description": "Share of the 30-day error budget still unused. A full bar means no failed requests so far; an empty bar means the budget is spent.",
+      "config": {
+        "objective": 99.9,
+        "period": "30d",
+        "total": "http_requests_total{service=~{{service}},namespace={{namespace}}}",
+        "bad": "http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}"
+      },
       "options": {
-        "decimals": 1,
-        "showStatBar": true,
-        "min": 0,
-        "max": 100,
-        "thresholds": [
-          {
-            "value": 0,
-            "status": "critical"
-          },
-          {
-            "value": 25,
-            "status": "warning"
-          },
-          {
-            "value": 50,
-            "status": "ok"
-          }
-        ]
+        "decimals": 2
       },
       "layout": {
         "x": 0,
         "y": 0,
-        "w": 4,
-        "h": 3
-      }
-    },
-    {
-      "id": "burn-1h",
-      "title": "Burn rate, 1 hour",
-      "type": "stat",
-      "providerId": "metrics-provider-id",
-      "query": "(sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[1h])) / sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}}}[1h]))) / 0.001",
-      "unit": "x",
-      "options": {
-        "decimals": 1,
-        "showSparkline": true,
-        "thresholds": [
-          {
-            "value": 0,
-            "status": "ok"
-          },
-          {
-            "value": 2,
-            "status": "warning"
-          },
-          {
-            "value": 14.4,
-            "status": "critical"
-          }
-        ]
-      },
-      "layout": {
-        "x": 4,
-        "y": 0,
-        "w": 4,
-        "h": 3
-      }
-    },
-    {
-      "id": "burn-6h",
-      "title": "Burn rate, 6 hours",
-      "type": "stat",
-      "providerId": "metrics-provider-id",
-      "query": "(sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}},code=~\"5..\"}[6h])) / sum(rate(http_requests_total{service=~{{service}},namespace={{namespace}}}[6h]))) / 0.001",
-      "unit": "x",
-      "options": {
-        "decimals": 1,
-        "showSparkline": true,
-        "thresholds": [
-          {
-            "value": 0,
-            "status": "ok"
-          },
-          {
-            "value": 2,
-            "status": "warning"
-          },
-          {
-            "value": 6,
-            "status": "critical"
-          }
-        ]
-      },
-      "layout": {
-        "x": 8,
-        "y": 0,
-        "w": 4,
-        "h": 3
+        "w": 12,
+        "h": 5
       }
     },
     {
@@ -147,7 +73,7 @@
       },
       "layout": {
         "x": 0,
-        "y": 3,
+        "y": 5,
         "w": 6,
         "h": 5
       }
@@ -182,7 +108,7 @@
       },
       "layout": {
         "x": 6,
-        "y": 3,
+        "y": 5,
         "w": 6,
         "h": 5
       }

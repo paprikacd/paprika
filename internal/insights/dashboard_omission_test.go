@@ -111,9 +111,21 @@ func breachDetailDashboard() *DashboardQueryResult {
 			Freshness:  &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: state, LastTimestamp: &last, AgeSeconds: &age},
 		})
 	}
+	// The sloBurn step drops only slo-summary burn windows, so the fixture needs one to reach it.
+	result.Widgets[0].SLO = sloDetailObjective()
 	// The first widget also carries a ranking's previewed rows, so the rankingRows step has detail to drop.
 	result.Widgets[0].Ranking = &DashboardRecordRanking{Basis: recordRankBasis, Evaluated: 2, Counts: map[string]int{"critical": 1}, Columns: []dataframe.Column{{Key: "host", Type: "string"}}, Rows: [][]any{{strings.Repeat("h", 120)}}, Statuses: []string{"critical"}}
 	return result
+}
+
+// sloDetailObjective is an slo-summary objective with a burn window, the detail the sloBurn step drops.
+func sloDetailObjective() *DashboardSLO {
+	return &DashboardSLO{
+		Basis: dashboardSLOBasis, Objective: 99.9, Period: "30d", EvaluatedAt: "2026-10-26T01:00:00Z",
+		State: "meeting", Reasons: []string{}, Counts: sloCounts{Meeting: 1},
+		Groups: []DashboardSLOGroup{{Labels: map[string]string{"service": "api"}, State: "meeting", Reasons: []string{},
+			Burn: []sloBurn{{Long: "1h", Short: "5m", Factor: 14.4, Severity: "critical"}}}},
+	}
 }
 
 // sizeAfterStepsOf measures a fresh dashboard from build after the first n ladder steps, with the

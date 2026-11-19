@@ -12,6 +12,8 @@ import { RecordTable, RecordTreemap } from "./plugins/records";
 import { SmallMultiples } from "./plugins/small-multiples";
 import { StatusGrid } from "./plugins/status-grid";
 import { UptimeCalendar, UptimeTimeline } from "./plugins/uptime-views";
+import { SloSummary } from "./plugins/slo-summary";
+import sloFixtures from "../../../../docs/design/insights/conformance/slo.json";
 
 /*
  * One conformance suite for every observation owner, driven the way a user drives each host.
@@ -144,6 +146,14 @@ const heatmapResult = (): QueryResult => ({ series: [samples("api", [0.5]), samp
 const heatmapCells = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>("[data-heatmap-cell]")];
 
 const detailsResult = (): QueryResult => ({ series: [samples("api", [1]), samples("worker", [0]), samples("db", [1])] });
+
+
+// The SLO card: the 30d fixture of a fast burn gives every multiwindow pair a reading to show exactly.
+type SloFixture = { name: string; config: NonNullable<Widget["config"]>; result: QueryResult };
+const sloCase = (sloFixtures.cases as unknown as SloFixture[]).find(entry => entry.name === "a fast burn on 1h and 5m breaches")!;
+const sloBurnConfig = sloCase.config;
+const sloBurnResult = (): QueryResult => sloCase.result;
+const sloBurnTrigger = (root: HTMLElement, i: number) => screen.getByRole("button", { name: `Burn windows ${["1h and 5m", "6h and 30m", "1d and 2h", "3d and 6h"][i]}` });
 
 const OWNERS: OwnerCase[] = [
   {
@@ -368,6 +378,23 @@ const OWNERS: OwnerCase[] = [
       nativeEnter,
       { flag: "panels", reason: "One owner per instance: a pin cannot be replaced by another instance's hover, but both panels can be open at once." },
       { flag: "reorder", reason: "Each instance owns one key, so there is no reorder to follow." },
+    ],
+  },
+  {
+    owner: "slo burn windows",
+    host: "plugins/slo-summary.tsx",
+    tokens: ["1h over 5m", "6h over 30m", "1d over 2h", "3d over 6h"],
+    retention: "keyed",
+    result: sloBurnResult,
+    mount: result => <SloSummary widget={widget("slo-summary", { config: sloBurnConfig, options: {} })} result={result} />,
+    hover: (root, i) => hoverElement(sloBurnTrigger(root, i)),
+    leave: (root, i) => leaveElement(sloBurnTrigger(root, i)),
+    press: (root, i) => fireEvent.click(sloBurnTrigger(root, i)),
+    pressKey: (root, i) => fireEvent.click(sloBurnTrigger(root, i)),
+    differs: [ noOffPoint, noArrows, noTimestamps,
+      nativeEnter,
+      { flag: "panels", reason: "One owner per burn pair: a pin on one pair cannot be replaced by another pair's hover." },
+      { flag: "reorder", reason: "Each burn pair owns one key, and the pairs are fixed by the preset, so there is no reorder to follow." },
     ],
   },
 ];

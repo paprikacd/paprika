@@ -1,0 +1,8941 @@
+{
+ "description": "Shared SLO summary cases for the slo-summary widget. The UI test (ui/src/features/insights/slo.test.ts) and the Go port test (internal/insights/slo_conformance_test.go) both run every case, so slo.ts and slo.go cannot diverge. Kinds: compile validates the config (expected.error is null when valid, else the error code), then compiles it (expected.query is the exact PromQL, and expected.error is query_too_long when the text is too long). step gives sloStep(start, end) in seconds. evaluate validates the config, evaluates result against it, and checks that every field present in expected matches the output. Fields absent from expected are not checked. Arrays must have the same length. Numbers match within 1e-9 relative. null means the output is null. Error codes are the SloErrorCode values in slo.ts. Windows: 5m, 30m, 1h, 2h, 6h, 1d, 3d and the period. Burn factors are spent * period / long seconds. Series are labelled slo_window and slo_part.",
+ "cases": [
+  {
+   "name": "minimal bad selector is valid",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": null
+   }
+  },
+  {
+   "name": "good selector is valid",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "good": "http_requests_total{code=\"2xx\"}"
+   },
+   "expected": {
+    "error": null
+   }
+  },
+  {
+   "name": "placeholder inside matchers is valid",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total{service=~{{service}}}",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": null
+   }
+  },
+  {
+   "name": "objective below 50 is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 49.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_objective"
+   }
+  },
+  {
+   "name": "objective of 100 is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 100,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_objective"
+   }
+  },
+  {
+   "name": "objective with five decimals is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.99999,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_objective"
+   }
+  },
+  {
+   "name": "unsupported period is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "90d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_period"
+   }
+  },
+  {
+   "name": "a rate call is not a selector",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "rate(http_requests_total[5m])",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_selector"
+   }
+  },
+  {
+   "name": "a range selector is not a selector",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total[5m]",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_selector"
+   }
+  },
+  {
+   "name": "an offset is not a selector",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total offset 1h",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_selector"
+   }
+  },
+  {
+   "name": "an unbalanced matcher block is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total{service=\"a\"",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_selector"
+   }
+  },
+  {
+   "name": "a placeholder cannot name the metric",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "{{metric}}",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "invalid_selector"
+   }
+  },
+  {
+   "name": "bad and good together are rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "good": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "good_bad_exclusive"
+   }
+  },
+  {
+   "name": "neither bad nor good is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total"
+   },
+   "expected": {
+    "error": "good_bad_exclusive"
+   }
+  },
+  {
+   "name": "unknown burn preset is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "burnAlerts": "fast"
+   },
+   "expected": {
+    "error": "invalid_burn_alerts"
+   }
+  },
+  {
+   "name": "a reserved label cannot group",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "slo_window"
+   },
+   "expected": {
+    "error": "invalid_group_by"
+   }
+  },
+  {
+   "name": "multiwindow allows six groups",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "maxRows": 6
+   },
+   "expected": {
+    "error": null
+   }
+  },
+  {
+   "name": "multiwindow rejects seven groups at sixteen series each",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "maxRows": 7
+   },
+   "expected": {
+    "error": "invalid_max_rows"
+   }
+  },
+  {
+   "name": "page allows ten groups at ten series each",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "burnAlerts": "page",
+    "maxRows": 10
+   },
+   "expected": {
+    "error": null
+   }
+  },
+  {
+   "name": "page rejects eleven groups",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "burnAlerts": "page",
+    "maxRows": 11
+   },
+   "expected": {
+    "error": "invalid_max_rows"
+   }
+  },
+  {
+   "name": "none allows twelve groups at two series each",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "burnAlerts": "none",
+    "maxRows": 12
+   },
+   "expected": {
+    "error": null
+   }
+  },
+  {
+   "name": "maxRows above twelve is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "maxRows": 13
+   },
+   "expected": {
+    "error": "invalid_max_rows"
+   }
+  },
+  {
+   "name": "a fractional maxRows is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "maxRows": 2.5
+   },
+   "expected": {
+    "error": "invalid_max_rows"
+   }
+  },
+  {
+   "name": "an unknown key is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "queryRef": {
+     "id": "x"
+    }
+   },
+   "expected": {
+    "error": "unknown_key"
+   }
+  },
+  {
+   "name": "a config that is not an object is rejected",
+   "kind": "compile",
+   "config": [
+    1,
+    2
+   ],
+   "expected": {
+    "error": "invalid_config"
+   }
+  },
+  {
+   "name": "multiwindow 30d bad compiles to the golden query",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "query": "label_replace(label_replace(sum(increase(http_requests_total[5m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[5m])) or (0 * sum(increase(http_requests_total[5m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[30m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[30m])) or (0 * sum(increase(http_requests_total[30m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[1h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[1h])) or (0 * sum(increase(http_requests_total[1h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[2h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[2h])) or (0 * sum(increase(http_requests_total[2h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[6h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[6h])) or (0 * sum(increase(http_requests_total[6h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[1d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[1d])) or (0 * sum(increase(http_requests_total[1d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[3d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[3d])) or (0 * sum(increase(http_requests_total[3d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[30d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[30d])) or (0 * sum(increase(http_requests_total[30d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\")"
+   }
+  },
+  {
+   "name": "page preset keeps only the critical pairs",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "burnAlerts": "page"
+   },
+   "expected": {
+    "query": "label_replace(label_replace(sum(increase(http_requests_total[5m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[5m])) or (0 * sum(increase(http_requests_total[5m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[30m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[30m])) or (0 * sum(increase(http_requests_total[30m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[1h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[1h])) or (0 * sum(increase(http_requests_total[1h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[6h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[6h])) or (0 * sum(increase(http_requests_total[6h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total[30d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[30d])) or (0 * sum(increase(http_requests_total[30d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\")"
+   }
+  },
+  {
+   "name": "none preset compiles only the period window",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "burnAlerts": "none"
+   },
+   "expected": {
+    "query": "label_replace(label_replace(sum(increase(http_requests_total[30d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{code=\"5xx\"}[30d])) or (0 * sum(increase(http_requests_total[30d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\")"
+   }
+  },
+  {
+   "name": "a 1d period compiles without the 1d and 3d pairs",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "1d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service"
+   },
+   "expected": {
+    "query": "label_replace(label_replace(sum by (service)(increase(http_requests_total[5m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace((sum by (service)(increase(http_requests_total{code=\"5xx\"}[5m])) or (0 * sum by (service)(increase(http_requests_total[5m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[30m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace((sum by (service)(increase(http_requests_total{code=\"5xx\"}[30m])) or (0 * sum by (service)(increase(http_requests_total[30m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[1h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace((sum by (service)(increase(http_requests_total{code=\"5xx\"}[1h])) or (0 * sum by (service)(increase(http_requests_total[1h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[6h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace((sum by (service)(increase(http_requests_total{code=\"5xx\"}[6h])) or (0 * sum by (service)(increase(http_requests_total[6h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[1d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace((sum by (service)(increase(http_requests_total{code=\"5xx\"}[1d])) or (0 * sum by (service)(increase(http_requests_total[1d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\")"
+   }
+  },
+  {
+   "name": "good selector compiles bad as clamp_min of total minus good, zero when good is absent",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "good": "http_requests_total{code=\"2xx\"}",
+    "groupBy": "service"
+   },
+   "expected": {
+    "query": "label_replace(label_replace(sum by (service)(increase(http_requests_total[5m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[5m])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[5m])) or (0 * sum by (service)(increase(http_requests_total[5m])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[30m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[30m])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[30m])) or (0 * sum by (service)(increase(http_requests_total[30m])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[1h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[1h])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[1h])) or (0 * sum by (service)(increase(http_requests_total[1h])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[2h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[2h])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[2h])) or (0 * sum by (service)(increase(http_requests_total[2h])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[6h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[6h])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[6h])) or (0 * sum by (service)(increase(http_requests_total[6h])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[1d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[1d])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[1d])) or (0 * sum by (service)(increase(http_requests_total[1d])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[3d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[3d])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[3d])) or (0 * sum by (service)(increase(http_requests_total[3d])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace(sum by (service)(increase(http_requests_total[30d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\") or label_replace(label_replace(clamp_min(sum by (service)(increase(http_requests_total[30d])) - (sum by (service)(increase(http_requests_total{code=\"2xx\"}[30d])) or (0 * sum by (service)(increase(http_requests_total[30d])))), 0), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\")"
+   }
+  },
+  {
+   "name": "placeholders pass through compilation unchanged",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total{service=~{{service}}}",
+    "bad": "http_requests_total{service=~{{service}},code=\"5xx\"}"
+   },
+   "expected": {
+    "query": "label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[5m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[5m])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[5m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"5m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[30m])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[30m])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[30m])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30m\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[1h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[1h])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[1h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[2h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[2h])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[2h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"2h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[6h])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[6h])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[6h])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"6h\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[1d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[1d])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[1d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"1d\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[3d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[3d])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[3d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"3d\", \"\", \"\") or label_replace(label_replace(sum(increase(http_requests_total{service=~{{service}}}[30d])), \"slo_part\", \"total\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\") or label_replace(label_replace((sum(increase(http_requests_total{service=~{{service}},code=\"5xx\"}[30d])) or (0 * sum(increase(http_requests_total{service=~{{service}}}[30d])))), \"slo_part\", \"bad\", \"\", \"\"), \"slo_window\", \"30d\", \"\", \"\")"
+   }
+  },
+  {
+   "name": "a query over 8192 characters is rejected",
+   "kind": "compile",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total{service=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "expected": {
+    "error": "query_too_long"
+   }
+  },
+  {
+   "name": "step spans a short range at the 60 second floor",
+   "kind": "step",
+   "start": 0,
+   "end": 30,
+   "expected": {
+    "step": 60
+   }
+  },
+  {
+   "name": "step spans the range for a longer window",
+   "kind": "step",
+   "start": 0,
+   "end": 3600,
+   "expected": {
+    "step": 3600
+   }
+  },
+  {
+   "name": "step of an empty range is the floor",
+   "kind": "step",
+   "start": 1000,
+   "end": 1000,
+   "expected": {
+    "step": 60
+   }
+  },
+  {
+   "name": "healthy budget and burn meet the objective",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "counts": {
+     "meeting": 1,
+     "at_risk": 0,
+     "breaching": 0,
+     "unknown": 0
+    },
+    "groups": [
+     {
+      "state": "meeting",
+      "availability": 99.99,
+      "budgetRemaining": 90,
+      "burn": [
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a burn window sampled only at the range start has no reading",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 5000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 5000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "groups": [
+     {
+      "state": "meeting",
+      "burn": [
+       {
+        "long": "1h",
+        "short": "5m",
+        "longBurn": null,
+        "shortBurn": null,
+        "firing": false
+       },
+       {
+        "long": "6h",
+        "short": "30m",
+        "firing": false
+       },
+       {
+        "long": "1d",
+        "short": "2h",
+        "firing": false
+       },
+       {
+        "long": "3d",
+        "short": "6h",
+        "firing": false
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "overspent budget breaches without a fast burn",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1.5
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "breaching",
+    "reasons": [
+     "budget_exhausted"
+    ],
+    "groups": [
+     {
+      "state": "breaching",
+      "budgetRemaining": -50
+     }
+    ]
+   }
+  },
+  {
+   "name": "a negative budget is shown, not clamped",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 3
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "breaching",
+    "reasons": [
+     "budget_exhausted"
+    ],
+    "groups": [
+     {
+      "budgetRemaining": -200,
+      "availability": 99.7
+     }
+    ]
+   }
+  },
+  {
+   "name": "a fast burn on 1h and 5m breaches",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "breaching",
+    "reasons": [
+     "fast_burn"
+    ],
+    "groups": [
+     {
+      "budgetRemaining": 50,
+      "burn": [
+       {
+        "longBurn": 20,
+        "shortBurn": 20,
+        "factor": 14.4,
+        "firing": true
+       },
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a slow burn on 1d and 2h is at risk",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "at_risk",
+    "reasons": [
+     "slow_burn"
+    ],
+    "groups": [
+     {
+      "budgetRemaining": 50
+     }
+    ]
+   }
+  },
+  {
+   "name": "a slow burn on 3d and 6h is at risk",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 2
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 2
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "at_risk",
+    "reasons": [
+     "slow_burn"
+    ]
+   }
+  },
+  {
+   "name": "a long window alone does not fire a pair",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "groups": [
+     {
+      "burn": [
+       {
+        "longBurn": 20,
+        "shortBurn": 0.1,
+        "firing": false
+       },
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a group with no period traffic is unknown, not meeting",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "unknown",
+    "reasons": [
+     "no_traffic"
+    ],
+    "counts": {
+     "meeting": 0,
+     "at_risk": 0,
+     "breaching": 0,
+     "unknown": 1
+    },
+    "groups": [
+     {
+      "state": "unknown",
+      "reasons": [
+       "no_traffic"
+      ],
+      "availability": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "no series at all reads as no data",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "unknown",
+    "reasons": [
+     "no_data"
+    ],
+    "groups": [
+     {
+      "state": "unknown",
+      "reasons": [
+       "no_data"
+      ],
+      "total": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a missing bad series for the period is no data",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "unknown",
+    "reasons": [
+     "no_data"
+    ],
+    "groups": [
+     {
+      "state": "unknown",
+      "reasons": [
+       "no_data"
+      ],
+      "total": 1000000,
+      "bad": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a missing bad series for a burn window leaves that burn unread",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "groups": [
+     {
+      "burn": [
+       {
+        "longBurn": null,
+        "firing": false
+       },
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "the latest sample by timestamp is used, not the array position",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 1
+       },
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 999999
+       },
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groups": [
+     {
+      "budgetRemaining": 90
+     }
+    ]
+   }
+  },
+  {
+   "name": "a null sample at the range end is absent, not the earlier finite one",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 1000000
+       },
+       {
+        "timestamp": 2000,
+        "value": null
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 1000,
+        "value": 100
+       },
+       {
+        "timestamp": 2000,
+        "value": null
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "unknown",
+    "reasons": [
+     "no_data"
+    ],
+    "groups": [
+     {
+      "state": "unknown",
+      "reasons": [
+       "no_data"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a truncated result with every reading keeps meeting",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ],
+    "truncated": true
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [
+     "incomplete"
+    ],
+    "groups": [
+     {
+      "state": "meeting",
+      "reasons": []
+     }
+    ]
+   }
+  },
+  {
+    "name": "a truncated result marks a group with a missing window incomplete",
+    "kind": "evaluate",
+    "config": {
+      "objective": 99.9,
+      "period": "30d",
+      "total": "http_requests_total",
+      "bad": "http_requests_total{code=\"5xx\"}"
+    },
+    "result": {
+      "series": [
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "5m",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "5m",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "30m",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "30m",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "1h",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "2h",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "2h",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "6h",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "6h",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "1d",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "1d",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "3d",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "3d",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "30d",
+            "slo_part": "total"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 1000000
+            }
+          ]
+        },
+        {
+          "name": "x",
+          "labels": {
+            "slo_window": "30d",
+            "slo_part": "bad"
+          },
+          "points": [
+            {
+              "timestamp": 2000,
+              "value": 100
+            }
+          ]
+        }
+      ],
+      "truncated": true
+    },
+    "expected": {
+      "state": "unknown",
+      "reasons": [
+        "incomplete"
+      ],
+      "groups": [
+        {
+          "state": "unknown",
+          "reasons": [
+            "incomplete"
+          ]
+        }
+      ]
+    }
+  },
+  {
+   "name": "a truncated result keeps a fast burn breaching",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ],
+    "truncated": true
+   },
+   "expected": {
+    "state": "breaching",
+    "reasons": [
+     "fast_burn",
+     "incomplete"
+    ]
+   }
+  },
+  {
+   "name": "a truncated empty result is unknown and incomplete",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [],
+    "truncated": true
+   },
+   "expected": {
+    "state": "unknown",
+    "reasons": [
+     "no_data",
+     "incomplete"
+    ]
+   }
+  },
+  {
+   "name": "an empty result is unknown with no data",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": []
+   },
+   "expected": {
+    "state": "unknown",
+    "reasons": [
+     "no_data"
+    ],
+    "groups": []
+   }
+  },
+  {
+   "name": "groups are ordered worst state first",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "a",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "b",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1.5
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "c",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "breaching",
+    "reasons": [
+     "budget_exhausted"
+    ],
+    "counts": {
+     "meeting": 1,
+     "at_risk": 1,
+     "breaching": 1,
+     "unknown": 0
+    },
+    "groups": [
+     {
+      "labels": {
+       "service": "b"
+      },
+      "state": "breaching"
+     },
+     {
+      "labels": {
+       "service": "c"
+      },
+      "state": "at_risk"
+     },
+     {
+      "labels": {
+       "service": "a"
+      },
+      "state": "meeting"
+     }
+    ]
+   }
+  },
+  {
+   "name": "groups in one state are ordered by budget ascending",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 600
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 300
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groups": [
+     {
+      "labels": {
+       "service": "y"
+      },
+      "budgetRemaining": 40
+     },
+     {
+      "labels": {
+       "service": "z"
+      },
+      "budgetRemaining": 70
+     },
+     {
+      "labels": {
+       "service": "x"
+      },
+      "budgetRemaining": 90
+     }
+    ]
+   }
+  },
+  {
+   "name": "maxRows caps the listed groups and counts the rest",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service",
+    "maxRows": 2
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "x",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "y",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 600
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "z",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 300
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groupsOmitted": 1,
+    "counts": {
+     "meeting": 3,
+     "at_risk": 0,
+     "breaching": 0,
+     "unknown": 0
+    },
+    "groups": [
+     {
+      "labels": {
+       "service": "y"
+      }
+     },
+     {
+      "labels": {
+       "service": "z"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "unknown ranks after meeting, and a meeting set with an unknown group is partial",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "groupBy": "service"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "m",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "service": "u",
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "partial",
+    "reasons": [
+     "no_traffic"
+    ],
+    "counts": {
+     "meeting": 1,
+     "at_risk": 0,
+     "breaching": 0,
+     "unknown": 1
+    },
+    "groups": [
+     {
+      "labels": {
+       "service": "m"
+      },
+      "state": "meeting"
+     },
+     {
+      "labels": {
+       "service": "u"
+      },
+      "state": "unknown"
+     }
+    ]
+   }
+  },
+  {
+   "name": "the page preset ignores a slow burn",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "burnAlerts": "page"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "groups": [
+     {
+      "burn": [
+       {
+        "firing": false
+       },
+       {
+        "firing": false
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "the none preset ignores a fast burn",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}",
+    "burnAlerts": "none"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 20
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "groups": [
+     {
+      "burn": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "a 7 day period scales the 1h factor to 3.36",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "7d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 4
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 4
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "7d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "7d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "breaching",
+    "reasons": [
+     "fast_burn"
+    ],
+    "groups": [
+     {
+      "burn": [
+       {
+        "factor": 3.36,
+        "firing": true
+       },
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "the same burn does not fire on a 30 day period",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 4
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 4
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groups": [
+     {
+      "burn": [
+       {
+        "factor": 14.4,
+        "firing": false
+       },
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a 1d period drops the pairs in evaluation",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "1d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 40
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 500
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "reasons": [],
+    "groups": [
+     {
+      "budgetRemaining": 50,
+      "burn": [
+       {
+        "long": "1h"
+       },
+       {
+        "long": "6h"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a four decimal objective allows one part in a million",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9999,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groups": [
+     {
+      "availability": 100,
+      "budgetRemaining": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "a zero-traffic burn window reads as no burn",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 0
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groups": [
+     {
+      "burn": [
+       {
+        "longBurn": null,
+        "firing": false
+       },
+       {},
+       {},
+       {}
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "a series for an unknown window is ignored",
+   "kind": "evaluate",
+   "config": {
+    "objective": 99.9,
+    "period": "30d",
+    "total": "http_requests_total",
+    "bad": "http_requests_total{code=\"5xx\"}"
+   },
+   "result": {
+    "series": [
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "5m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30m",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "2h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "6h",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "1d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "3d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 10
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000000
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "30d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 100
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "42d",
+       "slo_part": "total"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1
+       }
+      ]
+     },
+     {
+      "name": "x",
+      "labels": {
+       "slo_window": "42d",
+       "slo_part": "bad"
+      },
+      "points": [
+       {
+        "timestamp": 2000,
+        "value": 1000
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "state": "meeting",
+    "groups": [
+     {
+      "budgetRemaining": 90
+     }
+    ]
+   }
+  },
+  {"name": "a truncated grouped result with only meeting groups is partial", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}", "groupBy": "service"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}], "truncated": true}, "expected": {"state": "partial", "reasons": ["incomplete"], "counts": {"meeting": 2, "at_risk": 0, "breaching": 0, "unknown": 0}}},
+  {"name": "a truncated page-preset grouped result with meeting groups is partial", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}", "burnAlerts": "page", "groupBy": "service"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}], "truncated": true}, "expected": {"state": "partial", "reasons": ["incomplete"], "counts": {"meeting": 2}}},
+  {"name": "a truncated grouped result keeps a breaching group breaching", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}", "groupBy": "service"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}], "truncated": true}, "expected": {"state": "breaching", "reasons": ["budget_exhausted", "slow_burn", "incomplete"], "counts": {"meeting": 1, "breaching": 1}}},
+  {"name": "a no traffic group beside a meeting group is partial, not breaching", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}", "groupBy": "service"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}]}, "expected": {"state": "partial", "reasons": ["no_traffic"], "counts": {"meeting": 1, "unknown": 1}}},
+  {"name": "a no traffic group does not hide a breaching group", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}", "groupBy": "service"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 200}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 0}]}, {"name": "x", "labels": {"service": "b", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 0}]}]}, "expected": {"state": "breaching", "reasons": ["budget_exhausted", "slow_burn"], "groups": [{"labels": {"service": "a"}, "state": "breaching"}, {"labels": {"service": "b"}, "state": "unknown", "reasons": ["no_traffic"]}]}},
+  {"name": "a truncated ungrouped result with every reading stays meeting", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}], "truncated": true}, "expected": {"state": "meeting", "reasons": ["incomplete"]}},
+  {"name": "a period total sampled only at the range start is no data, not its start value", "kind": "evaluate", "config": {"objective": 99.9, "period": "30d", "total": "http_requests_total", "bad": "http_requests_total{code=\"5xx\"}", "groupBy": "service"}, "result": {"series": [{"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "5m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30m", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "2h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "6h", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "1d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "total"}, "points": [{"timestamp": 2000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "3d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "total"}, "points": [{"timestamp": 1000, "value": 100000}]}, {"name": "x", "labels": {"service": "a", "slo_window": "30d", "slo_part": "bad"}, "points": [{"timestamp": 2000, "value": 10}]}]}, "expected": {"state": "unknown", "reasons": ["no_data"], "groups": [{"state": "unknown", "reasons": ["no_data"], "total": null}]}}
+ ]
+}

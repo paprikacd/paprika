@@ -188,7 +188,7 @@ func TestRankedRecordTableCountsTowardAttentionAndNoRankDoesNot(t *testing.T) {
 	}
 	ranked := rankedHealthWidget(t, `{"columns":["host","health"],"rank":{"status":"health"},"cellStyles":[{"column":"health","display":"status-badge","mappings":[{"value":"Down","status":"critical"},{"value":"Up","status":"ok"}]}]}`)
 	signal := &DashboardSignal{ID: "q1", State: "ok"}
-	applyDashboardSignal(&ranked, signal, &QueryResult{Records: frame}, 0)
+	applyDashboardSignal(&ranked, signal, &QueryResult{Records: frame}, 0, 0)
 	require.NotNil(t, ranked.Threshold)
 	require.Equal(t, "matched", ranked.Threshold.State)
 	require.Equal(t, "critical", ranked.Threshold.Status)
@@ -201,7 +201,7 @@ func TestRankedRecordTableCountsTowardAttentionAndNoRankDoesNot(t *testing.T) {
 	require.Equal(t, 1, attention.Critical, "a ranked table with a critical row counts as critical")
 
 	plain := rankedHealthWidget(t, `{"columns":["host","health"],"cellStyles":[{"column":"health","display":"status-badge","mappings":[{"value":"Down","status":"critical"}]}]}`)
-	applyDashboardSignal(&plain, signal, &QueryResult{Records: frame}, 0)
+	applyDashboardSignal(&plain, signal, &QueryResult{Records: frame}, 0, 0)
 	require.Nil(t, plain.Threshold, "a table without rank never adds to attention")
 	require.Nil(t, plain.Ranking)
 }
@@ -209,7 +209,7 @@ func TestRankedRecordTableCountsTowardAttentionAndNoRankDoesNot(t *testing.T) {
 func TestInvalidRankSetsNoBandAndNamesTheReason(t *testing.T) {
 	frame := &dataframe.Frame{Columns: []dataframe.Column{{Key: "host", Type: "string"}}, Rows: [][]any{{"a"}}}
 	widget := rankedHealthWidget(t, `{"rank":{"status":"host"}}`)
-	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "ok"}, &QueryResult{Records: frame}, 0)
+	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "ok"}, &QueryResult{Records: frame}, 0, 0)
 	require.Nil(t, widget.Threshold)
 	require.Nil(t, widget.BandSeries)
 	require.NotNil(t, widget.Ranking)
@@ -218,7 +218,7 @@ func TestInvalidRankSetsNoBandAndNamesTheReason(t *testing.T) {
 
 func TestRankedRecordTableWithoutRowsSetsNoBand(t *testing.T) {
 	widget := rankedHealthWidget(t, `{"rank":{"status":"health"}}`)
-	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "error", Error: &DashboardQueryError{Code: "x", Message: "failed"}}, nil, 0)
+	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "error", Error: &DashboardQueryError{Code: "x", Message: "failed"}}, nil, 0, 0)
 	require.Nil(t, widget.Threshold)
 	require.NotNil(t, widget.Ranking)
 	require.Equal(t, "no loaded rows to rank", widget.Ranking.Reason)
@@ -232,7 +232,7 @@ func TestRankedRecordTableWithoutDeclaredRowsKeepsItsEvaluatedCount(t *testing.T
 		Rows:    [][]any{{"a", nil}, {"b", nil}},
 	}
 	widget := rankedHealthWidget(t, `{"columns":["host","health"],"rank":{"status":"health"},"cellStyles":[{"column":"health","display":"status-badge","mappings":[{"value":"Down","status":"critical"}]}]}`)
-	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "ok"}, &QueryResult{Records: frame}, 0)
+	applyDashboardSignal(&widget, &DashboardSignal{ID: "q1", State: "ok"}, &QueryResult{Records: frame}, 0, 0)
 	require.NotNil(t, widget.Threshold)
 	require.Equal(t, "unknown", widget.Threshold.State)
 	require.NotNil(t, widget.BandSeries)
