@@ -183,7 +183,7 @@ Use these terms exactly; the contracts are in `DESIGN.md` and `docs/design/insig
 - Ship a default. An unset variable is an error for any query that uses it, not an empty filter.
 - Reference a variable as `{{name}}`, unquoted, in PromQL or TraceQL (`service={{service}}`); Paprika writes the value as a string literal. A saved query takes it through `queryRef.bindings`: `{"parameter":"service","source":"variable","variable":"service"}`.
 - Use `selectionBindings` for click-to-filter on a supported plugin such as status-history: `[{"variable":"service","source":"label","value":"service"}]` sets the variable from the activated sample's label. Hover and focus never change a filter.
-- Options are static lists; there is no options source yet, so list the values you know or leave the field free text. An override outside the options still applies. `query_dashboard` names it in `warnings` and reports each declared variable under `variableDefinitions`.
+- Options are static lists, or a `source` that loads them: `{"type":"labelValues","providerId","label","selector?","limit?"}` for a Prometheus or Tempo label, or `{"type":"savedQuery","queryRef","field"}` for a records column or series label. The console resolves a source and shows its values; a sourced variable's `options` are only its fallback. `query_dashboard` does not resolve sources yet, so pass an explicit value for a sourced variable. An override outside a static list still applies. `query_dashboard` names it in `warnings` and reports each declared variable under `variableDefinitions`.
 
 ```json
 "variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","api"]}]

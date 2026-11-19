@@ -111,6 +111,8 @@ import { GammaConfirmation, useConfirmation } from "./gamma/confirmation"
 import { lockBodyScroll } from "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
 import { VariableBar } from "./dashboard-variables"
+import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "./variable-options"
+import type { VariableSourceCatalog } from "./variable-source-editor"
 import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
 import {
   describeIgnoredLink,
@@ -177,6 +179,8 @@ export interface InsightsAppProps {
   onBack?: () => void
   /** Changes when the host renews its session; a sign-in banner reloads its sources on a change. */
   sessionRevision?: number
+  /** The signed-in principal, stable across token renewals. Variable values are cached per principal. */
+  principal?: string
 }
 
 // Desktop compact chrome is a view preference, independent of measured canvas
@@ -235,6 +239,7 @@ function panelOpenerElement(name: string): HTMLElement | null {
 
 export default function InsightsApp({
   sessionRevision,
+  principal,
   client,
   initialExample = false,
   onBack,
@@ -783,6 +788,41 @@ export default function InsightsApp({
     return { ...resolved, query: interpolateQuery(request.query, variableValues) }
   }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceContext])
   const range = dashboardRange(viewDashboard, end)
+  // Values for variable sources come from the same metadata and query paths the widgets use.
+  const variableLoaders = useMemo<VariableValueLoaders>(() => ({
+    // The principal is the scope, so values loaded under one sign-in never serve another; a token renewal keeps them.
+    scope: variableValueScope(!!activeExample, principal),
+    metadata: async (request, signal) => {
+      // Example workspaces read a fixed fixture that has no selectors, so a selector is refused rather than ignored.
+      if (activeExample && request.selector !== undefined) throw new Error("Selector-filtered values are not available in examples")
+      const metadata = activeExample ? activeExample.repositoryWorkspaceMetadata : client.metadata
+      const response = await metadata(request.providerId, { kind: "values", label: request.label, selector: request.selector, start: request.start, end: request.end }, signal)
+      return { values: response.values, truncated: response.truncated }
+    },
+    query: (request, signal) => {
+      // Resolve with the values the plan was keyed on, not the route's current values, so the result matches its key.
+      if (queriesLoading) throw new Error("Loading the saved-query library…")
+      if (queriesError) throw new Error(queriesError)
+      const saved = savedQueries.find(query => query.id === request.queryRef.id)
+      if (!saved) throw new Error(`Saved query “${request.queryRef.id}” is unavailable.`)
+      assertProviderQueryTemplate(providers.find(provider => provider.id === saved.providerId)?.type, saved.query)
+      const definition = resolveSavedQueryReference(request.queryRef, savedQueries, request.variables, saved.kind)
+      if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
+        throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
+      return scheduledFetcher({ ...definition, start: request.start, end: request.end, step: sourceQueryStep(request.start, request.end) }, signal)
+    },
+  }), [client, activeExample, scheduledFetcher, savedQueries, queriesLoading, queriesError, providers, principal])
+  // The variable editor reads providers, label names and saved queries; its preview runs the same loaders as the bar.
+  const variableCatalog = useMemo<VariableSourceCatalog>(() => ({
+    loaders: variableLoaders,
+    providers,
+    savedQueries,
+    range: { start: range.start, end: range.end },
+    labels: async (providerId, signal) => {
+      const metadata = activeExample ? activeExample.repositoryWorkspaceMetadata : client.metadata
+      return (await metadata(providerId, { kind: "labels" }, signal)).values
+    },
+  }), [variableLoaders, providers, savedQueries, client, activeExample, range.start, range.end])
   const builderClient = useMemo(
     () =>
       activeExample
@@ -1827,7 +1867,7 @@ export default function InsightsApp({
         {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
         <div className={styles.toolbar} data-tooltip-obstacle>
           <div className={styles.toolbarLeft}>
-            <VariableBar dashboard={dashboard} values={variableValues} onApply={values => {
+            <VariableBar dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={values => {
               try {
                 applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
                 setError("")
@@ -2266,6 +2306,7 @@ export default function InsightsApp({
                   dashboard={dashboard}
                   dashboards={dashboards}
                   providers={providers}
+                  variableCatalog={variableCatalog}
                   busy={busy}
                   onClose={close}
                   onApply={(next) => {

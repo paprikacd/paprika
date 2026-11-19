@@ -135,6 +135,29 @@ describe("portable dashboard import review", () => {
     expect(screen.getByRole("button", { name: "Import 1 as new" })).toBeDisabled();
   });
 
+  it("offers a Tempo traces provider for a label-values source, which can answer label values", () => {
+    const traceBundle: DashboardBundle = {
+      dashboards: [{
+        ...document,
+        widgets: [],
+        variables: [{ name: "service", label: "Service", source: { type: "labelValues", providerId: "traces-source", label: "service.name" } }],
+      }],
+    };
+    render(
+      <SavedQueryLibraryProvider queries={[]} variables={[]} values={{}}>
+        <PortableImportPanel
+          providers={[{ id: "tempo-dest", name: "Trace store", type: "tempo", capabilities: ["traces"] }]}
+          initialDocument={{ source: serializeDashboardBundle(traceBundle, "json"), format: "json" }}
+        />
+      </SavedQueryLibraryProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }));
+    // The Tempo provider is offered for the label-values source, which a metrics-only requirement would hide.
+    fireEvent.click(screen.getByRole("combobox", { name: "Connect traces-source" }));
+    fireEvent.click(screen.getByRole("option", { name: "Trace store" }));
+    expect(screen.getByRole("combobox", { name: "Connect traces-source" })).toHaveTextContent("Trace store");
+  });
+
   it("reviews query providers and preserves new query IDs without silently choosing copy", async () => {
     const { onImportBundle } = renderPanel();
     expect(

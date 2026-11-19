@@ -177,6 +177,11 @@ func (s *Store) usesSavedQuery(id string) bool {
 	defer s.mu.RUnlock()
 	for _, raw := range s.documents {
 		var dashboard struct {
+			Variables []struct {
+				Source struct {
+					QueryRef struct{ ID string } `json:"queryRef"`
+				} `json:"source"`
+			}
 			Widgets []struct {
 				QueryRef         struct{ ID string } `json:"queryRef"`
 				AnnotationSource struct {
@@ -193,6 +198,11 @@ func (s *Store) usesSavedQuery(id string) bool {
 			}
 		}
 		_ = json.Unmarshal(raw, &dashboard) //nolint:errcheck // Every stored dashboard passed validateDashboard.
+		for _, variable := range dashboard.Variables {
+			if variable.Source.QueryRef.ID == id {
+				return true
+			}
+		}
 		for _, widget := range dashboard.Widgets {
 			if widget.QueryRef.ID == id || widget.AnnotationSource.QueryRef.ID == id || (widget.Options.TooltipView.Source.Type == "saved" && widget.Options.TooltipView.Source.Ref.ID == id) {
 				return true

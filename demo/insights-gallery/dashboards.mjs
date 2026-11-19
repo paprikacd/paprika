@@ -91,6 +91,8 @@ export function galleryDocuments(providers) {
     dashboard.id = `local-gallery-${key}`; dashboard.title = `${collection.title} · Local demo`;
     dashboard.description = "Synthetic sample data from the local Prometheus, Tempo and PostgreSQL providers.";
     dashboard.folder = "Local gallery demos"; dashboard.variables = [{ name: variable, label, defaultValue: choices[0], options: choices }];
+    // Edge Watch reads its cluster choices from the metrics provider. Its static list is the fallback only.
+    if (key === "edge-watch") dashboard.variables[0].source = { type: "labelValues", providerId: providers.metrics, label: "cluster" };
     dashboard.timeRange = key === "service-pulse" ? "1h" : key === "edge-watch" ? "30m" : key === "reliability-room" ? "30d" : "6h"; dashboard.refreshInterval = 0;
     for (const original of collection.sample.savedQueries) {
       const keyPart = original.id.slice(`ab-${key}-`.length);

@@ -25,10 +25,22 @@ type dashboardReadTimeRange struct {
 }
 
 type dashboardReadVariable struct {
-	Name         string   `json:"name"`
-	Label        string   `json:"label"`
-	DefaultValue *string  `json:"defaultValue"`
-	Options      []string `json:"options"`
+	Name         string                       `json:"name"`
+	Label        string                       `json:"label"`
+	DefaultValue *string                      `json:"defaultValue"`
+	Options      []string                     `json:"options"`
+	Source       *dashboardReadVariableSource `json:"source"`
+}
+
+// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. It does not resolve
+// the source: the values come from the console, so the rest of the source only describes it.
+type dashboardReadVariableSource struct {
+	Type       string                  `json:"type"`
+	ProviderID string                  `json:"providerId"`
+	Label      string                  `json:"label"`
+	Selector   *string                 `json:"selector"`
+	Field      string                  `json:"field"`
+	QueryRef   *dashboardReadReference `json:"queryRef"`
 }
 
 type dashboardReadWidget struct {
@@ -122,12 +134,55 @@ const dashboardVariableWarningValueBytes = 64
 // DashboardQueryVariable is a declared dashboard variable as query-dashboard reports it. Its value for this call
 // is the result's variables map, which holds the saved default unless an override replaced it.
 type DashboardQueryVariable struct {
-	Name           string   `json:"name"`
-	Label          string   `json:"label,omitempty"`
-	DefaultValue   *string  `json:"defaultValue,omitempty"`
-	Options        []string `json:"options,omitempty"`
-	OptionsOmitted int      `json:"optionsOmitted,omitempty"`
-	DetailOmitted  bool     `json:"detailOmitted,omitempty"`
+	Name         string   `json:"name"`
+	Label        string   `json:"label,omitempty"`
+	DefaultValue *string  `json:"defaultValue,omitempty"`
+	Options      []string `json:"options,omitempty"`
+	// Source names a query-backed source (labelValues or savedQuery). A sourced variable reports its static
+	// options as FallbackOptions instead of Options: they are shown only when the source fails, not as choices.
+	// The type is a short fixed word, outside the detail budget.
+	Source        string                        `json:"source,omitempty"`
+	SourceSummary *DashboardQueryVariableSource `json:"sourceSummary,omitempty"`
+	// FallbackOptions are a sourced variable's static options. query_dashboard does not resolve the source, so
+	// these are not the variable's choices.
+	FallbackOptions []string `json:"fallbackOptions,omitempty"`
+	OptionsOmitted  int      `json:"optionsOmitted,omitempty"`
+	DetailOmitted   bool     `json:"detailOmitted,omitempty"`
+}
+
+// DashboardQueryVariableSource describes where a sourced variable's values come from, without the values. Only
+// the fields that apply to the source kind are set. DependsOnVariables is true when the source reads another
+// variable, through a selector placeholder or a variable binding.
+type DashboardQueryVariableSource struct {
+	Kind               string `json:"kind"`
+	ProviderID         string `json:"providerId,omitempty"`
+	SavedQueryID       string `json:"savedQueryId,omitempty"`
+	Label              string `json:"label,omitempty"`
+	Field              string `json:"field,omitempty"`
+	DependsOnVariables bool   `json:"dependsOnVariables"`
+}
+
+// dashboardQuerySourceSummary reports a source's kind and identifiers, and whether it depends on another variable.
+// The selector and bindings are read for that check only; their text is not reported.
+func dashboardQuerySourceSummary(source *dashboardReadVariableSource) *DashboardQueryVariableSource {
+	summary := &DashboardQueryVariableSource{Kind: source.Type}
+	switch source.Type {
+	case "labelValues":
+		summary.ProviderID = source.ProviderID
+		summary.Label = source.Label
+		summary.DependsOnVariables = source.Selector != nil && strings.Contains(*source.Selector, "{{")
+	case "savedQuery":
+		if source.QueryRef != nil {
+			summary.SavedQueryID = source.QueryRef.ID
+			for _, binding := range source.QueryRef.Bindings {
+				if binding.Source == "variable" {
+					summary.DependsOnVariables = true
+				}
+			}
+		}
+		summary.Field = source.Field
+	}
+	return summary
 }
 
 // dashboardQueryVariables reports each declared variable with its label, default and static options, in
@@ -140,6 +195,10 @@ func dashboardQueryVariables(definitions []dashboardReadVariable) []DashboardQue
 	budget := dashboardVariableDetailBytes
 	for _, definition := range definitions {
 		variable := DashboardQueryVariable{Name: definition.Name}
+		if definition.Source != nil {
+			variable.Source = definition.Source.Type
+			variable.SourceSummary = dashboardQuerySourceSummary(definition.Source)
+		}
 		detail := 0
 		if definition.Label != "" {
 			detail += encodedStringBytes(definition.Label)
@@ -161,7 +220,11 @@ func dashboardQueryVariables(definitions []dashboardReadVariable) []DashboardQue
 				break
 			}
 			budget -= cost
-			variable.Options = append(variable.Options, option)
+			if definition.Source != nil {
+				variable.FallbackOptions = append(variable.FallbackOptions, option)
+			} else {
+				variable.Options = append(variable.Options, option)
+			}
 		}
 		out = append(out, variable)
 	}
@@ -179,11 +242,25 @@ func encodedStringBytes(s string) int {
 
 // dashboardVariableWarnings names each override that is outside a variable's declared options. A variable
 // without options accepts any string, and an override outside the list still applies, as it does in the UI.
+// A sourced variable's options are its fallback, not its choices, so an override of a sourced variable is never
+// checked against them. Only an empty or over-long override is named for it.
 func dashboardVariableWarnings(definitions []dashboardReadVariable, overrides map[string]string) []string {
 	var warnings []string
 	for _, definition := range definitions {
 		value, overridden := overrides[definition.Name]
-		if !overridden || len(definition.Options) == 0 || slices.Contains(definition.Options, value) {
+		if !overridden {
+			continue
+		}
+		if definition.Source != nil {
+			switch {
+			case value == "":
+				warnings = append(warnings, definition.Name+"= is empty; query_dashboard does not resolve the variable source, so pass an explicit value")
+			case stringUnits(value) > 1024:
+				warnings = append(warnings, definition.Name+" is longer than 1024 characters")
+			}
+			continue
+		}
+		if len(definition.Options) == 0 || slices.Contains(definition.Options, value) {
 			continue
 		}
 		warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the declared options", definition.Name, warningValue(value)))

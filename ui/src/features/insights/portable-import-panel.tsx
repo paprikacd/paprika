@@ -13,9 +13,11 @@ import {
   MAX_LIBRARY_BYTES,
   parseDashboardBundle,
   remapDashboardProviders,
+  providerSatisfies,
   requiredBundleProviders,
   selectBundleDashboards,
   type DashboardBundle,
+  type ProviderRequirement,
 } from "./workspace-transfer";
 import {
   canKeepSavedQuery,
@@ -104,7 +106,7 @@ function initialMapping(bundle: DashboardBundle, providers: Provider[]) {
       providers.some(
         (provider) =>
           provider.id === id &&
-          [...kinds].every((kind) => provider.capabilities.includes(kind)),
+          [...kinds].every((kind) => providerSatisfies(provider, kind)),
       )
     )
       mapping[id] = id;
@@ -375,7 +377,7 @@ export function PortableImportPanel({
     () =>
       activeBundle
         ? requiredImportProviders(activeBundle, new Set(keptQueries.keys()))
-        : new Map<string, Set<"metrics" | "traces" | "records">>(),
+        : new Map<string, Set<ProviderRequirement>>(),
     [activeBundle, keptQueries],
   );
   const mapped = useMemo(() => {
@@ -886,7 +888,7 @@ export function PortableImportPanel({
                     options={providers
                       .filter((provider) =>
                         [...kinds].every((kind) =>
-                          provider.capabilities.includes(kind),
+                          providerSatisfies(provider, kind),
                         ),
                       )
                       .map((provider) => ({

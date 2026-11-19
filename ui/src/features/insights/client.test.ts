@@ -309,6 +309,16 @@ describe("Insights HTTP client", () => {
     )
     expect(fetcher.mock.calls[2][1].signal).toBe(controller.signal)
   })
+  it("sends a label-values selector and its window only when both are given", async () => {
+    const fetcher = mockFetch(response({ values: ["omega"] }), response({ values: [] }))
+    const client = createInsightsClient()
+    await client.metadata("metrics", { kind: "values", label: "cluster", selector: 'up{service="api"}', start: 1700000000.7, end: 1700003600 })
+    expect(fetcher.mock.calls[0][0]).toBe(
+      "/api/insights/providers/metrics/metadata?kind=values&label=cluster&selector=up%7Bservice%3D%22api%22%7D&start=1700000000&end=1700003600",
+    )
+    await client.metadata("metrics", { kind: "values", label: "cluster", start: 1700000000 })
+    expect(fetcher.mock.calls[1][0]).toBe("/api/insights/providers/metrics/metadata?kind=values&label=cluster")
+  })
   it("distinguishes provider administration from dashboard access and preserves provider conflicts", async () => {
     mockFetch(
       response({ error: "denied" }, 403),

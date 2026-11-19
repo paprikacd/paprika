@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardVariablesEditor, VariableBar } from "./dashboard-variables";
 import type { Dashboard } from "./schema";
+import { sessionVariableValueCache } from "./variable-options";
 
 const dashboard: Dashboard = {
   schemaVersion: 1,
@@ -21,13 +22,13 @@ describe("dashboard variable declarations", () => {
   it("authors reusable dropdown choices without changing the default or applying while typing", () => {
     const onApply = vi.fn();
     render(<DashboardVariablesEditor dashboard={{ ...dashboard, variables: [dashboard.variables![0]] }} onApply={onApply} />);
-    fireEvent.click(screen.getByRole("combobox", { name: "Variable 1 control" }));
-    fireEvent.click(screen.getByRole("option", { name: "Dropdown" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Variable 1 values from" }));
+    fireEvent.click(screen.getByRole("option", { name: "Typed list" }));
     expect(screen.getByLabelText("Variable 1 option 1")).toHaveValue("api");
     fireEvent.click(screen.getByRole("button", { name: "Add choice" }));
     fireEvent.change(screen.getByLabelText("Variable 1 option 2"), { target: { value: "worker" } });
-    fireEvent.click(screen.getByRole("combobox", { name: "Variable 1 control" }));
-    fireEvent.click(screen.getByRole("option", { name: "Dropdown" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Variable 1 values from" }));
+    fireEvent.click(screen.getByRole("option", { name: "Typed list" }));
     expect(screen.getByLabelText("Variable 1 option 2")).toHaveValue("worker");
     expect(onApply).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
@@ -306,5 +307,124 @@ describe("dashboard variable value bar", () => {
       />,
     );
     expect(screen.queryByRole("form")).toBeNull();
+  });
+});
+
+describe("dashboard variable value sources", () => {
+  const range = { start: 1_000_000, end: 1_003_600 };
+  // The session cache is shared by every bar in the page; each case starts from an empty one.
+  beforeEach(() => sessionVariableValueCache.clear());
+  const sourced: Dashboard = {
+    ...dashboard,
+    variables: [
+      { name: "cluster", label: "Cluster", defaultValue: "omega", source: { type: "labelValues", providerId: "prom", label: "cluster" } },
+      { name: "service", label: "Service", source: { type: "labelValues", providerId: "prom", label: "service", selector: "up{cluster={{cluster}}}" } },
+    ],
+  };
+  function loaderFor(values: Record<string, string[] | Error>) {
+    return {
+      scope: "live",
+      metadata: vi.fn(async (request: { label: string }) => {
+        const answer = values[request.label] ?? [];
+        if (answer instanceof Error) throw answer;
+        return { values: answer };
+      }),
+      query: vi.fn(),
+    };
+  }
+  function Harness({ loaders, variables = sourced.variables }: { loaders?: unknown; variables?: Dashboard["variables"] }) {
+    const [values, setValues] = useState<Record<string, string>>({ cluster: "omega" });
+    return <VariableBar dashboard={{ ...sourced, variables }} values={values} range={range} loaders={loaders as never}
+      onApply={(next) => setValues(next as Record<string, string>)} />;
+  }
+
+  it("loads a dropdown source on open and lists its values", async () => {
+    const loaders = loaderFor({ cluster: ["omega", "delta"] });
+    render(<Harness loaders={loaders} />);
+    const input = screen.getByRole("combobox", { name: "Cluster" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(await screen.findByRole("option", { name: "delta" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "omega" })).toBeInTheDocument();
+    expect(loaders.metadata).toHaveBeenCalledWith(expect.objectContaining({ label: "cluster" }), expect.any(AbortSignal));
+  });
+
+  it("marks a current value that the loaded list does not contain as not current", async () => {
+    const loaders = loaderFor({ cluster: ["omega", "delta"] });
+    render(<VariableBar dashboard={{ ...dashboard, variables: [sourced.variables![0]] }} values={{ cluster: "prod" }} range={range} loaders={loaders} onApply={() => {}} />);
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Cluster" }), { key: "ArrowDown" });
+    expect(await screen.findByRole("option", { name: "delta" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /prod/ })).toHaveTextContent("Not in current values");
+  });
+
+  it("asks for the parent before a dependent source can load", () => {
+    const loaders = loaderFor({});
+    const unset = { name: "cluster", label: "Cluster", source: { type: "labelValues" as const, providerId: "prom", label: "cluster" } };
+    render(<VariableBar dashboard={{ ...sourced, variables: [unset, sourced.variables![1]] }} values={{}} range={range} loaders={loaders} onApply={() => {}} />);
+    expect(screen.getByText("Set Cluster to load values")).toBeInTheDocument();
+    expect(loaders.metadata).not.toHaveBeenCalled();
+  });
+
+  it("keeps a free-text source's typed value until Apply values and marks an unknown value", async () => {
+    const onApply = vi.fn();
+    const loaders = loaderFor({ service: ["api"] });
+    function Typed() {
+      const [values, setValues] = useState<Record<string, string>>({ cluster: "omega" });
+      return <VariableBar dashboard={{ ...sourced, variables: [sourced.variables![0], { name: "service", label: "Service", source: { type: "labelValues", providerId: "prom", label: "service" } }] }}
+        values={values} range={range} loaders={loaders} onApply={(next) => { onApply(next); setValues(next as Record<string, string>) }} />;
+    }
+    render(<Typed />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Service" }), { target: { value: "checkout" } });
+    expect(onApply).not.toHaveBeenCalled();
+    const typed = await screen.findByRole("option", { name: /^checkout/ });
+    expect(typed).toHaveTextContent("Not in current values");
+    fireEvent.click(typed);
+    expect(onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply values" }));
+    expect(onApply).toHaveBeenLastCalledWith({ cluster: "omega", service: "checkout" });
+  });
+
+  it("applies a loaded value as soon as it is picked", async () => {
+    const onApply = vi.fn();
+    const loaders = loaderFor({ cluster: ["omega", "delta"] });
+    render(<VariableBar dashboard={{ ...dashboard, variables: [sourced.variables![0]] }} values={{ cluster: "omega" }} range={range} loaders={loaders} onApply={onApply} />);
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Cluster" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "delta" }));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ cluster: "delta" }));
+  });
+
+  it("accepts a typed value next to a saved fallback list and stages it until Apply values", async () => {
+    const onApply = vi.fn();
+    const loaders = loaderFor({ cluster: new Error("provider down") });
+    render(<VariableBar dashboard={{ ...dashboard, variables: [{ ...sourced.variables![0], options: ["omega", "delta"] }] }} values={{ cluster: "omega" }} range={range} loaders={loaders} onApply={onApply} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Cluster" }), { target: { value: "prod" } });
+    expect(onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply values" }));
+    expect(onApply).toHaveBeenLastCalledWith(expect.objectContaining({ cluster: "prod" }));
+  });
+
+  it("shows saved choices and a retry when the source fails", async () => {
+    const loaders = loaderFor({ cluster: new Error("provider down") });
+    render(<Harness loaders={loaders} variables={[{ ...sourced.variables![0], options: ["omega", "delta"] }]} />);
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Cluster" }), { key: "ArrowDown" });
+    expect(await screen.findByText("Could not load values: provider down")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^delta/ })).toHaveTextContent("Saved choice");
+    loaders.metadata.mockResolvedValueOnce({ values: ["omega", "gamma"] });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("option", { name: "gamma" })).toBeInTheDocument();
+  });
+
+  it("explains an invalid source once, with no retry that cannot succeed", () => {
+    const loaders = loaderFor({ cluster: ["omega"] });
+    const broken = { name: "service", label: "Service", source: { type: "labelValues" as const, providerId: "prom", label: "service", selector: 'up{cluster="{{cluster}}"}' } };
+    render(<VariableBar dashboard={{ ...dashboard, variables: [sourced.variables![0], broken] }} values={{ cluster: "omega" }} range={range} loaders={loaders} onApply={vi.fn()} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not load values:");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("names truncation on a free-text source", async () => {
+    const loaders = { scope: "live", metadata: vi.fn(async () => ({ values: ["a", "b"], truncated: true })), query: vi.fn() } as never;
+    render(<Harness loaders={loaders} variables={[{ name: "cluster", label: "Cluster", source: { type: "labelValues", providerId: "prom", label: "cluster" } }]} />);
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Cluster" }), { key: "ArrowDown" });
+    expect(await screen.findByText("First 2 values; type to enter another")).toBeInTheDocument();
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
+import type { z } from "zod"
 import {
+  checkVariableSourceGraph,
   dashboardSchema,
   MAX_DOCUMENT_BYTES,
   MAX_WIDGETS,
@@ -433,5 +435,18 @@ describe("dashboard document contract", () => {
         options: {},
       }).options,
     ).toEqual({})
+  })
+})
+
+describe("variable source graph messages", () => {
+  // Same text as the Go validator (internal/insights/drilldowns.go), so both layers report one message.
+  it("names an undeclared dependency with the shared wording", () => {
+    const issues: string[] = []
+    const context = { addIssue: (issue: { message: string }) => issues.push(issue.message) } as unknown as z.RefinementCtx
+    checkVariableSourceGraph(
+      [{ name: "service", source: { type: "labelValues", providerId: "prom", label: "service", selector: "up{cluster={{cluster}}}" } }],
+      context,
+    )
+    expect(issues).toEqual(['source depends on undeclared variable "cluster"'])
   })
 })

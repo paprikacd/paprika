@@ -114,6 +114,11 @@ export interface InsightsClient {
       kind: "metrics" | "labels" | "values" | "series"
       label?: string
       metric?: string
+      /** A Prometheus series selector, such as up{cluster="omega"}. Label values only. */
+      selector?: string
+      /** The window in Unix seconds. Both are needed together; without them the trailing day is used. */
+      start?: number
+      end?: number
     },
     signal?: AbortSignal,
   ): Promise<ProviderMetadata>
@@ -558,6 +563,11 @@ export function createInsightsClient(
       const params = new URLSearchParams({ kind: options.kind })
       if (options.label) params.set("label", options.label)
       if (options.metric) params.set("metric", options.metric)
+      if (options.selector) params.set("selector", options.selector)
+      if (options.start !== undefined && options.end !== undefined) {
+        params.set("start", String(Math.floor(options.start)))
+        params.set("end", String(Math.floor(options.end)))
+      }
       return readJSON(
         await request(`/providers/${encodeURIComponent(id)}/metadata?${params}`, { signal })
       )

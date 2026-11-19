@@ -3,6 +3,7 @@ package insights
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -71,35 +72,95 @@ func sloWidgets(doc *lintDocument) []*lintWidget {
 // can read its type. An id that does not resolve is left out of the map, which the rule reads as unknown and
 // does not fire on. Only slo-summary widgets are resolved, so other documents cost nothing here.
 func (s *Server) providerTypesOf(r *http.Request, document Dashboard) map[string]string {
-	// A document without an slo-summary widget has no provider to resolve, so it is not decoded.
-	if !bytes.Contains(document, []byte(sloSummaryPluginID)) {
+	// A document without an slo-summary widget or a label-values variable source has no provider to resolve, so it is not decoded.
+	if !bytes.Contains(document, []byte(sloSummaryPluginID)) && !bytes.Contains(document, []byte(`"labelValues"`)) && !bytes.Contains(document, []byte(`"savedQuery"`)) {
 		return nil
 	}
 	doc, ok := decodeLintDocument(document)
 	if !ok {
 		return nil
 	}
-	var types map[string]string
-	// At most maxDashboardWidgets slo-summary widgets are resolved. A valid document has no more, and a document the
-	// schema later rejects cannot make the save look up more providers than a valid one could.
+	types := s.resolveProviderTypes(r, lintProviderIDs(doc))
+	for id, kind := range s.resolveSavedQueryKinds(lintSavedQueryIDs(doc)) {
+		if types == nil {
+			types = map[string]string{}
+		}
+		types[savedQueryKindKey(id)] = kind
+	}
+	return types
+}
+
+// lintProviderIDs lists the provider ids a document's rules read, in document order, with repeats.
+// At most maxDashboardWidgets slo-summary widgets are listed. A valid document has no more, and a document the schema
+// later rejects cannot make the save look up more providers than a valid one could. A valid document declares at most
+// 20 variables, so each label-values source adds at most one lookup.
+func lintProviderIDs(doc *lintDocument) []string {
+	var ids []string
 	for n, widget := range sloWidgets(doc) {
 		if n == maxDashboardWidgets {
 			break
 		}
-		if widget.providerID == "" {
+		ids = append(ids, widget.providerID)
+	}
+	for i := range doc.sourceVariables {
+		if doc.sourceVariables[i].sourceType == "labelValues" {
+			ids = append(ids, doc.sourceVariables[i].providerID)
+		}
+	}
+	return ids
+}
+
+// lintSavedQueryIDs lists the saved queries a savedQuery variable source reads.
+func lintSavedQueryIDs(doc *lintDocument) []string {
+	var ids []string
+	for i := range doc.sourceVariables {
+		if doc.sourceVariables[i].sourceType == "savedQuery" && doc.sourceVariables[i].queryRefID != "" {
+			ids = append(ids, doc.sourceVariables[i].queryRefID)
+		}
+	}
+	return ids
+}
+
+// resolveSavedQueryKinds maps each stored saved query id to its kind. An id that is not stored is left out.
+func (s *Server) resolveSavedQueryKinds(ids []string) map[string]string {
+	var kinds map[string]string
+	for _, id := range ids {
+		document, _, err := s.savedQueries.get(id)
+		if err != nil {
 			continue
 		}
-		if _, seen := types[widget.providerID]; seen {
+		var stored struct {
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal(document, &stored) != nil {
 			continue
 		}
-		provider, err := s.resolveProvider(r, widget.providerID)
+		if kinds == nil {
+			kinds = map[string]string{}
+		}
+		kinds[id] = stored.Kind
+	}
+	return kinds
+}
+
+// resolveProviderTypes maps each resolvable provider id to its type. An empty or unresolvable id is left out.
+func (s *Server) resolveProviderTypes(r *http.Request, ids []string) map[string]string {
+	var types map[string]string
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, seen := types[id]; seen {
+			continue
+		}
+		provider, err := s.resolveProvider(r, id)
 		if err != nil {
 			continue
 		}
 		if types == nil {
 			types = map[string]string{}
 		}
-		types[widget.providerID] = provider.public.Type
+		types[id] = provider.public.Type
 	}
 	return types
 }

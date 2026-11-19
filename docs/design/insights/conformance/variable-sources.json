@@ -1,0 +1,162 @@
+{
+  "description": "Dashboard variable source validity. Go (drilldowns.go) and zod (schema.ts) must reach each verdict. The published JSON Schema has no keyword for selector literal positions or dependency cycles, so it is not run here.",
+  "cases": [
+    {
+      "name": "bare metric selector",
+      "valid": true,
+      "variables": [
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up"
+          }
+        }
+      ]
+    },
+    {
+      "name": "unquoted placeholder inside a matcher list",
+      "valid": true,
+      "variables": [
+        {
+          "name": "cluster",
+          "options": [
+            "omega",
+            "delta"
+          ]
+        },
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{cluster={{cluster}}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "placeholder wrapped in double quotes",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "options": [
+            "omega",
+            "delta"
+          ]
+        },
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{cluster=\"{{cluster}}\"}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "placeholder inside a regex string",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "options": [
+            "omega",
+            "delta"
+          ]
+        },
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{cluster=~\"{{cluster}}.*\"}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "placeholder fused to a token",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "options": [
+            "omega",
+            "delta"
+          ]
+        },
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{cluster={{cluster}}x}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "placeholder naming no declared variable",
+      "valid": false,
+      "variables": [
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{cluster={{cluster}}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "self reference",
+      "valid": false,
+      "variables": [
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{service={{service}}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "two variable cycle",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "cluster",
+            "selector": "up{service={{service}}}"
+          }
+        },
+        {
+          "name": "service",
+          "source": {
+            "type": "labelValues",
+            "providerId": "prom",
+            "label": "service",
+            "selector": "up{cluster={{cluster}}}"
+          }
+        }
+      ]
+    }
+  ]
+}
