@@ -55,6 +55,12 @@ type DashboardQueryResult struct {
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
 	comparisons       []dashboardComparisonPlan
 	comparisonQueries []Query
+	// VariableDefinitions declares each dashboard variable with its label, default and static options, so an agent
+	// can choose values without a get_dashboard read. Absent when the dashboard declares no variables.
+	VariableDefinitions []DashboardQueryVariable `json:"variableDefinitions,omitempty"`
+	// Warnings names inputs the call accepted but that may be wrong, such as an override outside declared options.
+	// Absent when there are none. A warning never fails the call.
+	Warnings []string `json:"warnings,omitempty"`
 	// Omitted names, in the order applied, the optional detail dropped so the encoded result fits
 	// DashboardQueryResponseBytes. Absent when nothing was dropped. See dashboardOmissionSteps.
 	Omitted []string `json:"omitted,omitempty"`
@@ -195,6 +201,8 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 		ObservedAt: now.Format(time.RFC3339Nano), Range: queryRange, Variables: variables,
 		Widgets: make([]DashboardQueryWidget, 0, len(selected)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
+	result.VariableDefinitions = dashboardQueryVariables(document.Variables)
+	result.Warnings = dashboardVariableWarnings(document.Variables, input.Variables)
 	s.runDashboardPlan(r, &result, selected, saved, document.Variables, start, end, options)
 	writeDashboardQueryResult(w, &result)
 }

@@ -49,15 +49,17 @@ func TestDashboardQueryCharacterisesBaseOutputWithoutStatusThresholds(t *testing
 }
 
 // stripAdditiveDashboardFields removes the fields this contract adds for documents
-// without status thresholds: the top-level attention summary and omitted list, per-widget
-// attention, breaches, bandSeries and sample, and freshness objects that carry no
-// staleAfterSeconds threshold.
+// without status thresholds: the top-level attention summary, omitted list, variable
+// definitions and warnings, per-widget attention, breaches, bandSeries and sample, and
+// freshness objects that carry no staleAfterSeconds threshold.
 func stripAdditiveDashboardFields(t *testing.T, raw []byte) []byte {
 	t.Helper()
 	var document map[string]any
 	require.NoError(t, json.Unmarshal(raw, &document))
 	delete(document, "attention")
 	delete(document, "omitted")
+	delete(document, "variableDefinitions")
+	delete(document, "warnings")
 	widgets, _ := document["widgets"].([]any)
 	for _, entry := range widgets {
 		widget, ok := entry.(map[string]any)

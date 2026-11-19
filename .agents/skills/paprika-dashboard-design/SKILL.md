@@ -177,6 +177,18 @@ Use these terms exactly; the contracts are in `DESIGN.md` and `docs/design/insig
 - **`seriesColorMode`:** `name` (default) keys colour to series identity; `index` keeps position-based slots.
 - **Hatching** marks missing data. Invalid source data uses a second, warning-toned hatch. Status colour never uses hatching.
 
+## Variables and filters
+
+- Declare a shared filter as a dashboard variable: `name` (a letter or underscore, then letters, digits or underscores, at most 64 characters), optional `label`, a `defaultValue`, and `options` (1 to 100 unique strings; omit `options` for a free-text value). A dashboard declares at most 20 variables.
+- Ship a default. An unset variable is an error for any query that uses it, not an empty filter.
+- Reference a variable as `{{name}}`, unquoted, in PromQL or TraceQL (`service={{service}}`); Paprika writes the value as a string literal. A saved query takes it through `queryRef.bindings`: `{"parameter":"service","source":"variable","variable":"service"}`.
+- Use `selectionBindings` for click-to-filter on a supported plugin such as status-history: `[{"variable":"service","source":"label","value":"service"}]` sets the variable from the activated sample's label. Hover and focus never change a filter.
+- Options are static lists; there is no options source yet, so list the values you know or leave the field free text. An override outside the options still applies. `query_dashboard` names it in `warnings` and reports each declared variable under `variableDefinitions`.
+
+```json
+"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","api"]}]
+```
+
 ## Repair a live dashboard
 
 Before writing new queries for a dashboard whose data has drifted, use the tested repair

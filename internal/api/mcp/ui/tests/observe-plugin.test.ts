@@ -113,6 +113,18 @@ test("the merged records and SQL guidance stays in the canonical Observe skill",
   assert.match(skill, /`Forbidden` means the backend refused the supplied credentials/);
 });
 
+test("observe skills teach declared variables with defaults and read the variable result fields", async () => {
+  const skill = await readFile(new URL("skills/paprika-observe/SKILL.md", plugin), "utf8");
+  assert.match(skill, /\*\*Variables\.\*\* Declare a shared filter as a dashboard variable with a `defaultValue` and static\s+`options`/);
+  assert.match(skill, /Always ship a default: an unset variable fails\s+any query that uses it/);
+  assert.match(skill, /`variableDefinitions` gives each variable's label, default and\s+options/);
+  assert.match(skill, /named in\s+`warnings`/);
+  const design = await readFile(new URL(".agents/skills/paprika-dashboard-design/SKILL.md", root), "utf8");
+  assert.match(design, /^## Variables and filters$/m);
+  assert.match(design, /Ship a default\. An unset variable is an error/);
+  assert.match(design, /`warnings`/);
+});
+
 test("observe skill examples match real gateway schemas and preserve secure handoff boundaries", async () => {
   const source = await readFile(new URL("internal/observabilitygateway/tools.go", root), "utf8");
   const rangeSource = await readFile(new URL("internal/observabilitygateway/tools_explore_range.go", root), "utf8");

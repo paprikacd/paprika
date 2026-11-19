@@ -70,7 +70,9 @@ const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion"
 "dashboard":{"type":"object","required":["id","title","etag"],"properties":{"id":{"type":"string"},"title":{"type":"string"},"etag":{"type":"string"}}},
 "observedAt":{"type":"string","format":"date-time"},
 "range":{"type":"object","required":["start","end","stepSeconds"],"properties":{"start":{"type":"string","format":"date-time"},"end":{"type":"string","format":"date-time"},"stepSeconds":{"type":"number"}}},
-"variables":{"type":"object","additionalProperties":{"type":"string"}},
+"variables":{"type":"object","additionalProperties":{"type":"string"},"description":"The effective value of each variable for this call: the saved default, or the override."},
+"variableDefinitions":{"type":"array","description":"Each declared dashboard variable, in declaration order, with its label, saved default and static options, so an agent can choose values without get_dashboard. Label, default and options share a 4 KiB encoded budget per result: optionsOmitted counts options past it, and detailOmitted marks a label and default left out of it. get_dashboard returns the full definitions. Absent when the dashboard declares no variables.","items":{"type":"object","required":["name"],"additionalProperties":false,"properties":{"name":{"type":"string"},"label":{"type":"string"},"defaultValue":{"type":"string"},"options":{"type":"array","items":{"type":"string"}},"optionsOmitted":{"type":"integer","minimum":0},"detailOmitted":{"type":"boolean","description":"The label and default were left out of the 4 KiB budget; see variableDefinitions."}}}},
+"warnings":{"type":"array","description":"Inputs the call accepted but that may be wrong. An override outside a variable's declared options is accepted and applied, and is named here. Absent when there are none; a warning never fails the call.","items":{"type":"string"}},
 "widgets":{"type":"array","items":{"type":"object","required":["id","title","type","unit"],"allOf":[{"if":{"required":["ranking"]},"else":{"properties":{"threshold":{"if":{"properties":{"state":{"const":"matched"}},"required":["state"]},"then":{"required":["boundary"]}}}}}],"properties":{"id":{"type":"string"},"title":{"type":"string"},"type":{"type":"string"},"pluginId":{"type":"string","description":"Registered visualization ID when type is plugin; configuration remains in the saved dashboard document."},"dataKind":{"enum":["metrics","records","traces"],"description":"Normalized input kind for a plugin visualization."},"savedQueryId":{"type":"string","description":"Saved query referenced by this widget, including failed resolution; see savedQueries for its captured ETag when available."},"annotationSavedQueryId":{"type":"string","description":"Saved query referenced by the widget annotation source, including failed resolution."},"unit":{"type":"string"},"decimals":{"type":"integer"},"signalId":{"type":"string"},"error":{"$ref":"#/$defs/error"},"attention":{"enum":["critical","warning","failed","stale"],"description":"The most severe reason this widget needs attention. Absent when none applies. Counts appear in the top-level attention summary. A time series counts by breaches in its window; see breaches.latestLevel for the newest sample."},"comparison":{"type":"object","required":["state","window","offsetSeconds","changeUnit"],"description":"A stat's change against its earlier window. The change is point to point: the displayed sample against the latest valid sample of the same series in that window. It is information, not status. state not_run means the earlier window was not queried within the budget and is never no change; unavailable and error give a reason or error instead of a change.","properties":{"state":{"enum":["ok","partial","unavailable","error","not_run"]},"window":{"enum":["previous","1d","7d"]},"offsetSeconds":{"type":"number","description":"How far back the earlier window sits, in seconds."},"current":{"$ref":"#/$defs/sample","description":"The displayed sample."},"baseline":{"$ref":"#/$defs/sample","description":"The latest valid sample of the same series in the earlier window."},"delta":{"type":"number","description":"Displayed minus baseline, in changeUnit."},"percent":{"type":"number","description":"Delta divided by the absolute baseline, in percent. Absent when the baseline is zero."},"changeUnit":{"type":"string","description":"pp for a percentage widget, otherwise the widget unit."},"direction":{"enum":["up","down","flat"],"description":"flat means the change rounds to nothing at the widget's display, so it has no direction; delta and percent stay exact."},"assessment":{"enum":["better","worse","unchanged"],"description":"Set only when the stat declares which direction is better. unchanged accompanies flat."},"reason":{"enum":["no_previous_range","no_current_sample","no_prior_sample","ambiguous_series","time_budget"]},"error":{"$ref":"#/$defs/error"}}},"sample":{"type":"object","additionalProperties":false,"required":["state"],"description":"Age of the widget's latest valid returned sample relative to the selected range end, and the limit that judges it. Every metric widget reports it, unless the result cap removed it (see omitted). The age is the primary series' latest sample for a stat and the newest sample across series for a time series. A limit applies to a stat or time series with staleAfterSeconds, and to a time series without one by the UI's cadence fallback (twice the longest cadence among the series that reported last); a truncated time-series result is not judged. Unknown means no usable sample; no_threshold means the age is reported with no limit. This is not underlying scrape or ingestion health.","properties":{"state":{"enum":["fresh","stale","unknown","no_threshold"]},"basis":{"enum":["staleAfterSeconds","cadence"],"description":"What set the limit; absent when none applies."},"staleAfterSeconds":{"type":"number","exclusiveMinimum":0,"description":"The limit in effect, in seconds. Fractional for a cadence limit."},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"breaches":{"type":"object","additionalProperties":false,"required":["seriesEvaluated","intervals","summary"],"description":"Time-series stretches inside the author's warning or critical bands within the returned window, from each of up to 12 series evaluated with its own observed cadence. Intervals run from the first breaching sample to the last, extended toward the next observed contiguous sample by at most one cadence. A zero durationMs is a single breaching sample. The most recent intervals per level are listed, within a dashboard-wide budget; the summary counts every interval, merged across series. latestLevel names the level of the newest sample. Not a health verdict.","properties":{"seriesEvaluated":{"type":"integer","minimum":0,"maximum":12},"seriesOmitted":{"type":"integer","minimum":0,"description":"Returned series beyond the twelve evaluated."},"latestLevel":{"enum":["critical","warning"],"description":"The band of the newest sample. Absent when that sample is not in a warning or critical band."},"intervals":{"type":"array","maxItems":24,"items":{"type":"object","additionalProperties":false,"required":["series","level","start","end","durationMs"],"properties":{"series":{"type":"integer","minimum":0},"name":{"type":"string","description":"Bounded label of the series."},"level":{"enum":["warning","critical"]},"start":{"type":"number","description":"Unix milliseconds"},"end":{"type":"number","description":"Unix milliseconds"},"durationMs":{"type":"number","minimum":0}}}},"intervalsOmitted":{"type":"integer","minimum":0,"description":"Intervals older than those listed, cut by the dashboard budget, or omitted under the result cap (see the top-level omitted)."},"summary":{"type":"array","maxItems":2,"items":{"type":"object","additionalProperties":false,"required":["level","intervals","samples","durationMs"],"properties":{"level":{"enum":["critical","warning"]},"intervals":{"type":"integer","minimum":0,"description":"Merged spans with positive duration, across series."},"samples":{"type":"integer","minimum":0,"description":"Single breaching samples outside those spans."},"durationMs":{"type":"number","minimum":0,"description":"Merged breaching time."}}}}}},"freshness":{"type":"object","description":"Freshness object, kept for clients that read it. A stat's is the first contract's: it is present wherever an explicit staleAfterSeconds judges the stat, and the result cap keeps it. A time series with an explicit staleAfterSeconds also has one, added after the first contract, unless its result is truncated or the result cap removed it (see omitted). Its state is fresh, stale or unknown. Use sample for every metric widget.","required":["thresholdSeconds","state"],"properties":{"thresholdSeconds":{"type":"integer","description":"The widget's staleAfterSeconds."},"state":{"enum":["fresh","stale","unknown"]},"lastTimestamp":{"type":"number","description":"Unix milliseconds"},"ageSeconds":{"type":"number"}}},"threshold":{"type":"object","additionalProperties":false,"description":"A configured visual band that names a status, not an alert or service-health verdict. Stat bands use the last valid displayed sample. Gauges, status grids and status histories, and heatmaps evaluate the series the visualization draws, each on its latest recorded sample (a missing one is unknown and sets no band), and report the most severe matched band; bandSeries names the series that set it. A matched band names a status (ok, info, warning, critical or unknown), a six-digit hex color override, or both. The first band also applies below its boundary. A ranked record table's band names its worst row's status and has no boundary, because rows are banded by mapping or by a column's own thresholds. A color override, when present, replaces the status mark for that band. A missing latest observation is reported separately on the signal.","required":["state"],"properties":{"state":{"enum":["matched","unknown"]},"boundary":{"type":"number"},"status":{"enum":["ok","info","warning","critical","unknown"]},"color":{"type":"string"},"label":{"type":"string"}},"oneOf":[{"properties":{"state":{"const":"matched"}},"anyOf":[{"required":["status"]},{"required":["color"]}]},{"properties":{"state":{"const":"unknown"}},"not":{"anyOf":[{"required":["boundary"]},{"required":["status"]},{"required":["color"]},{"required":["label"]}]}}]},"ranking":{"type":"object","additionalProperties":false,"required":["basis","evaluated"],"description":"A record table that declares rank: its loaded rows ranked worst first by the author's declared statuses, then the rank value column in its order, then source position. Counts cover every loaded row; rows are the first ranked rows the limit keeps, at most 10 with 12 columns and strings capped at 160 characters, and are omitted under the result cap (see omitted). hidden counts rows the limit cut, including critical and warning rows. The worst declared row sets the widget's threshold, so the widget counts in attention. partial with reason means the ranking covers loaded rows only, or the rank could not be drawn. Not a health verdict.","properties":{"basis":{"type":"string"},"status":{"type":"string"},"value":{"type":"string"},"order":{"enum":["descending","ascending"]},"evaluated":{"type":"integer","minimum":0,"description":"Loaded rows ranked."},"limit":{"type":"integer","minimum":1,"maximum":100},"counts":{"type":"object","additionalProperties":{"type":"integer","minimum":0},"description":"Loaded rows per level: critical, warning, unknown, info, ok, undeclared (a colour-only band or unmapped value) and missing (no value)."},"hidden":{"type":"object","additionalProperties":false,"required":["rows","critical","warning"],"properties":{"rows":{"type":"integer","minimum":0},"critical":{"type":"integer","minimum":0},"warning":{"type":"integer","minimum":0}}},"columns":{"type":"array","maxItems":12,"items":{"$ref":"#/$defs/recordColumn"}},"rows":{"type":"array","maxItems":10,"items":{"type":"array","maxItems":12,"items":{"type":["string","number","boolean","null"]}}},"statuses":{"type":"array","maxItems":10,"items":{"enum":["critical","warning","unknown","info","ok","undeclared","missing"]}},"partial":{"type":"boolean"},"reason":{"type":"string"}}},"bandSeries":{"type":"object","additionalProperties":false,"required":["evaluated","omitted"],"description":"For a multi-series band: how many of the series the visualization draws were evaluated, how many returned series it does not draw, and which series set the band. Absent when the result cap removed it (see omitted); the band's threshold remains.","properties":{"evaluated":{"type":"integer","minimum":0},"omitted":{"type":"integer","minimum":0},"series":{"type":"integer","minimum":0,"description":"The series that set a matched band."},"name":{"type":"string","description":"Bounded label of that series."}}},"slo":{"type":"object","additionalProperties":false,"required":["basis","objective","period","evaluatedAt","state","reasons","counts","groups","groupsOmitted"],"description":"An slo-summary widget's authored objective evaluated over the returned window. A reading of the author's objective, not a health verdict: breaching counts as critical and at_risk as warning in attention. unknown means no evaluated group: no traffic, no data, or an incomplete truncated result. partial means no evaluated group is worse than meeting, but some group is unknown or a truncated grouped result may have hidden groups. Groups are sorted worst first and listed up to max_series; groupsOmitted counts the rest. burn lists each SRE-workbook window pair, its factor scaled to the period, and whether it fires; sloBurn in omitted removes burn only. A negative budgetRemaining means the error budget is overspent.","properties":{"basis":{"type":"string"},"objective":{"type":"number"},"period":{"enum":["1d","7d","28d","30d"]},"evaluatedAt":{"type":"string","format":"date-time","description":"The range end the window was evaluated at."},"state":{"enum":["meeting","at_risk","breaching","unknown","partial"],"description":"The worst evaluated group. partial means no evaluated group is worse than meeting, but some group is unknown or a truncated grouped result may have hidden groups, so the objective is not proven met."},"reasons":{"type":"array","items":{"enum":["budget_exhausted","fast_burn","slow_burn","no_traffic","no_data","incomplete"]}},"counts":{"type":"object","required":["meeting","at_risk","breaching","unknown"],"properties":{"meeting":{"type":"integer","minimum":0},"at_risk":{"type":"integer","minimum":0},"breaching":{"type":"integer","minimum":0},"unknown":{"type":"integer","minimum":0}}},"groups":{"type":"array","items":{"type":"object","required":["labels","state","reasons"],"properties":{"labels":{"type":"object","additionalProperties":{"type":"string"}},"state":{"enum":["meeting","at_risk","breaching","unknown"]},"reasons":{"type":"array","items":{"enum":["budget_exhausted","fast_burn","slow_burn","no_traffic","no_data","incomplete"]}},"availability":{"type":["number","null"],"description":"Percent of requests that were not bad over the period."},"errorRatio":{"type":["number","null"]},"budgetRemaining":{"type":["number","null"],"description":"Percent of the error budget left; negative when overspent."},"total":{"type":["number","null"]},"bad":{"type":["number","null"]},"allowed":{"type":["number","null"]},"burn":{"type":"array","items":{"type":"object","required":["long","short","factor","severity","longBurn","shortBurn","firing"],"properties":{"long":{"type":"string"},"short":{"type":"string"},"factor":{"type":"number"},"severity":{"enum":["critical","warning"]},"longBurn":{"type":["number","null"]},"shortBurn":{"type":["number","null"]},"firing":{"type":"boolean"}}}}}}},"groupsOmitted":{"type":"integer","minimum":0}}},"annotationSignalId":{"type":"string"},"annotationError":{"$ref":"#/$defs/error"},"annotationColumns":{"type":"object","required":["timestamp","label"],"properties":{"timestamp":{"type":"string"},"end":{"type":"string","description":"Optional end-time column for interval annotations."},"label":{"type":"string"},"severity":{"type":"string"}}}}}},
 "savedQueries":{"type":"array","items":{"type":"object","required":["id","etag"],"properties":{"id":{"type":"string"},"etag":{"type":"string"}}}},
 "signals":{"type":"array","items":{"type":"object","required":["id","state"],"properties":{
@@ -92,7 +94,7 @@ const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion"
 func insightsQueryDashboardTool(c *InsightsAuthoringClient) mcp.Tool {
 	return mcp.Tool{
 		Name: "query_dashboard", Title: "Read dashboard signals", Scope: mcp.ScopeObserve,
-		Description: "Execute a saved dashboard with its live saved queries and optional variable overrides. Returns compact, versioned machine-readable signals: exact latest values, unweighted means of returned finite samples, bounded range summaries, trace samples and record previews, plus document versions and missing/error/truncation states. Structured content carries an attention summary (author-declared warning and critical statuses, query failures and staleness, counted per widget), per-widget declared bands, time-series breach intervals within the window and freshness for metric widgets. Compact text leads with that attention summary and includes the execution range, bounded selected variables, widget and provider errors, declared bands, breach intervals and bounded per-series observations for multi-series signals, with omissions disclosed; structured content remains authoritative and may contain more detail. Sample means include duplicate timestamps and are not time weighted or source-wide. Declared bands, breaches and attention describe author-configured thresholds, not alert or service health. Record previews include at most 3 rows and 12 columns; returned counts describe the fetched page, never a source-wide total. When the encoded result would exceed 130 KiB, optional detail is dropped in the order listed in the top-level omitted field (breach intervals, per-widget breaches, band series objects, sample detail), and the text names what was dropped; attention and state are never dropped. Identical queries execute once. A stat with options.compare also returns its change against an earlier window (comparison); state not_run means the window was not queried within budget and is never no change. No layout, query expressions or raw metric sample arrays by default. State describes data availability, not service health. Read-only; requires paprika:observe and human Insights read permission, not authoring consent.",
+		Description: "Execute a saved dashboard with its live saved queries and optional variable overrides. Returns compact, versioned machine-readable signals: exact latest values, unweighted means of returned finite samples, bounded range summaries, trace samples and record previews, plus document versions and missing/error/truncation states. Structured content carries an attention summary (author-declared warning and critical statuses, query failures and staleness, counted per widget), per-widget declared bands, time-series breach intervals within the window and freshness for metric widgets. Compact text leads with that attention summary and includes the execution range, bounded selected variables, widget and provider errors, declared bands, breach intervals and bounded per-series observations for multi-series signals, with omissions disclosed; structured content remains authoritative and may contain more detail. Sample means include duplicate timestamps and are not time weighted or source-wide. Declared bands, breaches and attention describe author-configured thresholds, not alert or service health. Record previews include at most 3 rows and 12 columns; returned counts describe the fetched page, never a source-wide total. When the encoded result would exceed 130 KiB, optional detail is dropped in the order listed in the top-level omitted field (breach intervals, per-widget breaches, band series objects, sample detail), and the text names what was dropped; attention and state are never dropped. Identical queries execute once. variableDefinitions declares each variable's label, default and options; an override outside its options is still applied and named in warnings. A stat with options.compare also returns its change against an earlier window (comparison); state not_run means the window was not queried within budget and is never no change. No layout, query expressions or raw metric sample arrays by default. State describes data availability, not service health. Read-only; requires paprika:observe and human Insights read permission, not authoring consent.",
 		InputSchema: json.RawMessage(dashboardQueryInputSchema), OutputSchema: json.RawMessage(dashboardQueryOutputSchema),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 			if err := requireDashboardQueryAdmission(ctx); err != nil {
@@ -360,11 +362,14 @@ type dashboardTextSummary struct {
 		End         string  `json:"end"`
 		StepSeconds float64 `json:"stepSeconds"`
 	} `json:"range"`
-	Variables map[string]string     `json:"variables"`
-	State     string                `json:"state"`
-	Omitted   []string              `json:"omitted"`
-	Widgets   []dashboardTextWidget `json:"widgets"`
-	Signals   []dashboardTextSignal `json:"signals"`
+	Variables map[string]string `json:"variables"`
+	// VariableDefinitions is each declared variable's label, default and options, as the structured result has them.
+	VariableDefinitions []dashboardTextVariable `json:"variableDefinitions"`
+	Warnings            []string                `json:"warnings"`
+	State               string                  `json:"state"`
+	Omitted             []string                `json:"omitted"`
+	Widgets             []dashboardTextWidget   `json:"widgets"`
+	Signals             []dashboardTextSignal   `json:"signals"`
 }
 
 func dashboardQueryText(raw json.RawMessage) (string, error) {
@@ -383,6 +388,8 @@ func dashboardQueryText(raw json.RawMessage) (string, error) {
 	if summary.Variables != nil {
 		appendDashboardVariablesText(&out, summary.Variables)
 	}
+	appendDashboardDeclaredVariablesText(&out, summary.VariableDefinitions)
+	appendDashboardWarningsText(&out, summary.Warnings)
 	// A widget can fail before it has a signal (for example, a missing saved
 	// query). Report these first so a text-only client does not miss the error.
 	if appendDashboardWidgetDiagnostics(&out, summary.Widgets) {
@@ -907,6 +914,93 @@ func appendDashboardVariablesText(out *strings.Builder, variables map[string]str
 		fmt.Fprintf(out, " (%d variables omitted; see structuredContent)", len(keys)-shown)
 	}
 	out.WriteByte('\n')
+}
+
+// dashboardTextVariable is one declared variable as the structured result reports it, read for the synopsis.
+type dashboardTextVariable struct {
+	Name           string   `json:"name"`
+	Label          string   `json:"label"`
+	DefaultValue   *string  `json:"defaultValue"`
+	Options        []string `json:"options"`
+	OptionsOmitted int      `json:"optionsOmitted"`
+	DetailOmitted  bool     `json:"detailOmitted"`
+}
+
+const (
+	dashboardTextVariableOptions = 8    // Options named per variable; the rest are counted.
+	dashboardTextVariableBytes   = 1000 // The synopsis line's bound; later variables are counted, not named.
+)
+
+// appendDashboardDeclaredVariablesText names each declared variable with its label, default and options, so a
+// text-only client can choose values without a get_dashboard read. Structured content holds the full definitions.
+func appendDashboardDeclaredVariablesText(out *strings.Builder, definitions []dashboardTextVariable) {
+	if len(definitions) == 0 {
+		return
+	}
+	var entries strings.Builder
+	shown := 0
+	for index := range definitions {
+		entry := declaredVariableText(&definitions[index])
+		if shown > 0 && entries.Len()+len(entry) > dashboardTextVariableBytes {
+			break
+		}
+		if shown > 0 {
+			entries.WriteString("; ")
+		}
+		entries.WriteString(entry)
+		shown++
+	}
+	out.WriteString("Declared variables: ")
+	out.WriteString(entries.String())
+	if shown < len(definitions) {
+		fmt.Fprintf(out, " (%d more; see structuredContent)", len(definitions)-shown)
+	}
+	out.WriteString(".\n")
+}
+
+// declaredVariableText is one variable's entry in the declared-variables line: its quoted name, then its label,
+// default and the first options it names, with the count of the rest.
+func declaredVariableText(definition *dashboardTextVariable) string {
+	entry := strconv.Quote(shortDashboardText(definition.Name, 48))
+	if definition.Label != "" {
+		entry += " (" + strconv.Quote(shortDashboardText(definition.Label, 48)) + ")"
+	}
+	if definition.DefaultValue != nil {
+		entry += " default " + strconv.Quote(shortDashboardText(*definition.DefaultValue, 96))
+	}
+	named := make([]string, 0, dashboardTextVariableOptions)
+	for index, option := range definition.Options {
+		if index == dashboardTextVariableOptions {
+			break
+		}
+		named = append(named, strconv.Quote(shortDashboardText(option, 48)))
+	}
+	if len(named) > 0 {
+		entry += " options " + strings.Join(named, ", ")
+	}
+	if more := len(definition.Options) - len(named) + definition.OptionsOmitted; more > 0 {
+		if len(named) == 0 {
+			entry += " options"
+		}
+		entry += fmt.Sprintf(" (+%d more; see structuredContent)", more)
+	}
+	if definition.DetailOmitted {
+		entry += " (label and default omitted; see structuredContent)"
+	}
+	return entry
+}
+
+// appendDashboardWarningsText names each warning the call returned, quoted and bounded. An override outside
+// a variable's declared options is still applied, so the warning says what was accepted, not what failed.
+func appendDashboardWarningsText(out *strings.Builder, warnings []string) {
+	const shown = 5
+	for index, warning := range warnings {
+		if index == shown {
+			fmt.Fprintf(out, "Warnings: %d more; see structuredContent.\n", len(warnings)-shown)
+			return
+		}
+		fmt.Fprintf(out, "Warning: %s.\n", strconv.Quote(shortDashboardText(warning, 200)))
+	}
 }
 
 func dashboardSignalIdentity(signalID string, widgets []dashboardTextWidget) (title, unit, view string, decimals *int, matched int) {

@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestDashboardSavedQueryTypedBindingsAndExplicitDefaults(t *testing.T) {
@@ -60,5 +61,108 @@ func TestDashboardLiteralInterpolationMatchesBrowserBoundaries(t *testing.T) {
 	}
 	if padded, err := interpolateDashboardLiterals(strings.Repeat(" ", 8200)+"up", nil, nil); err != nil || padded != "up" {
 		t.Fatalf("valid padded query must normalize like the UI: %q %v", padded, err)
+	}
+}
+
+func TestDashboardQueryVariablesReportDefinitionsAndBudgetOptions(t *testing.T) {
+	label := "Service"
+	service := "checkout"
+	definitions := []dashboardReadVariable{
+		{Name: "service", Label: label, DefaultValue: &service, Options: []string{"checkout", "api"}},
+		{Name: "free"},
+		{Name: "large", Options: []string{strings.Repeat("a", 2000), strings.Repeat("b", 2000), strings.Repeat("c", 2000)}},
+		{Name: "after", Options: []string{strings.Repeat("y", 200)}},
+	}
+	variables := dashboardQueryVariables(definitions)
+	if len(variables) != 4 || variables[0].Name != "service" || variables[0].Label != label || *variables[0].DefaultValue != "checkout" || len(variables[0].Options) != 2 || variables[0].OptionsOmitted != 0 {
+		t.Fatalf("declared definition not reported in order: %+v", variables)
+	}
+	if variables[1].DefaultValue != nil || variables[1].Options != nil || variables[1].OptionsOmitted != 0 {
+		t.Fatalf("free variable must report no default or options: %+v", variables[1])
+	}
+	// The 4 KiB budget lists two 2000-byte options, then counts the third as omitted; the budget left for later variables is small.
+	if len(variables[2].Options) != 2 || variables[2].OptionsOmitted != 1 {
+		t.Fatalf("options past the byte budget must be counted, not listed: %+v", variables[2])
+	}
+	if len(variables[3].Options) != 0 || variables[3].OptionsOmitted != 1 {
+		t.Fatalf("budget exhausted by an earlier variable must omit later options: %+v", variables[3])
+	}
+	if dashboardQueryVariables(nil) != nil {
+		t.Fatal("a dashboard without variables must report none")
+	}
+}
+
+func TestDashboardVariableWarningsNameOverridesOutsideDeclaredOptions(t *testing.T) {
+	definitions := []dashboardReadVariable{
+		{Name: "service", Options: []string{"omega", "delta"}},
+		{Name: "free"},
+	}
+	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "prod", "free": "anything"}); len(warnings) != 1 || warnings[0] != "service=prod is not one of the declared options" {
+		t.Fatalf("override outside options must warn once and never a variable without options: %v", warnings)
+	}
+	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "delta"}); len(warnings) != 0 {
+		t.Fatalf("declared option warned: %v", warnings)
+	}
+	if warnings := dashboardVariableWarnings(definitions, nil); len(warnings) != 0 {
+		t.Fatalf("no override must not warn: %v", warnings)
+	}
+}
+
+// The option budget counts the bytes the encoder writes, so escaped text cannot push the reported definitions past
+// the 4 KiB budget. Ten 400-character options escape to 2402 bytes each: one fits, and the rest are counted.
+func TestDashboardQueryVariablesBudgetCountsEncodedBytes(t *testing.T) {
+	options := make([]string, 10)
+	for index := range options {
+		options[index] = strings.Repeat("<", 400)
+	}
+	variables := dashboardQueryVariables([]dashboardReadVariable{{Name: "service", Options: options}})
+	if len(variables[0].Options) != 1 || variables[0].OptionsOmitted != 9 {
+		t.Fatalf("escaped options must count against the encoded budget: listed=%d omitted=%d", len(variables[0].Options), variables[0].OptionsOmitted)
+	}
+	encoded, err := json.Marshal(variables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) > dashboardVariableDetailBytes+256 {
+		t.Fatalf("definitions encode to %d bytes, past the %d byte budget", len(encoded), dashboardVariableDetailBytes)
+	}
+}
+
+// A label and default that do not fit the budget are left out with detailOmitted, and a later variable still
+// reports its own label and default. The budget is not spent on the omitted detail.
+func TestDashboardQueryVariablesOmitDetailPastBudgetAndKeepLaterDetail(t *testing.T) {
+	large := strings.Repeat("<", 1024)
+	small := "Region"
+	fallback := "eu"
+	variables := dashboardQueryVariables([]dashboardReadVariable{
+		{Name: "service", Label: large, DefaultValue: &large},
+		{Name: "region", Label: small, DefaultValue: &fallback},
+	})
+	if !variables[0].DetailOmitted || variables[0].Label != "" || variables[0].DefaultValue != nil {
+		t.Fatalf("oversized label and default must be omitted with detailOmitted: %+v", variables[0])
+	}
+	if variables[1].DetailOmitted || variables[1].Label != small || variables[1].DefaultValue == nil || *variables[1].DefaultValue != fallback {
+		t.Fatalf("later variable must keep its detail: %+v", variables[1])
+	}
+}
+
+// A warning names an override value shortened to a bounded length, so a long value keeps the reason visible.
+func TestDashboardVariableWarningsBoundTheOverrideValue(t *testing.T) {
+	definitions := []dashboardReadVariable{{Name: "service", Options: []string{"omega"}}}
+	long := strings.Repeat("x", 300)
+	warnings := dashboardVariableWarnings(definitions, map[string]string{"service": long})
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v", warnings)
+	}
+	if !strings.HasSuffix(warnings[0], " is not one of the declared options") || len(warnings[0]) > 200 {
+		t.Fatalf("warning must keep its reason inside 200 bytes: %q (%d bytes)", warnings[0], len(warnings[0]))
+	}
+	if !strings.Contains(warnings[0], "…") {
+		t.Fatalf("a shortened value must be marked: %q", warnings[0])
+	}
+	multibyte := strings.Repeat("é", 40)
+	warnings = dashboardVariableWarnings(definitions, map[string]string{"service": multibyte})
+	if len(warnings) != 1 || !utf8.ValidString(warnings[0]) {
+		t.Fatalf("a shortened multibyte value must stay valid UTF-8: %q", warnings)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -735,5 +736,37 @@ func TestDashboardQueryStatThresholdKeepsStatusColourOrBoth(t *testing.T) {
 		if hasStatus != check.wantStatus || hasColour != check.wantColour {
 			t.Fatalf("band %d JSON %s: status %t colour %t", check.index, encoded, hasStatus, hasColour)
 		}
+	}
+}
+
+// A query with an override outside a variable's declared options still applies it, and names it in warnings.
+// The result declares each variable with its label, default and options, so no get_dashboard read is needed.
+func TestDashboardQueryReportsVariableDefinitionsAndOptionWarnings(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+	}))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	putReadDashboard(t, s, queryReadWidget("requests", "up"))
+
+	outside := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","variables":{"service":"prod"},`+dashboardQueryWindow+`}`), nil))
+	if len(outside.Warnings) != 1 || outside.Warnings[0] != "service=prod is not one of the declared options" || outside.Variables["service"] != "prod" {
+		t.Fatalf("override outside declared options must warn and still apply: warnings=%v variables=%v", outside.Warnings, outside.Variables)
+	}
+	if len(outside.VariableDefinitions) != 1 {
+		t.Fatalf("variable definitions missing: %+v", outside.VariableDefinitions)
+	}
+	definition := outside.VariableDefinitions[0]
+	if definition.Name != "service" || definition.Label != "Service" || definition.DefaultValue == nil || *definition.DefaultValue != "checkout" || !slices.Equal(definition.Options, []string{"checkout", "api"}) {
+		t.Fatalf("variable definition: %+v", definition)
+	}
+
+	declared := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","variables":{"service":"api"},`+dashboardQueryWindow+`}`), nil))
+	if len(declared.Warnings) != 0 || declared.Variables["service"] != "api" {
+		t.Fatalf("declared option must not warn: warnings=%v", declared.Warnings)
+	}
+	defaulted := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
+	if len(defaulted.Warnings) != 0 || defaulted.Variables["service"] != "checkout" {
+		t.Fatalf("saved default must not warn: warnings=%v variables=%v", defaulted.Warnings, defaulted.Variables)
 	}
 }

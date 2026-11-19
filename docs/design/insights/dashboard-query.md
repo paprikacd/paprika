@@ -33,6 +33,8 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
 | `variables` | Saved defaults with this call's declared overrides applied |
+| `variableDefinitions` | Each declared variable's label, saved default and static options, in declaration order. Label, default and option text share a 4 KiB encoded budget per result: `optionsOmitted` counts options past it, and `detailOmitted` marks a label and default left out of it. `get_dashboard` returns them all. The text synopsis names them in one bounded `Declared variables` line. Omitted when the dashboard declares no variables |
+| `warnings` | Inputs the call accepted but that may be wrong. An override outside a variable's declared options still applies and is named here. Omitted when there are none; a warning never fails the call |
 | `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the `freshness` object where an explicit option judges it (a stat's is the first contract's), breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; under the result cap the listed breach intervals, each widget's whole `breaches` object, each multi-series `bandSeries` object, and `sample` may be omitted (see `omitted`). Only a time series' `freshness` can be dropped; a stat's `freshness` is never dropped; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
 | `signals` | Deduplicated query results, indexed by `q1`, `q2`, …; each identifies the query kind and, when provider lookup is authorized, its resolved provider ID |
@@ -233,7 +235,7 @@ The text synopsis states what was omitted and that `widget_ids` narrows the quer
 recover it.
 
 Never dropped, under any step: the top-level `schemaVersion`, `dashboard`,
-`observedAt`, `range`, `variables`, `savedQueries`, `signals` (every signal, its
+`observedAt`, `range`, `variables`, `variableDefinitions`, `warnings`, `savedQueries`, `signals` (every signal, its
 series summaries and their labels), `queryCount`, `state`, `attention` (the counts
 and the basis) and `omitted`; and for each widget its identity fields (`id`, `title`,
 `type`, `unit`, `decimals`, `pluginId`, `dataKind`), its saved-query, annotation and
@@ -355,7 +357,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Input/budget | Limit |
 |---|---|
 | Arguments | 32 KiB; unknown fields rejected |
-| Variables | Declared names only; at most 20 string overrides |
+| Variables | Declared names only; at most 20 string overrides. An override outside declared options is applied and listed in `warnings` |
 | Widgets | All by default, or 1–48 unique existing widget IDs |
 | Time | Both RFC3339 bounds or neither; maximum 31 days |
 | Default range | Saved custom range, otherwise saved rolling range |

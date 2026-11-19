@@ -58,6 +58,12 @@ IDs here are placeholders; run the steps in order.
    `get_insights_schema` notes. Starter sizes: stat cards w3 to w6 h2 with
    a sparkline and no bar; half-width series w6 h4 or h5; full-width w12 h4; tables w4 h5.
 
+   **Variables.** Declare a shared filter as a dashboard variable with a `defaultValue` and static
+   `options`, then use it as an unquoted `{{service}}` placeholder in a query, or bind it through
+   `queryRef.bindings` with `"source":"variable"`. Always ship a default: an unset variable fails
+   any query that uses it. Example: `"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","api"]}]`,
+   with the query `sum(rate(http_requests_total{service={{service}}}[5m]))`. Omit `options` only for a free-text value.
+
 5. **Validate.** `validate_dashboard` takes `document` or `id` and returns schema and lint
    findings without saving. Errors block a save; warnings do not. Add `execute: true`, with
    optional `variables`, for a data dry run: each distinct widget query runs once.
@@ -81,7 +87,10 @@ IDs here are placeholders; run the steps in order.
    row sets the widget's band, so the table counts in `attention`. Order the query at the source
    when the whole source must be ranked.
    Optional: `variables`, `widget_ids`, `start` and `end` (at most 31 days), `history_points`,
-   `max_series`, `max_traces`. Treat `structuredContent` as authoritative; the text is a
+   `max_series`, `max_traces`. `variableDefinitions` gives each variable's label, default and
+   options, so read them there rather than calling `get_dashboard`; `optionsOmitted` counts options
+   past a 4 KiB per-result budget; `get_dashboard` returns the full list. An override outside the options still applies and is named in
+   `warnings`, so check it before you report the signals. Treat `structuredContent` as authoritative; the text is a
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a
    failed query or stale data. Stat, gauge, status-view and heatmap widgets with a band report
    `threshold`; time series report `breaches`; metric widgets report `sample` freshness.
