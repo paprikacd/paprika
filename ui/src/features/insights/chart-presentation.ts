@@ -5,6 +5,14 @@ import { isFormattableTimeZone } from "./schema";
 export const DEFAULT_AREA_OPACITY = 0.28;
 
 /**
+ * The top fill opacity for an area with no authored fillOpacity. Three or more overlapping, non-stacked fills wash into a
+ * muddy block, so they default to a lighter wash. An authored fillOpacity always wins over this default.
+ */
+export function defaultAreaOpacity(seriesCount: number): number {
+  return seriesCount >= 3 ? 0.08 : DEFAULT_AREA_OPACITY;
+}
+
+/**
  * The zero line within the visible domain: zero when the domain includes it, otherwise the plot edge nearest zero. An area
  * closes at zero, so its fade has to meet this line. A domain that excludes zero would fade toward a zero off the plot.
  */

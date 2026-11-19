@@ -68,6 +68,8 @@ Use the canonical selection source for transient pointer and keyboard focus. Cle
 
 For the supplied dark references, explore a fill around 15–22% opacity near the trace fading to roughly 2–4% at its zero baseline, with a crisp primary stroke. These are aesthetic starting ranges, not contrast guarantees. Anchor positive and negative fills correctly on either side of zero; a sign change must not reverse the intended fade or fill outside its truthful area. Measure the composited result in each theme. Do not add a gradient to every series or stack; solid fills may make composition more readable.
 
+Use a line, not an area, for three or more unstacked series. Their fills overlap into a muddy block even at low opacity. Reserve area fills for one or two series, or for stacked totals, and author `fillOpacity` at 0.05 or lower when an area is still the right reading.
+
 Keep focus effects local: a small contrasting selected-point ring or restrained under-stroke can identify a trace without broad glow. Do not blur quantitative bars or use halos that merge nearby lines. Keep the exact marker center and direct crosshair response immediate; a short visual emphasis must not delay selection.
 
 Order layers deliberately: plot background → reference grid/interval bands → area fills → data strokes/bars → event/threshold emphasis where appropriate → focus/selection → axis labels and portalled inspection. Adjust this order when an important threshold would otherwise be obscured; verify real overlap cases.

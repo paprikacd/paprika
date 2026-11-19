@@ -256,6 +256,29 @@ describe("zero-anchored area gradients", () => {
     expect(fillGradient(areaPaths(container)[0])).toEqual([{ offset: 0, opacity: 0 }, { offset: 1, opacity: 0.28 }]);
   });
 
+  it("lightens the default wash when three or more series overlap, so their fills stay legible", () => {
+    const threeSeries = [...seriesOf("a", [[1, 1], [2, 4]])!, ...seriesOf("b", [[1, 2], [2, 3]])!, ...seriesOf("c", [[1, 3], [2, 2]])!];
+    const { container } = render(<WidgetVisualization widget={{ ...timeseries, options: { display: "area" } }} result={{ series: threeSeries }} />);
+    const paths = areaPaths(container);
+    expect(paths).toHaveLength(3);
+    for (const path of paths) expect(fillGradient(path)).toEqual([{ offset: 0, opacity: 0.08 }, { offset: 1, opacity: 0 }]);
+  });
+
+  it("counts only series that draw a fill toward the series-count default", () => {
+    // Two filled series and one with no points: the empty series draws no fill, so the default stays at 0.28.
+    const twoAndEmpty = [...seriesOf("a", [[1, 1], [2, 4]])!, ...seriesOf("b", [[1, 2], [2, 3]])!, ...seriesOf("c", [])!];
+    const { container } = render(<WidgetVisualization widget={{ ...timeseries, options: { display: "area" } }} result={{ series: twoAndEmpty }} />);
+    const paths = areaPaths(container);
+    expect(paths).toHaveLength(2);
+    for (const path of paths) expect(fillGradient(path)[0].opacity).toBe(0.28);
+  });
+
+  it("keeps an authored fill opacity over the series-count default", () => {
+    const threeSeries = [...seriesOf("a", [[1, 1], [2, 4]])!, ...seriesOf("b", [[1, 2], [2, 3]])!, ...seriesOf("c", [[1, 3], [2, 2]])!];
+    const { container } = render(<WidgetVisualization widget={{ ...timeseries, options: { display: "area", fillOpacity: 0.12 } }} result={{ series: threeSeries }} />);
+    for (const path of areaPaths(container)) expect(fillGradient(path)).toEqual([{ offset: 0, opacity: 0.12 }, { offset: 1, opacity: 0 }]);
+  });
+
   it("places the zero line within a series that crosses it", () => {
     // Highest 3 and lowest -1: zero is three quarters of the way down the fill.
     const { container } = area([[1, 3], [2, -1], [3, 2]]);

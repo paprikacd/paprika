@@ -4,6 +4,8 @@ import { ConnectionMap, IncidentCalendar, PipelineTopology, registerOperationalR
 import { getWidgetDefinition } from "../widget-registry"
 import { PluginConfigEditor } from "../plugin-config-editor"
 import type { QueryResult, Widget } from "../schema"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 afterEach(cleanup)
 const widget: Widget={id:"operational",title:"Operational records",type:"plugin",pluginId:"connection-map",dataKind:"records",providerId:"records",query:"records",unit:"",layout:{x:0,y:0,w:6,h:5},options:{decimals:2}}
@@ -260,5 +262,18 @@ describe("incident calendar tooltip decimals",()=>{
     const tooltip=screen.getByRole("tooltip")
     expect(tooltip).toHaveTextContent("Sum of recorded values6")
     expect(tooltip.textContent).not.toContain("5.579")
+  })
+})
+
+describe("density dots stay crisp", () => {
+  // DESIGN.md: no glow or blur on marks. A halo on a density dot enlarges it beyond its declared size mapping.
+  it("gives every density dot rule a box-shadow of none", () => {
+    const css = readFileSync(join(process.cwd(), "src/features/insights/plugins/operational-records.module.css"), "utf8")
+    const rules = [...css.matchAll(/([^{}]*\.dot[^{}]*)\{([^}]*)\}/g)].filter(([, selector]) => selector.includes('[data-density="true"]'))
+    expect(rules.length).toBeGreaterThan(0)
+    for (const [, , body] of rules) {
+      const shadows = [...body.matchAll(/box-shadow\s*:\s*([^;]+)/g)].map(([, value]) => value.trim())
+      for (const shadow of shadows) expect(shadow).toBe("none")
+    }
   })
 })
