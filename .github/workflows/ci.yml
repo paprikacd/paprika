@@ -59,7 +59,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Run race tests
@@ -90,7 +90,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Verify linter configuration
@@ -200,7 +200,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Set up Node.js
@@ -330,7 +330,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install GoReleaser
@@ -428,7 +428,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Set up Node.js
@@ -572,7 +572,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: true
 
       - name: Set up Node.js
@@ -660,7 +660,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.27.4'
           cache: true
 
       - name: Set up Helm

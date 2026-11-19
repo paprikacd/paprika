@@ -2,7 +2,7 @@ module github.com/benebsworth/paprika
 
 go 1.26.0
 
-toolchain go1.26.4
+toolchain go1.27.4
 
 require (
 	connectrpc.com/connect v1.20.0
