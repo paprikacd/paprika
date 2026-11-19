@@ -48,7 +48,7 @@ const (
 // lintRules is the registry, in report order. A new rule is added to the
 // file for its family and to this list; the drift test then requires its summary
 // in the composition guidance.
-var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules)
+var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules, tableLintRules)
 
 // lintDocument is the part of a schema-valid document the rules read. It is
 // decoded once per call, so every rule sees the same snapshot and the cost stays
@@ -82,6 +82,10 @@ type lintWidget struct {
 	variables []lintVariableRef
 	// colorFields lists each authored hex that carries no status or role.
 	colorFields []colorField
+	// thresholds counts the widget's own options.thresholds bands.
+	thresholds int
+	// cellStyles are the record-table column styles, decoded from config.
+	cellStyles []wireCellStyle
 }
 
 type lintVariableRef struct {
@@ -175,10 +179,33 @@ type wireMark struct {
 // wireWidgetConfig holds the plugin config members that carry colours: series colour rules and the
 // value mappings of record-table status badges.
 type wireWidgetConfig struct {
-	SeriesColors []wireMark `json:"seriesColors"`
-	CellStyles   []struct {
-		Mappings []wireMapping `json:"mappings"`
-	} `json:"cellStyles"`
+	SeriesColors []wireMark        `json:"seriesColors"`
+	CellStyles   []wireStyleColors `json:"cellStyles"`
+}
+
+// wireStyleColors holds the colour members of one record-table column style: status badge mappings and
+// the column's own threshold bands.
+type wireStyleColors struct {
+	Mappings   []wireMapping   `json:"mappings"`
+	Thresholds []wireThreshold `json:"thresholds"`
+}
+
+// wireTableConfig holds the record-table column styles the table rule compares. It is decoded on its own,
+// so a malformed member here never hides the colour rules, which read wireWidgetConfig.
+type wireTableConfig struct {
+	CellStyles []wireCellStyle `json:"cellStyles"`
+}
+
+// wireCellStyle is one record-table column style. Min and Max are pointers so a missing bound is distinct
+// from zero; the schema check has already refused a bar without bounds, so lint reads them leniently.
+type wireCellStyle struct {
+	Column     string          `json:"column"`
+	Display    string          `json:"display"`
+	Unit       string          `json:"unit"`
+	Min        *float64        `json:"min"`
+	Max        *float64        `json:"max"`
+	Mappings   []wireMapping   `json:"mappings"`
+	Thresholds []wireThreshold `json:"thresholds"`
 }
 
 // wireMapping is one status-badge mapping. A mapping that names a status keeps its colour as a hue
@@ -215,6 +242,7 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 			lw.compares = widget.Options.Compare != nil
 			lw.xAxisLabel = widget.Options.XAxisLabel
 			lw.yAxisLabel = widget.Options.YAxisLabel
+			lw.thresholds = len(widget.Options.Thresholds)
 		}
 		lw.variables = append(lw.variables, variableRefs(base+"/queryRef", widget.QueryRef)...)
 		for k, binding := range widget.SelectionBindings {
@@ -227,6 +255,7 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 			lw.variables = append(lw.variables, variableRefs(base+"/options/tooltipView/source/ref", widget.Options.TooltipView.Source.Ref)...)
 		}
 		lw.colorFields = colorFieldsOf(base, widget)
+		lw.cellStyles = tableCellStylesOf(widget.Config)
 		doc.widgets = append(doc.widgets, lw)
 	}
 	return doc, true
@@ -250,6 +279,16 @@ func colorFieldsOf(base string, widget *wireWidget) []colorField {
 		fields = append(fields, mappingColorFields(base, config.CellStyles)...)
 	}
 	return fields
+}
+
+// tableCellStylesOf reads a record-table's column styles from its config. A config that does not decode
+// has no styles to compare, as an unreadable colour config has no colours to check.
+func tableCellStylesOf(config json.RawMessage) []wireCellStyle {
+	var table wireTableConfig
+	if len(config) == 0 || json.Unmarshal(config, &table) != nil {
+		return nil
+	}
+	return table.CellStyles
 }
 
 // optionColorFields lists the bare colours in a widget's options.
@@ -284,14 +323,18 @@ func lineAndSeriesColorFields(base string, option *wireWidgetOption) []colorFiel
 }
 
 // mappingColorFields lists the status-badge mappings that carry a colour but no status.
-func mappingColorFields(base string, styles []struct {
-	Mappings []wireMapping `json:"mappings"`
-}) []colorField {
+func mappingColorFields(base string, styles []wireStyleColors) []colorField {
 	var fields []colorField
 	for k, style := range styles {
 		for m, mapping := range style.Mappings {
 			if mapping.Status == "" && mapping.Color != "" {
 				fields = append(fields, colorField{pointer: base + "/config/cellStyles/" + strconv.Itoa(k) + "/mappings/" + strconv.Itoa(m) + "/color", what: "status badge colour", hex: mapping.Color})
+			}
+		}
+		// A column's own bands colour cells exactly as the widget's thresholds do, so they get the same check.
+		for t, threshold := range style.Thresholds {
+			if threshold.Status == "" && threshold.Color != "" {
+				fields = append(fields, colorField{pointer: base + "/config/cellStyles/" + strconv.Itoa(k) + "/thresholds/" + strconv.Itoa(t) + "/color", what: "column threshold colour", hex: threshold.Color})
 			}
 		}
 	}

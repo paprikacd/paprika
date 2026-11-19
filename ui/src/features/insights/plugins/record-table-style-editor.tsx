@@ -7,6 +7,8 @@ import { GammaSwitch } from "../gamma/switch"
 import { useInsightsTheme } from "../insights-theme"
 import { statusLevels, type StatusLevel, type StatusMark } from "../status"
 import { StatusMarkFields } from "../status-mark-fields"
+import { ThresholdListEditor } from "../threshold-list-editor"
+import type { Threshold } from "../schema"
 import editorStyles from "../editor.module.css"
 import styles from "./record-table-style-editor.module.css"
 
@@ -23,6 +25,16 @@ function withMark(mapping: Record<string, unknown>, mark: StatusMark): Record<st
   if (mark.status !== undefined) next.status = mark.status
   if (mark.color !== undefined) next.color = mark.color
   return next
+}
+
+/** A band the threshold list can edit: a plain object with a numeric value. Anything else is left in the JSON. */
+function isEditableBand(band: unknown) {
+  return !!band && typeof band === "object" && !Array.isArray(band) && typeof (band as { value?: unknown }).value === "number"
+}
+
+/** Colour cells read a band set; a sparkline does so only when it names a threshold column. */
+function usesOwnThresholds(entry: Record<string, unknown>) {
+  return ["bar", "bar-segments", "color-text", "color-background"].includes(entry.display as string) || entry.display === "sparkline" && typeof entry.thresholdColumn === "string"
 }
 
 /** Guided column rules edit the same JSON draft as the advanced editor. */
@@ -45,7 +57,7 @@ export function RecordTableStyleEditor({ config, onChange }: {
   const updateTime = (patch: Record<string, unknown>) => onChange({ ...config, timeSelection: { ...time, ...patch } })
   return <section className={editorStyles.stack} aria-label="Column presentation">
     <h3>Column presentation</h3>
-    <p className={editorStyles.hint}>Use gauges or threshold colors for numbers, status badges for text, or a sparkline from a JSON history string. Names must match query result columns. Set numeric colors under Value thresholds in Style.</p>
+    <p className={editorStyles.hint}>Use gauges or threshold colors for numbers, status badges for text, or a sparkline from a JSON history string. Names must match query result columns. Set numeric colors under Value thresholds in Style, or give one column its own bands.</p>
     {!editable && <p role="status" className={editorStyles.hint}>Correct cellStyles in the configuration JSON to edit column presentation.</p>}
     {entries.map((entry, index) => <fieldset key={index} className={styles.rule}>
       <legend>Column style {index + 1}</legend>
@@ -65,6 +77,7 @@ export function RecordTableStyleEditor({ config, onChange }: {
             if (display !== "status-badge") delete next.mappings
             if (display !== "sparkline") delete next.thresholdColumn
             if (display === "status-badge") delete next.unit
+            if (!usesOwnThresholds(next)) delete next.thresholds
             update(entries.map((current, i) => i === index ? next : current))
           }} />
       </label>
@@ -114,11 +127,22 @@ export function RecordTableStyleEditor({ config, onChange }: {
         </label>
         <label className={editorStyles.field}>Color from numeric column (optional)
           <GammaInput aria-label={`Column ${index + 1} threshold column`} value={typeof entry.thresholdColumn === "string" ? entry.thresholdColumn : ""} maxLength={128} placeholder="For example: risk"
-            onChange={event => updateEntry(index, { thresholdColumn: event.target.value || undefined })} />
+            onChange={event => {
+              const thresholdColumn = event.target.value || undefined
+              updateEntry(index, thresholdColumn ? { thresholdColumn } : { thresholdColumn, thresholds: undefined })
+            }} />
         </label>
-        <p className={editorStyles.hint}>Color the whole history using this row’s numeric value and the widget’s Value thresholds. Missing values or thresholds use a neutral color.</p>
+        <p className={editorStyles.hint}>Color the whole history using this row’s numeric value and this column’s own thresholds, or else the widget’s Value thresholds. Missing values or thresholds use a neutral color.</p>
         <p className={editorStyles.hint}>Use a string column containing a JSON array of up to 240 objects with an ordered ISO timestamp and numeric or null value. Gaps remain gaps; this does not run another query.</p>
       </>}
+      {usesOwnThresholds(entry) && <div className={editorStyles.stack}>
+        <GammaSwitch label="Own thresholds for this column" description="Overrides Value thresholds for this column only. Off uses the widget's Value thresholds."
+          checked={Array.isArray(entry.thresholds)}
+          onChange={own => updateEntry(index, { thresholds: own ? [{ value: 0, status: "ok" }] : undefined })} />
+        {Array.isArray(entry.thresholds) && entry.thresholds.every(isEditableBand) && <ThresholdListEditor prefix={`Column ${index + 1} threshold`} addLabel={`Add column ${index + 1} threshold`}
+          thresholds={entry.thresholds as Threshold[]} onChange={thresholds => updateEntry(index, { thresholds: thresholds.length ? thresholds : undefined })} />}
+        {Array.isArray(entry.thresholds) && !entry.thresholds.every(isEditableBand) && <p role="status" className={editorStyles.hint}>Correct this column&apos;s thresholds in the configuration JSON to edit its bands.</p>}
+      </div>}
       <GammaButton size="sm" variant="quiet" onClick={() => update(entries.filter((_, i) => i !== index))} aria-label={`Remove column style ${index + 1}`}>Remove style</GammaButton>
     </fieldset>)}
     <GammaButton size="sm" disabled={!editable || entries.length >= 16} onClick={() => update([...entries, { column: "", display: "bar", min: 0, max: 100 }])}>Add column style</GammaButton>

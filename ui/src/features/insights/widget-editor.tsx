@@ -23,7 +23,6 @@ import {
   supportsAnnotationSource,
   type Dashboard,
   type Provider,
-  type Threshold,
   type Widget,
   type QueryResult,
   type WidgetOptions,
@@ -49,8 +48,8 @@ import {
   widgetTextColor,
 } from "./appearance";
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
-import { thresholdHex, type StatusMark, type StatusTheme } from "./status";
-import { StatusMarkFields } from "./status-mark-fields";
+import { thresholdHex, type StatusTheme } from "./status";
+import { ThresholdListEditor } from "./threshold-list-editor";
 import { useInsightsTheme } from "./insights-theme";
 import { seriesHex, type SeriesTheme } from "./series-palette";
 import { widgetColorSeriesIndex, widgetSeriesColors, type SeriesColorRule } from "./series-colors";
@@ -58,17 +57,6 @@ import { useCanvasDensity } from "./canvas-density";
 
 const THEME_BLOCKS: readonly StatusTheme[] = ["light", "dark", "compact"];
 
-/** New bands start with the healthy band, then escalate: ok, warning, then critical for every later band. */
-const NEW_BAND_STATUSES = ["ok", "warning", "critical"] as const;
-
-/** Replaces a band's status and hue, keeping its value and label and omitting absent keys. */
-function withStatusMark(threshold: Threshold, mark: StatusMark): Threshold {
-  const next: Threshold = { value: threshold.value };
-  if (mark.status !== undefined) next.status = mark.status;
-  if (mark.color !== undefined) next.color = mark.color;
-  if (threshold.label !== undefined) next.label = threshold.label;
-  return next;
-}
 import { TooltipEditor } from "./tooltip-editor";
 import { useSourceStatus } from "./source-status";
 import { validateTooltipQueryTemplate } from "./tooltip-context";
@@ -728,94 +716,10 @@ function StyleEditor({
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
               " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
-          {(options.thresholds ?? []).map((threshold, index) => (
-            <div className={styles.threshold} key={index}>
-              <label className={styles.field}>
-                At least
-                <GammaInput
-                  aria-label={`Threshold ${index + 1} value`}
-                  type="number"
-                  step="any"
-                  value={threshold.value}
-                  onChange={(event) =>
-                    update({
-                      thresholds: options.thresholds!.map((item, i) =>
-                        i === index
-                          ? { ...item, value: Number(event.target.value) }
-                          : item,
-                      ),
-                    })
-                  }
-                />
-              </label>
-              <GammaButton
-                type="button"
-                variant="quiet"
-                size="sm"
-                iconOnly
-                aria-label={`Remove threshold ${index + 1}`}
-                onClick={() =>
-                  update({
-                    thresholds: options.thresholds!.filter(
-                      (_, i) => i !== index,
-                    ),
-                  })
-                }
-              >
-                <Trash2 size={14} />
-              </GammaButton>
-              <StatusMarkFields
-                name={`Threshold ${index + 1}`}
-                mark={threshold}
-                theme={resolvedTheme}
-                onChange={(mark) =>
-                  update({
-                    thresholds: options.thresholds!.map((item, i) =>
-                      i === index ? withStatusMark(item, mark) : item,
-                    ),
-                  })
-                }
-              />
-              <label className={styles.thresholdLabel}>
-                Label
-                <GammaInput
-                  aria-label={`Threshold ${index + 1} label`}
-                  value={threshold.label ?? ""}
-                  maxLength={80}
-                  placeholder="e.g. Healthy"
-                  onChange={(event) =>
-                    update({
-                      thresholds: options.thresholds!.map((item, i) =>
-                        i === index
-                          ? { ...item, label: event.target.value || undefined }
-                          : item,
-                      ),
-                    })
-                  }
-                />
-              </label>
-            </div>
-          ))}
-          <GammaButton
-            type="button"
-            variant="secondary"
-            disabled={(options.thresholds?.length ?? 0) >= 12}
-            onClick={() =>
-              update({
-                thresholds: [
-                  ...(options.thresholds ?? []),
-                  {
-                    value: options.thresholds?.length
-                      ? options.thresholds[options.thresholds.length - 1].value + 1
-                      : 0,
-                    status: NEW_BAND_STATUSES[Math.min(options.thresholds?.length ?? 0, NEW_BAND_STATUSES.length - 1)],
-                  },
-                ],
-              })
-            }
-          >
-            <Plus size={13} /> Add threshold
-          </GammaButton>
+          <ThresholdListEditor
+            thresholds={options.thresholds ?? []}
+            onChange={(thresholds) => update({ thresholds })}
+          />
         </fieldset>
       )}
       <GammaButton

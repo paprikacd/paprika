@@ -7,7 +7,7 @@ import { statusHex, statusLevels, statusToken, thresholdInk, thresholdPaint } fr
 import { StatusChip } from "../status-chip"
 import { contrastRatio, readableTextColor } from "../appearance"
 import { seriesHex } from "../series-palette"
-import type { RecordFrame, Threshold } from "../schema"
+import { thresholdSchema, type RecordFrame, type Threshold } from "../schema"
 import { StatSparkline, MAX_SPARKLINE_POINTS } from "../stat-sparkline"
 import styles from "./records.module.css"
 
@@ -28,6 +28,8 @@ const cellStyle = z.strictObject({
   max: z.number().finite().optional(),
   unit: z.string().max(24).optional(),
   segments: z.number().int().min(4).max(60).optional(),
+  /** This column's own bands. They replace the widget's Value thresholds for this column only. */
+  thresholds: z.array(thresholdSchema).min(1).max(12).optional(),
 }).superRefine((style, context) => {
   const bar = style.display === "bar" || style.display === "bar-segments"
   if (bar &&
@@ -41,6 +43,12 @@ const cellStyle = z.strictObject({
     context.addIssue({ code: "custom", message: "Only gauges use a bar color mode" })
   if (style.display !== "sparkline" && style.thresholdColumn !== undefined)
     context.addIssue({ code: "custom", message: "Only history sparklines use a threshold column" })
+  if (style.thresholds !== undefined && (style.display === "status-badge" || style.display === "sparkline" && style.thresholdColumn === undefined))
+    context.addIssue({ code: "custom", message: "Only colour cells and history sparklines with a threshold column use their own thresholds" })
+  style.thresholds?.forEach((threshold, index, thresholds) => {
+    if (index && threshold.value <= thresholds[index - 1].value)
+      context.addIssue({ code: "custom", path: ["thresholds", index, "value"], message: "Threshold values must be strictly increasing" })
+  })
   if (style.display !== "status-badge" && style.mappings !== undefined)
     context.addIssue({ code: "custom", message: "Only status badges use value mappings" })
   if (style.display === "status-badge" && style.unit !== undefined)
@@ -57,6 +65,11 @@ export const tableCellStylesSchema = z.array(cellStyle).max(16).superRefine((ent
   })
 })
 export type TableCellStyle = z.infer<typeof cellStyle>
+
+/** A column's own thresholds replace the widget's set for that column only; a column without its own set keeps the widget's. */
+export function resolveColumnThresholds(style: Pick<TableCellStyle, "thresholds"> | undefined, widgetThresholds: readonly Threshold[] | undefined) {
+  return style?.thresholds ?? widgetThresholds
+}
 
 // Match the scoped Gamma panel and series tokens (guarded by the palette test). Series slot 3 is the default record colour.
 const tableThemes = {
