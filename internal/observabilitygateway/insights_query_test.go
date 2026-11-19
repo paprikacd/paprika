@@ -128,8 +128,17 @@ func TestDashboardQueryCompactTextAndSchemaDescribeStatVisualThreshold(t *testin
 	resolved, err := schema.Resolve(nil)
 	require.NoError(t, err)
 	require.NoError(t, resolved.Validate(fixture))
+	// A matched band names a status or a colour, and a stat or series band also has a boundary. Only a ranked
+	// record table's worst row band omits the boundary, because its row was banded by mapping or by column thresholds.
 	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched", "color": "#ff0000"}
-	require.Error(t, resolved.Validate(fixture), "a matched band requires its boundary")
+	require.Error(t, resolved.Validate(fixture), "a matched stat band without a ranking requires its boundary")
+	requireDashboardTextMap(t, widgets[0])["ranking"] = map[string]any{"basis": "author-declared row statuses over loaded rows", "evaluated": 2}
+	require.NoError(t, resolved.Validate(fixture), "a ranked table's matched band may omit its boundary")
+	delete(requireDashboardTextMap(t, widgets[0]), "ranking")
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched", "boundary": 0, "color": "#ff0000"}
+	require.NoError(t, resolved.Validate(fixture))
+	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "matched"}
+	require.Error(t, resolved.Validate(fixture), "a matched band names a status or a colour")
 	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "unknown", "boundary": 0}
 	require.Error(t, resolved.Validate(fixture), "an unknown band cannot claim a boundary")
 }
@@ -856,4 +865,24 @@ func TestDashboardTextNamesProviderTruncationReason(t *testing.T) {
 			t.Fatalf("a reason-free truncation is not known to be partial: text %q", text)
 		}
 	}
+}
+
+// A ranked table's worst-row band has no boundary, so its synopsis line names the status instead of dropping it.
+func TestRankedBandSynopsisNamesItsStatusWithoutABoundary(t *testing.T) {
+	var widget dashboardTextWidget
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"hosts","threshold":{"state":"matched","status":"critical"}}`), &widget))
+	var out strings.Builder
+	appendDashboardThresholdsText(&out, []dashboardTextWidget{widget})
+	require.Contains(t, out.String(), `widget "hosts": configured visual band="matched"; status="critical"`)
+	require.NotContains(t, out.String(), "boundary=")
+}
+
+// A ranked row's numeric cell in the synopsis follows the widget's decimals, so float noise is never printed.
+func TestRankedSynopsisFormatsNumericTopCellsAtTheWidgetDecimals(t *testing.T) {
+	var widget dashboardTextWidget
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"hosts","title":"Hosts","decimals":1,"ranking":{"basis":"b","evaluated":1,"counts":{"critical":1,"warning":0},"rows":[[0.30000000000000004,"x"]],"statuses":["critical"]}}`), &widget))
+	var out strings.Builder
+	appendDashboardRankingText(&out, []dashboardTextWidget{widget})
+	require.Contains(t, out.String(), "; top: 0.3")
+	require.NotContains(t, out.String(), "0.30000000000000004")
 }

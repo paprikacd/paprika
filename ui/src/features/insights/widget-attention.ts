@@ -2,6 +2,9 @@ import { createContext, useContext } from "react";
 import { latestPoint, sampleCadence, type Point } from "./chart-data";
 import { breachSummary, timeSeriesBreaches, type BreachLevel, type BreachLevelSummary } from "./breaches";
 import { thresholdForValue } from "./chart-renderer-shared";
+import { STATUS_RANK, type StatusLevel } from "./status";
+import { ROW_RANK, rankRows, rankSchema, rankTableError } from "./plugins/record-ranking";
+import { tableCellStylesSchema } from "./plugins/record-table-cells";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { validTimestamp } from "./widget-context";
 
@@ -94,8 +97,6 @@ const STATUS_GRID_DEFAULT_MAX_SERIES = 512;
 /** How many series a time series evaluates for breaches (breaches.go maxBreachSeries). */
 const BREACH_SERIES_CAP = 12;
 
-const STATUS_RANK: Record<string, number> = { critical: 4, warning: 3, unknown: 2, info: 1, ok: 0 };
-
 type AttentionWidget = Pick<Widget, "type" | "options"> & { pluginId?: string; config?: unknown };
 
 function optionalNumber(value: unknown, fallback: number): number {
@@ -146,7 +147,7 @@ function worstSeriesStatus(series: readonly { points: readonly Point[] }[], thre
     if (!latest || typeof latest.value !== "number" || !Number.isFinite(latest.value)) continue;
     const band = thresholdForValue(latest.value, thresholds);
     const status = band?.status ?? "";
-    const rank = STATUS_RANK[status] ?? -1;
+    const rank = (STATUS_RANK as Readonly<Record<string, number | undefined>>)[status] ?? -1;
     if (!found || rank > worstRank) {
       worst = status;
       worstRank = rank;
@@ -194,6 +195,25 @@ export interface WidgetAttention {
   partial: boolean;
 }
 
+/**
+ * A ranked record table's band: the worst declared status over its loaded rows, unknown when no row declares one, and
+ * null when the rank cannot be drawn or the rows did not load. Undefined when the table declares no rank. The Go side
+ * (applyDashboardRecordRanking) reads the same rows the same way.
+ */
+function rankedTableThreshold(widget: AttentionWidget, result: QueryResult): AttentionFacts["threshold"] | undefined {
+  const config = (widget.config ?? {}) as { rank?: unknown; cellStyles?: unknown };
+  if (config.rank === undefined) return undefined;
+  const rank = rankSchema.safeParse(config.rank);
+  const styles = tableCellStylesSchema.safeParse(config.cellStyles ?? []);
+  const frame = result.records;
+  if (!rank.success || !styles.success || !frame) return null;
+  if (rankTableError(frame, rank.data, styles.data, widget.options?.thresholds)) return null;
+  const ranked = rankRows(frame, frame.rows, rank.data, styles.data, widget.options?.thresholds);
+  const declared = ranked.statuses.map(status => status.level).filter((level): level is StatusLevel => ROW_RANK[level] >= 0);
+  if (!declared.length) return { state: "unknown", status: "" };
+  return { state: "matched", status: declared.reduce((worst, level) => (ROW_RANK[level] > ROW_RANK[worst] ? level : worst)) };
+}
+
 /** One widget's facts from its source outcome, as the Go side reads them from the executed signal. */
 export function extractAttentionFacts(widget: AttentionWidget, source: AttentionSource): { facts: AttentionFacts; band?: Threshold; ageSeconds?: number } {
   const thresholds = widget.options?.thresholds;
@@ -205,6 +225,11 @@ export function extractAttentionFacts(widget: AttentionWidget, source: Attention
   if (!result) return { facts: { failure: "none", signal: "pending", ...notJudged } };
   const truncated = result.truncated === true || result.records?.truncated === true;
   const signal: AttentionSignal = hasUsableData(result) ? "ok" : truncated ? "partial" : "empty";
+
+  if (widget.type === "plugin" && widget.pluginId === "record-table") {
+    const ranked = rankedTableThreshold(widget, result);
+    if (ranked !== undefined) return { facts: { failure: "none", signal, threshold: ranked, breaches: null, freshness: "no_threshold" } };
+  }
 
   if (widget.type === "stat") {
     const displayed = displayedSample(result);

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
 // statusBandedMatrix is a three-series matrix whose values cycle through ok, warning and
@@ -109,6 +111,8 @@ func breachDetailDashboard() *DashboardQueryResult {
 			Freshness:  &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: state, LastTimestamp: &last, AgeSeconds: &age},
 		})
 	}
+	// The first widget also carries a ranking's previewed rows, so the rankingRows step has detail to drop.
+	result.Widgets[0].Ranking = &DashboardRecordRanking{Basis: recordRankBasis, Evaluated: 2, Counts: map[string]int{"critical": 1}, Columns: []dataframe.Column{{Key: "host", Type: "string"}}, Rows: [][]any{{strings.Repeat("h", 120)}}, Statuses: []string{"critical"}}
 	return result
 }
 
@@ -190,6 +194,10 @@ func TestDashboardOmittedListsExactlyWhatWasDropped(t *testing.T) {
 				require.NotEmpty(t, widget.Breaches.Summary, "summaries are kept until the breach object itself is dropped")
 			}
 			require.Equal(t, dropped["bandSeries"], widget.BandSeries == nil, "the bandSeries object on %s", widget.ID)
+			if widget.Ranking != nil {
+				require.Equal(t, dropped["rankingRows"], len(widget.Ranking.Rows) == 0, "ranked rows on %s", widget.ID)
+				require.Equal(t, 1, widget.Ranking.Counts["critical"], "ranking counts are kept on %s", widget.ID)
+			}
 			require.Equal(t, dropped["sample"], widget.Freshness == nil, "time-series freshness on %s", widget.ID)
 			switch {
 			case !dropped["sample"]:
@@ -344,7 +352,7 @@ func withStatWidgets() *DashboardQueryResult {
 // reads each stat's stale judgement. Only time-series freshness, which was added after the first
 // contract, is dropped.
 func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
-	const steps = 4 // The sample step runs, so the time-series freshness and sample detail are dropped.
+	const steps = 5 // The sample step runs, so the time-series freshness and sample detail are dropped.
 	result := withStatWidgets()
 	result.Dashboard.Title = fillerForStepsOf(t, withStatWidgets, steps)
 	encoded, err := encodeDashboardQueryResult(result)
@@ -379,7 +387,7 @@ func dashboardOmissionStepNamesThrough(n int) []string {
 	return names
 }
 
-// Step 4 drops a stale sample stub entirely when the widget's attention already reads stale, because
+// The sample step drops a stale sample stub entirely when the widget's attention already reads stale, because
 // attention says the same. A stale sample on a widget with a more severe reason keeps its state.
 func TestDashboardOmissionDropsStaleSampleStubWhenAttentionReadsStale(t *testing.T) {
 	seconds, age, last := 120.0, 600.0, 1792975800000.0
@@ -392,7 +400,7 @@ func TestDashboardOmissionDropsStaleSampleStubWhenAttentionReadsStale(t *testing
 		{ID: "critical", Type: "timeseries", Attention: "critical", Sample: stale()},
 		{ID: "stat-stale", Type: "stat", Attention: "stale", Sample: stale(), Freshness: &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "stale", LastTimestamp: &last, AgeSeconds: &age}},
 	}}
-	require.True(t, dashboardOmissionSteps[3].drop(result))
+	require.True(t, dashboardOmissionSteps[4].drop(result))
 	require.Nil(t, result.Widgets[0].Sample, "a stale stub on a widget whose attention reads stale is dropped")
 	require.Nil(t, result.Widgets[0].Freshness)
 	require.NotNil(t, result.Widgets[1].Sample, "a stale stub under a more severe attention is kept")
@@ -434,7 +442,7 @@ func kubeStateNineLabelMatrix(t *testing.T, value string, samples, padding int) 
 
 // A 48-widget colour-only time series, each judged stale by the cadence fallback because its samples end
 // ten minutes before the range end, must return 200 within the cap. The namespace label carries 30 extra
-// characters, so the fixture encodes to 136,167 bytes before any step. Only step 4 (sample) runs, and it
+// characters, so the fixture encodes to 136,167 bytes before any step. Only step 5 (sample) runs, and it
 // fits at 130,620 bytes, which drops the stale stubs whose attention already reads stale. The padding
 // sizes this fixture; it is not a claim about real namespaces. It is a different shape from review
 // probe (b), which is pinned to 200 within the cap in dashboard_omission_probe_test.go.

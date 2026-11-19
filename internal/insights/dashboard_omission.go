@@ -16,10 +16,11 @@ type dashboardOmissionStep struct {
 // dashboardOmissionSteps is the fixed order in which optional detail is dropped when the encoded
 // result exceeds DashboardQueryResponseBytes. The ladder stops as soon as the result fits. Attention
 // counts, band thresholds and signals are never dropped. Breach summaries and latest levels go only
-// with a widget's breach object, in step 2. The series behind a band go with its whole bandSeries
-// object, in step 3. A result whose never-dropped facts alone exceed the cap is refused.
+// with a widget's breach object, in step 3. The series behind a band go with its whole bandSeries
+// object, in step 4. A result whose never-dropped facts alone exceed the cap is refused.
 var dashboardOmissionSteps = []dashboardOmissionStep{
 	{name: "breachIntervals", drop: dropDashboardBreachIntervals},
+	{name: "rankingRows", drop: dropDashboardRankingRows},
 	{name: "breaches", drop: dropDashboardWidgetBreaches},
 	{name: "bandSeries", drop: dropDashboardBandSeriesDetail},
 	{name: "sample", drop: dropDashboardSampleDetail},
@@ -46,6 +47,21 @@ func dropDashboardBreachIntervals(result *DashboardQueryResult) bool {
 		}
 		breaches.IntervalsOmitted += len(breaches.Intervals)
 		breaches.Intervals = []DashboardBreachInterval{}
+		dropped = true
+	}
+	return dropped
+}
+
+// dropDashboardRankingRows removes each ranked record table's previewed rows, with their columns and
+// statuses. Its counts, hidden rows, basis and reason stay, so attention and the limit are still exact.
+func dropDashboardRankingRows(result *DashboardQueryResult) bool {
+	dropped := false
+	for index := range result.Widgets {
+		ranking := result.Widgets[index].Ranking
+		if ranking == nil || len(ranking.Rows) == 0 {
+			continue
+		}
+		ranking.Rows, ranking.Statuses, ranking.Columns = nil, nil, nil
 		dropped = true
 	}
 	return dropped
@@ -109,7 +125,7 @@ func dropTimeSeriesFreshness(widget *DashboardQueryWidget) bool {
 	return true
 }
 
-// trimDashboardSample applies step 4 to one widget's sample: it removes a sample that is not stale or
+// trimDashboardSample applies step 5 to one widget's sample: it removes a sample that is not stale or
 // whose widget attention already reads stale. Any other stale sample keeps its state and loses its
 // basis, staleAfterSeconds, lastTimestamp and ageSeconds.
 func trimDashboardSample(widget *DashboardQueryWidget) bool {

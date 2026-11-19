@@ -169,4 +169,41 @@ describe("records", () => {
     const records = { columns: [{ key: "a", type: "string" as const }], rows: [["x"]] };
     expect(widgetAttention({ type: "plugin", pluginId: "record-table" } as unknown as Pick<Widget, "type" | "options">, { result: { series: [], records } }).state).toBe("ok");
   });
+
+  // A ranked table counts its worst declared row, as the Go side does, so it reaches the attention strip too.
+  describe("ranked tables", () => {
+    const records = {
+      columns: [{ key: "host", type: "string" as const }, { key: "health", type: "string" as const }, { key: "cpu", type: "number" as const }],
+      rows: [["a", "Up", 10], ["b", "Down", 5], ["c", "Degraded", 7]],
+    };
+    const cellStyles = [{ column: "health", display: "status-badge", mappings: [{ value: "Down", status: "critical" }, { value: "Degraded", status: "warning" }, { value: "Up", status: "ok" }] }];
+    const ranked = (config: Record<string, unknown>) => ({ type: "plugin", pluginId: "record-table", config } as unknown as Pick<Widget, "type" | "options">);
+
+    it("counts a critical row as critical", () => {
+      const attention = widgetAttention(ranked({ rank: { status: "health" }, cellStyles }), { result: { series: [], records } });
+      expect(attention.state).toBe("critical");
+      expect(attention.facts.threshold).toEqual({ state: "matched", status: "critical" });
+    });
+
+    it("counts the worst declared row, with a warning when no row is critical", () => {
+      const warningOnly = { ...records, rows: [["a", "Up", 10], ["c", "Degraded", 7]] };
+      const attention = widgetAttention(ranked({ rank: { status: "health" }, cellStyles }), { result: { series: [], records: warningOnly } });
+      expect(attention.state).toBe("warning");
+    });
+
+    it("is unknown when no row declares a status, and a table without rank has no band", () => {
+      // No cpu value is loaded, so no row declares a status; the thresholds name one but there is nothing to match.
+      const unloaded = { ...records, rows: [["a", "Up", null], ["b", "Down", null]] };
+      const numericThresholds = [{ column: "cpu", display: "color-text", thresholds: [{ value: 90, status: "critical" }] }];
+      expect(widgetAttention(ranked({ rank: { status: "cpu" }, cellStyles: numericThresholds }), { result: { series: [], records: unloaded } }).facts.threshold).toEqual({ state: "unknown", status: "" });
+      expect(widgetAttention(ranked({ cellStyles }), { result: { series: [], records } }).facts.threshold).toBeNull();
+    });
+
+    it("sets no band when the rank cannot be drawn or the rows did not load", () => {
+      const invalid = widgetAttention(ranked({ rank: { status: "host" } }), { result: { series: [], records } });
+      expect(invalid.facts.threshold).toBeNull();
+      const failed = widgetAttention(ranked({ rank: { status: "health" }, cellStyles }), { failure: "provider", result: undefined });
+      expect(failed.facts.threshold).toBeNull();
+    });
+  });
 });

@@ -83,6 +83,58 @@ func dashboardWidgetBandOutput(output *DashboardQueryWidget, widget *dashboardRe
 	}
 }
 
+// dashboardWidgetRankOutput prepares a record-table's ranking. Only a table that declares rank is ranked, so
+// existing tables keep their attention counts. The band is set when the rows are read.
+func dashboardWidgetRankOutput(output *DashboardQueryWidget, widget *dashboardReadWidget) {
+	if widget.Type != "plugin" || widget.PluginID != "record-table" {
+		return
+	}
+	table := parseDashboardRecordTable(widget.Config)
+	if table.Rank == nil && table.RankErr == "" {
+		return
+	}
+	ranked := &dashboardRankedTable{styles: table.CellStyles, thresholds: widget.Options.Thresholds, invalid: table.RankErr, columns: table.Columns}
+	if table.Rank != nil {
+		ranked.rank = *table.Rank
+	}
+	output.rankTable = ranked
+	output.Threshold = &DashboardStatThreshold{State: "unknown"}
+	output.BandSeries = &DashboardBandSeries{}
+}
+
+// applyDashboardRecordRanking ranks a ranked record-table's loaded rows and sets its band to the worst
+// declared row. An invalid rank, or a failed read, sets no band.
+func applyDashboardRecordRanking(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult) {
+	if widget.SignalID != signal.ID || widget.rankTable == nil {
+		return
+	}
+	table := widget.rankTable
+	if signal.Error != nil || raw == nil || raw.Records == nil {
+		widget.Ranking = &DashboardRecordRanking{Basis: recordRankBasis, Status: table.rank.Status, Value: table.rank.Value, Reason: "no loaded rows to rank"}
+		widget.Threshold, widget.BandSeries = nil, nil
+		return
+	}
+	ranking, worst, level := rankDashboardRecords(raw.Records, table)
+	widget.Ranking = &ranking
+	if ranking.Counts == nil {
+		widget.Threshold, widget.BandSeries = nil, nil
+		return
+	}
+	if level == "" {
+		// No row declares a status, so the band stays unknown; its evaluated count still reports the rows read.
+		widget.BandSeries = &DashboardBandSeries{Evaluated: ranking.Evaluated}
+		return
+	}
+	widget.Threshold = &DashboardStatThreshold{State: "matched", Status: level}
+	name := ""
+	if len(raw.Records.Rows[worst]) > 0 {
+		if text, isText := raw.Records.Rows[worst][0].(string); isText {
+			name, _ = dashboardText(text, 160)
+		}
+	}
+	widget.BandSeries = &DashboardBandSeries{Evaluated: ranking.Evaluated, Series: &worst, Name: name}
+}
+
 // applyDashboardSignal applies one executed signal to a widget bound to it. Stat bands read
 // the displayed summary; the other evaluations need the drawn series, so they read the raw
 // result, which is nil when the provider did not answer.
@@ -90,9 +142,12 @@ func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal,
 	if widget.SignalID != signal.ID {
 		return
 	}
-	if widget.Type == "stat" {
+	switch {
+	case widget.rankTable != nil:
+		applyDashboardRecordRanking(widget, signal, raw)
+	case widget.Type == "stat":
 		applyDashboardThreshold(widget, signal)
-	} else {
+	default:
 		applyDashboardSeriesBand(widget, signal, raw)
 	}
 	applyDashboardFreshness(widget, signal, raw, end)

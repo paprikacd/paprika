@@ -7,6 +7,12 @@ import { readableTextColor } from "./appearance";
 export const statusLevels = ["ok", "info", "warning", "critical", "unknown"] as const;
 export type StatusLevel = (typeof statusLevels)[number];
 
+/**
+ * Severity order, higher is worse. The attention reducer (widget-attention.ts) and the record-table ranking share it, so a
+ * status ranks the same way wherever a table or a tile orders by it.
+ */
+export const STATUS_RANK: Readonly<Record<StatusLevel, number>> = { critical: 4, warning: 3, unknown: 2, info: 1, ok: 0 };
+
 /** The paint-relevant part of a threshold. A threshold must name a status, a colour or both. */
 export type StatusMark = { status?: StatusLevel; color?: string };
 

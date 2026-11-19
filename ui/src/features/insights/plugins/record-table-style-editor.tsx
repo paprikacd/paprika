@@ -53,6 +53,8 @@ export function RecordTableStyleEditor({ config, onChange }: {
     onChange(result)
   }
   const updateEntry = (index: number, patch: Record<string, unknown>) => update(entries.map((entry, i) => i === index ? { ...entry, ...patch } : entry))
+  const rank = config.rank && typeof config.rank === "object" && !Array.isArray(config.rank) ? config.rank as Record<string, unknown> : undefined
+  const updateRank = (patch: Record<string, unknown>) => onChange({ ...config, rank: { ...rank, ...patch } })
   const time = config.timeSelection && typeof config.timeSelection === "object" && !Array.isArray(config.timeSelection) ? config.timeSelection as Record<string, unknown> : undefined
   const updateTime = (patch: Record<string, unknown>) => onChange({ ...config, timeSelection: { ...time, ...patch } })
   return <section className={editorStyles.stack} aria-label="Column presentation">
@@ -146,6 +148,38 @@ export function RecordTableStyleEditor({ config, onChange }: {
       <GammaButton size="sm" variant="quiet" onClick={() => update(entries.filter((_, i) => i !== index))} aria-label={`Remove column style ${index + 1}`}>Remove style</GammaButton>
     </fieldset>)}
     <GammaButton size="sm" disabled={!editable || entries.length >= 16} onClick={() => update([...entries, { column: "", display: "bar", min: 0, max: 100 }])}>Add column style</GammaButton>
+    <fieldset className={styles.rule}><legend>Ranking</legend>
+      <GammaSwitch label="Rank rows" description="Order rows worst first by a status column, then by a value column. Each rank column names a result column."
+        checked={!!rank} onChange={enabled => {
+          const next = { ...config }
+          if (enabled) next.rank = { status: "" }
+          else delete next.rank
+          onChange(next)
+        }} />
+      {rank && <>
+        <label className={editorStyles.field}>Status column
+          <GammaInput aria-label="Rank status column" value={typeof rank.status === "string" ? rank.status : ""} maxLength={128} placeholder="For example: health"
+            onChange={event => updateRank({ status: event.target.value })} />
+        </label>
+        <p className={editorStyles.hint}>Use a status-badge column with a status mapping, or a numeric column whose thresholds name a status. Other rows keep their source order.</p>
+        <label className={editorStyles.field}>Then by value column (optional)
+          <GammaInput aria-label="Rank value column" value={typeof rank.value === "string" ? rank.value : ""} maxLength={128} placeholder="For example: cpu_percent"
+            onChange={event => updateRank({ value: event.target.value || undefined })} />
+        </label>
+        <label className={editorStyles.field}>Order
+          <GammaSelect aria-label="Rank order" value={rank.order === "ascending" ? "ascending" : "descending"}
+            options={[{ value: "descending", label: "Higher is worse" }, { value: "ascending", label: "Lower is worse" }]}
+            onValueChange={order => updateRank({ order: order === "ascending" ? "ascending" : undefined })} />
+        </label>
+        <label className={editorStyles.field}>Show top rows (optional)
+          <GammaInput aria-label="Rank limit" type="number" min={1} max={100} step={1} value={typeof rank.limit === "number" ? rank.limit : ""} placeholder="All"
+            onChange={event => updateRank({ limit: event.target.value === "" ? undefined : Number(event.target.value) })} />
+        </label>
+        <GammaSwitch label="Status rail" description="A 1 px warning or 2 px critical rail on each row's first cell."
+          checked={rank.rail !== false} onChange={rail => updateRank({ rail: rail ? undefined : false })} />
+        <p className={editorStyles.hint}>Ranking covers the loaded rows only. Rows the limit hides are counted on the caption line above the table, never drawn.</p>
+      </>}
+    </fieldset>
     <GammaSwitch label="Focus dashboard time from a row" description="Offer an explicit Focus time action using a recorded start and duration." checked={!!time} onChange={enabled => {
       const next = { ...config }
       if (enabled) next.timeSelection = { start: "", duration: "", durationUnit: "minutes", paddingSeconds: 300 }
