@@ -5,6 +5,7 @@ import {
   parseDashboardLibrary,
   serializeDashboardBundle,
   serializeDashboardLibrary,
+  providerSatisfies,
   requiredBundleProviders,
   remapBundleProviders,
   remapBundleQueryReferences,
@@ -600,5 +601,60 @@ describe("bundle import planning", () => {
       /once/,
     );
     expect(() => selectBundleDashboards(bundle, [])).toThrow(/1 and 100/);
+  });
+});
+
+describe("variable sources in portable bundles", () => {
+  const savedSource: Dashboard = {
+    ...dashboard,
+    widgets: [],
+    variables: [
+      { name: "service", defaultValue: "api", source: { type: "savedQuery", field: "service", queryRef: { id: shared.id, bindings: [{ parameter: "service", source: "constant", value: "api" }] } } },
+    ],
+  };
+  const labelSource: Dashboard = {
+    ...dashboard,
+    widgets: [],
+    variables: [{ name: "service", defaultValue: "api", source: { type: "labelValues", providerId: "prom", label: "service" } }],
+  };
+
+  it("exports a saved query that only a variable source reads, and refuses one that is missing", () => {
+    expect(buildDashboardBundle([savedSource], [shared]).savedQueries?.map((query) => query.id)).toEqual([shared.id]);
+    expect(() => buildDashboardBundle([savedSource], [])).toThrow(/unavailable/);
+  });
+
+  it("refuses a traces query as a variable source at export", () => {
+    expect(() => buildDashboardBundle([{ ...savedSource, variables: [{ name: "service", source: { type: "savedQuery", field: "service", queryRef: { id: child.id } } }] }], [child])).toThrow(/cannot supply variable values/);
+  });
+
+  it("rewrites a variable source's saved query ID with the widget references on import", () => {
+    const bundle = buildDashboardBundle([savedSource], [shared]);
+    const remapped = remapBundleQueryReferences(bundle, { [shared.id]: "availability-copy" });
+    expect(remapped.dashboards[0].variables?.[0].source).toMatchObject({ type: "savedQuery", queryRef: { id: "availability-copy" } });
+    expect(remapped.savedQueries?.[0].id).toBe("availability-copy");
+  });
+
+  it("accepts a Prometheus metrics provider or a Tempo traces provider for a label-values source", () => {
+    const prometheus: Provider = { id: "prom", name: "Prometheus", type: "prometheus", capabilities: ["metrics"] };
+    const tempo: Provider = { id: "tempo", name: "Tempo", type: "tempo", capabilities: ["traces"] };
+    const tempoMetricsOnly: Provider = { id: "tempo-metrics", name: "Tempo", type: "tempo", capabilities: ["metrics"] };
+    const prometheusTracesOnly: Provider = { id: "prom-traces", name: "Prometheus", type: "prometheus", capabilities: ["traces"] };
+    expect(providerSatisfies(prometheus, "labelValues")).toBe(true);
+    expect(providerSatisfies(tempo, "labelValues")).toBe(true);
+    expect(providerSatisfies(tempoMetricsOnly, "labelValues")).toBe(false);
+    expect(providerSatisfies(prometheusTracesOnly, "labelValues")).toBe(false);
+    expect(providerSatisfies(tempo, "traces")).toBe(true);
+  });
+
+  it("lists and remaps the provider of a label-values source, and checks the destination type", () => {
+    const bundle = buildDashboardBundle([labelSource]);
+    expect(requiredBundleProviders(bundle).get("prom")).toEqual(new Set(["labelValues"]));
+    const mapped = remapBundleProviders(bundle, { prom: "metrics-2" }, [
+      { id: "metrics-2", name: "Metrics", type: "prometheus", capabilities: ["metrics"] },
+    ]);
+    expect(mapped.dashboards[0].variables?.[0].source).toMatchObject({ type: "labelValues", providerId: "metrics-2" });
+    expect(() => remapBundleProviders(bundle, { prom: "traces-only" }, [
+      { id: "traces-only", name: "Traces", type: "prometheus", capabilities: ["traces"] },
+    ])).toThrow(/variable service/);
   });
 });

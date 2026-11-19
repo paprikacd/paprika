@@ -28,6 +28,7 @@ import { GammaButton } from "./gamma/button";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { SearchCombobox } from "./gamma/search-combobox";
 import { DashboardVariablesEditor } from "./dashboard-variables";
+import type { VariableSourceCatalog } from "./variable-source-editor";
 
 interface FolderNode {
   name: string;
@@ -250,12 +251,14 @@ export function DashboardManager({
   onRefreshQueries,
   onReviewBundle,
   validateDocument,
+  variableCatalog,
   onClose,
   busy,
 }: {
   dashboard: Dashboard;
   dashboards: Dashboard[];
   providers: Provider[];
+  variableCatalog?: VariableSourceCatalog;
   busy: boolean;
   onApply: (dashboard: Dashboard) => void;
   onDuplicate: () => void;
@@ -453,6 +456,7 @@ export function DashboardManager({
         key={dashboard.id}
         dashboard={dashboard}
         onApply={onApply}
+        catalog={variableCatalog}
       />
       <section>
         <h3>Export your library</h3>

@@ -60,6 +60,8 @@ export const dashboardVariableSchema = z.strictObject({
   label: z.string().max(80).optional(),
   defaultValue: variableValueSchema.optional(),
   options: z.array(variableValueSchema).min(1).max(MAX_VARIABLE_OPTIONS).optional(),
+  // Declared later in this file: a lazy reference avoids a use before definition.
+  source: z.lazy(() => variableSourceSchema).optional(),
 }).superRefine((variable, context) => {
   const seen = new Set<string>()
   variable.options?.forEach((option, index) => {
@@ -158,6 +160,127 @@ export const dashboardQueryReferenceSchema = z.strictObject({
   id: identifier,
   bindings: z.array(dashboardQueryBindingSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
 }).superRefine(uniqueQueryBindings)
+
+// Mirrors validateDashboardVariableSource in internal/insights/drilldowns.go.
+const variableSelectorPlaceholder = /\{\{([^{}]*)\}\}/g
+const variableSelectorShape = /^(?:[A-Za-z_:][A-Za-z0-9_:]*)?\{[^{}]*\}$|^[A-Za-z_:][A-Za-z0-9_:]*$/
+const variableNamePattern = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
+const selectorBefore = /[\s\[(=~!<>:,|&]/
+const selectorAfter = /[\s,})\]|&!<>=:+\-*/%^]/
+export const selectorTemplateMessage = "selector placeholders must be complete unquoted literals outside comments"
+
+/** Mirrors validateSavedQueryTemplate in Go: a placeholder must be a whole literal outside quotes and comments. */
+export function selectorTemplateIsLiteral(selector: string): boolean {
+  let quote: string | null = null
+  let comment: "line" | "block" | null = null
+  let escaped = false
+  for (let index = 0; index < selector.length; index++) {
+    const char = selector[index]
+    const next = selector[index + 1]
+    if (char === "{" && next === "{") {
+      const end = selector.indexOf("}}", index + 2)
+      if (end === -1 || quote !== null || comment !== null) return false
+      const before = selector[index - 1]
+      const after = selector[end + 2]
+      if (before !== undefined && !selectorBefore.test(before)) return false
+      if (after !== undefined && !selectorAfter.test(after)) return false
+      index = end + 1
+      continue
+    }
+    if (comment === "line") {
+      if (char === "\n" || char === "\r") comment = null
+      continue
+    }
+    if (comment === "block") {
+      if (char === "*" && next === "/") {
+        comment = null
+        index++
+      }
+      continue
+    }
+    if (quote !== null) {
+      if (quote !== "`" && escaped) escaped = false
+      else if (quote !== "`" && char === "\\") escaped = true
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'" || char === "`") quote = char
+    else if (char === "#" || (char === "/" && next === "/")) comment = "line"
+    else if (char === "/" && next === "*") {
+      comment = "block"
+      index++
+    }
+  }
+  return true
+}
+export const variableSourceSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("labelValues"),
+    providerId: identifier,
+    label: z.string().min(1).max(128),
+    selector: z.string().min(1).max(1024).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }).superRefine((source, context) => {
+    if (source.selector === undefined) return
+    for (const match of source.selector.matchAll(variableSelectorPlaceholder)) {
+      if (!variableNamePattern.test(match[1])) context.addIssue({ code: "custom", path: ["selector"], message: "selector placeholders must name a declared variable" })
+    }
+    const shape = source.selector.replace(variableSelectorPlaceholder, '"x"')
+    if (!variableSelectorShape.test(shape)) context.addIssue({ code: "custom", path: ["selector"], message: "selector must be a metric name or one brace-enclosed matcher list" })
+    else if (!selectorTemplateIsLiteral(source.selector)) context.addIssue({ code: "custom", path: ["selector"], message: selectorTemplateMessage })
+  }),
+  z.strictObject({
+    type: z.literal("savedQuery"),
+    queryRef: dashboardQueryReferenceSchema,
+    field: z.string().min(1).max(128),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+])
+export type VariableSource = z.infer<typeof variableSourceSchema>
+
+/** The variables a source reads: selector placeholders and variable bindings. */
+export function variableSourceDependencies(source: VariableSource): string[] {
+  if (source.type === "labelValues") {
+    return [...(source.selector ?? "").matchAll(variableSelectorPlaceholder)].map((match) => match[1])
+  }
+  return (source.queryRef.bindings ?? []).flatMap((binding) => (binding.source === "variable" ? [binding.variable] : []))
+}
+
+/** Rejects a source that reads an undeclared variable or closes a dependency cycle. */
+export function checkVariableSourceGraph(variables: { name: string; source?: VariableSource }[] | undefined, context: z.RefinementCtx) {
+  if (!variables) return
+  const declared = new Set(variables.map((variable) => variable.name))
+  const dependencies = new Map<string, string[]>()
+  variables.forEach((variable, index) => {
+    if (!variable.source) return
+    const refs = variableSourceDependencies(variable.source)
+    for (const ref of refs) {
+      if (!declared.has(ref)) context.addIssue({ code: "custom", path: [index, "source"], message: `source depends on undeclared variable "${ref}"` })
+    }
+    dependencies.set(variable.name, refs)
+  })
+  const state = new Map<string, "visiting" | "done">()
+  const visit = (name: string): string | undefined => {
+    const current = state.get(name)
+    if (current === "visiting") return name
+    if (current === "done") return undefined
+    state.set(name, "visiting")
+    for (const next of dependencies.get(name) ?? []) {
+      const found = visit(next)
+      if (found !== undefined) return found
+    }
+    state.set(name, "done")
+    return undefined
+  }
+  for (const variable of variables) {
+    const found = visit(variable.name)
+    if (found !== undefined) {
+      const index = variables.findIndex((item) => item.name === found)
+      context.addIssue({ code: "custom", path: [index, "source"], message: "dashboard variable sources must not depend on themselves or form a cycle" })
+      return
+    }
+  }
+}
 export type SavedQuery = z.infer<typeof savedQuerySchema>
 export type SavedQueryParameter = z.infer<typeof savedQueryParameterSchema>
 export type SavedQueryBinding = z.infer<typeof savedQueryBindingSchema>
@@ -582,7 +705,7 @@ export const dashboardSchema = z
     customTimeRange: customTimeRangeSchema.optional(),
     /** The zone of the calendar axis, observation inspector and window labels. Omitted, they use the viewer's zone. */
     timeZone: timeZoneSchema.optional(),
-    variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
+    variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional().superRefine(checkVariableSourceGraph),
     timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),
     widgets: z.array(widgetSchema).max(MAX_WIDGETS),

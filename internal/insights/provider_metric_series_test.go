@@ -117,7 +117,7 @@ func TestMetricSeriesCancellation(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := p.metadata(ctx, "series", "", "up")
+		_, err := p.metadata(ctx, &metadataQuery{Kind: "series", Metric: "up"})
 		done <- err
 	}()
 	select {

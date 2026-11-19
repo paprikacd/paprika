@@ -40,13 +40,17 @@ function canonicalQuery(input: SavedQuery, stripEtag = false): SavedQuery {
   validateSavedQueryTemplate(query);
   return query;
 }
+/** A saved query a dashboard reads. Variable sources accept metrics or records, so they carry "variable" rather than a kind. */
 function references(dashboards: readonly Dashboard[]) {
   const result: {
     dashboard: Dashboard;
     reference: SavedQueryReference;
-    kind: DataKind;
+    kind: DataKind | "variable";
   }[] = [];
-  for (const dashboard of dashboards)
+  for (const dashboard of dashboards) {
+    for (const variable of dashboard.variables ?? [])
+      if (variable.source?.type === "savedQuery")
+        result.push({ dashboard, reference: variable.source.queryRef, kind: "variable" });
     for (const widget of dashboard.widgets) {
       if (widget.queryRef)
         result.push({
@@ -64,6 +68,7 @@ function references(dashboards: readonly Dashboard[]) {
           kind: widgetKind(view),
         });
     }
+  }
   return result;
 }
 function validateClosure(bundle: DashboardBundle): void {
@@ -78,9 +83,11 @@ function validateClosure(bundle: DashboardBundle): void {
       throw new Error(
         `Dashboard “${dashboard.title}” references saved query “${reference.id}”, which is missing from the bundle.`,
       );
-    if (query.kind !== kind)
+    if (kind === "variable" ? query.kind === "traces" : query.kind !== kind)
       throw new Error(
-        `Saved query “${query.name}” does not provide ${kind} for dashboard “${dashboard.title}”.`,
+        kind === "variable"
+          ? `Saved query “${query.name}” cannot supply variable values for dashboard “${dashboard.title}”; use a metrics or records query.`
+          : `Saved query “${query.name}” does not provide ${kind} for dashboard “${dashboard.title}”.`,
       );
     used.add(query.id);
     for (const binding of reference.bindings ?? []) {
@@ -304,6 +311,21 @@ export function remapBundleQueryReferences(
   return checkedBundle({
     dashboards: source.dashboards.map((document) => ({
       ...document,
+      ...(document.variables
+        ? {
+            variables: document.variables.map((variable) =>
+              variable.source?.type === "savedQuery"
+                ? {
+                    ...variable,
+                    source: {
+                      ...variable.source,
+                      queryRef: { ...variable.source.queryRef, id: mappedId(variable.source.queryRef.id) },
+                    },
+                  }
+                : variable,
+            ),
+          }
+        : {}),
       widgets: document.widgets.map((widget) => {
         const view = widget.options?.tooltipView;
         return {
@@ -375,9 +397,23 @@ export function selectBundleDashboards(
       : {}),
   });
 }
+/**
+ * What a bundle needs from a destination provider. A label-values source needs a provider that can answer label
+ * values, which a Prometheus provider with metrics or a Tempo provider with traces can do. It is not one capability.
+ */
+export type ProviderRequirement = DataKind | "labelValues";
+
+export function providerSatisfies(provider: Provider, requirement: ProviderRequirement): boolean {
+  if (requirement === "labelValues") {
+    return (provider.type === "prometheus" && provider.capabilities.includes("metrics"))
+      || (provider.type === "tempo" && provider.capabilities.includes("traces"));
+  }
+  return provider.capabilities.includes(requirement);
+}
+
 export function requiredBundleProviders(
   bundle: DashboardBundle,
-): Map<string, Set<DataKind>> {
+): Map<string, Set<ProviderRequirement>> {
   const source = checkedBundle(bundle);
   const result = requiredProviders(source.dashboards);
   for (const query of source.savedQueries ?? []) {
@@ -416,8 +452,15 @@ export function remapBundleProviders(
 }
 
 export function requiredProviders(documents: Dashboard[]) {
-  const result = new Map<string, Set<"metrics" | "traces" | "records">>();
-  for (const document of documents)
+  const result = new Map<string, Set<ProviderRequirement>>();
+  for (const document of documents) {
+    // A label-values source needs a provider that answers label values. The bundle carries no provider types, so
+    // the destination is checked with providerSatisfies when the mapping is offered and applied.
+    for (const variable of document.variables ?? []) {
+      if (variable.source?.type !== "labelValues") continue;
+      if (!result.has(variable.source.providerId)) result.set(variable.source.providerId, new Set());
+      result.get(variable.source.providerId)!.add("labelValues");
+    }
     for (const widget of document.widgets) {
       if (!widget.queryRef) {
         if (!result.has(widget.providerId))
@@ -431,7 +474,27 @@ export function requiredProviders(documents: Dashboard[]) {
         result.get(view.source.providerId)!.add(widgetKind(view));
       }
     }
+  }
   return result;
+}
+
+/** A label-values source reads its provider's metrics, or traces for a Tempo provider, so the destination must match. */
+function remapVariableProviders(
+  variables: NonNullable<Dashboard["variables"]>,
+  mapping: Record<string, string>,
+  providers: Provider[],
+) {
+  return variables.map((variable) => {
+    if (variable.source?.type !== "labelValues") return variable;
+    const providerId = Object.hasOwn(mapping, variable.source.providerId)
+      ? mapping[variable.source.providerId]
+      : variable.source.providerId;
+    const provider = providers.find((item) => item.id === providerId);
+    const kind = provider?.type === "tempo" ? "traces" : "metrics";
+    if (!provider?.capabilities.includes(kind))
+      throw new Error(`Choose a compatible data source for the values of variable ${variable.name}.`);
+    return { ...variable, source: { ...variable.source, providerId } };
+  });
 }
 
 export function remapDashboardProviders(
@@ -441,6 +504,9 @@ export function remapDashboardProviders(
 ) {
   return documents.map((document) => ({
     ...document,
+    ...(document.variables
+      ? { variables: remapVariableProviders(document.variables, mapping, providers) }
+      : {}),
     widgets: document.widgets.map((widget) => {
       const providerId =
         !widget.queryRef && Object.hasOwn(mapping, widget.providerId)

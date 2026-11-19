@@ -17,19 +17,43 @@ import {
 import { resolveDashboardVariables, type VariableValues } from "./drilldown";
 import styles from "./drilldown.module.css";
 import optionStyles from "./variable-options.module.css";
+import { SearchCombobox, type SearchComboboxOption } from "./gamma/search-combobox";
+import {
+  VariableSourceFields,
+  sourceFor,
+  valuesFromOf,
+  type VariableSourceCatalog,
+  type VariableValuesFrom,
+} from "./variable-source-editor";
+import {
+  useVariableOptions,
+  type VariableOptionsSnapshot,
+  type VariableRange,
+  type VariableValueLoaders,
+} from "./variable-options";
 
 export interface DashboardVariablesEditorProps {
   dashboard: Dashboard;
   onApply: (dashboard: Dashboard) => void;
+  /** Providers, label names, saved queries and the value loaders the source fields read. Without it, sources are not offered. */
+  catalog?: VariableSourceCatalog;
 }
 
 export function DashboardVariablesEditor(props: DashboardVariablesEditorProps) {
   return <VariablesEditor key={props.dashboard.id} {...props} />;
 }
 
+const VALUES_FROM: { value: VariableValuesFrom; label: string }[] = [
+  { value: "text", label: "Free text" },
+  { value: "typed", label: "Typed list" },
+  { value: "labelValues", label: "Provider label values" },
+  { value: "savedQuery", label: "Saved query column" },
+];
+
 function VariablesEditor({
   dashboard,
   onApply,
+  catalog,
 }: DashboardVariablesEditorProps) {
   const source = JSON.stringify(dashboard.variables ?? []);
   const [state, setState] = useState(() => ({
@@ -142,23 +166,37 @@ function VariablesEditor({
             />
           </label>
           <label className={styles.field}>
-            <span>Control</span>
+            <span>Values from</span>
             <GammaSelect
-              aria-label={`Variable ${index + 1} control`}
-              value={variable.options ? "dropdown" : "text"}
-              options={[{ value: "text", label: "Text input" }, { value: "dropdown", label: "Dropdown" }]}
-              onValueChange={(control) => {
-                if (control === (variable.options ? "dropdown" : "text")) return;
+              aria-label={`Variable ${index + 1} values from`}
+              value={valuesFromOf(variable)}
+              options={VALUES_FROM.map((item) => ({ value: item.value, label: item.label }))}
+              onValueChange={(choice) => {
+                const from = choice as VariableValuesFrom;
+                if (from === valuesFromOf(variable)) return;
                 const next = { ...variable };
-                if (control === "dropdown") next.options = [variable.defaultValue ?? ""];
-                else delete next.options;
+                delete next.source;
+                if (from === "text") delete next.options;
+                else if (from === "typed") next.options = variable.options ?? [variable.defaultValue ?? ""];
+                else next.source = sourceFor(from);
                 patch(index, next);
               }}
             />
           </label>
+          {(valuesFromOf(variable) === "labelValues" || valuesFromOf(variable) === "savedQuery") && (catalog
+            ? <VariableSourceFields
+                index={index}
+                variable={variable}
+                defaults={Object.fromEntries(draft.flatMap((other, otherIndex) => other.name && other.defaultValue !== undefined && otherIndex !== index ? [[other.name, other.defaultValue]] : []))}
+                catalog={catalog}
+                onChange={(next) => patch(index, next)}
+              />
+            : <p className={styles.help} role="status">Values from a source are unavailable here. The fallback choices still apply.</p>)}
           {variable.options && <fieldset className={optionStyles.options}>
-            <legend>Dropdown choices</legend>
-            <p className={styles.help}>Selecting a choice refreshes the connected widgets. Dashboard links can also supply another value.</p>
+            <legend>{variable.source ? "Fallback choices" : "Dropdown choices"}</legend>
+            <p className={styles.help}>{variable.source
+              ? "Shown when the source cannot load values. Choices are never silently replaced."
+              : "Selecting a choice refreshes the connected widgets. Dashboard links can also supply another value."}</p>
             {variable.options.map((option, optionIndex) => <div className={optionStyles.row} key={optionIndex}>
               <GammaInput
                 aria-label={`Variable ${index + 1} option ${optionIndex + 1}`}
@@ -167,9 +205,13 @@ function VariablesEditor({
                 placeholder="Service name"
                 onChange={(event) => patch(index, { ...variable, options: variable.options!.map((value, current) => current === optionIndex ? event.target.value : value) })}
               />
-              <GammaButton iconOnly variant="ghost" size="sm" disabled={variable.options!.length === 1}
+              <GammaButton iconOnly variant="ghost" size="sm" disabled={variable.options!.length === 1 && !variable.source}
                 aria-label={`Remove variable ${index + 1} option ${optionIndex + 1}`}
-                onClick={() => patch(index, { ...variable, options: variable.options!.filter((_, current) => current !== optionIndex) })}>
+                onClick={() => {
+                  // A sourced variable with its last fallback choice drops the list rather than leaving an empty one.
+                  if (variable.options!.length === 1) { const next = { ...variable }; delete next.options; patch(index, next); return; }
+                  patch(index, { ...variable, options: variable.options!.filter((_, current) => current !== optionIndex) });
+                }}>
                 <Trash2 size={14} aria-hidden="true" />
               </GammaButton>
             </div>)}
@@ -178,6 +220,11 @@ function VariablesEditor({
               <Plus size={13} aria-hidden="true" /> Add choice
             </GammaButton>
           </fieldset>}
+          {valuesFromOf(variable) !== "text" && !variable.options && variable.source && <div className={optionStyles.options}>
+            <GammaButton size="sm" onClick={() => patch(index, { ...variable, options: [variable.defaultValue ?? ""] })}>
+              <Plus size={13} aria-hidden="true" /> Add fallback choices
+            </GammaButton>
+          </div>}
           <GammaSwitch
             label="Use a default value"
             description="Used when a dashboard link or viewer does not supply a value."
@@ -273,6 +320,10 @@ export interface VariableBarProps {
   dashboard: Dashboard;
   values: VariableValues;
   onApply: (values: VariableValues) => void;
+  /** Loads values for variables with a source. Without them, sourced variables report that values are unavailable. */
+  loaders?: VariableValueLoaders;
+  /** The dashboard's current view range in seconds, which label values and saved queries cover. */
+  range?: VariableRange;
 }
 
 export function VariableBar(props: VariableBarProps) {
@@ -286,7 +337,7 @@ export function VariableBar(props: VariableBarProps) {
   return <VariableBarDraft key={revision} {...props} />;
 }
 
-function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
+function VariableBarDraft({ dashboard, values, onApply, loaders, range }: VariableBarProps) {
   const id = useId();
   const initial = resolveDashboardVariables(dashboard, values);
   const source = JSON.stringify(Object.entries(initial).sort(([a], [b]) => a.localeCompare(b)));
@@ -303,10 +354,17 @@ function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
     publishing.current = undefined;
   }, [source, initial]);
   const [error, setError] = useState("");
+  const options = useVariableOptions({
+    variables: dashboard.variables ?? [],
+    values: initial,
+    range: range ?? { start: 0, end: 0 },
+    loaders,
+  });
   const dirty = (dashboard.variables ?? []).some(
     ({ name }) => draft[name] !== initial[name],
   );
-  const hasTextInputs = dashboard.variables?.some((variable) => !variable.options);
+  // A typed value stages until Apply values, and so does a sourced variable that accepts typing beside its list.
+  const hasTextInputs = dashboard.variables?.some((variable) => !variable.options || Boolean(variable.source));
   function apply(next: VariableValues) {
     try {
       onApply(resolveDashboardVariables(dashboard, next));
@@ -314,6 +372,12 @@ function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Check the variable values");
     }
+  }
+  function choose(name: string, value: string) {
+    const next = { ...initial, [name]: value };
+    publishing.current = JSON.stringify(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)));
+    setDraft((previous) => ({ ...previous, [name]: value }));
+    apply(next);
   }
   return (
     <form
@@ -327,25 +391,41 @@ function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
       }}
     >
       <div className={styles.barFields}>
-        {dashboard.variables?.map((variable) => (
-          <label
+        {dashboard.variables?.map((variable) => {
+          const fieldId = `${id}-${variable.name}`;
+          if (variable.source) {
+            return <VariableSourceField
+              key={variable.name}
+              variable={variable}
+              parentLabel={(name) => {
+                const parent = dashboard.variables?.find((item) => item.name === name);
+                return parent?.label || name;
+              }}
+              id={fieldId}
+              value={draft[variable.name]}
+              snapshot={options.snapshot(variable.name)}
+              onActivate={() => options.activate(variable.name)}
+              onRetry={() => options.retry(variable.name)}
+              onChoose={(value) => choose(variable.name, value)}
+              onType={(value) => {
+                setDraft((previous) => ({ ...previous, [variable.name]: value }));
+                setError("");
+              }}
+            />;
+          }
+          return <label
             className={styles.barField}
             key={variable.name}
-            htmlFor={`${id}-${variable.name}`}
+            htmlFor={fieldId}
           >
             <span title={variable.name}>{variable.label || variable.name}</span>
             {variable.options ? <VariableDropdown
               variable={variable}
-              id={`${id}-${variable.name}`}
+              id={fieldId}
               value={draft[variable.name]}
-              onChange={(value) => {
-                const next = { ...initial, [variable.name]: value };
-                publishing.current = JSON.stringify(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)));
-                setDraft((previous) => ({ ...previous, [variable.name]: value }));
-                apply(next);
-              }}
+              onChange={(value) => choose(variable.name, value)}
             /> : <GammaInput
-              id={`${id}-${variable.name}`}
+              id={fieldId}
               size="sm"
               value={draft[variable.name] ?? ""}
               maxLength={MAX_VARIABLE_VALUE_LENGTH}
@@ -358,8 +438,8 @@ function VariableBarDraft({ dashboard, values, onApply }: VariableBarProps) {
                 setError("");
               }}
             />}
-          </label>
-        ))}
+          </label>;
+        })}
       </div>
       {hasTextInputs && <div className={styles.barActions}>
         <GammaButton
@@ -412,4 +492,86 @@ function VariableDropdown({ variable, value, id, onChange }: {
     }))}
     onValueChange={(index) => { if (Number(index) !== selected) onChange(choices[Number(index)]); }}
   />;
+}
+
+/**
+ * A variable whose values come from a source. Free text is accepted when there are no saved choices,
+ * and a dropdown applies its selection at once. Failures keep the saved choices and offer a retry.
+ */
+/** The error class or message for a failed source, bounded so it fits beside the field. */
+function shortSourceError(error: string | undefined): string {
+  const text = (error ?? "").trim();
+  if (!text) return "the source did not answer";
+  return text.length > 160 ? `${text.slice(0, 159)}…` : text;
+}
+
+function VariableSourceField({ variable, parentLabel, id, value, snapshot, onActivate, onRetry, onChoose, onType }: {
+  variable: DashboardVariable;
+  parentLabel: (name: string) => string;
+  id: string;
+  value?: string;
+  snapshot: VariableOptionsSnapshot | undefined;
+  onActivate: () => void;
+  onRetry: () => void;
+  onChoose: (value: string) => void;
+  onType: (value: string) => void;
+}) {
+  const label = variable.label || variable.name;
+  const freeText = !variable.options;
+  const state = snapshot?.state ?? "idle";
+  const known = state === "ready" || state === "empty";
+  const fallback = state === "failed" && variable.options;
+  const choices: SearchComboboxOption[] = [];
+  if (state === "ready") {
+    for (const item of snapshot!.values) choices.push({ value: item, label: item || "Empty value" });
+  } else if (fallback) {
+    for (const item of variable.options!) choices.push({ value: item, label: item || "Empty value", description: "Saved choice" });
+  }
+  if (value !== undefined && !choices.some((choice) => choice.value === value))
+    choices.push({ value, label: value || "Empty value", description: known ? "Not in current values" : undefined });
+  // Values a viewer picks from the loaded list or the saved fallback apply at once; anything typed stages until Apply values.
+  const listed = new Set(state === "ready" ? snapshot!.values : fallback ? variable.options! : []);
+  const emptyMessage = state === "needs_variable"
+    ? `Set ${parentLabel(snapshot!.parent!)} to load values`
+    : state === "failed" || state === "invalid" ? "Could not load values" : "No values in this time range";
+  let status = "";
+  let retryable = false;
+  if (state === "needs_variable") status = `Set ${parentLabel(snapshot!.parent!)} to load values`;
+  else if (state === "empty") status = "No values in this time range";
+  else if (state === "invalid") status = `Could not load values: ${shortSourceError(snapshot!.error)}. Fix the source in the editor.`;
+  else if (state === "failed") {
+    status = `Could not load values: ${shortSourceError(snapshot!.error)}`;
+    retryable = true;
+  }
+  else if (state === "ready" && snapshot!.truncated) status = `First ${snapshot!.values.length} values; type to enter another`;
+  return <div className={styles.barField}>
+    <label htmlFor={id}>
+      <span title={variable.name}>{label}</span>
+    </label>
+    <SearchCombobox
+      id={id}
+      aria-label={label}
+      options={choices}
+      value={value ?? null}
+      clearable={false}
+      placeholder={freeText ? "Set a value" : "Choose a value"}
+      filter={state === "ready" || Boolean(fallback)}
+      loading={state === "loading"}
+      loadingMessage="Loading values…"
+      emptyMessage={emptyMessage}
+      onOpenChange={(open) => { if (open) onActivate() }}
+      onValueChange={(next) => { if (next === null) return; if (listed.has(next)) onChoose(next); else onType(next) }}
+      onQueryInput={onType}
+    />
+    {status && <p
+      className={styles.help}
+      role={state === "failed" || state === "invalid" ? "alert" : "status"}
+    >
+      {status}
+      {retryable && <>
+        {" "}
+        <GammaButton size="sm" onClick={onRetry}>Retry</GammaButton>
+      </>}
+    </p>}
+  </div>;
 }

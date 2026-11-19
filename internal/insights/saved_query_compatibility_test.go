@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -223,5 +224,20 @@ func TestSavedQueryReplacementConcurrentHTTPWritersPreserveReferences(t *testing
 	var final SavedQuery
 	if err != nil || json.Unmarshal(persisted, &final) != nil || len(final.Parameters) != 1 || final.Parameters[0].Type != "string" {
 		t.Fatalf("incompatible contract persisted: %s %v", persisted, err)
+	}
+}
+
+func TestCheckDashboardQueryReferencesVisitsVariableSourceQueries(t *testing.T) {
+	raw := json.RawMessage(`{"title":"Board","variables":[{"name":"service","source":{"type":"savedQuery","queryRef":{"id":"query","bindings":[{"parameter":"p","source":"variable","variable":"cluster"}]},"field":"service"}},{"name":"cluster","source":{"type":"labelValues","providerId":"metrics","label":"cluster"}}],"widgets":[]}`)
+	var seen []string
+	err := checkDashboardQueryReferences(raw, func(reference persistedQueryReference, dashboard, widget, location string) error {
+		seen = append(seen, reference.ID+"|"+widget+"|"+location)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"query|variable service|source"}; !slices.Equal(seen, want) {
+		t.Fatalf("visited references %v, want %v", seen, want)
 	}
 }

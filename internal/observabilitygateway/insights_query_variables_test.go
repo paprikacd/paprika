@@ -132,3 +132,43 @@ func TestDashboardDeclaredVariablesTextIsBounded(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, text, `Declared variables: "big" (label and default omitted; see structuredContent).`)
 }
+
+// A sourced variable names its source type, and the schema refuses any other source word.
+func TestDashboardVariableSourceValidatesAgainstTheSchema(t *testing.T) {
+	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
+	document := variableResult(t)
+	document["variableDefinitions"] = []any{map[string]any{"name": "service", "source": "labelValues", "options": []any{"api"}}}
+	require.NoError(t, resolved.Validate(document))
+	document["variableDefinitions"] = []any{map[string]any{"name": "service", "source": "sql"}}
+	require.Error(t, resolved.Validate(document), "an unknown source type must not validate")
+}
+
+// The text synopsis says a sourced variable takes its values from a source, names its options as a fallback and
+// tells the agent to pass an explicit value.
+func TestDashboardVariableSourceAppearsInTheTextSynopsis(t *testing.T) {
+	document := variableResult(t)
+	document["variableDefinitions"] = []any{map[string]any{"name": "service", "source": "labelValues", "fallbackOptions": []any{"api"}}}
+	raw, err := json.Marshal(document)
+	require.NoError(t, err)
+	text, err := dashboardQueryText(raw)
+	require.NoError(t, err)
+	require.Contains(t, text, `"service" takes its values from a labelValues source; pass an explicit value; fallback options "api"`)
+}
+
+// The source summary and fallback options validate against the advertised schema, and the summary rejects an
+// unknown kind, so the schema constrains the new fields.
+func TestDashboardVariableSourceSummaryValidatesAgainstTheSchema(t *testing.T) {
+	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
+	document := variableResult(t)
+	document["variableDefinitions"] = []any{map[string]any{
+		"name":            "service",
+		"source":          "labelValues",
+		"fallbackOptions": []any{"api"},
+		"sourceSummary":   map[string]any{"kind": "labelValues", "providerId": "prom-1", "label": "service", "dependsOnVariables": true},
+	}}
+	require.NoError(t, resolved.Validate(document))
+	document["variableDefinitions"] = []any{map[string]any{"name": "service", "sourceSummary": map[string]any{"kind": "traces", "dependsOnVariables": false}}}
+	require.Error(t, resolved.Validate(document), "a traces kind must not validate as a variable source")
+	document["variableDefinitions"] = []any{map[string]any{"name": "service", "sourceSummary": map[string]any{"kind": "labelValues"}}}
+	require.Error(t, resolved.Validate(document), "dependsOnVariables is required in a source summary")
+}

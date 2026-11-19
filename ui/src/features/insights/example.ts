@@ -254,6 +254,7 @@ export const exampleMetadata: InsightsClient["metadata"] = async (id, options, s
       (
         {
           service: ["api-gateway", "release-controller", "repo-server"],
+          cluster: ["omega", "delta"],
           job: ["paprika"],
           status: ["200", "404", "500"],
         } as Record<string, string[]>

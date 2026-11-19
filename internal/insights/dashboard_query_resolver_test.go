@@ -166,3 +166,69 @@ func TestDashboardVariableWarningsBoundTheOverrideValue(t *testing.T) {
 		t.Fatalf("a shortened multibyte value must stay valid UTF-8: %q", warnings)
 	}
 }
+
+func TestDashboardQueryVariablesMarkSourcedFallbacks(t *testing.T) {
+	definitions := []dashboardReadVariable{
+		{Name: "service", Options: []string{"api"}, Source: &dashboardReadVariableSource{Type: "labelValues"}},
+	}
+	variables := dashboardQueryVariables(definitions)
+	if len(variables) != 1 || variables[0].Source != "labelValues" || len(variables[0].FallbackOptions) != 1 || len(variables[0].Options) != 0 {
+		t.Fatalf("sourced variable must report its static options as fallback options, not choices: %+v", variables)
+	}
+	// The fallback list is not the choice list, and the source is not resolved, so an override is not warned about.
+	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "delta"}); len(warnings) != 0 {
+		t.Fatalf("override of a sourced variable warned against its fallback options: %v", warnings)
+	}
+}
+
+// An empty override of a sourced variable is still named, since no source value can be empty.
+func TestDashboardVariableWarningsFlagEmptySourcedOverrides(t *testing.T) {
+	definitions := []dashboardReadVariable{
+		{Name: "service", Options: []string{"api"}, Source: &dashboardReadVariableSource{Type: "savedQuery"}},
+	}
+	warnings := dashboardVariableWarnings(definitions, map[string]string{"service": ""})
+	if len(warnings) != 1 || !strings.HasPrefix(warnings[0], "service= is empty") {
+		t.Fatalf("empty override of a sourced variable must warn: %v", warnings)
+	}
+	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "not-in-fallback"}); len(warnings) != 0 {
+		t.Fatalf("sourced override must not warn against fallback options: %v", warnings)
+	}
+}
+
+// Each sourced variable reports a source summary with its kind, identifiers and whether it depends on another
+// variable. Selector and binding text is not reported.
+func TestDashboardQueryVariablesReportSourceSummaries(t *testing.T) {
+	selector := `up{cluster={{cluster}}}`
+	plain := "up"
+	definitions := []dashboardReadVariable{
+		{Name: "cluster", Source: &dashboardReadVariableSource{Type: "labelValues", ProviderID: "prom-1", Label: "cluster"}},
+		{Name: "service", Source: &dashboardReadVariableSource{Type: "labelValues", ProviderID: "prom-1", Label: "service", Selector: &selector}},
+		{Name: "pod", Source: &dashboardReadVariableSource{Type: "labelValues", ProviderID: "prom-1", Label: "pod", Selector: &plain}},
+		{Name: "owner", Source: &dashboardReadVariableSource{Type: "savedQuery", Field: "owner", QueryRef: &dashboardReadReference{ID: "sq-1", Bindings: []dashboardReadBinding{{Parameter: "team", Source: "variable", Variable: "cluster"}}}}},
+		{Name: "team", Source: &dashboardReadVariableSource{Type: "savedQuery", Field: "team", QueryRef: &dashboardReadReference{ID: "sq-2", Bindings: []dashboardReadBinding{{Parameter: "x", Source: "constant", Value: json.RawMessage(`"a"`)}}}}},
+	}
+	variables := dashboardQueryVariables(definitions)
+	want := []DashboardQueryVariableSource{
+		{Kind: "labelValues", ProviderID: "prom-1", Label: "cluster"},
+		{Kind: "labelValues", ProviderID: "prom-1", Label: "service", DependsOnVariables: true},
+		{Kind: "labelValues", ProviderID: "prom-1", Label: "pod"},
+		{Kind: "savedQuery", SavedQueryID: "sq-1", Field: "owner", DependsOnVariables: true},
+		{Kind: "savedQuery", SavedQueryID: "sq-2", Field: "team"},
+	}
+	for index, variable := range variables {
+		if variable.SourceSummary == nil || *variable.SourceSummary != want[index] {
+			t.Fatalf("%s: source summary = %+v, want %+v", variable.Name, variable.SourceSummary, want[index])
+		}
+	}
+	unsourced := dashboardQueryVariables([]dashboardReadVariable{{Name: "free"}})
+	if unsourced[0].SourceSummary != nil {
+		t.Fatal("a variable without a source must report no source summary")
+	}
+	encoded, err := json.Marshal(variables[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "{{cluster}}") {
+		t.Fatalf("source summary must not echo the selector text: %s", encoded)
+	}
+}

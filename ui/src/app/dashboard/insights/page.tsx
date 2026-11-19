@@ -40,6 +40,8 @@ export default function InsightsPage() {
       initialExample={example}
       // A renewed token is a new revision: a banner waiting on sign-in reloads its sources.
       sessionRevision={session.revision}
+      // Stable across token renewals; variable values are cached per principal.
+      principal={JSON.stringify([session.identityKey, session.identityEpoch])}
       onBack={() => router.push("/dashboard/")}
     />
   )

@@ -56,7 +56,9 @@ var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, v
 // linear in the document size.
 type lintDocument struct {
 	variables map[string]bool
-	widgets   []lintWidget
+	// sourceVariables lists each declared variable with the members the variable rules read.
+	sourceVariables []lintVariable
+	widgets         []lintWidget
 	// providerTypes maps a provider id to its type, as the server resolved it for this check. An id
 	// that is absent is unknown, and a rule that needs its type does not fire. The CLI check resolves no
 	// providers, so it leaves the map nil.
@@ -112,10 +114,24 @@ type lintVariableRef struct {
 // wireDocument mirrors only the members lint reads. Unknown members are ignored
 // here because the schema check has already rejected them on every save.
 type wireDocument struct {
-	Variables []struct {
-		Name string `json:"name"`
-	} `json:"variables"`
-	Widgets []wireWidget `json:"widgets"`
+	Variables []wireVariable `json:"variables"`
+	Widgets   []wireWidget   `json:"widgets"`
+}
+
+// wireVariable mirrors the variable members the variable rules read.
+type wireVariable struct {
+	Name         string         `json:"name"`
+	DefaultValue *string        `json:"defaultValue"`
+	Options      []string       `json:"options"`
+	Source       *wireVarSource `json:"source"`
+}
+
+// wireVarSource mirrors a variable source. Type selects which members apply.
+type wireVarSource struct {
+	Type       string        `json:"type"`
+	ProviderID string        `json:"providerId"`
+	Selector   *string       `json:"selector"`
+	QueryRef   *wireQueryRef `json:"queryRef"`
 }
 
 type wireWidget struct {
@@ -153,6 +169,7 @@ type wireAnnotation struct {
 }
 
 type wireQueryRef struct {
+	ID       string        `json:"id"`
 	Bindings []wireBinding `json:"bindings"`
 }
 
@@ -267,8 +284,9 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 		return nil, false
 	}
 	doc := &lintDocument{variables: make(map[string]bool, len(wire.Variables))}
-	for _, variable := range wire.Variables {
-		doc.variables[variable.Name] = true
+	for i := range wire.Variables {
+		doc.variables[wire.Variables[i].Name] = true
+		doc.sourceVariables = append(doc.sourceVariables, lintVariableOf(i, &wire.Variables[i]))
 	}
 	for i := range wire.Widgets {
 		doc.widgets = append(doc.widgets, lintWidgetOf(i, &wire.Widgets[i]))

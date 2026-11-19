@@ -3,6 +3,7 @@ package insights
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -138,7 +139,12 @@ func (s *Server) providerMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	defer done()
 	params := r.URL.Query()
-	result, err := p.metadata(r.Context(), params.Get("kind"), params.Get("label"), params.Get("metric"))
+	query, err := metadataQueryOf(params)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	result, err := p.metadata(r.Context(), &query)
 	if err != nil {
 		var remoteErr *observeError
 		if errors.As(err, &remoteErr) {
@@ -160,4 +166,24 @@ func (s *Server) isSharedProviderID(id string) bool {
 func (s *Server) providerTypeInUse(config *ProviderConfig) bool {
 	existing, ok := s.providers.get(config.ID)
 	return ok && existing.public.Type != config.Type && s.savedQueries.usesProvider(config.ID)
+}
+
+// metadataQueryOf reads a metadata lookup from its query string. start and end are Unix seconds and must be given
+// together; a selector is a series selector template.
+func metadataQueryOf(params url.Values) (metadataQuery, error) {
+	query := metadataQuery{Kind: params.Get("kind"), Label: params.Get("label"), Metric: params.Get("metric"), Selector: params.Get("selector")}
+	rawStart, rawEnd := params.Get("start"), params.Get("end")
+	if (rawStart == "") != (rawEnd == "") {
+		return metadataQuery{}, errors.New("metadata start and end must be given together")
+	}
+	if rawStart == "" {
+		return query, nil
+	}
+	start, startErr := strconv.ParseInt(rawStart, 10, 64)
+	end, endErr := strconv.ParseInt(rawEnd, 10, 64)
+	if startErr != nil || endErr != nil {
+		return metadataQuery{}, errors.New("metadata start and end must be whole seconds")
+	}
+	query.Start, query.End = start, end
+	return query, nil
 }

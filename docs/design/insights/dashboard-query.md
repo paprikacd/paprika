@@ -33,7 +33,7 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
 | `variables` | Saved defaults with this call's declared overrides applied |
-| `variableDefinitions` | Each declared variable's label, saved default and static options, in declaration order. Label, default and option text share a 4 KiB encoded budget per result: `optionsOmitted` counts options past it, and `detailOmitted` marks a label and default left out of it. `get_dashboard` returns them all. The text synopsis names them in one bounded `Declared variables` line. Omitted when the dashboard declares no variables |
+| `variableDefinitions` | Each declared variable's label, saved default and static options, in declaration order. Label, default and option text share a 4 KiB encoded budget per result: `optionsOmitted` counts options past it, and `detailOmitted` marks a label and default left out of it. A variable with a query-backed `source` reports `source` (`labelValues` or `savedQuery`) and a `sourceSummary` (kind, provider or saved-query ID, label or field, and whether it depends on another variable). Its static list is reported as `fallbackOptions`, not `options`. query_dashboard does not resolve the source yet: an override of a sourced variable is not checked against the fallback, and only an empty or over-long override is named in `warnings`. `get_dashboard` returns them all. The text synopsis names them in one bounded `Declared variables` line. Omitted when the dashboard declares no variables |
 | `warnings` | Inputs the call accepted but that may be wrong. An override outside a variable's declared options still applies and is named here. Omitted when there are none; a warning never fails the call |
 | `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the `freshness` object where an explicit option judges it (a stat's is the first contract's), breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; under the result cap the listed breach intervals, each widget's whole `breaches` object, each multi-series `bandSeries` object, and `sample` may be omitted (see `omitted`). Only a time series' `freshness` can be dropped; a stat's `freshness` is never dropped; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
@@ -357,7 +357,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Input/budget | Limit |
 |---|---|
 | Arguments | 32 KiB; unknown fields rejected |
-| Variables | Declared names only; at most 20 string overrides. An override outside declared options is applied and listed in `warnings` |
+| Variables | Declared names only; at most 20 string overrides. An override outside declared options is applied and listed in `warnings`. A sourced variable's override is not checked against its fallback options; an empty one is listed |
 | Widgets | All by default, or 1–48 unique existing widget IDs |
 | Time | Both RFC3339 bounds or neither; maximum 31 days |
 | Default range | Saved custom range, otherwise saved rolling range |

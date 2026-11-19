@@ -119,7 +119,13 @@ func addBindingTypeIssue(issues map[string]string, binding persistedQueryBinding
 
 func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQueryReference, string, string, string) error) error {
 	var dashboard struct {
-		Title   string
+		Title     string
+		Variables []struct {
+			Name   string
+			Source struct {
+				QueryRef persistedQueryReference `json:"queryRef"`
+			} `json:"source"`
+		}
 		Widgets []struct {
 			Title            string
 			QueryRef         persistedQueryReference `json:"queryRef"`
@@ -138,6 +144,15 @@ func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQuer
 	}
 	if json.Unmarshal(raw, &dashboard) != nil {
 		return errors.New("invalid stored dashboard")
+	}
+	for i := range dashboard.Variables {
+		variable := &dashboard.Variables[i]
+		if variable.Source.QueryRef.ID == "" {
+			continue
+		}
+		if err := check(variable.Source.QueryRef, dashboard.Title, "variable "+variable.Name, "source"); err != nil {
+			return err
+		}
 	}
 	for i := range dashboard.Widgets {
 		widget := &dashboard.Widgets[i]

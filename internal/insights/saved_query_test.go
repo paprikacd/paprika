@@ -231,12 +231,14 @@ func TestSavedQueryReferenceDeletionGuards(t *testing.T) {
 		t.Fatal(w.Body)
 	}
 	tag := w.Header().Get("ETag")
-	for _, refType := range []string{"widget", "tooltip"} {
+	for _, refType := range []string{"widget", "tooltip", "variable"} {
 		var d map[string]any
 		_ = json.Unmarshal(dashboard("board", "Board"), &d)
 		widget := testFixtureObject(t, d, "widgets", 0)
 		if refType == "widget" {
 			widget["queryRef"] = map[string]any{"id": "query"}
+		} else if refType == "variable" {
+			d["variables"] = []any{map[string]any{"name": "service", "source": map[string]any{"type": "savedQuery", "queryRef": map[string]any{"id": "query"}, "field": "service"}}}
 		} else {
 			widget["options"] = map[string]any{"tooltipView": map[string]any{"type": "stat", "source": map[string]any{"type": "saved", "ref": map[string]any{"id": "query"}}}}
 		}

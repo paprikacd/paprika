@@ -3,6 +3,7 @@ package insights
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 )
@@ -25,7 +26,206 @@ func validateDashboardVariables(raw json.RawMessage) error {
 			return in(strconv.Itoa(i), err)
 		}
 	}
+	return validateDashboardVariableSources(variables, seen)
+}
+
+// validateDashboardVariableSources checks every variable source once all names are
+// declared, so a dependency can point at any variable and a cycle is caught as a whole.
+func validateDashboardVariableSources(variables []json.RawMessage, declared map[string]bool) error {
+	dependencies := map[string][]string{}
+	names := make([]string, 0, len(variables))
+	positions := map[string]int{}
+	for i, item := range variables {
+		var variable struct {
+			Name   string          `json:"name"`
+			Source json.RawMessage `json:"source"`
+		}
+		if err := decodeMember(item, &variable, "dashboard variables require a valid shape"); err != nil {
+			return in(strconv.Itoa(i), err)
+		}
+		names = append(names, variable.Name)
+		positions[variable.Name] = i
+		if variable.Source == nil {
+			continue
+		}
+		refs, err := validateDashboardVariableSource(variable.Source)
+		if err != nil {
+			return in(strconv.Itoa(i), in("source", err))
+		}
+		for _, ref := range refs {
+			if !declared[ref] {
+				return in(strconv.Itoa(i), in("source", fmt.Errorf("source depends on undeclared variable %q", ref)))
+			}
+		}
+		dependencies[variable.Name] = refs
+	}
+	if cycle := findVariableCycle(dependencies, names); cycle != "" {
+		return in(strconv.Itoa(positions[cycle]), in("source", errors.New(variableSourceCycleMessage)))
+	}
 	return nil
+}
+
+const variableSourceCycleMessage = "dashboard variable sources must not depend on themselves or form a cycle"
+
+// findVariableCycle returns a variable on a dependency cycle, or "" when there is none.
+// Each variable has at most 20 dependencies in a valid document, so depth-first search is cheap.
+func findVariableCycle(dependencies map[string][]string, order []string) string {
+	const (
+		unvisited = iota
+		visiting
+		done
+	)
+	state := map[string]int{}
+	var visit func(name string) string
+	visit = func(name string) string {
+		switch state[name] {
+		case visiting:
+			return name
+		case done:
+			return ""
+		}
+		state[name] = visiting
+		for _, next := range dependencies[name] {
+			if found := visit(next); found != "" {
+				return found
+			}
+		}
+		state[name] = done
+		return ""
+	}
+	for _, name := range order {
+		if found := visit(name); found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+// variableSourceSelectorPlaceholder finds a {{name}} placeholder in a selector template.
+var variableSourceSelectorPlaceholder = regexp.MustCompile(`\{\{([^{}]*)\}\}`)
+
+// variableSourceSelectorShape accepts a bare metric name or a name with one brace-enclosed
+// matcher list, after placeholders are replaced by a quoted literal.
+var variableSourceSelectorShape = regexp.MustCompile(`^(?:[A-Za-z_:][A-Za-z0-9_:]*)?\{[^{}]*\}$|^[A-Za-z_:][A-Za-z0-9_:]*$`)
+
+// selectorTemplateMessage is shared with the browser check in schema.ts; keep them identical.
+const selectorTemplateMessage = "selector placeholders must be complete unquoted literals outside comments"
+
+// validateDashboardVariableSource checks one source and returns the declared variables it reads.
+func validateDashboardVariableSource(raw json.RawMessage) ([]string, error) {
+	var header struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(raw, &header) != nil {
+		return nil, errors.New("dashboard variable sources must be JSON objects")
+	}
+	switch header.Type {
+	case "labelValues":
+		return validateLabelValuesSource(raw)
+	case "savedQuery":
+		return validateSavedQueryVariableSource(raw)
+	}
+	return nil, fieldErr("type", "dashboard variable source type must be labelValues or savedQuery")
+}
+
+func validateVariableSourceLimit(limit *int) error {
+	if limit != nil && (*limit < 1 || *limit > 100) {
+		return fieldErr("limit", "dashboard variable source limits must be integers from 1 to 100")
+	}
+	return nil
+}
+
+func validateLabelValuesSource(raw json.RawMessage) ([]string, error) {
+	fields, err := requireObjectShape(raw, []string{"type", "providerId", "label"}, []string{"selector", "limit"})
+	if err != nil {
+		return nil, err
+	}
+	var source struct {
+		ProviderID string  `json:"providerId"`
+		Label      string  `json:"label"`
+		Selector   *string `json:"selector"`
+		Limit      *int    `json:"limit"`
+	}
+	const message = "label value sources require a provider ID, a label of 1–128 characters, and an optional selector of up to 1024 characters"
+	if err := decodeMember(raw, &source, message); err != nil {
+		return nil, err
+	}
+	if !validID.MatchString(source.ProviderID) {
+		return nil, fieldErr("providerId", message)
+	}
+	if source.Label == "" || stringUnits(source.Label) > 128 {
+		return nil, fieldErr("label", message)
+	}
+	if err := validateVariableSourceLimit(source.Limit); err != nil {
+		return nil, err
+	}
+	if _, ok := fields["selector"]; !ok {
+		return nil, nil
+	}
+	return validateVariableSourceSelector(source.Selector, message)
+}
+
+// validateVariableSourceSelector checks a selector template and returns its placeholder variables.
+func validateVariableSourceSelector(selector *string, message string) ([]string, error) {
+	if selector == nil || *selector == "" || stringUnits(*selector) > 1024 {
+		return nil, fieldErr("selector", message)
+	}
+	var refs []string
+	types := map[string]string{}
+	for _, match := range variableSourceSelectorPlaceholder.FindAllStringSubmatch(*selector, -1) {
+		if !validVariableName(match[1]) {
+			return nil, fieldErr("selector", "selector placeholders must name a declared variable")
+		}
+		refs = append(refs, match[1])
+		types[match[1]] = "string"
+	}
+	shape := variableSourceSelectorPlaceholder.ReplaceAllString(*selector, `"x"`)
+	if !variableSourceSelectorShape.MatchString(shape) {
+		return nil, fieldErr("selector", "selector must be a metric name or one brace-enclosed matcher list")
+	}
+	// Placeholders expand as whole quoted literals, exactly as query templates do, so a
+	// quoted placeholder or one inside a comment is refused here and not at view time.
+	if validateSavedQueryTemplate(*selector, types) != nil {
+		return nil, fieldErr("selector", selectorTemplateMessage)
+	}
+	return refs, nil
+}
+
+func validateSavedQueryVariableSource(raw json.RawMessage) ([]string, error) {
+	fields, err := requireObjectShape(raw, []string{"type", "queryRef", "field"}, []string{"limit"})
+	if err != nil {
+		return nil, err
+	}
+	var source struct {
+		Field string `json:"field"`
+		Limit *int   `json:"limit"`
+	}
+	const message = "saved query variable sources require a field of 1–128 characters and an optional limit"
+	if err := decodeMember(raw, &source, message); err != nil {
+		return nil, err
+	}
+	if source.Field == "" || stringUnits(source.Field) > 128 {
+		return nil, fieldErr("field", message)
+	}
+	if err := validateVariableSourceLimit(source.Limit); err != nil {
+		return nil, err
+	}
+	if err := validateQueryReference(fields["queryRef"], false); err != nil {
+		return nil, in("queryRef", err)
+	}
+	var ref struct {
+		Bindings []queryBinding `json:"bindings"`
+	}
+	if err := json.Unmarshal(fields["queryRef"], &ref); err != nil {
+		return nil, in("queryRef", errors.New("saved query references require valid bindings"))
+	}
+	var refs []string
+	for _, binding := range ref.Bindings {
+		if binding.Source == "variable" {
+			refs = append(refs, binding.Variable)
+		}
+	}
+	return refs, nil
 }
 
 func validateDrilldowns(raw json.RawMessage) error {
@@ -58,7 +258,7 @@ func validateDrilldownBindings(raw json.RawMessage) error {
 }
 
 func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error {
-	fields, err := requireObjectShape(item, []string{"name"}, []string{"label", "defaultValue", "options"})
+	fields, err := requireObjectShape(item, []string{"name"}, []string{"label", "defaultValue", "options", "source"})
 	if err != nil {
 		return err
 	}

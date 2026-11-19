@@ -16,6 +16,7 @@ import {
   requiredProviders,
   savedQueryFingerprint,
   type DashboardBundle,
+  type ProviderRequirement,
 } from "./workspace-transfer";
 
 export type ImportAction = "keep" | "replace" | "copy";
@@ -443,7 +444,7 @@ export function canKeepSavedQuery(
 export function requiredImportProviders(
   bundle: DashboardBundle,
   keptIds: ReadonlySet<string>,
-): Map<string, Set<DataKind>> {
+): Map<string, Set<ProviderRequirement>> {
   const requirements = requiredProviders(bundle.dashboards);
   for (const query of bundle.savedQueries ?? []) {
     if (keptIds.has(query.id)) continue;
