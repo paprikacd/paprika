@@ -1,10 +1,19 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { GammaButton } from "./gamma/button";
 import { GammaInput } from "./gamma/input";
 import { GammaSwitch } from "./gamma/switch";
+import { lockBodyScroll } from "./gamma/scroll-lock";
 import { GammaSelect } from "./gamma/select";
 import {
   dashboardSchema,
@@ -320,6 +329,10 @@ export interface VariableBarProps {
   dashboard: Dashboard;
   values: VariableValues;
   onApply: (values: VariableValues) => void;
+  /** `sheet` stacks the fields full width inside the phone variables sheet. */
+  layout?: "bar" | "sheet";
+  /** Reports whether an unapplied text draft exists. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Loads values for variables with a source. Without them, sourced variables report that values are unavailable. */
   loaders?: VariableValueLoaders;
   /** The dashboard's current view range in seconds, which label values and saved queries cover. */
@@ -337,7 +350,7 @@ export function VariableBar(props: VariableBarProps) {
   return <VariableBarDraft key={revision} {...props} />;
 }
 
-function VariableBarDraft({ dashboard, values, onApply, loaders, range }: VariableBarProps) {
+function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout = "bar", onDirtyChange }: VariableBarProps) {
   const id = useId();
   const initial = resolveDashboardVariables(dashboard, values);
   const source = JSON.stringify(Object.entries(initial).sort(([a], [b]) => a.localeCompare(b)));
@@ -365,6 +378,7 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range }: Variab
   );
   // A typed value stages until Apply values, and so does a sourced variable that accepts typing beside its list.
   const hasTextInputs = dashboard.variables?.some((variable) => !variable.options || Boolean(variable.source));
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange]);
   function apply(next: VariableValues) {
     try {
       onApply(resolveDashboardVariables(dashboard, next));
@@ -373,6 +387,8 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range }: Variab
       setError(cause instanceof Error ? cause.message : "Check the variable values");
     }
   }
+  // Inside the sheet the dialog is already named "Dashboard variables", so the form is not named a second time.
+  const sheet = layout === "sheet";
   function choose(name: string, value: string) {
     const next = { ...initial, [name]: value };
     publishing.current = JSON.stringify(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)));
@@ -383,7 +399,8 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range }: Variab
     <form
       noValidate
       className={styles.variableBar}
-      aria-label="Dashboard variables"
+      data-layout={sheet ? "sheet" : undefined}
+      aria-label={sheet ? undefined : "Dashboard variables"}
       onSubmit={(event) => {
         event.preventDefault();
         if (!dirty) return;
@@ -492,6 +509,125 @@ function VariableDropdown({ variable, value, id, onChange }: {
     }))}
     onValueChange={(index) => { if (Number(index) !== selected) onChange(choices[Number(index)]); }}
   />;
+}
+
+/**
+ * The phone toolbar's variables control: a summary chip that opens the variables sheet. The bar inside the sheet
+ * stays mounted while the sheet is closed, so an unapplied text draft survives closing it.
+ */
+export function PhoneVariables({ dashboard, values, onApply, loaders, range }: VariableBarProps) {
+  const [open, setOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const chip = useRef<HTMLButtonElement>(null);
+  if (!dashboard.variables?.length) return null;
+  const resolved = resolveDashboardVariables(dashboard, values);
+  const shownValues = dashboard.variables.map(({ name }) => resolved[name] || "Empty value");
+  const summary = shownValues.join(" · ");
+  // Screen readers get each variable's label with its value, so the names are not read as one list of unlabelled values.
+  const accessibleSummary = dashboard.variables.map(({ name, label }, index) => `${label || name} ${shownValues[index]}`).join(", ");
+  return (
+    <>
+      <VariableSummaryButton
+        buttonRef={chip}
+        summary={summary}
+        accessibleSummary={accessibleSummary}
+        dirty={dirty}
+        expanded={open}
+        onOpen={() => setOpen(true)}
+      />
+      <VariableSheet open={open} onClose={() => setOpen(false)} returnFocus={chip}>
+        <VariableBar
+          dashboard={dashboard}
+          values={values}
+          onApply={onApply}
+          loaders={loaders}
+          range={range}
+          layout="sheet"
+          onDirtyChange={setDirty}
+        />
+      </VariableSheet>
+    </>
+  );
+}
+
+/** The chip shows the values in use. Its accessible name also says when a draft is not applied yet. */
+export function VariableSummaryButton({ buttonRef, summary, accessibleSummary, dirty, expanded, onOpen }: {
+  buttonRef: RefObject<HTMLButtonElement | null>;
+  summary: string;
+  accessibleSummary: string;
+  dirty: boolean;
+  expanded: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <GammaButton
+      ref={buttonRef}
+      size="sm"
+      variant="secondary"
+      className={styles.variableSummary}
+      aria-label={`Dashboard variables: ${accessibleSummary}${dirty ? ", unapplied changes" : ""}`}
+      aria-haspopup="dialog"
+      aria-expanded={expanded}
+      onClick={onOpen}
+    >
+      <SlidersHorizontal size={14} aria-hidden="true" />
+      <span className={styles.variableSummaryText} aria-hidden="true">{summary}</span>
+      {dirty && <span className={styles.variableDirty} aria-hidden="true" />}
+    </GammaButton>
+  );
+}
+
+/**
+ * A native modal bottom sheet. It is always mounted, so its children keep their state while it is closed. Escape,
+ * Done and a backdrop tap close it, and focus returns to the chip that opened it.
+ */
+export function VariableSheet({ open, onClose, returnFocus, children }: {
+  open: boolean;
+  onClose: () => void;
+  returnFocus: RefObject<HTMLElement | null>;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    if (!open) {
+      if (element.open) {
+        element.close();
+        returnFocus.current?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    element.showModal();
+    const unlock = lockBodyScroll();
+    const first = element.querySelector<HTMLElement>("form [role='combobox'], form input") ?? element.querySelector<HTMLElement>("button");
+    first?.focus({ preventScroll: true });
+    return unlock;
+  }, [open, returnFocus]);
+  return (
+    <dialog
+      ref={dialog}
+      className={styles.variableSheet}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        // A click on the dialog element itself is on the backdrop; the sheet body covers the rest.
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className={styles.sheetBody}>
+        <div className={styles.sheetHeader}>
+          <h2 id={titleId}>Dashboard variables</h2>
+          <GammaButton size="sm" variant="primary" onClick={onClose}>Done</GammaButton>
+        </div>
+        {children}
+      </div>
+    </dialog>
+  );
 }
 
 /**

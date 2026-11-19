@@ -98,6 +98,7 @@ For analytical dashboards, fix contradictory semantics before polishing. For a l
 
 Use the current Paprika identity for adaptation. In literal reproduction, first match the supplied identity, composition, and state. Make investigation improvements when the scope warrants them; do not insert a redesign into a screenshot-reproduction task.
 
+- On a phone (600px and below) the header shows the title and the first two lines of the description, and the canvas follows in saved order. The first two description lines and the first KPIs are what a reader sees first: each full-width stat costs about 110px of height, so every KPI above the first chart pushes it down by that much. Keep leading KPIs to what an on-call reader needs and put the first chart early when the chart is the reading.
 - Maximize useful plot area; put configuration in the editor and provenance in inspection. Keep ordinary widget chrome focused on title, telemetry, and relevant actions.
 - Align related plot edges, units, time domains, baselines, and legends. Use small multiples when overlays prevent comparison. Let density follow the task and viewport.
 - Use the product sans face, tabular numerals for live or aligned values, and monospace for identifiers/query syntax. Distinguish title, value, unit, axis, and detail without marketing-sized headings.

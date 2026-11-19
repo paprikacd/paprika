@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, activateDashboardAction } from "./gamma-controls.mjs";
 // Run against a local Next development server:
 // INSIGHTS_E2E_URL=http://localhost:3015 node e2e/insights.e2e.mjs
 // This script owns fresh browser contexts and writes screenshots outside source.
@@ -33,7 +33,7 @@ async function check(name, callback) {
 }
 
 async function sourceEditor() {
-  await page.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(page, "Code")
   const editor = page.getByRole("region", { name: "Dashboard source editor" })
   await editor.getByRole("button", { name: "JSON", exact: true }).click()
   return editor
@@ -99,7 +99,7 @@ try {
   })
 
   await check("visual editor updates title and PromQL and adds a widget", async () => {
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("button", { name: "Edit Request rate", exact: true }).click()
     const editor = page.getByRole("region", { name: "Widget editor" })
     await editor.getByLabel("Title", { exact: true }).fill("Total request rate")
@@ -222,7 +222,7 @@ try {
     await mobilePage.getByRole("heading", { name: "Service overview", exact: true }).waitFor()
     assert.ok(await mobilePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "Mobile page must not overflow horizontally")
     assert.equal(await mobilePage.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), true)
-    await mobilePage.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(mobilePage)
     await mobilePage.getByRole("button", { name: "Edit Request rate", exact: true }).click()
     await mobilePage.getByRole("region", { name: "Widget editor" }).getByLabel("Title", { exact: true }).fill("Mobile request rate")
     await mobilePage.getByRole("button", { name: "Apply changes", exact: true }).click()

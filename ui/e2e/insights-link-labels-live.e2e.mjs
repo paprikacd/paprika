@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Author a dashboard link from the loaded Prometheus label names, save it
 // conditionally and follow the exact selected node into a real dashboard.
 import assert from "node:assert/strict"
@@ -43,7 +43,7 @@ try {
       await tile.scrollIntoViewIfNeeded()
       const chart = tile.getByRole("img", { name: "CPU utilization by node", exact: true })
       await chart.waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit CPU utilization by node", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Links" }).click()

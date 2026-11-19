@@ -1,3 +1,4 @@
+import { openDashboardEditor } from "./gamma-controls.mjs"
 import assert from "node:assert/strict"
 
 export function precisionFixtures(width) {
@@ -15,7 +16,7 @@ export async function verifyPrecision({ page, width, api, panel, tooltip, showCe
   const expected = (value, decimals) => new Intl.NumberFormat("en", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)
   for (const decimals of [0, 2, 4]) {
     const before = (await api("dashboards/explorer-board")).document
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("button", { name: "Edit Parent health", exact: true }).click()
     await panel().getByRole("tab", { name: "Tooltips", exact: true }).click()
     await panel().getByLabel("Details decimal places", { exact: true }).fill(String(decimals))

@@ -7,7 +7,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const configFile = process.env.INSIGHTS_OMEGA_CONFIG
@@ -143,8 +143,7 @@ async function open(width) {
   await expectService(services[0])
 }
 async function selectService(service) {
-  const filter = page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: "Service", exact: true })
-  await selectGammaOption(page, filter, service)
+  await selectDashboardVariable(page, "Service", service)
   return expectService(service)
 }
 try {

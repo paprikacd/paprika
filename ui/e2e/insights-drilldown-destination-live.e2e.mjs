@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Verify destination changes preserve a live query's drilldown bindings until
 // explicitly confirmed, and that only saving the dashboard persists them.
 import assert from "node:assert/strict"
@@ -51,7 +51,7 @@ try {
       const tile = page.locator('[data-widget-id="node-cpu"]')
       await tile.scrollIntoViewIfNeeded()
       await tile.getByRole("img", { name: "CPU utilization by node", exact: true }).waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit CPU utilization by node", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Links" }).click()

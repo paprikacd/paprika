@@ -82,7 +82,7 @@ async function fresh(name, width = 1512, { existing = true, external = false } =
 }
 async function review(document = bundle, { format = "json", code = false } = {}) {
   if (code) {
-    await page.getByRole("button", { name: "Code", exact: true }).click()
+    await activateDashboardAction(page, "Code")
     const path = join(output, `incoming-${scenario}.${format}`)
     await writeFile(path, format === "json" ? JSON.stringify(document) : stringifyYAML(document))
     await page.getByRole("region", { name: "Dashboard source editor", exact: true }).getByLabel("Import dashboard document", { exact: true }).setInputFiles(path)

@@ -71,16 +71,12 @@ it("leaves compact chrome while editing without clearing the stored preference",
   expect(client.save).not.toHaveBeenCalled();
 });
 
-it("keeps long mobile context accessible without taking space from the metrics", async () => {
+it("keeps long mobile context in the page as a two-line clamp, not a disclosure", async () => {
   const description = "Synthetic local provider observations. Node readiness is independently sampled; missing samples remain unknown. The resource inventory is a separate snapshot and must not be interpreted as the same observation.";
   const { client } = setup({ width: 390, description, dense: false });
   await screen.findByRole("heading", { name: "Edge Watch" });
-  const disclosure = screen.getByText("Dashboard context").closest("details")!;
-  expect(disclosure).not.toHaveAttribute("open");
-  expect(disclosure).toHaveTextContent(description);
-  fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }));
   expect(screen.queryByText("Dashboard context")).not.toBeInTheDocument();
-  expect(screen.getByText(description)).toBeVisible();
+  expect(screen.getByText(description)).toBeInTheDocument();
   expect(client.save).not.toHaveBeenCalled();
 });
 

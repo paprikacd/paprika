@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, activateDashboardAction, selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 // Rich chart integration uses test-only HTTP fixtures and the actual application.
 // These compositions are not dashboard templates and are never shipped in the public gallery.
 import assert from "node:assert/strict"
@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { resolve, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+
 import { installRichChartFixtureAPI } from "./fixtures/rich-chart-api.mjs"
 import { chartFixtures } from "./fixtures/rich-chart-data.ts"
 import { widgetRendered } from "./widget-readiness.ts"
@@ -27,7 +27,6 @@ let browser, context, page, current, fixtureAPI
 await mkdir(output, { recursive: true })
 const tile = id => page.locator(`[data-widget-id=${JSON.stringify(id)}]`)
 const editor = () => page.getByRole("region", { name: "Widget editor", exact: true })
-const scopeControl = variable => page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: variable.label, exact: true })
 async function until(predicate, message, timeout = 15000) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
@@ -417,7 +416,7 @@ async function inspectCompactProviderLabels() {
       return rows
     }
     await assertRows("omega", 7)
-    await selectGammaOption(page, scopeControl(board.variables[0]), "staging")
+    await selectDashboardVariable(page, board.variables[0].label, "staging")
     await element.scrollIntoViewIfNeeded()
     const rows = await assertRows("staging", 4)
     assert.ok(fixtureAPI.calls.some(call => call.path === "/query" && call.document?.query === `${metric}{cluster="staging"}`), "The shared filter must resolve into the saved provider query")
@@ -497,7 +496,7 @@ async function inspectTopologyScroll() {
   return { overflow: true, start, advanced, maximum }
 }
 async function sourceRoundtrip() {
-  await page.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(page, "Code")
   const source = page.getByRole("region", { name: "Dashboard source editor", exact: true })
   await source.getByRole("button", { name: "JSON", exact: true }).click()
   const original = JSON.parse(await source.getByRole("textbox", { name: "Dashboard source" }).inputValue())
@@ -537,7 +536,7 @@ try {
         const before = await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value")
         const priorSecondary = await chartSnapshot(study.secondary)
         if (study.id === "collection-control") assert.ok(priorSecondary.connections.includes("Inspect connection Sources to Collector: 124.82K obs/s"), "Production pipeline must show its exact fixture connection value")
-        await selectGammaOption(page, scopeControl(variable), variable.options[1])
+        await selectDashboardVariable(page, variable.label, variable.options[1])
         await until(async () => await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value") !== before, "Shared filter did not update the single value")
         await ready(board.widgets.find(widget => widget.id === study.secondary))
         await until(async () => JSON.stringify(await chartSnapshot(study.secondary)) !== JSON.stringify(priorSecondary), "Shared filter did not update the dependent chart or records")
@@ -554,7 +553,7 @@ try {
         assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get("vars")), { [variable.name]: variable.options[1] })
         const stored = fixtureAPI.documents.get(board.id)
         assert.equal(stored.variables[0].defaultValue, variable.options[0], "Viewing a filter must not persist a dashboard default")
-        await selectGammaOption(page, scopeControl(variable), variable.options[0])
+        await selectDashboardVariable(page, variable.label, variable.options[0])
         for (const widget of board.widgets) {
           const element = await ready(widget)
           if (["distribution-heatmap", "stacked-timeseries", "directional-traffic", "connection-map", "pipeline-topology", "incident-calendar", "threshold-gauge"].includes(widget.pluginId)) {
@@ -577,7 +576,7 @@ try {
     if (width === 1512) {
       await check("Guided histogram settings preview, save, reload and JSON/YAML preserve saved-query bindings", async () => {
         await open(studies[0])
-        await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+        await openDashboardEditor(page)
         await page.getByRole("button", { name: "Edit Latency distribution", exact: true }).click()
         await editor().getByRole("tab", { name: "Options", exact: true }).click()
         await editor().getByRole("spinbutton", { name: "Maximum time columns", exact: true }).fill("24")
@@ -602,7 +601,7 @@ try {
         const board = await open(studies[1])
         const originalSeries = structuredClone(board.widgets.find(widget => widget.id === "node-cpu"))
         const originalGauge = structuredClone(board.widgets.find(widget => widget.id === "cpu-meter"))
-        await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+        await openDashboardEditor(page)
         await tile("node-cpu").getByRole("button", { name: "Edit CPU utilization by node", exact: true }).click()
         await selectGammaOption(page, editor().getByRole("combobox", { name: "Visualization", exact: true }), /^Stacked time series /)
         await editor().getByRole("tab", { name: "Options", exact: true }).click()
@@ -638,7 +637,7 @@ try {
         await ready(persisted.widgets.find(widget => widget.id === "cpu-meter"))
         assert.equal(persisted.widgets.find(widget => widget.id === "node-cpu").pluginId, "stacked-timeseries")
         assert.equal(persisted.widgets.find(widget => widget.id === "cpu-meter").config.display, "radial")
-        await selectGammaOption(page, scopeControl(persisted.variables[0]), "staging")
+        await selectDashboardVariable(page, persisted.variables[0].label, "staging")
         await until(async () => await tile("node-cpu").locator("g[data-series]").count() === 4, "Converted chart must still follow its existing shared cluster filter")
         await ready(persisted.widgets.find(widget => widget.id === "cpu-meter"))
         return { existingTimeSeriesConverted: true, stackedBarsRendered: true, gaugePreviewModes: ["linear", "segmented", "radial"], queryBindingsPreserved: true, savedAndReloaded: true, sharedFilterRetained: true }

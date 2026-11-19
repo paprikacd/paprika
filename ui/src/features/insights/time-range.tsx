@@ -32,12 +32,21 @@ export type TimeRangeChoice = Pick<Dashboard, "timeRange" | "customTimeRange">
 export function TimeRangeControl({
   dashboard,
   onChange,
+  customButton = true,
+  className,
 }: {
   /** The dashboard as this view shows it, so the current window is the one displayed. */
   dashboard: Dashboard
   onChange: (choice: TimeRangeChoice) => boolean | void
+  /**
+   * Shows the calendar button beside the select. Phones turn it off because the select's "Custom range…" option opens
+   * the same popover, and focus then returns to the select.
+   */
+  customButton?: boolean
+  className?: string
 }) {
   const id = useId()
+  const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [from, setFrom] = useState("")
@@ -48,7 +57,9 @@ export function TimeRangeControl({
   const displayTimeZone = resolveDashboardTimeZone(dashboard.timeZone)
   function close() {
     setOpen(false)
-    trigger.current?.focus()
+    // Without the calendar button, focus goes back to the select that opened the popover.
+    const target = customButton ? trigger.current : root.current?.querySelector<HTMLElement>("[role='combobox']")
+    target?.focus()
   }
   function openRange() {
     const range = dashboardRange(dashboard, Math.floor(Date.now() / 1000))
@@ -58,7 +69,7 @@ export function TimeRangeControl({
     setOpen(true)
   }
   return (
-    <div className={styles.range}>
+    <div ref={root} className={[styles.range, className].filter(Boolean).join(" ")}>
       <label className={shared.timeSelect}>
         <span className={shared.srOnly}>Time range</span>
         <GammaSelect
@@ -81,16 +92,18 @@ export function TimeRangeControl({
           ]}
         />
       </label>
-      <GammaButton iconOnly size="sm" variant="quiet"
-        ref={trigger}
-        className={shared.iconButton}
-        aria-label="Choose custom time range"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => (open ? close() : openRange())}
-      >
-        <CalendarRange size={15} />
-      </GammaButton>
+      {customButton && (
+        <GammaButton iconOnly size="sm" variant="quiet"
+          ref={trigger}
+          className={shared.iconButton}
+          aria-label="Choose custom time range"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => (open ? close() : openRange())}
+        >
+          <CalendarRange size={15} />
+        </GammaButton>
+      )}
       {open && (
         <section
           id={id}

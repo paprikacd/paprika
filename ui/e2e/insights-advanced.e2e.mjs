@@ -1,10 +1,10 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, activateDashboardAction, selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
 import assert from "node:assert/strict"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const output = resolve(fileURLToPath(new URL("../../", import.meta.url)), "artifacts/insights")
@@ -41,7 +41,7 @@ async function check(name, action) {
   }
 }
 async function document() {
-  await page.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(page, "Code")
   const source = page.getByRole("region", { name: "Dashboard source editor" })
   await source.getByRole("button", { name: "JSON", exact: true }).click()
   const value = JSON.parse(
@@ -77,7 +77,7 @@ try {
         await unavailable.evaluate((el) => getComputedStyle(el).backgroundColor),
         "rgb(192, 100, 79)",
       )
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await page.getByRole("button", { name: "Edit Service health", exact: true }).click()
       await editor().getByRole("tab", { name: "Style", exact: true }).click()
       await editor().getByLabel("Threshold 1 colour", { exact: true }).fill("#ad3f32")
@@ -174,7 +174,7 @@ try {
       // A toolbar window is a view: the saved dashboard keeps its own range until the author sets it as the default.
       assert.equal((await document()).customTimeRange, undefined)
       // Earlier checks leave the dashboard in edit mode, where the default action is offered.
-      if (await page.getByRole("button", { name: "Edit dashboard", exact: true }).count()) await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      if (await page.getByRole("button", { name: "Edit dashboard", exact: true }).count()) await openDashboardEditor(page)
       await page.getByRole("button", { name: "Set as dashboard default", exact: true }).click()
       await save()
       await page.reload({ waitUntil: "networkidle" })
@@ -281,7 +281,7 @@ try {
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5000 })
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     await manager().getByRole("button", { name: "Close dashboard manager" }).click()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("button", { name: "Edit Service health", exact: true }).click()
     await editor().getByRole("tab", { name: "Style", exact: true }).click()
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))

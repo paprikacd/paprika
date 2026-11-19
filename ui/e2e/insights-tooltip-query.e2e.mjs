@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, activateDashboardAction, selectGammaOption, waitForDashboardView } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry } from "./query-editor.mjs"
 import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
@@ -15,7 +15,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
+
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -204,7 +204,7 @@ async function check(name, action) {
   catch (error) { await screenshot(`failure-${scenario}.png`).catch(() => {}); reports.push({ name, passed: false, error: error.message, stack: error.stack }); throw error }
 }
 async function editTooltip() {
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: "Edit Live signal health", exact: true }).click()
   await panel().getByRole("tab", { name: "Tooltips", exact: true }).click()
 }
@@ -212,7 +212,7 @@ async function applySave() {
   await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
   await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+  await waitForDashboardView(page)
 }
 
 const hostChart = () => tile().locator('svg[role="img"]').first()
@@ -362,11 +362,11 @@ function toOpenUI(document) {
 async function saveCurrent() {
   await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+  await waitForDashboardView(page)
 }
 async function typedAuthoring(width) {
   await openScenario(undefined, width)
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: "Add widget", exact: true }).click()
   await page.getByRole("region", { name: "Widget library", exact: true }).getByRole("button", { name: /^Status heatmap/ }).click()
   await panel().getByLabel("Title", { exact: true }).fill("Discoverable tooltip host")
@@ -405,7 +405,7 @@ async function typedAuthoring(width) {
   assert.ok(fresh, "Adding a heatmap must lead to a persistable tooltip editor")
   assert.deepEqual(fresh.options.tooltipView.source, observationSource())
   const sourcePanel = () => page.getByRole("region", { name: "Dashboard source editor", exact: true })
-  await page.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(page, "Code")
   await sourcePanel().getByRole("button", { name: "JSON", exact: true }).click()
   const json = JSON.parse(await sourcePanel().getByRole("textbox", { name: "Dashboard source", exact: true }).inputValue())
   json.widgets = [{ ...fresh, type: "timeseries", layout: { x: 0, y: 0, w: 12, h: 6 } }]
@@ -414,7 +414,7 @@ async function typedAuthoring(width) {
   await sourcePanel().waitFor({ state: "hidden" }); await saveCurrent()
   document = await saved()
   assert.equal(document.widgets[0].type, "timeseries"); assert.deepEqual(document.widgets[0].options.tooltipView.source, observationSource())
-  await page.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(page, "Code")
   await sourcePanel().getByRole("button", { name: "YAML", exact: true }).click()
   const yamlField = sourcePanel().getByRole("textbox", { name: "Dashboard source", exact: true }), yaml = await yamlField.inputValue()
   assert.match(yaml, /field: timestamp/)

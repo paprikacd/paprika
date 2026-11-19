@@ -111,7 +111,7 @@ async function check(name, action) {
 async function review(document, { format = "json", file, code = false } = {}) {
   let sourceDraft
   if (code) {
-    await page.getByRole("button", { name: "Code", exact: true }).click()
+    await activateDashboardAction(page, "Code")
     sourceDraft = await editor().getByRole("textbox", { name: "Dashboard source", exact: true }).inputValue()
     await editor().getByLabel("Import dashboard document", { exact: true }).setInputFiles(file)
     await importer().waitFor()
@@ -489,7 +489,7 @@ try {
     assert.equal((await library()).length, 0)
     await screenshot("incomplete-bundle-390.png")
     await manager().getByRole("button", { name: "Close dashboard manager", exact: true }).click()
-    await page.getByRole("button", { name: "Code", exact: true }).click()
+    await activateDashboardAction(page, "Code")
     await editor().getByRole("button", { name: "JSON", exact: true }).click()
     const invalidSource = JSON.stringify({ ...downloads.json.document, savedQueries: [] })
     await editor().getByRole("textbox", { name: "Dashboard source", exact: true }).fill(invalidSource)

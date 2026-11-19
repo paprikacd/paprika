@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, activateDashboardAction, selectGammaOption, respondToGammaConfirmation, waitForDashboardView, openDashboardVariables, closeDashboardVariables } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
@@ -15,7 +15,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { activateDashboardAction, selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+
 import { connectionQuery, verifyConnections } from "./query-connections-scenarios.mjs"
 import { precisionFixtures, verifyPrecision } from "./precision-scenarios.mjs"
 
@@ -201,7 +201,7 @@ async function applySave() {
 async function saveBoard() {
   await applyWidgetChanges(page);
   await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+  await waitForDashboardView(page)
 }
 async function showCell(index = 0) {
   await tile().scrollIntoViewIfNeeded()
@@ -209,7 +209,7 @@ async function showCell(index = 0) {
   await tooltip().waitFor()
 }
 async function editHost() {
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: "Edit Parent health", exact: true }).click()
   await panel().getByRole("tab", { name: "Tooltips", exact: true }).click()
 }
@@ -414,7 +414,7 @@ async function reusedStatSparkline(width) {
   assert.equal(await child.locator("svg[data-stat-sparkline]").count(), 0)
   await page.keyboard.press("Escape"); await tooltip().waitFor({ state: "hidden" })
   await editHost(); await panel().getByRole("switch", { name: "Show sparkline", exact: true }).click(); await applySave()
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: "Edit Current response", exact: true }).click()
   await panel().getByRole("tab", { name: "Style", exact: true }).click()
   await panel().getByRole("switch", { name: "Show sparkline", exact: true }).click(); await applySave()
@@ -750,11 +750,12 @@ async function authorAndLink(width) {
   assert.deepEqual(widget.queryRef.bindings.find(binding => binding.parameter === "service"), { parameter: "service", source: "variable", variable: "selected_service" })
   const widgetId = widget.id, customDraft = widget.query
   await until(() => queryRequests().some(entry => entry.params.query === 'library_requests{service="dashboard-api"} > -7.25'), "Linked widget did not use remapped variable and numeric variable")
-  const variables = page.getByRole("form", { name: "Dashboard variables", exact: true })
+  const variables = await openDashboardVariables(page)
   const beforeTyping = queryRequests().length
   await variables.getByLabel("Selected service", { exact: true }).fill(enteredService)
   await frames(); assert.equal(queryRequests().length, beforeTyping, "Dashboard variable typing must not query before Apply")
   await variables.getByRole("button", { name: "Apply values", exact: true }).click()
+  await closeDashboardVariables(page)
   await until(() => queryRequests().at(-1)?.params.query === exact, "Apply values did not update the live query reference")
   await shot(`linked-dashboard-${width}.png`)
 
@@ -768,7 +769,7 @@ async function authorAndLink(width) {
   await until(() => queryRequests().at(-1)?.params.query === `${exact} + 1`, "A saved definition edit did not update the linked dashboard query")
   document = (await api("dashboards/explorer-board")).document
   assert.equal(document.widgets.find(widget => widget.id === widgetId).query, customDraft, "Live reference edits must not replace the retained custom draft")
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click()
   await panel().getByRole("button", { name: "Use custom query", exact: true }).click()
   assert.equal(await queryEditorValue(panel().getByRole("textbox", { name: /^PromQL query/ })), customDraft)
@@ -1010,7 +1011,7 @@ try {
     await openScenario(original, 390)
     const sourcePanel = () => page.getByRole("region", { name: "Dashboard source editor", exact: true })
     for (const format of ["JSON", "YAML"]) {
-      await page.getByRole("button", { name: "Code", exact: true }).click()
+      await activateDashboardAction(page, "Code")
       await sourcePanel().getByRole("button", { name: format, exact: true }).click()
       const field = sourcePanel().getByRole("textbox", { name: "Dashboard source", exact: true }), text = await field.inputValue()
       assert.match(text, /queryRef/); assert.match(text, /tooltip-library/)
@@ -1134,7 +1135,7 @@ try {
       await row.click()
       await libraryPicker.getByText("production", { exact: true }).waitFor()
       await explorer().getByRole("button", { name: "Dashboard", exact: true }).click()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await page.getByRole("button", { name: "Edit Parent health", exact: true }).click()
       const settingsTabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
       // The editor is lazy-loaded; wait for all tabs before reading their geometry.

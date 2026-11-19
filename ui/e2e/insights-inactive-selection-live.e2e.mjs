@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // A visualisation change must not hide retained dashboard-filter bindings.
 // This uses a unique ETag-protected dashboard against the local provider.
 import assert from "node:assert/strict"
@@ -44,7 +44,7 @@ try {
       await page.goto(`${app.origin}/dashboard/insights/?dashboard=${id}`, { waitUntil: "networkidle" })
       const tile = page.locator('[data-widget-id="shares"]')
       await tile.getByRole("group", { name: "Service shares" }).waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit Service shares", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Links" }).click()

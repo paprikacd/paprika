@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Exercise optional returned-sample age through the real editor, Insights
 // persistence and the local Prometheus/Observe path. Only unique local
 // dashboards are written and each is deleted with its current ETag.
@@ -33,7 +33,7 @@ try {
       await tile.scrollIntoViewIfNeeded();
       await tile.locator("[data-stat-sparkline]").waitFor();
       assert.equal(await tile.locator("[data-stale-observation]").count(), 0, "Threshold is opt-in");
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+      await openDashboardEditor(page);
       await tile.getByRole("button", { name: "Edit Old returned samples · expected", exact: true }).click();
       const editor = page.getByRole("region", { name: "Widget editor" });
       await editor.getByRole("tab", { name: "Style" }).click();

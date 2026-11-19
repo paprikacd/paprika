@@ -83,7 +83,8 @@ import { createBundleImporter, loadBundleImportReview, type BundleImportRequest 
 import { dashboardUsesSavedQuery, resolveSavedQueryReference } from "./saved-queries"
 import type { DashboardBundle } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
-import { useMobileNavigation } from "./use-mobile-navigation"
+import { useMobileNavigation, usePhoneShell } from "./use-mobile-navigation"
+import { dashboardActionItems } from "./dashboard-actions"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
@@ -110,7 +111,8 @@ import { GammaSelect } from "./gamma/select"
 import { GammaConfirmation, useConfirmation } from "./gamma/confirmation"
 import { lockBodyScroll } from "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
-import { VariableBar } from "./dashboard-variables"
+import { PhoneVariables, VariableBar } from "./dashboard-variables"
+import { ClampedDescription } from "./dashboard-description"
 import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "./variable-options"
 import type { VariableSourceCatalog } from "./variable-source-editor"
 import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
@@ -359,6 +361,7 @@ export default function InsightsApp({
   const compactShell = dense && !editing && resolvedTheme === "dark" && compactDesktop
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const isMobile = useMobileNavigation()
+  const phoneViewport = usePhoneShell()
   const drawerOpen = isMobile && mobileSidebar
   const navigation = useRef<HTMLElement>(null)
   // A panel lives in the workspace section, which Explore hides. The sidebar carries Explore and Dashboards, so it
@@ -486,6 +489,14 @@ export default function InsightsApp({
   const viewDashboard = useMemo(() => viewedDashboard(dashboard, currentRoute), [dashboard, currentRoute])
   const viewDiffers = editing && viewDiffersFromDefaults(dashboard, viewDashboard)
   const saveButton = useRef<HTMLButtonElement>(null)
+  // Edit chosen from the phone menu moves focus to the title field, which also announces the edit state.
+  const titleField = useRef<HTMLInputElement>(null)
+  const focusTitleOnEdit = useRef(false)
+  useLayoutEffect(() => {
+    if (!editing || !focusTitleOnEdit.current) return
+    focusTitleOnEdit.current = false
+    titleField.current?.focus()
+  }, [editing])
   // Definitions can be removed while editing. Stale view overrides must not
   // make an otherwise valid document impossible to edit.
   const variableKey = JSON.stringify(resolveDashboardVariables(dashboard, Object.fromEntries(
@@ -511,6 +522,16 @@ export default function InsightsApp({
   )
   const editingWidget = panel === "widget" && !!currentWidget
   const focusedWidget = editingWidget && !exploring
+  // The phone shell is a view: editing, a focused chart and Explore keep their full chrome.
+  const phoneShell = phoneViewport && !editing && !focusedWidget && !exploring
+  // Save removes the Save button on the phone shell, so focus moves to the Dashboard actions trigger, as Edit does on master.
+  const actionsRegion = useRef<HTMLDivElement>(null)
+  const focusActionsOnView = useRef(false)
+  useLayoutEffect(() => {
+    if (!focusActionsOnView.current) return
+    focusActionsOnView.current = false
+    if (phoneShell) actionsRegion.current?.querySelector<HTMLButtonElement>("button")?.focus()
+  }, [editing, phoneShell])
   const previewWidget = widgetPreview?.id === currentWidget?.id ? widgetPreview : currentWidget
   const builderPanel = useBuilderPanelFocus(
     panel && !exploring
@@ -1042,6 +1063,7 @@ export default function InsightsApp({
           ? "Example saved in this browser."
           : "Dashboard saved.",
       )
+      focusActionsOnView.current = phoneViewport
       setEditing(false)
       close()
     } catch (error) {
@@ -1198,6 +1220,12 @@ export default function InsightsApp({
       setError(cause instanceof Error ? cause.message : "Could not change the time range")
       return false
     }
+  }
+  function applyDashboardVariables(values: Parameters<typeof resolveDashboardVariables>[1]) {
+    try {
+      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
+      setError("")
+    } catch (error) { setError(error instanceof Error ? error.message : "Invalid variable values") }
   }
   function changeViewRefresh(refresh: Dashboard["refreshInterval"]) {
     try {
@@ -1594,7 +1622,7 @@ export default function InsightsApp({
   return (
     <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
     <SourceStatusContext.Provider value={sourceContext}>
-    <div ref={layoutRoot} className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-widget-focus={focusedWidget || undefined}>
+    <div ref={layoutRoot} className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-phone-shell={phoneShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />
       {drawerOpen && (
         <button type="button"
@@ -1803,6 +1831,7 @@ export default function InsightsApp({
           <div className={styles.heading}>
             {editing ? (
               <GammaInput
+                ref={titleField}
                 className={styles.titleInput}
                 aria-label="Dashboard title"
                 maxLength={120}
@@ -1814,17 +1843,22 @@ export default function InsightsApp({
             ) : (
               <h1>{dashboard.title}</h1>
             )}
-            {dashboard.description && (compactShell || (isMobile && !editing && dashboard.description.length > 140) ? <details className={styles.compactDescription}><summary>Dashboard context</summary><p>{dashboard.description}</p></details> : <p>{dashboard.description}</p>)}
+            {dashboard.description && (compactShell
+              ? <details className={styles.compactDescription}><summary>Dashboard context</summary><p>{dashboard.description}</p></details>
+              : isMobile ? <ClampedDescription text={dashboard.description} /> : <p>{dashboard.description}</p>)}
           </div>
-          <div className={styles.actions}>
+          <div className={styles.actions} ref={actionsRegion}>
             {isMobile || compactShell ? <GammaActionMenu
               label="Dashboard actions"
+              openerName="dashboard-actions"
               className={styles.iconButton}
               disabled={importingBundle}
-              items={[
-                { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => openBuilderPanel(panel === "manage" ? null : "manage") },
-                { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => openBuilderPanel(panel === "ai" ? null : "ai") },
-              ]}
+              items={dashboardActionItems({ phoneShell, refreshInterval: viewDashboard.refreshInterval, customRange: !!viewDashboard.customTimeRange }, {
+                edit: () => { focusTitleOnEdit.current = true; setEditing(true) },
+                togglePanel: name => openBuilderPanel(panel === name ? null : name),
+                inspectQueries: () => setInspectingQueries(value => !value),
+                refresh: changeViewRefresh,
+              })}
             /> : <>
             <GammaButton data-panel-opener="manage" size="sm" variant="secondary"
               className={styles.secondary}
@@ -1842,7 +1876,7 @@ export default function InsightsApp({
               <Sparkles size={15} /> Build with AI
             </GammaButton>
             </>}
-            {editing ? (
+            {!phoneShell && (editing ? (
               <GammaButton ref={saveButton} size="sm" variant="primary" className={styles.primary} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
                 {busy ? (
                   <Loader2 size={15} className={styles.spin} />
@@ -1861,18 +1895,14 @@ export default function InsightsApp({
               >
                 <Pencil size={14} />{!compactShell && " Edit dashboard"}
               </GammaButton>
-            )}
+            ))}
           </div>
         </div>
         {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
         <div className={styles.toolbar} data-tooltip-obstacle>
-          <div className={styles.toolbarLeft}>
-            <VariableBar dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={values => {
-              try {
-                applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
-                setError("")
-              } catch (error) { setError(error instanceof Error ? error.message : "Invalid variable values") }
-            }} />
+          {!phoneShell && <div className={styles.toolbarLeft}>
+            <VariableBar dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={applyDashboardVariables} />
+            {/* The phone shell holds Code and Queries in the Dashboard actions menu, so the canvas tools row is not shown. */}
             <div className={styles.canvasTools}>
             <span className={styles.canvasTab}>
               <LayoutDashboard size={14} /> Canvas
@@ -1925,12 +1955,15 @@ export default function InsightsApp({
               </>
             )}
             </div>
-          </div>
-          <div className={styles.toolbarRight}>
+          </div>}
+          <div className={styles.toolbarRight} role={phoneShell ? "group" : undefined} aria-label={phoneShell ? "Dashboard view" : undefined}>
+            {phoneShell && <PhoneVariables dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={applyDashboardVariables} />}
             <TimeRangeControl
               key={dashboard.id}
               dashboard={viewDashboard}
               onChange={changeViewRange}
+              customButton={!phoneShell}
+              className={phoneShell ? styles.phoneTime : undefined}
             />
             <GammaButton iconOnly size="sm" variant="quiet"
               className={styles.iconButton}
@@ -1943,7 +1976,7 @@ export default function InsightsApp({
             >
               <RefreshCw size={14} />
             </GammaButton>
-            <GammaSelect
+            {!phoneShell && <GammaSelect
               className={styles.refreshSelect}
               aria-label="Auto refresh"
               size="sm"
@@ -1954,7 +1987,7 @@ export default function InsightsApp({
                 {value: "0", label: "Auto off"}, {value: "15", label: "15s"},
                 {value: "30", label: "30s"}, {value: "60", label: "1m"},
               ]}
-            />
+            />}
             {viewDiffers && (
               <GammaButton size="sm" variant="quiet" onClick={setViewAsDefault}>
                 Set as dashboard default

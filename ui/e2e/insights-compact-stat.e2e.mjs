@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectGammaOption } from "./gamma-controls.mjs"
 // Exercise compact and backdrop KPI presentations through the real document API
 // and browser layout at desktop and mobile sizes. Query values are deterministic.
 import assert from "node:assert/strict";
@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createReferenceDashboardEnvironment } from "./fixtures/reference-dashboard-environment.mjs";
-import { selectGammaOption } from "./gamma-controls.mjs";
+
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 const environment = await createReferenceDashboardEnvironment(repository, process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015");
@@ -40,7 +40,7 @@ try {
     await environment.installQueryFixture(page, () => ({ series: [{ name: "api", labels: {}, points: [{ timestamp: Date.now(), value: 42.34 }] }] }));
     try {
       await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+      await openDashboardEditor(page);
       await page.getByRole("button", { name: "Edit Ingress", exact: true }).click();
       const editor = page.getByRole("region", { name: "Widget editor" });
       await editor.getByRole("tab", { name: "Style" }).click();
@@ -122,7 +122,7 @@ try {
       await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" });
       for (const id of editIds) await page.locator(`[data-widget-id="${id}"] [data-metric-value]`).first().waitFor();
       const view = Object.fromEntries((await measureTiles(page)).map(entry => [entry.id, entry]));
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+      await openDashboardEditor(page);
       for (const id of editIds) await page.locator(`[data-widget-id="${id}"] [data-widget-edit]`).waitFor();
       assertEditGeometry(view, await measureTiles(page), "fine 1512");
       // Keyboard focus draws its ring inside the chip, where the tile's overflow clip cannot cut it.
@@ -148,7 +148,7 @@ try {
       await page.goto(`${environment.baseURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" });
       await page.locator('[data-widget-id="side"] [data-metric-value]').first().waitFor();
       const view = Object.fromEntries((await measureTiles(page)).map(entry => [entry.id, entry]));
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+      await openDashboardEditor(page);
       for (const id of editIds) await page.locator(`[data-widget-id="${id}"] [data-widget-edit]`).waitFor();
       assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), true, "touch context must report a coarse pointer");
       const edit = await measureTiles(page);

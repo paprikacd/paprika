@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, activateDashboardAction, openDashboardEditor, selectGammaOption } from "./gamma-controls.mjs"
 // Run from ui/ against a fresh production export or development server:
 // INSIGHTS_E2E_URL=http://127.0.0.1:3015 node e2e/insights-responsive.e2e.mjs
 // Responsive and interaction tests use fresh browser contexts. The tooltip
@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { installChartSystemFixture } from "./fixtures/chart-system.mjs"
 
@@ -64,7 +64,7 @@ async function stableGeometry(target = page) {
   }))
 }
 async function document() {
-  await page.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(page, "Code")
   const source = page.getByRole("region", { name: "Dashboard source editor" })
   await source.getByRole("button", { name: "JSON", exact: true }).click()
   const value = JSON.parse(await source.getByRole("textbox", { name: "Dashboard source" }).inputValue())
@@ -73,8 +73,7 @@ async function document() {
   return value
 }
 async function editing() {
-  const button = page.getByRole("button", { name: "Edit dashboard", exact: true })
-  if (await button.isVisible()) await button.click()
+  await openDashboardEditor(page)
 }
 const editor = () => page.getByRole("region", { name: "Widget editor" })
 const heatmap = () => page.getByRole("group", { name: "Service health heatmap", exact: true })
@@ -476,11 +475,10 @@ try {
   })
 
 async function editIn(target) {
-  const button = target.getByRole("button", { name: "Edit dashboard", exact: true })
-  if (await button.isVisible()) await button.click()
+  await openDashboardEditor(target)
 }
 async function documentIn(target) {
-  await target.getByRole("button", { name: "Code", exact: true }).click()
+  await activateDashboardAction(target, "Code")
   const source = target.getByRole("region", { name: "Dashboard source editor" })
   await source.getByRole("button", { name: "JSON", exact: true }).click()
   const value = JSON.parse(await source.getByRole("textbox", { name: "Dashboard source" }).inputValue())
@@ -576,7 +574,7 @@ await check("panel open and close keep tile nodes and issue no queries on a live
     const fixture = await installChartSystemFixture(target, baseURL)
     await target.goto(`${baseURL}/dashboard/insights/?dashboard=${fixture.dashboard.id}`)
     await target.locator('[data-widget-id="hex-map"] [data-geo-cell], [data-widget-id="hex-map"] [data-map-plane]').first().waitFor()
-    await target.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await activateDashboardAction(target, "Edit dashboard")
     await target.locator(".insights-drag-handle").first().waitFor()
     await target.evaluate(() => {
       window.__tiles = new Map([...document.querySelectorAll("[data-widget-id]")].map((node) => [node.dataset.widgetId, node]))
