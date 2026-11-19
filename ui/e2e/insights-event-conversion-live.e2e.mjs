@@ -1,10 +1,10 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectGammaOption } from "./gamma-controls.mjs"
 // Switching visualization types must not silently remove a saved event query.
 // Exercise a unique ETag-protected dashboard with real local providers.
 import assert from "node:assert/strict"
 import { mkdir } from "node:fs/promises"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+
 
 const origin = new URL(process.env.PAPRIKA_GALLERY_BASE_URL || "http://127.0.0.1:1")
 const app = new URL(process.env.INSIGHTS_E2E_URL || origin.href)
@@ -43,7 +43,7 @@ try {
       await page.goto(`${app.origin}/dashboard/insights/?dashboard=${id}`, { waitUntil: "networkidle" })
       const tile = page.locator(`[data-widget-id="${source.id}"]`)
       await tile.getByRole("img", { name: source.title, exact: true }).waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: `Edit ${source.title}`, exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       const viz = editor.getByRole("combobox", { name: "Visualization", exact: true })

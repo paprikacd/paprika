@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Real Insights service + deterministic Prometheus, bridged into the static UI.
 import assert from "node:assert/strict"
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const base = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -90,7 +90,7 @@ try {
   await page.goto(`${base}/dashboard/insights/?dashboard=fleet`, { waitUntil: "networkidle" })
   await check("configure a persistent dashboard link through Gamma controls", async () => {
     await page.getByRole("heading", { name: "Fleet health", exact: true }).waitFor()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("button", { name: "Edit Service health", exact: true }).click()
     await editor().getByRole("tab", { name: "Links", exact: true }).click()
     await editor().getByRole("button", { name: "Add dashboard link", exact: true }).click()
@@ -150,7 +150,7 @@ try {
     assert.equal((await get("service-detail")).variables[0].defaultValue, "default")
   })
   await check("dirty navigation is cancellable and saving keeps carried view settings transient", async () => {
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByLabel("Dashboard title", { exact: true }).fill("Service detail revised")
     await page.getByRole("button", { name: "Fleet health", exact: true }).click()
     await respondToGammaConfirmation(page, "Cancel")
@@ -166,7 +166,7 @@ try {
   await check("Gamma dropdowns support keyboard selection and stay inside a narrow viewport", async () => {
     await page.getByRole("button", { name: "Fleet health", exact: true }).click()
     await page.getByRole("heading", { name: "Fleet health", exact: true }).waitFor()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("button", { name: "Edit Service health", exact: true }).click()
     await editor().getByRole("tab", { name: "Links", exact: true }).click()
     const destination = editor().getByRole("combobox", { name: "Link 1 destination", exact: true })

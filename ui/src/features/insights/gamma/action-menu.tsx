@@ -25,6 +25,8 @@ export interface GammaActionMenuItem {
   danger?: boolean;
   selected?: boolean;
   icon?: ReactNode;
+  /** Consecutive items with the same group render under one visible heading, exposed as a named role=group. */
+  group?: string;
   onSelect: () => void;
 }
 
@@ -35,6 +37,7 @@ export function GammaActionMenu({
   className,
   disabled = false,
   iconOnly = true,
+  openerName,
 }: {
   label?: string;
   trigger?: ReactNode;
@@ -42,6 +45,8 @@ export function GammaActionMenu({
   className?: string;
   disabled?: boolean;
   iconOnly?: boolean;
+  /** Names the trigger as the opener of any builder panel its items open, so focus returns to the trigger. */
+  openerName?: string;
 }) {
   const id = useId();
   const [isOpen, setOpen] = useState(false);
@@ -78,6 +83,65 @@ export function GammaActionMenu({
     typed.current = { value: "", at: 0 };
     setOpen(true);
   }
+  function renderItem(item: GammaActionMenuItem) {
+    return (
+      <button
+        type="button"
+        key={item.id}
+        tabIndex={-1}
+        role={item.selected === undefined ? "menuitem" : "menuitemradio"}
+        aria-checked={item.selected}
+        aria-disabled={item.disabled || undefined}
+        data-label={item.label}
+        data-danger={item.danger || undefined}
+        className={`${styles.option} ${styles.menuItem}`}
+        onClick={() => {
+          if (!item.disabled) {
+            if (nativeControlDisabled(triggerRef.current)) {
+              close(false);
+              return;
+            }
+            close();
+            item.onSelect();
+          }
+        }}
+      >
+        {item.icon && <span aria-hidden="true">{item.icon}</span>}
+        <span className={styles.menuCopy}>
+          <span>{item.label}</span>
+          {item.description && <small>{item.description}</small>}
+        </span>
+        {item.selected && <Check size={14} aria-hidden="true" />}
+      </button>
+    );
+  }
+  // Arrow, Home, End and typeahead query every button in the panel, so navigation crosses group boundaries.
+  function renderItems() {
+    const nodes: ReactNode[] = [];
+    let index = 0;
+    while (index < items.length) {
+      const item = items[index];
+      if (!item.group) {
+        nodes.push(renderItem(item));
+        index += 1;
+        continue;
+      }
+      const start = index;
+      const members: GammaActionMenuItem[] = [];
+      while (index < items.length && items[index].group === item.group) {
+        members.push(items[index]);
+        index += 1;
+      }
+      const headingId = `${id}-group-${start}`;
+      nodes.push(
+        <div key={`group-${start}`} role="group" aria-labelledby={headingId} className={styles.menuGroup}>
+          <div id={headingId} aria-hidden="true" className={styles.menuGroupLabel}>{item.group}</div>
+          {members.map(renderItem)}
+        </div>,
+      );
+    }
+    return nodes;
+  }
   return (
     <>
       <GammaButton
@@ -87,6 +151,7 @@ export function GammaActionMenu({
         iconOnly={iconOnly}
         className={className}
         disabled={disabled}
+        data-panel-opener={openerName}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -179,38 +244,7 @@ export function GammaActionMenu({
               }
             }}
           >
-            {items.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                tabIndex={-1}
-                role={
-                  item.selected === undefined ? "menuitem" : "menuitemradio"
-                }
-                aria-checked={item.selected}
-                aria-disabled={item.disabled || undefined}
-                data-label={item.label}
-                data-danger={item.danger || undefined}
-                className={`${styles.option} ${styles.menuItem}`}
-                onClick={() => {
-                  if (!item.disabled) {
-                    if (nativeControlDisabled(triggerRef.current)) {
-                      close(false);
-                      return;
-                    }
-                    close();
-                    item.onSelect();
-                  }
-                }}
-              >
-                {item.icon && <span aria-hidden="true">{item.icon}</span>}
-                <span className={styles.menuCopy}>
-                  <span>{item.label}</span>
-                  {item.description && <small>{item.description}</small>}
-                </span>
-                {item.selected && <Check size={14} aria-hidden="true" />}
-              </button>
-            ))}
+            {renderItems()}
             {!items.length && (
               <div className={styles.empty}>No actions available.</div>
             )}

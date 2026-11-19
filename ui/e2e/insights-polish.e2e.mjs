@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Local visual/interaction loop, backed by real Insights persistence and synthetic queries.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -167,7 +167,7 @@ try {
         return { exactReading: reading, pod: vars.pod, missingObservationDisabled: true };
       });
       await check(`${label}: single-row menus with pointer, touch and keyboard scrolling`, async () => {
-        await page.getByRole('button', { name: 'Edit dashboard', exact: true }).click();
+        await openDashboardEditor(page);
         await page.getByRole('button', { name: 'Edit Request latency', exact: true }).click();
         const editor = page.getByRole('region', { name: 'Widget editor', exact: true });
         const tabs = editor.getByRole('tablist', { name: 'Widget settings', exact: true });

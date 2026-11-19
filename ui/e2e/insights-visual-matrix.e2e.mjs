@@ -47,7 +47,7 @@ import { tileNotReadySelector } from "../render-worker.mjs"
 import { createReferenceDashboardEnvironment } from "./fixtures/reference-dashboard-environment.mjs"
 import { referenceDashboards, resultForReferenceQuery } from "./fixtures/reference-dashboard-data.ts"
 import { compareMatrix, errorRenders, formatReport, serializeBaseline } from "./fixtures/visual-matrix-diff.mjs"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectGammaOption, openDashboardEditor } from "./gamma-controls.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const baselinePath = fileURLToPath(new URL("./baselines/visual-matrix.json", import.meta.url))
@@ -126,7 +126,7 @@ async function captureRender(page, key, url, { edit = false } = {}) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded" })
     await page.waitForSelector("[data-widget-id]", { timeout: settleTimeout })
-    if (edit) await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    if (edit) await openDashboardEditor(page)
     await settle(page, key)
     const probed = await page.evaluate(dashboardProbe, {})
     const measured = await page.evaluate(measureDashboard, anchorSelector)

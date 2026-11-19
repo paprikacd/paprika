@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { chromium } from "playwright"
+import { activateDashboardAction } from "./gamma-controls.mjs"
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -158,7 +159,14 @@ try {
       if (widget.query.includes("fixture_metric_8")) await tile.getByText(/The query timed out/i).waitFor()
       else await tile.locator("[data-metric-value]").first().waitFor()
     }
-    const trigger = page.getByRole("button", { name: "Query inspector", exact: true })
+    // Phones open the inspector from the Dashboard actions menu, and focus returns to that menu trigger.
+    const phone = width <= 600
+    const trigger = phone ? page.getByRole("button", { name: "Dashboard actions", exact: true }) : page.getByRole("button", { name: "Query inspector", exact: true })
+    const openInspector = async (key) => {
+      if (phone) return activateDashboardAction(page, "Query inspector")
+      if (key) return trigger.press(key)
+      return trigger.click()
+    }
     await trigger.scrollIntoViewIfNeeded()
     await settleQueries(page, pending)
     // A warm 5-second cache can conceal a canvas remount/requery regression.
@@ -169,7 +177,7 @@ try {
     const timeoutsBeforeInspection = requests.filter(query => query === 8).length
     const beforeGeometry = await canvasGeometry(page)
     await trigger.focus()
-    await page.keyboard.press("Enter")
+    await openInspector("Enter")
     const inspector = page.getByRole("dialog", { name: "Query inspector", exact: true })
     await inspector.getByRole("heading", { name: "Scheduler timeline" }).waitFor()
     await assertNativeModal(page, inspector)
@@ -212,7 +220,7 @@ try {
     assert.equal(requests.filter(query => query === 8).length, timeoutsBeforeInspection, "The uncached timeout must not retry when inspection closes")
     assert.equal(failedRequests.length, failuresBeforeInspection)
 
-    await trigger.press("Enter")
+    await openInspector("Enter")
     await inspector.waitFor()
     await assertNativeModal(page, inspector)
     await inspector.getByRole("button", { name: "Close query inspector" }).click()
@@ -231,7 +239,7 @@ try {
     const beforeHeldInspection = [...requests]
     const failuresBeforeHeldInspection = failedRequests.length
     const heldGeometry = await canvasGeometry(page)
-    await trigger.click()
+    await openInspector()
     await inspector.waitFor()
     await afterEffects(page)
     const running = inspector.getByRole("button", { name: /Inspect.*Running/ })
@@ -246,7 +254,7 @@ try {
     assertCanvasUnchanged(heldGeometry, await canvasGeometry(page))
     assert.deepEqual(requests, beforeHeldInspection, "Closing must preserve the original in-flight request")
     assert.equal(failedRequests.length, failuresBeforeHeldInspection, "Closing must not abort an in-flight request")
-    await trigger.press("Enter")
+    await openInspector("Enter")
     await inspector.waitFor()
     await afterEffects(page)
     assert.equal(await inspector.getByRole("button", { name: runningLabel, exact: true }).count(), 1, "The same execution stays Running when reopened")
@@ -281,7 +289,7 @@ try {
         await page.waitForTimeout(5_200)
         await settleQueries(page, pending)
         const thresholdRequests = [...requests], thresholdFailures = failedRequests.length
-        await trigger.click()
+        await openInspector()
         await inspector.waitFor()
         await afterEffects(page)
         assertCanvasUnchanged(thresholdGeometry, await canvasGeometry(page))

@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Author a geo selection binding through the actual editor, persist it through
 // Insights, then verify the selected record drives a real PostgreSQL query.
 // All dashboard writes target unique documents in a local-only gallery store.
@@ -45,7 +45,7 @@ try {
       await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
       const tile = page.locator('[data-widget-id="geo-honeycomb"]')
       await tile.scrollIntoViewIfNeeded()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit Source requests · honeycomb", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Links" }).click()

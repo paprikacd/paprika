@@ -9,7 +9,10 @@ export async function applyWidgetChanges(page) {
   }
 }
 
-/** Open a dashboard action through its visible desktop button or compact menu. */
+/** Menu names for dashboard actions that the phone shell moves into the Dashboard actions menu. */
+const phoneMenuNames = { Code: "Dashboard as code", Queries: "Query inspector" }
+
+/** Open a dashboard action through its visible desktop button or the Dashboard actions menu (phone shell and compact). */
 export async function activateDashboardAction(page, name) {
   if (name === "Save dashboard") await applyWidgetChanges(page)
   const button = page.getByRole("button", { name, exact: true })
@@ -18,7 +21,15 @@ export async function activateDashboardAction(page, name) {
     return
   }
   await page.getByRole("button", { name: "Dashboard actions", exact: true }).click()
-  await page.getByRole("menuitem", { name, exact: true }).click()
+  await page.getByRole("menuitem", { name: phoneMenuNames[name] ?? name, exact: true }).click()
+}
+
+/** Start editing through whichever control this viewport shows: the Edit button, or the Dashboard actions menu on phones. Already editing is a no-op. */
+export async function openDashboardEditor(page) {
+  const title = page.getByRole("textbox", { name: "Dashboard title", exact: true })
+  if (await title.isVisible()) return
+  await activateDashboardAction(page, "Edit dashboard")
+  await title.waitFor()
 }
 
 /** Choose through Gamma's visible button/listbox, including its body portal. */
@@ -42,4 +53,36 @@ export async function respondToGammaConfirmation(page, action) {
   await dialog.waitFor()
   await dialog.getByRole("button", { name: action, exact: true }).click()
   await dialog.waitFor({ state: "hidden" })
+}
+
+/** Wait until a save or cancel has left edit mode: the title field is gone and the view's Edit control, or the phone menu, is present. */
+export async function waitForDashboardView(page) {
+  await page.getByRole("textbox", { name: "Dashboard title", exact: true }).waitFor({ state: "hidden" })
+  await page.getByRole("button", { name: /^(Edit dashboard|Dashboard actions)$/ }).first().waitFor()
+}
+
+/** Variables sit in the toolbar, or in the native bottom sheet behind the phone chip. Opens the sheet when the chip is shown and returns the variables form. */
+export async function openDashboardVariables(page) {
+  const chip = page.getByRole("button", { name: /^Dashboard variables:/ })
+  if (await chip.count() === 0) return page.getByRole("form", { name: "Dashboard variables", exact: true })
+  if (await page.locator("dialog[open]").count() === 0) {
+    await chip.click()
+    await page.locator("dialog[open]").waitFor()
+  }
+  return page.locator("dialog[open]").locator("form")
+}
+
+/** Closes the phone variables sheet when it is open, because it is modal and makes the rest of the page inert. */
+export async function closeDashboardVariables(page) {
+  const sheet = page.locator("dialog[open]")
+  if (await sheet.count() === 0) return
+  await sheet.getByRole("button", { name: "Done", exact: true }).click()
+  await sheet.waitFor({ state: "detached" })
+}
+
+/** Choose one option of a dashboard variable through the variables form: opens the phone sheet when shown, selects, and closes the sheet again so the page is not left inert. */
+export async function selectDashboardVariable(page, name, optionName) {
+  const form = await openDashboardVariables(page)
+  await selectGammaOption(page, form.getByRole("combobox", { name, exact: true }), optionName)
+  await closeDashboardVariables(page)
 }

@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Exercise result-column discovery in the real widget editor and conditional
 // persistence. Only unique dashboards in the isolated local store are changed.
 import assert from "node:assert/strict"
@@ -39,7 +39,7 @@ try {
       const tile = page.locator('[data-widget-id="composition"]')
       await tile.scrollIntoViewIfNeeded()
       await tile.getByRole("group", { name: "Company composition by market cap" }).waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit Company composition by market cap", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Options", exact: true }).click()

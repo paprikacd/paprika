@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectGammaOption, waitForDashboardView } from "./gamma-controls.mjs";
 import { serveAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
 // Real Go storage/adapters + deterministic Prometheus/Tempo providers. The local
@@ -14,7 +14,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { parse as parseYaml } from "yaml"
-import { selectGammaOption } from "./gamma-controls.mjs"
+
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
@@ -127,7 +127,7 @@ async function openScenario(width = 1512) {
   await tile().locator('[data-metric-value="123.5"]').waitFor()
 }
 async function edit(title = "Original widget") {
-  if (await page.getByRole("button", { name: "Edit dashboard", exact: true }).isVisible()) await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: `Edit ${title}`, exact: true }).click()
   await panel().waitFor()
 }
@@ -201,7 +201,7 @@ try {
     await panel().getByRole("textbox", { name: "Title", exact: true }).fill("Saved live preview")
     await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+    await waitForDashboardView(page)
     const persisted = (await api("dashboards/editing-board")).document
     assert.equal(persisted.widgets[0].title, "Saved live preview"); assert.equal(persisted.widgets[0].query, "fast_probe")
     await page.reload({ waitUntil: "networkidle" })
@@ -228,7 +228,7 @@ try {
     await until(() => panel().getByRole("button", { name: "Apply changes", exact: true }).isEnabled(), "Corrected widget draft did not enable Save")
     await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+    await waitForDashboardView(page)
     assert.deepEqual((await api("dashboards/editing-board")).document.widgets[0].config, { label: "Live gauge" })
     return { rejectedInvalidJSON: true, validConfigPersisted: true }
   })
@@ -291,7 +291,7 @@ try {
     await panel().getByRole("button", { name: "Apply changes", exact: true }).click()
     await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+    await waitForDashboardView(page)
     await page.reload({ waitUntil: "networkidle" }); await edit()
     await panel().getByRole("combobox", { name: "Saved query", exact: true }).getByText("production", { exact: true }).waitFor()
     assert.deepEqual((await api(`saved-queries/${tagged.id}`)).document.tags, tagged.tags)

@@ -2,7 +2,7 @@
 // authored expression and time range have not changed.
 import assert from "node:assert/strict"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectGammaOption, openDashboardEditor } from "./gamma-controls.mjs"
 
 const origin = new URL(process.env.PAPRIKA_GALLERY_BASE_URL || "http://127.0.0.1:1")
 const app = new URL(process.env.INSIGHTS_E2E_URL || origin.href)
@@ -40,7 +40,7 @@ try {
     else page.on("request", request => { if (new URL(request.url()).pathname === "/api/insights/query") requests.push(request.postDataJSON()) })
     try {
       await page.goto(`${app.origin}/dashboard/insights/?dashboard=${id}`, { waitUntil: "networkidle" })
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await page.locator('[data-widget-id="requests"]').getByRole("button", { name: "Edit Requests", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       const run = editor.getByRole("button", { name: "Run query", exact: true })

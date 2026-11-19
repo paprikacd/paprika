@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -175,9 +175,8 @@ try {
     for (const theme of ["Light", "Dark"]) {
       await check(`${theme} service filter updates saved query, two-decimal value and sparkline at ${width}px`, async () => {
         await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
-        const filter = page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: "Service", exact: true })
-        await selectGammaOption(page, filter, services[0]); const before = await showService(services[0])
-        await selectGammaOption(page, filter, services[1]); const after = await showService(services[1])
+        await selectDashboardVariable(page, "Service", services[0]); const before = await showService(services[0])
+        await selectDashboardVariable(page, "Service", services[1]); const after = await showService(services[1])
         assert.notEqual(before.path, after.path, "Service selection must change the plotted history")
         assert.equal((await api(`dashboards/${dashboard.id}`)).etag, persisted.etag, "Filtering must not persist dashboard defaults")
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)

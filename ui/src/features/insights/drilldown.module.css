@@ -224,3 +224,89 @@
     margin-left: auto;
   }
 }
+
+/* Phone variables: a summary chip that opens a native-dialog bottom sheet holding the variable bar. */
+.variableSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 55%;
+  min-width: 0;
+}
+.variableSummaryText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.variableDirty {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gamma-accent);
+}
+.variableSheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 85dvh;
+  padding: 0;
+  border: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--gamma-bg);
+  color: var(--gamma-ink);
+  box-shadow: var(--gamma-shadow-high);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.variableSheet:not([open]) {
+  display: none;
+}
+.variableSheet::backdrop {
+  background: color-mix(in srgb, var(--gamma-ink) 32%, transparent);
+}
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sheetHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+.variableSheet .variableBar[data-layout="sheet"] {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.variableSheet .variableBar[data-layout="sheet"] .barFields {
+  flex-direction: column;
+  flex-basis: auto;
+}
+.variableSheet .variableBar[data-layout="sheet"] .barField {
+  max-width: none;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.variableSheet .variableBar[data-layout="sheet"] .barField > :is(button, input) {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.variableSheet .variableBar[data-layout="sheet"] .barActions {
+  margin-left: 0;
+}
+.variableSheet .variableBar[data-layout="sheet"] .barField > span {
+  max-width: none;
+}

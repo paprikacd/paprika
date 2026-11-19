@@ -1,3 +1,4 @@
+import { openDashboardEditor } from "./gamma-controls.mjs"
 // View-only compact projection, exercised against the local real provider stack.
 import assert from "node:assert/strict"
 import { chromium } from "playwright"
@@ -83,7 +84,7 @@ try {
       await page.screenshot({ path: `/tmp/paprika-compact-canvas-${theme}-${width}.png`, fullPage: true })
       await page.reload({ waitUntil: "networkidle" })
       assert.equal(await page.evaluate(() => localStorage.getItem("paprika-insights-compact-view")), "true", "Local viewing preference persists")
-      await page.getByRole("button", { name: "Edit dashboard" }).click()
+      await openDashboardEditor(page)
       assert.equal(await canvas.getAttribute("data-density"), "standard", "Editing uses the actual saved grid")
       if (await toggle.isVisible()) assert.equal(await toggle.isDisabled(), true)
       await page.getByRole("button", { name: "Preview", exact: true }).click()

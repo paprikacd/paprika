@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectDashboardVariable, selectGammaOption, respondToGammaConfirmation, waitForDashboardView } from "./gamma-controls.mjs";
 // Real MCP -> authenticated API proxy -> Insights storage, followed by the real
 // browser workspace. Only Kubernetes and telemetry are deterministic fixtures.
 import assert from "node:assert/strict"
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+
 import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -138,7 +138,7 @@ const tile = () => page.locator('[data-widget-id="selected-service"]')
 const widgetEditor = () => page.getByRole("region", { name: "Widget editor", exact: true })
 const explorer = () => page.getByRole("region", { name: "Data source explorer", exact: true }).last()
 async function openTooltipSettings() {
-  await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+  await openDashboardEditor(page)
   await tile().getByRole("button", { name: `Edit ${dashboardEntry.document.widgets[0].title}`, exact: true }).click()
   const editor = widgetEditor()
   await editor.getByRole("tab", { name: "Style", exact: true }).click()
@@ -465,7 +465,7 @@ try {
     dashboardEntry = verifyDocumentResult(await tool("update_dashboard", { document, etag: previous.etag }), document)
     assert.notEqual(dashboardEntry.etag, previous.etag)
     await until(() => documentReads.slice(beforeReads).some(item => item.path.endsWith(`/dashboards/${dashboard.id}`) && item.status === 200 && item.etag === dashboardEntry.etag), "The open UI did not refresh its ETag for a same-content remote revision")
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("textbox", { name: "Dashboard title", exact: true }).fill("Dashboard updated from the UI")
     const beforeWrites = writes.length
     await applyWidgetChanges(page);
@@ -477,7 +477,7 @@ try {
     return { changedETagWithoutSemanticChanges: true, uiSaveStatus: 200, uiChangeVisibleThroughMCP: true }
   })
   await check("An MCP dashboard update preserves an unsaved UI draft and its conflict boundary", async () => {
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     const title = page.getByRole("textbox", { name: "Dashboard title", exact: true })
     await title.fill("Local dashboard draft")
     const document = { ...dashboardEntry.document, title: "New remote dashboard revision" }
@@ -551,7 +551,7 @@ try {
     await unchanged("dashboards", before)
     await applyWidgetChanges(page);
     await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+    await waitForDashboardView(page)
     dashboardEntry = verifyDocumentResult(await tool("get_dashboard", { id: dashboard.id }), { ...before.document, widgets: [expectedWidget] })
     assert.notEqual(dashboardEntry.etag, before.etag)
     await unchanged("saved-queries", queryEntry)
@@ -564,9 +564,8 @@ try {
     await page.getByRole("heading", { name: dashboardEntry.document.title, exact: true }).waitFor()
     for (const theme of ["Light", "Dark"]) await check(`MCP-authored service filters and sparklines work in ${theme} at ${width}px`, async () => {
       await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
-      const filter = page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: "Service", exact: true })
-      await selectGammaOption(page, filter, services[0]); const before = await showReading(services[0], 2)
-      await selectGammaOption(page, filter, services[1]); const after = await showReading(services[1], 2)
+      await selectDashboardVariable(page, "Service", services[0]); const before = await showReading(services[0], 2)
+      await selectDashboardVariable(page, "Service", services[1]); const after = await showReading(services[1], 2)
       assert.notEqual(before.path, after.path)
       assert.equal((await api(`dashboards/${dashboard.id}`)).etag, dashboardEntry.etag)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -604,7 +603,7 @@ try {
       await page.screenshot({ path: join(output, `tooltip-workspace-${theme.toLowerCase()}-${width}.png`), fullPage: false })
       await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).waitFor()
+      await waitForDashboardView(page)
       await unchanged("dashboards", dashboardEntry)
       return { before, after, savedDefaultUnchanged: true, tooltipPresentationRestored: true, exactSourceReadingPreserved: true, tooltipWorkspaceOverflow: false }
     })

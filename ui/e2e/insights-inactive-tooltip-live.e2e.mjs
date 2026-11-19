@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Changing visualizations must not hide or silently drop tooltip settings.
 // Uses a unique ETag-protected dashboard and real local Prometheus data.
 import assert from "node:assert/strict"
@@ -45,7 +45,7 @@ try {
       await page.goto(`${app.origin}/dashboard/insights/?dashboard=${id}`, { waitUntil: "networkidle" })
       const tile = page.locator('[data-widget-id="rate"]')
       await tile.getByRole("img", { name: "Request rate" }).waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit Request rate", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       const viz = editor.getByRole("combobox", { name: "Visualization", exact: true })

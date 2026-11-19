@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 import { queryEditorGeometry, queryEditorValue } from "./query-editor.mjs"
 // Builder surface review. Deterministic normalized API fixtures isolate authored
@@ -8,7 +8,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { activateDashboardAction, selectGammaOption } from "./gamma-controls.mjs"
+
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const baseline = process.argv.includes("--baseline")
@@ -102,16 +102,18 @@ async function surfaceAudit(width) {
   const record = { name: "builder surface geometry and control states", width, measurements: {}, contrast: {}, popups: {} }
   try {
     await capture(page, `workspace-${width}`)
-    const toolbar = page.getByRole("button", { name: "Edit dashboard", exact: true }).locator("..")
+    // Phone widths keep Edit in the Dashboard actions menu, so that trigger anchors the toolbar measurement there.
+    const control = width <= 600 ? "Dashboard actions" : "Edit dashboard"
+    const toolbar = page.getByRole("button", { name: control, exact: true }).locator("..")
     await capture(page, `toolbar-${width}`, toolbar)
     record.measurements.toolbar = await metrics(toolbar.getByRole("button"))
     record.contrast.toolbar = await textContrast(toolbar)
-    const edit = page.getByRole("button", { name: "Edit dashboard", exact: true })
+    const edit = page.getByRole("button", { name: control, exact: true })
     await edit.hover(); record.measurements.toolbarHover = await metrics(edit)
     await edit.focus(); await page.keyboard.press("Shift+Tab"); await page.keyboard.press("Tab")
     record.measurements.toolbarFocus = await metrics(edit)
     await capture(page, `toolbar-focus-${width}`, toolbar)
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByRole("button", { name: "Edit Request traffic", exact: true }).click()
     const editor = page.getByRole("region", { name: "Widget editor", exact: true })
     await capture(page, `query-editor-${width}`, editor)
@@ -213,8 +215,7 @@ async function check(name, width, run, configure, series) {
   finally { await state.context.close() }
 }
 async function widgetEditor(page, title) {
-  const edit = page.getByRole("button", { name: "Edit dashboard", exact: true })
-  if (await edit.isVisible()) await edit.click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: `Edit ${title}`, exact: true }).click()
   const panel = page.getByRole("region", { name: "Widget editor", exact: true }); await panel.waitFor(); return panel
 }
@@ -337,7 +338,7 @@ async function tooltipAuthoring(width) {
     const initial = { type: "timeseries", height: 200, showGrid: false, showAxis: false }
     assert.deepEqual(documents.get(dashboard.id).widgets[1].options.tooltipView, initial)
     assert.equal(queries.filter(query => query.query === "service_health").length, before, "Tooltip style edits must not fetch telemetry")
-    await page.getByRole("button", { name: "Code", exact: true }).click()
+    await activateDashboardAction(page, "Code")
     const source = page.getByRole("region", { name: "Dashboard source editor", exact: true })
     await source.getByRole("button", { name: "JSON", exact: true }).click()
     const text = source.getByRole("textbox", { name: "Dashboard source", exact: true })
@@ -346,7 +347,7 @@ async function tooltipAuthoring(width) {
     json.widgets[1].options.tooltipView = { type: "timeseries", height: 120, showGrid: true, showAxis: true }
     await text.fill(JSON.stringify(json, null, 2)); await source.getByRole("button", { name: "Apply to canvas", exact: true }).click()
     await source.waitFor({ state: "hidden" })
-    await page.getByRole("button", { name: "Code", exact: true }).click()
+    await activateDashboardAction(page, "Code")
     await source.getByRole("button", { name: "YAML", exact: true }).click()
     const yaml = await text.inputValue(); assert.match(yaml, /tooltipView:/)
     await text.fill(yaml.replace("height: 120", "height: 200")); await source.getByRole("button", { name: "Apply to canvas", exact: true }).click()

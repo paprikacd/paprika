@@ -93,8 +93,22 @@ async function check(name, run) {
     await page?.screenshot({ path: join(output, "failure.png"), fullPage: false }).catch(() => {}); throw error
   }
 }
-const variableBar = () => page.getByRole("form", { name: "Dashboard variables", exact: true })
+// On phones the variables live in a native-dialog sheet opened from the "Dashboard variables" chip; the sheet is modal, so the rest of the page is inert while it is open.
+const phone = () => (page.viewportSize()?.width ?? 1512) < 600
+const variableBar = () => phone() ? page.locator("dialog form") : page.getByRole("form", { name: "Dashboard variables", exact: true })
 const serviceSelect = () => variableBar().getByRole("combobox", { name: "Service", exact: true })
+async function openVariables() {
+  if (!phone() || await page.locator("dialog[open]").count()) return
+  await page.getByRole("button", { name: /^Dashboard variables:/ }).click()
+  await page.locator("dialog[open]").waitFor()
+}
+async function closeVariables() {
+  if (!phone() || await page.locator("dialog[open]").count() === 0) return
+  await page.locator("dialog[open]").getByRole("button", { name: "Done", exact: true }).click()
+  await page.waitForSelector("dialog[open]", { state: "detached" })
+}
+const chooseService = async (option) => { await openVariables(); await selectGammaOption(page, serviceSelect(), option) }
+const chooseTheme = async (theme) => { await closeVariables(); await selectGammaOption(page, appearance(), theme) }
 const appearance = () => page.getByRole("combobox", { name: "Dashboard appearance", exact: true })
 const tile = () => page.locator('[data-widget-id="selected-service"]')
 const displayed = () => tile().locator("[data-metric-value]")
@@ -169,11 +183,11 @@ try {
     await open(width)
     for (const theme of ["Light", "Dark"]) {
       await check(`${theme} service dropdown immediately updates saved-query value and history at ${width}px`, async () => {
-        await selectGammaOption(page, appearance(), theme)
+        await chooseTheme(theme)
         await until(async () => await page.locator(`[data-insights-theme="${theme.toLowerCase()}"]`).count() > 0, "Theme did not resolve")
-        await selectGammaOption(page, serviceSelect(), services[0])
+        await chooseService(services[0])
         const before = await expectService(services[0])
-        await selectGammaOption(page, serviceSelect(), services[1])
+        await chooseService(services[1])
         const after = await expectService(services[1])
         assert.notEqual(after.history, before.history, "Changing services must update the sparkline history as well as the number")
         assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get("vars")), { service: services[1] })
@@ -196,6 +210,7 @@ try {
           assert.ok(filterBounds.y < timeBounds.y + timeBounds.height && timeBounds.y < filterBounds.y + filterBounds.height, "Service and time controls must share the compact toolbar")
         }
         await screenshot(`filter-${theme.toLowerCase()}-${width}.png`)
+        await openVariables()
         await serviceSelect().click()
         const options = page.getByRole("listbox", { name: "Service options", exact: true })
         await options.waitFor()
@@ -212,17 +227,17 @@ try {
     }
     await check(`Back steps to the previous filter value at ${width}px`, async () => {
       // Each dropdown change is a history step: Back from B returns to A, not to the previous page.
-      await selectGammaOption(page, serviceSelect(), services[2]); await expectService(services[2])
-      await selectGammaOption(page, serviceSelect(), services[3]); await expectService(services[3])
+      await chooseService(services[2]); await expectService(services[2])
+      await chooseService(services[3]); await expectService(services[3])
       await page.goBack({ waitUntil: "networkidle" })
       await expectService(services[2])
       assert.deepEqual(JSON.parse(new URL(page.url()).searchParams.get("vars")), { service: services[2] })
       return { backTo: services[2] }
     })
     await check(`Filter values, precision and theme survive reload and navigation at ${width}px`, async () => {
-      await selectGammaOption(page, serviceSelect(), services[4]); await expectService(services[4])
+      await chooseService(services[4]); await expectService(services[4])
       await page.reload({ waitUntil: "networkidle" }); await expectService(services[4])
-      assert.match(await serviceSelect().innerText(), /worker-west/)
+      await openVariables(); assert.match(await serviceSelect().innerText(), /worker-west/)
       assert.equal(await page.locator('[data-insights-theme="dark"]').count() > 0, true)
       await page.goto(`${gatewayURL}/dashboard/insights/?dashboard=${elsewhere.id}`, { waitUntil: "networkidle" })
       await page.getByRole("heading", { name: elsewhere.title, exact: true }).waitFor()
@@ -231,20 +246,20 @@ try {
       return { zeroDisplayed: await displayed().innerText(), currentService: services[4], defaultService: persisted.document.variables[0].defaultValue }
     })
     await check(`Escaped service choices and link overrides remain exact at ${width}px`, async () => {
-      await selectGammaOption(page, serviceSelect(), services[6]); await expectService(services[6])
+      await chooseService(services[6]); await expectService(services[6])
       const target = new URL(`${gatewayURL}/dashboard/insights/`)
       target.searchParams.set("dashboard", dashboard.id); target.searchParams.set("vars", JSON.stringify({ service: "from-link" }))
       await page.goto(target.href, { waitUntil: "networkidle" }); await expectService("from-link")
-      assert.match(await serviceSelect().innerText(), /from-link/)
+      await openVariables(); assert.match(await serviceSelect().innerText(), /from-link/)
       assert.deepEqual((await api(`dashboards/${dashboard.id}`)).document.variables[0].options, services)
       return { quotedProviderQuery: exactQuery(services[6]), linkedValueVisible: true, authoredOptionsUnchanged: true }
     })
     await check(`A delayed old service cannot replace the latest dropdown selection at ${width}px`, async () => {
       const start = requests.length
-      await selectGammaOption(page, serviceSelect(), "slow-service")
+      await chooseService("slow-service")
       await until(() => requests.slice(start).some(entry => entry.query === exactQuery("slow-service")), "Slow service request was not issued")
       assert.equal(await displayed().count(), 0, "Old service value must clear while a new service loads")
-      await selectGammaOption(page, serviceSelect(), services[5]); const current = await expectService(services[5])
+      await chooseService(services[5]); const current = await expectService(services[5])
       for (const item of pending.splice(0)) if (!item.response.destroyed) json(item.response, 200, result(item.value, item.end))
       await page.waitForTimeout(150)
       assert.equal(await displayed().getAttribute("data-metric-value"), String(readings[5]))
@@ -252,7 +267,7 @@ try {
       return { current, oldValueNeverRendered: true, obsoleteRequestAborted: requests.slice(start).some(entry => entry.query === exactQuery("slow-service") && entry.aborted) }
     })
     await check(`System appearance responds to color scheme changes at ${width}px`, async () => {
-      await selectGammaOption(page, appearance(), "System")
+      await chooseTheme("System")
       const appearances = []
       for (const colorScheme of ["light", "dark"]) {
         await page.emulateMedia({ colorScheme })

@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 // Live MCP authoring acceptance. Configuration and tokens stay outside the repo.
 // Creates unique demonstration documents and retains them; never overwrites a
 // pre-existing dashboard/query. Set INSIGHTS_OMEGA_AUTHORING_CONFIG to private JSON.
@@ -7,7 +7,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+
 import { assertNoLegacyDataTools, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -141,7 +141,7 @@ async function open(width = 1512, id) {
   await page.bringToFront()
 }
 async function service(value, query) {
-  await selectGammaOption(page, page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: "Service", exact: true }), value)
+  await selectDashboardVariable(page, "Service", value)
   return reading(value, query)
 }
 
@@ -264,7 +264,7 @@ try {
     const query = await tool("get_saved_query", { id: queryId }, readToken), board = await tool("get_dashboard", { id: dashboardId }, readToken)
     assert.deepEqual(query.document, queryEntry.document); assert.equal(query.etag, queryEntry.etag)
     assert.deepEqual(board.document, dashboardEntry.document); assert.equal(board.etag, dashboardEntry.etag)
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     const updatedTitle = `${title} — MCP and UI verified`
     await page.getByRole("textbox", { name: "Dashboard title", exact: true }).fill(updatedTitle)
     const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/insights/dashboards/${dashboardId}`)

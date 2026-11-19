@@ -123,6 +123,7 @@ try {
     "e2e/insights-series-colors.e2e.mjs",
     "e2e/insights-small-multiples.e2e.mjs",
     "e2e/insights-metric-annotations.e2e.mjs",
+    "e2e/insights-phone-shell.e2e.mjs",
   ]
   for (const script of scripts) await run(script, baseURL)
 } catch (error) {

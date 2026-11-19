@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, closeDashboardVariables, openDashboardEditor, openDashboardVariables } from "./gamma-controls.mjs";
 // Exact-label series colors through the real Insights store and Prometheus.
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
@@ -51,7 +51,7 @@ try {
         assert.equal(tipColor, series.includes("1h") ? "rgb(52, 140, 240)" : "rgb(21, 199, 161)", "Tooltip swatch must match its comparison series");
       }
       await plot.press("Escape");
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click();
+      await openDashboardEditor(page);
       await tile.getByRole("button", { name: "Edit Availability burn rate · request errors", exact: true }).click();
       const editor = page.getByRole("region", { name: "Widget editor" });
       await editor.getByRole("tab", { name: "Style" }).click();
@@ -65,7 +65,9 @@ try {
       await page.reload({ waitUntil: "networkidle" });
       await tile.scrollIntoViewIfNeeded(); await legend.getByRole("listitem", { name: /1h/ }).waitFor();
       assert.equal(await colorFor("1h"), "rgb(41, 122, 192)");
-      await selectGammaOption(page, page.getByRole("combobox", { name: "Service", exact: true }), "payments");
+      const variables = await openDashboardVariables(page);
+      await selectGammaOption(page, variables.getByRole("combobox", { name: "Service", exact: true }), "payments");
+      await closeDashboardVariables(page);
       await tile.scrollIntoViewIfNeeded(); await legend.getByRole("listitem", { name: /1h/ }).waitFor();
       assert.equal(await colorFor("1h"), "rgb(41, 122, 192)");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);

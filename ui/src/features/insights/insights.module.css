@@ -1559,3 +1559,47 @@
 .editorSkeletonSettings { display: grid; align-content: start; gap: 12px; padding: 16px; border-left: 1px solid var(--gamma-border); min-width: 0; }
 .skeletonBar { display: block; height: 10px; width: 160px; border-radius: 4px; background: var(--gamma-surface-2); }
 .skeletonBlock { display: block; height: 180px; border-radius: 6px; background: var(--gamma-surface-2); }
+
+/* Phone shell (viewport 600px or narrower, view mode): the header is the title beside one actions menu. */
+.root[data-phone-shell] .pageHeader {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px 8px;
+}
+.root[data-phone-shell] .heading {
+  flex: 1;
+}
+.root[data-phone-shell] .heading h1 {
+  font-size: 20px !important;
+}
+.root[data-phone-shell] .actions {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+/* Phone shell: one control row under the header (variables chip, time range, refresh) instead of the toolbar. */
+.root[data-phone-shell] .toolbar {
+  margin: 0 16px;
+  padding: 8px 0;
+}
+.root[data-phone-shell] .toolbarRight {
+  width: 100%;
+  margin-left: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+/* One line at 360px: the variables chip shrinks (its text is ellipsised) before the time range or Refresh wrap. The
+   button base style does not shrink, so the chip opts back in here. */
+.root[data-phone-shell] .toolbarRight > button[aria-haspopup="dialog"] {
+  flex: 0 1 auto;
+  min-width: 44px;
+}
+.root[data-phone-shell] .phoneTime {
+  flex: 1 1 128px;
+  min-width: 128px;
+}
+.root[data-phone-shell] .phoneTime [data-gamma-select] {
+  width: 100%;
+}

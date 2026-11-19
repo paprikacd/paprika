@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor } from "./gamma-controls.mjs";
 // Exercise the centered directional axis through the real editor and store.
 import assert from "node:assert/strict"
 import { chromium } from "playwright"
@@ -28,7 +28,7 @@ try {
       await page.goto(new URL(`/dashboard/insights/?dashboard=${id}`, origin).href, { waitUntil: "networkidle" })
       const tile = page.locator('[data-widget-id="flow"]')
       await tile.scrollIntoViewIfNeeded()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit Traffic flow", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Options", exact: true }).click()

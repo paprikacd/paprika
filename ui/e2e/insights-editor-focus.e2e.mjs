@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { installChartSystemFixture } from './fixtures/chart-system.mjs';
 import { polishDashboards, polishQuery } from './fixtures/dashboard-polish.mjs';
-import { activateDashboardAction, selectGammaOption } from './gamma-controls.mjs';
+import { activateDashboardAction, openDashboardEditor, selectGammaOption } from './gamma-controls.mjs';
 
 const base = process.env.INSIGHTS_E2E_URL || 'http://127.0.0.1:3015';
 const output = resolve('../artifacts/insights/editor-focus');
@@ -31,7 +31,7 @@ try {
       await page.goto(`${base}/dashboard/insights/?dashboard=${board.id}`);
       await page.getByRole("heading", { name: board.title, exact: true }).waitFor();
       const edit = async title => {
-        if (await page.getByRole('button', { name: 'Edit dashboard', exact: true }).isVisible()) await activateDashboardAction(page, 'Edit dashboard');
+        await openDashboardEditor(page);
         await page.getByRole('button', { name: `Edit ${title}`, exact: true }).click();
         await page.getByRole('region', { name: 'Widget editor', exact: true }).waitFor();
       };

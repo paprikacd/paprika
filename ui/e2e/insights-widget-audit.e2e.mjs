@@ -1,4 +1,4 @@
-import { applyWidgetChanges } from "./gamma-controls.mjs";
+import { applyWidgetChanges, openDashboardEditor, selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs";
 import { routeAnonymousAuthConfiguration } from "./anonymous-auth-fixture.mjs"
 // Renderer/editor audit using deterministic normalized API responses. Real Go
 // adapters and durable persistence are exercised by the separate live suites.
@@ -7,7 +7,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption, respondToGammaConfirmation } from "./gamma-controls.mjs"
+
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const output = resolve(fileURLToPath(new URL("../../", import.meta.url)), "artifacts/insights/widget-audit")
@@ -429,8 +429,7 @@ async function closeEditor(page) {
   await stable(page)
 }
 async function editWidget(page, kind) {
-  const edit = page.getByRole("button", { name: "Edit dashboard", exact: true })
-  if (await edit.isVisible()) await edit.click()
+  await openDashboardEditor(page)
   await page.getByRole("button", { name: `Edit ${titles[kind]}`, exact: true }).click()
   await editor(page).waitFor()
   // The editor is lazy-loaded: wait for its tabs before measuring or switching tabs.
@@ -570,7 +569,7 @@ async function drilldownAudit(width, kind) {
 async function confirmationAudit(width) {
   const { page, context, documents } = await openFixture("normal", width)
   await check(`${width}px Gamma confirmations preserve drafts on Cancel/Escape and accept explicit actions`, async () => {
-    await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+    await openDashboardEditor(page)
     await page.getByLabel("Dashboard title", { exact: true }).fill("Unpublished audit draft")
     const navigate = async () => {
       const link = page.getByRole("navigation", { name: "Dashboard library", exact: true }).getByRole("button", { name: "Audit destination", exact: true })

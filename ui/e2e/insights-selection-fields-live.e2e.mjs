@@ -1,3 +1,4 @@
+import { openDashboardEditor } from "./gamma-controls.mjs"
 // Verify selection-binding guidance against actual Prometheus series, using a
 // temporary dashboard and leaving its saved document untouched.
 import assert from "node:assert/strict"
@@ -42,7 +43,7 @@ try {
       await page.goto(`${app.origin}/dashboard/insights/?dashboard=${id}`, { waitUntil: "networkidle" })
       const tile = page.locator('[data-widget-id="shares"]')
       await tile.getByRole("group", { name: "Service shares" }).waitFor()
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       await tile.getByRole("button", { name: "Edit Service shares", exact: true }).click()
       const editor = page.getByRole("region", { name: "Widget editor" })
       await editor.getByRole("tab", { name: "Links" }).click()

@@ -2,7 +2,7 @@
 // Insights storage and the actual local providers.
 import assert from "node:assert/strict"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectGammaOption, openDashboardEditor } from "./gamma-controls.mjs"
 
 const origin = new URL(process.env.PAPRIKA_GALLERY_BASE_URL || "http://127.0.0.1:1")
 const app = new URL(process.env.INSIGHTS_E2E_URL || origin.href)
@@ -33,7 +33,7 @@ try {
     try {
       await page.goto(`${app.origin}/dashboard/insights/?dashboard=${id}`, { waitUntil: "networkidle" })
       await selectGammaOption(page, page.getByRole("combobox", { name: "Dashboard appearance", exact: true }), theme)
-      await page.getByRole("button", { name: "Edit dashboard", exact: true }).click()
+      await openDashboardEditor(page)
       const tile = page.locator('[data-widget-id="latency"]')
       await tile.scrollIntoViewIfNeeded()
       await tile.getByRole("button", { name: /^Edit / }).click()

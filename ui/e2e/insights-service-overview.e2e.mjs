@@ -10,7 +10,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 import { assertCoverage, finitePoints } from "./service-overview-coverage.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -118,9 +118,7 @@ async function open(width) {
 }
 const tile = widget => page.locator(`[data-widget-id=${JSON.stringify(widget.id)}]`)
 async function selectService(service) {
-  const filter = page.getByRole("form", { name: "Dashboard variables", exact: true }).getByRole("combobox", { name: variable.label || variable.name, exact: true })
-  await filter.scrollIntoViewIfNeeded()
-  await selectGammaOption(page, filter, service)
+  await selectDashboardVariable(page, variable.label || variable.name, service)
 }
 async function assertChart(widget, body) {
   const target = tile(widget)

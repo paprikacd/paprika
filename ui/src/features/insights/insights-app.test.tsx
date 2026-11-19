@@ -86,17 +86,18 @@ async function chartDraftInExplorer(api = client(), dashboardDirty = false) {
   await queryWorkbench()
   return { api, title }
 }
+// Only the tablet breakpoint matches here. The phone shell (600px) has its own suite in phone-shell.test.tsx.
 function viewport(mobile: boolean) {
-  vi.spyOn(window, "matchMedia").mockReturnValue({
-    matches: mobile,
-    media: "(max-width: 950px)",
+  vi.spyOn(window, "matchMedia").mockImplementation(query => ({
+    matches: mobile && query === "(max-width: 950px)",
+    media: query,
     onchange: null,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     addListener: vi.fn(),
     removeListener: vi.fn(),
     dispatchEvent: vi.fn(),
-  })
+  }))
 }
 beforeEach(() => {
   window.history.replaceState(null, "", "/dashboard/insights/")
