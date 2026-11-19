@@ -67,10 +67,12 @@ func TestServeHTTP_RateLimited(t *testing.T) {
 		return rec
 	}
 
-	require.Equal(t, http.StatusOK, call().Code, "first request passes")
+	// The limiter refills one token every 1/50 s from the moment the first request takes its token, so timing from
+	// before that request bounds the second one's wait however long the first request itself takes.
 	started := time.Now()
+	require.Equal(t, http.StatusOK, call().Code, "first request passes")
 	require.Equal(t, http.StatusOK, call().Code, "brief burst waits rather than rejecting")
-	assert.GreaterOrEqual(t, time.Since(started), 10*time.Millisecond)
+	assert.GreaterOrEqual(t, time.Since(started), 19*time.Millisecond)
 
 	// A delay beyond the configured queue budget still returns an explicit
 	// Retry-After, rather than leaving the MCP request open indefinitely.
