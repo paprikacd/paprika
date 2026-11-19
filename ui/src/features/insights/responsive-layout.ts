@@ -100,14 +100,34 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
       start = end
     }
   }
+  // Half-width cards in a compact projection are stats outside the balanced
+  // metric groups and short plugin cards (saved w <= 4). Consecutive half-width
+  // cards in reading order share a row, so a stat and a gauge pair the way two
+  // stats do. A short plugin with no half-width card after it takes the full
+  // width rather than leaving blank space beside it. An unpaired stat keeps its
+  // half-width rule. Cards that are not half-width break the run.
+  const halfWidths = new Map<string, number>()
+  if (mode === "compact") {
+    const half = (widget: Widget | undefined) => widget !== undefined && !metricWidths.has(widget.id) &&
+      (widget.type === "stat" || (widget.type === "plugin" && widget.layout.w <= 4))
+    for (let i = 0; i < ordered.length; i++) {
+      const widget = ordered[i]
+      if (!half(widget)) continue
+      if (half(ordered[i + 1])) {
+        halfWidths.set(widget.id, 6)
+        halfWidths.set(ordered[++i].id, 6)
+      } else {
+        halfWidths.set(widget.id, widget.type === "stat" ? 6 : 12)
+      }
+    }
+  }
   let x = 0
   let y = 0
   let rowHeight = 0
   return ordered.map((widget) => {
     let position = { ...widget.layout }
     if (mode !== "wide") {
-      const small = widget.type === "stat" || (widget.type === "plugin" && widget.layout.w <= 4)
-      const w = metricWidths.get(widget.id) ?? (mode === "compact" && small ? 6 : 12)
+      const w = metricWidths.get(widget.id) ?? halfWidths.get(widget.id) ?? 12
       const heatmapText = widget.type === "heatmap" &&
         (widget.options?.showLabels !== false || widget.options?.showValues !== false)
       // On narrow canvases a statistics table sits below the plot. Reserve a

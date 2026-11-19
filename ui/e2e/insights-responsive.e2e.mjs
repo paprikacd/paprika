@@ -146,8 +146,16 @@ async function geometry(width, withEditor, original) {
     assert.ok(widget.height >= (definition.type === "stat" ? 94 : 120), `${where}: ${widget.id} is too short`)
     assert.ok(widget.titleSize >= 10, `${where}: ${widget.id} title is too small`)
     assert.ok(widget.x >= -1 && widget.x + widget.width <= width + 1, `${where}: ${widget.id} escaped viewport`)
-    if (!withEditor && (result.mode === "stacked" || (result.mode === "compact" && definition.type !== "stat"))) {
+    const shortPlugin = definition.type === "plugin" && definition.layout.w <= 4
+    if (!withEditor && (result.mode === "stacked" || (result.mode === "compact" && definition.type !== "stat" && !shortPlugin))) {
       assert.ok(widget.width >= result.canvas.width - 1, `${where}: ${widget.id} must use the available canvas width`)
+    }
+    // A short plugin card is either full width or shares its row with a half-width card: a stat or another short plugin card.
+    if (!withEditor && result.mode === "compact" && shortPlugin && widget.width < result.canvas.width - 1) {
+      const halfWidth = (other) => other?.type === "stat" || (other?.type === "plugin" && other.layout.w <= 4)
+      const partner = result.widgets.find((item) => item.id !== widget.id && Math.abs(item.y - widget.y) <= 1 && item.width < result.canvas.width - 1 &&
+        halfWidth(original.widgets.find((other) => other.id === item.id)))
+      assert.ok(partner, `${where}: ${widget.id} is a half-width card with no partner beside it`)
     }
     for (const chart of widget.charts) {
       assert.ok(chart.width > 50 && chart.height > 20, `${where}: ${widget.id} chart collapsed`)

@@ -28,6 +28,44 @@ describe("responsive canvas projection", () => {
     expect(canvasLayout(widgets, "compact", 840).slice(1).map(item => [item.x, item.y, item.w])).toEqual([[0, 4, 4], [4, 4, 4], [8, 4, 4]])
     expect(JSON.stringify(widgets)).toBe(before)
   })
+  it("pairs short plugin cards in reading order and gives an unpaired card the full compact width", () => {
+    const base = exampleDashboard.widgets[0]
+    const plugin = (id: string, layout: Widget["layout"], pluginId = "gauge"): Widget => ({ ...base, id, type: "plugin", pluginId, layout })
+    const cases: [string, Widget[], Record<string, number>][] = [
+      // A lone gauge beside a full-width table must not leave blank space.
+      ["lone gauge", [plugin("gauge", { x: 0, y: 0, w: 4, h: 4 }), plugin("table", { x: 0, y: 4, w: 8, h: 4 }, "record-table")], { gauge: 12, table: 12 }],
+      // Two short cards share a row; the chart after them keeps the full row.
+      ["pair then chart", [plugin("a", { x: 0, y: 0, w: 4, h: 4 }), plugin("b", { x: 4, y: 0, w: 4, h: 4 }), { ...base, id: "chart", type: "timeseries", layout: { x: 0, y: 4, w: 12, h: 4 } }], { a: 6, b: 6, chart: 12 }],
+      // Three short cards: the first two pair, the odd third takes the full width.
+      ["odd third card", [plugin("a", { x: 0, y: 0, w: 4, h: 4 }), plugin("b", { x: 4, y: 0, w: 4, h: 4 }), plugin("c", { x: 8, y: 0, w: 4, h: 4 })], { a: 6, b: 6, c: 12 }],
+      // A short plugin pairs with a following stat, as two stats pair.
+      ["plugin before stat", [plugin("gauge", { x: 0, y: 0, w: 4, h: 4 }), { ...base, id: "stat", type: "stat", layout: { x: 0, y: 4, w: 4, h: 2 } }], { gauge: 6, stat: 6 }],
+      // A stat row ending in a gauge: the gauge completes the last pair, the chart keeps the full row.
+      ["stats then gauge", [
+        ...Array.from({ length: 3 }, (_, i) => ({ ...base, id: `stat-${i}`, layout: { x: i * 4, y: 0, w: 4, h: 2 } })),
+        plugin("gauge", { x: 0, y: 2, w: 4, h: 4 }),
+        { ...base, id: "chart", type: "timeseries", layout: { x: 0, y: 6, w: 12, h: 4 } },
+      ], { "stat-0": 6, "stat-1": 6, "stat-2": 6, gauge: 6, chart: 12 }],
+      // Two gauges after an odd stat: the stat pairs with the first gauge, the second gauge takes the full width.
+      ["stats then two gauges", [
+        ...Array.from({ length: 3 }, (_, i) => ({ ...base, id: `stat-${i}`, layout: { x: i * 4, y: 0, w: 4, h: 2 } })),
+        plugin("gauge-a", { x: 0, y: 2, w: 4, h: 4 }),
+        plugin("gauge-b", { x: 4, y: 2, w: 4, h: 4 }),
+      ], { "stat-0": 6, "stat-1": 6, "stat-2": 6, "gauge-a": 6, "gauge-b": 12 }],
+    ]
+    for (const [name, widgets, widths] of cases) {
+      const before = JSON.stringify(widgets)
+      const layout = canvasLayout(widgets, "compact", 768)
+      expect(Object.fromEntries(layout.map(item => [item.i, item.w])), name).toEqual(widths)
+      for (const [index, a] of layout.entries()) for (const b of layout.slice(index + 1)) {
+        expect(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y, name).toBe(false)
+      }
+      expect(JSON.stringify(widgets), name).toBe(before)
+      // Narrow and wide projections keep their own rules.
+      expect(canvasLayout(widgets, "stacked", 390).every(item => item.w === 12), name).toBe(true)
+      expect(canvasLayout(widgets, "wide", 1200).map(item => [item.x, item.w]), name).toEqual(widgets.map(item => [item.layout.x, item.layout.w]))
+    }
+  })
   it("only gives ordinary short stats intrinsic mobile reading height", () => {
     const base = exampleDashboard.widgets[0]
     expect(intrinsicStat(base)).toBe(true)
