@@ -383,8 +383,14 @@ func TestLargeDocumentIsCheapThroughDryRunAndSave(t *testing.T) {
 		if w.Code != 200 && w.Code != 400 {
 			t.Fatalf("%s status = %d", name, w.Code)
 		}
-		if elapsed > time.Second {
-			t.Fatalf("%s of a %d byte document took %s", name, len(document), elapsed)
+		// The budget is a second. The race detector slows this CPU-bound path several times over, so under it the bound
+		// only catches a pathological cost, not an ordinary slow runner.
+		budget := time.Second
+		if raceEnabled {
+			budget = 5 * time.Second
+		}
+		if elapsed > budget {
+			t.Fatalf("%s of a %d byte document took %s (budget %s)", name, len(document), elapsed, budget)
 		}
 	}
 }
