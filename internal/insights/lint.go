@@ -86,6 +86,12 @@ type lintWidget struct {
 	thresholds int
 	// cellStyles are the record-table column styles, decoded from config.
 	cellStyles []wireCellStyle
+	// rank is the record-table rank, decoded from config, or nil when the table does not rank.
+	rank *wireRank
+	// rankErr is why the rank does not decode strictly, or empty. The UI refuses such a rank, so lint reports it.
+	rankErr string
+	// statusBands is true when the widget's own options.thresholds name a status.
+	statusBands bool
 }
 
 type lintVariableRef struct {
@@ -190,10 +196,36 @@ type wireStyleColors struct {
 	Thresholds []wireThreshold `json:"thresholds"`
 }
 
-// wireTableConfig holds the record-table column styles the table rule compares. It is decoded on its own,
-// so a malformed member here never hides the colour rules, which read wireWidgetConfig.
+// wireTableConfig holds the record-table column styles the table rules compare. It is decoded on its own, so a
+// malformed member here never hides the colour rules, which read wireWidgetConfig. The rank is decoded apart,
+// strictly, by tableRankOf, so a rank member of another type (limit 5.0) never hides the column styles.
 type wireTableConfig struct {
 	CellStyles []wireCellStyle `json:"cellStyles"`
+}
+
+// wireRank holds the members of a record-table rank that name its columns, and the options lint checks
+// the way the schema does.
+type wireRank struct {
+	Status string `json:"status"`
+	Value  string `json:"value"`
+	Order  string `json:"order"`
+	Limit  *int   `json:"limit"`
+}
+
+// tableRankOf reads a record-table's rank from its config, decoding it strictly as the zod rankSchema does.
+// It returns nil with an empty reason when the table declares no rank, and nil with the decode error otherwise.
+func tableRankOf(config json.RawMessage) (rank *wireRank, reason string) {
+	var table struct {
+		Rank json.RawMessage `json:"rank"`
+	}
+	if len(config) == 0 || json.Unmarshal(config, &table) != nil {
+		return nil, ""
+	}
+	strict, reason := decodeStrictRecordRank(table.Rank)
+	if strict == nil {
+		return nil, reason
+	}
+	return &wireRank{Status: strict.Status, Value: strict.Value, Order: strict.Order, Limit: strict.Limit}, ""
 }
 
 // wireCellStyle is one record-table column style. Min and Max are pointers so a missing bound is distinct
@@ -228,37 +260,43 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 		doc.variables[variable.Name] = true
 	}
 	for i := range wire.Widgets {
-		widget := &wire.Widgets[i]
-		base := widgetBase(i)
-		lw := lintWidget{
-			index: i, id: widget.ID, title: widget.Title, widgetType: widget.Type, pluginID: widget.PluginID,
-			description: widget.Description, unit: widget.Unit, query: widget.Query, hasQueryRef: widget.QueryRef != nil,
-			x: widget.Layout.X, y: widget.Layout.Y, w: widget.Layout.W, h: widget.Layout.H,
-		}
-		if widget.Options != nil {
-			lw.showBar = widget.Options.ShowStatBar
-			lw.showSpark = widget.Options.ShowSparkline
-			lw.statIcon = widget.Options.StatIcon
-			lw.compares = widget.Options.Compare != nil
-			lw.xAxisLabel = widget.Options.XAxisLabel
-			lw.yAxisLabel = widget.Options.YAxisLabel
-			lw.thresholds = len(widget.Options.Thresholds)
-		}
-		lw.variables = append(lw.variables, variableRefs(base+"/queryRef", widget.QueryRef)...)
-		for k, binding := range widget.SelectionBindings {
-			lw.variables = append(lw.variables, lintVariableRef{pointer: base + "/selectionBindings/" + strconv.Itoa(k) + "/variable", variable: binding.Variable})
-		}
-		if widget.AnnotationSource != nil {
-			lw.variables = append(lw.variables, variableRefs(base+"/annotationSource/queryRef", widget.AnnotationSource.QueryRef)...)
-		}
-		if widget.Options != nil && widget.Options.TooltipView != nil && widget.Options.TooltipView.Source != nil {
-			lw.variables = append(lw.variables, variableRefs(base+"/options/tooltipView/source/ref", widget.Options.TooltipView.Source.Ref)...)
-		}
-		lw.colorFields = colorFieldsOf(base, widget)
-		lw.cellStyles = tableCellStylesOf(widget.Config)
-		doc.widgets = append(doc.widgets, lw)
+		doc.widgets = append(doc.widgets, lintWidgetOf(i, &wire.Widgets[i]))
 	}
 	return doc, true
+}
+
+// lintWidgetOf reads one widget's members for lint. base pointers are rooted at the widget's index.
+func lintWidgetOf(i int, widget *wireWidget) lintWidget {
+	base := widgetBase(i)
+	lw := lintWidget{
+		index: i, id: widget.ID, title: widget.Title, widgetType: widget.Type, pluginID: widget.PluginID,
+		description: widget.Description, unit: widget.Unit, query: widget.Query, hasQueryRef: widget.QueryRef != nil,
+		x: widget.Layout.X, y: widget.Layout.Y, w: widget.Layout.W, h: widget.Layout.H,
+	}
+	if widget.Options != nil {
+		lw.showBar = widget.Options.ShowStatBar
+		lw.showSpark = widget.Options.ShowSparkline
+		lw.statIcon = widget.Options.StatIcon
+		lw.compares = widget.Options.Compare != nil
+		lw.xAxisLabel = widget.Options.XAxisLabel
+		lw.yAxisLabel = widget.Options.YAxisLabel
+		lw.thresholds = len(widget.Options.Thresholds)
+	}
+	lw.variables = append(lw.variables, variableRefs(base+"/queryRef", widget.QueryRef)...)
+	for k, binding := range widget.SelectionBindings {
+		lw.variables = append(lw.variables, lintVariableRef{pointer: base + "/selectionBindings/" + strconv.Itoa(k) + "/variable", variable: binding.Variable})
+	}
+	if widget.AnnotationSource != nil {
+		lw.variables = append(lw.variables, variableRefs(base+"/annotationSource/queryRef", widget.AnnotationSource.QueryRef)...)
+	}
+	if widget.Options != nil && widget.Options.TooltipView != nil && widget.Options.TooltipView.Source != nil {
+		lw.variables = append(lw.variables, variableRefs(base+"/options/tooltipView/source/ref", widget.Options.TooltipView.Source.Ref)...)
+	}
+	lw.colorFields = colorFieldsOf(base, widget)
+	lw.cellStyles = tableCellStylesOf(widget.Config)
+	lw.rank, lw.rankErr = tableRankOf(widget.Config)
+	lw.statusBands = widget.Options != nil && hasDeclaredRankThreshold(widget.Options.Thresholds)
+	return lw
 }
 
 // colorFieldsOf lists the authored hex colours of one widget that carry no status or role. A threshold

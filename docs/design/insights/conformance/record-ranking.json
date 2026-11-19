@@ -1,0 +1,134 @@
+{
+  "description": "Shared record-table ranking cases. Each case runs rowStatus and rankRows (ui record-ranking-conformance.test.ts). Levels are declared statuses, or undeclared (a colour-only band or an unmapped value) and missing (no value). Order is worst first: status, then the rank value in its order with missing values last, then source position. Counts cover every loaded row; shown is what the limit keeps; hidden counts the rows it cut and their critical and warning levels.",
+  "cases": [
+    {
+      "name": "mapped statuses rank worst first and keep source order inside a status",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "health", "type": "string" }, { "key": "cpu", "type": "number" }],
+        "rows": [["a", "Up", 10], ["b", "Down", 5], ["c", "Degraded", 7], ["d", "Blue", 1], ["e", null, 2], ["f", "Down", 9]]
+      },
+      "rank": { "status": "health" },
+      "cellStyles": [{ "column": "health", "display": "status-badge", "mappings": [{ "value": "Down", "status": "critical" }, { "value": "Degraded", "status": "warning" }, { "value": "Up", "status": "ok" }, { "value": "Blue", "color": "#3366cc" }] }],
+      "expect": {
+        "levels": ["ok", "critical", "warning", "undeclared", "missing", "critical"],
+        "order": [1, 5, 2, 0, 3, 4],
+        "shown": [1, 5, 2, 0, 3, 4],
+        "counts": { "critical": 2, "warning": 1, "unknown": 0, "info": 0, "ok": 1, "undeclared": 1, "missing": 1 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    },
+    {
+      "name": "descending value order puts ties in source order and missing values last",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "state", "type": "number" }, { "key": "load", "type": "number" }],
+        "rows": [["a", 90, 50], ["b", 90, null], ["c", 90, 70], ["d", 90, 70], ["e", 10, 99]]
+      },
+      "rank": { "status": "state", "value": "load" },
+      "thresholds": [{ "value": 0, "status": "ok" }, { "value": 80, "status": "critical" }],
+      "expect": {
+        "levels": ["critical", "critical", "critical", "critical", "ok"],
+        "order": [2, 3, 0, 1, 4],
+        "shown": [2, 3, 0, 1, 4],
+        "counts": { "critical": 4, "warning": 0, "unknown": 0, "info": 0, "ok": 1, "undeclared": 0, "missing": 0 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    },
+    {
+      "name": "ascending value order reverses the value comparison inside a status",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "state", "type": "number" }, { "key": "load", "type": "number" }],
+        "rows": [["a", 90, 50], ["b", 90, null], ["c", 90, 70], ["d", 90, 70], ["e", 10, 99]]
+      },
+      "rank": { "status": "state", "value": "load", "order": "ascending" },
+      "thresholds": [{ "value": 0, "status": "ok" }, { "value": 80, "status": "critical" }],
+      "expect": {
+        "levels": ["critical", "critical", "critical", "critical", "ok"],
+        "order": [0, 2, 3, 1, 4],
+        "shown": [0, 2, 3, 1, 4],
+        "counts": { "critical": 4, "warning": 0, "unknown": 0, "info": 0, "ok": 1, "undeclared": 0, "missing": 0 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    },
+    {
+      "name": "a limit of one hides a critical and a warning row and says so",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "health", "type": "string" }, { "key": "cpu", "type": "number" }],
+        "rows": [["a", "Up", 10], ["b", "Down", 5], ["c", "Degraded", 7], ["d", "Blue", 1], ["e", null, 2], ["f", "Down", 9]]
+      },
+      "rank": { "status": "health", "limit": 1 },
+      "cellStyles": [{ "column": "health", "display": "status-badge", "mappings": [{ "value": "Down", "status": "critical" }, { "value": "Degraded", "status": "warning" }, { "value": "Up", "status": "ok" }, { "value": "Blue", "color": "#3366cc" }] }],
+      "expect": {
+        "levels": ["ok", "critical", "warning", "undeclared", "missing", "critical"],
+        "order": [1, 5, 2, 0, 3, 4],
+        "shown": [1],
+        "counts": { "critical": 2, "warning": 1, "unknown": 0, "info": 0, "ok": 1, "undeclared": 1, "missing": 1 },
+        "hidden": { "rows": 5, "critical": 1, "warning": 1 }
+      }
+    },
+    {
+      "name": "a column's own thresholds replace the widget thresholds for that column",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "budget", "type": "number", "unit": "%" }],
+        "rows": [["a", 30], ["b", 60], ["c", 10], ["d", 90]]
+      },
+      "rank": { "status": "budget" },
+      "cellStyles": [{ "column": "budget", "display": "bar", "min": 0, "max": 100, "thresholds": [{ "value": 0, "status": "critical" }, { "value": 25, "status": "warning" }, { "value": 50, "status": "ok" }] }],
+      "thresholds": [{ "value": 0, "status": "ok" }, { "value": 80, "status": "critical" }],
+      "expect": {
+        "levels": ["warning", "ok", "critical", "ok"],
+        "order": [2, 0, 1, 3],
+        "shown": [2, 0, 1, 3],
+        "counts": { "critical": 1, "warning": 1, "unknown": 0, "info": 0, "ok": 2, "undeclared": 0, "missing": 0 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    },
+    {
+      "name": "a colour-only band is undeclared and a missing value is missing",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "x", "type": "number" }],
+        "rows": [["a", 5], ["b", null]]
+      },
+      "rank": { "status": "x" },
+      "thresholds": [{ "value": 0, "color": "#112233" }],
+      "expect": {
+        "levels": ["undeclared", "missing"],
+        "order": [0, 1],
+        "shown": [0, 1],
+        "counts": { "critical": 0, "warning": 0, "unknown": 0, "info": 0, "ok": 0, "undeclared": 1, "missing": 1 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    },
+    {
+      "name": "an unmapped badge value is undeclared and an empty badge is missing",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "health", "type": "string" }],
+        "rows": [["a", "Up"], ["b", "Gray"], ["c", ""]]
+      },
+      "rank": { "status": "health" },
+      "cellStyles": [{ "column": "health", "display": "status-badge", "mappings": [{ "value": "Up", "status": "ok" }] }],
+      "expect": {
+        "levels": ["ok", "undeclared", "missing"],
+        "order": [0, 1, 2],
+        "shown": [0, 1, 2],
+        "counts": { "critical": 0, "warning": 0, "unknown": 0, "info": 0, "ok": 1, "undeclared": 1, "missing": 1 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    },
+    {
+      "name": "a value below the first threshold takes the first band and orders by value inside it",
+      "frame": {
+        "columns": [{ "key": "host", "type": "string" }, { "key": "x", "type": "number" }, { "key": "load", "type": "number" }],
+        "rows": [["a", -5, 10], ["b", 50, 3]]
+      },
+      "rank": { "status": "x", "value": "load", "order": "ascending" },
+      "thresholds": [{ "value": 0, "status": "ok" }, { "value": 80, "status": "critical" }],
+      "expect": {
+        "levels": ["ok", "ok"],
+        "order": [1, 0],
+        "shown": [1, 0],
+        "counts": { "critical": 0, "warning": 0, "unknown": 0, "info": 0, "ok": 2, "undeclared": 0, "missing": 0 },
+        "hidden": { "rows": 0, "critical": 0, "warning": 0 }
+      }
+    }
+  ]
+}

@@ -133,7 +133,9 @@ func requireReviewProbeWithinCap(t *testing.T, endGap int, widgets []map[string]
 // 1,210 bytes under the cap.
 func TestDashboardQueryReviewProbeStatusBandedReturnsWithinTheCap(t *testing.T) {
 	kinds := []string{"timeseries", "stat", "heatmap", "status-grid", "threshold-gauge", "status-history"}
-	requireReviewProbeWithinCap(t, 0, reviewProbeWidgets(kinds, true, 0), dashboardOmissionStepNamesThrough(len(dashboardOmissionSteps)))
+	// The probe has no ranked record table, so the rankingRows step drops nothing and is not reported.
+	wantOmitted := []string{"breachIntervals", "breaches", "bandSeries", "sample"}
+	requireReviewProbeWithinCap(t, 0, reviewProbeWidgets(kinds, true, 0), wantOmitted)
 }
 
 // Review probe (b) is the measured 7fe8ccca check: a colour-only time series with cadence staleness. It

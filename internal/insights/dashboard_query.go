@@ -98,6 +98,9 @@ type DashboardQueryWidget struct {
 	// BandSeries names the series that set a multi-series band, and how many series the
 	// visualization draws. It sits beside threshold so the band keeps its first-contract shape.
 	BandSeries *DashboardBandSeries `json:"bandSeries,omitempty"`
+	// Ranking is a record-table's ranking over its loaded rows, set only when the table declares rank.
+	// Its worst row band sets threshold, so a ranked table counts toward attention. See DashboardRecordRanking.
+	Ranking *DashboardRecordRanking `json:"ranking,omitempty"`
 	// Attention is set only when this widget needs it: critical, warning, failed or stale.
 	Attention string `json:"attention,omitempty"`
 	// Breaches is set for time-series widgets with an author-declared warning or critical status.
@@ -106,6 +109,8 @@ type DashboardQueryWidget struct {
 	Comparison *DashboardComparison `json:"comparison,omitempty"`
 	// seriesCap is how many leading series the visualization draws, for band widgets.
 	seriesCap int
+	// rankTable is a record-table's rank with the styles and thresholds it reads, set only when rank is declared.
+	rankTable *dashboardRankedTable
 }
 
 // A configured visual band, not an inferred alert or service-health verdict.
@@ -273,6 +278,7 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 		}
 	}
 	dashboardWidgetBandOutput(&output, widget)
+	dashboardWidgetRankOutput(&output, widget)
 	return output
 }
 

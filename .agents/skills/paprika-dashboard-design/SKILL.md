@@ -59,7 +59,7 @@ Write a compact brief using [the brief template](assets/chart-brief.template.md)
 
 Choose the primary question, then rank secondary questions. A useful sequence is health or outcome → change → breakdown → evidence, but do not force every dashboard into four KPI cards or equal tiles. Give the critical comparison more space. Remove panels that do not change understanding or action.
 
-Budget each family's anatomy before effects: title/actions, plot, legend, exact values and interaction surface. Design supporting maps, state histories and quantitative tables as carefully as the main line chart. Record whether each action inspects, highlights, filters locally, changes shared scope/time or navigates; identify its owner, affected panels and reset path.
+Budget each family's anatomy before effects: title/actions, plot, legend, exact values and interaction surface. Design supporting maps, state histories and quantitative tables as carefully as the main line chart. Record whether each action inspects, highlights, filters locally, changes shared scope/time or navigates; identify its owner, affected panels and reset path. For a table that answers which entity is worst, declare the record table's `rank`, with a status source (a status-badge mapping, or a threshold that names a status), instead of relying on the query's ORDER BY; the rank orders the loaded rows only.
 
 Read [chart grammar and semantics](references/chart-grammar.md) before selecting an unfamiliar encoding or changing calculations. Read [visual craft](references/visual-craft.md) before visual planning.
 

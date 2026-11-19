@@ -60,6 +60,11 @@ IDs here are placeholders; run the steps in order.
 7. **Query.** `query_dashboard` with `id` runs the saved dashboard over its saved range. A stat with
    `options.compare` also returns its change against an earlier window (`comparison`, labelled by
    `window`): report the change with its state, never as no change when the state is `not_run`.
+   For "which entity is worst?", read `widgets[].ranking` on a record table that declares `rank`,
+   not a SQL ORDER BY: it ranks the loaded rows only, shows at most 10 rows and counts what the
+   limit hid, and `partial` with `reason` says when the rows were truncated. Its worst declared
+   row sets the widget's band, so the table counts in `attention`. Order the query at the source
+   when the whole source must be ranked.
    Optional: `variables`, `widget_ids`, `start` and `end` (at most 31 days), `history_points`,
    `max_series`, `max_traces`. Treat `structuredContent` as authoritative; the text is a
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a

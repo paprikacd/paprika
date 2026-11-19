@@ -23,6 +23,8 @@ import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
 import { truncationNote, type TruncationSource } from "../truncation"
 import styles from "./records.module.css"
+import { rankRows, rankSchema, rankTableError, railWidth, type RowStatus } from "./record-ranking"
+import { StatusChip } from "../status-chip"
 import { StyledRecordCell, parseRecordHistory, resolveColumnThresholds, tableCellStyleError, tableCellStylesSchema, tableTextPalette, type ColumnFormat } from "./record-table-cells"
 import { useInsightsTheme } from "../insights-theme"
 import { useDashboardWindow } from "../dashboard-window"
@@ -47,6 +49,7 @@ const tableConfig = z.strictObject({
   showSearch: z.boolean().default(true),
   showRowNumbers: z.boolean().optional(),
   cellStyles: tableCellStylesSchema.optional(),
+  rank: rankSchema.optional(),
   timeSelection: z.strictObject({ start: key, duration: key, durationUnit: z.enum(["milliseconds", "seconds", "minutes"]), paddingSeconds: z.number().finite().min(0).max(86400).default(0) }).optional(),
 })
 const listConfig = z.strictObject({
@@ -200,6 +203,31 @@ function Note({
   )
 }
 
+function railName(level: RowStatus["level"] | undefined) {
+  const width = level ? railWidth(level) : 0
+  return width === 2 ? "critical" : width === 1 ? "warning" : undefined
+}
+
+/** A row's status as a glyph and a word. A missing or undeclared value says so, rather than borrowing a level. */
+function RankStatus({ status }: { status: RowStatus }) {
+  if (status.level === "missing") return <span className={styles.rankNone}>No status</span>
+  if (status.level === "undeclared") return <span className={styles.rankNone}>Not declared</span>
+  return <StatusChip status={status.level} label={status.label} />
+}
+
+/** The footer counts for a ranked table: hidden rows, hidden critical and warning rows, rows without a status, and the truncation basis. */
+function RankSummary({ ranking, rank, truncated }: { ranking: { hidden: { rows: number; critical: number; warning: number }; searched: number; counts: Record<string, number> }; rank: { limit?: number }; truncated: boolean }) {
+  const parts: string[] = []
+  if (ranking.hidden.rows) parts.push(`Top ${rank.limit} of ${ranking.searched} loaded rows`)
+  const hiddenLevels = [ranking.hidden.critical && `${ranking.hidden.critical} critical`, ranking.hidden.warning && `${ranking.hidden.warning} warning`].filter(Boolean)
+  if (hiddenLevels.length) parts.push(`${hiddenLevels.join(" · ")} not shown`)
+  const missing = ranking.counts.missing ?? 0
+  parts.push(`${missing} ${missing === 1 ? "row has" : "rows have"} no status`)
+  if (truncated) parts.push("Ranked among loaded rows only; order the query to rank the whole source.")
+  // A live region, so a search that changes what the limit hides is announced as the old footer note was.
+  return <span data-rank-summary="" role="status">{parts.join(" · ")}</span>
+}
+
 export function RecordTable({
   widget,
   result,
@@ -210,6 +238,7 @@ export function RecordTable({
   const { resolvedTheme } = useInsightsTheme()
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
+  const rankBarRef = useRef<HTMLDivElement>(null)
   const [sort, setSort] = useState<{
     index: number
     descending: boolean
@@ -231,21 +260,30 @@ export function RecordTable({
   const textColors = useMemo(() => tableTextPalette(resolvedTheme, widget.options?.background, paletteThresholds, widget.color),
     [resolvedTheme, widget.options?.background, paletteThresholds, widget.color])
   const activeSearch = !embedded && config.showSearch ? search : ""
-  const cellConfigIdentity = JSON.stringify([config.columns, config.cellStyles])
+  const cellConfigIdentity = JSON.stringify([config.columns, config.cellStyles, config.rank])
   // A new frame, search, sort, page or cell setup closes the open cell panel.
   const cellRevision = useMemo(() => ({ frame, view: [activeSearch, sort, page, cellConfigIdentity] }), [frame, activeSearch, sort, page, cellConfigIdentity])
   const cellOwner = useObservationOwner({ enabled: inspectCells, retention: { revision: cellRevision } })
   const hideCell = () => cellOwner.dismiss()
+  const searchedRows = useMemo(() => {
+    if (!frame) return []
+    const needle = activeSearch.toLocaleLowerCase()
+    return frame.rows.filter((row) => !activeSearch || row.some((v) => keyText(v).toLocaleLowerCase().includes(needle) || text(v).toLocaleLowerCase().includes(needle)))
+  }, [frame, activeSearch])
+  const rankError = useMemo(() => frame && config.rank ? rankTableError(frame, config.rank, config.cellStyles ?? [], widget.options?.thresholds) : undefined,
+    [frame, config.rank, config.cellStyles, widget.options?.thresholds])
+  // Ranks run over the loaded rows that search keeps. Each row's position is its rank among them, so a hidden row keeps its number.
+  const ranking = useMemo(() => {
+    if (!frame || !config.rank || rankError) return undefined
+    const ranked = rankRows(frame, searchedRows, config.rank, config.cellStyles ?? [], widget.options?.thresholds)
+    const positions = new Map<RecordFrame["rows"][number], { position: number; status: RowStatus }>()
+    ranked.order.forEach((source, position) => positions.set(searchedRows[source], { position: position + 1, status: ranked.statuses[source] }))
+    return { ...ranked, searched: searchedRows.length, positions, shownRows: ranked.shown.map(source => searchedRows[source]) }
+  }, [frame, config.rank, config.cellStyles, widget.options?.thresholds, rankError, searchedRows])
+  // The limit keeps the top of the rank. A header sort then reorders those rows; without one they stay in rank order.
   const rows = useMemo(() => {
     if (!frame) return []
-    const selected = frame.rows.filter(
-      (row) =>
-        !activeSearch ||
-        row.some((v) => {
-          const needle = activeSearch.toLocaleLowerCase()
-          return keyText(v).toLocaleLowerCase().includes(needle) || text(v).toLocaleLowerCase().includes(needle)
-        }),
-    )
+    const selected = ranking ? [...ranking.shownRows] : [...searchedRows]
     if (sort)
       selected.sort((a, b) => {
         const left = a[sort.index],
@@ -259,7 +297,7 @@ export function RecordTable({
         return sort.descending ? -order : order
       })
     return selected
-  }, [frame, activeSearch, sort])
+  }, [frame, searchedRows, ranking, sort])
   useEffect(() => {
     const region = scrollRef.current
     if (!region) return
@@ -274,11 +312,16 @@ export function RecordTable({
   if (!frame?.rows.length) return <EmptyState />
   const cellStyleError = tableCellStyleError(frame, config.cellStyles ?? [])
   if (cellStyleError) return <p role="alert" className={styles.note}>{cellStyleError}</p>
+  if (rankError) return <p role="alert" className={styles.note}>{rankError}</p>
   const cellStyles = new Map((config.cellStyles ?? []).map(style => [style.column, style]))
   const thresholdIndexes = new Map((config.cellStyles ?? []).filter(style => style.thresholdColumn).map(style => [style.column, frame.columns.findIndex(column => column.key === style.thresholdColumn)]))
   const indexes =
     config.columns?.map((name) => column(frame, name)) ??
     frame.columns.map((_, i) => i)
+  // A status column the table draws as a badge carries its own chip; any other rank gets a leading status cell.
+  const leadingStatus = !!ranking && !(config.rank && indexes.some(index => frame.columns[index].key === config.rank!.status && cellStyles.get(config.rank!.status)?.display === "status-badge"))
+  const columnName = (key: string) => frame.columns.find(column => column.key === key)?.label ?? key
+  const numberOf = (row: RecordFrame["rows"][number], i: number) => ranking?.positions.get(row)?.position ?? current * pageSize + i + 1
   const timeConfig = config.timeSelection
   const startIndex = timeConfig ? column(frame, timeConfig.start) : -1
   const durationIndex = timeConfig ? column(frame, timeConfig.duration) : -1
@@ -322,9 +365,14 @@ export function RecordTable({
               setPage(0)
             }}
           />
-          <span>{rows.length} loaded rows</span>
+          <span>{ranking ? ranking.searched : rows.length} loaded rows</span>
         </div>
       )}
+      {ranking && config.rank && <div className={styles.rankBar} data-rank-caption="" ref={rankBarRef} tabIndex={-1}>
+        <span>{sort ? `Sorted by ${columnName(frame.columns[sort.index].key)}. Ranked order is hidden.` : `Ranked by ${columnName(config.rank.status)}${config.rank.value ? `, then ${columnName(config.rank.value)}, ${config.rank.order === "ascending" ? "lowest" : "highest"} first` : ", then source order"}.`}</span>
+        {sort && <GammaButton size="sm" variant="quiet" type="button" onClick={() => { hideCell(); rankBarRef.current?.focus(); setSort(null) }}>Ranked order</GammaButton>}
+        <RankSummary ranking={ranking} rank={config.rank} truncated={!!frame.truncated} />
+      </div>}
       <div
         className={styles.scroll}
         ref={scrollRef}
@@ -336,7 +384,10 @@ export function RecordTable({
         <ChartTable density={config.density} aria-label={widget.title}>
           <thead>
             <tr>
-              {config.showRowNumbers && <th scope="col" className={styles.rowNumber} title="Position in the displayed records" aria-label="Row number">#</th>}
+              {config.showRowNumbers && (ranking
+                ? <th scope="col" className={styles.rowNumber} title={`Rank among ${ranking.searched} loaded rows`} aria-label="Rank">Rank</th>
+                : <th scope="col" className={styles.rowNumber} title="Position in the displayed records" aria-label="Row number">#</th>)}
+              {leadingStatus && <th scope="col" data-rank-status-column="">Status</th>}
               {indexes.map((index) => (
                 <th
                   key={frame.columns[index].key}
@@ -379,8 +430,9 @@ export function RecordTable({
           <tbody>
             {displayedRows
               .map((row, i) => (
-                <tr key={i}>
-                  {config.showRowNumbers && <td className={styles.rowNumber}>{current * pageSize + i + 1}</td>}
+                <tr key={i} data-rank-status={ranking?.positions.get(row)?.status.level} data-status-rail={ranking && config.rank?.rail !== false ? railName(ranking.positions.get(row)?.status.level) : undefined}>
+                  {config.showRowNumbers && <td className={styles.rowNumber}>{numberOf(row, i)}</td>}
+                  {leadingStatus && <td data-rank-status-cell=""><RankStatus status={ranking?.positions.get(row)?.status ?? { level: "missing" }} /></td>}
                   {indexes.map((index, visibleColumn) => {
                     const field = frame.columns[index]
                     const style = cellStyles.get(field.key)
@@ -420,7 +472,7 @@ export function RecordTable({
                         onClick={() =>
                           onContextChange({ labels: labels(frame, row) })
                         }
-                        aria-label={`Select row ${current * pageSize + i + 1}`}
+                        aria-label={`Select row ${numberOf(row, i)}`}
                       >
                         Select
                       </GammaButton>
@@ -433,7 +485,7 @@ export function RecordTable({
                     const padding = timeConfig.paddingSeconds * 1000
                     const from = start - padding, to = start + (typeof duration === "number" ? duration * multiplier : NaN) + padding
                     const valid = Number.isFinite(from) && from > 0 && typeof duration === "number" && Number.isFinite(duration) && duration > 0 && Number.isFinite(to) && to > from && to - from <= 31 * 86400_000
-                    return <td><GammaButton size="sm" variant="quiet" type="button" aria-label={`Focus time for row ${current * pageSize + i + 1}`} disabled={!valid} title={valid ? "Focus dashboard on this recorded interval" : "This row needs a valid start and duration within 31 days"} onClick={() => applyTime({ start: from, end: to })}>Focus time</GammaButton></td>
+                    return <td><GammaButton size="sm" variant="quiet" type="button" aria-label={`Focus time for row ${numberOf(row, i)}`} disabled={!valid} title={valid ? "Focus dashboard on this recorded interval" : "This row needs a valid start and duration within 31 days"} onClick={() => applyTime({ start: from, end: to })}>Focus time</GammaButton></td>
                   })()}
                 </tr>
               ))}
@@ -967,6 +1019,14 @@ export function registerRecordWidgetPlugins() {
         ...("styleControls" in entry ? { styleControls: entry.styleControls } : {}),
         ...(entry.id === "record-table" ? {
           sizing: { mode: "fill", minHeight: 240 },
+          // The config alone cannot show the widget's own thresholds, so a numeric status is assumed to have some here.
+          // The render checks the real set and reports the same reason when it is missing.
+          validateInput: (result, config) => {
+            const parsed = tableConfig.safeParse(config ?? {})
+            if (!parsed.success || !parsed.data.rank || !result.records) return []
+            const reason = rankTableError(result.records, parsed.data.rank, parsed.data.cellStyles ?? [], [{ value: 0, status: "ok" }])
+            return reason ? [{ field: "rank", message: reason }] : []
+          },
           defaultConfig: { density: "comfortable", showSearch: true },
           styleControls: ["decimals", "color", "tooltips"] as const,
           configFields: [
