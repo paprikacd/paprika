@@ -468,7 +468,7 @@ async function inspectRecord(id, name) {
   await mark.press("Enter")
   assert.equal(await mark.getAttribute("aria-pressed"), "true")
   await page.mouse.move(1, 1)
-  await details.getByText("Pinned · tap again to close", { exact: true }).waitFor()
+  await details.getByText("Pinned · select again to close", { exact: true }).waitFor()
   const inspection = await details.boundingBox(), viewport = page.viewportSize()
   assert.ok(inspection.x >= 0 && inspection.x + inspection.width <= viewport.width + 1, "Record inspection must fit the viewport")
   await mark.press("Escape")
@@ -536,14 +536,14 @@ try {
         await tile(first.id).scrollIntoViewIfNeeded()
         const before = await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value")
         const priorSecondary = await chartSnapshot(study.secondary)
-        if (study.id === "collection-control") assert.ok(priorSecondary.connections.includes("Inspect connection Sources to Collector: 124,820.00 obs/s"), "Production pipeline must show its exact fixture connection value")
+        if (study.id === "collection-control") assert.ok(priorSecondary.connections.includes("Inspect connection Sources to Collector: 124.82K obs/s"), "Production pipeline must show its exact fixture connection value")
         await selectGammaOption(page, scopeControl(variable), variable.options[1])
         await until(async () => await tile(first.id).locator("[data-metric-value]").getAttribute("data-metric-value") !== before, "Shared filter did not update the single value")
         await ready(board.widgets.find(widget => widget.id === study.secondary))
         await until(async () => JSON.stringify(await chartSnapshot(study.secondary)) !== JSON.stringify(priorSecondary), "Shared filter did not update the dependent chart or records")
         if (study.id === "collection-control") {
-          await until(async () => (await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 79,884.80 obs/s"), "Staging pipeline must show its exact scoped fixture connection value")
-          assert.equal((await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 124,820.00 obs/s"), false, "The stale production connection must not remain after switching scope")
+          await until(async () => (await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 79.88K obs/s"), "Staging pipeline must show its exact scoped fixture connection value")
+          assert.equal((await chartSnapshot(study.secondary)).connections.includes("Inspect connection Sources to Collector: 124.82K obs/s"), false, "The stale production connection must not remain after switching scope")
         }
         for (const widget of board.widgets) {
           await ready(widget)

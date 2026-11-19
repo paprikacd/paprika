@@ -17,6 +17,7 @@ import {
 import styles from "./operational-records.module.css"
 import { ObservationDetails } from "../observation-tooltip"
 import { TooltipDetail, TooltipFact } from "../tooltip-content"
+import { formatBounds } from "../units"
 import { GeographicPlot } from "../geographic-plot"
 
 const metric = (value: number | null, unit: string, decimals?: number) => value === null ? "No observed value" : formatMetric(value, unit === "percent" ? "%" : unit, false, decimals)
@@ -24,10 +25,10 @@ const metric = (value: number | null, unit: string, decimals?: number) => value 
 // continues to carry the original unrounded source coordinate.
 const coordinate = (value: number) => String(Number(value.toFixed(4)))
 
-function Inspect({label, context, details, children, className, props, selectOnFocus, avoidWidget, tabIndex, mark}: {
-  label: string; context: DrilldownContext; details: ReactNode; children: ReactNode; className?: string; props: WidgetRendererProps; selectOnFocus?: boolean; avoidWidget?: boolean; tabIndex?: number; mark?: boolean
+function Inspect({label, context, details, children, className, props, selectOnFocus, avoidWidget, tabIndex, mark, observationKey}: {
+  label: string; context: DrilldownContext; details: ReactNode; children: ReactNode; className?: string; props: WidgetRendererProps; selectOnFocus?: boolean; avoidWidget?: boolean; tabIndex?: number; mark?: boolean; observationKey?: string
 }) {
-  return <ObservationDetails label={label} className={className} details={details} revision={props.result}
+  return <ObservationDetails label={label} className={className} details={details} revision={props.result} observationKey={observationKey}
     selectOnFocus={selectOnFocus} avoidWidget={avoidWidget} tabIndex={tabIndex} mark={mark}
     enabled={!props.embedded && props.widget.options?.showTooltip !== false}
     onSelect={!props.embedded && props.onContextChange ? () => props.onContextChange!(context) : undefined}>{children}</ObservationDetails>
@@ -202,7 +203,13 @@ export function IncidentCalendar(props: WidgetRendererProps) {
   if (!data) return <EmptyState/>
   const unit = widget.unit || data.valueUnit, decimals = widget.options?.decimals
   const thresholds = widget.options?.thresholds ?? []
-  const thresholdLabel = (threshold: typeof thresholds[number], index: number) => threshold.label || (index === 0 ? thresholds.length === 1 ? "All values" : `Below ${metric(thresholds[1].value,unit,decimals)}` : `≥ ${metric(threshold.value,unit,decimals)}`)
+  // Threshold bounds share one formatter with the heatmap, so neighbouring bounds never print the same text.
+  const thresholdBounds = formatBounds(thresholds.map(threshold => threshold.value), unit === "percent" ? "%" : unit, decimals, thresholds.map(threshold => threshold.value));
+  const thresholdLabel = (threshold: typeof thresholds[number], index: number) => threshold.label || (index === 0 ? thresholds.length === 1 ? "All values" : `Below ${thresholdBounds[1]}` : `≥ ${thresholdBounds[index]}`)
+  // The day tooltip follows the widget's tooltip presentation: its title, value caption, unit and decimal places.
+  const dayTitle = widget.options?.tooltipTitle?.trim();
+  const dayMetric = (value: number | null) => metric(value, widget.options?.tooltipShowUnit === false ? "" : unit, widget.options?.tooltipDecimals ?? decimals);
+  const valueCaption = (fallback: string) => widget.options?.tooltipValueLabel?.trim() || fallback;
   return <div className={styles.wrapper} data-operational-chart="incident-calendar">
     <div className={styles.caption}><span>{config.aggregation === "count" ? "Record count" : `${config.aggregation === "sum" ? "Sum" : "Maximum"} per day`}</span><span>UTC calendar days</span></div>
     {data.months.length ? <div className={styles.calendarScroll}><div className={styles.months}>
@@ -211,8 +218,8 @@ export function IncidentCalendar(props: WidgetRendererProps) {
         <div className={styles.days}>
           {Array.from({length:month.offset},(_,index)=><span key={`blank-${index}`} aria-hidden="true"/>)}
           {month.days.map(day=>{ const threshold = config.colorMode === "thresholds" && day.value !== null ? thresholdForValue(day.value, thresholds) : undefined; const dayThreshold = threshold ? thresholdLabel(threshold, thresholds.indexOf(threshold)) : "Unmapped value"; return <div key={day.date} className={styles.day} data-observed={day.observations>0} data-missing={day.value===null} data-unknown={config.colorMode === "thresholds" && day.observations>0 && !threshold || undefined} data-threshold={threshold?.label || (threshold ? String(threshold.value) : undefined)} style={{"--day-strength":day.value===null?0:0.06+Math.abs(day.value)/Math.max(1,data.max)*.28, ...(threshold ? {"--day-color":thresholdPaint(threshold)} : {}), ...(config.colorMode === "thresholds" && !threshold ? {"--day-strength":0} : {})} as CSSProperties}>
-            <Inspect props={props} label={`${day.date}: ${day.observations ? metric(day.value, unit, decimals) : "No observations"}${day.observations && config.colorMode === "thresholds" ? ` · ${day.value === null ? "Unknown value" : dayThreshold}` : ""}`} context={day.context} className={styles.dayTrigger}
-              details={<Detail title={`${day.date} · UTC`}><Fact label={config.aggregation === "count" ? "Record count" : `${config.aggregation} of recorded values`}>{day.observations ? metric(day.value,unit,decimals) : "No observations"}</Fact>{day.observations>0&&config.colorMode==="thresholds"&&<Fact label="Threshold">{day.value === null ? "Unknown value" : dayThreshold}</Fact>}<Fact label="Source records">{day.observations}</Fact>{day.labels.length>0&&<span>{day.labels.join(" · ")}</span>}{day.status&&<Status value={day.status}/>}<span>{day.observations ? "Aggregated from records in this UTC day." : "No source records for this day; this is not a healthy or zero observation."}</span></Detail>}>
+            <Inspect props={props} observationKey={day.date} label={`${day.date}: ${day.observations ? metric(day.value, unit, decimals) : "No observations"}${day.observations && config.colorMode === "thresholds" ? ` · ${day.value === null ? "Unknown value" : dayThreshold}` : ""}`} context={day.context} className={styles.dayTrigger}
+              details={<Detail title={dayTitle || `${day.date} · UTC`}><Fact label={valueCaption(config.aggregation === "count" ? "Record count" : config.aggregation === "sum" ? "Sum of recorded values" : "Maximum recorded value")}>{day.observations ? dayMetric(day.value) : "No observations"}</Fact>{day.observations>0&&config.colorMode==="thresholds"&&<Fact label="Threshold">{day.value === null ? "Unknown value" : dayThreshold}</Fact>}<Fact label="Source records">{day.observations}</Fact>{day.labels.length>0&&<span>{day.labels.join(" · ")}</span>}{day.status&&<Status value={day.status}/>}<span>{day.observations ? "Aggregated from records in this UTC day." : "No source records for this day; this is not a healthy or zero observation."}</span></Detail>}>
               <span>{Number(day.date.slice(-2))}</span>{day.observations>0&&<i aria-hidden="true"/>}
             </Inspect>
           </div>})}

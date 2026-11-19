@@ -26,7 +26,7 @@ describe("observation inspector", () => {
     const { container } = inspector({ timestamp: 1000 });
     const rows = Array.from(container.querySelectorAll("[data-observation-state]"));
     expect(rows.map((row) => row.getAttribute("data-observation-state"))).toEqual(["observed", "observed", "observed"]);
-    expect(rows[0].querySelector("strong")).toHaveTextContent("12.345 ms");
+    expect(rows[0].querySelector("strong")).toHaveTextContent("12.3 ms");
     expect(rows[1].querySelector("strong")).toHaveTextContent("4 ms");
   });
 

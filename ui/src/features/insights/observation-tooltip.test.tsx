@@ -177,7 +177,7 @@ describe("focus restore", () => {
     fireEvent.click(trigger);
     act(() => screen.getByRole("button", { name: "Details action" }).focus());
     fireEvent.pointerDown(document.body);
-    expect(screen.queryByText("Pinned · tap again to close")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pinned · select again to close")).not.toBeInTheDocument();
     expect(trigger).not.toHaveFocus();
   });
 

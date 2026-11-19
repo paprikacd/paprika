@@ -65,3 +65,42 @@ These contracts record the Next-phase review decisions. Each one names the code 
 | Production limits | `docs/design/insights/README.md` and the widget review report; no alert/log/remote-plugin/Grafana-parity claim |
 
 English is currently the authored language. Numeric and timestamp formatting follows the renderer's explicit formatters, with the local timezone shown for custom time input. No additional locale or production browser-support promise is made by this local Chromium review. The scope contains no billing or legal-copy change.
+
+## Number display
+
+- Every number a widget shows honours its decimal places: `options.decimals` (0 to 8, or unset for Auto), set in the
+  editor's Style section as "Decimal places". Each numeric widget type exposes that control.
+- Auto (unset) shows the reading precision: three significant figures, with unit scaling (`812 ms`, `1.07K req/s`).
+  Auto never prints floating-point noise such as `5.878749999999975`.
+- With `decimals` set, the unit is still chosen first, as in Auto, and the decimal places then apply to the scaled number:
+  `296303060975000` bytes reads `269.49 TiB` at two places, not `296,303,060,975,000.00 bytes`. A record table, treemap,
+  list or record chart cell with a scalable unit scales each value on its own, so the cell reads in the unit step its value
+  reads in (`269.49 TiB` beside `1.00 KiB`, not `296,303,060,975,000 bytes` or `0.000 TiB`). A bar cell's scale bounds and a
+  matrix legend share one scale for their bounds.
+- Whole numbers are never padded. A whole number with no unit is a count or an id: it reads as an integer at any setting,
+  and a count is grouped (`18,432`) in stats, bounds, legends, matrix labels, record cells and record charts. A measure with a
+  unit keeps the widget's decimals (`78.000%`, `84.000 ms`). Non-integers follow the widget's decimals.
+- Identifier columns are shown as stored. A column with no unit whose last word is `id` (`order_id`, `orderId`, `Order ID`),
+  `year` or `day` (a whole word, not `days` or `start_date`) drops digit grouping and padding (`10021`). A column with a unit is
+  never an identifier: `retention_day` in ms reads `86,400 s` at zero places. A word before the last does not count, so
+  `cost_per_year` is a money column. Matrix labels use the shortest form of the same number, so `0.1 + 0.2` labels as `0.3`.
+- A set of values that compares (gauge scale, small-multiple extremes, a bar's scale bounds, a matrix legend) takes one unit,
+  chosen from its largest value, and the decimals then apply to each scaled value: `1.03 s` and `0.64 s`, not `1.03 s` beside
+  `640.00 ms`. A record cell is the exception: it scales on its own (see above).
+- Axis ticks take their tick step's precision, not the widget's decimals: a `0`–`500` axis reads `0 250 500` at any
+  setting, and a 0.25 step reads `0.25`. An authored decimal count is the smallest tick step, so ticks never collide. Readings,
+  tooltips, cells and legends follow the decimals setting.
+- Exact values appear only where the UI says "exact": Source details, the observation and point tables, and the
+  "Exact" labels, and a record cell's "Recorded value". They keep up to 12 significant digits and group digits (`296,303,060,975,000`). Integers that are safe
+  to represent keep every digit.
+- Bucket and threshold bounds keep their own value. A bound whose exact form has at most five places shows it when the
+  authored places would not (`0.5 s` at 0 decimals reads `0.5 s`, not `1 s`; `1.2 s` reads `1.2 s`). Otherwise the authored
+  places apply (`272.84841053 TiB` reads `273` at 0 decimals), and a bound takes up to five places only when rounding would
+  make it read as its neighbour or as zero. Auto puts every bound of one axis on a single shared scale, so neighbouring rows
+  never mix `100 ms` with `1 s`.
+- Latitude and longitude are coordinates, not metrics, and keep fixed precision.
+- Agent text (MCP synopses) follows the same rule. A value with a scalable unit takes one step from its own magnitude, then
+  the decimals: `296303060975000` bytes reads `269.486 TiB` at three places and `269 TiB` in Auto, never 15 raw digits. Auto
+  keeps three significant figures for a value with a unit, and six for a unit-less value. A unit-less whole number stays
+  whole and ungrouped (`84`, not `84.000`) at any setting, and each record cell scales on its own, as in the UI. Structured content keeps
+  the exact number.

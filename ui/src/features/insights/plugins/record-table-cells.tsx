@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
-import { exactMetric } from "../chart-data"
-import { formatRecordValue } from "../units"
+import { formatMetricDetails } from "../chart-data"
+import { formatBounds, formatMetric, recordNumberText, valueCellText } from "../units"
 import { thresholdForValue } from "../chart-renderers"
 import { statusHex, statusLevels, statusToken, thresholdInk, thresholdPaint } from "../status"
 import { StatusChip } from "../status-chip"
@@ -186,15 +186,20 @@ function RecordHistoryCell({ value, column, color, decimals, unit: authoredUnit,
   const name = column.label ?? column.key, unit = authoredUnit ?? (column.unit === "percent" ? "%" : column.unit ?? "")
   const latest = history.points[history.points.length - 1]
   return <span className={styles.cellHistory} data-cell-display="sparkline" data-history-state="valid" title={nativeTitle ? colorMeaning : undefined}>
-    <span className={styles.cellHistoryPlot}><StatSparkline series={{ name, labels: {}, points: history.points }} name={name} unit={unit} color={color ?? "var(--gamma-chart-1)"} latestLabel="Latest valid sample in history" /></span>
-    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : formatRecordValue(latest.value, unit, decimals)}</span>
+    <span className={styles.cellHistoryPlot}><StatSparkline series={{ name, labels: {}, points: history.points }} name={name} unit={unit} decimals={decimals} color={color ?? "var(--gamma-chart-1)"} latestLabel="Latest valid sample in history" /></span>
+    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : valueCellText(latest.value, unit, decimals)}</span>
     {colorMeaning && <span className={styles.cellHistoryMeaning} data-history-color-meaning>{colorMeaning}</span>}
   </span>
 }
 
-export function StyledRecordCell({ value, formatted, column, style, thresholds, color, textColors, decimals, thresholdValue, nativeTitle = true }: {
+/** A column's formatters: `text` formats one cell on its own unit step; `bound` formats a scale bound on the column's scale. */
+export type ColumnFormat = { text: (value: number) => string; bound: (value: number) => string }
+
+export function StyledRecordCell({ value, formatted, format, column, style, thresholds, color, textColors, decimals, thresholdValue, nativeTitle = true }: {
   value: unknown
   formatted: ReactNode
+  /** The column's scale, so the label and the scale bounds read in the same unit as the visible reading. */
+  format?: ColumnFormat
   column: RecordFrame["columns"][number]
   style: TableCellStyle
   thresholds?: readonly Threshold[]
@@ -207,13 +212,15 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   if (style.display === "status-badge") {
     const missing = value === null || value === undefined || value === ""
     const mapping = typeof value === "string" ? style.mappings?.find(entry => entry.value === value) : undefined
+    // Numbers follow the widget's decimal places, like every other number a widget shows.
+    const displayed = typeof value === "number" ? formatMetricDetails(value, "", decimals) : String(value)
     // The chip is the badge: no second pill around it. Hex-only mappings keep the dot and text below.
     if (mapping?.status) return <span className={styles.statusChipCell} data-cell-display="status-badge" data-status-state="mapped"
-      title={nativeTitle ? `${column.label ?? column.key}: ${String(value)}` : undefined}>
-      <StatusChip status={mapping.status} color={mapping.color} label={String(value)} />
+      title={nativeTitle ? `${column.label ?? column.key}: ${displayed}` : undefined}>
+      <StatusChip status={mapping.status} color={mapping.color} label={displayed} />
     </span>
     return <span className={styles.statusBadge} data-cell-display="status-badge" data-status-state={missing ? "missing" : mapping ? "mapped" : "unmapped"}
-      title={nativeTitle ? `${column.label ?? column.key}: ${missing ? "No data" : String(value)}` : undefined}>
+      title={nativeTitle ? `${column.label ?? column.key}: ${missing ? "No data" : displayed}` : undefined}>
       <span className={styles.statusDot} aria-hidden="true" style={mapping ? { backgroundColor: mapping.color } : undefined} />
       <span>{missing ? "No data" : formatted}</span>
     </span>
@@ -221,10 +228,12 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   if (style.display === "sparkline") {
     const sourceValue = typeof thresholdValue === "number" && Number.isFinite(thresholdValue) ? thresholdValue : undefined
     const threshold = sourceValue === undefined ? undefined : thresholdForValue(sourceValue, thresholds)
+    // The source value reads at the widget's decimals, so the meaning never shows float noise.
+    const shownSource = sourceValue === undefined ? "" : formatMetric(sourceValue, "", false, decimals)
     const colorMeaning = style.thresholdColumn ? sourceValue === undefined
       ? `Color by ${style.thresholdColumn}: no data`
-      : threshold ? `Color by ${style.thresholdColumn}: ${sourceValue}${threshold.label ? ` · ${threshold.label}` : ""}`
-        : `Color by ${style.thresholdColumn}: ${sourceValue} · no thresholds configured`
+      : threshold ? `Color by ${style.thresholdColumn}: ${shownSource}${threshold.label ? ` · ${threshold.label}` : ""}`
+        : `Color by ${style.thresholdColumn}: ${shownSource} · no thresholds configured`
       : undefined
     return <RecordHistoryCell value={value} column={column} color={style.thresholdColumn ? thresholdPaint(threshold) ?? "var(--gamma-muted)" : color} decimals={decimals} unit={style.unit} colorMeaning={colorMeaning} nativeTitle={nativeTitle} />
   }
@@ -234,8 +243,14 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
   const fill = thresholdPaint(threshold) ?? color ?? "var(--gamma-chart-3)"
   const isBar = style.display === "bar" || style.display === "bar-segments"
   const geometry = finite && isBar ? tableBarGeometry(value, style.min!, style.max!) : undefined
-  const exact = finite ? exactMetric(value, unit) : "No data"
-  const scale = isBar ? ` · Scale ${exactMetric(style.min!, unit)} to ${exactMetric(style.max!, unit)}${geometry?.outside ? " · Outside scale" : ""}` : ""
+  // The label reads what the cell shows, so a screen reader hears the same unit and places as a sighted user.
+  const shown = finite && style.unit !== undefined ? (unit ? valueCellText(value, unit, decimals) : recordNumberText(value, unit, column.key, decimals)) : formatted
+  const exact = !finite ? "No data" : typeof shown === "string" ? shown : formatMetricDetails(value, unit, decimals)
+  // Bounds keep their own value; a column's bounds share its one scale, as its values do.
+  const [lowerText, upperText] = !isBar ? [] : format && style.unit === undefined
+    ? [format.bound(style.min!), format.bound(style.max!)]
+    : formatBounds([style.min!, style.max!], unit, decimals)
+  const scale = isBar ? ` · Scale ${lowerText} to ${upperText}${geometry?.outside ? " · Outside scale" : ""}` : ""
   const label = `${column.label ?? column.key}: ${exact}${threshold?.label ? ` · ${threshold.label}` : ""}${scale}`
   const background = finite && style.display === "color-background" ? colorBackgroundFill(fill, threshold !== undefined) : undefined
   const foreground = finite && style.display === "color-text" ? textColors.get(fill)
@@ -251,6 +266,6 @@ export function StyledRecordCell({ value, formatted, column, style, thresholds, 
         {geometry.baseline > 0 && geometry.baseline < 1 && <span className={styles.cellBarZero} style={{ left: `${geometry.baseline * 100}%` }} />}
       </>}
     </span>}
-    <span className={styles.cellReading} aria-hidden="true">{finite && style.unit !== undefined ? formatRecordValue(value, unit, decimals) : formatted}{geometry?.outside && <span className={styles.cellOverflow}>{(value as number) < style.min! ? " ↙" : " ↗"}</span>}</span>
+    <span className={styles.cellReading} aria-hidden="true">{shown}{geometry?.outside && <span className={styles.cellOverflow}>{(value as number) < style.min! ? " ↙" : " ↗"}</span>}</span>
   </span>
 }

@@ -8,7 +8,7 @@ import { TraceWaterfall } from "./trace-waterfall"
 import styles from "./trace-dialog.module.css"
 
 /** A trace needs a common time axis and enough room to compare its spans. */
-export function TraceDialog({ traceId, onClose }: { traceId: string; onClose: () => void }) {
+export function TraceDialog({ traceId, onClose, decimals }: { traceId: string; onClose: () => void; decimals?: number }) {
   const dialog = useRef<HTMLDialogElement>(null), close = useRef<HTMLButtonElement>(null), id = useId()
   useEffect(() => {
     const element = dialog.current
@@ -29,6 +29,6 @@ export function TraceDialog({ traceId, onClose }: { traceId: string; onClose: ()
       <div><h2 id={`${id}-title`}>Trace detail</h2><span title={traceId}>{traceId}</span></div>
       <GammaButton ref={close} variant="quiet" size="sm" iconOnly aria-label="Close trace detail" onClick={onClose}><X size={17} aria-hidden="true" /></GammaButton>
     </header>
-    <div className={styles.content}><TraceWaterfall traceId={traceId} /></div>
+    <div className={styles.content}><TraceWaterfall traceId={traceId} decimals={decimals} /></div>
   </dialog>
 }

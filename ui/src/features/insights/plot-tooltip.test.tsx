@@ -500,6 +500,22 @@ describe("point and row tooltip hosts", () => {
     expect(labels).toHaveTextContent("service: api");
   });
 
+  it("reads peer values in the headline precision, keeping the exact value on hover", async () => {
+    const response: QueryResult = { series: [
+      { name: "checkout", labels: { service: "checkout" }, points: [{ timestamp: 1000.25, value: 16.85309166666745 }, { timestamp: 2000.5, value: 17 }] },
+      { name: "worker", labels: { service: "worker" }, points: [{ timestamp: 1000.25, value: 36.93984166666687 }, { timestamp: 2000.5, value: 37 }] },
+    ] };
+    render(<Host value={{ ...widget, unit: "req/s" }} response={response} fetcher={vi.fn().mockResolvedValue(child)} />);
+    const chart = screen.getByRole("img", { name: widget.title });
+    hoverLine(chart, 1, 0);
+    const tip = await screen.findByRole("tooltip");
+    fireEvent.keyDown(chart, { key: "Enter" });
+    // The selected series is worker; checkout is the peer whose exact value must not show in the headline precision.
+    const peer = tip.querySelector('[data-peer-series="checkout"]')!;
+    expect(peer.querySelector("strong")).not.toHaveTextContent("16.85309166666745");
+    expect(peer.querySelector("strong")).toHaveTextContent(/^16\.9 req\/s$/);
+    expect(peer.querySelector("strong")).toHaveAttribute("title", "Exact value 16.8530916667 req/s");
+  });
   it("uses the legend's percentile identities without replacing authored labels or historical observations", async () => {
     const percentiles = [
       { quantile: "p50", historical: 0, latest: 1.25 },
@@ -1025,9 +1041,9 @@ describe("plot tooltip placement", () => {
     fireEvent.blur(trigger, { relatedTarget: action });
     fireEvent.focus(action, { relatedTarget: trigger });
     expect(trigger).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Pinned · tap again to close")).toBeInTheDocument();
+    expect(screen.getByText("Pinned · select again to close")).toBeInTheDocument();
     fireEvent.keyDown(action, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByText("Pinned · tap again to close")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Pinned · select again to close")).not.toBeInTheDocument());
   });
   it("replaces another transient tooltip when scrolling introduces a new hover target, but keeps pinned details", () => {
     render(<>

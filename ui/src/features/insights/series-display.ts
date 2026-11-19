@@ -69,6 +69,18 @@ export function compactSeriesLabels(series: readonly Series[]): string[] {
   return labels.map((label, index) => generated.includes(index) && labels.some((other, otherIndex) => otherIndex !== index && other === label) ? originals[index] : label);
 }
 
+/**
+ * The short name of one series when there are no peers to compare with: a generated name shows its highest-priority
+ * label value (service=checkout reads "checkout"). Authored and provider names are returned as written.
+ */
+export function preferredSeriesLabel(series: Series, index = 0): string {
+  const original = seriesName(series, index);
+  if (!isGeneratedName(series)) return original;
+  const key = Object.keys(series.labels ?? {}).filter(name => name !== "__name__").sort((a, b) => priority(a) - priority(b) || (a < b ? -1 : a > b ? 1 : 0))[0];
+  const value = key ? series.labels?.[key] : undefined;
+  return value ? value : original;
+}
+
 // Group and column labels are joined with this separator (see record-charts.tsx plotData).
 const SEGMENT_SEPARATOR = " · ";
 

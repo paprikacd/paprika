@@ -56,7 +56,7 @@ try {
       // The shared title, timestamp, peer and action sections now retain their
       // readable gutters. Bound the complete anatomy, including its footer.
       assert.ok(state.bottom - state.top <= Math.min(440, state.height - 24), `Transient traffic details should stay compact: ${JSON.stringify(state)}`)
-      await tooltip.getByText("Click or tap chart to pin details").waitFor()
+      await tooltip.getByText("Click, tap or press Enter to keep open", { exact: true }).waitFor()
       const peers = tooltip.getByRole("list", { name: "Series at selected time" })
       assert.equal(await peers.locator("li").count(), 2)
       await peers.getByText("inbound", { exact: true }).waitFor()

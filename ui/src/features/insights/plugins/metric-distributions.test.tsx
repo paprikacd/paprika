@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { MetricPie, StatusHistory, statusHistoryTicks } from "./metric-distributions"
+import { tooltipPinHint } from "../tooltip-content"
 import type { QueryResult, Widget } from "../schema"
 import { DashboardTimeZoneProvider } from "../dashboard-time-zone"
 import { EmbeddedWidgetProvider } from "../widget-presentation"
@@ -27,6 +28,43 @@ describe("metric distributions",()=>{
     expect(statusHistoryTicks(Date.UTC(2026,9,27),Date.UTC(2026,9,27,1),"UTC")[0].label).toBe("00:00")
   })
 
+  it("keeps a pinned history sample on its own row when labels repeat, and on its own timestamp when two share one", () => {
+    const rows: QueryResult["series"] = [
+      { name:"a", labels:{ component:"db" }, points:[{ timestamp:Date.UTC(2026,9,27,0,0), value:1 }, { timestamp:Date.UTC(2026,9,27,0,1), value:1 }] },
+      { name:"b", labels:{ component:"db" }, points:[{ timestamp:Date.UTC(2026,9,27,0,0), value:0 }, { timestamp:Date.UTC(2026,9,27,0,0), value:2 }] },
+    ];
+    const { container } = render(<StatusHistory widget={{ ...widget, config:{ labelField:"component" } }} result={{ series:rows }} />);
+    fireEvent.click(container.querySelector('[data-history-key="1-0"]')!);
+    expect(container.querySelector('[data-history-key="1-0"]')).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelector('[data-history-key="0-0"]')).not.toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(container.querySelector('[data-history-key="1-1"]')!);
+    expect(container.querySelector('[data-history-key="1-1"]')).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelector('[data-history-key="1-0"]')).not.toHaveAttribute("aria-pressed", "true");
+  });
+  it("keeps a pinned history sample open when a refresh moves every timestamp by less than one step", () => {
+    const at = (seconds: number) => Date.UTC(2026,9,27,0,0,seconds);
+    const build = (offset: number, value: number) => ({ series:[{ name:"api", labels:{ service:"api" }, points:[{ timestamp:at(offset), value:0 }, { timestamp:at(offset + 60), value }] }] });
+    const { container, rerender } = render(<StatusHistory widget={widget} result={build(0, 1)} />);
+    fireEvent.click(container.querySelector('[data-history-key="0-1"]')!);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    rerender(<StatusHistory widget={widget} result={build(6, 3)} />);
+    expect(screen.getByRole("tooltip").querySelector("[data-metric-value]")).toHaveAttribute("data-metric-value", "3");
+    rerender(<StatusHistory widget={widget} result={build(12, 4)} />);
+    expect(screen.getByRole("tooltip").querySelector("[data-metric-value]")).toHaveAttribute("data-metric-value", "4");
+  });
+  it("keeps a pinned history sample open when a refresh shifts an irregular row by 20 s", () => {
+    // The first gap is 12 s and the rest are about 4 min, as a partial first bucket looks in the gallery. A shift of 20 s is
+    // further than the shortest gap but well within half the typical gap, so the pin must follow the sample. The pinned
+    // sample is the third one, whose neighbours are 204 s away, so the nearest sample after the shift is the same sample.
+    const at = (seconds: number) => Date.UTC(2026,9,27,0,0,seconds);
+    const build = (offset: number, value: number) => ({ series:[{ name:"api", labels:{ service:"api" }, points:[0, 12, 216, 492, 768].map((seconds, index) => ({ timestamp:at(seconds + offset), value: index === 2 ? value : 0 })) }] });
+    const { container, rerender } = render(<StatusHistory widget={widget} result={build(0, 1)} />);
+    fireEvent.click(container.querySelector('[data-history-key="0-2"]')!);
+    expect(screen.getByRole("tooltip").querySelector("[data-metric-value]")).toHaveAttribute("data-metric-value", "1");
+    rerender(<StatusHistory widget={widget} result={build(20, 5)} />);
+    expect(screen.getByRole("tooltip").querySelector("[data-metric-value]")).toHaveAttribute("data-metric-value", "5");
+    expect(container.querySelector('[data-history-key="0-2"]')).toHaveAttribute("aria-pressed","true");
+  });
   it("exposes history marks through named button semantics rather than native title tooltips",()=>{
     const {container}=render(<StatusHistory widget={widget} result={{series:[series("api",[2.125])]}} />)
     const mark=screen.getByRole("button",{name:/api .*2.13/})
@@ -96,6 +134,14 @@ describe("metric distributions",()=>{
     rerender(<MetricPie widget={widget} result={{series:[series("new",[3])]}} onContextChange={select}/>)
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
   })
+  it("tells the viewer how a pinned pie slice closes, and how an open one is pinned",()=>{
+    render(<MetricPie widget={widget} result={{series:[series("api",[1,2.5]),series("worker",[1,7.5])]}} onContextChange={vi.fn()}/>)
+    const api=screen.getByRole("button",{name:"api: 2.50"})
+    fireEvent.pointerEnter(api,{pointerType:"mouse"})
+    expect(screen.getByRole("tooltip")).toHaveTextContent(tooltipPinHint(false))
+    fireEvent.click(api)
+    expect(screen.getByRole("tooltip")).toHaveTextContent(tooltipPinHint(true))
+  })
   it("preserves relative pie shares when the sum of finite observations overflows",()=>{
     const result:QueryResult={series:[series("large-a",[1e308]),series("large-b",[1e308]),series("smaller",[5e307])]}
     const {container}=render(<MetricPie widget={widget} result={result}/> )
@@ -115,7 +161,7 @@ describe("metric distributions",()=>{
   it("respects disabled tooltips and keeps explicit selection available",()=>{
     const select=vi.fn()
     render(<MetricPie widget={{...widget,options:{...widget.options,showTooltip:false}}} result={{series:[series("api",[4])]}} onContextChange={select}/>)
-    const slice=screen.getByRole("button",{name:"api: 4.00"})
+    const slice=screen.getByRole("button",{name:"api: 4"})
     fireEvent.pointerEnter(slice,{pointerType:"mouse"})
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
     fireEvent.keyDown(slice,{key:"Enter"})
@@ -132,12 +178,12 @@ describe("metric distributions",()=>{
     render(<MetricPie widget={widget} result={{series:entries}} onContextChange={select}/>)
     const legend=screen.getByRole("region",{name:"Legend for Service state"})
     const names=[...legend.querySelectorAll(":scope > span")]
-    expect(names.map(item=>item.textContent)).toEqual(["node=node-01 · cluster=omega 1.00","node=node-02 · cluster=omega 2.00","node=node-01 · cluster=delta 3.00","Authored alias 4.00"])
+    expect(names.map(item=>item.textContent)).toEqual(["node=node-01 · cluster=omega 1","node=node-02 · cluster=omega 2","node=node-01 · cluster=delta 3","Authored alias 4"])
     expect(new Set(names.map(item=>item.textContent)).size).toBe(4)
     expect(names[0]).toHaveAttribute("title",entries[0].name)
-    expect(names[0]).toHaveAttribute("aria-label",`${entries[0].name}: 1.00`)
+    expect(names[0]).toHaveAttribute("aria-label",`${entries[0].name}: 1`)
     expect(names[0]).toHaveAttribute("role","group")
-    const slice=screen.getByRole("button",{name:`${entries[0].name}: 1.00`})
+    const slice=screen.getByRole("button",{name:`${entries[0].name}: 1`})
     fireEvent.pointerEnter(slice,{pointerType:"mouse"})
     expect(screen.getByRole("tooltip")).toHaveTextContent(entries[0].name)
     fireEvent.click(slice)
@@ -146,13 +192,13 @@ describe("metric distributions",()=>{
   it("offers keyboard inspection without a selection binding and suppresses nested tooltip interaction",()=>{
     const result:QueryResult={series:[series("api",[4])]}
     const {rerender}=render(<MetricPie widget={widget} result={result}/>)
-    const slice=screen.getByRole("button",{name:"api: 4.00"})
+    const slice=screen.getByRole("button",{name:"api: 4"})
     fireEvent.focus(slice)
     expect(screen.getByRole("tooltip")).toHaveTextContent("api")
     fireEvent.keyDown(slice,{key:"Enter"})
     expect(slice).toHaveAttribute("aria-pressed","true")
     rerender(<EmbeddedWidgetProvider><MetricPie widget={widget} result={result}/></EmbeddedWidgetProvider>)
-    expect(screen.queryByRole("button",{name:"api: 4.00"})).not.toBeInTheDocument()
+    expect(screen.queryByRole("button",{name:"api: 4"})).not.toBeInTheDocument()
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
   })
   it("orders by timestamp, lets the last duplicate replace a prior value, and never revives a stale pie slice",()=>{
@@ -193,8 +239,8 @@ describe("metric distributions",()=>{
     render(<StatusHistory widget={{...widget,config:{maxPoints:8,maxSeries:1}}} result={{series:[series("api",values),series("worker",[1])],truncated:true}}/>)
     expect(screen.getAllByRole("button").length).toBeLessThanOrEqual(8)
     expect(screen.getByRole("button",{name:/No data/})).toBeInTheDocument()
-    expect(screen.getByRole("button",{name:/100.00/})).toBeInTheDocument()
-    expect(screen.getByRole("button",{name:/5.00/})).toBeInTheDocument()
+    expect(screen.getByRole("button",{name:/100/})).toBeInTheDocument()
+    expect(screen.getByRole("button",{name:/5/})).toBeInTheDocument()
     expect(screen.getByText("Sampled view · 1 of 2 series")).toBeInTheDocument()
     expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
   })
@@ -237,6 +283,75 @@ describe("metric distributions",()=>{
     fireEvent.click(cells[4])
     expect(cells[4]).toHaveAttribute("aria-pressed","true")
     expect(screen.getByRole("tooltip").querySelector('[data-metric-value="5"]')).toBeInTheDocument()
+  })
+  it("closes a hovered history sample after the pointer leaves, even while another sample keeps focus",()=>{
+    vi.useFakeTimers()
+    try {
+      const {container}=render(<StatusHistory widget={widget} result={{series:[series("api",[0,1,2])]}} />)
+      const cells=[...container.querySelectorAll<HTMLButtonElement>('[data-history-key]')]
+      act(()=>cells[0].focus())
+      fireEvent.pointerEnter(cells[2],{pointerType:"mouse"})
+      expect(screen.getByRole("tooltip")).toBeInTheDocument()
+      fireEvent.pointerLeave(cells[2])
+      act(()=>{ vi.advanceTimersByTime(200) })
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+      expect(cells[0]).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it("keeps a pinned history sample open with its refreshed value, and releases it when the sample leaves",()=>{
+    const {container,rerender}=render(<StatusHistory widget={widget} result={{series:[series("api",[1,2,3])]}} />)
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-history-key="0-1"]')!)
+    expect(screen.getByRole("tooltip").querySelector('[data-metric-value="2"]')).toBeInTheDocument()
+    // The refresh changes the value of the same sample: the pin stays and shows the new reading.
+    rerender(<StatusHistory widget={widget} result={{series:[series("api",[1,7,3])]}} />)
+    expect(screen.getByRole("tooltip").querySelector('[data-metric-value="7"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-history-key="0-1"]')).toHaveAttribute("aria-pressed","true")
+    // A refresh without that sample's timestamp closes the pin.
+    rerender(<StatusHistory widget={widget} result={{series:[series("api",[1])]}} />)
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+  })
+  it("heads a history sample with its series, not the widget title",()=>{
+    const {container}=render(<StatusHistory widget={widget} result={{series:[series("api",[1])]}} />)
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-history-key]')!)
+    expect(within(screen.getByRole("tooltip")).getByText("api",{selector:"strong"})).toBeInTheDocument()
+  })
+  it("gives each narrow sample its own pointer slice, so hovering a slice opens its own sample",()=>{
+    vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){ return this.matches?.("[data-history-track]") ? {x:0,y:0,left:0,top:0,right:300,bottom:20,width:300,height:20,toJSON(){}} as DOMRect : {x:0,y:0,left:0,top:0,right:0,bottom:0,width:0,height:0,toJSON(){}} as DOMRect })
+    const entries=series("api",Array.from({length:85},(_,index)=>index%3===0?1:2))
+    const {container}=render(<StatusHistory widget={widget} result={{series:[entries]}}/>)
+    const samples=container.querySelectorAll("[data-history-key]").length
+    const slices=[...container.querySelectorAll<HTMLElement>("[data-history-hit]")]
+    expect(slices).toHaveLength(samples)
+    const target=slices[Math.floor(samples/2)], key=target.getAttribute("data-history-hit")!
+    fireEvent.pointerEnter(target,{pointerType:"mouse"})
+    expect(container.querySelector(`[data-history-key="${key}"]`)).toHaveAttribute("aria-pressed")
+    const neighbour=key.replace(/-(\d+)$/,(_,n)=>`-${Number(n)+1}`)
+    expect(container.querySelector(`[data-history-key="${neighbour}"]`)).not.toHaveAttribute("aria-pressed")
+    vi.restoreAllMocks()
+  })
+  it("keeps a pinned sample pinned under a pointer on its slice, and a second click on the slice unpins it",()=>{
+    vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){ return this.matches?.("[data-history-track]") ? {x:0,y:0,left:0,top:0,right:300,bottom:20,width:300,height:20,toJSON(){}} as DOMRect : {x:0,y:0,left:0,top:0,right:0,bottom:0,width:0,height:0,toJSON(){}} as DOMRect })
+    try {
+      const entries=series("api",Array.from({length:85},(_,index)=>index%3===0?1:2))
+      const {container}=render(<StatusHistory widget={widget} result={{series:[entries]}}/>)
+      const slices=[...container.querySelectorAll<HTMLElement>("[data-history-hit]")]
+      const slice=slices[Math.floor(slices.length/2)], key=slice.getAttribute("data-history-hit")!
+      const sample=container.querySelector<HTMLButtonElement>(`[data-history-key="${key}"]`)!
+      // The slice belongs to its sample: a pointer on it is a pointer on the sample, not an outside click.
+      expect(sample).toContainElement(slice)
+      fireEvent.pointerDown(slice,{pointerType:"mouse"})
+      fireEvent.click(slice)
+      expect(sample).toHaveAttribute("aria-pressed","true")
+      fireEvent.pointerDown(slice,{pointerType:"mouse"})
+      expect(sample).toHaveAttribute("aria-pressed","true")
+      fireEvent.click(slice)
+      expect(sample).not.toHaveAttribute("aria-pressed","true")
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
   it("keeps endpoint hit areas inside the lane while preserving exact selected samples",()=>{
     const select=vi.fn(), entries=series("api",[1,2,3])
@@ -327,6 +442,6 @@ describe("metric distributions",()=>{
     expect(screen.getByRole("group",{name:"Status history legend"})).toHaveTextContent("Mixed / uncertain")
     expect(screen.getAllByRole("img",{name:/Changes, missing samples or duplicate timestamps/}).length).toBeGreaterThan(0)
     expect(screen.getByRole("button",{name:/api .*No data/})).toBeInTheDocument()
-    expect(screen.getByRole("button",{name:/api .*3.00.*Critical/})).toBeInTheDocument()
+    expect(screen.getByRole("button",{name:/api .*3.*Critical/})).toBeInTheDocument()
   })
 })

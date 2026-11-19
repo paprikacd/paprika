@@ -5,6 +5,12 @@ import { TraceDialog } from "./trace-dialog"
 import { TraceFetcherProvider } from "./trace-waterfall"
 
 describe("trace detail dialog", () => {
+  it("prints the trace's durations at the decimals the dialog is given", async () => {
+    const fetchTrace = vi.fn(async () => ({ spans: [{ spanId: "root", service: "api", operation: "GET", startTime: 1000, durationMs: 200, status: "ok" }] }))
+    render(<TraceFetcherProvider fetchTrace={fetchTrace}><TraceDialog traceId="abc" onClose={() => undefined} decimals={3} /></TraceFetcherProvider>)
+    await screen.findByRole("region", { name: "Trace abc waterfall" })
+    expect(screen.getByText(/200\.000 ms observed/)).toBeInTheDocument()
+  })
   it("opens a full trace, closes accessibly and returns focus to the opener", async () => {
     const fetchTrace = vi.fn(async () => ({ spans: [{ spanId: "root", service: "api", operation: "GET", startTime: 1000, durationMs: 200, status: "ok" }] }))
     function Example() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statusHistoryLayout } from "./status-history-data";
+import { historyHitSlices, statusHistoryLayout } from "./status-history-data";
 import type { Series } from "../chart-data";
 
 const series = (name: string, times: number[], values = times): Series => ({ name, labels: {}, points: times.map((timestamp, index) => ({ timestamp, value: values[index] })) });
@@ -47,3 +47,26 @@ describe("status history time layout", () => {
     expect(duplicate.rows[0].bridges.some(bridge => bridge.kind === "mixed")).toBe(true);
   });
 });
+
+describe("status history pointer slices", () => {
+  it("never overlap in a dense lane, and always contain their own sample's centre and drawn edges", () => {
+    const lane = 300, marks = Array.from({ length: 85 }, (_, index) => ({ centre: 2 + index * (lane - 4) / 84, halfWidth: 1.9 }));
+    const slices = historyHitSlices(marks.map(mark => ({ centre: mark.centre, halfWidth: Math.max(3, mark.halfWidth) })), lane);
+    slices.forEach((slice, index) => {
+      // The drawn edge sits 1.9 px out; a point 0.75 px inside it must still belong to this sample.
+      expect(slice.start).toBeLessThanOrEqual(marks[index].centre - 1.15);
+      expect(slice.end).toBeGreaterThanOrEqual(marks[index].centre + 1.15);
+      if (index > 0) expect(slice.start).toBeGreaterThanOrEqual(slices[index - 1].end - 1e-9);
+    });
+  });
+  it("clamps endpoint slices to the lane and keeps each slice within its own reach", () => {
+    const slices = historyHitSlices([{ centre: 0, halfWidth: 3 }, { centre: 200, halfWidth: 3 }], 200);
+    expect(slices).toEqual([{ start: 0, end: 3 }, { start: 197, end: 200 }]);
+  });
+  it("does not extend a slice over a distant neighbour", () => {
+    const slices = historyHitSlices([{ centre: 10, halfWidth: 3 }, { centre: 200, halfWidth: 3 }], 300);
+    expect(slices[0]).toEqual({ start: 7, end: 13 });
+    expect(slices[1]).toEqual({ start: 197, end: 203 });
+  });
+});
+

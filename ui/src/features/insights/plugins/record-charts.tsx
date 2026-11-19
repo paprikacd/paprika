@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { z } from "zod"
 import { formatMetric, EmptyState, ObservationTooltip } from "../chart-renderers"
-import { axisScale, niceDomain, ticksWithin } from "../units"
+import { axisScale, isIdentifierColumn, niceDomain, recordNumberText, ticksWithin } from "../units"
 import type { RecordFrame } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
@@ -11,6 +11,7 @@ import { formatTimeTick } from "../chart-data"
 import { displaySeriesNames, fallbackIdentityTitle } from "../series-display"
 import { truncationNote } from "../truncation"
 import { TimeWindowLens } from "../time-window-lens"
+import { TooltipPinHint } from "../tooltip-content"
 import { assignSeriesColors } from "../series-colors"
 import { seriesSlot } from "../series-palette"
 import type { ObservationWindow } from "../time-window"
@@ -123,8 +124,19 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   rightTicks=ticksWithin([right.min,right.max],yTicks.length).map(tick=>({tick,fraction:positionFraction(tick,right.min,right.max)})),
   leftLabels=axisScale([left.min,left.max],"",{compact:true,decimals:widget.options?.decimals,ticks:leftTicks.map(({tick})=>tick)}),
   rightLabels=axisScale([right.min,right.max],"",{compact:true,decimals:widget.options?.decimals,ticks:rightTicks.map(({tick})=>tick)});
-  const xText=(x:number,exact=false)=>data.category?data.categories[Math.round(x)]??"":data.xColumn.type==="timestamp"?(exact?new Date(x).toISOString():formatTimeTick(x,maxX-minX,timeZone)):exact?String(x):formatMetric(x,"",false,0)
-  const ticks=(data.category?[minX,positions[Math.floor((positions.length-1)/2)],maxX]:[minX,minX*.5+maxX*.5,maxX]).filter((x,i,list)=>list.indexOf(x)===i)
+  // Context values follow the widget's decimal places; text stays text.
+  const contextText=(value:unknown)=>typeof value==="number"?formatMetric(value,"",false,widget.options?.decimals):String(value)
+  const xText=(x:number,exact=false)=>data.category?data.categories[Math.round(x)]??"":data.xColumn.type==="timestamp"?(exact?new Date(x).toISOString():formatTimeTick(x,maxX-minX,timeZone)):exact?recordNumberText(x,"",data.xColumn.key):Number.isInteger(x)?recordNumberText(x,"",data.xColumn.key):formatMetric(x,"",false,widget.options?.decimals)
+  // Numeric x ticks take their step's precision (decision 3). An identifier column is never grouped (10021, not 10,021),
+  // and its ticks are whole ids: a mid tick between two ids is rounded to one of them.
+  const numericX=!data.category&&data.xColumn.type!=="timestamp"
+  const identifierX=numericX&&isIdentifierColumn(data.xColumn.key)&&!data.xColumn.unit
+  const midX=minX*.5+maxX*.5
+  // An identifier's middle tick is the id present nearest the midpoint, so the axis never labels an id with no record.
+  const nearestId=positions.reduce((best,x)=>Math.abs(x-midX)<Math.abs(best-midX)?x:best,minX)
+  const ticks=(data.category?[minX,positions[Math.floor((positions.length-1)/2)],maxX]:[minX,identifierX?nearestId:midX,maxX]).filter((x,i,list)=>list.indexOf(x)===i)
+  const xAxis=numericX?axisScale([minX,maxX],"",{decimals:widget.options?.decimals,ticks}):undefined
+  const xTickText=(x:number)=>xAxis?(identifierX?(Number.isInteger(x)?String(x):xAxis.label(x).replace(/,(?=\d{3})/g,"")):xAxis.label(x)):xText(x)
   const select=(entry:PlotSeries,point:Datum)=>onContextChange?.({series:entry.name,value:point.value,labels:Object.fromEntries(frame.columns.flatMap((column,i)=>point.row[i]===null?[]:[[column.key,String(point.row[i])]])),...(data.xColumn.type==="timestamp"?{timestamp:point.x}:{})})
   const current=tooltipEnabled&&inspection?.revision===revision?inspection:undefined
   const show=(seriesIndex:number,point:Datum,pinned=false)=>{const anchor=plot.current;if(!anchor||!tooltipEnabled)return;clearTimeout(hideTimer.current);setInspection(previous=>previous?.revision===revision&&previous.seriesIndex===seriesIndex&&previous.point===point&&previous.pinned===pinned&&previous.anchor===anchor?previous:{revision,seriesIndex,point,pinned,anchor})}
@@ -173,7 +185,7 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     {identityTitle&&<title>{`${identityTitle} · ${series[0].name}`}</title>}<defs><clipPath id={unique}><rect data-record-plot-height={plotHeight} x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
     {leftTicks.map(({tick,fraction})=><g key={`l${tick}`}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{leftLabels.label(tick)}</text></g>)}
     {series.some(s=>s.right)&&rightTicks.map(({tick,fraction})=><text key={`r${tick}`} x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{rightLabels.label(tick)}</text>)}
-    {ticks.map(x=><text key={x} x={xScale(x)} y={plotBottom+20} textAnchor="middle">{xText(x)}</text>)}
+    {ticks.map(x=><text key={x} x={xScale(x)} y={plotBottom+20} textAnchor="middle">{xTickText(x)}</text>)}
     <text x={plotLeft} y={12}>{series.filter(s=>!s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text><text x={plotRight} y={12} textAnchor="end">{series.filter(s=>s.right).map(s=>s.unit).filter((unit,i,list)=>unit&&list.indexOf(unit)===i).join(" / ")}</text>
     <g clipPath={`url(#${unique})`}>{config.annotations?.map((annotation,i)=>{const at=data.position(annotation.x);return Number.isFinite(at)&&at>=minX&&at<=maxX?<g key={i}><title>{annotation.label}</title><line x1={xScale(at)} x2={xScale(at)} y1={plotTop-4} y2={plotBottom} stroke="var(--gamma-muted)" strokeDasharray="3 3"/><text x={xScale(at)+4} y={plotTop+10+i%3*12}>{annotation.label.slice(0,bounds.width<480?20:30)}</text></g>:null})}
     {series.map((entry,index)=>{
@@ -190,13 +202,13 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     })}</g>
   </svg>{current&&<ObservationTooltip id={tooltipId} anchor={current.anchor} anchorRect={anchorRect} preferSide avoidWidget pinned={current.pinned} onDismiss={()=>setInspection(undefined)} onEnter={()=>clearTimeout(hideTimer.current)} onLeave={hide}>
     <div data-record-observation={current.point.x}><div className={tooltipStyles.plotTooltipTime}><span>Selected observation</span><span>{xText(current.point.x,true)}</span></div><div className={tooltipStyles.plotTooltipValues}><ul><li className={tooltipStyles.plotTooltipSelected}><i aria-hidden="true" style={{background:colorOf(current.seriesIndex)}}/><span>{series[current.seriesIndex].name}</span><strong>{formatMetric(current.point.value!,series[current.seriesIndex].unit==="percent"?"%":series[current.seriesIndex].unit||widget.unit,false,widget.options?.decimals)}</strong></li></ul></div>
-      {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":String(value).length>128?`${String(value).slice(0,128)}…`:String(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
-      <div className={tooltipStyles.tooltipFooter}><small>{current.pinned?"Pinned · press Escape to close":"Move across the chart or use arrow keys · Enter to pin"}</small></div></div>
+      {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":contextText(value).length>128?`${contextText(value).slice(0,128)}…`:contextText(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
+      <TooltipPinHint pinned={current.pinned} /></div>
   </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colorOf(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
   {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{truncationNote(result)&&<span>{truncationNote(result)}</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>
 export const RecordBar=(props:WidgetRendererProps)=><RecordChart {...props} bar/>
 export function registerRecordChartPlugins(){
-  for(const entry of [{id:"records-line",label:"Record line chart",render:RecordLine},{id:"records-bar",label:"Record bar chart",render:RecordBar}])if(!getWidgetDefinition("plugin",entry.id))registerWidgetPlugin({...entry,dataKind:"records",description:"Plot exact application records and authored historical datasets",parseConfig:config=>configSchema.parse(config??{})})
+  for(const entry of [{id:"records-line",label:"Record line chart",render:RecordLine},{id:"records-bar",label:"Record bar chart",render:RecordBar}])if(!getWidgetDefinition("plugin",entry.id))registerWidgetPlugin({...entry,dataKind:"records",description:"Plot exact application records and authored historical datasets",parseConfig:config=>configSchema.parse(config??{}),styleControls:["decimals"]})
 }

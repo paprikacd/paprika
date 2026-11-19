@@ -714,7 +714,8 @@ describe("widget visualizations", () => {
     );
     expect(screen.getByText("Time")).toBeInTheDocument();
     expect(screen.getByText("Response time")).toBeInTheDocument();
-    expect(screen.getByText("100.00 ms")).toBeInTheDocument();
+    // The axis tick takes its step's precision; the reading keeps the widget's decimals.
+    expect(screen.getByText("100 ms")).toBeInTheDocument();
     expect(screen.queryByText("api")).not.toBeInTheDocument();
     // fillOpacity now sets the top stop of the area's gradient, which fades to transparent at the baseline.
     const fill = container.querySelector("g.ts-chart__area path")!.getAttribute("fill")!;
@@ -759,13 +760,13 @@ describe("widget visualizations", () => {
       />,
     );
     const healthy = screen.getByRole("button", {
-      name: "healthy-api: 1.0 · Healthy",
+      name: "healthy-api: 1 · Healthy",
     });
     // jsdom drops a var() background, so the status band is checked through its on-fill ink and the default bands' statuses.
     expect(DEFAULT_HEATMAP_THRESHOLDS.map(({ status }) => status)).toEqual(["critical", "ok"]);
     expect(healthy).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-ok-on)"));
     expect(
-      screen.getByRole("button", { name: "failed-worker: 0.0 · Unhealthy" }),
+      screen.getByRole("button", { name: "failed-worker: 0 · Unhealthy" }),
     ).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-critical-on)"));
     expect(
       screen.getByRole("button", { name: "missing-job: No data" }),
@@ -895,7 +896,7 @@ describe("widget visualizations", () => {
       "data-metric-value",
       "0.123456789",
     );
-    expect(within(tip).getByText("Below 1 req/s")).toBeInTheDocument();
+    expect(within(tip).getByText("Below 1.00 req/s")).toBeInTheDocument();
     expect(within(tip).getByText("value11")).toBeInTheDocument();
     expect(tip.querySelector("time")).toHaveAttribute("datetime", timestamp);
     Object.defineProperties(tip, {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { ChartTable } from "../chart-table"
 import { GammaButton } from "../gamma/button"
 import { GammaInput } from "../gamma/input"
@@ -13,17 +13,26 @@ import {
   type WidgetRendererProps,
 } from "../widget-registry"
 import { EmptyState, ObservationTooltip } from "../chart-renderers"
-import { formatRecordValue } from "../units"
-import { TooltipDetail, TooltipFact, TooltipHint } from "../tooltip-content"
+import { ObservationDetails } from "../observation-tooltip"
+import { exactMetric } from "../chart-data"
+import { formatRecordValue, isIdentifierColumn, recordNumberText, sharedScale, unitSuffix, valueCellText } from "../units"
+import { TooltipDetail, TooltipFact, TooltipPinHint } from "../tooltip-content"
 import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
 import { truncationNote, type TruncationSource } from "../truncation"
 import styles from "./records.module.css"
-import { StyledRecordCell, parseRecordHistory, tableCellStyleError, tableCellStylesSchema, tableTextPalette } from "./record-table-cells"
+import { StyledRecordCell, parseRecordHistory, tableCellStyleError, tableCellStylesSchema, tableTextPalette, type ColumnFormat } from "./record-table-cells"
 import { useInsightsTheme } from "../insights-theme"
 import { useDashboardWindow } from "../dashboard-window"
 import { PlotHatchDefs, plotHatchFill } from "../plot-hatch"
 import hatchStyles from "../plot-hatch.module.css"
+
+// The stored value, exactly. A whole number in a unit-less identifier or date-part column is printed as stored
+// ("2026", "10022"), the way its cell reads; everything else takes the exact formatter, which never rounds to zero.
+function recordedValueText(value: number, unit: string, column: string) {
+  if (unit === "" && Number.isInteger(value) && Math.abs(value) < 1e21 && isIdentifierColumn(column)) return `${value}`
+  return exactMetric(value, unit)
+}
 
 /** A label on a missing-colour tile sits on the hatch, so its halo is the empty fill, which keeps the text legible. */
 const missingLabelHalo = { paintOrder: "stroke", stroke: "var(--gamma-chart-empty)", strokeWidth: "3px", strokeLinejoin: "round" } as const
@@ -88,8 +97,67 @@ function column(frame: RecordFrame, name: string) {
   if (index < 0) throw new Error(`The query result has no “${name}” column.`)
   return index
 }
-function text(value: unknown): string {
+/**
+ * Display text. Non-integer numbers take the widget's decimal places. Integers are identifiers as often as measurements
+ * (years, order numbers), so they keep their stored digits and are never grouped. Use `keyText` for keys, search and context.
+ */
+function text(value: unknown, decimals?: number): string {
+  if (typeof value === "number" && Number.isFinite(value) && !Number.isInteger(value)) return formatRecordValue(value, "", decimals)
+  return keyText(value)
+}
+/** A list field: numbers take the column's unit and the widget's decimals, as a table cell does; other values keep their text. */
+function listText(frame: RecordFrame, row: RecordFrame["rows"][number], index: number, decimals?: number): string {
+  const value = row[index]
+  if (typeof value === "number" && Number.isFinite(value)) return String(cell(frame, row, index, decimals))
+  return text(value, decimals)
+}
+const columnFormatterCache = new WeakMap<RecordFrame, Map<string, (ColumnFormat | undefined)[]>>()
+/**
+ * One formatter per column that has a scalable unit. Each cell (`text`) takes the unit step its own value reads in, so
+ * "1.000 KiB" and "269.486 TiB" can sit in one column. The column's scale (from its largest absolute value) is used for
+ * `bound` only, so a column's scale bounds read on one unit. Columns without a unit keep their stored digits (see
+ * `recordNumberText`); an identifier column has no unit, so it never reaches a scale.
+ */
+export function columnFormatters(frame: RecordFrame, decimals?: number): (ColumnFormat | undefined)[] {
+  const key = String(decimals)
+  let byDecimals = columnFormatterCache.get(frame)
+  if (!byDecimals) columnFormatterCache.set(frame, (byDecimals = new Map()))
+  const cached = byDecimals.get(key)
+  if (cached) return cached
+  const formatters = frame.columns.map((column, index) => {
+    const unit = column.unit === "percent" ? "%" : (column.unit ?? "")
+    if (unit === "") return undefined
+    const values = frame.rows.flatMap(row => (typeof row[index] === "number" && Number.isFinite(row[index]) ? [row[index] as number] : []))
+    const scale = sharedScale(values, unit, { decimals })
+    return {
+      // Each value takes the unit step it reads in; the column's one scale is kept for bounds, where it bounds the cells.
+      text: (value: number) => valueCellText(value, unit, decimals),
+      bound: (value: number) => `${scale.bound(value)}${unitSuffix(scale.unit)}`,
+    }
+  })
+  byDecimals.set(key, formatters)
+  return formatters
+}
+/**
+ * The raw text of a cell, never reformatted. Grouping, coordinates, search and drill-down context compare on it, so two
+ * values that differ in their digits stay distinct and a drill-down binding receives the stored value.
+ */
+function keyText(value: unknown): string {
   return value === null || value === undefined ? "—" : String(value)
+}
+/**
+ * A number as its table cell prints it: a column with a unit gives each value its own unit step, and a unit-less column
+ * keeps its identifier or count rules (`recordNumberText`).
+ */
+function numberCellText(frame: RecordFrame, index: number, value: number, decimals?: number): string {
+  const scaled = columnFormatters(frame, decimals)[index]?.text(value)
+  if (scaled !== undefined) return scaled
+  return recordNumberText(
+    value,
+    frame.columns[index].unit === "percent" ? "%" : (frame.columns[index].unit ?? ""),
+    frame.columns[index].key,
+    decimals,
+  )
 }
 function cell(
   frame: RecordFrame,
@@ -99,14 +167,7 @@ function cell(
 ) {
   const value = row[index]
   if (value === null) return "—"
-  if (typeof value === "number")
-    return formatRecordValue(
-      value,
-      frame.columns[index].unit === "percent"
-        ? "%"
-        : (frame.columns[index].unit ?? ""),
-      decimals,
-    )
+  if (typeof value === "number") return numberCellText(frame, index, value, decimals)
   if (typeof value === "boolean") return value ? "Yes" : "No"
   if (frame.columns[index].type === "timestamp")
     return new Date(value).toLocaleString()
@@ -178,9 +239,10 @@ export function RecordTable({
     const selected = frame.rows.filter(
       (row) =>
         !activeSearch ||
-        row.some((v) =>
-          text(v).toLocaleLowerCase().includes(activeSearch.toLocaleLowerCase()),
-        ),
+        row.some((v) => {
+          const needle = activeSearch.toLocaleLowerCase()
+          return keyText(v).toLocaleLowerCase().includes(needle) || text(v).toLocaleLowerCase().includes(needle)
+        }),
     )
     if (sort)
       selected.sort((a, b) => {
@@ -241,10 +303,14 @@ export function RecordTable({
   const history = activeStyle?.display === "sparkline" ? parseRecordHistory(activeCell?.value) : undefined
   const activeUnit = activeStyle?.unit ?? (activeColumn?.unit === "percent" ? "%" : activeColumn?.unit ?? "")
   const activeValue = history?.state === "valid" ? history.points[history.points.length - 1].value : activeCell?.value
-  const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? "No data" : typeof activeValue === "number" ? formatRecordValue(activeValue, activeUnit, widget.options?.decimals) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
+  // The panel heading reads as the cell does: a styled unit (or a sparkline's history) reads on that unit, otherwise the column.
+  const cellNumber = (value: number) => activeColumn && activeStyle && (history || activeStyle.unit !== undefined)
+    ? activeUnit ? valueCellText(value, activeUnit, widget.options?.decimals) : recordNumberText(value, activeUnit, activeColumn.key, widget.options?.decimals)
+    : numberCellText(frame, activeCell ? indexes[activeCell.column] : 0, value, widget.options?.decimals)
+  const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? "No data" : typeof activeValue === "number" ? cellNumber(activeValue) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
   return (
     <div className={`${styles.wrapper}${config.density === "compact" ? ` ${styles.compactTable}` : ""}`} data-record-table="" data-table-density={config.density} data-cell-inspection={inspectCells || undefined}>
-      {inspectCells && <p id={cellHelpId} className={styles.cellHistoryMeaning}>Use arrow keys to move between cells and Enter to pin details.</p>}
+      {inspectCells && <p id={cellHelpId} className={styles.cellHistoryMeaning}>Use arrow keys to move between cells; Enter opens the details of a cell.</p>}
       {!embedded && config.showSearch && (
         <div className={styles.toolbar}>
           <GammaInput size="sm"
@@ -337,7 +403,7 @@ export function RecordTable({
                         const next = scrollRef.current?.querySelector<HTMLTableCellElement>(`td[data-record-cell-row="${nextRow}"][data-record-cell-column="${nextColumn}"]`)
                         next?.focus({ preventScroll: true }); next?.scrollIntoView?.({ block: "nearest", inline: "nearest" })
                       }}>
-                      {style ? <StyledRecordCell value={row[index]} formatted={formatted} column={field} style={style}
+                      {style ? <StyledRecordCell value={row[index]} formatted={formatted} format={columnFormatters(frame, widget.options?.decimals)[index]} column={field} style={style}
                         thresholds={widget.options?.thresholds} color={widget.color} textColors={textColors} decimals={widget.options?.decimals} thresholdValue={thresholdIndexes.has(field.key) ? row[thresholdIndexes.get(field.key)!] : undefined} nativeTitle={false} /> : formatted}
                     </td>
                   })}
@@ -375,7 +441,7 @@ export function RecordTable({
       {activeCell && activeColumn && <ObservationTooltip id={cellTooltipId} anchor={activeCell.anchor} className={styles.recordTooltip} avoidWidget pinned={activeCell.pinned} role={activeCell.pinned ? "region" : "tooltip"} ariaLabel={activeCell.pinned ? "Record cell details" : undefined} tabIndex={activeCell.pinned ? 0 : undefined} panelRef={element => { cellPanel.current = element }} onDismiss={() => { if (cellPanel.current?.contains(document.activeElement)) activeCell.anchor.focus({ preventScroll: true }); hideCell() }} onEnter={() => { cellInteraction.current.panel = true; clearCellHide() }} onLeave={() => { cellInteraction.current.panel = false; scheduleCellHide() }}>
         <TooltipDetail title={activeColumn.label ?? activeColumn.key}>
           <span className={styles.recordCellValue}>{formattedValue}</span>
-          {typeof activeValue === "number" && Number.isFinite(activeValue) && <TooltipFact label="Recorded value">{String(activeValue)}</TooltipFact>}
+          {typeof activeValue === "number" && Number.isFinite(activeValue) && <TooltipFact label="Recorded value">{recordedValueText(activeValue, activeUnit, activeColumn.key)}</TooltipFact>}
           {history?.state === "valid" && <small>{history.points.length} recorded {history.points.length === 1 ? "sample" : "samples"} · latest {new Date(history.points[history.points.length - 1].timestamp).toLocaleString()}</small>}
           {history?.state === "invalid" && <small>History must be an ordered JSON array of timestamped numeric or null observations.</small>}
           {cellMeaning && <small>{cellMeaning}</small>}
@@ -451,21 +517,21 @@ export function RecordList({
                 <strong>
                   {url ? (
                     <a href={url} target="_blank" rel="noopener noreferrer">
-                      {text(row[indexes.title])}
+                      {listText(frame, row, indexes.title, widget.options?.decimals)}
                     </a>
                   ) : (
-                    text(row[indexes.title])
+                    listText(frame, row, indexes.title, widget.options?.decimals)
                   )}
                 </strong>
                 {config.status && (
                   <span className={styles.badge}>
-                    {text(row[indexes.status])}
+                    {listText(frame, row, indexes.status, widget.options?.decimals)}
                   </span>
                 )}
                 {config.subtitle && (
-                  <small>{text(row[indexes.subtitle])}</small>
+                  <small>{listText(frame, row, indexes.subtitle, widget.options?.decimals)}</small>
                 )}
-                {config.body && <p>{text(row[indexes.body])}</p>}
+                {config.body && <p>{listText(frame, row, indexes.body, widget.options?.decimals)}</p>}
                 {onContextChange && !embedded && (
                   <button
                     type="button"
@@ -559,7 +625,7 @@ export function RecordTreemap({
   type Node = { name?: string; row?: RecordFrame["rows"][number]; children?: Node[] }
   const groups = new Map<string, Node[]>()
   for (const row of positive) {
-    const name = group >= 0 ? text(row[group]) : "all"
+    const name = group >= 0 ? keyText(row[group]) : "all"
     const entries = groups.get(name) ?? []
     entries.push({ row })
     groups.set(name, entries)
@@ -588,8 +654,8 @@ export function RecordTreemap({
         {group >= 0 && tree.children?.map(node => node.x1 - node.x0 >= 60 && <text key={node.data.name} x={node.x0 + 4} y={node.y0 + 14} fill="currentColor" fontSize="11">{node.data.name}</text>)}
         {leaves.map((leaf, index) => {
           const row = leaf.data.row!,
-            name = text(row[label]),
-            formatted = formatRecordValue(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, widget.options?.decimals)
+            name = keyText(row[label]),
+            formatted = (typeof row[value] === "number" ? columnFormatters(frame, widget.options?.decimals)[value]?.text(row[value] as number) : undefined) ?? formatRecordValue(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, widget.options?.decimals)
           const colorValue = color >= 0 && typeof row[color] === "number" && Number.isFinite(row[color]) ? row[color] as number : null
           const colorLabel = color >= 0 ? frame.columns[color].label ?? frame.columns[color].key : undefined
           const colorDetail = color >= 0 ? `${colorLabel}: ${colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals)}` : undefined
@@ -608,7 +674,7 @@ export function RecordTreemap({
             if (!detailsEnabled || (active?.pinned && !pinned)) return
             clearHide()
             setInspection({ frame, revision, index, anchor, pinned, name, sizeLabel: frame.columns[value].label ?? frame.columns[value].key, sizeValue: formatted, sizeRaw: row[value] as number,
-              ...(group >= 0 ? { groupLabel: frame.columns[group].label ?? frame.columns[group].key, groupValue: text(row[group]) } : {}),
+              ...(group >= 0 ? { groupLabel: frame.columns[group].label ?? frame.columns[group].key, groupValue: keyText(row[group]) } : {}),
               ...(color >= 0 ? { colorLabel, colorValue: colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals), colorRaw: colorValue } : {}) })
           }
           const actionable = interactive && (detailsEnabled || !!onContextChange)
@@ -671,7 +737,7 @@ export function RecordTreemap({
           {active.groupLabel && <TooltipFact label={active.groupLabel}>{active.groupValue}</TooltipFact>}
           {active.colorLabel && <TooltipFact label={active.colorLabel}><span data-treemap-color-observation={active.colorRaw === null ? "missing" : active.colorRaw}>{active.colorValue}</span></TooltipFact>}
         </TooltipDetail>
-        <TooltipHint>{active.pinned ? "Pinned · select again to close" : "Click or press Enter to keep open"}</TooltipHint>
+        <TooltipPinHint pinned={active.pinned} />
       </ObservationTooltip>}
       {color >= 0 && <div className={styles.treeColorLegend} role="group" aria-label="Treemap color scale">
         <span>{frame.columns[color].label ?? frame.columns[color].key}</span>
@@ -695,19 +761,34 @@ export function RecordMatrix({
   result,
   onContextChange,
 }: WidgetRendererProps) {
+  // The one cell in the tab order (roving focus); arrow keys move it through the grid.
+  const [tabKey, setTabKey] = useState<string>()
   const frame = result.records
   if (!frame?.rows.length) return <EmptyState />
   const config = matrixConfig.parse(widget.config ?? {})
   const x = column(frame, config.x),
     y = column(frame, config.y),
     value = column(frame, config.value)
-  const xs = [...new Set(frame.rows.map((row) => text(row[x])))].slice(0, 25),
-    ys = [...new Set(frame.rows.map((row) => text(row[y])))].slice(0, 25)
+  // Keys are the stored text: a coordinate names its cell, so rounding it would merge neighbouring columns. A label reads
+  // the shortest form of the same number, so float noise (0.1 + 0.2) never shows on an axis; integers stay as stored.
+  const axisValues = (index: number) => {
+    const seen = new Map<string, string>()
+    for (const row of frame.rows) {
+      const raw = row[index]
+      seen.set(keyText(raw), typeof raw === "number" && Number.isFinite(raw) && !Number.isInteger(raw) ? String(Number(raw.toPrecision(12))) : keyText(raw))
+    }
+    return [...seen].slice(0, 25).map(([key, label]) => ({ key, label }))
+  }
+  const xs = axisValues(x),
+    ys = axisValues(y)
   const values = frame.rows.flatMap((row) =>
     typeof row[value] === "number" ? [row[value] as number] : [],
   )
   const min = config.min ?? Math.min(0, ...values),
     max = config.max ?? Math.max(1, ...values)
+  // The legend reads on the value column's scale, as the cells do, so "269.486 TiB" is not printed as 15 raw digits.
+  const valueFormat = columnFormatters(frame, widget.options?.decimals)[value]
+  const scaleText = (bound: number) => valueFormat?.bound(bound) ?? formatRecordValue(bound, frame.columns[value].unit === "percent" ? "%" : (frame.columns[value].unit ?? ""), widget.options?.decimals)
   if (min >= max)
     return (
       <p role="alert">
@@ -717,7 +798,7 @@ export function RecordMatrix({
     )
   const cells = new Map<string, RecordFrame["rows"][number]>()
   for (const row of frame.rows) {
-    const id = JSON.stringify([text(row[x]), text(row[y])])
+    const id = JSON.stringify([keyText(row[x]), keyText(row[y])])
     if (cells.has(id))
       return (
         <p role="alert">
@@ -727,6 +808,28 @@ export function RecordMatrix({
       )
     cells.set(id, row)
   }
+  const cellAt = (yIndex: number, xIndex: number) =>
+    cells.get(JSON.stringify([xs[xIndex]?.key, ys[yIndex]?.key]))
+  // The first populated cell is the tab stop until the user moves it with the arrow keys.
+  const populated = ys.flatMap((_, yIndex) => xs.flatMap((_, xIndex) => (cellAt(yIndex, xIndex) ? [`${yIndex}-${xIndex}`] : [])))
+  const stopKey = tabKey && populated.includes(tabKey) ? tabKey : populated[0]
+  // Arrow keys step one populated cell in their direction, skipping empty coordinates, and never leave the grid.
+  const moveFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[event.key]
+    const origin = event.target instanceof HTMLElement ? event.target.closest<HTMLTableCellElement>("td[data-matrix-key]") : null
+    if (!step || !origin) return
+    event.preventDefault()
+    const [startY, startX] = origin.dataset.matrixKey!.split("-").map(Number)
+    let yIndex = startY + step[0], xIndex = startX + step[1]
+    while (yIndex >= 0 && yIndex < ys.length && xIndex >= 0 && xIndex < xs.length && !cellAt(yIndex, xIndex)) {
+      yIndex += step[0]
+      xIndex += step[1]
+    }
+    if (yIndex < 0 || yIndex >= ys.length || xIndex < 0 || xIndex >= xs.length || !cellAt(yIndex, xIndex)) return
+    const next = `${yIndex}-${xIndex}`
+    setTabKey(next)
+    event.currentTarget.querySelector<HTMLElement>(`td[data-matrix-key="${next}"] button`)?.focus()
+  }
   return (
     <div className={styles.wrapper}>
       <div
@@ -734,23 +837,25 @@ export function RecordMatrix({
         tabIndex={0}
         role="region"
         aria-label={`${widget.title} matrix`}
+        onKeyDown={moveFocus}
       >
         <ChartTable className={styles.matrix}>
           <thead>
             <tr>
               <th />
               {xs.map((name) => (
-                <th key={name}>{name}</th>
+                <th key={name.key}>{name.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {ys.map((name) => (
-              <tr key={name}>
-                <th>{name}</th>
-                {xs.map((xName) => {
-                  const row = cells.get(JSON.stringify([xName, name])),
-                    number = row?.[value]
+            {ys.map((name, yIndex) => (
+              <tr key={name.key}>
+                <th>{name.label}</th>
+                {xs.map((xName, xIndex) => {
+                  const row = cellAt(yIndex, xIndex),
+                    number = row?.[value],
+                    cellKey = `${yIndex}-${xIndex}`
                   const progress =
                     typeof number === "number"
                       ? Math.max(0, Math.min(1, (number - min) / (max - min)))
@@ -760,7 +865,10 @@ export function RecordMatrix({
                     : "—"
                   return (
                     <td
-                      key={xName}
+                      key={xName.key}
+                      data-matrix-key={cellKey}
+                      // Focus, from a click or the keyboard, moves the tab stop, so Tab returns to the cell last used.
+                      onFocus={row ? () => setTabKey(cellKey) : undefined}
                       style={
                         progress === undefined
                           ? undefined
@@ -769,19 +877,33 @@ export function RecordMatrix({
                             }
                       }
                     >
-                      {onContextChange && row ? (
-                        <button
-                          type="button"
-                          aria-label={`${name}, ${xName}: ${formatted}`}
-                          onClick={() =>
-                            onContextChange({
-                              labels: labels(frame, row),
-                              value: typeof number === "number" ? number : null,
-                            })
+                      {row ? (
+                        <ObservationDetails
+                          label={`${name.label}, ${xName.label}: ${formatted}`}
+                          observationKey={JSON.stringify([xName.key, name.key])}
+                          enabled={widget.options?.showTooltip !== false}
+                          avoidWidget
+                          selectOnFocus={false}
+                          tabIndex={cellKey === stopKey ? 0 : -1}
+                          onSelect={
+                            onContextChange
+                              ? () =>
+                                  onContextChange({
+                                    labels: labels(frame, row),
+                                    value: typeof number === "number" ? number : null,
+                                  })
+                              : undefined
+                          }
+                          details={
+                            <TooltipDetail title={`${name.label} · ${xName.label}`}>
+                              <TooltipFact label={frame.columns.find(column => column.key === config.x)?.label ?? config.x}>{xName.label}</TooltipFact>
+                              <TooltipFact label={frame.columns.find(column => column.key === config.y)?.label ?? config.y}>{name.label}</TooltipFact>
+                              <TooltipFact label={frame.columns.find(column => column.key === config.value)?.label ?? config.value}>{formatted}</TooltipFact>
+                            </TooltipDetail>
                           }
                         >
                           {formatted}
-                        </button>
+                        </ObservationDetails>
                       ) : (
                         formatted
                       )}
@@ -795,10 +917,10 @@ export function RecordMatrix({
       </div>
       <Note frame={frame} result={result}>
         <span>
-          Scale {min}–{max} · missing cells —
+          Scale {scaleText(min)}–{scaleText(max)} · missing cells —
         </span>
-        {(new Set(frame.rows.map((row) => text(row[x]))).size > 25 ||
-          new Set(frame.rows.map((row) => text(row[y]))).size > 25) && (
+        {(new Set(frame.rows.map((row) => keyText(row[x]))).size > 25 ||
+          new Set(frame.rows.map((row) => keyText(row[y]))).size > 25) && (
           <span>Showing first 25 rows and columns</span>
         )}
       </Note>
@@ -821,6 +943,7 @@ export function registerRecordWidgetPlugins() {
       description: "News, recommendations and narrative records",
       render: RecordList,
       schema: listConfig,
+      styleControls: ["decimals"] as const,
     },
     {
       id: "record-treemap",
@@ -835,6 +958,7 @@ export function registerRecordWidgetPlugins() {
       description: "Compare paired entities without filling missing values",
       render: RecordMatrix,
       schema: matrixConfig,
+      styleControls: ["decimals"] as const,
     },
   ] as const
   for (const entry of entries)
@@ -846,6 +970,7 @@ export function registerRecordWidgetPlugins() {
         render: entry.render,
         dataKind: "records",
         parseConfig: (config) => entry.schema.parse(config ?? {}),
+        ...("styleControls" in entry ? { styleControls: entry.styleControls } : {}),
         ...(entry.id === "record-table" ? {
           sizing: { mode: "fill", minHeight: 240 },
           defaultConfig: { density: "comfortable", showSearch: true },

@@ -100,7 +100,7 @@ try {
     if (wideReading) {
       assert.equal(columns, 2, "Long values need enough width even when the authored layout has three columns")
       assert.ok(geometry.rows.every(row => row.value === "123,456.78" && row.unit === "MB/s"), "Long values and units must remain complete")
-      assert.ok((await bank.getByRole("meter").first().getAttribute("aria-valuetext")).includes("123456.78 MB/s"), "Out-of-scale exact values remain accessible")
+      assert.ok((await bank.getByRole("meter").first().getAttribute("aria-valuetext")).includes("123,456.78 MB/s"), "Out-of-scale exact values remain accessible")
     }
     for (const row of geometry.rows) {
       assert.ok(row.contrast >= 4.5, `${width}px ${theme}: status-colored gauge values need readable contrast: ${JSON.stringify(row)}`)
@@ -119,8 +119,8 @@ try {
       const tooltip = page.getByRole("tooltip")
       await tooltip.waitFor({ state: "visible" })
       // A visible preview can still belong to the chart the pointer crossed.
-      await page.waitForFunction(() => /Critical[\s\S]*Below 10 GB[\s\S]*Scale: 0 to 100 GB/.test(document.querySelector('[role="tooltip"]')?.innerText ?? ""))
-      assert.match(await tooltip.innerText(), /Critical[\s\S]*Below 10 GB[\s\S]*Scale: 0 to 100 GB/, `${width}px ${theme}: gauge tooltip should explain its threshold band and scale`)
+      await page.waitForFunction(() => /Critical[\s\S]*Below 10.0 GB[\s\S]*Scale: 0.0 GB to 100.0 GB/.test(document.querySelector('[role="tooltip"]')?.innerText ?? ""))
+      assert.match(await tooltip.innerText(), /Critical[\s\S]*Below 10.0 GB[\s\S]*Scale: 0.0 GB to 100.0 GB/, `${width}px ${theme}: gauge tooltip should explain its threshold band and scale`)
       // Pinning retains the preview's pointer-side corner while making its
       // controls interactive, even if the inspector gains extra content.
       assert.equal(await tooltip.evaluate(element => getComputedStyle(element).pointerEvents), "none")

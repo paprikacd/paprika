@@ -16,25 +16,28 @@ describe("configured numeric precision", () => {
   it.each([0, 2, 4])("formats %i places including zero, negatives, large numbers and percent units", (decimals) => {
     expect(formatMetric(12.345678, "ms", false, decimals)).toBe(`${(12.345678).toFixed(decimals)} ms`);
     expect(formatMetricDetails(-12.345678, "%", decimals)).toBe(`${(-12.345678).toFixed(decimals)}%`);
-    expect(formatMetric(0, "", false, decimals)).toBe((0).toFixed(decimals));
-    expect(formatMetricDetails(1234.5678, "ms", decimals)).toBe(`${new Intl.NumberFormat("en", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(1234.5678)} ms`);
+    // A whole number with no unit is never padded: zero reads "0" at any setting.
+    expect(formatMetric(0, "", false, decimals)).toBe("0");
+    // 1,234.5678 ms is 1.2345678 s: the unit is chosen first, and the decimals apply to the scaled number.
+    expect(formatMetricDetails(1234.5678, "ms", decimals)).toBe(`${new Intl.NumberFormat("en", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(1.2345678)} s`);
     expect(formatMetricDetails(NaN, "ms", decimals)).toBe("—");
     expect(formatMetric(Infinity, "ms", false, decimals)).toBe("—");
   });
 
-  it("scales a stat reading and its unit together, and keeps an authored unit under authored decimals", () => {
+  it("scales a stat reading and its unit together, and applies authored decimals after the scale", () => {
     const scaled = render(<WidgetVisualization widget={{ ...widget, type: "stat", unit: "ms" }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 999.5 }] }] }} />);
     expect(scaled.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^1s$/);
     scaled.unmount();
     const fixed = render(<WidgetVisualization widget={{ ...widget, type: "stat", unit: "ms", options: { decimals: 2 } }} result={{ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 999.5 }] }] }} />);
-    expect(fixed.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^999\.50ms$/);
+    // 999.5 ms is 0.9995 s: two places after the scale read "1.00 s", and no unscaled "999.50 ms" is left in the text.
+    expect(fixed.container.querySelector('[data-metric-value="999.5"]')).toHaveTextContent(/^1\.00s$/);
   });
 
-  it("keeps Auto details exact and safely handles invalid host-supplied precision", () => {
-    expect(formatMetricDetails(0.123456789, "ms")).toBe("0.123456789 ms");
+  it("uses reading precision in Auto details and safely handles invalid host-supplied precision", () => {
+    expect(formatMetricDetails(0.123456789, "ms")).toBe("123 us");
     for (const decimals of [NaN, Infinity, -Infinity]) {
       expect(formatMetric(12.345678, "", false, decimals)).toBe("12.3");
-      expect(formatMetricDetails(12.345678, "", decimals)).toBe("12.345678");
+      expect(formatMetricDetails(12.345678, "", decimals)).toBe("12.3");
     }
     expect(formatMetric(12.345678, "", false, -1)).toBe("12");
     expect(formatMetric(12.345678, "", false, 2.9)).toBe("12.35");

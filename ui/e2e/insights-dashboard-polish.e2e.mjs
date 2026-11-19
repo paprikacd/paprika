@@ -90,8 +90,8 @@ try {
     assert.equal(await gauges.locator('[data-gauge-outside-scale="below"]').count(), 1);
     assert.equal(await gauges.locator('[data-gauge-value="unknown"]').innerText(), 'No data');
     await gauges.getByRole('button', { name: /identity-1: 558.22%/ }).click();
-    await tip.getByText('Above scale maximum: 200%', { exact: true }).waitFor();
-    assert.match(await tip.innerText(), /Above scale maximum: 200%/);
+    await tip.getByText('Above scale maximum: 200.00%', { exact: true }).waitFor();
+    assert.match(await tip.innerText(), /Above scale maximum: 200.00%/);
     const box = await tip.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= width + 1, 'Pinned details fit viewport');
     await page.screenshot({ path: join(output, `inspector-${theme}-${width}.png`) });
     await page.keyboard.press('Escape');

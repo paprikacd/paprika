@@ -10,17 +10,19 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type CSSProperties,
 } from "react";
 import { useTraceFetcher } from "./trace-waterfall";
 import { TraceDialog } from "./trace-dialog";
-import { TooltipInstructions } from "./tooltip-instructions";
 import { MetricDetails } from "./metric-tooltip-content";
+import { TooltipPinHint } from "./tooltip-content";
+import { isRestoringTooltipFocus } from "./tooltip-focus";
 export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
-import { formatReading, formatSharedScale, joinReading } from "./units";
+import { formatBounds, formatReading, formatSharedScale, joinReading } from "./units";
 import { heatmapValueEm, heatmapValueGlyphs, useHeatmapValueFit } from "./heatmap-value-width";
 export {
   downsamplePoints,
@@ -210,7 +212,7 @@ function Stat({
             <span
               className={styles.statValue}
               data-metric-value={String(first.point.value)}
-              title={exactMetric(first.point.value, widget.unit)}
+              title={`Exact value ${exactMetric(first.point.value, widget.unit)}`}
               style={{ color: textColor }}
             >
               {statReading.value}
@@ -334,10 +336,8 @@ function MetricTable({
       }
     return { entry, latest: latestPoint(entry), min, max };
   });
-  const columnLabels = (values: number[]) =>
-    widget.options?.decimals === undefined
-      ? formatSharedScale(values, widget.unit)
-      : values.map(value => formatMetric(value, widget.unit, false, widget.options?.decimals));
+  // One unit per column, chosen from its largest value; the authored decimals then apply to every scaled value.
+  const columnLabels = (values: number[]) => formatSharedScale(values, widget.unit, { decimals: widget.options?.decimals });
   // Rows name themselves with the same compacted labels as the charts; the full identity stays in each row's title.
   const displayNames = displaySeriesNames(series.slice(0, MAX_ROWS));
   const latestLabels = columnLabels(tableRows.map(row => row.latest?.value ?? NaN));
@@ -669,7 +669,7 @@ function TraceList({
                   {!embedded && fetchTrace && /^[a-fA-F0-9]{32}$/.test(trace.traceId) && <button type="button" data-trace-waterfall-toggle className={styles.traceExpand} aria-expanded={expandedTrace === trace.traceId} onClick={event => { event.stopPropagation(); setExpandedTrace(previous => previous === trace.traceId ? undefined : trace.traceId); }}>
                     {expandedTrace === trace.traceId ? "Close waterfall" : "View waterfall"}
                   </button>}
-                  {!embedded && expandedTrace === trace.traceId && <TraceDialog traceId={trace.traceId} onClose={() => setExpandedTrace(undefined)} />}
+                  {!embedded && expandedTrace === trace.traceId && <TraceDialog traceId={trace.traceId} decimals={widget.options?.decimals} onClose={() => setExpandedTrace(undefined)} />}
                 </td>
                 <td>
                   <div className={styles.traceTime}>
@@ -762,11 +762,15 @@ function thresholdRange(
   thresholds: readonly Threshold[],
   index: number,
   unit: string,
+  decimals?: number,
 ) {
   if (thresholds.length === 1) return "All values";
-  if (index === 0) return `Below ${exactMetric(thresholds[1].value, unit)}`;
+  const axis = thresholds.map(threshold => threshold.value);
+  if (index === 0) return `Below ${formatBounds([thresholds[1].value], unit, decimals, axis)[0]}`;
   const next = thresholds[index + 1];
-  return `≥ ${exactMetric(thresholds[index].value, unit)}${next ? ` and < ${exactMetric(next.value, unit)}` : ""}`;
+  if (!next) return `≥ ${formatBounds([thresholds[index].value], unit, decimals, axis)[0]}`;
+  const [from, to] = formatBounds([thresholds[index].value, next.value], unit, decimals, axis);
+  return `≥ ${from} and < ${to}`;
 }
 
 export function Heatmap({
@@ -795,6 +799,8 @@ export function Heatmap({
     undefined,
   );
   const tooltipId = useId();
+  // One tab stop for the grid: the focused cell keeps it, and the arrow keys move it, as status-grid does.
+  const [keyboardIndex, setKeyboardIndex] = useState(0);
   const options = widget.options ?? EMPTY_OPTIONS;
   const thresholds = options.thresholds?.length
     ? options.thresholds
@@ -863,15 +869,27 @@ export function Heatmap({
     selected?.value === undefined
       ? undefined
       : thresholdForValue(selected.value, thresholds);
-  const timestamp =
-    selected?.point && Math.abs(selected.point.timestamp) <= 8.64e15
-      ? new Date(selected.point.timestamp).toISOString()
-      : undefined;
+  // Short names for the heading; the full identity stays in Source details.
+  const heatmapSubjects = useMemo(() => displaySeriesNames(series.slice(0, MAX_ROWS)), [series]);
   const hasText = options.showLabels !== false || options.showValues !== false;
   // One value text per cell feeds the visible text, its width and both accessible names, so they cannot drift apart.
   const valueTexts = cells.map((cell) => heatmapValueText(cell.value, widget.unit, options.decimals));
   // The fit re-runs when the column count changes: the cells re-render after the ResizeObserver has already measured the old layout.
   const columns = balancedHeatmapColumns(cells.length, cellsWidth, hasText);
+  const tabIndex = Math.min(keyboardIndex, cells.length - 1);
+  const navigateCells = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next = index;
+    if (event.key === "ArrowLeft") next--;
+    else if (event.key === "ArrowRight") next++;
+    else if (event.key === "ArrowUp") next -= columns;
+    else if (event.key === "ArrowDown") next += columns;
+    // Home and End stay with the open preview, which scrolls on them (Page Up/Down and Home/End are its documented keys).
+    else return;
+    event.preventDefault();
+    next = Math.max(0, Math.min(cells.length - 1, next));
+    setKeyboardIndex(next);
+    cellsRef.current?.querySelectorAll<HTMLElement>("[data-heatmap-cell]")[next]?.focus();
+  };
   useHeatmapValueFit(cellsRef, [columns, options.showValues !== false, ...valueTexts].join("\u0000"));
   return (
     <div className={configStyles.heatmap}>
@@ -891,7 +909,7 @@ export function Heatmap({
               : thresholdForValue(cell.value, thresholds);
           const valueText = valueTexts[index];
           const valueStyle = { "--value-em": heatmapValueEm(valueText), "--value-glyphs": heatmapValueGlyphs(valueText) } as CSSProperties;
-          const label = `${cell.name}: ${valueText}${threshold?.label ? ` · ${threshold.label}` : ""}`;
+          const label = `${heatmapSubjects[index] ?? cell.name}: ${valueText}${threshold?.label ? ` · ${threshold.label}` : ""}`;
           if (embedded)
             return (
               <div
@@ -932,6 +950,8 @@ export function Heatmap({
                 ...criticalStroke(threshold),
               }}
               aria-label={label}
+              tabIndex={index === tabIndex ? 0 : -1}
+              onKeyDown={(event) => navigateCells(event, index)}
               aria-describedby={
                 active?.index === index && options.showTooltip !== false
                   ? tooltipId
@@ -959,6 +979,7 @@ export function Heatmap({
                 scheduleHide();
               }}
               onFocus={(event) => {
+                setKeyboardIndex(index);
                 onContextChange?.({
                   series: cell.name,
                   labels: cell.labels,
@@ -966,7 +987,8 @@ export function Heatmap({
                 });
                 interaction.current.focused = event.currentTarget;
                 clearHide();
-                if (options.showTooltip !== false) {
+                // Returning focus to a cell after Escape must not reopen the preview it just closed.
+                if (options.showTooltip !== false && !isRestoringTooltipFocus()) {
                   setActive({
                     index,
                     key: cell.key,
@@ -1025,66 +1047,43 @@ export function Heatmap({
             scheduleHide();
           }}
         >
-          <div className={configStyles.tooltipHeader}>
-            <strong className={configStyles.tooltipTitle}>
-              {selected.name}
-            </strong>
-            <span className={configStyles.tooltipKeyHint}>
-              <TooltipInstructions />
-            </span>
-          </div>
-          <div className={configStyles.tooltipReading}>
-            <strong
-              data-metric-value={
-                selected.value === undefined
-                  ? "missing"
-                  : String(selected.value)
-              }
-            >
-              {selected.value === undefined
-                ? "No data"
-                : formatMetricDetails(selected.value, widget.unit, options.decimals)}
-            </strong>
-            <span className={configStyles.tooltipStatus}>
-              <i
-                style={{ background: thresholdPaint(selectedThreshold) ?? "#a5ad9b" }}
+          <MetricDetails
+            widget={widget}
+            series={selected.source}
+            index={active.index}
+            point={selected.point}
+            unit={widget.unit}
+            decimals={options.decimals}
+            subject={heatmapSubjects[active.index]}
+            seriesLabel={widget.title}
+            description="Latest sample"
+          >
+            {selectedThreshold?.status ? (
+              <StatusChip
+                status={selectedThreshold.status}
+                color={selectedThreshold.color}
+                label={selectedThreshold.label ?? "Threshold matched"}
               />
-              {selectedThreshold?.label ??
-                (selectedThreshold ? "Threshold matched" : "Unknown")}
-            </span>
+            ) : (
+              <span className={configStyles.tooltipStatus}>
+                <i
+                  style={{ background: thresholdPaint(selectedThreshold) ?? "#a5ad9b" }}
+                />
+                {selectedThreshold?.label ??
+                  (selectedThreshold ? "Threshold matched" : "Unknown")}
+              </span>
+            )}
             <span className={configStyles.tooltipRange}>
               {selectedThreshold
                 ? thresholdRange(
                     thresholds,
                     thresholds.indexOf(selectedThreshold),
                     widget.unit,
+                    options.decimals,
                   )
                 : "The latest sample has no finite value"}
             </span>
-          </div>
-          {Object.keys(selected.labels).length > 0 && (
-            <div className={configStyles.tooltipLabels}>
-              <span className={configStyles.tooltipEyebrow}>Series labels</span>
-              <dl>
-                {Object.entries(selected.labels).map(([key, value]) => (
-                  <div key={key}>
-                    <dt>{key}: </dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
-          <div className={configStyles.tooltipFooter}>
-            <span>Latest sample</span>
-            {timestamp ? (
-              <time dateTime={timestamp}>
-                {fullDateTimeFormat.format(new Date(timestamp))}
-              </time>
-            ) : (
-              <span>No timestamp</span>
-            )}
-          </div>
+          </MetricDetails>
           {options.tooltipView && (
             <TooltipSubWidget
               view={options.tooltipView}
@@ -1095,13 +1094,7 @@ export function Heatmap({
               color={widget.color}
             />
           )}
-          <div className={configStyles.tooltipFooter}>
-            <small>
-              {active.pinned
-                ? "Pinned · tap again or press Esc to close"
-                : "Click or tap to keep open"}
-            </small>
-          </div>
+          <TooltipPinHint pinned={active.pinned} />
         </ObservationTooltip>
       )}
       {options.showLegend !== false && (
@@ -1120,7 +1113,7 @@ export function Heatmap({
                     false,
                     options.decimals,
                   )}
-                <small>{thresholdRange(thresholds, index, widget.unit)}</small>
+                <small>{thresholdRange(thresholds, index, widget.unit, options.decimals)}</small>
               </span>
             </span>
           ))}

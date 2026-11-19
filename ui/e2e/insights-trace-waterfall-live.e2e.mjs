@@ -103,7 +103,9 @@ try {
       await waterfall.getByRole("button", { name: "Errors only" }).click()
       assert.equal(await waterfall.locator("[data-span-id]").count(), 4)
       assert.equal(detailRequests.length, initialDetailRequests, "Local filtering must not query Tempo again")
-      const axis = waterfall.getByRole("img", { name: `Trace duration axis from 0 milliseconds to ${extent} milliseconds` })
+      // The axis names its extent at the reading precision (two places from one millisecond up, three below it).
+      const extentText = extent >= 1 ? extent.toFixed(2) : extent.toFixed(3)
+      const axis = waterfall.getByRole("img", { name: `Trace duration axis from 0 milliseconds to ${extentText} milliseconds` })
       await axis.waitFor()
       await waterfall.getByText("Time from first recorded span").waitFor()
       assert.equal(await axis.locator("span").count(), 5, "The shared axis has five aligned time ticks")

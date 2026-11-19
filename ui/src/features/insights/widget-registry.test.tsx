@@ -226,7 +226,7 @@ describe("trusted widget registry", () => {
     );
     expect(screen.getByRole("meter")).toHaveAttribute(
       "aria-valuetext",
-      "92% · Critical",
+      "92.0% · Critical",
     );
     // The reading is text, so it takes the critical text token, not the mark.
     expect(screen.getByText("92.0").closest("[style]")).toHaveAttribute("style", expect.stringContaining("color: var(--gamma-status-critical-text)"));
@@ -311,7 +311,7 @@ describe("trusted widget registry", () => {
     );
     expect(screen.getByRole("meter")).toHaveAttribute(
       "aria-valuetext",
-      "-0.123456789%",
+      "-0.12%",
     );
     fireEvent.click(button);
     expect(button).toHaveAttribute("aria-pressed", "true");

@@ -37,7 +37,8 @@
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
-.windowList li { display: grid; grid-template-columns: 62px minmax(40px, 1fr) auto; align-items: center; gap: 8px; }
+/* The label column sizes to its text, so the selected bucket's full range is never cut off; the bar takes the rest. */
+.windowList li { display: grid; grid-template-columns: max-content minmax(40px, 1fr) auto; align-items: center; gap: 8px; }
 .windowList li[aria-current="true"] { color: var(--gamma-ink); font-weight: 600; }
 .windowLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .windowTrack { display: block; height: 8px; border-radius: 2px; overflow: hidden; background: var(--gamma-chart-empty); }

@@ -79,7 +79,7 @@ describe("operational record renderers",()=>{
     const markers=[...container.querySelectorAll('[data-map-plane] button')]
     expect(markers).toHaveLength(50)
     expect(markers.every(marker=>marker.getAttribute("tabindex")==="-1")).toBe(true)
-    expect(markers[0]).toHaveAccessibleName("Point 1 · -73.55°, 144.96° · 0.00")
+    expect(markers[0]).toHaveAccessibleName("Point 1 · -73.55°, 144.96° · 0")
     fireEvent.click(screen.getByText("Explore locations · 50 displayed"))
     expect(screen.getByText("1–20 of 50")).toBeInTheDocument()
     expect(screen.getAllByRole("button",{name:/^Inspect location Point /})).toHaveLength(20)
@@ -191,17 +191,24 @@ describe("operational record renderers",()=>{
     const select=vi.fn(),result:QueryResult={records:{columns:[{key:"date",type:"string"},{key:"value",type:"number"}],rows:[["2026-10-03",2.123],["2026-10-03",3.456],["2026-10-04",0]]}}
     render(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config:{value:"value",aggregation:"sum",months:1}}} result={result} onContextChange={select}/>)
     expect(screen.getByRole("button",{name:"2026-10-02: No observations"})).toBeInTheDocument()
-    expect(screen.getByRole("button",{name:"2026-10-04: 0.00"})).toBeInTheDocument()
+    expect(screen.getByRole("button",{name:"2026-10-04: 0"})).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button",{name:"2026-10-03: 5.58"}))
     expect(select).toHaveBeenLastCalledWith({series:"2026-10-03",value:5.579000000000001,labels:{date:"2026-10-03",aggregation:"sum",observations:"2"}})
+  })
+  it("names the aggregation in sentence case in the day fact, as the caption does",()=>{
+    const result:QueryResult={records:{columns:[{key:"date",type:"string"},{key:"value",type:"number"}],rows:[["2026-10-03",2]]}}
+    render(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config:{value:"value",aggregation:"max",months:1}}} result={result}/>)
+    fireEvent.click(screen.getByRole("button",{name:/^2026-10-03:/}))
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Maximum recorded value")
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("max of recorded values")
   })
   it("colors aggregated days by configured thresholds while preserving unknown and unobserved days",()=>{
     const result:QueryResult={records:{columns:[{key:"date",type:"string"},{key:"value",type:"number"},{key:"status",type:"string"}],rows:[["2026-10-02",1,"warning"],["2026-10-03",1,"warning"],["2026-10-03",2,"critical"],["2026-10-04",null,"unknown"],["2026-10-04",2,"critical"]]}}
     const options={...widget.options,thresholds:[{value:1,color:"#eab640",label:"Warning"},{value:2,color:"#e8554e",label:"Critical"}]}
     render(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config:{value:"value",status:"status",aggregation:"max",colorMode:"thresholds",months:1},options}} result={result}/>)
     expect(screen.getByRole("button",{name:"2026-10-01: No observations"}).parentElement).toHaveAttribute("data-observed","false")
-    expect(screen.getByRole("button",{name:"2026-10-02: 1.00 · Warning"}).parentElement).toHaveAttribute("data-threshold","Warning")
-    expect(screen.getByRole("button",{name:"2026-10-03: 2.00 · Critical"}).parentElement).toHaveAttribute("data-threshold","Critical")
+    expect(screen.getByRole("button",{name:"2026-10-02: 1 · Warning"}).parentElement).toHaveAttribute("data-threshold","Warning")
+    expect(screen.getByRole("button",{name:"2026-10-03: 2 · Critical"}).parentElement).toHaveAttribute("data-threshold","Critical")
     const unknown=screen.getByRole("button",{name:"2026-10-04: No observed value · Unknown value"})
     expect(unknown.parentElement).toHaveAttribute("data-observed","true")
     expect(unknown.parentElement).toHaveAttribute("data-unknown","true")
@@ -214,11 +221,11 @@ describe("operational record renderers",()=>{
     const config={value:"value",aggregation:"max",colorMode:"thresholds",months:1}
     const options={...widget.options,thresholds:[{value:1,color:"#eab640"},{value:2,color:"#e8554e"}]}
     const {rerender}=render(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config,options}} result={result}/>)
-    expect(screen.getByRole("button",{name:"2026-10-02: 0.00 · Below 2.00"})).toBeInTheDocument()
-    expect(screen.getByText("Below 2.00")).toBeInTheDocument()
+    expect(screen.getByRole("button",{name:"2026-10-02: 0 · Below 2"})).toBeInTheDocument()
+    expect(screen.getByText("Below 2")).toBeInTheDocument()
     rerender(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config,options:{...options,thresholds:[]}}} result={result}/>)
-    expect(screen.getByRole("button",{name:"2026-10-02: 0.00 · Unmapped value"}).parentElement).toHaveAttribute("data-unknown","true")
-    expect(screen.getByRole("button",{name:"2026-10-02: 0.00 · Unmapped value"}).parentElement).not.toHaveAttribute("data-threshold")
+    expect(screen.getByRole("button",{name:"2026-10-02: 0 · Unmapped value"}).parentElement).toHaveAttribute("data-unknown","true")
+    expect(screen.getByRole("button",{name:"2026-10-02: 0 · Unmapped value"}).parentElement).not.toHaveAttribute("data-threshold")
   })
   it("renders embedded data without nested controls or callbacks",()=>{
     const select=vi.fn();const {container}=render(<ConnectionMap widget={{...widget,config:{value:"value"}}} result={locations} onContextChange={select} embedded/>)
@@ -231,5 +238,27 @@ describe("operational record renderers",()=>{
     expect(screen.getByText("Provider response may be incomplete")).toBeInTheDocument()
     expect(screen.queryByText(/Partial/)).not.toBeInTheDocument()
     expect(screen.getByText("1 additional locations omitted by the point limit")).toBeInTheDocument()
+  })
+})
+
+describe("incident calendar pinned day",()=>{
+  it("keeps a pinned day pinned when a refresh keeps that date, because the day's observation key is its date",()=>{
+    const first:QueryResult={records:{columns:[{key:"date",type:"string"},{key:"value",type:"number"}],rows:[["2026-10-03",5.579]]}}
+    const {rerender}=render(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config:{value:"value",aggregation:"sum",months:1}}} result={first}/>)
+    const day=screen.getByRole("button",{name:"2026-10-03: 5.58"})
+    fireEvent.click(day); expect(day).toHaveAttribute("aria-pressed","true")
+    const refreshed:QueryResult={records:{columns:[{key:"date",type:"string"},{key:"value",type:"number"}],rows:[["2026-10-03",7.5]]}}
+    rerender(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",config:{value:"value",aggregation:"sum",months:1}}} result={refreshed}/>)
+    expect(screen.getByRole("button",{name:/^2026-10-03: 7\.5/})).toHaveAttribute("aria-pressed","true")
+  })
+})
+describe("incident calendar tooltip decimals",()=>{
+  it("shows the day's value at the tooltip's own decimal places, not the widget's",()=>{
+    const result:QueryResult={records:{columns:[{key:"date",type:"string"},{key:"value",type:"number"}],rows:[["2026-10-03",5.579]]}}
+    render(<IncidentCalendar widget={{...widget,pluginId:"incident-calendar",options:{decimals:3,tooltipDecimals:0},config:{value:"value",aggregation:"sum",months:1}}} result={result}/>)
+    fireEvent.click(screen.getByRole("button",{name:"2026-10-03: 5.579"}))
+    const tooltip=screen.getByRole("tooltip")
+    expect(tooltip).toHaveTextContent("Sum of recorded values6")
+    expect(tooltip.textContent).not.toContain("5.579")
   })
 })

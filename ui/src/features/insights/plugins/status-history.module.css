@@ -21,6 +21,8 @@
 }
 .cells > button, .cells > span { position: absolute; top: 0; bottom: 0; min-width: 1px; border-radius: 1px; }
 .mark { transform: translateX(-50%); }
+/* Pointer targets are the lane slices from historyHitSlices: transparent, at least 6 px wide, and never overlapping a neighbour. */
+.hit { position: absolute; top: 0; bottom: 0; min-width: 0; background: transparent; }
 /* Keep time-axis endpoints reachable even when subpixel marks are rounded
    against an adjacent sample. Their outside edge stays at the exact boundary. */
 .mark[data-history-edge="start"] { transform: none; min-width: 2px; z-index: 1; }

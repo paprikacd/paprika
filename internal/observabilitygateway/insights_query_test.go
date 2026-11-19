@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,7 +121,7 @@ func TestDashboardQueryCompactTextAndSchemaDescribeStatVisualThreshold(t *testin
 	require.NoError(t, err)
 	text, err := dashboardQueryText(encoded)
 	require.NoError(t, err)
-	require.Contains(t, text, `widget "rate": configured visual band="matched"; boundary=0; color="#ff0000"; label="High"`)
+	require.Contains(t, text, `widget "rate": configured visual band="matched"; boundary=0 req/s; color="#ff0000"; label="High"`)
 	require.Contains(t, text, `widget "trace": configured visual band="unknown"`)
 	var schema jsonschema.Schema
 	require.NoError(t, json.Unmarshal(insightsQueryDashboardTool(nil).OutputSchema, &schema))
@@ -186,7 +187,7 @@ func TestDashboardQueryRecordsContractAndCompactText(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, content.Text, "returned records=7 (bounded page)")
 	require.Contains(t, content.Text, "record preview truncated; omitted columns=1; source truncated (reason not reported)")
-	require.Contains(t, content.Text, `first record (3/4 columns): "service"="api", "requests"=0, "active"=false`)
+	require.Contains(t, content.Text, `first record (3/4 columns): "service"="api", "requests"=0 req/s, "active"=false`)
 	require.NotContains(t, content.Text, "worker", "later record rows belong only in structuredContent")
 	require.LessOrEqual(t, len(content.Text), dashboardQueryTextBytes)
 
@@ -248,7 +249,7 @@ func TestDashboardQueryMetricSeriesTextAvoidsRepeatingCanonicalNames(t *testing.
 		{Index: 1, Name: "Authored alias", Labels: map[string]string{"service": "worker"}},
 	}
 	var line strings.Builder
-	appendDashboardSeriesText(&line, series, "")
+	appendDashboardSeriesText(&line, series, "", nil)
 	require.NotContains(t, line.String(), `name="requests`)
 	require.Contains(t, line.String(), `"service"="checkout"`)
 	require.Contains(t, line.String(), `name="Authored alias"`)
@@ -383,14 +384,14 @@ func TestDashboardQueryRecordTextBoundsAndScalarHonesty(t *testing.T) {
 		raw, want string
 	}{
 		{`null`, "null"}, {`0`, "0"}, {`false`, "false"},
-		{`1.23456789012345`, "1.23456789012345"}, {`"line\nnext"`, `"line\nnext"`},
+		{`1.23456789012345`, "1.23457"}, {`"line\nnext"`, `"line\nnext"`},
 		{`{"opaque":"not-a-cell"}`, "[unavailable]"},
 	} {
-		require.Equal(t, tc.want, dashboardRecordScalarText(json.RawMessage(tc.raw)))
+		require.Equal(t, tc.want, dashboardRecordScalarText(json.RawMessage(tc.raw), "", nil))
 	}
 	longCell, err := json.Marshal(strings.Repeat("🫑\n", 200))
 	require.NoError(t, err)
-	formatted := dashboardRecordScalarText(longCell)
+	formatted := dashboardRecordScalarText(longCell, "", nil)
 	require.True(t, utf8.ValidString(formatted))
 	require.Less(t, len(formatted), 180)
 	require.NotContains(t, formatted, "\n")
@@ -398,7 +399,7 @@ func TestDashboardQueryRecordTextBoundsAndScalarHonesty(t *testing.T) {
 	var records dashboardTextRecords
 	require.NoError(t, json.Unmarshal([]byte(`{"returned":1,"columns":[{"key":"a"},{"key":"b"},{"key":"c"},{"key":"hidden"}],"rows":[[null,0,false,"omit-me"]]}`), &records))
 	var preview strings.Builder
-	appendDashboardRecordPreview(&preview, &records)
+	appendDashboardRecordPreview(&preview, &records, nil)
 	require.Contains(t, preview.String(), `first record (3/4 columns): "a"=null, "b"=0, "c"=false`)
 	require.NotContains(t, preview.String(), "omit-me")
 }
@@ -473,7 +474,9 @@ func TestDashboardQueryUsesObserveReadAndHumanInsightsRead(t *testing.T) {
 				content, ok := wire.Content[0].(*sdkmcp.TextContent)
 				require.True(t, ok)
 				text := content.Text
-				require.Contains(t, text, "1.234567890123")
+				// Text rounds to six significant digits; the structured content keeps 1.234567890123 exactly.
+				require.Contains(t, text, "latest valid=1.23 \"req/s\"")
+				require.NotContains(t, text, "1.234567890123")
 				require.Contains(t, text, "returned traces=100 (bounded sample)")
 				require.NotContains(t, text, `"samples":300`)
 				require.Less(t, len(text), len(dashboardQueryFixture))
@@ -723,9 +726,9 @@ func TestDashboardQueryStatusBandsValidateAndDescribeInText(t *testing.T) {
 		name, text string
 		band       map[string]any
 	}{
-		{"status only", `widget "rate": configured visual band="matched"; boundary=50; status="critical"`, map[string]any{"state": "matched", "boundary": 50, "status": "critical"}},
-		{"colour only", `widget "rate": configured visual band="matched"; boundary=50; color="#ff0000"`, map[string]any{"state": "matched", "boundary": 50, "color": "#ff0000"}},
-		{"status and colour", `widget "rate": configured visual band="matched"; boundary=50; status="ok"; color="#20cba3"; label="Healthy"`, map[string]any{"state": "matched", "boundary": 50, "status": "ok", "color": "#20cba3", "label": "Healthy"}},
+		{"status only", `widget "rate": configured visual band="matched"; boundary=50 req/s; status="critical"`, map[string]any{"state": "matched", "boundary": 50, "status": "critical"}},
+		{"colour only", `widget "rate": configured visual band="matched"; boundary=50 req/s; color="#ff0000"`, map[string]any{"state": "matched", "boundary": 50, "color": "#ff0000"}},
+		{"status and colour", `widget "rate": configured visual band="matched"; boundary=50 req/s; status="ok"; color="#20cba3"; label="Healthy"`, map[string]any{"state": "matched", "boundary": 50, "status": "ok", "color": "#20cba3", "label": "Healthy"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireDashboardTextMap(t, widgets[0])["threshold"] = tc.band
@@ -746,6 +749,82 @@ func TestDashboardQueryStatusBandsValidateAndDescribeInText(t *testing.T) {
 	require.Error(t, resolved.Validate(fixture), "only the published statuses are accepted")
 	requireDashboardTextMap(t, widgets[0])["threshold"] = map[string]any{"state": "unknown", "status": "ok"}
 	require.Error(t, resolved.Validate(fixture), "an unknown band cannot claim a status")
+}
+
+// Text never prints floating-point noise: a reading keeps six significant digits, and the exact value stays in
+// structured content.
+func TestDashboardNumberTextRoundsNoise(t *testing.T) {
+	require.Equal(t, "5.87875", dashboardNumberText(5.878749999999975))
+	require.Equal(t, "0.3", dashboardNumberText(0.1+0.2))
+	require.Equal(t, "1.5", dashboardNumberText(1.5))
+	require.NotContains(t, dashboardNumberText(7.191875000000073), "000000")
+	// Integers keep every digit; only non-integers take the six-digit exponent form.
+	require.Equal(t, "1234567", dashboardNumberText(1234567))
+	require.Equal(t, "296303060975000", dashboardNumberText(296303060975000))
+	require.Equal(t, "1700000000000", dashboardNumberText(1700000000000))
+	require.Equal(t, "0", dashboardNumberText(math.Copysign(0, -1)))
+	// Non-integers of a million or more stay in fixed notation at six significant digits.
+	require.Equal(t, "1234568", dashboardNumberText(1234567.5))
+	require.Equal(t, "0.0123457", dashboardNumberText(0.0123456789))
+	require.Equal(t, "2.5", dashboardNumberText(2.5))
+	require.Equal(t, "10", dashboardNumberText(9.9999999))
+	require.Equal(t, "1.234e-5", dashboardNumberText(0.00001234))
+}
+
+// A widget's decimal places govern the numbers its text synopsis prints, and an unset widget keeps the Auto reading.
+func TestDashboardRecordTextHonoursWidgetDecimals(t *testing.T) {
+	two := 2
+	records := &dashboardTextRecords{Returned: 1, Columns: []struct {
+		Key  string `json:"key"`
+		Unit string `json:"unit"`
+	}{{Key: "latency"}, {Key: "sum"}, {Key: "order"}, {Key: "year"}}, Rows: [][]json.RawMessage{{
+		json.RawMessage("5.878749999999975"), json.RawMessage("0.30000000000000004"), json.RawMessage("1234567"), json.RawMessage("2024"),
+	}}}
+	line := func(decimals *int) string {
+		var b strings.Builder
+		appendDashboardRecordText(&b, records, false, "", decimals)
+		return b.String()
+	}
+	auto := line(nil)
+	require.Contains(t, auto, `"latency"=5.87875, "sum"=0.3, "order"=1234567`)
+	require.NotContains(t, auto, "5.878749999999975")
+	require.NotContains(t, auto, "0.30000000000000004")
+	fixed := line(&two)
+	require.Contains(t, fixed, `"latency"=5.88, "sum"=0.30, "order"=1234567`)
+	require.NotContains(t, fixed, "5.87875")
+}
+
+func TestDashboardQueryTextHonoursWidgetDecimals(t *testing.T) {
+	two, zero := 2, 0
+	primary := 0
+	widgets := []dashboardTextWidget{{ID: "w1", Title: "Latency", Type: "stat", Unit: "ms", SignalID: "q1", Decimals: &two}}
+	signal := &dashboardTextSignal{
+		ID:            "q1",
+		State:         "ok",
+		PrimarySeries: &primary,
+		Series:        []dashboardTextSeries{{Index: 0, Name: "p95", Last: &dashboardTextSample{Timestamp: 1700000000000, Value: 5.878749999999975}, Mean: &[]float64{0.1 + 0.2}[0]}},
+	}
+	text := dashboardSignalText(signal, widgets)
+	require.Contains(t, text, "latest valid=5.88 \"ms\"")
+	require.Contains(t, text, "sample mean=300.00 \"us\"")
+	require.NotContains(t, text, "5.87875")
+
+	widgets[0].Decimals = &zero
+	require.Contains(t, dashboardSignalText(signal, widgets), "latest valid=6 \"ms\"")
+
+	widgets[0].Decimals = nil
+	auto := dashboardSignalText(signal, widgets)
+	require.Contains(t, auto, "latest valid=5.88 \"ms\"")
+	require.NotContains(t, auto, "5.878749999999975")
+}
+
+// A whole number with no unit is a count, so agent text keeps it whole at any setting; a measured value keeps
+// the widget's decimals ("84.000 ms").
+func TestDashboardReadingTextKeepsUnitlessWholeNumbersWhole(t *testing.T) {
+	three := 3
+	require.Equal(t, "84", dashboardReadingWithUnit(84, "", &three))
+	require.Equal(t, "84.000 ms", dashboardReadingWithUnit(84, "ms", &three))
+	require.Equal(t, "5.879", dashboardReadingWithUnit(5.878749999999975, "", &three))
 }
 
 // The text line names the source's truncation reason so an agent can tell a

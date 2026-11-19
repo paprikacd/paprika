@@ -5,13 +5,13 @@ import type { Widget } from "./schema";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
 import { isRestoringTooltipFocus } from "./tooltip-focus";
-import { TooltipHint } from "./tooltip-content";
+import { TooltipPinHint } from "./tooltip-content";
 import { MetricDetails } from "./metric-tooltip-content";
 import { nearestStatHistoryIndex, statHistoryObservations, statPlotRectangle } from "./stat-history-interaction";
 import { area, line } from "d3-shape";
 import {
   boundHistoryPoints,
-  exactMetric,
+  formatMetricDetails,
   type Point,
   type Series,
 } from "./chart-data";
@@ -44,6 +44,7 @@ export function StatSparkline({
   unit,
   color,
   widget,
+  decimals,
   latestLabel = "Displayed latest valid sample",
   onSelect,
 }: {
@@ -52,6 +53,8 @@ export function StatSparkline({
   unit: string;
   color?: string;
   widget?: Widget;
+  /** Fraction digits for the summary; the widget's decimals when omitted. */
+  decimals?: number;
   latestLabel?: string;
   /** Called when the user focuses or activates the history, so the widget's drilldown context follows the series. */
   onSelect?: () => void;
@@ -175,11 +178,12 @@ export function StatSparkline({
     return new DOMRect(box.left, box.top, box.width, box.height);
   }, [anchor, history, selected]);
   if (!history.latestValid) return null;
+  const shownDecimals = decimals ?? widget?.options?.decimals;
   const summary = [
     `History of the displayed series, from ${new Date(history.start).toISOString()} to ${new Date(history.end).toISOString()}.`,
     `${history.sampleCount} samples; ${history.missingCount} missing.`,
-    `Minimum ${exactMetric(history.min, unit)}; maximum ${exactMetric(history.max, unit)}.`,
-    `${latestLabel}: ${exactMetric(history.latestValid.value!, unit)} at ${new Date(history.latestValid.timestamp).toISOString()}.`,
+    `Minimum ${formatMetricDetails(history.min, unit, shownDecimals)}; maximum ${formatMetricDetails(history.max, unit, shownDecimals)}.`,
+    `${latestLabel}: ${formatMetricDetails(history.latestValid.value!, unit, shownDecimals)} at ${new Date(history.latestValid.timestamp).toISOString()}.`,
     history.latest?.value === null
       ? `Latest observation is missing at ${new Date(history.latest.timestamp).toISOString()}.`
       : "",
@@ -307,7 +311,7 @@ export function StatSparkline({
     </svg>
     {selected && current && anchor && <ObservationTooltip id={tooltipId} anchor={anchor} anchorRect={sampleRect} preferSide anchorOwnsHistoryKeys pinned={current.pinned} onDismiss={dismiss} onEnter={clearHide} onLeave={scheduleHide}>
       <MetricDetails widget={widget} series={series} index={0} point={selected} unit={unit} description="Recorded sample" />
-      <TooltipHint>{current.pinned ? "Pinned · Enter or tap to release" : "Move to inspect · Enter or tap to pin"}<span>Arrow keys navigate · Esc closes</span></TooltipHint>
+      <TooltipPinHint pinned={current.pinned} />
     </ObservationTooltip>}
     </>
   );

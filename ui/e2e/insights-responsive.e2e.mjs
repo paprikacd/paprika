@@ -228,7 +228,10 @@ async function completeTooltip(target, cell) {
   assert.equal(await cell.getAttribute("aria-describedby"), id, "Cell must reference its accessible tooltip")
   assert.ok((await tip.textContent()).includes(detailedName), "Full series name must remain readable")
   const actualLabels = await tip.locator("dl > div").evaluateAll((rows) => Object.fromEntries(rows.map((row) => [row.querySelector("dt").textContent.trim().replace(/:$/, ""), row.querySelector("dd").textContent])))
-  assert.deepEqual(actualLabels, detailedLabels, "Tooltip must preserve every label key and full value")
+  // "Exact value" is the separate exact row in Source details; the labels are the remaining dl rows.
+  const { "Exact value": exactValue, ...labelRows } = actualLabels
+  assert.ok(exactValue !== undefined, "Source details must show the exact value")
+  assert.deepEqual(labelRows, detailedLabels, "Tooltip must preserve every label key and full value")
   assert.equal(await tip.locator("[data-metric-value]").getAttribute("data-metric-value"), "0.123456789", "Tooltip must preserve the exact underlying value")
   assert.equal(await tip.locator("time").getAttribute("datetime"), new Date(timestamp).toISOString())
   assert.match(await tip.innerText(), /Unavailable/)
@@ -415,6 +418,8 @@ try {
       await cell.focus()
     }
     measurements.push(await completeTooltip(target, cell))
+    // Labels sit in the collapsed Source details, so open them before measuring the scroll range.
+    await target.getByRole("tooltip").evaluate((el) => { for (const details of el.querySelectorAll("details")) details.open = true })
     await cell.press("End")
     await settle(target)
     assert.ok(await target.getByRole("tooltip").evaluate((el) => el.scrollTop > 0), "Keyboard users must be able to scroll long tooltip details")

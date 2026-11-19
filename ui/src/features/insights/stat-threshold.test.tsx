@@ -18,14 +18,14 @@ describe("stat readings near a threshold", () => {
     const { container } = render1(99.895, "%", 99.9);
     const value = container.querySelector<HTMLElement>('[data-metric-value="99.895"]');
     expect(value?.textContent).toContain("99.895");
-    expect(value).toHaveAttribute("title", "99.895%");
+    expect(value).toHaveAttribute("title", "Exact value 99.895%");
   });
 
   it("does not read 99.86 ms as 99.9 ms against a 99.9 ms objective", () => {
     const { container } = render1(99.86, "ms", 99.9);
     const value = container.querySelector<HTMLElement>('[data-metric-value="99.86"]');
     expect(value?.textContent).toBe("99.86ms");
-    expect(value).toHaveAttribute("title", "99.86 ms");
+    expect(value).toHaveAttribute("title", "Exact value 99.86 ms");
   });
 
   it("keeps an exact value on the side of its threshold even at the precision limit", () => {

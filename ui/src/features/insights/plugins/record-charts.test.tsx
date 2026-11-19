@@ -15,7 +15,7 @@ describe("record charts", () => {
     render(<DashboardTimeZoneProvider timeZone="Australia/Melbourne"><RecordLine widget={{...widget,config:{x:"at",y:["value"]}}} result={result}/></DashboardTimeZoneProvider>)
     expect(screen.getByText("11:00")).toBeInTheDocument()
     expect(screen.getByText("12:00")).toBeInTheDocument()
-    expect(screen.getByRole("img",{name:"value · 2026-11-07T00:00:00.000Z · 12.00"})).toBeInTheDocument()
+    expect(screen.getByRole("img",{name:"value · 2026-11-07T00:00:00.000Z · 12"})).toBeInTheDocument()
   })
   it.each([{rows:[["api",12]]},{rows:[["api",12],["worker",24],["web",6]]}])("keeps every complete bar inside the plot, including singleton and edge categories", ({rows}) => {
     const {container} = render(<RecordBar widget={widget} result={frame(rows as NonNullable<QueryResult["records"]>["rows"])} />)
@@ -96,7 +96,7 @@ describe("record charts", () => {
     const config={x:"at",y:["rate","latency"],rightAxis:["latency"],annotations:[{x:start,label:"Deployment"}]}
     const {container} = render(<DashboardTimeZoneProvider timeZone="UTC"><RecordLine widget={{...widget,config}} result={result} /></DashboardTimeZoneProvider>)
     const rate=screen.getByRole("img",{name:"Rate · 2026-10-27T02:00:00.000Z · 1.00 req/s"})
-    const latency=screen.getByRole("img",{name:"Latency · 2026-10-27T02:00:00.000Z · 1,000.00 ms"})
+    const latency=screen.getByRole("img",{name:"Latency · 2026-10-27T02:00:00.000Z · 1.00 s"})
     expect(rate.getAttribute("cy")).toBe(latency.getAttribute("cy"))
     expect(screen.getByText("Latency (right axis)")).toBeInTheDocument()
     expect(screen.getByText("01:00")).toBeInTheDocument()

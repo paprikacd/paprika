@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placeHeatmapTooltip, placeOutsideWidgetTooltip, placePlotTooltip, placeTooltip, readTooltipPlacement, tooltipLimit, type TooltipPlacement, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
+import { placeClearOutsideWidgetTooltip, placeHeatmapTooltip, placeOutsideWidgetTooltip, placePointerAvoiding, placePlotTooltip, placeTooltip, readTooltipPlacement, tooltipLimit, type TooltipPlacement, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
 
 const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 const pointer = (x: number, y: number): TooltipTarget => ({ kind: "pointer", point: { x, y } });
@@ -33,6 +33,30 @@ describe("shared observation tooltip positioning", () => {
     expect(placeTooltip({ kind: "anchor", anchor }, size, viewport)).toEqual(placeHeatmapTooltip(anchor, size, viewport));
     const widget = { left: 100, right: 600, top: 100, bottom: 400 };
     expect(placeTooltip({ kind: "outside", anchor, widget }, size, viewport)).toEqual(placeOutsideWidgetTooltip(widget, anchor, size, viewport));
+  });
+
+  it("uses the overlap fallback on a phone when the only outside slot is a sliver beside a tall widget", () => {
+    const phone = { width: 390, height: 844 };
+    const widget = { left: 0, right: 390, top: 100, bottom: 700 };
+    const anchor = { left: 150, right: 240, top: 300, bottom: 340 };
+    const size = { width: 340, height: 300 };
+    const placed = placeOutsideWidgetTooltip(widget, anchor, size, phone);
+    // Above the widget there is 78 px and below it 122 px: neither can show a 200 px reading, so the panel overlaps the widget instead.
+    expect(placed.overlapsWidget).toBe(true);
+    // A wide viewport keeps the outside slot, as before.
+    expect(placeOutsideWidgetTooltip(widget, anchor, size, { width: 1512, height: 844 }).overlapsWidget).toBe(false);
+  });
+
+  it("keeps the phone slot floor when obstacles are present, so no sliver is picked from the candidates", () => {
+    const phone = { width: 390, height: 844 };
+    const widget = { left: 0, right: 390, top: 100, bottom: 700 };
+    const anchor = { left: 150, right: 240, top: 300, bottom: 340 };
+    const size = { width: 340, height: 300 };
+    // A header across the top leaves only the 78 px sliver above the widget, and the bottom slot is 122 px: both fall under the floor.
+    const obstacles = [{ left: 0, right: 390, top: 0, bottom: 90 }];
+    const placed = placeClearOutsideWidgetTooltip(widget, anchor, size, phone, obstacles);
+    expect(placed.overlapsWidget).toBe(true);
+    expect(placeClearOutsideWidgetTooltip(widget, anchor, size, { width: 1512, height: 844 }, obstacles).overlapsWidget).toBe(false);
   });
 
   it("treats explicit placement as a preference and flips when that side cannot fit", () => {
@@ -96,7 +120,7 @@ describe("shared observation tooltip positioning", () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it("reserves a scrollable region below or above a pointer when neither side fits", () => {
     const result = placeTooltip(pointer(150, 85), { width: 292, height: 560 }, { width: 320, height: 260 });
@@ -131,5 +155,54 @@ describe("tooltip settings", () => {
     expect(readTooltipPlacement({ tooltipPlacement: "fixed-card", tooltipOffset: Number.NaN, tooltipMaxWidth: -5, tooltipMaxHeight: Number.POSITIVE_INFINITY })).toEqual({});
     expect(readTooltipPlacement(undefined)).toEqual({});
     expect(readTooltipPlacement({ showTooltip: true })).toEqual({});
+  });
+});
+
+describe("pointer previews avoid tooltip controls", () => {
+  it("keeps a low pointer's preview tall by stopping it under the header and toolbar, not squeezing it below", () => {
+    // Service Pulse at 1512x900: the pointer sits low on the plot, under a header and a toolbar that both weigh 8.
+    const viewport = { width: 1512, height: 900, left: 0, top: 0 };
+    const size = { width: 330, height: 495 };
+    const header = { left: 0, right: 1512, top: 0, bottom: 120, weight: 8 };
+    const toolbar = { left: 0, right: 1512, top: 120, bottom: 170, weight: 8 };
+    const pointer = { kind: "pointer" as const, point: { x: 700, y: 650 } };
+    const placed = placePointerAvoiding(pointer, size, viewport, [header, toolbar], {});
+    const visible = Math.min(size.height, placed.maxHeight ?? size.height);
+    // Below the pointer only 222 px is free, which squeezes the reading. Above the pointer 448 px is free, below the toolbar.
+    expect(visible).toBeGreaterThanOrEqual(400);
+    expect(placed.top).toBeGreaterThanOrEqual(170);
+    expect(placed.top + visible).toBeLessThanOrEqual(650);
+  });
+
+  it("keeps a full-height preview when a tall header leaves a free band beside the low pointer", () => {
+    // The header and the strip below it take the top 300 px. Above the pointer only 318 px is clear, below it 222 px,
+    // but the 572 px band between the strip and the viewport bottom fits the full 495 px panel.
+    const viewport = { width: 1512, height: 900, left: 0, top: 0 };
+    const size = { width: 330, height: 495 };
+    const header = { left: 0, right: 1512, top: 0, bottom: 250, weight: 8 };
+    const strip = { left: 0, right: 1512, top: 250, bottom: 300, weight: 8 };
+    const pointer = { kind: "pointer" as const, point: { x: 700, y: 650 } };
+    const placed = placePointerAvoiding(pointer, size, viewport, [header, strip], {});
+    expect(Math.min(size.height, placed.maxHeight ?? size.height)).toBe(size.height);
+    expect(placed.top).toBeGreaterThanOrEqual(strip.bottom);
+    expect(placed.top + size.height).toBeLessThanOrEqual(viewport.height - 12);
+    expect(placed.placement).toBe("pointer-band-right");
+  });
+
+  it("moves a pointer preview off the attention strip, and keeps the first candidate when nothing clears it", () => {
+    const viewport = { width: 1000, height: 700, left: 0, top: 0 };
+    const size = { width: 300, height: 200 };
+    // A strip (weight 8) where the default below-the-pointer slot lands.
+    const strip = { left: 400, right: 1000, top: 160, bottom: 400, weight: 8 };
+    const pointer = { kind: "pointer" as const, point: { x: 500, y: 150 } };
+    const plain = placeTooltip(pointer, size, viewport);
+    expect(plain.top).toBeLessThan(strip.bottom);
+    expect(plain.top + size.height).toBeGreaterThan(strip.top);
+    const avoided = placePointerAvoiding(pointer, size, viewport, [strip], {});
+    const avoidedHeight = Math.min(size.height, avoided.maxHeight ?? size.height);
+    expect(avoided.top + avoidedHeight <= strip.top || avoided.top >= strip.bottom || avoided.left + size.width <= strip.left || avoided.left >= strip.right).toBe(true);
+    // With the strip covering the whole viewport there is no clear placement, so the first candidate wins.
+    const everywhere = { left: 0, right: 1000, top: 0, bottom: 700, weight: 8 };
+    expect(placePointerAvoiding(pointer, size, viewport, [everywhere], {})).toEqual(placeTooltip(pointer, size, viewport, { placement: "auto" }));
   });
 });

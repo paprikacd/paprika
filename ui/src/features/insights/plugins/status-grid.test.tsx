@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { QueryResult, Widget } from "../schema";
 import { StatusGrid, latestStatusPoint, statusGridConfigSchema } from "./status-grid";
@@ -8,6 +8,14 @@ const widget: Widget = { id:"status", title:"Current monitors", type:"plugin", p
 const series = (name: string, values: (number | null)[]): NonNullable<QueryResult["series"]>[number] => ({ name, labels:{ service:name }, points:values.map((value,index) => ({ timestamp:Date.UTC(2026,0,1,0,index),value })) });
 
 describe("monitor status grid", () => {
+  it("pins the cell that was clicked when two monitors share a name", () => {
+    render(<StatusGrid widget={widget} result={{ series:[series("api",[1]),series("api",[0])] }} />);
+    const cells = screen.getAllByRole("button", { name: /api: / });
+    fireEvent.click(cells[1]);
+    expect(cells[1]).toHaveAttribute("aria-pressed", "true");
+    expect(cells[0]).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("0");
+  });
   it("uses the newest timestamp, including null, without reviving older status", () => {
     const input = series("api",[1,0,null]);
     input.points = [input.points[2],input.points[0],input.points[1]];
@@ -21,7 +29,7 @@ describe("monitor status grid", () => {
     const select = vi.fn();
     const options = { ...widget.options, thresholds:[{value:0,color:"#10aa33",label:"Healthy"},{value:4,color:"#dd4422",label:"Warning"}] };
     render(<StatusGrid widget={{...widget,options}} result={{series:[series("db",[4.126]),series("empty",[null])]}} onContextChange={select} />);
-    const status = screen.getByRole("button",{name:/db: 4.126 · Warning/});
+    const status = screen.getByRole("button",{name:/db: 4.13 · Warning/});
     fireEvent.click(status);
     expect(select).toHaveBeenLastCalledWith({ labels:{service:"db"}, value:4.126, series:"db" });
     expect(screen.getByRole("tooltip").querySelector('[data-metric-value="4.126"]')).toHaveTextContent("4.13");
@@ -63,7 +71,44 @@ describe("monitor status grid", () => {
     fireEvent.keyDown(buttons[1],{key:"Escape"});
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.focus(buttons[0]);
+    // The same monitor stays open across a refresh and shows its new reading.
     rerender(<StatusGrid widget={widget} result={{series:[series("api",[null])]}} />);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("No data");
+  });
+  it("closes a hovered preview after the pointer leaves, even while another cell keeps focus", () => {
+    vi.useFakeTimers();
+    try {
+      const result = { series: [series("api", [1]), series("worker", [0]), series("cron", [1]), series("db", [0])] };
+      const { container } = render(<StatusGrid widget={widget} result={result} />);
+      const buttons = [...container.querySelectorAll<HTMLButtonElement>("[data-status-index]")];
+      // Keyboard focus stays on the first cell while the pointer visits another one.
+      act(() => buttons[0].focus());
+      expect(buttons[0]).toHaveFocus();
+      fireEvent.pointerEnter(buttons[3], { pointerType: "mouse" });
+      expect(screen.getByRole("tooltip")).toHaveTextContent("db");
+      fireEvent.pointerLeave(buttons[3]);
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      expect(buttons[0]).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("keeps a pinned monitor open on the same monitor when a refresh changes its value or order", () => {
+    const first = [series("api", [1]), series("worker", [0])];
+    const { container, rerender } = render(<StatusGrid widget={widget} result={{ series: first }} />);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-status-index="1"]')!);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Unhealthy");
+    // Same monitor, new value and a new order: the pin follows the monitor, not the old index.
+    rerender(<StatusGrid widget={widget} result={{ series: [series("worker", [1]), series("api", [1])] }} />);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Healthy");
+    expect(container.querySelector('[data-status-index="0"]')).toHaveAttribute("aria-pressed", "true");
+  });
+  it("closes the preview and releases the pin when its monitor leaves the result", () => {
+    const { container, rerender } = render(<StatusGrid widget={widget} result={{ series: [series("api", [1]), series("worker", [0])] }} />);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-status-index="1"]')!);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    rerender(<StatusGrid widget={widget} result={{ series: [series("api", [1])] }} />);
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
   it("renders empty and embedded states without active controls", () => {

@@ -200,11 +200,11 @@ describe("bounded tooltip rendering", () => {
     const chart = screen.getByRole("img", { name: "api time series" });
     expect(chart).toHaveAttribute("tabindex", "-1");
     expect(chart).toHaveAccessibleDescription(
-      /Minimum -3.123456789 req\/s.*Maximum 0 req\/s.*2 missing samples/,
+      /Minimum -3.12 req\/s.*Maximum 0 req\/s.*2 missing samples/,
     );
     expect(chart.querySelectorAll("circle").length).toBeGreaterThanOrEqual(2);
     expect(container.querySelector("[data-history-min]")).toHaveTextContent(
-      "-3.123456789 req/s",
+      "-3.12 req/s",
     );
     expect(container.querySelector("[data-history-max]")).toHaveTextContent(
       "0 req/s",
@@ -398,7 +398,7 @@ describe("heatmap tooltip sub-widget integration", () => {
     const childWidget = tip.querySelector(
       '[data-tooltip-widget="timeseries"]',
     )!;
-    const interactionHint = within(tip).getByText("Click or tap to keep open");
+    const interactionHint = within(tip).getByText("Click, tap or press Enter to keep open");
     expect(
       parentTimestamp.compareDocumentPosition(childWidget) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -573,7 +573,7 @@ describe("shared embedded tooltip renderers", () => {
       if (type === "plugin")
         expect(screen.getByRole("meter")).toHaveAttribute(
           "aria-valuetext",
-          "-12.3456 ms",
+          "-12.346 ms",
         );
     },
   );
@@ -687,7 +687,7 @@ describe("shared embedded tooltip renderers", () => {
       );
       if (type === "bar")
         expect(chart).toHaveAccessibleDescription(
-          /Latest valid sample used by bar: -12.3456 ms at 1970-01-01T00:00:02.000Z/,
+          /Latest valid sample used by bar: -12.3 ms at 1970-01-01T00:00:02.000Z/,
         );
       expect(chart.querySelectorAll("text")).toHaveLength(0);
       expect(screen.queryByRole("button")).toBeNull();

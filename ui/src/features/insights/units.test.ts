@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoAxisDomain, axisScale, formatMetric, formatRange, formatReading, formatRecordValue, niceAxis, niceDomain, symmetricDomain, ticksWithin } from "./units";
+import { autoAxisDomain, axisScale, formatBounds, formatMetric, formatRange, formatRangeBounds, formatReading, formatRecordValue, formatSharedScale, isIdentifierColumn, sharedScale, niceAxis, niceDomain, recordNumberText, symmetricDomain, ticksWithin, valueCellText } from "./units";
 
 describe("auto precision", () => {
   it.each([
@@ -148,9 +148,12 @@ it("applies the minimum step to the nice and within-domain tick helpers", () => 
   expect(niceAxis([0, 1], 5).ticks).toEqual([0, 0.25, 0.5, 0.75, 1]);
 });
 
-  it("honours decimals exactly, without scaling or precision loss", () => {
-    expect(formatMetric(124820, "obs/s", false, 2)).toBe("124,820.00 obs/s");
-    expect(formatMetric(1234.5678, "ms", false, 2)).toBe("1,234.57 ms");
+  it("honours decimals exactly, on the number after the unit has been scaled", () => {
+    // The unit is chosen first, as in Auto; the decimals then apply to the scaled number.
+    expect(formatMetric(124820, "obs/s", false, 2)).toBe("124.82K obs/s");
+    expect(formatMetric(1234.5678, "ms", false, 2)).toBe("1.23 s");
+    expect(formatMetric(296303060975000, "bytes", false, 3)).toBe("269.486 TiB");
+    expect(formatMetric(0.1 + 0.2, "", false, 2)).toBe("0.30");
     expect(formatMetric(0.5, "%", false, 0)).toBe("1%");
     expect(formatMetric(1, "req/s", false, 4)).toBe("1.0000 req/s");
   });
@@ -236,10 +239,13 @@ describe("axis labels", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("uses the authored decimals on every tick and keeps the unit as authored", () => {
+  it("labels ticks at the tick step's precision in the unit the axis chose, while readings keep the decimals", () => {
     const axis = axisScale([0, 1000], "ms", { count: 4, decimals: 1 });
-    expect(axis.unit).toBe("ms");
-    expect(axis.label(250)).toBe("250.0 ms");
+    // At one authored decimal the step is 0.5 s: ticks never print more places than the setting allows.
+    expect(axis.unit).toBe("s");
+    expect(axis.ticks.map(tick => axis.label(tick, false))).toEqual(["0", "0.5", "1.0"]);
+    expect(formatMetric(250, "ms", false, 1)).toBe("250.0 ms");
+    expect(axisScale([0, 500], "", { count: 3, decimals: 3 }).ticks.map(tick => axisScale([0, 500], "", { count: 3, decimals: 3 }).label(tick, false))).toEqual(["0", "250", "500"]);
   });
 
   it("omits the unit when asked for a captioned axis", () => {
@@ -420,3 +426,181 @@ describe("percent ranges and exponent guards", () => {
     expect(formatMetric(99.995, "%")).toBe("99.995%");
   });
 });
+
+describe("Auto bounds on integer readings", () => {
+  it("does not give a whole-number bound a spurious decimal place", () => {
+    expect(formatBounds([10], "GB", undefined, [10, 20])).toEqual(["10 GB"]);
+    expect(formatBounds([10, 20], "GB")).toEqual(["10 GB", "20 GB"]);
+  });
+});
+
+describe("authored bounds never round a non-zero bound to zero", () => {
+  it("widens an inexact tiny bound until it reads as non-zero", () => {
+    const [text] = formatBounds([1.2345678e-5], "", 0);
+    expect(text).not.toBe("0");
+    expect(Number(text)).toBeGreaterThan(0);
+    expect(text).not.toMatch(/\.\d{6,}/);
+  });
+});
+
+describe("bounds that name neighbours never print alike", () => {
+  it("keeps the authored decimals when the bounds still differ", () => {
+    expect(formatBounds([2.5, 5], "s", 1)).toEqual(["2.5 s", "5.0 s"]);
+    expect(formatRangeBounds(0.5, 0.9, "", 1)).toBe("0.5–0.9");
+  });
+  it("adds places until a bound still reads its own value, instead of printing a neighbour's", () => {
+    // The bounds share one scale, as in Auto, so the unit is milliseconds and each bound keeps its own value.
+    expect(formatBounds([0.005, 0.01], "s", 0)).toEqual(["5 ms", "10 ms"]);
+    expect(formatRangeBounds(0.005, 0.01, "s", 0)).toBe("5 ms–10 ms");
+    expect(formatBounds([0.005, 10], "s", 0)).toEqual(["0.005 s", "10 s"]);
+    expect(formatRangeBounds(0.5, 0.9, "", 0)).toBe("0.5–0.9");
+  });
+  it("keeps every Prometheus le bucket reading its own bound at decimals 0 and 1", () => {
+    const bounds = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+    expect(formatBounds(bounds, "s", 0).map(label => label.replace(" s", ""))).toEqual(["0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10"]);
+    // A whole bound keeps the authored places ("1.0"), and every other bound reads its own value.
+    expect(formatBounds(bounds, "s", 1).map(label => label.replace(" s", ""))).toEqual(["0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1.0", "2.5", "5.0", "10.0"]);
+  });
+  it("uses one scale for every Auto bound on an axis, so adjacent buckets never mix units", () => {
+    const bounds = [0.1, 0.25, 0.5, 1, 2.5];
+    // The axis reaches 2.5 s, so every bound on it reads in seconds, including the 100 ms bucket.
+    expect(formatRangeBounds(0.1, 0.25, "s", undefined, bounds)).toBe("0.1 s–0.25 s");
+    expect(formatRangeBounds(0.5, 1, "s", undefined, bounds)).toBe("0.5 s–1 s");
+    // Without the axis, the pair is its own axis and takes the scale that reads best.
+    expect(formatRangeBounds(0.1, 0.25, "s", undefined)).toBe("100 ms–250 ms");
+  });
+});
+
+describe("bounds at zero decimals keep a short exact value", () => {
+  it("reads 0.5 s, 1.2 s and 1.4 s as themselves, never as a rounded whole second", () => {
+    // A lone 0.5 s picks milliseconds for itself, so the axis names the second scale.
+    expect(formatBounds([0.5], "s", 0, [0.5, 1, 1.5])).toEqual(["0.5 s"]);
+    expect(formatBounds([1.2, 1.4], "s", 0)).toEqual(["1.2 s", "1.4 s"]);
+    expect(formatBounds([0.5, 1, 1.5], "s", 0)).toEqual(["0.5 s", "1 s", "1.5 s"]);
+  });
+  it("keeps the authored places on a whole bound, so 1000 ms at two decimals reads 1.00 s", () => {
+    expect(formatBounds([1000], "ms", 2)).toEqual(["1.00 s"]);
+    expect(formatBounds([1000], "ms", 0)).toEqual(["1 s"]);
+  });
+  it("reads a 1500 ms bar scale bound as 1.5 s at zero decimals", () => {
+    expect(formatBounds([0, 1500], "ms", 0)).toEqual(["0 s", "1.5 s"]);
+    const scale = sharedScale([0, 1500], "ms", { decimals: 0 });
+    expect(scale.unit).toBe("s");
+    expect(scale.bound(1500)).toBe("1.5");
+  });
+  it("reads a bound against the whole axis it belongs to, not only the bounds passed", () => {
+    // 2.0000001 is not a short exact form, so it is widened until it differs from its axis neighbour.
+    expect(formatBounds([2.0000004], "", 0, [2.0000004, 2.0000001])).toEqual(["2.00000"]);
+    expect(formatBounds([2.0000004], "", 0)).toEqual(["2"]);
+  });
+});
+
+describe("identifiers and counts at authored decimals", () => {
+  it("shows an identifier or date-part whole number with no unit as stored, and groups a unit-less count", () => {
+    expect(recordNumberText(10021, "", "order_id", 2)).toBe("10021");
+    expect(recordNumberText(2024, "", "year", 2)).toBe("2024");
+    expect(recordNumberText(296303060975000, "", "orderId", 3)).toBe("296303060975000");
+    expect(recordNumberText(7, "", "day_of_week", 0)).toBe("7");
+    // A count is not an identifier: it is grouped, and never padded.
+    expect(recordNumberText(10021, "", "order", 2)).toBe("10,021");
+    expect(recordNumberText(18432, "", "rows", 3)).toBe("18,432");
+  });
+  it("applies decimals to non-integers and to whole numbers that carry a unit", () => {
+    expect(recordNumberText(2.5, "", "order", 2)).toBe("2.50");
+    expect(recordNumberText(2024, "ms", "latency", 2)).toBe("2,024.00 ms");
+    expect(recordNumberText(5.878749999999975, "ms", "latency", 2)).toBe("5.88 ms");
+  });
+  it("recognises identifier and date-part names by a whole last word, and not names that only contain the letters", () => {
+    for (const name of ["id", "order_id", "orderId", "Order ID", "year", "day", "created_day"]) expect(isIdentifierColumn(name), name).toBe(true);
+    for (const name of ["latency", "width", "paid", "rapid", "provider", "cost_per_year", "wait_days", "start_date", "ids"]) expect(isIdentifierColumn(name), name).toBe(false);
+  });
+  it("never treats a column with a unit as an identifier: its measure keeps the unit and the decimals", () => {
+    // The caller applies the identifier rule only to unit-less columns; a measure with a unit always takes the decimals.
+    expect(recordNumberText(3, "d", "wait_days", 2)).toBe("3.00 d");
+    expect(recordNumberText(86400000, "ms", "retention_day", 0)).toBe("86,400,000 ms");
+    expect(recordNumberText(125000, "USD", "cost_per_year", 2)).toBe("125,000.00 USD");
+    expect(recordNumberText(7, "ms", "order_id", 2)).toBe("7.00 ms");
+  });
+});
+
+describe("whole numbers and shared scales at authored decimals", () => {
+  it("never pads a unit-less whole number, and keeps the decimals of a value with a unit", () => {
+    expect(formatMetric(84, "", false, 3)).toBe("84");
+    expect(formatMetric(18432, "", false, 2)).toBe("18,432");
+    expect(formatMetric(0.5, "", false, 2)).toBe("0.50");
+    expect(formatMetric(4, "ms", false, 2)).toBe("4.00 ms");
+  });
+  it("scales first, then applies the decimals to the scaled number", () => {
+    expect(formatMetric(296303060975000, "B", false, 3)).toBe("269.486 TiB");
+    expect(formatMetric(5.878749999999975, "ms", false, 2)).toBe("5.88 ms");
+  });
+  it("gives a column one unit, so a mixed ms and s column reads in one scale at authored decimals", () => {
+    expect(formatSharedScale([1030, 640], "ms", { decimals: 2 })).toEqual(["1.03 s", "0.64 s"]);
+    expect(formatSharedScale([1030, 640], "ms")).toEqual(["1.03 s", "0.64 s"]);
+  });
+  it("keeps one unit across a bytes gauge at authored decimals", () => {
+    const scale = sharedScale([296303060975000, 400000000000000], "B", { decimals: 3 });
+    expect(scale.unit).toBe("TiB");
+    expect(scale.number(296303060975000)).toBe("269.486");
+    expect(scale.number(400000000000000)).toBe("363.798");
+  });
+  it("places axis ticks at the tick step's precision, not the authored decimals", () => {
+    expect(axisScale([0, 1000], "", { decimals: 3 }).ticks.map(tick => axisScale([0, 1000], "", { decimals: 3 }).label(tick, false))).toEqual(["0", "250", "500", "750", "1,000"]);
+  });
+});
+
+describe("percent shared scales honour the authored decimals", () => {
+  it("keeps the places on a gauge reading in percent", () => {
+    expect(sharedScale([92], "%", { scaleDown: false, decimals: 1 }).number(92)).toBe("92.0");
+    expect(sharedScale([-0.123456789], "%", { scaleDown: false, decimals: 2 }).number(-0.123456789)).toBe("-0.12");
+  });
+});
+
+describe("negative zero and bounds at authored decimals", () => {
+  it("never prints a negative zero at a set decimals", () => {
+    expect(formatMetric(-0.0001, "", false, 0)).toBe("0");
+    expect(formatMetric(-0.0001, "req/s", false, 3)).toBe("0.000 req/s");
+    expect(formatMetric(-0.0001, "ns", false, 0)).toBe("0 ns");
+  });
+
+  it("keeps a scaled bound at the authored decimals rather than its exact value", () => {
+    const tib = 272.84841053 * 1024 ** 4;
+    const scale = sharedScale([tib], "bytes", { decimals: 0 });
+    expect(scale.unit).toBe("TiB");
+    expect(scale.bound(tib)).toBe("273");
+    expect(sharedScale([tib], "bytes", { decimals: 3 }).bound(tib)).toBe("272.848");
+  });
+
+  it("widens a bound only when rounding would give zero or merge it with a neighbour", () => {
+    expect(formatBounds([0.004], "s", 0)).toEqual(["4 ms"]);
+    expect(formatBounds([-0.4], "", 0)).toEqual(["-0.4"]);
+    expect(formatBounds([1.001, 1.004], "", 2)).toEqual(["1.001", "1.004"]);
+    // A bound with a short exact form shows it at zero places: 1.2 never reads "1".
+    expect(formatBounds([1.2, 1.9], "", 0)).toEqual(["1.2", "1.9"]);
+  });
+
+  it("never prints six or more fraction digits in a bound", () => {
+    for (const value of [0.000001234, 0.0000005, 272.84841053, 1.0000004]) {
+      for (const decimals of [0, 3]) {
+        const [text] = formatBounds([value], "", decimals);
+        expect(text).not.toMatch(/\.\d{6,}/);
+      }
+    }
+  });
+});
+
+describe("record cells scale each value on its own", () => {
+  it("gives a small and a large value of one bytes column their own units, at decimals 3 and Auto", () => {
+    expect(valueCellText(1023.6, "bytes", 3)).toBe("1.000 KiB");
+    expect(valueCellText(296303060975000, "bytes", 3)).toBe("269.486 TiB");
+    expect(valueCellText(1023.6, "bytes")).toBe("1 KiB");
+    expect(valueCellText(296303060975000, "bytes")).toBe("269 TiB");
+  });
+
+  it("never prints an exponent in a record cell, even where a scaled value is very small", () => {
+    expect(valueCellText(0.0000000001, "bytes")).not.toMatch(/e[-+]?\d/);
+    expect(valueCellText(0.4, "ms", 0)).toBe("400 us");
+    expect(valueCellText(0.0004, "s")).toBe("400 us");
+  });
+});
+

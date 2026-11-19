@@ -34,6 +34,41 @@ describe("trace waterfall", () => {
     const rows = traceRows([...spans, { spanId: "sibling", parentSpanId: "root", service: "cache", operation: "get", startTime: 1030, durationMs: 5, status: "ok" }, { spanId: "grandchild", parentSpanId: "child", service: "store", operation: "read", startTime: 1020, durationMs: 2, status: "ok" }])
     expect(rows.find(row => row.span.spanId === "grandchild")?.guides).toEqual([true])
   })
+  it("prints durations at the widget's decimal places when set, and at the duration's own precision when unset", async () => {
+    const fetchTrace = vi.fn().mockResolvedValue({ spans })
+    const { unmount } = render(<TraceFetcherProvider fetchTrace={fetchTrace}><TraceWaterfall traceId="abc" decimals={3} /></TraceFetcherProvider>)
+    await screen.findByRole("region", { name: "Trace abc waterfall" })
+    expect(screen.getByText(/100\.000 ms observed/)).toBeInTheDocument()
+    expect(screen.getAllByText("100.000 ms", { exact: false }).length).toBeGreaterThan(0)
+    unmount()
+    const auto = render(<TraceFetcherProvider fetchTrace={fetchTrace}><TraceWaterfall traceId="abc" /></TraceFetcherProvider>)
+    await screen.findByRole("region", { name: "Trace abc waterfall" })
+    expect(screen.getByText(/100\.00 ms observed/)).toBeInTheDocument()
+    auto.unmount()
+  })
+  it("labels the duration axis without float noise, and its ticks at the tick step's precision", async () => {
+    // Spans starting at 1000.1 and 1000.2 ms: the observed extent is 0.1 + 0.2 wide in floating point.
+    const noisy = [
+      { spanId: "a", service: "api", operation: "GET", startTime: 1000.1, durationMs: 0.1 + 0.2, status: "ok" },
+      { spanId: "b", service: "api", operation: "GET", startTime: 1000.2, durationMs: 5.878749999999975, status: "ok" },
+    ]
+    const fetchTrace = vi.fn().mockResolvedValue({ spans: noisy })
+    const { container, unmount } = render(<TraceFetcherProvider fetchTrace={fetchTrace}><TraceWaterfall traceId="noise" /></TraceFetcherProvider>)
+    await screen.findByRole("region", { name: "Trace noise waterfall" })
+    const axis = screen.getByRole("img", { name: /Trace duration axis/ })
+    expect(axis.getAttribute("aria-label")).not.toMatch(/\d\.\d{6,}/)
+    // Visible text and accessible names only: layout percentages in style attributes are not read out.
+    expect(container.textContent).not.toMatch(/\d\.\d{6,}/)
+    container.querySelectorAll("[aria-label],[title]").forEach(node => expect(node.getAttribute("aria-label") ?? node.getAttribute("title")).not.toMatch(/\d\.\d{6,}/))
+    unmount()
+    const wide = [{ spanId: "a", service: "api", operation: "GET", startTime: 1000, durationMs: 100, status: "ok" }]
+    const wideTrace = vi.fn().mockResolvedValue({ spans: wide })
+    const { container: ticks } = render(<TraceFetcherProvider fetchTrace={wideTrace}><TraceWaterfall traceId="wide" decimals={3} /></TraceFetcherProvider>)
+    await screen.findByRole("region", { name: "Trace wide waterfall" })
+    // A 100 ms extent has a 25 ms step: the labels print whole milliseconds, while the readings keep the decimals.
+    expect([...ticks.querySelectorAll("[class*='axisTrack'] span")].map(tick => tick.textContent)).toEqual(["0 ms", "25 ms", "50 ms", "75 ms", "100 ms"])
+    expect(screen.getByRole("img", { name: /Trace duration axis/ }).getAttribute("aria-label")).toBe("Trace duration axis from 0 milliseconds to 100.000 milliseconds")
+  })
   it("filters recorded span details locally, preserves parent context, and never re-fetches", async () => {
     const records = spans.map(span => span.spanId === "child" ? { ...span, attributes: [{ key: "db.system.name", value: "postgresql" }] } : span)
     const fetchTrace = vi.fn().mockResolvedValue({ spans: records })
@@ -68,7 +103,7 @@ describe("trace waterfall", () => {
     await screen.findByRole("region", { name: "Trace abc waterfall" })
     expect(fetchTrace).toHaveBeenCalledWith("abc", expect.any(AbortSignal))
     expect(screen.getByText("40.00 ms")).toBeInTheDocument()
-    expect(screen.getByRole("img", { name: "Trace duration axis from 0 milliseconds to 100 milliseconds" })).toBeInTheDocument()
+    expect(screen.getByRole("img", { name: "Trace duration axis from 0 milliseconds to 100.00 milliseconds" })).toBeInTheDocument()
     expect(screen.getByText(/Partial trace/)).toBeInTheDocument()
     expect(container.querySelector('[data-span-id="child"] [data-span-status="error"]')).toHaveStyle({ left: "10%", width: "40%" })
     expect(container.querySelector('[data-span-id="child"]')).toHaveTextContent("Error")
@@ -78,7 +113,8 @@ describe("trace waterfall", () => {
     const { container } = render(<TraceFetcherProvider fetchTrace={fetchTrace}><TraceWaterfall traceId="abc" /></TraceFetcherProvider>)
     await screen.findByRole("region", { name: "Trace abc waterfall" })
     expect(screen.getByText("Time from first recorded span")).toBeInTheDocument()
-    expect(screen.getByText("25.00 ms")).toBeInTheDocument()
+    // The 25 ms tick label takes the step's whole-millisecond precision.
+    expect(screen.getByText("25 ms")).toBeInTheDocument()
     expect(container.querySelector('[data-span-id="child"] [data-trace-branch]')).toBeInTheDocument()
     expect(container.querySelector('[data-span-id="grandchild"] [data-trace-branch]')).toBeInTheDocument()
     expect(container.querySelector('[data-span-id="root"] [data-trace-stem]')).toBeInTheDocument()
@@ -125,7 +161,7 @@ describe("trace waterfall", () => {
   it("reports a zero-duration trace truthfully rather than its rendering fallback", async () => {
     const fetchTrace = vi.fn().mockResolvedValue({ spans: [{ spanId: "zero", service: "api", operation: "instant", startTime: 1000, durationMs: 0, status: "ok" }] })
     render(<TraceFetcherProvider fetchTrace={fetchTrace}><TraceWaterfall traceId="abc" /></TraceFetcherProvider>)
-    expect(await screen.findByRole("img", { name: "Trace duration axis from 0 milliseconds to 0 milliseconds" })).toBeInTheDocument()
+    expect(await screen.findByRole("img", { name: "Trace duration axis from 0 milliseconds to 0.00 milliseconds" })).toBeInTheDocument()
   })
   it("does not select the surrounding trace row when the waterfall button receives focus", () => {
     const select = vi.fn()

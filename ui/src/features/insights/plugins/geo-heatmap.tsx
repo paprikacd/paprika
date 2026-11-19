@@ -34,9 +34,12 @@ function GeoHeatmapContent({ widget, result, embedded, onContextChange, config, 
   const columns = config.gridColumns ?? Math.min(48, Math.max(8, Math.ceil(Math.sqrt(data.cells.length * Math.sqrt(3) / 2 * width / Math.max(48, availableHeight)))))
   const unit = widget.unit || data.unit, decimals = widget.options?.decimals
   const formatted = (value: number | null) => value === null ? "No complete value" : formatMetric(value, unit, false, decimals)
+  // The tooltip follows the widget's tooltip presentation: title, value caption, unit and decimal places.
+  const tooltipFormatted = (value: number | null) => value === null ? "No complete value" : formatMetric(value, widget.options?.tooltipShowUnit === false ? "" : unit, false, widget.options?.tooltipDecimals ?? decimals)
   const radius = config.mode === "map" ? config.radius : 684 / columns / Math.sqrt(3)
   const height = config.mode === "map" ? 360 : Math.max(45, 2 * radius + 10 + (Math.ceil(data.cells.length / columns) - 1) * radius * 1.5)
   const label = config.aggregation === "count" ? "Record count" : config.aggregation === "sum" ? `Sum of ${config.value}` : `Mean of ${config.value}`
+  const tooltipCaption = widget.options?.tooltipValueLabel?.trim() || label
   const planeWidth = config.mode === "map" ? 720 : 684 + 684 / columns / 2 + 10
   const cells = data.cells.map((cell, index) => {
           const fraction = cell.value === null || !Number.isFinite(data.min) ? 0 : data.max === data.min ? .5 : (cell.value-data.min)/(data.max-data.min)
@@ -46,10 +49,10 @@ function GeoHeatmapContent({ widget, result, embedded, onContextChange, config, 
           const x = config.mode === "map" ? cell.x : step / 2 + 5 + index % columns * step + row % 2 * step / 2
           const y = config.mode === "map" ? cell.y : radius + 5 + row * radius * 1.5
           return <div key={cell.key} className={styles.cellPosition} style={{ left: `${x/planeWidth*100}%`, top: `${y/height*100}%`, width: `${Math.sqrt(3)*radius/planeWidth*100}%`, height: `${radius*2/height*100}%` }}>
-            <ObservationDetails mark className={styles.trigger} revision={result} enabled={!embedded && widget.options?.showTooltip !== false} avoidWidget label={title} selectOnFocus={false}
+            <ObservationDetails mark className={styles.trigger} observationKey={cell.key} enabled={!embedded && widget.options?.showTooltip !== false} avoidWidget label={title} selectOnFocus={false}
               onSelect={!embedded && onContextChange ? () => onContextChange({ labels: cell.labels, value: cell.value, series: cell.name }) : undefined}
-              details={<><TooltipDetail title={cell.name}>
-                <TooltipFact label={label}>{formatted(cell.value)}</TooltipFact>
+              details={<><TooltipDetail title={widget.options?.tooltipTitle?.trim() || cell.name}>
+                <TooltipFact label={tooltipCaption}>{tooltipFormatted(cell.value)}</TooltipFact>
                 <TooltipFact label="Source records">{cell.count}</TooltipFact>
                 {cell.missing > 0 && <span>{cell.missing} missing values{config.aggregation === "count" ? "" : "; aggregation unavailable"}</span>}
                 {config.mode === "map" && <span>Nearby locations grouped in a projected hexagonal bin.</span>}

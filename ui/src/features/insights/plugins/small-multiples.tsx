@@ -8,6 +8,7 @@ import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName
 import { validTimestamp } from "../widget-context";
 import { truncationNote } from "../truncation";
 import { compactSeriesLabels } from "../series-display";
+import { TooltipPinHint } from "../tooltip-content";
 import { widgetSeriesColors } from "../series-colors";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
@@ -93,9 +94,7 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
     return !hasValue(points[pointIndex - 1]) && !hasValue(points[pointIndex + 1]) ? [coordinates(point, domain)] : [];
   });
   // Both extremes share one scale and reading precision, so the pair compares in one unit. Authored decimals stay exact.
-  const [topLabel, bottomLabel] = widget.options?.decimals === undefined
-    ? formatSharedScale([domain.max, domain.min], widget.unit)
-    : [formatMetric(domain.max, widget.unit, false, widget.options.decimals), formatMetric(domain.min, widget.unit, false, widget.options.decimals)];
+  const [topLabel, bottomLabel] = formatSharedScale([domain.max, domain.min], widget.unit, { decimals: widget.options?.decimals });
   return <section className={styles.panel} data-multiple-series={name}>
     <div className={styles.heading}><span className={styles.name} title={name} aria-label={name}>{displayName}</span><span className={styles.value}>{latest ? formatMetric(latest.value, widget.unit, false, widget.options?.decimals) : "No data"}</span></div>
     <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{topLabel}</span><span>{bottomLabel}</span></div>
@@ -114,7 +113,7 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
     <div className={styles.xAxis} aria-hidden="true"><span>{formatTimeTick(domain.start, domain.end - domain.start)}</span><span>{formatTimeTick(domain.end, domain.end - domain.start)}</span></div></div>
     {detailsEnabled && current && selected && <ObservationTooltip id={id} anchor={current.anchor} avoidWidget pinned={current.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clear(); }} onLeave={() => { interaction.current.panel = false; leave(); }}>
       <MetricDetails widget={widget} series={entry} index={index} point={selected} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample" />
-      <span className={styles.hint}>{current.pinned ? "Pinned · press Enter to close" : "Click or press Enter to keep open"} · Esc to close</span>
+      <TooltipPinHint pinned={current.pinned} />
     </ObservationTooltip>}
   </section>;
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -200,17 +201,20 @@ type dashboardTextRecords struct {
 	ColumnsOmitted    int  `json:"columnsOmitted"`
 	MetadataTruncated bool `json:"metadataTruncated"`
 	Columns           []struct {
-		Key string `json:"key"`
+		Key  string `json:"key"`
+		Unit string `json:"unit"`
 	} `json:"columns"`
 	Rows [][]json.RawMessage `json:"rows"`
 }
 
 type dashboardTextWidget struct {
-	ID                 string              `json:"id"`
-	Title              string              `json:"title"`
-	Type               string              `json:"type"`
-	PluginID           string              `json:"pluginId"`
-	Unit               string              `json:"unit"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Type     string `json:"type"`
+	PluginID string `json:"pluginId"`
+	Unit     string `json:"unit"`
+	// Decimals is the widget's decimal places; nil means Auto (three significant figures for a value with a unit, six otherwise).
+	Decimals           *int                `json:"decimals"`
 	SignalID           string              `json:"signalId"`
 	AnnotationSignalID string              `json:"annotationSignalId"`
 	Error              *dashboardTextError `json:"error"`
@@ -434,7 +438,7 @@ func dashboardBreachLineText(widget *dashboardTextWidget) string {
 		line.WriteString(" none in the returned window;")
 	}
 	for _, level := range widget.Breaches.Summary {
-		fmt.Fprintf(&line, " %s in window: intervals=%d, merged=%s ms, samples=%d;", strconv.Quote(shortDashboardText(level.Level, 16)), level.Intervals, strconv.FormatFloat(level.DurationMs, 'f', -1, 64), level.Samples)
+		fmt.Fprintf(&line, " %s in window: intervals=%d, merged=%s ms, samples=%d;", strconv.Quote(shortDashboardText(level.Level, 16)), level.Intervals, dashboardNumberText(level.DurationMs), level.Samples)
 	}
 	if widget.Breaches.LatestLevel != "" {
 		fmt.Fprintf(&line, " latest sample: %s now;", strconv.Quote(shortDashboardText(widget.Breaches.LatestLevel, 16)))
@@ -443,7 +447,7 @@ func dashboardBreachLineText(widget *dashboardTextWidget) string {
 	}
 	shown := widget.Breaches.Intervals[max(0, len(widget.Breaches.Intervals)-3):]
 	for _, interval := range shown {
-		fmt.Fprintf(&line, " [series %d %s %s %s-%s ms]", interval.Series, strconv.Quote(shortDashboardText(interval.Name, 96)), strconv.Quote(shortDashboardText(interval.Level, 16)), strconv.FormatFloat(interval.Start, 'f', -1, 64), strconv.FormatFloat(interval.End, 'f', -1, 64))
+		fmt.Fprintf(&line, " [series %d %s %s %s-%s ms]", interval.Series, strconv.Quote(shortDashboardText(interval.Name, 96)), strconv.Quote(shortDashboardText(interval.Level, 16)), dashboardNumberText(interval.Start), dashboardNumberText(interval.End))
 	}
 	// Intervals listed in structuredContent but not shown here are named apart from intervalsOmitted,
 	// which counts intervals that structuredContent does not list at all.
@@ -527,10 +531,34 @@ func appendDashboardWidgetDiagnostics(out *strings.Builder, widgets []dashboardT
 	return false
 }
 
+// dashboardNumberText formats a reading for text: six significant digits, so floating-point noise such as
+// 5.878749999999975 reads as 5.87875. Integers below 1e15 keep every digit (1234567 stays whole), because a count or an
+// identifier read as an exponent loses its exactness. Non-integers below 1e15 keep six significant digits in fixed
+// notation (1234567.5 reads as 1234568, 0.0123456789 as 0.0123457), never an exponent. Structured content keeps the
+// exact number.
+func dashboardNumberText(value float64) string {
+	if value == 0 {
+		return "0"
+	}
+	magnitude := math.Abs(value)
+	if value == math.Trunc(value) && magnitude < 1e15 {
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	}
+	if magnitude >= 1e15 || magnitude < 1e-4 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return dashboardTrimExponent(strconv.FormatFloat(value, 'g', 6, 64))
+	}
+	places := max(0, 5-int(math.Floor(math.Log10(magnitude))))
+	text := strconv.FormatFloat(value, 'f', places, 64)
+	if strings.Contains(text, ".") {
+		text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	}
+	return text
+}
+
 // appendDashboardBandText writes a matched band's boundary, then its status, colour and label, printing only the
 // fields the band names.
-func appendDashboardBandText(line *strings.Builder, threshold *dashboardTextThreshold) {
-	fmt.Fprintf(line, "; boundary=%s", strconv.FormatFloat(*threshold.Boundary, 'g', -1, 64))
+func appendDashboardBandText(line *strings.Builder, threshold *dashboardTextThreshold, unit string, decimals *int) {
+	fmt.Fprintf(line, "; boundary=%s", dashboardReadingWithUnit(*threshold.Boundary, unit, decimals))
 	if threshold.Status != "" {
 		fmt.Fprintf(line, "; status=%s", strconv.Quote(shortDashboardText(threshold.Status, 16)))
 	}
@@ -547,7 +575,7 @@ func appendDashboardBandText(line *strings.Builder, threshold *dashboardTextThre
 func dashboardFreshnessText(widget *dashboardTextWidget) (string, bool) {
 	id := strconv.Quote(shortDashboardText(widget.ID, 80))
 	if sample := widget.Sample; sample != nil && sample.Basis != "" && sample.StaleAfterSeconds != nil {
-		limit := strconv.FormatFloat(*sample.StaleAfterSeconds, 'f', -1, 64) + "s"
+		limit := dashboardNumberText(*sample.StaleAfterSeconds) + "s"
 		if sample.Basis == "cadence" {
 			limit += ", twice the longest cadence"
 		}
@@ -593,7 +621,7 @@ func appendDashboardThresholdsText(out *strings.Builder, widgets []dashboardText
 		var line strings.Builder
 		fmt.Fprintf(&line, "widget %s: configured visual band=%s", strconv.Quote(shortDashboardText(widget.ID, 80)), strconv.Quote(shortDashboardText(widget.Threshold.State, 24)))
 		if widget.Threshold.State == "matched" && widget.Threshold.Boundary != nil {
-			appendDashboardBandText(&line, widget.Threshold)
+			appendDashboardBandText(&line, widget.Threshold, widget.Unit, widget.Decimals)
 		}
 		appendDashboardBandSeriesText(&line, widget.BandSeries)
 		line.WriteByte('\n')
@@ -639,14 +667,14 @@ func appendDashboardVariablesText(out *strings.Builder, variables map[string]str
 	out.WriteByte('\n')
 }
 
-func dashboardSignalIdentity(signalID string, widgets []dashboardTextWidget) (title, unit, view string, matched int) {
+func dashboardSignalIdentity(signalID string, widgets []dashboardTextWidget) (title, unit, view string, decimals *int, matched int) {
 	title = signalID
 	for index := range widgets {
 		widget := &widgets[index]
 		if widget.SignalID == signalID {
 			matched++
 			if matched == 1 {
-				title, unit, view = widget.Title, widget.Unit, widget.Type
+				title, unit, view, decimals = widget.Title, widget.Unit, widget.Type, widget.Decimals
 				if widget.Type == "plugin" && widget.PluginID != "" {
 					view = widget.PluginID
 				}
@@ -656,7 +684,7 @@ func dashboardSignalIdentity(signalID string, widgets []dashboardTextWidget) (ti
 	if title == signalID {
 		title = dashboardAnnotationTitle(signalID, title, widgets)
 	}
-	return title, unit, view, matched
+	return title, unit, view, decimals, matched
 }
 
 func dashboardAnnotationTitle(signalID, fallback string, widgets []dashboardTextWidget) string {
@@ -669,7 +697,7 @@ func dashboardAnnotationTitle(signalID, fallback string, widgets []dashboardText
 }
 
 func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWidget) string {
-	title, unit, view, matched := dashboardSignalIdentity(signal.ID, widgets)
+	title, unit, view, decimals, matched := dashboardSignalIdentity(signal.ID, widgets)
 	var line strings.Builder
 	fmt.Fprintf(&line, "%s %s: %s", signal.ID, strconv.Quote(shortDashboardText(title, 160)), signal.State)
 	if view != "" {
@@ -679,8 +707,8 @@ func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWid
 		}
 	}
 	appendDashboardSignalMetadata(&line, signal)
-	appendDashboardPrimaryText(&line, signal, unit)
-	appendDashboardSignalSeries(&line, signal, unit)
+	appendDashboardPrimaryText(&line, signal, unit, decimals)
+	appendDashboardSignalSeries(&line, signal, unit, decimals)
 	if signal.Traces != nil {
 		fmt.Fprintf(&line, "; returned traces=%d (bounded sample)", signal.Traces.Returned)
 		if signal.Traces.ExamplesTruncated || signal.Traces.MetadataTruncated {
@@ -691,7 +719,7 @@ func dashboardSignalText(signal *dashboardTextSignal, widgets []dashboardTextWid
 	// A row cap is a bounded page, not a partial source, so it names only the
 	// row limit. Partial and warned responses keep the partial wording.
 	sourcePartial := signal.ProviderTruncated && signal.ProviderTruncation != "row_limit"
-	appendDashboardRecordText(&line, signal.Records, sourcePartial, signal.ProviderTruncation)
+	appendDashboardRecordText(&line, signal.Records, sourcePartial, signal.ProviderTruncation, decimals)
 	appendDashboardTruncationText(&line, signal, sourcePartial)
 	return line.String()
 }
@@ -729,7 +757,7 @@ func dashboardTracesTruncated(traces *dashboardTextTraces) bool {
 	return traces != nil && (traces.ExamplesTruncated || traces.MetadataTruncated)
 }
 
-func appendDashboardPrimaryText(line *strings.Builder, signal *dashboardTextSignal, unit string) {
+func appendDashboardPrimaryText(line *strings.Builder, signal *dashboardTextSignal, unit string, decimals *int) {
 	if signal.PrimarySeries == nil {
 		return
 	}
@@ -738,9 +766,11 @@ func appendDashboardPrimaryText(line *strings.Builder, signal *dashboardTextSign
 		if series.Index != *signal.PrimarySeries || series.Last == nil {
 			continue
 		}
-		fmt.Fprintf(line, "; latest valid=%s %s at %s ms", strconv.FormatFloat(series.Last.Value, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)), strconv.FormatFloat(series.Last.Timestamp, 'f', -1, 64))
+		number, displayUnit := dashboardReading(series.Last.Value, unit, decimals)
+		fmt.Fprintf(line, "; latest valid=%s %s at %s ms", number, strconv.Quote(shortDashboardText(displayUnit, 48)), strconv.FormatFloat(series.Last.Timestamp, 'f', -1, 64))
 		if series.Mean != nil {
-			fmt.Fprintf(line, "; sample mean=%s %s", strconv.FormatFloat(*series.Mean, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)))
+			mean, meanUnit := dashboardReading(*series.Mean, unit, decimals)
+			fmt.Fprintf(line, "; sample mean=%s %s", mean, strconv.Quote(shortDashboardText(meanUnit, 48)))
 		}
 		if series.TailMissing {
 			line.WriteString("; latest observation missing")
@@ -764,7 +794,7 @@ func appendDashboardSignalMetadata(line *strings.Builder, signal *dashboardTextS
 	}
 }
 
-func appendDashboardSignalSeries(line *strings.Builder, signal *dashboardTextSignal, unit string) {
+func appendDashboardSignalSeries(line *strings.Builder, signal *dashboardTextSignal, unit string, decimals *int) {
 	if len(signal.Series) != 0 {
 		fmt.Fprintf(line, "; series=%d", len(signal.Series))
 		duplicates := 0
@@ -780,7 +810,7 @@ func appendDashboardSignalSeries(line *strings.Builder, signal *dashboardTextSig
 	// other series. Keep text-only clients useful while bounding this synopsis;
 	// complete identities and samples remain in structuredContent.
 	if len(signal.Series) > 1 {
-		appendDashboardSeriesText(line, signal.Series, unit)
+		appendDashboardSeriesText(line, signal.Series, unit, decimals)
 	}
 	if signal.SeriesTruncated {
 		line.WriteString("; series preview truncated")
@@ -804,10 +834,10 @@ func appendDashboardTraceText(line *strings.Builder, traces *dashboardTextTraces
 		}
 		fmt.Fprintf(&item, " status=%s", strconv.Quote(shortDashboardText(example.Status, 32)))
 		if example.DurationMs != nil {
-			fmt.Fprintf(&item, " duration=%s ms", strconv.FormatFloat(*example.DurationMs, 'g', -1, 64))
+			fmt.Fprintf(&item, " duration=%s ms", dashboardNumberText(*example.DurationMs))
 		}
 		if example.StartTime != nil {
-			fmt.Fprintf(&item, " start=%s ms", strconv.FormatFloat(*example.StartTime, 'f', -1, 64))
+			fmt.Fprintf(&item, " start=%s ms", dashboardNumberText(*example.StartTime))
 		}
 		if example.InvalidFields {
 			item.WriteString("; invalid fields")
@@ -847,11 +877,11 @@ func appendDashboardTraceCounts(line *strings.Builder, counts map[string]int) {
 
 const dashboardSeriesTextBytes = 1000
 
-func appendDashboardSeriesText(line *strings.Builder, entries []dashboardTextSeries, unit string) {
+func appendDashboardSeriesText(line *strings.Builder, entries []dashboardTextSeries, unit string, decimals *int) {
 	var synopsis strings.Builder
 	shown := 0
 	for index := range entries {
-		item := dashboardSeriesItemText(&entries[index], unit)
+		item := dashboardSeriesItemText(&entries[index], unit, decimals)
 		if synopsis.Len()+len(item) > dashboardSeriesTextBytes {
 			break
 		}
@@ -865,7 +895,7 @@ func appendDashboardSeriesText(line *strings.Builder, entries []dashboardTextSer
 	}
 }
 
-func dashboardSeriesItemText(entry *dashboardTextSeries, unit string) string {
+func dashboardSeriesItemText(entry *dashboardTextSeries, unit string, decimals *int) string {
 	var item strings.Builder
 	fmt.Fprintf(&item, " [#%d", entry.Index)
 	if entry.Name != "" && entry.Name != canonicalDashboardSeriesName(entry.Labels) {
@@ -885,10 +915,12 @@ func dashboardSeriesItemText(entry *dashboardTextSeries, unit string) string {
 	if entry.Last == nil {
 		item.WriteString("; no valid observation")
 	} else {
-		fmt.Fprintf(&item, "; last valid=%s %s at %s ms", strconv.FormatFloat(entry.Last.Value, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)), strconv.FormatFloat(entry.Last.Timestamp, 'f', -1, 64))
+		number, displayUnit := dashboardReading(entry.Last.Value, unit, decimals)
+		fmt.Fprintf(&item, "; last valid=%s %s at %s ms", number, strconv.Quote(shortDashboardText(displayUnit, 48)), strconv.FormatFloat(entry.Last.Timestamp, 'f', -1, 64))
 	}
 	if entry.Mean != nil {
-		fmt.Fprintf(&item, "; sample mean=%s %s", strconv.FormatFloat(*entry.Mean, 'g', -1, 64), strconv.Quote(shortDashboardText(unit, 48)))
+		mean, meanUnit := dashboardReading(*entry.Mean, unit, decimals)
+		fmt.Fprintf(&item, "; sample mean=%s %s", mean, strconv.Quote(shortDashboardText(meanUnit, 48)))
 	}
 	if entry.TailMissing {
 		item.WriteString("; latest observation missing")
@@ -928,7 +960,7 @@ func canonicalDashboardSeriesName(labels map[string]string) string {
 // no reason. The reason is unknown, so the text does not name a partial source.
 const dashboardUnreportedReasonText = "; source truncated (reason not reported)"
 
-func appendDashboardRecordText(line *strings.Builder, records *dashboardTextRecords, providerTruncated bool, providerReason string) {
+func appendDashboardRecordText(line *strings.Builder, records *dashboardTextRecords, providerTruncated bool, providerReason string, decimals *int) {
 	if records == nil {
 		return
 	}
@@ -946,10 +978,10 @@ func appendDashboardRecordText(line *strings.Builder, records *dashboardTextReco
 			line.WriteString(dashboardUnreportedReasonText)
 		}
 	}
-	appendDashboardRecordPreview(line, records)
+	appendDashboardRecordPreview(line, records, decimals)
 }
 
-func appendDashboardRecordPreview(line *strings.Builder, records *dashboardTextRecords) {
+func appendDashboardRecordPreview(line *strings.Builder, records *dashboardTextRecords, decimals *int) {
 	if len(records.Rows) == 0 {
 		return
 	}
@@ -963,11 +995,19 @@ func appendDashboardRecordPreview(line *strings.Builder, records *dashboardTextR
 		if index > 0 {
 			line.WriteString(", ")
 		}
-		fmt.Fprintf(line, "%s=%s", strconv.Quote(shortDashboardText(records.Columns[index].Key, 48)), dashboardRecordScalarText(row[index]))
+		column := records.Columns[index]
+		unit := column.Unit
+		if unit == "percent" {
+			unit = "%"
+		}
+		fmt.Fprintf(line, "%s=%s", strconv.Quote(shortDashboardText(column.Key, 48)), dashboardRecordScalarText(row[index], unit, decimals))
 	}
 }
 
-func dashboardRecordScalarText(raw json.RawMessage) string {
+// dashboardRecordScalarText prints one record cell. A number with a unit takes the column's unit family and the widget's
+// decimal places, as a table cell does, so no cell prints an unscaled 15-digit value. A unit-less number keeps its
+// stored digits: it may be an identifier or a year, and float noise is never printed.
+func dashboardRecordScalarText(raw json.RawMessage, unit string, decimals *int) string {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var value any
@@ -982,7 +1022,14 @@ func dashboardRecordScalarText(raw json.RawMessage) string {
 	case bool:
 		return strconv.FormatBool(value)
 	case json.Number:
-		return shortDashboardText(value.String(), 80)
+		text := value.String()
+		if unit == "" && !strings.ContainsAny(text, ".eE") {
+			return shortDashboardText(text, 80)
+		}
+		if reading, err := strconv.ParseFloat(text, 64); err == nil {
+			return shortDashboardText(dashboardReadingWithUnit(reading, unit, decimals), 80)
+		}
+		return shortDashboardText(text, 80)
 	default:
 		return "[unavailable]"
 	}
