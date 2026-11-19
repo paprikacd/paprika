@@ -79,6 +79,10 @@ per-widget attention to fit the 128 KiB cap, was rejected. The reviewed dashboar
 this decision are in Omitted detail below, and the never-dropped facts are listed there
 too.
 
+### Stat comparisons
+
+A stat that declares `options.compare` gets a `comparison` object: the displayed sample against the latest valid sample of the same series in its earlier window (`previous`, `1d` or `7d`). The earlier window is queried after the main queries, within the remaining budget, once per distinct window. A stat with no displayed sample is never queried for its earlier window (`unavailable`, `no_current_sample`). Dry runs (`validate_dashboard` and other `execute: false` paths) plan no earlier query. `queryCount.comparison` counts the earlier-window queries planned and executed. The text synopsis names each change at the widget's decimals. A comparison is never dropped under the 130 KiB cap, and it never changes the result state or attention, and `not_run` never means no change.
+
 ### Attention summary
 
 `attention` counts widgets, each under its single most severe reason, in this

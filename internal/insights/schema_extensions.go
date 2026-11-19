@@ -125,7 +125,26 @@ func validateWidgetExtensions(widget map[string]json.RawMessage) error {
 			}
 		}
 	}
+	if err := validateWidgetCompareType(widget); err != nil {
+		return err
+	}
 	return validateWidgetPluginFields(widget)
+}
+
+// validateWidgetCompareType reports a comparison on a widget that is not a stat, at the options member that carries it.
+func validateWidgetCompareType(widget map[string]json.RawMessage) error {
+	var options map[string]json.RawMessage
+	if raw, ok := widget["options"]; !ok || json.Unmarshal(raw, &options) != nil {
+		return nil
+	}
+	if _, ok := options["compare"]; !ok {
+		return nil
+	}
+	var kind string
+	if json.Unmarshal(widget["type"], &kind) != nil || kind != "stat" {
+		return in("options", in("compare", errors.New("comparisons are only available on stat widgets")))
+	}
+	return nil
 }
 
 func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
@@ -201,7 +220,7 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "seriesColorMode", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
+	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "compare", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "seriesColorMode", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
 	if err != nil {
 		return err
 	}
@@ -210,12 +229,30 @@ func validateWidgetOptions(raw json.RawMessage) error {
 			return in("tooltipView", err)
 		}
 	}
+	if value, ok := options["compare"]; ok {
+		if err := validateStatCompare(value); err != nil {
+			return in("compare", err)
+		}
+	}
 	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetTooltipPlacement, validateWidgetFlags, validateWidgetAppearance, validateWidgetRenderingOptions, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
 		if err := check(options); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateStatCompare checks a stat's earlier-window comparison. Its window names one of three earlier windows and
+// good, when set, names the direction that reads as better. Only a stat widget may carry it; validateWidgetExtensions checks that.
+func validateStatCompare(raw json.RawMessage) error {
+	fields, err := requireObjectShape(raw, []string{"window"}, []string{"good"})
+	if err != nil {
+		return err
+	}
+	if err := validateWidgetEnum(fields, "window", []string{"previous", "1d", "7d"}, "compare window must be previous, 1d or 7d"); err != nil {
+		return err
+	}
+	return validateWidgetEnum(fields, "good", []string{"up", "down"}, "compare good must be up or down")
 }
 
 func validateTooltipView(raw json.RawMessage) error {

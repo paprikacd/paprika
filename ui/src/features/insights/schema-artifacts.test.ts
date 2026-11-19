@@ -29,6 +29,9 @@ function assertAndRemoveStatHeightConstraint(widget: Record<string, unknown>) {
   expect(widget.allOf).toEqual([{
     if: { properties: { type: { const: "stat" } }, required: ["type"] },
     else: { properties: { layout: { properties: { h: { minimum: 2 } } } } },
+  }, {
+    if: { required: ["options"], properties: { options: { required: ["compare"] } } },
+    then: { properties: { type: { const: "stat" } } },
   }])
   delete widget.allOf
   const options = (widget.properties as Record<string, Record<string, unknown>>).options

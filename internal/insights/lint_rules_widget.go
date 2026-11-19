@@ -17,6 +17,13 @@ var widgetLintRules = []lintRule{
 		check:    checkStatDensity,
 	},
 	{
+		ID:       "stat.compare-arrow",
+		Severity: warningSeverity,
+		Summary:  guidanceStatCompare,
+		Fix:      "Remove the arrow statIcon from a stat that shows a change against an earlier window, or drop compare: the change chip already carries its own direction.",
+		check:    checkStatCompareArrow,
+	},
+	{
 		ID:       "stat.compact-bar",
 		Severity: warningSeverity,
 		Summary:  guidanceStatBar,
@@ -38,6 +45,27 @@ func checkStatDensity(doc *lintDocument) []lintHit {
 				pointer:  widgetBase(widget.index) + "/options/showStatBar",
 				widgetID: widget.id,
 				message:  widgetLabel(widget) + " is at most two grid rows tall and stacks a bar on a sparkline",
+			})
+		}
+	}
+	return hits
+}
+
+// guidanceStatCompare is the guidance line for a stat that shows a change against an earlier window.
+const guidanceStatCompare = "A stat may set options.compare to show its change from an earlier window: the previous range, or 1d or 7d earlier. The change compares the displayed sample with the latest valid earlier sample, so it is a point-to-point change, not an average, and it costs one extra query per refresh. The direction word is neutral unless good names the better direction. Use it only when the earlier window answers the reader's question. Do not add an arrow statIcon to such a stat: the change chip already names the direction."
+
+// checkStatCompareArrow fires for a stat that compares with an earlier window and also shows an arrow icon. The change
+// chip already names its direction with a glyph, so the arrow says the same thing twice and can read as a second verdict.
+// The pointer names the icon setting.
+func checkStatCompareArrow(doc *lintDocument) []lintHit {
+	var hits []lintHit
+	for i := range doc.widgets {
+		widget := &doc.widgets[i]
+		if widget.widgetType == "stat" && widget.compares && (widget.statIcon == "arrow-up" || widget.statIcon == "arrow-down") {
+			hits = append(hits, lintHit{
+				pointer:  widgetBase(widget.index) + "/options/statIcon",
+				widgetID: widget.id,
+				message:  widgetLabel(widget) + " shows an arrow icon and a change against an earlier window",
 			})
 		}
 	}

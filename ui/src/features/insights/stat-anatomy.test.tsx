@@ -148,8 +148,9 @@ describe("stat trend and freshness", () => {
       </DashboardWindowProvider>,
     );
     const figure = container.querySelector("[data-stat-figure]");
-    expect(figure?.children[0]).toHaveAttribute("data-metric-value");
-    expect(figure?.children[1]).toHaveAttribute("data-stat-chip", "critical");
+    const reading = figure?.children[0];
+    expect(reading?.children[0]).toHaveAttribute("data-metric-value");
+    expect(reading?.children[1]).toHaveAttribute("data-stat-chip", "critical");
     const meta = container.querySelector("[data-stat-reading] > [class*='statMeta']");
     expect(meta?.textContent).toContain("Latest valid sample");
     expect(figure?.nextElementSibling).toBe(meta);

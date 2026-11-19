@@ -73,8 +73,11 @@ type lintWidget struct {
 	x, y, w, h  int
 	showBar     bool
 	showSpark   bool
-	xAxisLabel  string
-	yAxisLabel  string
+	// statIcon is the stat's icon, and compares is true when the stat shows a change against an earlier window.
+	statIcon   string
+	compares   bool
+	xAxisLabel string
+	yAxisLabel string
 	// variables lists each variable reference with the pointer of its variable member.
 	variables []lintVariableRef
 	// colorFields lists each authored hex that carries no status or role.
@@ -112,6 +115,11 @@ type wireWidget struct {
 	Config            json.RawMessage   `json:"config"`
 }
 
+// wireCompare is a stat's earlier-window comparison. Only its presence matters to lint.
+type wireCompare struct {
+	Window string `json:"window"`
+}
+
 type wireLayout struct {
 	X int `json:"x"`
 	Y int `json:"y"`
@@ -135,6 +143,8 @@ type wireBinding struct {
 type wireWidgetOption struct {
 	ShowStatBar    bool            `json:"showStatBar"`
 	ShowSparkline  bool            `json:"showSparkline"`
+	StatIcon       string          `json:"statIcon"`
+	Compare        *wireCompare    `json:"compare"`
 	XAxisLabel     string          `json:"xAxisLabel"`
 	YAxisLabel     string          `json:"yAxisLabel"`
 	TooltipView    *wireTooltip    `json:"tooltipView"`
@@ -201,6 +211,8 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 		if widget.Options != nil {
 			lw.showBar = widget.Options.ShowStatBar
 			lw.showSpark = widget.Options.ShowSparkline
+			lw.statIcon = widget.Options.StatIcon
+			lw.compares = widget.Options.Compare != nil
 			lw.xAxisLabel = widget.Options.XAxisLabel
 			lw.yAxisLabel = widget.Options.YAxisLabel
 		}

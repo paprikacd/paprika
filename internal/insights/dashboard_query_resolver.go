@@ -44,6 +44,8 @@ type dashboardReadWidget struct {
 		Decimals          *int                     `json:"decimals"`
 		StaleAfterSeconds *float64                 `json:"staleAfterSeconds"`
 		Thresholds        []dashboardReadThreshold `json:"thresholds"`
+		// Compare is a stat's earlier-window comparison. Nil leaves the stat without one.
+		Compare *dashboardReadCompare `json:"compare"`
 		// The declared scale and styling the dry-run data rules compare against.
 		// Query output never reads them.
 		Min           *float64        `json:"min"`
@@ -51,6 +53,11 @@ type dashboardReadWidget struct {
 		ShowSparkline bool            `json:"showSparkline"`
 		SeriesColors  json.RawMessage `json:"seriesColors"`
 	} `json:"options"`
+}
+
+type dashboardReadCompare struct {
+	Window string `json:"window"`
+	Good   string `json:"good,omitempty"`
 }
 
 type dashboardReadThreshold struct {

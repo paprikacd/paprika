@@ -436,6 +436,8 @@ interface QueryState {
   error: string | null;
   /** The machine code of a failed query, when Insights sent one; see InsightsQueryError in client.ts. */
   errorCode: string | null;
+  /** The request whose outcome is in data or error, once that outcome has settled. A request still loading does not set it. */
+  settled?: { key: string; fetcher?: QueryFetcher };
 }
 
 /**
@@ -482,7 +484,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     const completed = kept?.request;
     const current = completed?.key === key && completed.revision === fetcherRevision;
     const due = refreshInterval > 0 && (!completed || Date.now() >= completed.settledAt + Math.max(5_000, refreshInterval));
-    return { key: completed?.key, fetcher: completed?.revision, series, unidentified, data: kept?.result, error: kept?.error ?? null, errorCode: kept?.errorCode ?? null, loading: enabled && (!current || due) };
+    return { key: completed?.key, fetcher: completed?.revision, series, unidentified, data: kept?.result, error: kept?.error ?? null, errorCode: kept?.errorCode ?? null, loading: enabled && (!current || due), settled: completed ? { key: completed.key, fetcher: completed.revision } : undefined };
   });
   const runRef = useRef<(manual?: boolean) => void>(() => {});
   const previousRequest = useRef<
@@ -511,7 +513,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
       // An outcome is applied only to the request that asked for it, with the series it belongs to.
       const owner = { key, series, unidentified, fetcher: fetcherRevision };
       if (!queryRef && (!providerId || !query.trim())) {
-        setState({ ...owner, data: undefined, loading: false, error: null, errorCode: null });
+        setState({ ...owner, data: undefined, loading: false, error: null, errorCode: null, settled: { key, fetcher: fetcherRevision } });
         return;
       }
       if (!enabled) {
@@ -544,14 +546,14 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
           signal,
         );
         if (!disposed && !signal.aborted && generation === requestGeneration) {
-          setState({ ...owner, data, loading: false, error: null, errorCode: null });
+          setState({ ...owner, data, loading: false, error: null, errorCode: null, settled: { key, fetcher: fetcherRevision } });
           retentionRef.current?.write({ series, unidentified, result: data, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
         }
       } catch (error) {
         if (!disposed && !signal.aborted && generation === requestGeneration) {
           const message = error instanceof Error ? error.message : "The query could not be completed.";
           const errorCode = queryErrorCodeOf(error);
-          setState({ ...owner, data: undefined, loading: false, error: message, errorCode });
+          setState({ ...owner, data: undefined, loading: false, error: message, errorCode, settled: { key, fetcher: fetcherRevision } });
           retentionRef.current?.write({ series, unidentified, error: message, errorCode, request: { key, revision: fetcherRevision, settledAt: Date.now() } });
         }
       } finally {
@@ -583,7 +585,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
             retained.request?.key === key && retained.request.revision === fetcherRevision) {
           const remaining = retained.request.settledAt + Math.max(5_000, refreshInterval) - Date.now();
           if (refreshInterval === 0 || remaining > 0 || document.hidden) {
-            setState({ key, series, unidentified, fetcher: fetcherRevision, data: retained.result, error: retained.error ?? null, errorCode: retained.errorCode ?? null, loading: false });
+            setState({ key, series, unidentified, fetcher: fetcherRevision, data: retained.result, error: retained.error ?? null, errorCode: retained.errorCode ?? null, loading: false, settled: { key, fetcher: fetcherRevision } });
             // Resume the original poll deadline; opening/closing the editor must
             // neither refresh early nor postpone the next real refresh.
             if (refreshInterval > 0 && !document.hidden) timer = setTimeout(run, remaining);
@@ -644,6 +646,10 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     loading: current ? state.loading : enabled,
     error: sameSeries ? state.error : null,
     errorCode: sameSeries ? state.errorCode : null,
+    /** Whether `data` and `error` answer the request just asked for, not an earlier window that is still on screen. */
+    current: sameSeries && current,
+    /** Whether `data` and `error` are the settled outcome of the request just asked for. A request that is still loading is not settled, even when an earlier outcome stays on screen. */
+    settled: sameSeries && state.settled?.key === key && state.settled.fetcher === fetcherRevision,
     refresh,
   };
 }

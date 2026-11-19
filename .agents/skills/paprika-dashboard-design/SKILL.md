@@ -79,7 +79,7 @@ Record the following before writing mark geometry:
 | Units | Base unit, displayed unit, actual conversion, denominator, precision, and threshold units. A suffix alone does not convert a value. Readings choose the display unit per value (`1 s` for 999.5 ms); with `decimals` set, the unit is still chosen first and the places apply to the scaled number (`269.49 TiB`); a gauge or a bar's bounds take one unit from the largest value, and each record cell scales on its own. Decimals govern every number a widget shows; Auto never prints floating-point noise, and exact values appear only in rows labelled exact. A whole number with no unit is never padded (`84`); a count is grouped, while an identifier column (its last word is `id`, `year` or `day`, with no unit) is shown as stored. A measure with a unit always takes the decimals (`78.000%`). Axis ticks take their step's precision. Agent text follows the same rule. |
 | Time | Authoritative bounds/timezone, sample timestamps, gaps, query step, and any visible panel override. |
 | Encoding | Position/length/area/color meaning; domain; baseline; linear/log scale; stacking and interpolation policy. |
-| Summary | What the large value and delta mean; original semantic result; comparison window; zero-denominator and stale-tail behavior. |
+| Summary | What the large value and delta mean; original semantic result; comparison window; zero-denominator and stale-tail behavior. A stat change (`options.compare`) is neutral ink that names its window, and it is hidden rather than clipped when it does not fit. |
 | Identity | Stable entity key, consistent categorical mapping, and distinction between category, severity, selection, and comparison. |
 
 Apply these invariants:

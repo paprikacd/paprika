@@ -29,7 +29,9 @@ import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
 import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
 import { fullDateTimeOptions, latestPoint } from "./chart-data";
-import type { ObservationWindow } from "./time-window";
+import { priorWindowQuery, statComparison, type ObservationWindow, type StatComparison } from "./time-window";
+import { StatComparisonContext, type StatComparisonState } from "./stat-comparison";
+import { truncationOf } from "./truncation";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
 import type {
@@ -98,13 +100,17 @@ export interface WidgetResultSnapshot {
  * What a canvas keeps for one widget between remounts: the last outcome it showed and whether its draw-in has played.
  * It lives with the canvas, so it ends with the page session and never reaches another user's session.
  */
-interface WidgetMemory { retained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
+interface WidgetMemory { retained?: RetainedQuery; priorRetained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
 /** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
-function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
+function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; priorRetention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
   return {
     retention: {
       read: () => memory.get(key)?.retained,
       write: (retained) => { memory.set(key, { ...memory.get(key), retained, entered: memory.get(key)?.entered ?? false }); },
+    },
+    priorRetention: {
+      read: () => memory.get(key)?.priorRetained,
+      write: (priorRetained) => { memory.set(key, { ...memory.get(key), priorRetained, entered: memory.get(key)?.entered ?? false }); },
     },
     annotationRetention: {
       read: () => memory.get(key)?.annotation,
@@ -128,6 +134,81 @@ function displayedSampleAt(result: QueryResult | undefined): number | undefined 
   }
   return undefined;
 }
+/** The change a stat pairs from its displayed result and its earlier window, with the failure that stopped the earlier window. */
+interface PairedChange { outcome?: StatComparison; error?: string }
+
+/**
+ * A stat that compares with an earlier window fetches that window as soon as the stat has a displayed sample, so a refresh
+ * or a new range runs both requests at once. The window is the same bounded query the time-series lens asks for, so the chip
+ * and the lens's previous-period row agree on one range. Other widgets render no scope and run no extra query.
+ *
+ * The change is paired only from settled results for the same range. While the displayed result reloads, the last pair
+ * stays, since it matches the reading still on screen. Once the displayed result has settled, a change waits for its own
+ * earlier window: that gap is the only time the chip shows its loading slot.
+ */
+function StatComparisonScope({ widget, compare, fetcher, start, end, enabled, debounceMs, retention, primary, primarySettled, children }: {
+  widget: Widget;
+  compare: NonNullable<NonNullable<Widget["options"]>["compare"]>;
+  fetcher: Fetcher;
+  start: number;
+  end: number;
+  /** Whether the tile may query at all. */
+  enabled: boolean;
+  debounceMs: number;
+  retention: QueryRetention;
+  /** The result on screen: the last one while a refresh or a new range loads, undefined when there is none or it failed. */
+  primary?: QueryResult;
+  /** Whether `primary` answers the request just asked for. */
+  primarySettled: boolean;
+  children: ReactNode;
+}) {
+  const rangeMs = useMemo(() => ({ start: start * 1000, end: end * 1000 }), [start, end]);
+  const earlier = priorWindowQuery(rangeMs, compare.window);
+  const earlierReady = !("unavailable" in earlier);
+  // Nothing to compare with until the displayed result has a sample, so an empty stat asks for no earlier window (Go agrees).
+  const hasSample = !!primary?.series?.some(entry => latestPoint(entry));
+  const earlierNeeded = earlierReady && hasSample;
+  const earlierQuery = useWidgetQuery(widget, {
+    fetcher,
+    start: earlierReady ? earlier.start : start,
+    end: earlierReady ? earlier.end : end,
+    step: earlierReady ? earlier.step : Math.max(1, Math.ceil((end - start) / 300)),
+    enabled: enabled && earlierNeeded && !!primary,
+    debounceMs,
+    retention,
+  });
+  const fresh = useMemo<PairedChange | undefined>(() => {
+    if (!primary || !primarySettled) return undefined;
+    if (!earlierNeeded) return { outcome: statComparison(primary.series ?? [], [], rangeMs, compare.window) };
+    // Only a settled earlier result for this range is paired. While a new range loads, the hook still holds the previous
+    // window's result, and pairing it with this range's bounds would show a change that belongs to another window.
+    if (!earlierQuery.settled) return undefined;
+    if (!earlierQuery.data) return { error: earlierQuery.error ?? undefined };
+    const kind = truncationOf(earlierQuery.data);
+    return { outcome: statComparison(primary.series ?? [], earlierQuery.data.series ?? [], rangeMs, compare.window, kind !== "none" && kind !== "limit") };
+  }, [compare.window, earlierNeeded, earlierQuery.data, earlierQuery.error, earlierQuery.settled, primary, primarySettled, rangeMs]);
+  // The last pair is kept while the displayed result reloads, and dropped with it when the stat has no result. It lives in state
+  // and is updated while rendering, the React pattern for deriving state from a prop, so the render never reads a ref.
+  // Each held pair remembers the reading it was computed from, so a reload shows it only beside that same reading.
+  const [held, setHeld] = useState<{ pair: PairedChange; primary: QueryResult } | undefined>(undefined);
+  if (!primary) {
+    if (held) setHeld(undefined);
+  } else if (fresh && (fresh !== held?.pair || primary !== held.primary)) setHeld({ pair: fresh, primary });
+  // A settled result shows only its own pair, so a pending change is a loading slot. A reloading result keeps the last pair,
+  // but only while the reading on screen is the one that pair was computed from; a newer reading waits for its own pair.
+  const shown = primary && !primarySettled ? (held?.primary === primary ? held.pair : undefined) : fresh;
+  const state = useMemo<StatComparisonState>(() => ({
+    window: compare.window,
+    good: compare.good,
+    span: rangeMs.end - rangeMs.start,
+    unit: widget.unit,
+    decimals: widget.options?.decimals,
+    outcome: shown?.outcome,
+    error: shown?.outcome ? undefined : shown?.error,
+  }), [compare.good, compare.window, rangeMs, shown, widget.options?.decimals, widget.unit]);
+  return <StatComparisonContext.Provider value={state}>{children}</StatComparisonContext.Provider>;
+}
+
 const Tile = memo(function Tile({
   widget,
   active,
@@ -211,7 +292,7 @@ const Tile = memo(function Tile({
   const awaitingSources = waitingOn !== null;
   // A shared tile stays busy while the shared catalog reloads, even though it still queries.
   const busyOnSources = waitingOn === "pending" || (sourceStatus === "pending" && provider?.source === "observability");
-  const { data, loading, error, errorCode, refresh } = useWidgetQuery(widget, {
+  const { data, loading, error, errorCode, refresh, settled } = useWidgetQuery(widget, {
     fetcher,
     start,
     end,
@@ -232,14 +313,14 @@ const Tile = memo(function Tile({
     ...(widget.queryRef ? { queryRef: widget.queryRef } : {}),
   }, signal), [fetcher, widget.providerId, widget.query, widget.queryRef, start, end]);
   const previous = useCallback((window: ObservationWindow, signal: AbortSignal) => {
-    const duration = window.end - window.start;
-    if (!Number.isFinite(duration) || duration < 1000 || duration > 31 * 86400_000 || window.start - duration <= 0)
+    const range = priorWindowQuery(window, "previous");
+    if ("unavailable" in range)
       return Promise.reject(new Error("Choose a window from one second up to 31 days with an available previous period."));
     return fetcher({ providerId: widget.providerId, query: widget.query, kind: "metrics",
-      start: (window.start - duration) / 1000, end: (window.start - 1) / 1000,
-      step: Math.max(1, Math.ceil(duration / 300_000)), ...(widget.queryRef ? { queryRef: widget.queryRef } : {}) }, signal);
+      start: range.start, end: range.end, step: range.step, ...(widget.queryRef ? { queryRef: widget.queryRef } : {}) }, signal);
   }, [fetcher, widget.providerId, widget.query, widget.queryRef]);
   const windowActions = useMemo(() => ({ apply: editing ? undefined : onTimeRange, previous, rangeEnd: end * 1000 }), [editing, onTimeRange, previous, end]);
+  const compare = widget.type === "stat" ? widget.options?.compare : undefined;
   const connectionKey = queryConnectionKey(widget, { start, end });
   useEffect(() => {
     if (selected && onQueryFields) onQueryFields({ widgetId: widget.id, key: connectionKey, fetcher, fields: data && !error ? queryFields(data) : undefined });
@@ -353,6 +434,25 @@ const Tile = memo(function Tile({
     event.stopPropagation();
     onNudge(widget.id, event.key, event.shiftKey);
   };
+  // The visualization is built once and placed inside the stat's comparison scope when it compares.
+  const visualization = (
+    <WidgetVisualization
+      widget={widget}
+      naturalHeight={naturalHeight}
+      result={savedQueryLoading ? undefined : data}
+      loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
+      deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
+      sourceState={!savedQueryLoading && waitingOn ? { status: waitingOn, label: waitingOn === "pending" ? "Waiting for data sources…" : sourceWaitMessage(waitingOn) } : undefined}
+      error={visibleError}
+      errorCode={error ? errorCode ?? undefined : undefined}
+      providerName={provider?.name}
+      onEditQuery={editing ? editQuery : undefined}
+      onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
+      onContextChange={
+        (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
+      }
+    />
+  );
   return (
     <article
       ref={element}
@@ -472,22 +572,22 @@ const Tile = memo(function Tile({
       {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
       <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
-          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetAttentionContext.Provider value={attention}><WidgetVisualization
-            widget={widget}
-            naturalHeight={naturalHeight}
-            result={savedQueryLoading ? undefined : data}
-            loading={savedQueryLoading || loading || (engaged && awaitingFirstResult)}
-            deferred={!savedQueryLoading && !engaged && awaitingFirstResult}
-            sourceState={!savedQueryLoading && waitingOn ? { status: waitingOn, label: waitingOn === "pending" ? "Waiting for data sources…" : sourceWaitMessage(waitingOn) } : undefined}
-            error={visibleError}
-            errorCode={error ? errorCode ?? undefined : undefined}
-            providerName={provider?.name}
-            onEditQuery={editing ? editQuery : undefined}
-            onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
-            onContextChange={
-              (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
-            }
-          /></WidgetAttentionContext.Provider></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
+          <AnnotationEventsProvider state={annotationState}><DashboardWindowProvider value={windowActions}><TraceFetcherProvider fetchTrace={fetchTrace}><WidgetDrilldownProvider open={onDrilldown}><ChartEntranceContext.Provider value={memoryOf.entrance}><WidgetAttentionContext.Provider value={attention}>{compare ? (
+            <StatComparisonScope
+              widget={widget}
+              compare={compare}
+              fetcher={fetcher}
+              start={start}
+              end={end}
+              enabled={active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider) && !error}
+              debounceMs={editing && selected ? 350 : 0}
+              retention={memoryOf.priorRetention}
+              primary={savedQueryLoading || error ? undefined : data}
+              primarySettled={!!settled}
+            >
+              {visualization}
+            </StatComparisonScope>
+          ) : visualization}</WidgetAttentionContext.Provider></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
         )}
       </div>
     </article>

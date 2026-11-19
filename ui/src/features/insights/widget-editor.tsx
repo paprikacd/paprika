@@ -666,6 +666,24 @@ function StyleEditor({
               options={[{ value: "background", label: "Behind value" }, { value: "side", label: "Beside value" }]} />
           </label>}
           <label className={styles.field}>
+            Compare with
+            <GammaSelect aria-label="Compare with" value={options.compare?.window ?? "off"}
+              onValueChange={(value) => update({ compare: value === "off" ? undefined : { window: value as "previous" | "1d" | "7d", ...(options.compare?.good ? { good: options.compare.good } : {}) } })}
+              options={[
+                { value: "off", label: "Off" }, { value: "previous", label: "Previous range" },
+                { value: "1d", label: "1 day earlier" }, { value: "7d", label: "7 days earlier" },
+              ]} />
+          </label>
+          {options.compare && <>
+            <label className={styles.field}>
+              Higher is
+              <GammaSelect aria-label="Higher is" value={options.compare.good ?? "neutral"}
+                onValueChange={(value) => update({ compare: { window: options.compare!.window, ...(value === "neutral" ? {} : { good: value as "up" | "down" }) } })}
+                options={[{ value: "neutral", label: "Neutral" }, { value: "up", label: "Better" }, { value: "down", label: "Worse" }]} />
+            </label>
+            <p className={styles.hint}>Shows the change from the earlier window. Each refresh runs one more query for this stat.</p>
+          </>}
+          <label className={styles.field}>
             Icon
             <GammaSelect aria-label="Stat icon" value={options.statIcon ?? "none"}
               onValueChange={(value) => update({ statIcon: value === "none" ? undefined : value as WidgetOptions["statIcon"] })}
@@ -1152,6 +1170,11 @@ export function WidgetEditor({
       delete next.pluginId;
       delete next.dataKind;
       delete next.config;
+    }
+    // A comparison is a stat option. Any other visualization drops it, so the widget still applies.
+    if (type !== "stat" && next.options?.compare) {
+      next.options = { ...next.options };
+      delete next.options.compare;
     }
     setPendingVisualization(undefined);
     history.update(current => ({ ...current, draft: next,
