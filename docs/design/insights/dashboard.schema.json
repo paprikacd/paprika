@@ -834,6 +834,30 @@
                 "minimum": 1,
                 "maximum": 2678400
               },
+              "compare": {
+                "type": "object",
+                "properties": {
+                  "window": {
+                    "type": "string",
+                    "enum": [
+                      "previous",
+                      "1d",
+                      "7d"
+                    ]
+                  },
+                  "good": {
+                    "type": "string",
+                    "enum": [
+                      "up",
+                      "down"
+                    ]
+                  }
+                },
+                "required": [
+                  "window"
+                ],
+                "additionalProperties": false
+              },
               "min": {
                 "type": "number"
               },
@@ -1236,6 +1260,27 @@
                       "minimum": 2
                     }
                   }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "options"
+              ],
+              "properties": {
+                "options": {
+                  "required": [
+                    "compare"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "type": {
+                  "const": "stat"
                 }
               }
             }

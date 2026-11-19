@@ -52,6 +52,9 @@ type DashboardQueryResult struct {
 	QueryCount    DashboardQueryCount      `json:"queryCount"`
 	State         string                   `json:"state"`
 	Attention     DashboardAttention       `json:"attention"`
+	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
+	comparisons       []dashboardComparisonPlan
+	comparisonQueries []Query
 	// Omitted names, in the order applied, the optional detail dropped so the encoded result fits
 	// DashboardQueryResponseBytes. Absent when nothing was dropped. See dashboardOmissionSteps.
 	Omitted []string `json:"omitted,omitempty"`
@@ -99,6 +102,8 @@ type DashboardQueryWidget struct {
 	Attention string `json:"attention,omitempty"`
 	// Breaches is set for time-series widgets with an author-declared warning or critical status.
 	Breaches *DashboardBreaches `json:"breaches,omitempty"`
+	// Comparison is a stat's change against its earlier window, when the stat declares one. See DashboardComparison.
+	Comparison *DashboardComparison `json:"comparison,omitempty"`
 	// seriesCap is how many leading series the visualization draws, for band widgets.
 	seriesCap int
 }
@@ -137,6 +142,8 @@ type DashboardQueryCount struct {
 	Planned      int `json:"planned"`
 	Executed     int `json:"executed"`
 	Deduplicated int `json:"deduplicated"`
+	// Comparison counts the earlier-window queries of stats that declare a comparison. Absent when none do.
+	Comparison *DashboardComparisonCount `json:"comparison,omitempty"`
 }
 
 type dashboardSavedSnapshot struct {
@@ -198,6 +205,9 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		}
 		return nil
 	})
+	if options.SkipComparisons {
+		dropDashboardComparisons(result)
+	}
 	s.executeDashboardQueries(r, queries, options, result, &cache)
 	budgetDashboardBreaches(result)
 	result.Attention = applyDashboardAttention(result)
@@ -207,6 +217,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 	seenSaved := make(map[string]bool)
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
+	seenComparisons := make(map[Query]int)
 	for i := range selected {
 		widget := &selected[i]
 		output := dashboardQueryWidgetOutput(widget)
@@ -235,6 +246,9 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 			output.SignalID = fmt.Sprintf("q%d", len(queries)+1)
 			seenQueries[query] = output.SignalID
 			queries = append(queries, query)
+		}
+		if resolutionError == nil {
+			planDashboardComparison(result, len(result.Widgets), widget, &output, &query, seenComparisons)
 		}
 		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, validators)
 		result.Widgets = append(result.Widgets, output)
@@ -518,6 +532,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		query := &queries[index]
 		signal, executed, columns, raw := s.executeDashboardQuery(r, query, options, cache)
 		signal.ID = fmt.Sprintf("q%d", index+1)
+		captureDashboardComparisons(result, signal.ID, raw)
 		signal.Kind = query.Kind
 		// Do not disclose a provider selected by a saved query unless this
 		// caller was authorized to resolve it. A denied provider still has a
@@ -540,6 +555,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		}
 		result.Signals = append(result.Signals, signal)
 	}
+	s.executeDashboardComparisons(r, options, result, cache)
 }
 
 func dashboardPrimaryObservation(signal *DashboardSignal, requireValue bool) *Point {

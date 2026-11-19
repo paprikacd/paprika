@@ -18,6 +18,7 @@ import { MetricDetails } from "./metric-tooltip-content";
 import { isRestoringTooltipFocus } from "./tooltip-focus";
 export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
+import { StatDelta, useStatComparison, useStatDeltaFit } from "./stat-comparison";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import { exactMetric, formatMetric, formatMetricDetails, fullDateTimeFormat, latestPoint, seriesName, timeFormat } from "./chart-data";
 import { formatBounds, formatReading, formatSharedScale, joinReading } from "./units";
@@ -115,7 +116,13 @@ function Stat({
   const embedded = useEmbeddedWidget();
   const timeZone = useDashboardTimeZone();
   const sampleTime = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }), [timeZone]);
+  // The earlier sample can be days away, so its title carries the date as well as the time.
+  const earlierSampleTime = useMemo(() => new Intl.DateTimeFormat("en", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone, timeZoneName: "short" }), [timeZone]);
   const { rangeEnd } = useDashboardWindow();
+  // The change is the tile's, and an embedded stat (a tooltip's view) never shows one.
+  const comparison = useStatComparison();
+  const delta = embedded ? undefined : comparison;
+  const statRef = useRef<HTMLDivElement>(null);
   // The tile evaluates its widget once and passes the verdict down. An embedded renderer shows another widget, so it evaluates its own.
   // Outside a tile, the renderer evaluates once itself; a tile's verdict is never recomputed here.
   const tileAttention = useWidgetAttentionContext();
@@ -132,6 +139,7 @@ function Stat({
     }))
     .filter((entry) => entry.point);
   const first = entries[0];
+  useStatDeltaFit(statRef);
   if (!first?.point) return <EmptyState partial={attention.partial} />;
   // A Single value intentionally displays the last valid observation. A
   // newer missing observation must still be disclosed: otherwise an older
@@ -196,7 +204,7 @@ function Stat({
   return (
     // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
     // hidden (kept for assistive technology) exactly as for a shared sample.
-    <div className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined} data-caption-merged={latestMissing || undefined}>
+    <div ref={statRef} className={`${styles.stat} ${embedded ? styles.embeddedStat : ""}`} data-stat-sparkline-enabled={widget.options?.showSparkline || undefined} data-stat-bar-enabled={showBar || undefined} data-caption-merged={latestMissing || undefined}>
       {latestMissing && <div className={styles.missingObservation} role="status" data-latest-missing="" title="The latest returned observation is missing; the displayed value is the last valid sample.">Latest missing · last valid {sampleTime.format(new Date(first.point.timestamp))}</div>}
       <div
         className={`${sparklineStyles.summary} ${widget.options?.showSparkline ? sparklineStyles.withSparkline : ""}`}
@@ -206,17 +214,22 @@ function Stat({
         {/* Anatomy, in order: reading and unit, status chip beside it, the latest valid sample's time, then the trend. */}
         <div className={sparklineStyles.value} data-stat-reading="">
           <div className={styles.statFigure} data-stat-figure="">
-            {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
-            <span
-              className={styles.statValue}
-              data-metric-value={String(first.point.value)}
-              title={`Exact value ${exactMetric(first.point.value, widget.unit)}`}
-              style={{ color: textColor }}
-            >
-              {statReading.value}
-              <span className={styles.statUnit}>{statReading.unit}</span>
+            {/* The reading and its status chips stay one group, so a change that wraps leaves them in place beside the reading. */}
+            <span className={styles.statFigureReading}>
+              {/* Plain text: the reading is never a trigger, highlight or details owner. The sparkline inspects recorded samples. */}
+              <span
+                className={styles.statValue}
+                data-metric-value={String(first.point.value)}
+                data-exact-title={`Exact value ${exactMetric(first.point.value, widget.unit)}`}
+                title={`Exact value ${exactMetric(first.point.value, widget.unit)}`}
+                style={{ color: textColor }}
+              >
+                {statReading.value}
+                <span className={styles.statUnit}>{statReading.unit}</span>
+              </span>
+              {chip}
             </span>
-            {chip}
+            {delta && <StatDelta state={delta} formatTime={(timestamp) => earlierSampleTime.format(new Date(timestamp))} />}
           </div>
           <div className={styles.statMeta}>
             {entries.length > 1 ? `${first.name} · ` : ""}Latest valid sample ·{" "}

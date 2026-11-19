@@ -57,7 +57,9 @@ IDs here are placeholders; run the steps in order.
    a conflict, reread, compare and reapply only the intended edit; never silently overwrite
    or retry blindly.
 
-7. **Query.** `query_dashboard` with `id` runs the saved dashboard over its saved range.
+7. **Query.** `query_dashboard` with `id` runs the saved dashboard over its saved range. A stat with
+   `options.compare` also returns its change against an earlier window (`comparison`, labelled by
+   `window`): report the change with its state, never as no change when the state is `not_run`.
    Optional: `variables`, `widget_ids`, `start` and `end` (at most 31 days), `history_points`,
    `max_series`, `max_traces`. Treat `structuredContent` as authoritative; the text is a
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a

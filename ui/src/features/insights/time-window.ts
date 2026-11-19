@@ -1,4 +1,4 @@
-import type { Series } from "./chart-data"
+import { exactMetric, formatMetricDetails, latestPoint, type Series } from "./chart-data"
 import { validTimestamp } from "./widget-context"
 
 export type ObservationWindow = { start: number; end: number }
@@ -29,18 +29,130 @@ export function compareWindow(series: Series[], window: ObservationWindow) {
   })
 }
 
+/** Which earlier window a stat compares with: the equal window before the range, or the same window one day or seven days earlier. */
+export type ComparisonWindow = "previous" | "1d" | "7d";
+const COMPARISON_OFFSET_MS: Record<Exclude<ComparisonWindow, "previous">, number> = { "1d": 86_400_000, "7d": 604_800_000 };
+const MAX_WINDOW_MS = 31 * 86_400_000;
+
+/** How far back the earlier window sits: the range length for "previous", a fixed day count otherwise. */
+export function comparisonOffset(window: ObservationWindow, compare: ComparisonWindow): number {
+  return compare === "previous" ? window.end - window.start : COMPARISON_OFFSET_MS[compare];
+}
+
+/**
+ * The earlier window as a query: seconds for the provider, the same bounds the time-series lens asks for, and the
+ * primary query's step rule. The end is exclusive by one millisecond. A range from one second to 31 days with room
+ * before it has a previous window; anything else is unavailable.
+ */
+export function priorWindowQuery(window: ObservationWindow, compare: ComparisonWindow): { start: number; end: number; step: number } | { unavailable: "no_previous_range" } {
+  const span = window.end - window.start;
+  const offset = comparisonOffset(window, compare);
+  if (![window.start, window.end, offset].every(Number.isFinite) || span < 1000 || span > MAX_WINDOW_MS || offset <= 0 || window.start - offset <= 0)
+    return { unavailable: "no_previous_range" };
+  return { start: (window.start - offset) / 1000, end: (window.end - offset - 1) / 1000, step: Math.max(1, Math.ceil(span / 300_000)) };
+}
+
+export type ComparisonReason = "no_previous_range" | "no_current_sample" | "no_prior_sample" | "ambiguous_series";
+export type StatComparison =
+  | { state: "unavailable"; reason: ComparisonReason }
+  | { state: "ok" | "partial"; current: { timestamp: number; value: number }; baseline: { timestamp: number; value: number }; delta: number; percent?: number; direction: "up" | "down" | "flat" };
+
+/**
+ * A stat's point-to-point change: its displayed sample now against the latest valid sample of the same series in the
+ * earlier window. Only the first series with a latest sample is compared, as the stat shows it. A series key that is not
+ * unique in the current result, or that matches more than one earlier series, is never paired. A truncated earlier
+ * response is partial when its series matched, and unavailable otherwise.
+ */
+export function statComparison(current: Series[], earlier: Series[], window: ObservationWindow, compare: ComparisonWindow, earlierPartial = false): StatComparison {
+  const range = priorWindowQuery(window, compare);
+  if ("unavailable" in range) return { state: "unavailable", reason: "no_previous_range" };
+  const shown = current.find(entry => latestPoint(entry));
+  const now = shown ? latestPoint(shown) : undefined;
+  if (!shown || !now) return { state: "unavailable", reason: "no_current_sample" };
+  const key = seriesKey(shown);
+  if (current.filter(entry => seriesKey(entry) === key).length > 1) return { state: "unavailable", reason: "ambiguous_series" };
+  const matches = earlier.filter(entry => seriesKey(entry) === key);
+  if (matches.length > 1) return { state: "unavailable", reason: "ambiguous_series" };
+  const offset = comparisonOffset(window, compare);
+  const from = window.start - offset, to = window.end - offset;
+  const sample = matches[0]?.points
+    .filter(point => validTimestamp(point.timestamp) && point.timestamp >= from && point.timestamp < to && typeof point.value === "number" && Number.isFinite(point.value))
+    .sort((a, b) => a.timestamp - b.timestamp).at(-1);
+  if (!sample) return { state: "unavailable", reason: "no_prior_sample" };
+  const difference = now.value - sample.value!;
+  if (!Number.isFinite(difference)) return { state: "unavailable", reason: "no_prior_sample" };
+  const ratio = sample.value !== 0 ? difference / Math.abs(sample.value!) * 100 : undefined;
+  const percent = ratio !== undefined && Number.isFinite(ratio) ? ratio : undefined;
+  return {
+    state: earlierPartial ? "partial" : "ok",
+    current: { timestamp: now.timestamp, value: now.value },
+    baseline: { timestamp: sample.timestamp, value: sample.value! },
+    delta: difference,
+    percent,
+    direction: difference > 0 ? "up" : difference < 0 ? "down" : "flat",
+  };
+}
+
+/** The change as a reader sees it, and whether it rounds to nothing at the widget's decimals. */
+export interface ChangeText { text: string; exactTitle: string; direction: "up" | "down" | "flat"; form: "relative" | "points" | "absolute" }
+
+/** A relative change as a percent. The percent sign always comes from the "%" unit path, so decimals pad whole percents too. */
+export function formatRelativeChange(percent: number, decimals?: number): string {
+  return formatMetricDetails(percent, "%", decimals);
+}
+
+/**
+ * Whether a change is float noise in Auto, so it reads as "≈0" with no direction. A relative change below 0.005% of its
+ * earlier value is noise. An absolute or point change is noise below the current reading's precision (three significant
+ * figures, so one part in two thousand of it), or below one trillionth when the current reading is unknown or zero.
+ * Explicit decimals decide their own rounding and never use this.
+ */
+export function isChangeNoise(delta: number, form: ChangeText["form"], percent: number | undefined, decimals?: number, current?: number): boolean {
+  if (decimals !== undefined) return false;
+  if (form === "relative" && percent !== undefined) return Math.abs(percent) < .005;
+  const reading = Math.abs(current ?? 0);
+  return Math.abs(delta) < (reading > 0 ? reading * 5e-4 : 1e-12);
+}
+
+/** A relative change in parentheses beside the absolute one: signed, padded to the decimals, and "≈0%" when it is noise. */
+export function formatRelativePercentText(percent: number, decimals?: number, current?: number | null): string {
+  // A relative change is noise by its percent alone, so the absolute change is not needed to decide it.
+  if (isChangeNoise(0, "relative", percent, decimals, current ?? undefined)) return `≈${formatRelativeChange(0, decimals)}`;
+  return `${percent > 0 ? "+" : ""}${formatRelativeChange(percent, decimals)}`;
+}
+
+/**
+ * Text for a change. A percentage unit reports percentage points, never a relative percent of a percent. Other units
+ * report the relative change, or the absolute change in the widget unit when the earlier value is zero. The number follows the
+ * widget's decimals, and a change that rounds to zero reads as "≈0" with no direction. In Auto, float noise reads as "≈0"
+ * too, so a stat that moved by 1e-14 never prints an arrow and an exponent.
+ */
+export function formatChange(delta: number, percent: number | undefined, unit: string, decimals?: number, current?: number): ChangeText {
+  const form: ChangeText["form"] = unit === "%" ? "points" : percent !== undefined ? "relative" : "absolute";
+  const magnitude = form === "relative" ? percent! : delta;
+  // Relative changes print their own percent sign; points and absolute changes take the unit that formatMetricDetails prints.
+  const measure = (value: number) => form === "relative" ? formatRelativeChange(value, decimals) : formatMetricDetails(value, form === "points" ? "pp" : unit, decimals);
+  const body = measure(magnitude);
+  const numeric = Number.parseFloat(body.replace(/,/g, ""));
+  const exact = `${delta > 0 ? "+" : ""}${exactMetric(delta, form === "points" ? "pp" : unit)}`;
+  const exactTitle = `Exact change ${exact}${form === "relative" && percent !== undefined ? ` (${percent > 0 ? "+" : ""}${exactMetric(percent, "%")})` : ""}`;
+  if (delta === 0) return { text: measure(0), exactTitle, direction: "flat", form };
+  // A change that rounds to zero at the widget's decimals is "≈0" with no direction, so a flat-looking value never shows an arrow.
+  if (numeric === 0 || isChangeNoise(delta, form, percent, decimals, current)) return { text: `≈${measure(0)}`, exactTitle, direction: "flat", form };
+  return { text: `${magnitude > 0 ? "+" : ""}${body}`, exactTitle, direction: delta > 0 ? "up" : "down", form };
+}
+
 /** Compare latest finite recorded samples, never matching an ambiguous series. */
-export function comparePriorPeriod(current: Series[], previous: Series[], window: ObservationWindow) {
+export function comparePriorPeriod(current: Series[], previous: Series[], window: ObservationWindow, offset = window.end - window.start) {
   const counts = new Map<string, number>()
   for (const entry of current) counts.set(seriesKey(entry), (counts.get(seriesKey(entry)) ?? 0) + 1)
   const lookup = new Map<string, Series[]>()
   for (const entry of previous) lookup.set(seriesKey(entry), [...(lookup.get(seriesKey(entry)) ?? []), entry])
   const latest = (entry: Series | undefined, from: number, to: number, includeEnd: boolean) => entry?.points.filter(point => validTimestamp(point.timestamp) && point.timestamp >= from && (includeEnd ? point.timestamp <= to : point.timestamp < to) && typeof point.value === "number" && Number.isFinite(point.value)).sort((a, b) => a.timestamp - b.timestamp).at(-1)
-  const length = window.end - window.start
   return current.map(entry => {
     const candidates = lookup.get(seriesKey(entry)) ?? []
     const actual = latest(entry, window.start, window.end, true)
-    const prior = counts.get(seriesKey(entry)) === 1 && candidates.length === 1 ? latest(candidates[0], window.start - length, window.start, false) : undefined
+    const prior = counts.get(seriesKey(entry)) === 1 && candidates.length === 1 ? latest(candidates[0], window.start - offset, window.end - offset, false) : undefined
     const diff = actual && prior ? actual.value! - prior.value! : undefined
     const delta = diff !== undefined && Number.isFinite(diff) ? diff : undefined
     const ratio = delta !== undefined && prior?.value !== 0 ? delta / Math.abs(prior!.value!) * 100 : undefined

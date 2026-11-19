@@ -199,6 +199,31 @@ describe("widget inspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
     expect(toggle).not.toBeChecked();
   });
+  it("offers a comparison with an earlier window only on stats, and saves its direction as better or worse", () => {
+    const callbacks = props();
+    const { unmount } = render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "timeseries" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    expect(screen.queryByRole("combobox", { name: "Compare with" })).not.toBeInTheDocument();
+    unmount();
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Style" }));
+    choose("Compare with", "1 day earlier");
+    choose("Higher is", "Worse");
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ compare: { window: "1d", good: "down" } }) }));
+    choose("Compare with", "Off");
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.not.objectContaining({ compare: expect.anything() }) }));
+  });
+  it("drops a stat's comparison when the visualization changes, so the change still applies", () => {
+    const callbacks = props();
+    render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", options: { compare: { window: "1d" } } }} />);
+    choose("Visualization", /^Time series/);
+    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    const applied = callbacks.onApply.mock.calls.at(-1)![0];
+    expect(applied.type).toBe("timeseries");
+    expect(applied.options?.compare).toBeUndefined();
+  });
   it("does not invent bar bounds: it focuses the minimum and explains what is missing in plain words", () => {
     const callbacks = props();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);

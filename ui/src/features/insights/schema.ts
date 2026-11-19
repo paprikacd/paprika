@@ -328,6 +328,12 @@ export const tooltipViewSchema = z.strictObject({
     context.addIssue({ code: "custom", path: ["source"], message: "Trace tooltip widgets require a query data source" })
 })
 
+/** A stat's comparison with an earlier window. `good` names which direction reads as better; without it the change is neutral. */
+export const statCompareSchema = z.strictObject({
+  window: z.enum(["previous", "1d", "7d"]),
+  good: z.enum(["up", "down"]).optional(),
+});
+
 export const widgetOptionsSchema = z
   .strictObject({
     display: z.enum(["line", "area"]).optional(),
@@ -354,6 +360,7 @@ export const widgetOptionsSchema = z
     showGrid: z.boolean().optional(),
     decimals: z.number().int().min(0).max(8).optional(),
     staleAfterSeconds: z.number().int().min(1).max(2678400).optional(),
+    compare: statCompareSchema.optional(),
     min: z.number().optional(),
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
@@ -442,6 +449,8 @@ export const widgetSchema = z
       .refine((v) => v.x + v.w <= 12, "Widget must fit within the 12-column canvas"),
   })
   .superRefine((widget, context) => {
+    if (widget.options?.compare && widget.type !== "stat")
+      context.addIssue({ code: "custom", path: ["options", "compare"], message: "Comparisons are only available on stat widgets" })
     if (widget.type !== "stat" && widget.layout.h < 2)
       context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
     if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))

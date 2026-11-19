@@ -16,6 +16,8 @@ type DashboardSummaryOptions struct {
 	MaxSeries     int
 	MaxTraces     int
 	HistoryPoints int
+	// SkipComparisons plans no earlier-window queries, so a dry run costs no more than its main queries.
+	SkipComparisons bool
 }
 
 type DashboardQueryError struct {

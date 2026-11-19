@@ -472,7 +472,8 @@ jobs:
           SESSION_E2E_STATIC: "1"
 
       - name: Run Insights MCP and dashboard browser smoke
-        timeout-minutes: 15
+        # About 12 minutes on a typical runner; slower runners have taken over 15.
+        timeout-minutes: 20
         run: >-
           node e2e/run-insights.mjs
           e2e/insights-query-inspector.e2e.mjs
@@ -481,6 +482,7 @@ jobs:
           e2e/insights-render-worker.e2e.mjs
           e2e/insights-tooltip-peers.e2e.mjs
           e2e/insights-compact-stat.e2e.mjs
+          e2e/insights-compact-stat-compare.e2e.mjs
           e2e/insights-status-history-axis.e2e.mjs
           e2e/insights-dashboard-polish.e2e.mjs
           e2e/insights-presentation.e2e.mjs

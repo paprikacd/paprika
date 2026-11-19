@@ -644,7 +644,7 @@ func documentFirst(findings []*insightsv1.CheckFinding) []*insightsv1.CheckFindi
 // series is the most a summary holds, so the unit rule sees every series the
 // summary keeps. The caller never receives these summaries, only the findings
 // and per-widget states derived from them.
-var dryRunSummaryOptions = DashboardSummaryOptions{MaxSeries: 8, MaxTraces: 1}
+var dryRunSummaryOptions = DashboardSummaryOptions{MaxSeries: 8, MaxTraces: 1, SkipComparisons: true}
 
 // dryRunInputError is a caller error in a dry run with execute: the variables or
 // the document's time range cannot be used. It is reported as a 400.

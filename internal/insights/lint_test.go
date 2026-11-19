@@ -77,6 +77,7 @@ func TestLintRegistryIsWellFormed(t *testing.T) {
 		"axis.unit-in-label":     insightsv1.Severity_SEVERITY_WARNING,
 		"plugin.unknown":         insightsv1.Severity_SEVERITY_WARNING,
 		"color.near-status":      insightsv1.Severity_SEVERITY_WARNING,
+		"stat.compare-arrow":     insightsv1.Severity_SEVERITY_WARNING,
 	}
 	if len(lintRules) != len(want) {
 		t.Fatalf("registry has %d rules, want %d", len(lintRules), len(want))
@@ -395,5 +396,31 @@ func TestLintCostIsBoundedForLargeDocuments(t *testing.T) {
 	}
 	if len(findings) == 0 {
 		t.Fatal("overlapping widgets must produce findings")
+	}
+}
+
+// A stat that compares with an earlier window and also shows an arrow icon repeats its direction, so stat.compare-arrow
+// fires on that pairing alone. The pointer names the icon, and a stat without a comparison is not flagged.
+func TestStatCompareArrowFiresOnlyWhenTheArrowRepeatsTheChange(t *testing.T) {
+	stat := func(options string) Dashboard {
+		return Dashboard(`{"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"rate","title":"Rate","type":"stat","providerId":"p","query":"rate","unit":"req/s","layout":{"x":0,"y":0,"w":3,"h":2},"options":` + options + `}]}`)
+	}
+	ruleIDs := func(findings []*insightsv1.CheckFinding) []string {
+		var ids []string
+		for _, finding := range findings {
+			if finding.GetRuleId() == "stat.compare-arrow" {
+				ids = append(ids, finding.GetPointer())
+			}
+		}
+		return ids
+	}
+	if got := ruleIDs(lintFindings(stat(`{"compare":{"window":"previous"},"statIcon":"arrow-up"}`))); !slices.Equal(got, []string{"/widgets/0/options/statIcon"}) {
+		t.Fatalf("an arrow with a comparison: %v", got)
+	}
+	if got := ruleIDs(lintFindings(stat(`{"compare":{"window":"previous"},"statIcon":"target"}`))); len(got) != 0 {
+		t.Fatalf("a non-arrow icon with a comparison must not fire: %v", got)
+	}
+	if got := ruleIDs(lintFindings(stat(`{"statIcon":"arrow-up"}`))); len(got) != 0 {
+		t.Fatalf("an arrow without a comparison must not fire: %v", got)
 	}
 }
