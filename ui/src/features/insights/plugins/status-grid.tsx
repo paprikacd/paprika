@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, seriesName, thresholdForValue } from "../chart-renderers";
 import { thresholdPaint } from "../status";
@@ -8,8 +8,8 @@ import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrack
 import { formatMetricDetails, type Point, type Series } from "../chart-data";
 import { formatBounds } from "../units";
 import { compactSeriesLabels } from "../series-display";
-import { TooltipPinHint } from "../tooltip-content";
 import { occurrenceKeys } from "../tooltip-identity";
+import { useObservationOwner } from "../observation-owner";
 import { validTimestamp } from "../widget-context";
 import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
@@ -26,35 +26,18 @@ export function latestStatusPoint(series: Series): Point | undefined {
 export function StatusGrid({ widget, result, onContextChange, embedded }: WidgetRendererProps) {
   const config = statusGridConfigSchema.parse(widget.config ?? {}), parentEmbedded = useEmbeddedWidget();
   const interactive = !embedded && !parentEmbedded, detailsEnabled = interactive && widget.options?.showTooltip !== false;
-  const id = useId(), grid = useRef<HTMLDivElement>(null), scroll = useRef<HTMLDivElement>(null), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // The cells that own the pointer and focus, not booleans: a preview closes only when its own cell is neither hovered nor focused.
-  const interaction = useRef<{ hovered: HTMLButtonElement | null; focused: HTMLButtonElement | null; panel: boolean }>({ hovered: null, focused: null, panel: false });
+  const id = useId(), grid = useRef<HTMLDivElement>(null), scroll = useRef<HTMLDivElement>(null);
   const [keyboardIndex, setKeyboardIndex] = useState(0);
   const [overflow, setOverflow] = useState(false);
-  // The open cell is named by its series, so a refresh keeps the preview or pin on the same monitor with its new values.
-  const [state, setState] = useState<{ key: string; anchor: HTMLButtonElement; pinned: boolean }>();
-  const clearHide = useCallback(() => clearTimeout(timer.current), []);
-  const dismiss = useCallback(() => { clearHide(); interaction.current.panel = false; setState(undefined); }, [clearHide]);
-  const scheduleHide = useCallback(() => {
-    clearHide(); timer.current = setTimeout(() => {
-      const current = interaction.current;
-      setState(previous => previous && !previous.pinned && !current.panel && current.hovered !== previous.anchor && current.focused !== previous.anchor ? undefined : previous);
-    }, 180);
-  }, [clearHide]);
-  useEffect(() => clearHide, [clearHide]);
   const all = result.series ?? [], selected = all.slice(0, config.maxSeries ?? 512);
   // Duplicate names get an occurrence suffix, so a pin on the second "api" never resolves to the first.
   const keys = occurrenceKeys(selected.map((entry, index) => seriesName(entry, index)));
-  // A monitor that left the result closes its preview, and a pin on it is released.
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- a stale pin must be released once its monitor has left the result
-  useEffect(() => { if (state && !keys.includes(state.key)) setState(undefined); }, [state, keys]);
-  // The anchor follows its monitor when the grid reorders or re-renders.
-  useLayoutEffect(() => {
-    if (!state) return;
-    const index = keys.indexOf(state.key);
-    const element = index < 0 ? null : grid.current?.querySelector<HTMLButtonElement>(`[data-status-index="${index}"]`);
-    if (element && element !== state.anchor) setState(previous => previous && previous.key === state.key ? { ...previous, anchor: element } : previous);
-  }, [state, keys]);
+  // The open cell is named by its series: a refresh keeps the preview or pin on the same monitor, following its cell.
+  const owner = useObservationOwner({
+    enabled: detailsEnabled,
+    retention: { keys },
+    locate: key => grid.current?.querySelector<HTMLButtonElement>(`[data-status-index="${keys.indexOf(key)}"]`) ?? null,
+  });
   useEffect(() => {
     const element = scroll.current, content = grid.current;
     if (!element || !content) return;
@@ -76,13 +59,8 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
     const point = latestStatusPoint(entry), value = typeof point?.value === "number" && Number.isFinite(point.value) ? point.value : undefined;
     return { entry, index, point, value, name: names[index], threshold: value === undefined ? undefined : thresholdForValue(value, thresholds) };
   });
-  const openIndex = detailsEnabled && state ? keys.indexOf(state.key) : -1;
-  const active = openIndex >= 0 && state ? { ...state, index: openIndex } : undefined;
+  const active = owner.active ? { ...owner.active, index: keys.indexOf(owner.active.key) } : undefined;
   const current = active ? cells[active.index] : undefined;
-  const show = (index: number, anchor: HTMLButtonElement, pinned = false) => {
-    if (!detailsEnabled) return;
-    clearHide(); setState(previous => previous?.pinned && !pinned ? previous : { key: keys[index], anchor, pinned });
-  };
   const tabIndex = Math.min(keyboardIndex, cells.length - 1);
   const navigate = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = index;
@@ -114,14 +92,14 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
           const style = cell.value === undefined ? undefined : { "--status-color": color, ...statusStrokeStyle(cell.threshold, cellSize) } as CSSProperties;
           const stroke = cell.value === undefined ? undefined : statusStrokeLevel(cell.threshold, cellSize);
           if (!interactive) return <span key={cell.index} className={className} style={style} data-status-stroke={stroke} role="img" aria-label={label} />;
+          const trigger = owner.trigger(keys[cell.index]);
           return <button key={cell.index} type="button" className={className} style={style} data-status-stroke={stroke} data-status-index={cell.index}
             data-status-value={cell.value ?? "unknown"} aria-label={label} aria-pressed={detailsEnabled ? active?.index === cell.index && active.pinned : undefined}
             aria-describedby={`${id}-keys${active?.index === cell.index ? ` ${id}` : ""}`} tabIndex={cell.index === tabIndex ? 0 : -1}
-            onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hovered = event.currentTarget; show(cell.index,event.currentTarget); } }}
-            onPointerLeave={event => { if (interaction.current.hovered === event.currentTarget) interaction.current.hovered = null; scheduleHide(); }}
-            onFocus={event => { setKeyboardIndex(cell.index); interaction.current.focused = event.currentTarget; show(cell.index,event.currentTarget); }}
-            onBlur={event => { if (interaction.current.focused === event.currentTarget) interaction.current.focused = null; scheduleHide(); }} onKeyDown={event => navigate(event,cell.index)}
-            onClick={event => { onContextChange?.({ labels:cell.entry.labels, value:cell.value ?? null, series:seriesName(cell.entry, cell.index) }); if (active?.pinned && active.index === cell.index) dismiss(); else show(cell.index,event.currentTarget,true); }} />;
+            onPointerEnter={trigger.onPointerEnter} onPointerLeave={trigger.onPointerLeave}
+            onFocus={event => { setKeyboardIndex(cell.index); trigger.onFocus(event); }}
+            onBlur={trigger.onBlur} onKeyDown={event => navigate(event,cell.index)}
+            onClick={event => { onContextChange?.({ labels:cell.entry.labels, value:cell.value ?? null, series:seriesName(cell.entry, cell.index) }); trigger.onClick(event); }} />;
         })}
       </div>
     </div>
@@ -137,8 +115,8 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       {all.length > cells.length && <span>Showing {cells.length} of {all.length}</span>}
       {truncationNote(result) && <span>{truncationNote(result)}</span>}
     </div>
-    {current && active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget anchorOwnsHistoryKeys pinned={active.pinned} onDismiss={dismiss}
-      onEnter={() => { interaction.current.panel = true; clearHide(); }} onLeave={() => { interaction.current.panel = false; scheduleHide(); }}>
+    {current && active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget anchorOwnsHistoryKeys pinned={active.pinned} onDismiss={owner.dismiss}
+      onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
       <MetricDetails widget={widget} series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} subject={current.name} seriesLabel={widget.title} description="Latest sample">
         {current.value === undefined
           ? <span>No data</span>
@@ -146,7 +124,6 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
             ? <StatusChip status={current.threshold.status} color={current.threshold.color} label={current.threshold.label} />
             : <span>{current.threshold?.label ?? "Observed"}</span>}
       </MetricDetails>
-      <TooltipPinHint pinned={active.pinned} />
     </ObservationTooltip>}
   </div>;
 }

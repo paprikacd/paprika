@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { QueryResult, Widget } from "../schema";
 import { getWidgetDefinition } from "../widget-registry";
@@ -54,6 +54,21 @@ describe("small multiples", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     rerender(<SmallMultiples widget={widget} result={result} embedded />);
     expect(screen.getByRole("group", { name: /alpha trend/ })).not.toHaveAttribute("tabindex");
+  });
+  it("hides an unpinned preview one grace period after the last engagement ends, however often the pointer leaves", () => {
+    vi.useFakeTimers();
+    try {
+      render(<SmallMultiples widget={widget} result={result} />);
+      const plot = screen.getByRole("group", { name: /alpha trend/ });
+      fireEvent.focus(plot);
+      fireEvent.blur(plot);
+      act(() => { vi.advanceTimersByTime(100); });
+      fireEvent.pointerLeave(plot);
+      act(() => { vi.advanceTimersByTime(100); });
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("compacts generated node labels while retaining exact identities and authored names", () => {
     const generated: QueryResult = { series: [

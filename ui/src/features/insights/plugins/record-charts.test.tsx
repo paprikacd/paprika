@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordBar, RecordLine } from "./record-charts"
 import type { QueryResult, Widget } from "../schema"
@@ -134,6 +134,51 @@ describe("record charts", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned")
     rerender(<RecordLine widget={widget} result={frame([["api",1],["worker",2]])}/>)
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+  })
+  it("keeps an inspected observation open while the pointer stays on the plot off every mark", async () => {
+    vi.useFakeTimers()
+    try {
+      const result=frame([["api",10],["worker",30]])
+      render(<RecordLine widget={widget} result={result}/>)
+      const chart=screen.getByRole("group",{name:widget.title})
+      vi.spyOn(chart,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,600,280))
+      const [a]=screen.getAllByRole("img")
+      const move=(clientX:number,clientY:number)=>{const event=new MouseEvent("pointermove",{bubbles:true,clientX,clientY});Object.defineProperty(event,"pointerType",{value:"mouse"});fireEvent(chart,event)}
+      move(Number(a.getAttribute("cx")),Number(a.getAttribute("cy")))
+      expect(screen.getByRole("tooltip")).toHaveTextContent("api")
+      move(1,1)
+      act(()=>vi.advanceTimersByTime(1000))
+      expect(screen.getByRole("tooltip")).toHaveTextContent("api")
+      fireEvent.pointerLeave(chart)
+      act(()=>vi.advanceTimersByTime(179))
+      expect(screen.getByRole("tooltip")).toBeInTheDocument()
+      act(()=>vi.advanceTimersByTime(1))
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it("holds the preview while the pointer is in its panel", async () => {
+    vi.useFakeTimers()
+    try {
+      const result=frame([["api",10],["worker",30]])
+      render(<RecordLine widget={widget} result={result}/>)
+      const chart=screen.getByRole("group",{name:widget.title})
+      vi.spyOn(chart,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,600,280))
+      const [a]=screen.getAllByRole("img")
+      const event=new MouseEvent("pointermove",{bubbles:true,clientX:Number(a.getAttribute("cx")),clientY:Number(a.getAttribute("cy"))})
+      Object.defineProperty(event,"pointerType",{value:"mouse"})
+      fireEvent(chart,event)
+      fireEvent.pointerLeave(chart)
+      fireEvent.pointerEnter(screen.getByRole("tooltip"))
+      act(()=>vi.advanceTimersByTime(1000))
+      expect(screen.getByRole("tooltip")).toHaveTextContent("api")
+      fireEvent.pointerLeave(screen.getByRole("tooltip"))
+      act(()=>vi.advanceTimersByTime(180))
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
   it("hits a line between sparse samples but shows an actual observation", async () => {
     render(<RecordLine widget={widget} result={frame([["api",10],["worker",30]])}/>)

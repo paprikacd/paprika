@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetVisualization } from "./charts";
 import type { Series } from "./chart-data";
 import type { QueryResult, Widget } from "./schema";
@@ -115,5 +115,40 @@ describe("built-in heatmap tooltip content", () => {
     fireEvent.keyDown(summary, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     expect(document.activeElement).toBe(cell);
+  });
+
+  it("opens no preview or pin when the widget turns its tooltip off, and still selects the cell", () => {
+    const select = vi.fn();
+    render(<WidgetVisualization widget={{ ...base, options: { showTooltip: false } }} result={result} onContextChange={select} />);
+    const cell = screen.getByRole("button", { name: /database/ });
+    fireEvent.pointerEnter(cell, { pointerType: "mouse" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.click(cell);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(cell).not.toHaveAttribute("aria-pressed", "true");
+    expect(select).toHaveBeenCalled();
+  });
+
+  it("keeps a hovered preview open after Escape returns focus to its cell, until the focus leaves", () => {
+    vi.useFakeTimers();
+    try {
+      render(<WidgetVisualization widget={base} result={result} />);
+      const cell = screen.getByRole("button", { name: /database/ });
+      cell.focus();
+      fireEvent.click(cell);
+      const summary = within(screen.getByRole("tooltip")).getByText("Source details");
+      summary.focus();
+      fireEvent.keyDown(summary, { key: "Escape" });
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(cell);
+      // The cell still has focus, so the hover preview it opens must hold after the pointer leaves.
+      fireEvent.pointerEnter(cell, { pointerType: "mouse" });
+      expect(screen.getByRole("tooltip")).toBeInTheDocument();
+      fireEvent.pointerLeave(cell);
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

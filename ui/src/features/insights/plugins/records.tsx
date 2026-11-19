@@ -13,10 +13,12 @@ import {
   type WidgetRendererProps,
 } from "../widget-registry"
 import { EmptyState, ObservationTooltip } from "../chart-renderers"
+import { useObservationOwner } from "../observation-owner"
+import { isRestoringTooltipFocus, restoreTooltipFocus } from "../tooltip-focus"
 import { ObservationDetails } from "../observation-tooltip"
 import { exactMetric } from "../chart-data"
 import { formatRecordValue, isIdentifierColumn, recordNumberText, sharedScale, unitSuffix, valueCellText } from "../units"
-import { TooltipDetail, TooltipFact, TooltipPinHint } from "../tooltip-content"
+import { TooltipDetail, TooltipFact } from "../tooltip-content"
 import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
 import { truncationNote, type TruncationSource } from "../truncation"
@@ -222,18 +224,15 @@ export function RecordTable({
   const parentEmbedded = useEmbeddedWidget()
   const inspectCells = !embedded && !parentEmbedded && widget.options?.showTooltip !== false
   const [cellFocus, setCellFocus] = useState({ row: 0, column: 0 })
-  const [cellObservation, setCellObservation] = useState<{ anchor: HTMLTableCellElement; frame: RecordFrame; view: string; row: number; column: number; value: unknown; pinned: boolean }>()
   const cellPanel = useRef<HTMLDivElement | null>(null)
-  const cellHideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const cellInteraction = useRef({ panel: false, hovered: false, focused: false })
-  const clearCellHide = () => clearTimeout(cellHideTimer.current)
-  const hideCell = () => { clearCellHide(); cellInteraction.current.panel = false; setCellObservation(undefined) }
-  const scheduleCellHide = () => { clearCellHide(); cellHideTimer.current = setTimeout(() => { const state = cellInteraction.current; if (!state.panel && !state.hovered && !state.focused) setCellObservation(previous => previous?.pinned ? previous : undefined) }, 180) }
-  useEffect(() => () => clearTimeout(cellHideTimer.current), [])
   const [horizontalOverflow, setHorizontalOverflow] = useState(false)
   const config = useMemo(() => tableConfig.parse(widget.config ?? {}), [widget.config])
   const activeSearch = !embedded && config.showSearch ? search : ""
   const cellConfigIdentity = JSON.stringify([config.columns, config.cellStyles])
+  // A new frame, search, sort, page or cell setup closes the open cell panel.
+  const cellRevision = useMemo(() => ({ frame, view: [activeSearch, sort, page, cellConfigIdentity] }), [frame, activeSearch, sort, page, cellConfigIdentity])
+  const cellOwner = useObservationOwner({ enabled: inspectCells, retention: { revision: cellRevision } })
+  const hideCell = () => cellOwner.dismiss()
   const rows = useMemo(() => {
     if (!frame) return []
     const selected = frame.rows.filter(
@@ -288,15 +287,12 @@ export function RecordTable({
     Math.max(0, Math.ceil(rows.length / pageSize) - 1),
   )
   const displayedRows = rows.slice(current * pageSize, (current + 1) * pageSize)
-  const view = JSON.stringify([activeSearch, sort, current, cellConfigIdentity])
-  const activeCell = inspectCells && cellObservation?.frame === frame && cellObservation.view === view && cellObservation.anchor.isConnected ? cellObservation : undefined
+  // A cell's key is its position on the page: "row,column". The owner's revision already closes the panel on a page change.
+  const openCell = cellOwner.active && cellOwner.active.anchor.isConnected ? cellOwner.active : undefined
+  const openPosition = openCell ? openCell.key.split(",").map(Number) : undefined
+  const activeCell = openCell && openPosition ? { anchor: openCell.anchor as HTMLTableCellElement, pinned: openCell.pinned, row: openPosition[0], column: openPosition[1], value: displayedRows[openPosition[0]]?.[indexes[openPosition[1]]] } : undefined
   const focusRow = Math.min(cellFocus.row, Math.max(0, displayedRows.length - 1))
   const focusColumn = Math.min(cellFocus.column, Math.max(0, indexes.length - 1))
-  const showCell = (anchor: HTMLTableCellElement, row: number, column: number, value: unknown, pinned = false) => {
-    if (!inspectCells) return
-    clearCellHide()
-    setCellObservation({ anchor, frame, view, row, column, value, pinned })
-  }
   const activeColumn = activeCell ? frame.columns[indexes[activeCell.column]] : undefined
   const activeStyle = activeColumn ? cellStyles.get(activeColumn.key) : undefined
   const cellMeaning = activeCell?.anchor.querySelector("[data-cell-display][aria-label]")?.getAttribute("aria-label") ?? activeCell?.anchor.querySelector("[data-history-color-meaning]")?.textContent
@@ -386,15 +382,22 @@ export function RecordTable({
                     const field = frame.columns[index]
                     const style = cellStyles.get(field.key)
                     const formatted = cell(frame, row, index, widget.options?.decimals)
-                    return <td key={index} data-record-cell-row={i} data-record-cell-column={visibleColumn} tabIndex={inspectCells ? i === focusRow && visibleColumn === focusColumn ? 0 : -1 : undefined} aria-describedby={inspectCells ? `${cellHelpId}${activeCell?.row === i && activeCell.column === visibleColumn ? ` ${cellTooltipId}` : ""}` : undefined} data-numeric={field.type === "number" || undefined} data-styled-cell={style?.display}
-                      onPointerEnter={event => { if (event.pointerType !== "touch") { cellInteraction.current.hovered = true; if (!activeCell?.pinned) showCell(event.currentTarget, i, visibleColumn, row[index]) } }}
-                      onPointerLeave={() => { cellInteraction.current.hovered = false; scheduleCellHide() }}
-                      onFocus={event => { cellInteraction.current.focused = true; setCellFocus({ row: i, column: visibleColumn }); showCell(event.currentTarget, i, visibleColumn, row[index], !!activeCell?.pinned) }}
-                      onBlur={() => { cellInteraction.current.focused = false; scheduleCellHide() }}
-                      onClick={event => { if (!inspectCells) return; event.currentTarget.focus({ preventScroll: true }); if (activeCell?.anchor === event.currentTarget && activeCell.pinned) hideCell(); else showCell(event.currentTarget, i, visibleColumn, row[index], true) }}
+                    const cellKey = `${i},${visibleColumn}`, cellTrigger = cellOwner.trigger(cellKey), openHere = activeCell?.row === i && activeCell.column === visibleColumn
+                    return <td key={index} data-record-cell-row={i} data-record-cell-column={visibleColumn} tabIndex={inspectCells ? i === focusRow && visibleColumn === focusColumn ? 0 : -1 : undefined} aria-describedby={inspectCells ? `${cellHelpId}${openHere ? ` ${cellTooltipId}` : ""}` : undefined} data-numeric={field.type === "number" || undefined} data-styled-cell={style?.display}
+                      onPointerEnter={cellTrigger.onPointerEnter}
+                      onPointerLeave={cellTrigger.onPointerLeave}
+                      onFocus={event => {
+                        setCellFocus({ row: i, column: visibleColumn })
+                        // Focus returned after a dismissal holds the cell without reopening its panel.
+                        if (isRestoringTooltipFocus()) cellOwner.holdFocus(event.currentTarget)
+                        else if (activeCell?.pinned) cellOwner.pin(cellKey, event.currentTarget)
+                        else cellTrigger.onFocus(event)
+                      }}
+                      onBlur={cellTrigger.onBlur}
+                      onClick={event => { if (!inspectCells) return; event.currentTarget.focus({ preventScroll: true }); if (openHere && activeCell?.pinned) hideCell(); else cellOwner.pin(cellKey, event.currentTarget) }}
                       onKeyDown={event => {
                         if (!inspectCells) return
-                        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (activeCell?.anchor === event.currentTarget && activeCell.pinned) hideCell(); else showCell(event.currentTarget, i, visibleColumn, row[index], true); return }
+                        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (openHere && activeCell?.pinned) hideCell(); else cellOwner.pin(cellKey, event.currentTarget); return }
                         if (event.key === "Tab" && !event.shiftKey && activeCell?.pinned && cellPanel.current) { event.preventDefault(); cellPanel.current.focus({ preventScroll: true }); return }
                         const delta = event.key === "ArrowLeft" ? [0, -1] : event.key === "ArrowRight" ? [0, 1] : event.key === "ArrowUp" ? [-1, 0] : event.key === "ArrowDown" ? [1, 0] : undefined
                         if (!delta) return
@@ -438,14 +441,14 @@ export function RecordTable({
         )}
       </div>
       {horizontalOverflow && <div id={overflowHintId} className={styles.scrollHint}><ArrowRight size={12} aria-hidden="true" /> Scroll horizontally to see more columns</div>}
-      {activeCell && activeColumn && <ObservationTooltip id={cellTooltipId} anchor={activeCell.anchor} className={styles.recordTooltip} avoidWidget pinned={activeCell.pinned} role={activeCell.pinned ? "region" : "tooltip"} ariaLabel={activeCell.pinned ? "Record cell details" : undefined} tabIndex={activeCell.pinned ? 0 : undefined} panelRef={element => { cellPanel.current = element }} onDismiss={() => { if (cellPanel.current?.contains(document.activeElement)) activeCell.anchor.focus({ preventScroll: true }); hideCell() }} onEnter={() => { cellInteraction.current.panel = true; clearCellHide() }} onLeave={() => { cellInteraction.current.panel = false; scheduleCellHide() }}>
+      {activeCell && activeColumn && <ObservationTooltip id={cellTooltipId} anchor={activeCell.anchor} className={styles.recordTooltip} avoidWidget pinned={activeCell.pinned} pinHint={false} role={activeCell.pinned ? "region" : "tooltip"} ariaLabel={activeCell.pinned ? "Record cell details" : undefined} tabIndex={activeCell.pinned ? 0 : undefined} panelRef={element => { cellPanel.current = element }} onDismiss={() => { if (cellPanel.current?.contains(document.activeElement)) restoreTooltipFocus(activeCell.anchor); hideCell() }} onEnter={() => cellOwner.panelEnter()} onLeave={() => cellOwner.panelLeave()}>
         <TooltipDetail title={activeColumn.label ?? activeColumn.key}>
           <span className={styles.recordCellValue}>{formattedValue}</span>
           {typeof activeValue === "number" && Number.isFinite(activeValue) && <TooltipFact label="Recorded value">{recordedValueText(activeValue, activeUnit, activeColumn.key)}</TooltipFact>}
           {history?.state === "valid" && <small>{history.points.length} recorded {history.points.length === 1 ? "sample" : "samples"} · latest {new Date(history.points[history.points.length - 1].timestamp).toLocaleString()}</small>}
           {history?.state === "invalid" && <small>History must be an ordered JSON array of timestamped numeric or null observations.</small>}
           {cellMeaning && <small>{cellMeaning}</small>}
-          {activeCell.pinned && <GammaButton size="sm" variant="quiet" type="button" onClick={() => { activeCell.anchor.focus({ preventScroll: true }); hideCell() }}>Close</GammaButton>}
+          {activeCell.pinned && <GammaButton size="sm" variant="quiet" type="button" onClick={() => { restoreTooltipFocus(activeCell.anchor); hideCell() }}>Close</GammaButton>}
         </TooltipDetail>
       </ObservationTooltip>}
       {(frame.truncated || !embedded && rows.length > pageSize) && <Note frame={frame} result={result}>
@@ -571,22 +574,10 @@ export function RecordTreemap({
   const interactive = !embedded && !parentEmbedded
   const detailsEnabled = interactive && widget.options?.showTooltip !== false
   const revision = JSON.stringify([widget.config, widget.unit, widget.options?.decimals])
-  const [inspection, setInspection] = useState<{ frame: RecordFrame; revision: string; index: number; anchor: SVGGElement; pinned: boolean; name: string; sizeLabel: string; sizeValue: string; sizeRaw: number; groupLabel?: string; groupValue?: string; colorLabel?: string; colorValue?: string; colorRaw?: number | null }>()
-  const interaction = useRef({ hovered: false, focused: false, panel: false })
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const clearHide = () => clearTimeout(timer.current)
-  const dismiss = () => { clearHide(); interaction.current.panel = false; setInspection(undefined) }
-  const scheduleHide = () => {
-    clearHide()
-    timer.current = setTimeout(() => {
-      const state = interaction.current
-      if (!state.hovered && !state.focused && !state.panel) setInspection(current => current?.pinned ? current : undefined)
-    }, 180)
-  }
-  useEffect(() => () => clearTimeout(timer.current), [])
   const frame = result.records
-  if (inspection && (inspection.frame !== frame || inspection.revision !== revision || !detailsEnabled)) setInspection(undefined)
-  const active = inspection && inspection.frame === frame && inspection.revision === revision && detailsEnabled ? inspection : undefined
+  // Tiles are kept by their layout position; a new frame or a changed config closes the open panel.
+  const tileRevision = useMemo(() => ({ frame, revision }), [frame, revision])
+  const owner = useObservationOwner({ enabled: detailsEnabled, retention: { revision: tileRevision } })
   useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
@@ -641,6 +632,18 @@ export function RecordTreemap({
     .paddingOuter(2)
     .paddingTop(node => group >= 0 && node.depth === 1 ? 20 : 2)(root)
   const leaves = tree.leaves()
+  // One description per tile, shared by its label and the panel, so the panel reads exactly as the tile does.
+  const describeTile = (leaf: (typeof leaves)[number]) => {
+    const row = leaf.data.row!
+    const name = keyText(row[label])
+    const formatted = (typeof row[value] === "number" ? columnFormatters(frame, widget.options?.decimals)[value]?.text(row[value] as number) : undefined) ?? formatRecordValue(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, widget.options?.decimals)
+    const colorValue = color >= 0 && typeof row[color] === "number" && Number.isFinite(row[color]) ? row[color] as number : null
+    const colorLabel = color >= 0 ? frame.columns[color].label ?? frame.columns[color].key : undefined
+    const colorDetail = color >= 0 ? `${colorLabel}: ${colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals)}` : undefined
+    return { row, name, formatted, colorValue, colorLabel, colorDetail }
+  }
+  const openLeaf = owner.active ? leaves[Number(owner.active.key)] : undefined
+  const openTile = openLeaf ? describeTile(openLeaf) : undefined
   return (
     <div className={styles.wrapper}>
       <svg
@@ -653,12 +656,7 @@ export function RecordTreemap({
         {colorMissing && <PlotHatchDefs id={missingPattern} />}
         {group >= 0 && tree.children?.map(node => node.x1 - node.x0 >= 60 && <text key={node.data.name} x={node.x0 + 4} y={node.y0 + 14} fill="currentColor" fontSize="11">{node.data.name}</text>)}
         {leaves.map((leaf, index) => {
-          const row = leaf.data.row!,
-            name = keyText(row[label]),
-            formatted = (typeof row[value] === "number" ? columnFormatters(frame, widget.options?.decimals)[value]?.text(row[value] as number) : undefined) ?? formatRecordValue(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, widget.options?.decimals)
-          const colorValue = color >= 0 && typeof row[color] === "number" && Number.isFinite(row[color]) ? row[color] as number : null
-          const colorLabel = color >= 0 ? frame.columns[color].label ?? frame.columns[color].key : undefined
-          const colorDetail = color >= 0 ? `${colorLabel}: ${colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals)}` : undefined
+          const { row, name, formatted, colorValue, colorDetail } = describeTile(leaf)
           const colorStyle = colorValue === null ? undefined : treemapColor(colorValue, colorMin, colorMax)
           const tileWidth = leaf.x1 - leaf.x0, tileHeight = leaf.y1 - leaf.y0
           const maxNameLength = Math.floor((tileWidth - 16) / 7)
@@ -670,13 +668,7 @@ export function RecordTreemap({
               value: row[value] as number,
               series: name,
             })
-          const show = (anchor: SVGGElement, pinned = false) => {
-            if (!detailsEnabled || (active?.pinned && !pinned)) return
-            clearHide()
-            setInspection({ frame, revision, index, anchor, pinned, name, sizeLabel: frame.columns[value].label ?? frame.columns[value].key, sizeValue: formatted, sizeRaw: row[value] as number,
-              ...(group >= 0 ? { groupLabel: frame.columns[group].label ?? frame.columns[group].key, groupValue: keyText(row[group]) } : {}),
-              ...(color >= 0 ? { colorLabel, colorValue: colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals), colorRaw: colorValue } : {}) })
-          }
+          const tileKey = String(index), tile = owner.trigger(tileKey), openHere = owner.active?.key === tileKey
           const actionable = interactive && (detailsEnabled || !!onContextChange)
           return (
             <g
@@ -684,19 +676,19 @@ export function RecordTreemap({
               role={actionable ? "button" : "img"}
               tabIndex={actionable ? 0 : undefined}
               aria-label={`${name}: ${formatted}${colorDetail ? ` · ${colorDetail}` : ""}`}
-              aria-describedby={active?.index === index ? `${missingPattern}-details` : undefined}
-              aria-pressed={detailsEnabled ? (active?.index === index && active.pinned) : undefined}
-              onPointerEnter={event => { if (event.pointerType === "touch") return; interaction.current.hovered = true; show(event.currentTarget) }}
-              onPointerLeave={() => { interaction.current.hovered = false; scheduleHide() }}
-              onFocus={event => { interaction.current.focused = true; show(event.currentTarget) }}
-              onBlur={() => { interaction.current.focused = false; scheduleHide() }}
-              onClick={event => { if (!interactive) return; selected(); if (active?.index === index && active.pinned) dismiss(); else show(event.currentTarget, true) }}
+              aria-describedby={openHere ? `${missingPattern}-details` : undefined}
+              aria-pressed={detailsEnabled ? (openHere && !!owner.active?.pinned) : undefined}
+              onPointerEnter={tile.onPointerEnter}
+              onPointerLeave={tile.onPointerLeave}
+              onFocus={tile.onFocus}
+              onBlur={tile.onBlur}
+              onClick={event => { if (!interactive) return; selected(); if (openHere && owner.active?.pinned) owner.dismiss(); else owner.pin(tileKey, event.currentTarget) }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault()
                   if (!interactive) return
                   selected()
-                  if (active?.index === index && active.pinned) dismiss(); else show(event.currentTarget, true)
+                  if (openHere && owner.active?.pinned) owner.dismiss(); else owner.pin(tileKey, event.currentTarget)
                 }
               }}
             >
@@ -730,14 +722,13 @@ export function RecordTreemap({
           )
         })}
       </svg>
-      {active && <ObservationTooltip id={`${missingPattern}-details`} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss}
-        onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}>
-        <TooltipDetail title={active.name}>
-          <TooltipFact label={active.sizeLabel}><span data-treemap-observation={active.sizeRaw}>{active.sizeValue}</span></TooltipFact>
-          {active.groupLabel && <TooltipFact label={active.groupLabel}>{active.groupValue}</TooltipFact>}
-          {active.colorLabel && <TooltipFact label={active.colorLabel}><span data-treemap-color-observation={active.colorRaw === null ? "missing" : active.colorRaw}>{active.colorValue}</span></TooltipFact>}
+      {owner.active && openLeaf && openTile && <ObservationTooltip id={`${missingPattern}-details`} anchor={owner.active.anchor} avoidWidget pinned={owner.active.pinned} onDismiss={() => owner.dismiss()}
+        onEnter={() => owner.panelEnter()} onLeave={() => owner.panelLeave()}>
+        <TooltipDetail title={openTile.name}>
+          <TooltipFact label={frame.columns[value].label ?? frame.columns[value].key}><span data-treemap-observation={openTile.row[value] as number}>{openTile.formatted}</span></TooltipFact>
+          {group >= 0 && <TooltipFact label={frame.columns[group].label ?? frame.columns[group].key}>{keyText(openTile.row[group])}</TooltipFact>}
+          {color >= 0 && openTile.colorLabel && <TooltipFact label={openTile.colorLabel}><span data-treemap-color-observation={openTile.colorValue === null ? "missing" : openTile.colorValue}>{openTile.colorValue === null ? "No data" : cell(frame, openTile.row, color, widget.options?.decimals)}</span></TooltipFact>}
         </TooltipDetail>
-        <TooltipPinHint pinned={active.pinned} />
       </ObservationTooltip>}
       {color >= 0 && <div className={styles.treeColorLegend} role="group" aria-label="Treemap color scale">
         <span>{frame.columns[color].label ?? frame.columns[color].key}</span>

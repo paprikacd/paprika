@@ -11,7 +11,7 @@ import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { useDashboardTimeZone } from "../dashboard-time-zone";
 import { GammaButton } from "../gamma/button";
 import { ObservationDrilldowns } from "../observation-drilldowns";
-import { TooltipPinHint, TooltipSection } from "../tooltip-content";
+import { TooltipSection } from "../tooltip-content";
 import { StatSparkline } from "../stat-sparkline";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
@@ -204,7 +204,6 @@ function Inspector({ widget, observation, peers, extra, footer, pinned, decimals
     {footer && <TooltipSection>{footer}</TooltipSection>}
     {/* A hover preview ignores the pointer, so its button would not be clickable: only a pinned panel offers it. Enter pins. */}
     {pinned && <div className={tooltipStyles.tooltipActions}><GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />Unpin observation</GammaButton></div>}
-    <TooltipPinHint pinned={pinned} />
   </ObservationTooltip>;
 }
 

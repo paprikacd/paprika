@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { formatSharedScale } from "../units";
@@ -8,8 +8,8 @@ import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName
 import { validTimestamp } from "../widget-context";
 import { truncationNote } from "../truncation";
 import { compactSeriesLabels } from "../series-display";
-import { TooltipPinHint } from "../tooltip-content";
 import { widgetSeriesColors } from "../series-colors";
+import { useObservationOwner } from "../observation-owner";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import type { QueryResult, Widget } from "../schema";
@@ -52,18 +52,11 @@ export function smallMultiplesPath(points: readonly Point[], domain: Domains) {
 function SmallMultiple({ entry, index, color, displayName, domain, widget, result, maxPoints, interactive, detailsEnabled, onContextChange }: { entry: Series; index: number; color: string; displayName: string; domain: Domains; widget: Widget; result: QueryResult; maxPoints: number; interactive: boolean; detailsEnabled: boolean; onContextChange: WidgetRendererProps["onContextChange"] }) {
   const points = useMemo(() => downsamplePoints(entry.points, maxPoints), [entry.points, maxPoints]);
   const name = seriesName(entry, index), latest = latestPoint(entry);
-  const id = useId(), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), interaction = useRef({ hovered: false, focused: false, panel: false });
-  const [active, setActive] = useState<{ index: number; anchor: SVGSVGElement; pinned: boolean; revision: QueryResult }>();
-  const current = active?.revision === result ? active : undefined;
-  const selected = current ? points[current.index] : undefined;
-  const clear = useCallback(() => clearTimeout(timer.current), []);
-  const dismiss = useCallback(() => { clear(); interaction.current.panel = false; setActive(undefined); }, [clear]);
-  const leave = useCallback(() => { clear(); timer.current = setTimeout(() => { const state = interaction.current; if (!state.hovered && !state.focused && !state.panel) setActive(previous => previous?.pinned ? previous : undefined); }, 180); }, [clear]);
-  useEffect(() => clear, [clear]);
-  const show = (pointIndex: number, anchor: SVGSVGElement, pin = false) => {
-    if (!interactive || !points[pointIndex]) return;
-    clear(); setActive(previous => previous?.pinned && !pin ? previous : { index: pointIndex, anchor, pinned: pin, revision: result });
-  };
+  const id = useId();
+  // One owner per panel: its single anchor is the plot. The owner is retained by the result revision, as before.
+  const owner = useObservationOwner({ enabled: interactive, retention: { revision: result } });
+  const current = owner.active;
+  const selected = current ? points[Number(current.key)] : undefined;
   const pointAt = (event: PointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     if (!bounds.width || !points.length) return undefined;
@@ -76,13 +69,14 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
   const select = (pointIndex: number, anchor: SVGSVGElement) => {
     const point = points[pointIndex]; if (!point) return;
     onContextChange?.({ labels: entry.labels, series: name, value: typeof point.value === "number" && Number.isFinite(point.value) ? point.value : null });
-    if (current?.pinned && current.index === pointIndex) dismiss(); else show(pointIndex, anchor, true);
+    owner.toggle(String(pointIndex), anchor);
   };
   const onKey = (event: KeyboardEvent<SVGSVGElement>) => {
-    const position = current?.index ?? Math.max(0, points.length - 1);
+    const position = current ? Number(current.key) : Math.max(0, points.length - 1);
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault(); const next = position + (event.key === "ArrowRight" ? 1 : -1);
-      show(Math.max(0, Math.min(points.length - 1, next)), event.currentTarget, !!current?.pinned);
+      const key = String(Math.max(0, Math.min(points.length - 1, next)));
+      if (current?.pinned) owner.pin(key, event.currentTarget); else owner.preview(key, event.currentTarget);
     } else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(position, event.currentTarget); }
   };
   const path = smallMultiplesPath(points, domain), coordinatesOfSelected = selected ? coordinates(selected, domain) : undefined;
@@ -100,10 +94,10 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
     <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{topLabel}</span><span>{bottomLabel}</span></div>
     <svg className={styles.plot} viewBox="0 0 600 100" preserveAspectRatio="none" role="group" aria-label={`${name} trend. Shared scales.${interactive && points.length ? " Arrow keys inspect samples; Enter pins." : ""}`} aria-describedby={detailsEnabled && selected ? id : undefined} tabIndex={interactive && points.length ? 0 : undefined}
       data-domain-start={domain.start} data-domain-end={domain.end} data-domain-min={domain.min} data-domain-max={domain.max}
-      onFocus={event => { interaction.current.focused = true; show(points.length - 1, event.currentTarget); }}
-      onBlur={() => { interaction.current.focused = false; leave(); }} onKeyDown={onKey}
-      onPointerMove={event => { if (event.pointerType === "touch") return; const point = pointAt(event); if (point !== undefined) { interaction.current.hovered = true; show(point, event.currentTarget); } else { interaction.current.hovered = false; leave(); } }}
-      onPointerLeave={() => { interaction.current.hovered = false; leave(); }} onClick={event => { const point = pointAt(event as unknown as PointerEvent<SVGSVGElement>); if (point !== undefined) select(point, event.currentTarget); }}>
+      onFocus={event => owner.engage(String(points.length - 1), event.currentTarget, "focus")}
+      onBlur={event => owner.leave(event.currentTarget, "focus")} onKeyDown={onKey}
+      onPointerMove={event => { if (event.pointerType === "touch") return; const point = pointAt(event); if (point !== undefined) owner.engage(String(point), event.currentTarget, "pointer"); else owner.leave(event.currentTarget, "pointer"); }}
+      onPointerLeave={event => owner.leave(event.currentTarget, "pointer")} onClick={event => { const point = pointAt(event as unknown as PointerEvent<SVGSVGElement>); if (point !== undefined) select(point, event.currentTarget); }}>
       <defs><clipPath id={`${id}-plot`}><rect x={left} y={top} width={right-left} height={bottom-top} /></clipPath></defs>
       {widget.options?.showGrid !== false && [top, (top + bottom) / 2, bottom].map(y => <line key={y} x1={left} x2={right} y1={y} y2={y} className={styles.gridLine} />)}
       <g clipPath={`url(#${id}-plot)`}><path d={path} className={styles.line} stroke={color} data-multiple-path="true" />
@@ -111,9 +105,8 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
       {coordinatesOfSelected?.y !== undefined && <circle cx={coordinatesOfSelected.x} cy={coordinatesOfSelected.y} r="3" fill={color} className={styles.point} />}</g>
     </svg>
     <div className={styles.xAxis} aria-hidden="true"><span>{formatTimeTick(domain.start, domain.end - domain.start)}</span><span>{formatTimeTick(domain.end, domain.end - domain.start)}</span></div></div>
-    {detailsEnabled && current && selected && <ObservationTooltip id={id} anchor={current.anchor} avoidWidget pinned={current.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clear(); }} onLeave={() => { interaction.current.panel = false; leave(); }}>
+    {detailsEnabled && current && selected && <ObservationTooltip id={id} anchor={current.anchor} avoidWidget pinned={current.pinned} onDismiss={owner.dismiss} onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
       <MetricDetails widget={widget} series={entry} index={index} point={selected} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample" />
-      <TooltipPinHint pinned={current.pinned} />
     </ObservationTooltip>}
   </section>;
 }

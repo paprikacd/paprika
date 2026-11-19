@@ -8,7 +8,8 @@ import { GammaButton } from "./gamma/button";
 import { TooltipPinHint } from "./tooltip-content";
 import configStyles from "./chart-styles.module.css";
 import { placePointerAvoiding, placeTooltip, tooltipLimit, type TooltipObstacle, type TooltipPlacementOptions, type TooltipPosition, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
-import { attachTooltipDismissal, useTooltipDismiss, type TooltipDismissalTarget } from "./tooltip-dismiss";
+import { attachTooltipDismissal, type TooltipDismissalTarget } from "./tooltip-dismiss";
+import { useObservationOwner } from "./observation-owner";
 import { isRestoringTooltipFocus, restoreTooltipFocus, tooltipFocusOwner, withTooltipDismissReason, type TooltipDismissReason } from "./tooltip-focus";
 import { registerNestedPanel, TooltipOwnerContext, tooltipScopeFor, useProvidedTooltipScope } from "./tooltip-interaction";
 
@@ -60,6 +61,8 @@ export interface ObservationTooltipProps {
   anchorOwnsHistoryKeys?: boolean;
   avoidWidget?: boolean;
   pinned?: boolean;
+  /** The keep-open and close hint, rendered as the panel's last line. Only a host with its own footer turns it off. */
+  pinHint?: boolean;
   /** Placement, gap and size limits from the widget's tooltip settings. Unset fields keep the defaults. */
   options?: TooltipPlacementOptions;
   panelRef?: (element: HTMLDivElement | null) => void;
@@ -105,6 +108,7 @@ export function ObservationTooltip({
   anchorOwnsHistoryKeys = false,
   avoidWidget = false,
   pinned = false,
+  pinHint = true,
   options,
   panelRef,
   role = "tooltip",
@@ -436,7 +440,7 @@ export function ObservationTooltip({
         </div>
       )}
       <TooltipOwnerContext.Provider value={token}>
-        <div id={`${id}-details`} hidden={minimized}>{children}</div>
+        <div id={`${id}-details`} hidden={minimized}>{children}{pinHint && <TooltipPinHint pinned={pinned} />}</div>
       </TooltipOwnerContext.Provider>
     </div>,
     // Native dialogs occupy the browser top layer; a body portal would render
@@ -488,57 +492,22 @@ export function ObservationDetails({
   mark?: boolean;
 }) {
   const id = useId();
-  // The panel is tied to the stable key when there is one, so a refresh that keeps the key keeps the panel open.
-  const retention: unknown = observationKey ?? revision;
-  const [active, setActive] = useState<{
-    anchor: Element;
-    pinned: boolean;
-    revision: unknown;
-  } | null>(null);
-  const interaction = useRef({ focused: false, hovered: false, panel: false });
-  const hide = useTooltipDismiss({
-    // A pinned observation is only ever closed by its owner.
-    onDismiss: () => setActive(current => current && !current.pinned ? null : current),
-    pinned: !!active?.pinned,
-    revision: retention,
+  // One observation per trigger: its key (or revision) retains the open panel, as the owner's rules describe.
+  const key = observationKey ?? "observation";
+  const owner = useObservationOwner({
     enabled,
-    engaged: () => interaction.current.focused || interaction.current.hovered || interaction.current.panel,
+    retention: observationKey !== undefined ? { keys: [observationKey] } : { revision },
   });
-  const dismiss = () => {
-    hide.cancel();
-    interaction.current.panel = false;
-    setActive(null);
-  };
+  const { engage, leave } = owner;
+  const trigger = owner.trigger(key);
   useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
+  // A host-driven anchor previews as a hover on that element, and releases it when the host lets go.
   useEffect(() => {
     if (!externalAnchor || !enabled) return;
-    let disposed = false;
-    const interactionState = interaction.current;
-    interactionState.hovered = true;
-    hide.cancel();
-    queueMicrotask(() => {
-      if (!disposed)
-        setActive((current) =>
-          current?.pinned
-            ? current
-            : { anchor: externalAnchor, pinned: false, revision: retention },
-        );
-    });
-    return () => {
-      disposed = true;
-      interactionState.hovered = false;
-      hide.schedule();
-    };
-  }, [externalAnchor, enabled, retention, hide]);
-  if (active && (active.revision !== retention || !enabled)) {
-    setActive(null);
-  }
-  const show = (anchor: HTMLButtonElement, pinned = false) => {
-    hide.cancel();
-    if (!enabled) return;
-
-    setActive({ anchor, pinned, revision: retention });
-  };
+    engage(key, externalAnchor, "pointer");
+    return () => leave(externalAnchor, "pointer");
+  }, [externalAnchor, enabled, key, engage, leave]);
+  const active = owner.active;
   if (!enabled && !onSelect)
     return <span className={className}>{children}</span>;
   return (
@@ -552,31 +521,20 @@ export function ObservationDetails({
         aria-pressed={enabled ? (active?.pinned ?? false) : undefined}
         tabIndex={tabIndex}
         onPointerEnter={(event) => {
-          if (!pointerPreview || event.pointerType === "touch") return;
-          interaction.current.hovered = true;
-          if (!active?.pinned) show(event.currentTarget);
+          if (!pointerPreview) return;
+          trigger.onPointerEnter(event);
         }}
-        onPointerLeave={() => {
-          interaction.current.hovered = false;
-          hide.schedule();
-        }}
+        onPointerLeave={trigger.onPointerLeave}
         onFocus={(event) => {
-          interaction.current.focused = true;
-          // Returning focus to the trigger after a dismissal must not reopen or reselect.
-          if (isRestoringTooltipFocus()) return;
+          // Returning focus to the trigger after a dismissal must not reopen or reselect; it still holds the focus.
+          if (isRestoringTooltipFocus()) { owner.holdFocus(event.currentTarget); return; }
           if (selectOnFocus) onSelect?.();
-          if (!active?.pinned) show(event.currentTarget);
+          trigger.onFocus(event);
         }}
-        onBlur={() => {
-          interaction.current.focused = false;
-          // Focus can move into the portaled content. Pinned observations
-          // remain open until explicitly dismissed.
-          hide.schedule();
-        }}
+        onBlur={trigger.onBlur}
         onClick={(event) => {
           onSelect?.();
-          if (active?.pinned) dismiss();
-          else show(event.currentTarget, true);
+          owner.toggle(key, event.currentTarget);
         }}
       >
         {children}
@@ -588,18 +546,11 @@ export function ObservationDetails({
           avoidWidget={avoidWidget}
           pinned={active.pinned}
           options={options}
-          onDismiss={dismiss}
-          onEnter={() => {
-            interaction.current.panel = true;
-            hide.cancel();
-          }}
-          onLeave={() => {
-            interaction.current.panel = false;
-            hide.schedule();
-          }}
+          onDismiss={() => owner.dismiss()}
+          onEnter={owner.panelEnter}
+          onLeave={owner.panelLeave}
         >
           {details}
-          <TooltipPinHint pinned={active.pinned} />
         </ObservationTooltip>
       )}
     </>

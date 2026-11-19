@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { thresholdPaint } from "../status";
@@ -12,8 +12,8 @@ import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import { UTC_DAY, uptimeObservations, type ObservationDay } from "./uptime-observations";
-import { TooltipPinHint } from "../tooltip-content";
 import { occurrenceKeys } from "../tooltip-identity";
+import { useObservationOwner } from "../observation-owner";
 import styles from "./uptime-views.module.css";
 import { formatBounds } from "../units";
 
@@ -36,8 +36,6 @@ function locateDay(data: { rows: readonly { entry: Series; days: readonly Observ
   return undefined;
 }
 const stateText = (day: ObservationDay) => day.kind === "unknown" ? "No recorded value" : day.kind === "mixed" ? "Mixed or incomplete observations" : bandReading(day.threshold);
-// The open day is named by its series and UTC day, so a refresh keeps it open with its new values.
-type Active = { key: string; anchor: HTMLButtonElement; pinned: boolean };
 
 function UptimeView({ widget, result, onContextChange, embedded, calendar }: WidgetRendererProps & { calendar: boolean }) {
   const config = configSchema.parse(widget.config ?? {});
@@ -47,30 +45,22 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
   const legendBound = (value: number) => `≥ ${formatBounds([value], widget.unit, widget.options?.decimals, thresholds.map(threshold => threshold.value))[0]}`;
   const data = useMemo(() => uptimeObservations(source, thresholds, config.maxDays ?? 90, config.maxSeries ?? (calendar ? 1 : 8)), [source, thresholds, config.maxDays, config.maxSeries, calendar]);
   const parentEmbedded = useEmbeddedWidget(), interactive = !embedded && !parentEmbedded, detailsEnabled = interactive && widget.options?.showTooltip !== false;
-  const id = useId(), root = useRef<HTMLDivElement>(null), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // The cells that own the pointer and focus: a preview closes only when its own day is neither hovered nor focused.
-  const interaction = useRef<{ hover: HTMLButtonElement | null; focus: HTMLButtonElement | null; panel: boolean }>({ hover: null, focus: null, panel: false });
-  const [active, setActive] = useState<Active>();
+  const id = useId(), root = useRef<HTMLDivElement>(null);
   const [focusKey, setFocusKey] = useState("0-0");
   const rowKeys = useMemo(() => occurrenceKeys(data.rows.map(({ entry }, row) => seriesName(entry, row))), [data]);
-
-  const clear = useCallback(() => clearTimeout(timer.current), []);
-  const dismiss = useCallback(() => { clear(); interaction.current.panel = false; setActive(undefined); }, [clear]);
-  const leave = useCallback(() => { clear(); timer.current = setTimeout(() => {
-    const current = interaction.current;
-    setActive(previous => previous && !previous.pinned && !current.panel && current.hover !== previous.anchor && current.focus !== previous.anchor ? undefined : previous);
-  }, 180); }, [clear]);
-  useEffect(() => clear, [clear]);
+  // A day is named by its series and UTC day, so a refresh keeps an open day open and re-anchors it to its cell.
+  const dayKeys = useMemo(() => data.rows.flatMap((row, index) => row.days.map(day => dayIdentity(rowKeys[index], day.day))), [data, rowKeys]);
+  const owner = useObservationOwner({
+    enabled: detailsEnabled,
+    retention: { keys: dayKeys },
+    locate: key => {
+      const found = locateDay(data, rowKeys, key);
+      return found ? root.current?.querySelector<HTMLButtonElement>(`[data-uptime-key="${found.row}-${found.index}"]`) ?? null : null;
+    },
+  });
+  const active = owner.active;
   // Frames need room: the measured track gives each cell's width, so narrow days stay unframed and keep their fill.
   const track = useTrackSize(root, "[data-uptime-track]", result);
-  // A day that left the result closes its preview and releases its pin; a day that stays keeps its anchor on the current cell.
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- a stale pin must be released once its day has left the result
-  useEffect(() => { if (active && !locateDay(data, rowKeys, active.key)) setActive(undefined); }, [active, data, rowKeys]);
-  useLayoutEffect(() => {
-    const found = active && locateDay(data, rowKeys, active.key);
-    const element = found && root.current?.querySelector<HTMLButtonElement>(`[data-uptime-key="${found.row}-${found.index}"]`);
-    if (active && element && element !== active.anchor) setActive(previous => previous && previous.key === active.key ? { ...previous, anchor: element } : previous);
-  }, [active, data, rowKeys]);
   if (!data.rows.length) return <EmptyState />;
   // A lone series has no peers to compare labels with, so its generated name is shortened to its own preferred label.
   const names = data.rows.length === 1 ? [preferredSeriesLabel(data.rows[0].entry)] : compactSeriesLabels(data.rows.map(row => row.entry));
@@ -81,10 +71,6 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
     const count = data.rows[row].days.length;
     if (calendar) { const width = (track.width - 18) / 7; return { width, height: width }; }
     return { width: (track.width - (count - 1) * 2) / count, height: track.height };
-  };
-  const show = (index: number, day: ObservationDay, anchor: HTMLButtonElement, pin = false) => {
-    if (!detailsEnabled) return;
-    clear(); setActive(previous => previous?.pinned && !pin ? previous : { key: dayIdentity(rowKeys[index], day.day), anchor, pinned: pin });
   };
   const key = (row: number, day: number) => `${row}-${day}`;
   // The open day is matched by its row and UTC day number, which a refresh keeps even when the cell index moves.
@@ -110,12 +96,12 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
     if (!interactive) return <span key={day.day} className={className} title={label} data-status-stroke={stroke} style={cellStyle} />;
     const [focusedRow, focusedIndex] = focusKey.split("-").map(Number);
     const tabKey = data.rows[focusedRow]?.days[focusedIndex] ? focusKey : "0-0";
+    const trigger = owner.trigger(dayIdentity(rowKeys[row], day.day));
     return <button key={day.day} type="button" data-uptime-key={key(row,index)} data-uptime-day={day.day} data-uptime-state={day.kind} aria-label={label} aria-describedby={`${id}-help${isOpen(row, day) ? ` ${id}` : ""}`} aria-pressed={detailsEnabled ? isOpen(row, day) && open?.pinned : undefined} tabIndex={tabKey === key(row,index) ? 0 : -1} className={className} data-status-stroke={stroke} style={cellStyle}
-      onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hover = event.currentTarget; show(row,day,event.currentTarget); } }}
-      onPointerLeave={event => { if (interaction.current.hover === event.currentTarget) interaction.current.hover = null; leave(); }}
-      onFocus={event => { interaction.current.focus = event.currentTarget; setFocusKey(key(row,index)); show(row,day,event.currentTarget); }}
-      onBlur={event => { if (interaction.current.focus === event.currentTarget) interaction.current.focus = null; leave(); }} onKeyDown={event => navigate(event,row,index)}
-      onClick={event => { onContextChange?.({ labels: entry.labels, value: typeof day.latest?.value === "number" && Number.isFinite(day.latest.value) ? day.latest.value : null, series: name }); if (open?.pinned && open.anchor === event.currentTarget) dismiss(); else show(row,day,event.currentTarget,true); }} />;
+      onPointerEnter={trigger.onPointerEnter} onPointerLeave={trigger.onPointerLeave}
+      onFocus={event => { setFocusKey(key(row,index)); trigger.onFocus(event); }}
+      onBlur={trigger.onBlur} onKeyDown={event => navigate(event,row,index)}
+      onClick={event => { onContextChange?.({ labels: entry.labels, value: typeof day.latest?.value === "number" && Number.isFinite(day.latest.value) ? day.latest.value : null, series: name }); trigger.onClick(event); }} />;
   };
   return <div className={styles.root} ref={root}>
     <span className={styles.srOnly} id={`${id}-help`}>Use arrow keys to move between days. Enter pins details; Escape closes them.</span>
@@ -131,10 +117,9 @@ function UptimeView({ widget, result, onContextChange, embedded, calendar }: Wid
       </section>)}
     </div>
     <div className={styles.footer}>{widget.options?.showLegend !== false && <div className={styles.legend} role="group" aria-label="Recorded day legend">{thresholds.map((threshold,index) => <span key={index}>{threshold.status ? <StatusChip status={threshold.status} color={threshold.color} label={threshold.label ?? legendBound(threshold.value)} /> : <><i style={{ background: thresholdPaint(threshold) }} />{threshold.label ?? legendBound(threshold.value)}</>}</span>)}<span><i className={styles.mixed} />Mixed / incomplete</span><span><i className={styles.unknown} />No recorded value</span></div>}<span>Recorded observations · UTC days</span><span>Not a measured uptime percentage</span>{data.truncatedDays && <span>Showing latest {config.maxDays ?? 90} days</span>}{data.truncatedSeries && <span>Showing {data.rows.length} of {source.length} series</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}</div>
-    {open && <ObservationTooltip id={id} anchor={open.anchor} avoidWidget pinned={open.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clear(); }} onLeave={() => { interaction.current.panel = false; leave(); }}>
+    {open && <ObservationTooltip id={id} anchor={open.anchor} avoidWidget pinned={open.pinned} onDismiss={owner.dismiss} onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
       <div className={styles.detail}><strong>{dayText(open.day.day)} UTC</strong>{open.day.kind === "observed" && open.day.threshold?.status ? <StatusChip status={open.day.threshold.status} color={open.day.threshold.color} label={open.day.threshold.label} /> : <span>{stateText(open.day)}</span>}<span>{open.day.count} recorded sample{open.day.count === 1 ? "" : "s"}{open.day.missing ? ` · ${open.day.missing} missing` : ""}</span><span>Samples do not establish availability for the full day.</span></div>
       {open.day.latest && <MetricDetails widget={widget} series={open.entry} index={open.index} point={open.day.latest} unit={widget.unit} decimals={widget.options?.decimals} subject={names[open.index]} seriesLabel={widget.title} description="Latest recorded sample that day" />}
-      <TooltipPinHint pinned={open.pinned} />
     </ObservationTooltip>}
   </div>;
 }

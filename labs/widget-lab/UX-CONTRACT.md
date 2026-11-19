@@ -86,7 +86,7 @@ Executed tests, browser actions and unfinished checks are recorded separately in
 | Behavior | Owner | Required outcome |
 | --- | --- | --- |
 | Chart window | Shared time-window math, pointer owner and controls | Finite, ordered, bounded timestamps; minimum source span; preview separate from committed state; click distinct from drag; exact UTC entry, Undo and Reset. The scope is local, without KPI/query mutation. |
-| Rich observation | Shared observation inspector and canonical tooltip owner | Exact same-time values; missing/absent/ambiguous samples disclosed; gap-preserving histories; raw statistics independent of visual reduction; named window/population and exact-data action. |
+| Rich observation | Canonical `ObservationTooltip` owner (`observation-tooltip.tsx`) | Exact same-time values; missing/absent/ambiguous samples disclosed; gap-preserving histories; raw statistics independent of visual reduction; named window/population and exact-data action. |
 | Responsive reference | ReferenceStudio, responsive CSS and measured reference SVG | Real reflow at every available width, with desktop columns, tablet rows and mobile stacking. Full chart content participates in panel height. Explicit source comparison retains literal geometry. |
 | Map wheel | Shared geographic viewport | Pointer-anchored ordinary zoom from 1–8×; consumed-only preventDefault; browser/horizontal gestures and outward-boundary scroll pass through; selection identity and values preserved. |
 

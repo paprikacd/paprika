@@ -57,6 +57,20 @@ describe("record table cell inspection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select row 1" }))
     expect(select).toHaveBeenCalledWith({ labels: { service: "api", ratio: "12.345", active: "false" } })
   })
+  it("does not reopen a cell's preview when Escape from its pinned panel returns focus to the cell", () => {
+    render(<RecordTable widget={widget} result={result} />)
+    const rows = screen.getAllByRole("row")
+    const value = within(rows[1]).getByText("12.35%").closest("td")!
+    value.focus()
+    fireEvent.click(value)
+    const panel = screen.getByRole("region", { name: "Record cell details" })
+    const close = within(panel).getByRole("button", { name: "Close" })
+    close.focus()
+    fireEvent.keyDown(close, { key: "Escape" })
+    expect(screen.queryByRole("region", { name: "Record cell details" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    expect(value).toHaveFocus()
+  })
   it("reports missing and boolean cells without manufacturing values", () => {
     render(<RecordTable widget={widget} result={result} />)
     const rows = screen.getAllByRole("row")

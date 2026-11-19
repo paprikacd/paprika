@@ -40,7 +40,7 @@ export function ChartTooltip({ children, pinned, onClose, onLeave, label, option
   });
   return <>
     <span ref={marker} hidden aria-hidden="true" data-inspector-anchor="" />
-    {anchor && <ObservationTooltip id={id} anchor={anchor} pinned={pinned} role={pinned ? 'region' : 'tooltip'}
+    {anchor && <ObservationTooltip id={id} anchor={anchor} pinned={pinned} role={pinned ? 'region' : 'tooltip'} pinHint={false}
       ariaLabel={label ?? children.props['aria-label']} className="lab-chart-tooltip" options={options}
       onDismiss={onClose} onLeave={onLeave}>
       {cloneElement(children, {

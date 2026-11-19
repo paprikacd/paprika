@@ -5,7 +5,7 @@ import type { Widget } from "./schema";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
 import { isRestoringTooltipFocus } from "./tooltip-focus";
-import { TooltipPinHint } from "./tooltip-content";
+import { useObservationOwner } from "./observation-owner";
 import { MetricDetails } from "./metric-tooltip-content";
 import { nearestStatHistoryIndex, statHistoryObservations, statPlotRectangle } from "./stat-history-interaction";
 import { area, line } from "d3-shape";
@@ -64,30 +64,15 @@ export function StatSparkline({
   const gradientId = useId();
   const tooltipId = useId();
   const [anchor, setAnchor] = useState<SVGSVGElement | null>(null);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const focused = useRef(false);
   const touchStart = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const enabled = !!widget && widget.options?.showTooltip !== false;
   const revision = useMemo(() => ({ series, widget, unit, name, color }), [series, widget, unit, name, color]);
   const observations = useMemo(() => statHistoryObservations(series.points), [series]);
-  const [selection, setSelection] = useState<{ revision: unknown; index: number; pinned: boolean } | null>(null);
-  const current = enabled && selection?.revision === revision ? selection : null;
+  // Samples are kept by their position; a new series, widget or unit closes the open panel.
+  const owner = useObservationOwner({ enabled, retention: { revision } });
+  const current = owner.active ? { index: Number(owner.active.key), pinned: owner.active.pinned } : null;
   const selected = current ? observations[current.index] : undefined;
-  const clearHide = useCallback(() => clearTimeout(hideTimer.current), []);
-  const dismiss = useCallback(() => { clearHide(); setSelection(null); }, [clearHide]);
-  const scheduleHide = useCallback(() => {
-    clearHide();
-    hideTimer.current = setTimeout(() => {
-      if (!focused.current) setSelection(value => value?.pinned ? value : null);
-    }, 180);
-  }, [clearHide]);
-  useEffect(() => clearHide, [revision, clearHide]);
   useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
-  const select = (index: number, pinned = false) => {
-    clearHide();
-    if (index < 0) return;
-    setSelection(previous => previous?.revision === revision && previous.index === index && previous.pinned === pinned ? previous : { revision, index, pinned });
-  };
   const indexAt = (clientX: number, svg: SVGSVGElement) => {
     const bounds = svg.getBoundingClientRect();
     if (!bounds.width || !observations.length) return -1;
@@ -205,14 +190,17 @@ export function StatSparkline({
       onPointerMove={enabled ? event => {
         if (event.pointerType === "touch") {
           if (touchStart.current && Math.hypot(event.clientX - touchStart.current.x, event.clientY - touchStart.current.y) > 8) touchStart.current.moved = true;
-        } else if (!current?.pinned) select(indexAt(event.clientX, event.currentTarget));
+        } else if (!current?.pinned) {
+          const index = indexAt(event.clientX, event.currentTarget);
+          if (index >= 0) owner.engage(String(index), event.currentTarget, "pointer");
+          else owner.leave(event.currentTarget, "pointer");
+        }
       } : undefined}
       onPointerDown={enabled ? event => {
         if (event.pointerType === "touch") { touchStart.current = { x: event.clientX, y: event.clientY, moved: false }; return; }
         const index = indexAt(event.clientX, event.currentTarget);
         onSelect?.();
-        if (current?.pinned && current.index === index) dismiss();
-        else select(index, true);
+        if (index >= 0) owner.toggle(String(index), event.currentTarget);
       } : undefined}
       onPointerUp={enabled ? event => {
         if (event.pointerType !== "touch") return;
@@ -221,27 +209,36 @@ export function StatSparkline({
         if (!start || start.moved || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) return;
         const index = indexAt(event.clientX, event.currentTarget);
         onSelect?.();
-        if (current?.pinned && current.index === index) dismiss();
-        else select(index, true);
+        if (index >= 0) owner.toggle(String(index), event.currentTarget);
       } : undefined}
       onPointerCancel={enabled ? () => { touchStart.current = null; } : undefined}
-      onPointerLeave={enabled ? scheduleHide : undefined}
-      onFocus={enabled ? () => {
-        focused.current = true;
-        clearHide();
+      onPointerLeave={enabled ? event => owner.leave(event.currentTarget, "pointer") : undefined}
+      onFocus={enabled ? event => {
         // Focus returned by a dismissal must neither reopen nor reselect the history.
-        if (isRestoringTooltipFocus()) return;
-        setSelection(previous => previous?.revision === revision ? previous : { revision, index: observations.length - 1, pinned: false });
+        if (isRestoringTooltipFocus()) { owner.holdFocus(event.currentTarget); return; }
+        // An open preview or pin keeps its sample; focus previews the latest one only when nothing is open.
+        if (owner.active) owner.holdFocus(event.currentTarget);
+        else owner.engage(String(observations.length - 1), event.currentTarget, "focus");
         onSelect?.();
       } : undefined}
-      onBlur={enabled ? () => { focused.current = false; scheduleHide(); } : undefined}
+      onBlur={enabled ? event => owner.leave(event.currentTarget, "focus") : undefined}
       onKeyDown={enabled ? event => {
         const index = current?.index ?? observations.length - 1;
-        if (event.key === "Escape") { event.preventDefault(); dismiss(); }
+        if (event.key === "Escape") { event.preventDefault(); owner.dismiss(); }
         else if (["ArrowLeft", "ArrowRight", "Home", "End", "Enter", " "].includes(event.key)) {
           event.preventDefault();
-          if (event.key === "Enter" || event.key === " ") { onSelect?.(); select(index, !current?.pinned); }
-          else select(event.key === "Home" ? 0 : event.key === "End" ? observations.length - 1 : Math.max(0, Math.min(observations.length - 1, index + (event.key === "ArrowLeft" ? -1 : 1))), current?.pinned);
+          if (event.key === "Enter" || event.key === " ") {
+            onSelect?.();
+            // A second Enter releases the pin and keeps the sample previewed, as a pointer click does not.
+            if (current?.pinned && current.index === index) owner.unpin();
+            else owner.toggle(String(index), event.currentTarget);
+          }
+          else {
+            const next = event.key === "Home" ? 0 : event.key === "End" ? observations.length - 1 : Math.max(0, Math.min(observations.length - 1, index + (event.key === "ArrowLeft" ? -1 : 1)));
+            // Keyboard movement keeps a pin on the sample it reaches, and otherwise previews it.
+            if (current?.pinned) owner.pin(String(next), event.currentTarget);
+            else owner.engage(String(next), event.currentTarget, "focus");
+          }
         }
       } : undefined}
       viewBox="0 0 240 64"
@@ -309,9 +306,8 @@ export function StatSparkline({
         </>}
       </g>}
     </svg>
-    {selected && current && anchor && <ObservationTooltip id={tooltipId} anchor={anchor} anchorRect={sampleRect} preferSide anchorOwnsHistoryKeys pinned={current.pinned} onDismiss={dismiss} onEnter={clearHide} onLeave={scheduleHide}>
+    {selected && current && anchor && <ObservationTooltip id={tooltipId} anchor={anchor} anchorRect={sampleRect} preferSide anchorOwnsHistoryKeys pinned={current.pinned} onDismiss={() => owner.dismiss()} onEnter={() => owner.panelEnter()} onLeave={() => owner.panelLeave()}>
       <MetricDetails widget={widget} series={series} index={0} point={selected} unit={unit} description="Recorded sample" />
-      <TooltipPinHint pinned={current.pinned} />
     </ObservationTooltip>}
     </>
   );
