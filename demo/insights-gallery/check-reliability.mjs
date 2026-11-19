@@ -41,3 +41,16 @@ for (const service of ["checkout", "payments"]) {
   assert.ok(within.some(p => other.has(p.timestamp) && Math.abs(p.value - other.get(p.timestamp)) > 0.1), `${service}: 1h and 6h burn rates must diverge during the event`)
   console.log(`PASS ${service}: incident ${new Date(from).toISOString()}–${new Date(to).toISOString()}, 1h burn peak ${peak.toFixed(2)}×`)
 }
+
+// The services-attention table must agree with itself: a service is At risk exactly when its rounded budget is spent.
+const attentionQuery = saved.find(q => q.id === "local-reliability-attention")
+assert.ok(attentionQuery, "The Reliability attention saved query must exist")
+const attention = (await request("/api/insights/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerId: attentionQuery.providerId, kind: attentionQuery.kind, query: attentionQuery.query, start, end, step: 1800 }) })).records
+const column = key => attention.columns.findIndex(item => item.key === key)
+assert.ok(attention.rows.length > 0, "The attention table must have rows")
+for (const row of attention.rows) {
+  const budget = row[column("budget")], status = row[column("status")], service = row[column("service")]
+  assert.ok(Number.isFinite(budget) && budget >= 0 && budget <= 100, `${service}: budget ${budget} is outside 0-100`)
+  assert.equal(status === "At risk", budget <= 0, `${service}: status ${status} disagrees with budget ${budget}`)
+}
+console.log(`PASS attention: ${attention.rows.length} services, status agrees with budget`)

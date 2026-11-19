@@ -68,16 +68,17 @@ func requireNoHits(t *testing.T, findings []*insightsv1.CheckFinding, ruleID str
 func TestLintRegistryIsWellFormed(t *testing.T) {
 	seen := map[string]bool{}
 	want := map[string]insightsv1.Severity{
-		"layout.overlap":         insightsv1.Severity_SEVERITY_ERROR,
-		"layout.hole":            insightsv1.Severity_SEVERITY_WARNING,
-		"variables.undeclared":   insightsv1.Severity_SEVERITY_WARNING,
-		"stat.density":           insightsv1.Severity_SEVERITY_WARNING,
-		"stat.compact-bar":       insightsv1.Severity_SEVERITY_WARNING,
-		"description.provenance": insightsv1.Severity_SEVERITY_WARNING,
-		"axis.unit-in-label":     insightsv1.Severity_SEVERITY_WARNING,
-		"plugin.unknown":         insightsv1.Severity_SEVERITY_WARNING,
-		"color.near-status":      insightsv1.Severity_SEVERITY_WARNING,
-		"stat.compare-arrow":     insightsv1.Severity_SEVERITY_WARNING,
+		"layout.overlap":          insightsv1.Severity_SEVERITY_ERROR,
+		"layout.hole":             insightsv1.Severity_SEVERITY_WARNING,
+		"variables.undeclared":    insightsv1.Severity_SEVERITY_WARNING,
+		"stat.density":            insightsv1.Severity_SEVERITY_WARNING,
+		"stat.compact-bar":        insightsv1.Severity_SEVERITY_WARNING,
+		"description.provenance":  insightsv1.Severity_SEVERITY_WARNING,
+		"axis.unit-in-label":      insightsv1.Severity_SEVERITY_WARNING,
+		"plugin.unknown":          insightsv1.Severity_SEVERITY_WARNING,
+		"color.near-status":       insightsv1.Severity_SEVERITY_WARNING,
+		"stat.compare-arrow":      insightsv1.Severity_SEVERITY_WARNING,
+		"table.shared-thresholds": insightsv1.Severity_SEVERITY_WARNING,
 	}
 	if len(lintRules) != len(want) {
 		t.Fatalf("registry has %d rules, want %d", len(lintRules), len(want))

@@ -23,7 +23,7 @@ import { useEmbeddedWidget } from "../widget-presentation"
 import type { RecordFrame } from "../schema"
 import { truncationNote, type TruncationSource } from "../truncation"
 import styles from "./records.module.css"
-import { StyledRecordCell, parseRecordHistory, tableCellStyleError, tableCellStylesSchema, tableTextPalette, type ColumnFormat } from "./record-table-cells"
+import { StyledRecordCell, parseRecordHistory, resolveColumnThresholds, tableCellStyleError, tableCellStylesSchema, tableTextPalette, type ColumnFormat } from "./record-table-cells"
 import { useInsightsTheme } from "../insights-theme"
 import { useDashboardWindow } from "../dashboard-window"
 import { PlotHatchDefs, plotHatchFill } from "../plot-hatch"
@@ -208,8 +208,6 @@ export function RecordTable({
 }: WidgetRendererProps) {
   const { apply: applyTime } = useDashboardWindow()
   const { resolvedTheme } = useInsightsTheme()
-  const textColors = useMemo(() => tableTextPalette(resolvedTheme, widget.options?.background, widget.options?.thresholds, widget.color),
-    [resolvedTheme, widget.options?.background, widget.options?.thresholds, widget.color])
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(0)
   const [sort, setSort] = useState<{
@@ -227,6 +225,11 @@ export function RecordTable({
   const cellPanel = useRef<HTMLDivElement | null>(null)
   const [horizontalOverflow, setHorizontalOverflow] = useState(false)
   const config = useMemo(() => tableConfig.parse(widget.config ?? {}), [widget.config])
+  // Text paint covers every band set the table draws: the widget's and each column's own.
+  const paletteThresholds = useMemo(() => [...(widget.options?.thresholds ?? []), ...(config.cellStyles ?? []).flatMap(style => style.thresholds ?? [])],
+    [widget.options?.thresholds, config.cellStyles])
+  const textColors = useMemo(() => tableTextPalette(resolvedTheme, widget.options?.background, paletteThresholds, widget.color),
+    [resolvedTheme, widget.options?.background, paletteThresholds, widget.color])
   const activeSearch = !embedded && config.showSearch ? search : ""
   const cellConfigIdentity = JSON.stringify([config.columns, config.cellStyles])
   // A new frame, search, sort, page or cell setup closes the open cell panel.
@@ -407,7 +410,7 @@ export function RecordTable({
                         next?.focus({ preventScroll: true }); next?.scrollIntoView?.({ block: "nearest", inline: "nearest" })
                       }}>
                       {style ? <StyledRecordCell value={row[index]} formatted={formatted} format={columnFormatters(frame, widget.options?.decimals)[index]} column={field} style={style}
-                        thresholds={widget.options?.thresholds} color={widget.color} textColors={textColors} decimals={widget.options?.decimals} thresholdValue={thresholdIndexes.has(field.key) ? row[thresholdIndexes.get(field.key)!] : undefined} nativeTitle={false} /> : formatted}
+                        thresholds={resolveColumnThresholds(style, widget.options?.thresholds)} color={widget.color} textColors={textColors} decimals={widget.options?.decimals} thresholdValue={thresholdIndexes.has(field.key) ? row[thresholdIndexes.get(field.key)!] : undefined} nativeTitle={false} /> : formatted}
                     </td>
                   })}
                   {onContextChange && !embedded && (

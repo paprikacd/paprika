@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, registerRecordWidgetPlugins } from "./records"
-import { StyledRecordCell, colorBackgroundFill, tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
+import { StyledRecordCell, colorBackgroundFill, resolveColumnThresholds, tableBarGeometry, tableCellStylesSchema, tableTextColor, tableTextPalette } from "./record-table-cells"
 import { PluginConfigEditor } from "../plugin-config-editor"
 import { getWidgetDefinition } from "../widget-registry"
 import { contrastRatio } from "../appearance"
@@ -350,3 +350,78 @@ describe("status band cell fill", () => {
     expect(cell.getAttribute("style")).toContain("color: var(--gamma-status-critical-on)");
   });
 });
+
+describe("column thresholds", () => {
+  const availabilityWidget: Widget = {
+    id: "services", title: "Services", type: "plugin", pluginId: "record-table", dataKind: "records",
+    providerId: "records", query: "services", unit: "", layout: { x: 0, y: 0, w: 6, h: 3 },
+    config: { cellStyles: [
+      { column: "usage", display: "color-text", unit: "%", thresholds: [{ value: 0, status: "critical", label: "Exhausted" }, { value: 99.9, status: "ok", label: "Healthy" }] },
+      { column: "load", display: "bar", min: 0, max: 100, unit: "%" },
+    ] },
+    options: { decimals: 2, thresholds: [{ value: 0, status: "warning", label: "Watch" }] },
+  }
+  const bands: QueryResult = { records: {
+    columns: [{ key: "host", type: "string" }, { key: "usage", label: "Usage", type: "number" }, { key: "load", label: "Load", type: "number" }],
+    rows: [["a", 99.86, 40]],
+  } }
+
+  it("colours a column with its own bands and leaves other columns on the widget bands", () => {
+    render(<RecordTable widget={availabilityWidget} result={bands} />)
+    expect(screen.getByRole("img", { name: "Usage: 99.86% · Exhausted" })).toBeInTheDocument()
+    expect(screen.getByRole("img", { name: /^Load: 40\.00% · Watch/ })).toBeInTheDocument()
+  })
+
+  it("uses the column's own colour bands for text paint, not only the widget bands", () => {
+    const paint: Widget = { ...availabilityWidget, config: { cellStyles: [{ column: "usage", display: "color-text", thresholds: [{ value: 0, color: "#f2cc0c", label: "Amber" }] }] }, options: { decimals: 2 } }
+    render(<RecordTable widget={paint} result={bands} />)
+    const reading = screen.getByRole("img", { name: "Usage: 99.86 · Amber" })
+    expect(reading.style.color).not.toBe("")
+    expect(contrastRatio(reading.style.color, "#ffffff")).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it("accepts column bands on colour cells and history sparklines with a threshold column only", () => {
+    expect(tableCellStylesSchema.parse([{ column: "usage", display: "bar", min: 0, max: 100, thresholds: [{ value: 0, status: "ok" }] }])).toHaveLength(1)
+    expect(tableCellStylesSchema.parse([{ column: "usage", display: "sparkline", thresholdColumn: "risk", thresholds: [{ value: 0, status: "ok" }] }])).toHaveLength(1)
+    for (const invalid of [
+      [{ column: "usage", display: "status-badge", mappings: [{ value: "x", status: "ok" }], thresholds: [{ value: 0, status: "ok" }] }],
+      [{ column: "usage", display: "sparkline", thresholds: [{ value: 0, status: "ok" }] }],
+      [{ column: "usage", display: "color-text", thresholds: [{ value: 5, status: "ok" }, { value: 5, status: "critical" }] }],
+      [{ column: "usage", display: "color-text", thresholds: [] }],
+    ]) expect(() => tableCellStylesSchema.parse(invalid)).toThrow()
+  })
+
+  it("resolves a column's own bands before the widget's", () => {
+    const widgetBands = [{ value: 0, status: "warning" as const }]
+    const own = [{ value: 0, status: "critical" as const }]
+    expect(resolveColumnThresholds({ thresholds: own }, widgetBands)).toBe(own)
+    expect(resolveColumnThresholds({}, widgetBands)).toBe(widgetBands)
+    expect(resolveColumnThresholds(undefined, undefined)).toBeUndefined()
+  })
+
+  it("authors a column's own bands in the column editor and writes exact JSON", () => {
+    registerRecordWidgetPlugins()
+    function Editor() {
+      const [value, setValue] = useState('{"columns":["host","usage"]}')
+      return <PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={value} onChange={setValue} />
+    }
+    render(<Editor />)
+    fireEvent.click(screen.getByRole("button", { name: "Add column style" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 name" }), { target: { value: "usage" } })
+    const json = () => JSON.parse((screen.getByRole("textbox", { name: "Plugin configuration", hidden: true }) as HTMLTextAreaElement).value)
+    expect(json().cellStyles[0].thresholds).toBeUndefined()
+    fireEvent.click(screen.getByRole("switch", { name: /^Own thresholds for this column/ }))
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "bar", min: 0, max: 100, thresholds: [{ value: 0, status: "ok" }] }])
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Column 1 threshold 1 value" }), { target: { value: "-5" } })
+    fireEvent.change(screen.getByRole("textbox", { name: "Column 1 threshold 1 label" }), { target: { value: "Low" } })
+    fireEvent.click(screen.getByRole("button", { name: "Add column 1 threshold" }))
+    expect(json().cellStyles[0].thresholds).toEqual([{ value: -5, status: "ok", label: "Low" }, { value: -4, status: "warning" }])
+    fireEvent.click(screen.getByRole("button", { name: "Remove column 1 threshold 2" }))
+    expect(json().cellStyles[0].thresholds).toEqual([{ value: -5, status: "ok", label: "Low" }])
+    // Removing the last band turns the column's own set off, so the saved JSON never holds an empty list.
+    fireEvent.click(screen.getByRole("button", { name: "Remove column 1 threshold 1" }))
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "bar", min: 0, max: 100 }])
+    fireEvent.click(screen.getByRole("switch", { name: /^Own thresholds for this column/ }))
+    expect(json().cellStyles).toEqual([{ column: "usage", display: "bar", min: 0, max: 100, thresholds: [{ value: 0, status: "ok" }] }])
+  })
+})

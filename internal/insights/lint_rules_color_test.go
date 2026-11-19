@@ -227,6 +227,18 @@ func TestNearStatusColourChecksColourOnlyMappings(t *testing.T) {
 	}
 }
 
+// A column's own threshold bands colour cells as the widget's thresholds do, so a colour-only band is a
+// bare colour too, and a band that names a status is not checked.
+func TestNearStatusColourChecksColumnThresholdBands(t *testing.T) {
+	findings := colourFinding(t,
+		pluginTestWidget("records", "record-table", `"dataKind":"records","config":{"cellStyles":[{"column":"availability","display":"color-text","thresholds":[{"value":0,"color":"#d14343"},{"value":99.9,"status":"ok","color":"#22c55e"}]}]}`),
+	)
+	requireOneHitAmong(t, findings, "color.near-status", "/widgets/0/config/cellStyles/0/thresholds/0/color")
+	if count := countRule(findings, "color.near-status"); count != 1 {
+		t.Fatalf("color.near-status hits = %d, want only the colour-only column band", count)
+	}
+}
+
 // A plugin config series rule is checked the same way as a widget series rule.
 func TestNearStatusColourChecksPluginSeriesRules(t *testing.T) {
 	findings := colourFinding(t,
