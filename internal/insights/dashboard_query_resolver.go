@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type dashboardReadDocument struct {
@@ -23,8 +25,10 @@ type dashboardReadTimeRange struct {
 }
 
 type dashboardReadVariable struct {
-	Name         string  `json:"name"`
-	DefaultValue *string `json:"defaultValue"`
+	Name         string   `json:"name"`
+	Label        string   `json:"label"`
+	DefaultValue *string  `json:"defaultValue"`
+	Options      []string `json:"options"`
 }
 
 type dashboardReadWidget struct {
@@ -103,6 +107,100 @@ func dashboardVariableValues(definitions []dashboardReadVariable, overrides map[
 		values[name] = value
 	}
 	return values, nil
+}
+
+// dashboardVariableDetailBytes caps the encoded label, default and option text that query-dashboard reports per
+// result. The count is the bytes the encoder writes, so escaped characters count in full. A variable whose label
+// and default do not fit reports neither and sets detailOmitted. Options past the budget are counted in
+// optionsOmitted. get_dashboard returns the full definitions, so one large variable cannot push a result over the cap.
+const dashboardVariableDetailBytes = 4 << 10
+
+// dashboardVariableWarningValueBytes bounds the override value a warning names. The warning keeps its reason
+// (" is not one of the declared options") inside the text synopsis's per-warning limit.
+const dashboardVariableWarningValueBytes = 64
+
+// DashboardQueryVariable is a declared dashboard variable as query-dashboard reports it. Its value for this call
+// is the result's variables map, which holds the saved default unless an override replaced it.
+type DashboardQueryVariable struct {
+	Name           string   `json:"name"`
+	Label          string   `json:"label,omitempty"`
+	DefaultValue   *string  `json:"defaultValue,omitempty"`
+	Options        []string `json:"options,omitempty"`
+	OptionsOmitted int      `json:"optionsOmitted,omitempty"`
+	DetailOmitted  bool     `json:"detailOmitted,omitempty"`
+}
+
+// dashboardQueryVariables reports each declared variable with its label, default and static options, in
+// declaration order. The label, default and options share one encoded byte budget, spent in that order.
+func dashboardQueryVariables(definitions []dashboardReadVariable) []DashboardQueryVariable {
+	if len(definitions) == 0 {
+		return nil
+	}
+	out := make([]DashboardQueryVariable, 0, len(definitions))
+	budget := dashboardVariableDetailBytes
+	for _, definition := range definitions {
+		variable := DashboardQueryVariable{Name: definition.Name}
+		detail := 0
+		if definition.Label != "" {
+			detail += encodedStringBytes(definition.Label)
+		}
+		if definition.DefaultValue != nil {
+			detail += encodedStringBytes(*definition.DefaultValue)
+		}
+		if detail <= budget {
+			budget -= detail
+			variable.Label = definition.Label
+			variable.DefaultValue = definition.DefaultValue
+		} else {
+			variable.DetailOmitted = true
+		}
+		for index, option := range definition.Options {
+			cost := encodedStringBytes(option) + 1 // The comma that separates it from the previous option.
+			if cost > budget {
+				variable.OptionsOmitted = len(definition.Options) - index
+				break
+			}
+			budget -= cost
+			variable.Options = append(variable.Options, option)
+		}
+		out = append(out, variable)
+	}
+	return out
+}
+
+// encodedStringBytes is the length of s as the result encoder writes it, quotes and escapes included.
+func encodedStringBytes(s string) int {
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		return len(s) * 6 // Unreachable for a string; the worst escape length keeps the budget safe.
+	}
+	return len(encoded)
+}
+
+// dashboardVariableWarnings names each override that is outside a variable's declared options. A variable
+// without options accepts any string, and an override outside the list still applies, as it does in the UI.
+func dashboardVariableWarnings(definitions []dashboardReadVariable, overrides map[string]string) []string {
+	var warnings []string
+	for _, definition := range definitions {
+		value, overridden := overrides[definition.Name]
+		if !overridden || len(definition.Options) == 0 || slices.Contains(definition.Options, value) {
+			continue
+		}
+		warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the declared options", definition.Name, warningValue(value)))
+	}
+	return warnings
+}
+
+// warningValue shortens an override value to dashboardVariableWarningValueBytes, cut at a rune boundary.
+func warningValue(value string) string {
+	if len(value) <= dashboardVariableWarningValueBytes {
+		return value
+	}
+	limit := dashboardVariableWarningValueBytes
+	for limit > 0 && !utf8.RuneStart(value[limit]) {
+		limit--
+	}
+	return value[:limit] + "…"
 }
 
 func dashboardWidgetKind(widget *dashboardReadWidget) string {
