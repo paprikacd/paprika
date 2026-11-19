@@ -15,6 +15,7 @@ import type {
   ChartValue,
 } from "@tanstack/charts";
 import { MetricDetails } from "./metric-tooltip-content";
+import { TooltipPinHint } from "./tooltip-content";
 import { ObservationDrilldowns } from "./observation-drilldowns";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
@@ -22,8 +23,7 @@ import { useTooltipDismiss } from "./tooltip-dismiss";
 import { isRestoringTooltipFocus } from "./tooltip-focus";
 import { readTooltipPlacement } from "./tooltip-position";
 import { TooltipSubWidget } from "./tooltip-widgets";
-import { TooltipInstructions } from "./tooltip-instructions";
-import { formatMetricDetails, seriesName, type Point, type Series } from "./chart-data";
+import { exactMetric, formatMetric, seriesName, type Point, type Series } from "./chart-data";
 import type { Widget } from "./schema";
 import styles from "./chart-styles.module.css";
 import { useChartCursorPublisher } from "./chart-cursor";
@@ -282,7 +282,7 @@ export function usePlotTooltip(
                 return <li key={candidate.datum.seriesIndex} data-peer-series={name} data-peer-value={candidate.datum.value} data-peer-timestamp={candidate.datum.timestamp}>
                   <i aria-hidden="true" style={{ background: candidate.color }} />
                   <details className={styles.tooltipSource}><summary>{displayLabels?.[candidate.datum.seriesIndex] ?? name}</summary><span className={styles.tooltipSourceIdentity}>{name}</span></details>
-                  <strong>{formatMetricDetails(candidate.datum.value!, widget.options?.tooltipShowUnit === false ? "" : widget.unit, widget.options?.tooltipDecimals ?? widget.options?.decimals)}</strong>
+                  <strong title={`Exact value ${exactMetric(candidate.datum.value!, widget.options?.tooltipShowUnit === false ? "" : widget.unit)}`}>{formatMetric(candidate.datum.value!, widget.options?.tooltipShowUnit === false ? "" : widget.unit, false, widget.options?.tooltipDecimals ?? widget.options?.decimals)}</strong>
                 </li>;
               })}</ul>
               {peersAtTime.length > 5 && <button type="button" className={styles.plotTooltipExpand} aria-expanded={showAllPeers} onClick={() => setShowAllPeers(value => !value)}>
@@ -303,14 +303,7 @@ export function usePlotTooltip(
               unit={widget.unit}
               color={current.point.color || widget.color}
             />}
-            <div className={styles.tooltipFooter}>
-              <small><TooltipInstructions /></small>
-              <small>
-                {current.pinned
-                  ? "Pinned · select again to close"
-                  : "Click, tap or press Enter to keep open"}
-              </small>
-            </div>
+            <TooltipPinHint pinned={current.pinned} />
           </div>
         </ObservationTooltip>
       ) : null,

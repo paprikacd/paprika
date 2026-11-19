@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
 import { getWidgetDefinition } from "../widget-registry";
 import { DashboardWindowProvider } from "../dashboard-window";
-import { formatMetric } from "../chart-renderers";
 import { ChartCursorProvider } from "../chart-cursor";
 import { EmbeddedWidgetProvider } from "../widget-presentation";
 import { fullDateTimeFormat } from "../chart-data";
 import type { QueryResult, Widget } from "../schema";
 import { seriesSlot } from "../series-palette";
+import { TOOLTIP_PIN_HINT_OPEN, TOOLTIP_PIN_HINT_PINNED } from "../tooltip-content";
 
 afterEach(cleanup);
 const widget: Widget = { id: "rich", title: "Request outcomes", type: "plugin", pluginId: "stacked-timeseries", dataKind: "metrics", providerId: "metrics", query: "rate", unit: "req/s", options: { decimals: 2 }, layout: { x: 0, y: 0, w: 6, h: 4 } };
@@ -39,13 +39,14 @@ describe("rich metric renderers", () => {
     const chart = screen.getByRole("group", { name: /Request outcomes/ });
     fireEvent.focus(chart);
     const inspector = screen.getByRole("region", { name: "Observation details" });
-    expect(within(inspector).getByText("Click or tap chart to pin details")).toBeInTheDocument();
+    expect(within(inspector).getByText("Click, tap or press Enter to keep open")).toBeInTheDocument();
     expect(within(inspector).getByRole("list", { name: "Series at selected time" })).toBeInTheDocument();
     expect(inspector.querySelector("time")).toBeInTheDocument();
     expect(inspector.querySelector("[data-stat-sparkline]")).not.toBeInTheDocument();
     expect(inspector.querySelector('[data-tooltip-compact="true"]')).toBeInTheDocument();
     fireEvent.keyDown(chart, { key: "Enter" });
-    expect(within(inspector).queryByText("Click or tap chart to pin details")).not.toBeInTheDocument();
+    expect(within(inspector).getByText(TOOLTIP_PIN_HINT_PINNED)).toBeInTheDocument();
+    expect(within(inspector).queryByText(TOOLTIP_PIN_HINT_OPEN)).not.toBeInTheDocument();
     expect(inspector.querySelector("[data-stat-sparkline]")).toBeInTheDocument();
     expect(inspector.querySelector('[data-tooltip-compact="true"]')).not.toBeInTheDocument();
     expect(within(inspector).getByText("Outbound is drawn below zero; this is the original nonnegative observation.")).toBeInTheDocument();
@@ -144,7 +145,10 @@ describe("rich metric renderers", () => {
     fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowDown" });
     let inspector = screen.getByRole("region", { name: "Observation details" });
     expect(inspector).not.toHaveAttribute("tabindex");
-    fireEvent.click(within(inspector).getByRole("button", { name: "Pin observation" }));
+    // An unpinned preview offers no button (the pointer cannot reach it); Enter pins the observation.
+    expect(within(inspector).queryByRole("button", { name: "Pin observation" })).not.toBeInTheDocument();
+    fireEvent.keyDown(chart, { key: "Enter" });
+    inspector = screen.getByRole("region", { name: "Observation details" });
     expect(inspector).toHaveAttribute("tabindex", "0");
     inspector.focus(); expect(inspector).toHaveFocus();
     Object.defineProperties(inspector, {
@@ -239,9 +243,31 @@ describe("rich metric renderers", () => {
     render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { densityUnit: "observations/s" } }} result={histogram} onContextChange={onContextChange} />);
     const chart = screen.getByRole("group", { name: /histogram buckets/ });
     fireEvent.focus(chart); fireEvent.keyDown(chart, { key: "ArrowUp" }); fireEvent.keyDown(chart, { key: "Enter" });
-    expect(onContextChange).toHaveBeenLastCalledWith({ series: "10 ms–100 ms", value: 11, labels: { service: "api", le: "100" } });
+    expect(onContextChange).toHaveBeenLastCalledWith({ series: "10.00 ms–100.00 ms", value: 11, labels: { service: "api", le: "100" } });
     expect(screen.getByLabelText("Color encodes bucket observations/s")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Observation details" }).textContent).toContain("11.00 observations/s");
+  });
+  it("a second click on a pinned bucket unpins it, and a click on another bucket pins that one", () => {
+    const histogram: QueryResult = { series: [
+      { name: "bucket", labels: { service: "api", le: "10" }, points: [{ timestamp: 1000, value: 2 }, { timestamp: 2000, value: 5 }] },
+      { name: "bucket", labels: { service: "api", le: "100" }, points: [{ timestamp: 1000, value: 9 }, { timestamp: 2000, value: 16 }] },
+    ] };
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms", config: { densityUnit: "observations/s" } }} result={histogram} />);
+    const svg = container.querySelector<SVGSVGElement>('svg[role="group"]')!;
+    const width = Number(svg.getAttribute("width")), height = Number(svg.getAttribute("height"));
+    // With no layout in jsdom the pointer maps one to one onto the svg's own units, so a cell's centre is its click point.
+    const clickCell = (rect: Element) => {
+      const x = Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2;
+      const y = Number(rect.getAttribute("y")) + Number(rect.getAttribute("height")) / 2;
+      fireEvent.click(svg, { clientX: x / width, clientY: y / height });
+    };
+    const [first, second] = [...svg.querySelectorAll("rect[data-bucket-value]")].filter(rect => Number(rect.getAttribute("width")) > 0 && Number(rect.getAttribute("height")) > 0);
+    clickCell(first);
+    expect(svg.parentElement?.querySelector("[data-selected-bucket]") ?? container.querySelector("[data-selected-bucket]")).toBeInTheDocument();
+    clickCell(first);
+    expect(container.querySelector("[data-selected-bucket]")).not.toBeInTheDocument();
+    clickCell(second);
+    expect(container.querySelector("[data-selected-bucket]")).toBeInTheDocument();
   });
   it("does not repeat the rate authoring caveat on a healthy heatmap cell", () => {
     const histogram: QueryResult = { series: [
@@ -274,13 +300,13 @@ describe("rich metric renderers", () => {
       expect(inspector.querySelector("details")).not.toHaveAttribute("open");
       expect(inspector.querySelector("details")).toHaveTextContent(bucket);
     };
-    assertObservation("≤ 10 ms", "5.00 observations/s", "1970-01-01T00:00:02.000Z");
+    assertObservation("≤ 10.00 ms", "5.00 observations/s", "1970-01-01T00:00:02.000Z");
     fireEvent.keyDown(chart, { key: "ArrowUp" });
-    assertObservation("10 ms–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
+    assertObservation("10.00 ms–100.00 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
     fireEvent.keyDown(chart, { key: "Enter" });
-    assertObservation("10 ms–100 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
+    assertObservation("10.00 ms–100.00 ms", "11.00 observations/s", "1970-01-01T00:00:02.000Z");
     fireEvent.keyDown(chart, { key: "ArrowLeft" });
-    assertObservation("10 ms–100 ms", "7.00 observations/s", "1970-01-01T00:00:01.000Z");
+    assertObservation("10.00 ms–100.00 ms", "7.00 observations/s", "1970-01-01T00:00:01.000Z");
   });
   it("does not render area through an incomplete stack and explains the gap", () => {
     const broken: QueryResult = { series: result.series!.map((entry, i) => ({ ...entry, points: [{ timestamp: 1000, value: i ? 2 : 4 }, { timestamp: 2000, value: i ? null : 8 }, { timestamp: 3000, value: i ? 3 : 9 }] })) };
@@ -360,7 +386,8 @@ describe("rich metric renderers", () => {
     };
     try {
       const { container, rerender } = render(<DirectionalTraffic widget={{ ...widget, unit: "Mb/s" }} result={{ series: [{ name: "Outbound", labels: { direction: "outbound" }, points: [{ timestamp: 1000, value: 253.42 }] }] }} />);
-      expect(container.textContent).toContain("-300.00 Mb/s"); assertGutter(container);
+      // Axis ticks take their step's precision (a 100 Mb/s step prints whole numbers), whatever the widget's decimals.
+      expect(container.textContent).toContain("-300 Mb/s"); assertGutter(container);
       expect(Number(container.querySelector("clipPath rect")?.getAttribute("width"))).toBeGreaterThan(140);
       rerender(<DistributionHeatmap widget={{ ...widget, unit: "milliseconds" }} result={{ series: [
         { name: "Bucket", labels: { le: "250" }, points: [{ timestamp: 1000, value: 3 }] },
@@ -555,7 +582,21 @@ describe("stacked bars with missing and not-started series", () => {
     expect(inspector).toHaveTextContent("No series reports at this time, so the stack total is unavailable.");
     expect(inspector).not.toHaveTextContent("Known series sum");
   });
-  it("shows the stack-total trend only for a pinned bar observation, with its caption", () => {
+  it("selecting the pinned bar again closes it, as the footer asks", () => {
+  const bounds = vi.spyOn(SVGElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, width: 600, height: 240, top: 0, left: 0, right: 600, bottom: 240, toJSON: () => ({}) });
+  try {
+    const { container } = barChart(stacked, vi.fn());
+    const chart = screen.getByRole("group", { name: /Request outcomes/ });
+    const [searchFirst] = container.querySelectorAll('g[data-series="search"] rect[data-partial-stack]');
+    const center = { clientX: Number(searchFirst.getAttribute("x")) + Number(searchFirst.getAttribute("width")) / 2, clientY: Number(searchFirst.getAttribute("y")) + Number(searchFirst.getAttribute("height")) / 2 };
+    fireEvent.click(chart, center);
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
+    fireEvent.click(chart, center);
+    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+  } finally { bounds.mockRestore(); }
+});
+
+it("shows the stack-total trend only for a pinned bar observation, with its caption", () => {
     barChart(stacked);
     const chart = screen.getByRole("group", { name: /Request outcomes/ });
     fireEvent.focus(chart);
@@ -693,7 +734,8 @@ describe("stacked bars with missing and not-started series", () => {
     fireEvent.click(screen.getByRole("button", { name: "Overlay previous period" }));
     expect(container.querySelectorAll("[data-prior-path]").length).toBeGreaterThan(0);
     const ticks = [...container.querySelectorAll("text[data-value-axis]")];
-    expect(ticks.at(-1)?.textContent).toBe(formatMetric(2, "req/s", true, widget.options?.decimals));
+    // The top tick takes its step's precision (0.5 steps print one place); readings keep the widget's decimals.
+    expect(ticks.at(-1)?.textContent).toBe("2.0 req/s");
   });
   it("says when the stack total leaves out series beyond the maximum plotted", () => {
     const three: QueryResult = { series: ["a", "b", "c"].map(name => ({ name, labels: { service: name }, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 2 }] })) };

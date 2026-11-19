@@ -23,6 +23,6 @@
 .legend { display: flex; flex-wrap: wrap; gap: 3px 9px; }
 .legend > span { display: inline-flex; align-items: center; gap: 4px; }
 .legend i { width: 9px; height: 9px; border-radius: 1px; border: 1px solid var(--gamma-border); }
-.detail { display: grid; gap: 4px; padding-bottom: 8px; font-size: 11px; line-height: 1.4; border-bottom: 1px solid var(--gamma-border); }
+.detail { display: grid; gap: 4px; padding: 10px var(--tooltip-gutter, 14px) 8px; font-size: 11px; line-height: 1.4; border-bottom: 1px solid var(--gamma-border); }
 .detail span:last-child { color: var(--gamma-muted); }
 @media (prefers-reduced-motion: reduce) { .cell { transition: none; } }

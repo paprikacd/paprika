@@ -8,6 +8,12 @@ const widget: Widget = { id: "latency", title: "Latency distribution", type: "pl
 const result: QueryResult = { series: ["10", "100"].map((le, bucket) => ({ name: `bucket ${le}`, labels: { le }, points: Array.from({ length: 120 }, (_, index) => ({ timestamp: (index + 1) * 1000, value: index === 37 ? null : bucket ? 3 : 1 })) })) };
 
 describe("distribution heatmap", () => {
+  it("labels the bucket axis at tick precision, so authored decimals never pad the gutter", () => {
+    const { container } = render(<DistributionHeatmap widget={{ ...widget, options: { decimals: 2 } }} result={result} />);
+    const ticks = [...container.querySelectorAll("svg text")].map(node => node.textContent ?? "").filter(text => /ms/.test(text));
+    expect(ticks).toContain("≤ 10 ms");
+    expect(ticks.some(text => /\.00 ms/.test(text))).toBe(false);
+  });
   it("does not label a nonzero color-domain maximum as zero at fixed display precision", () => {
     const tiny: QueryResult = { series: [{ name: "bucket", labels: { le: "1" }, points: [{ timestamp: 1000, value: 1e-12 }] }] };
     const { rerender } = render(<DistributionHeatmap widget={{ ...widget, options: { decimals: 2 } }} result={tiny} />);
@@ -65,7 +71,8 @@ describe("distribution heatmap", () => {
     width = 680;
     act(() => resize.forEach(callback => callback([], {} as ResizeObserver)));
     expect(cells().length).toBeGreaterThan(narrow.length);
-    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+    // A resize re-spreads the columns, but the same bucket and time stay open (HM-09).
+    expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
     expect(cells().some(cell => cell.getAttribute("data-timestamp") === "38000" && cell.getAttribute("data-bucket-value") === "unknown")).toBe(true);
     expect(cells().some(cell => cell.getAttribute("data-timestamp") === "120000")).toBe(true);
   });
@@ -295,18 +302,44 @@ describe("distribution heatmap states and p95", () => {
       expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
     } finally { bounds.mockRestore(); }
   });
-  it("clears a keyboard heatmap inspection on a refresh, so a cached result that returns after a pointer leave does not revive it", async () => {
+  it("keeps a keyboard-opened heatmap observation across a refresh and follows its new reading", () => {
     const first: QueryResult = { series: [series("10", [1, 1, 1]), series("50", [2, 2, 2]), series("+Inf", [3, 3, 3])] };
-    const { container, rerender } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={first} />);
+    const { rerender } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={first} />);
+    const chart = screen.getByRole("group", { name: /histogram buckets/ });
+    fireEvent.focus(chart);
+    fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("1 events/s");
+    // A refresh with the same buckets and times keeps the bucket and time open, now at the new reading.
+    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={{ series: [series("10", [9, 9, 9]), series("50", [2, 2, 2]), series("+Inf", [3, 3, 3])] }} />);
+    expect(screen.getByRole("region", { name: "Observation details" })).toHaveTextContent("9 events/s");
+  });
+  it("closes a heatmap observation only when its bucket and time leave the data", () => {
+    const first: QueryResult = { series: [series("10", [1, 1, 1]), series("50", [2, 2, 2]), series("+Inf", [3, 3, 3])] };
+    const { rerender } = render(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={first} />);
     const chart = screen.getByRole("group", { name: /histogram buckets/ });
     fireEvent.focus(chart);
     fireEvent.keyDown(chart, { key: "ArrowLeft" });
     expect(screen.getByRole("region", { name: "Observation details" })).toBeInTheDocument();
-    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={{ series: first.series }} />);
+    // The same buckets at new times: the open cell's time is gone, so its observation ends.
+    const moved = { series: first.series!.map(entry => ({ ...entry, points: entry.points.map(point => ({ ...point, timestamp: point.timestamp + 60_000 })) })) };
+    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={moved} />);
     expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
-    fireEvent.pointerLeave(container.firstElementChild!);
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
-    rerender(<DistributionHeatmap widget={{ ...widget, unit: "ms" }} result={first} />);
-    expect(screen.queryByRole("region", { name: "Observation details" })).not.toBeInTheDocument();
+  });
+  it("reads a missing bucket as No data in the keyboard live region", () => {
+    const gap: QueryResult = { series: [series("10", [1, null, 1]), series("+Inf", [2, 2, 2])] };
+    const { container } = render(<DistributionHeatmap widget={widget} result={gap} />);
+    const svg = container.querySelector("svg")!;
+    fireEvent.focus(svg);
+    fireEvent.keyDown(svg, { key: "ArrowLeft" });
+    expect(container.querySelector('[aria-live="polite"]')).toHaveTextContent("No data");
+  });
+  it("announces each keyboard-inspected bucket and time in a polite live region", () => {
+    const { container } = render(<DistributionHeatmap widget={widget} result={result} />);
+    const svg = container.querySelector("svg")!;
+    fireEvent.focus(svg);
+    fireEvent.keyDown(svg, { key: "ArrowRight" });
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).toHaveTextContent("≤ 10 ms, ");
+    expect(live).toHaveTextContent("1 events/s");
   });
 });

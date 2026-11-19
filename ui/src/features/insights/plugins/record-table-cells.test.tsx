@@ -76,8 +76,8 @@ describe("table visual cells", () => {
     const thresholds = [{ value: 0, color: "#73bf69", label: "Normal" }, { value: 50, color: "#f2cc0c", label: "Warning" }]
     const styledWidget: Widget = { ...widget, options: { decimals: 2, thresholds }, config: { cellStyles: [{ column: "usage", display: "color-text" }] } }
     const view = render(<RecordTable widget={styledWidget} result={result} />)
-    const reading = screen.getByRole("img", { name: "Usage: 72.1234% · Warning" })
-    const normal = screen.getByRole("img", { name: "Usage: 0% · Normal" })
+    const reading = screen.getByRole("img", { name: "Usage: 72.12% · Warning" })
+    const normal = screen.getByRole("img", { name: "Usage: 0.00% · Normal" })
     const light = reading.style.color
     expect(contrastRatio(light, "#ffffff")).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(normal.style.color, "#ffffff")).toBeGreaterThanOrEqual(4.5)
@@ -90,7 +90,7 @@ describe("table visual cells", () => {
     expect(reading.style.color).toBe("#f2cc0c")
     expect(normal.style.color).toBe("#73bf69")
     expect(contrastRatio(reading.style.color, "#182127")).toBeGreaterThanOrEqual(4.5)
-    expect(reading).toHaveAttribute("aria-label", "Usage: 72.1234% · Warning")
+    expect(reading).toHaveAttribute("aria-label", "Usage: 72.12% · Warning")
     view.rerender(<RecordTable widget={{ ...styledWidget, options: { ...styledWidget.options, background: "#ffffff" } }} result={result} />)
     expect(reading.style.color).toBe(light)
     expect(contrastRatio(reading.style.color, "#ffffff")).toBeGreaterThanOrEqual(4.5)
@@ -154,7 +154,7 @@ describe("table visual cells", () => {
   it("colors a whole gauge by the observed value when configured", () => {
     const rule = { column: "usage", display: "bar-segments", min: 0, max: 100, segments: 6, barColorMode: "value" }
     render(<RecordTable widget={{ ...widget, config: { cellStyles: [rule] } }} result={result} />)
-    const warning = screen.getByRole("img", { name: "Usage: 72.1234% · High · Scale 0% to 100%" })
+    const warning = screen.getByRole("img", { name: "Usage: 72.12% · High · Scale 0.00% to 100.00%" })
     expect((warning.querySelector("[data-bar-end]") as HTMLElement).style.background).toBe("#bd593e")
     expect(warning).toHaveTextContent("72.12%")
     expect(screen.getByRole("img", { name: /Usage: No data/ }).querySelector("[data-bar-end]")).toBeNull()
@@ -199,25 +199,25 @@ describe("table visual cells", () => {
     expect(() => tableCellStylesSchema.parse([{ ...rules[0], segments: 2 }])).toThrow()
     expect(() => tableCellStylesSchema.parse([{ ...rules[0], display: "bar" }])).toThrow()
     render(<RecordTable widget={{ ...widget, config: { cellStyles: rules } }} result={result} />)
-    const positive = screen.getByRole("img", { name: "Usage: 72.1234% · High · Scale 0% to 100%" })
+    const positive = screen.getByRole("img", { name: "Usage: 72.12% · High · Scale 0.00% to 100.00%" })
     expect(positive).toHaveTextContent("72.12%")
     expect(positive.querySelector("[data-segmented]")).toHaveStyle("--cell-segments: 20")
     expect(positive.querySelector("[data-bar-end]")).toHaveAttribute("data-bar-end", "0.721234")
     expect(screen.getByRole("img", { name: /Usage: No data/ }).querySelector("[data-bar-start]")).toBeNull()
-    expect(screen.getByRole("img", { name: /Usage: 120%.*Outside scale/ })).toHaveTextContent("120.00%")
+    expect(screen.getByRole("img", { name: /Usage: 120.00%.*Outside scale/ })).toHaveTextContent("120.00%")
   })
 
   it("keeps exact readings, unknowns and threshold meaning while bars remain fixed through filtering", () => {
     const select = vi.fn()
     const { container } = render(<RecordTable widget={widget} result={result} onContextChange={select} />)
-    const positive = screen.getByRole("img", { name: "Usage: 72.1234% · High · Scale -100% to 100%" })
+    const positive = screen.getByRole("img", { name: "Usage: 72.12% · High · Scale -100.00% to 100.00%" })
     expect(positive).toHaveTextContent("72.12%")
     const fill = positive.querySelector("[data-bar-start]")!
     expect(fill).toHaveAttribute("data-bar-start", "0.5")
     expect(fill).toHaveAttribute("data-bar-end", "0.860617")
     expect((fill as HTMLElement).style.background).toContain("#4b84b1 75%, #bd593e 75%")
     expect(screen.getByRole("img", { name: /Usage: No data/ }).querySelector("[data-bar-start]")).toBeNull()
-    expect(screen.getByRole("img", { name: /Usage: 120%.*Outside scale/ })).toHaveTextContent("120.00%")
+    expect(screen.getByRole("img", { name: /Usage: 120.00%.*Outside scale/ })).toHaveTextContent("120.00%")
     expect(container.querySelectorAll('[data-cell-display="bar"]')).toHaveLength(5)
     fireEvent.change(screen.getByRole("textbox", { name: "Filter Resource capacity" }), { target: { value: "positive" } })
     expect(screen.getByRole("img").querySelector("[data-bar-end]")).toHaveAttribute("data-bar-end", "0.860617")
@@ -235,7 +235,7 @@ describe("table visual cells", () => {
 
   it.each(["color-text", "color-background"] as const)("renders %s with exact threshold status and honest nulls", display => {
     const { container } = render(<RecordTable widget={{ ...widget, config: { cellStyles: [{ column: "usage", display }] } }} result={result} />)
-    const value = screen.getByRole("img", { name: "Usage: 72.1234% · High" })
+    const value = screen.getByRole("img", { name: "Usage: 72.12% · High" })
     expect(value).toHaveTextContent("72.12%")
     const unknown = screen.getByRole("img", { name: "Usage: No data" })
     expect(unknown.style.background).toBe("")

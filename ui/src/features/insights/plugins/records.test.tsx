@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { RecordTable, RecordList, RecordTreemap, RecordMatrix, registerRecordWidgetPlugins } from "./records"
 import { getWidgetDefinition } from "../widget-registry"
@@ -254,6 +254,117 @@ describe("record frame transport", () => {
         rows: Array.from({ length: 1001 }, () => result.records!.rows[0]),
       }),
     ).toThrow()
+  })
+  it("searches the raw digits of a number and keeps matrix coordinates distinct at the authored decimals", () => {
+    const rows = [["order-a", 1234567, true], ["order-b", 7, true]] as NonNullable<QueryResult["records"]>["rows"]
+    const numeric: QueryResult = { records: { columns: [{ key: "order", type: "string" }, { key: "id", type: "number" }, { key: "active", type: "boolean" }], rows, truncated: false } }
+    render(<RecordTable widget={{ ...widget, options: {} }} result={numeric} />)
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Service records" }), { target: { value: "1234567" } })
+    expect(screen.getByText("order-a")).toBeInTheDocument()
+    cleanup()
+    const coordinates: QueryResult = { records: { columns: [{ key: "x", type: "number" }, { key: "y", type: "string" }, { key: "v", type: "number" }], rows: [[0.12341, "a", 1], [0.12342, "a", 2]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "x", y: "y", value: "v" }, options: { decimals: 3 } } as Widget
+    render(<RecordMatrix widget={matrix} result={coordinates} />)
+    expect(screen.queryByText(/Duplicate matrix coordinates/)).not.toBeInTheDocument()
+    expect(screen.getAllByRole("cell")).toHaveLength(2)
+  })
+  it("opens a matrix cell's details with its column, row and value facts", () => {
+    cleanup()
+    const coordinates: QueryResult = { records: { columns: [{ key: "year", type: "number" }, { key: "service", type: "string" }, { key: "latency", type: "number" }], rows: [[2024, "api", 5.878749999999975]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "year", y: "service", value: "latency" }, options: { decimals: 2 } } as Widget
+    render(<RecordMatrix widget={matrix} result={coordinates} />)
+    fireEvent.pointerEnter(screen.getByText("5.88"), { pointerType: "mouse" })
+    expect(screen.getByText("year")).toBeInTheDocument()
+    expect(screen.getByText("service")).toBeInTheDocument()
+    expect(screen.getByText("latency")).toBeInTheDocument()
+  })
+  it("gives each matrix cell one button, so a selectable cell never nests a button inside the panel trigger", () => {
+    cleanup()
+    const grid: QueryResult = { records: { columns: [{ key: "x", type: "number" }, { key: "y", type: "string" }, { key: "v", type: "number" }], rows: [[1, "a", 1], [2, "a", 2], [1, "b", 3], [2, "b", 4]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "x", y: "y", value: "v" }, options: { decimals: 2 } } as Widget
+    const select = vi.fn()
+    const { container } = render(<RecordMatrix widget={matrix} result={grid} onContextChange={select} />)
+    expect(container.querySelectorAll("button button")).toHaveLength(0)
+    const triggers = screen.getAllByRole("button", { name: /^[ab], [12]: / })
+    expect(triggers).toHaveLength(4)
+    // One tab stop for the whole grid; the rest are reached with the arrow keys.
+    expect(triggers.filter(trigger => trigger.tabIndex === 0)).toHaveLength(1)
+    const first = triggers[0]
+    fireEvent.click(first)
+    expect(select).toHaveBeenCalledTimes(1)
+    expect(select).toHaveBeenLastCalledWith({ labels: expect.any(Object), value: 1 })
+    expect(first).toHaveAttribute("aria-pressed", "true")
+    fireEvent.click(first)
+    expect(first).not.toHaveAttribute("aria-pressed", "true")
+  })
+  it("moves focus with the arrow keys and a click without selecting a cell, and keeps the tab stop on the cell last focused", () => {
+    cleanup()
+    const grid: QueryResult = { records: { columns: [{ key: "x", type: "number" }, { key: "y", type: "string" }, { key: "v", type: "number" }], rows: [[1, "a", 1], [2, "a", 2], [1, "b", 3], [2, "b", 4]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "x", y: "y", value: "v" }, options: { decimals: 2 } } as Widget
+    const select = vi.fn()
+    const { container } = render(<RecordMatrix widget={matrix} result={grid} onContextChange={select} />)
+    const triggers = screen.getAllByRole("button", { name: /^[ab], [12]: / })
+    act(() => triggers[0].focus())
+    // Arrow keys move the stop and focus only: moving the focus never reports a selection.
+    fireEvent.keyDown(triggers[0], { key: "ArrowRight" })
+    expect(document.activeElement).toBe(triggers[1])
+    expect(triggers[1].tabIndex).toBe(0)
+    expect(triggers[0].tabIndex).toBe(-1)
+    expect(select).not.toHaveBeenCalled()
+    // A click elsewhere moves the stop to that cell, so Tab comes back to it.
+    act(() => triggers[3].focus())
+    expect(triggers[3].tabIndex).toBe(0)
+    expect(triggers[1].tabIndex).toBe(-1)
+  })
+  it("moves the single tab stop through the populated cells with the arrow keys", () => {
+    cleanup()
+    const grid: QueryResult = { records: { columns: [{ key: "x", type: "number" }, { key: "y", type: "string" }, { key: "v", type: "number" }], rows: [[1, "a", 1], [2, "a", 2], [1, "b", 3]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "x", y: "y", value: "v" }, options: { decimals: 2 } } as Widget
+    const { container } = render(<RecordMatrix widget={matrix} result={grid} />)
+    const region = container.querySelector<HTMLElement>('[role="region"]')!
+    const cellOf = (key: string) => container.querySelector<HTMLElement>(`td[data-matrix-key="${key}"] button`)!
+    expect(cellOf("0-0").tabIndex).toBe(0)
+    fireEvent.keyDown(cellOf("0-0"), { key: "ArrowRight" })
+    expect(cellOf("0-1")).toHaveFocus()
+    expect(cellOf("0-1").tabIndex).toBe(0)
+    expect(cellOf("0-0").tabIndex).toBe(-1)
+    // Row b, column 2 has no reading: stepping down from column 2 finds nothing and the tab stop stays put.
+    expect(container.querySelector('td[data-matrix-key="1-1"] button')).toBeNull()
+    fireEvent.keyDown(cellOf("0-1"), { key: "ArrowDown" })
+    expect(cellOf("0-1")).toHaveFocus()
+    expect(cellOf("0-1").tabIndex).toBe(0)
+    fireEvent.keyDown(cellOf("0-0"), { key: "ArrowDown" })
+    expect(cellOf("1-0")).toHaveFocus()
+    expect(cellOf("1-0").tabIndex).toBe(0)
+    expect(region).toBeInTheDocument()
+  })
+  it("names matrix axis coordinates by their stored digits, so close coordinates keep distinct headers at any decimals", () => {
+    cleanup()
+    const coordinates: QueryResult = { records: { columns: [{ key: "x", type: "number" }, { key: "y", type: "string" }, { key: "v", type: "number" }], rows: [[1.2, "a", 1], [1.4, "a", 2]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "x", y: "y", value: "v" }, options: { decimals: 0 } } as Widget
+    render(<RecordMatrix widget={matrix} result={coordinates} />)
+    expect(screen.getByRole("columnheader", { name: "1.2" })).toBeInTheDocument()
+    expect(screen.getByRole("columnheader", { name: "1.4" })).toBeInTheDocument()
+  })
+  it("labels a matrix axis with the shortest form of its coordinate, so 0.1 + 0.2 never shows float noise", () => {
+    cleanup()
+    const noisy: QueryResult = { records: { columns: [{ key: "x", type: "number" }, { key: "y", type: "string" }, { key: "v", type: "number" }], rows: [[0.1 + 0.2, "a", 1], [0.4, "a", 2]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "x", y: "y", value: "v" }, options: { decimals: 2 } } as Widget
+    const { container } = render(<RecordMatrix widget={matrix} result={noisy} />)
+    expect(container.textContent).not.toMatch(/\d\.\d{6,}/)
+    // 0.1 + 0.2 and 0.4 are different floats that both read 0.3 / 0.4: the header is the shortest form, the cell keeps its own key.
+    expect(screen.getByRole("columnheader", { name: "0.3" })).toBeInTheDocument()
+  })
+  it("prints integer identifiers and years as stored, and formats only non-integer readings", () => {
+    cleanup()
+    const years: QueryResult = { records: { columns: [{ key: "year", type: "number" }, { key: "order", type: "number" }, { key: "v", type: "number" }], rows: [[2024, 10021, 1], [2025, 10022, 2.5]], truncated: false } }
+    const matrix = { ...widget, pluginId: "record-matrix", config: { x: "year", y: "order", value: "v" }, options: { decimals: 2 } } as Widget
+    render(<RecordMatrix widget={matrix} result={years} />)
+    expect(screen.getByText("2024")).toBeInTheDocument()
+    expect(screen.getByText("2025")).toBeInTheDocument()
+    expect(screen.getByText("10021")).toBeInTheDocument()
+    expect(screen.queryByText("2,024")).not.toBeInTheDocument()
+    expect(screen.queryByText("10,021")).not.toBeInTheDocument()
   })
 })
 

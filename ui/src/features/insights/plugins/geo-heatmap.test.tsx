@@ -22,6 +22,14 @@ describe("geo heatmap", () => {
     expect(group.labels).toEqual({service:"api"})
     expect(data.min).toBe(4); expect(data.max).toBe(30)
   })
+  it("keeps a pinned cell pinned when its data refreshes, because the cell's observation key is stable", () => {
+    const { rerender } = render(<GeoHeatmap widget={widget} result={result}/>)
+    const target = screen.getByRole("button",{name:/2 observations · Sum of requests: 30 · 2 records/})
+    fireEvent.click(target); expect(target).toHaveAttribute("aria-pressed","true")
+    const refreshed = { records: { ...result.records!, rows: result.records!.rows.map(row => row[0] === "Melbourne B" ? ["Melbourne B",-37.82,144.97,25,"api"] : row) } }
+    rerender(<GeoHeatmap widget={widget} result={refreshed}/>)
+    expect(screen.getByRole("button",{name:/2 observations · Sum of requests: 35/})).toHaveAttribute("aria-pressed","true")
+  })
   it("keeps partial aggregates unknown instead of treating missing values as zero", () => {
     const data = buildGeoHeatmap({ ...result.records!, rows:[["A",-37.81,144.96,2,"api"],["B",-37.82,144.97,null,"api"]] }, geoHeatmapConfig.parse({value:"requests",aggregation:"mean"}))
     expect(data.cells[0].value).toBeNull(); expect(data.cells[0].missing).toBe(1)
@@ -50,7 +58,7 @@ describe("geo heatmap", () => {
   it("offers accessible cell details, pinned tooltips, and no false interpolation", () => {
     const {container} = render(<GeoHeatmap widget={widget} result={result}/>)
     expect(container.querySelectorAll("[data-geo-cell]")).toHaveLength(2)
-    const target = screen.getByRole("button",{name:/2 observations · Sum of requests: 30.00 · 2 records/})
+    const target = screen.getByRole("button",{name:/2 observations · Sum of requests: 30 · 2 records/})
     fireEvent.focus(target)
     expect(screen.getByRole("tooltip")).toHaveTextContent("Nearby locations grouped")
     expect(screen.getByText("service").nextElementSibling).toHaveTextContent("api")
@@ -117,5 +125,13 @@ describe("geo heatmap truncation", () => {
     render(<GeoHeatmap widget={{ ...widget, config: { ...widget.config, mode: "grid" } }} result={capped} />)
     expect(screen.getByText("Source row limit reached · narrow the query to see others")).toBeInTheDocument()
     expect(screen.queryByText("Partial source response")).not.toBeInTheDocument()
+  })
+})
+
+describe("geo heatmap tooltip title", () => {
+  it("titles a cell's tooltip with the widget's tooltip title when one is set", () => {
+    render(<GeoHeatmap widget={{ ...widget, options: { decimals: 2, tooltipTitle: "Regional totals" } }} result={result} />)
+    fireEvent.focus(screen.getByRole("button", { name: /2 observations · Sum of requests: 30 · 2 records/ }))
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Regional totals")
   })
 })

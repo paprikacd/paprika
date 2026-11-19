@@ -1,18 +1,17 @@
 "use client";
 
-import { axisScale, formatRange, ticksWithin } from "../units";
+import { axisScale, formatBounds, formatRangeBounds, ticksWithin } from "../units";
 import type { Widget } from "../schema";
 import { widgetSeriesColors } from "../series-colors";
 import { SERIES_PALETTE } from "../series-palette";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { Pin, X } from "lucide-react";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
-import { useDashboardTimeZone } from "../dashboard-time-zone";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
+import { useDashboardTimeZone } from "../dashboard-time-zone";
 import { GammaButton } from "../gamma/button";
 import { ObservationDrilldowns } from "../observation-drilldowns";
-import { TooltipHint, TooltipSection } from "../tooltip-content";
-import { TooltipInstructions } from "../tooltip-instructions";
+import { TooltipPinHint, TooltipSection } from "../tooltip-content";
 import { StatSparkline } from "../stat-sparkline";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
 import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
@@ -106,7 +105,16 @@ function useAxisGutter(labels: string[], root: RefObject<HTMLDivElement | null>,
 /** Who opened an unpinned inspection. Only a pointer inspection ends when the pointer leaves the chart. */
 type InspectionOwner = "pointer" | "keyboard";
 
-function useInspection({ result, widget, embedded, onContextChange }: WidgetRendererProps, signature: string, panel: HTMLDivElement | null) {
+/**
+ * A keyed inspection keeps its observation while its stable key stays in the data: each result re-finds the observation
+ * by key, and the inspection ends only when the key has left the data. Without a key, a new result ends it.
+ */
+interface RetainedInspection {
+  keyOf(observation: Observation): string | undefined;
+  resolve(key: string): Observation | undefined;
+}
+
+function useInspection({ result, widget, embedded, onContextChange }: WidgetRendererProps, signature: string, panel: HTMLDivElement | null, retained?: RetainedInspection) {
   const parentEmbedded = useEmbeddedWidget();
   const detailsEnabled = !embedded && !parentEmbedded && widget.options?.showTooltip !== false;
   const enabled = !embedded && !parentEmbedded && (detailsEnabled || !!onContextChange);
@@ -114,12 +122,18 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const root = useRef<HTMLDivElement>(null);
   const panelHover = useRef(false);
   const setRoot = useCallback((element: HTMLDivElement | null) => { root.current = element; }, []);
-  const [state, setState] = useState<{ observation: Observation; pinned: boolean; owner: InspectionOwner; result: unknown; signature: string }>();
+  const [state, setState] = useState<{ observation: Observation; pinned: boolean; owner: InspectionOwner; result: unknown; signature: string; key?: string }>();
   // A new result ends the inspection rather than hiding it, so a cached result that returns later cannot revive it. The
   // reset runs during render, so React discards the stale observation before anything with the new result is committed.
   const [seenResult, setSeenResult] = useState(result);
-  if (seenResult !== result) { setSeenResult(result); setState(undefined); }
-  const active = state?.result === result && state.signature === signature && enabled ? state : undefined;
+  const keyed = retained !== undefined && state?.key !== undefined;
+  if (!keyed && seenResult !== result) { setSeenResult(result); setState(undefined); }
+  let active = state?.result === result && state.signature === signature && enabled ? state : undefined;
+  if (retained && keyed && state && enabled) {
+    const found = retained.resolve(state.key!);
+    if (found) active = { ...state, observation: found };
+    else { active = undefined; setState(undefined); }
+  }
   const timestamp = active?.observation.timestamp, pinned = active?.pinned;
   useEffect(() => {
     if (timestamp !== undefined) publisher.publish(widget.id, timestamp, pinned);
@@ -130,7 +144,7 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const hover = useTooltipDismiss({
     onDismiss: () => setState(current => current?.pinned || current?.owner === "keyboard" ? current : undefined),
     pinned: !!pinned,
-    revision: result,
+    revision: keyed ? state?.key : result,
     enabled,
     engaged: () => panelHover.current,
   });
@@ -145,7 +159,7 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   const show = (observation: Observation, pinned = false, owner: InspectionOwner = "pointer") => {
     hover.cancel();
     if (!enabled || (active?.pinned && !pinned)) return;
-    setState({ observation, pinned, owner, result, signature });
+    setState({ observation, pinned, owner, result, signature, key: retained?.keyOf(observation) });
     if (pinned) onContextChange?.({ series: observation.name, labels: observation.series.labels, value: observation.value });
   };
   // Explicit Close and Escape return keyboard users to the chart. A passive dismissal keeps the focus the user just moved to.
@@ -162,12 +176,18 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   // Escape, a dismissing pointer press or focus moving away, so a pointer that was over the chart cannot clear it.
   const leave = () => { panelHover.current = false; hover.schedule(); };
   const focusPanel = () => { if (!panel) return false; panel.focus({ preventScroll: true }); return true; };
-  return { root: setRoot, enabled, detailsEnabled, active, show, focus, dismiss, leave, enterPanel, focusPanel };
+  // Selecting the pinned observation again closes it, as the footer says ("Pinned · select again to close").
+  const togglePin = (observation: Observation) => {
+    const pinnedNow = active?.pinned ? active.observation : undefined;
+    if (pinnedNow && pinnedNow.name === observation.name && pinnedNow.row === observation.row && pinnedNow.timestamp === observation.timestamp && pinnedNow.bucket === observation.bucket) dismiss("close");
+    else show(observation, true);
+  };
+  return { root: setRoot, enabled, detailsEnabled, active, show, togglePin, focus, dismiss, leave, enterPanel, focusPanel };
 }
 
 function Inspector({ widget, observation, peers, extra, footer, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; pinned: boolean; decimals?: number; onPin: () => void; onClose: (reason?: TooltipDismissReason) => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} options={readTooltipPlacement(widget.options)} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
-    <div className={tooltipStyles.tooltipToolbar}><span>{pinned ? "Pinned observation" : "Observation"}</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>
+    {pinned && <div className={tooltipStyles.tooltipToolbar}><span>Pinned observation</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>}
     <div className={styles.inspectorDetails} data-observation-details>
       <MetricDetails widget={widget} series={observation.series} index={observation.row} point={{ timestamp: observation.timestamp, value: observation.value }} unit={observation.unit} decimals={decimals} description="Selected sample" compact={!pinned}
         seriesLabel={peers?.[observation.row]?.display ?? observation.name}>
@@ -182,8 +202,9 @@ function Inspector({ widget, observation, peers, extra, footer, pinned, decimals
     {pinned && <ObservationDrilldowns widget={widget} context={{ series: observation.name, labels: observation.series.labels, value: observation.value, timestamp: observation.timestamp }} />}
     {pinned && <TooltipSection><div className={styles.history}><StatSparkline series={observation.series} name={observation.name} color={observation.color} unit={observation.unit} /></div></TooltipSection>}
     {footer && <TooltipSection>{footer}</TooltipSection>}
-    <div className={tooltipStyles.tooltipActions}><GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />{pinned ? "Unpin observation" : "Pin observation"}</GammaButton></div>
-    <TooltipHint>{pinned ? <TooltipInstructions /> : "Click or tap chart to pin details"}</TooltipHint>
+    {/* A hover preview ignores the pointer, so its button would not be clickable: only a pinned panel offers it. Enter pins. */}
+    {pinned && <div className={tooltipStyles.tooltipActions}><GammaButton size="sm" variant="quiet" onClick={onPin} aria-pressed={pinned}><Pin size={13} />Unpin observation</GammaButton></div>}
+    <TooltipPinHint pinned={pinned} />
   </ObservationTooltip>;
 }
 
@@ -235,10 +256,11 @@ function coordinates(event: PointerEvent<SVGSVGElement>, width: number, height: 
   return { x: (event.clientX - bounds.left) * width / Math.max(1, bounds.width), y: (event.clientY - bounds.top) * height / Math.max(1, bounds.height) };
 }
 
-function cellLabel(lower: number, upper: number, unit: string) {
-  if (!Number.isFinite(lower)) return `≤ ${formatMetric(upper, unit)}`;
-  if (!Number.isFinite(upper)) return `> ${formatMetric(lower, unit)}`;
-  return formatRange(lower, upper, unit);
+/** A bucket's bounds. The authored decimals apply unless they would print two bounds alike; see `formatRangeBounds`. */
+function cellLabel(lower: number, upper: number, unit: string, decimals: number | undefined, axis: readonly number[]) {
+  if (!Number.isFinite(lower)) return `≤ ${formatBounds([upper], unit, decimals, axis)[0]}`;
+  if (!Number.isFinite(upper)) return `> ${formatBounds([lower], unit, decimals, axis)[0]}`;
+  return formatRangeBounds(lower, upper, unit, decimals, axis);
 }
 
 /** A nonzero color domain should not be labeled as zero solely because the
@@ -284,6 +306,22 @@ export function DistributionHeatmap(props: WidgetRendererProps) {
   return <WidgetTooltipProvider><DistributionHeatmapPlot {...props} config={config} fullData={prepared.data!} /></WidgetTooltipProvider>;
 }
 
+/** What a distribution cell's inspector and keyboard readout name. Shared by the visible grid and the keyed re-lookup. */
+interface DistributionView { unit: string; densityUnit: string; decimals?: number; bounds: readonly number[] }
+
+function distributionObservation(view: DistributionView, row: number, column: number, bucket: DistributionRow, cell: DistributionCell): Observation {
+  const name = cellLabel(bucket.lower, bucket.upper, view.unit, view.decimals, view.bounds);
+  const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
+    : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
+    : undefined;
+  return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: view.densityUnit, color: SERIES_PALETTE[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
+}
+
+/** A distribution cell is keyed by its bucket's bounds and its timestamp, so a refresh or a resize keeps it. */
+function distributionKey(bucket: DistributionRow, timestamp: number) {
+  return `${bucket.lower}|${bucket.upper}|${timestamp}`;
+}
+
 function DistributionHeatmapPlot(props: WidgetRendererProps & { config: DistributionConfig; fullData: DistributionData }) {
   const timeZone = useDashboardTimeZone();
   const readoutClock = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }), [timeZone]);
@@ -295,12 +333,28 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const { showAxis, descriptionId, embedded: embeddedChart } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: props.embedded || embeddedChart, anchor: ref });
   const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
-  const tickLabels = fullData.rows.map(row => cellLabel(row.lower, row.upper, unit));
+  // Bucket names on the axis are ticks, so they take Auto precision like every axis tick and keep the gutter narrow on a
+  // phone; the selected bucket in the inspector and the screen-reader names follow the widget's decimals.
+  const tickLabels = fullData.rows.map(row => cellLabel(row.lower, row.upper, unit, undefined, fullData.bounds));
   const gutter = useAxisGutter(tickLabels, ref, width);
   const left = showAxis ? gutter : 4, top = 4, bottom = showAxis ? 24 : 4, plotWidth = Math.max(1, width - left - 10), plotHeight = Math.max(1, height - top - bottom);
   const columnLimit = heatmapColumnLimit(plotWidth, config.maxColumns ?? 60);
   const data = useMemo(() => fullData.timestamps.length <= columnLimit ? fullData : buildDistribution(result.series ?? [], { ...config, maxColumns: columnLimit }), [fullData, columnLimit, result, config]);
-  const { root: inspectionRoot, ...inspection } = useInspection(props, `${signature}:${data.timestamps.join(",")}`, panel), id = useId();
+  const view: DistributionView = { unit, densityUnit, decimals: widget.options?.decimals, bounds: fullData.bounds };
+  // A pinned or open cell is re-found by its bucket and timestamp in each result, so a refresh or a resize keeps it.
+  const retained: RetainedInspection = {
+    keyOf: observed => { const bucket = fullData.rows[observed.row]; return bucket ? distributionKey(bucket, observed.timestamp) : undefined; },
+    resolve: key => {
+      const row = fullData.rows.findIndex(bucket => key.startsWith(`${bucket.lower}|${bucket.upper}|`));
+      if (row < 0) return undefined;
+      const bucket = fullData.rows[row], timestamp = Number(key.slice(`${bucket.lower}|${bucket.upper}|`.length));
+      // `sourceCells` holds every window, so a timestamp that the narrower drawn sample dropped (or resampled away) still resolves.
+      const cell = bucket.sourceCells.find(entry => entry.timestamp === timestamp);
+      // A column the current width does not draw keeps column -1: the panel stays, without a highlight.
+      return cell ? distributionObservation(view, row, data.timestamps.indexOf(timestamp), bucket, cell) : undefined;
+    },
+  };
+  const { root: inspectionRoot, ...inspection } = useInspection(props, `${signature}:${data.timestamps.join(",")}`, panel, retained), id = useId();
   const cellWidth = plotWidth / Math.max(1, data.timestamps.length), cellHeight = plotHeight / Math.max(1, data.rows.length);
   const sourceTimes = useMemo(() => [...new Set((result.series ?? []).filter(series => Object.entries(config.group ?? {}).every(([key, value]) => series.labels[key] === value)).flatMap(series => series.points.map(point => point.timestamp)).filter(validTimestamp))].sort((a, b) => a - b), [result, config.group]);
   const gaps = useMemo(() => heatmapGaps(sourceTimes, left, plotWidth, data.timestamps.length), [sourceTimes, left, plotWidth, data.timestamps.length]);
@@ -322,18 +376,12 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const cellFill = (cell: DistributionCell) => cell.state === "missing" ? plotHatchFill(id) : cell.state === "invalid" ? plotHatchFill(id, "warning") : densityFill(cell.value ?? 0);
   const cellTitle = (row: DistributionRow, cell: DistributionCell) => cell.state === "missing" ? "No observation"
     : cell.state === "invalid" ? "Invalid bucket counts: cumulative counts decrease or are negative"
-    : `${cellLabel(row.lower, row.upper, unit)} · ${stamp(cell.timestamp)} · ${formatMetric(cell.value ?? 0, densityUnit, false, widget.options?.decimals)}`;
+    : `${cellLabel(row.lower, row.upper, unit, widget.options?.decimals, fullData.bounds)} · ${stamp(cell.timestamp)} · ${formatMetric(cell.value ?? 0, densityUnit, false, widget.options?.decimals)}`;
   // Labels come from the full bounds, so a bucket hidden by maxBuckets can still be named in the inspector.
-  const bucketLabel = (bucket: number) => cellLabel(bucket ? fullData.bounds[bucket - 1] : -Infinity, fullData.bounds[bucket], unit);
+  const bucketLabel = (bucket: number) => cellLabel(bucket ? fullData.bounds[bucket - 1] : -Infinity, fullData.bounds[bucket], unit, widget.options?.decimals, fullData.bounds);
   // The readout names one window, so it shows seconds; the axis format is too coarse to tell neighbours apart.
   const clock = (timestamp: number) => timeSpan >= 86_400_000 ? formatTimeTick(timestamp, timeSpan, timeZone) : readoutClock.format(new Date(timestamp));
-  const observation = (row: number, column: number): Observation => {
-    const bucket = data.rows[row], cell = bucket.cells[column], name = cellLabel(bucket.lower, bucket.upper, unit);
-    const note = cell.state === "missing" ? "No observation for this bucket at this time. Missing cells are hatched and left out of the p95."
-      : cell.state === "invalid" ? "Invalid source counts: cumulative counts decrease or are negative here. The cell is not drawn as density and its time is left out of the p95."
-      : undefined;
-    return { row, column, value: cell.value, timestamp: cell.timestamp, name, bucket: name, unit: densityUnit, color: SERIES_PALETTE[0], series: { name, labels: bucket.labels, points: bucket.sourceCells }, note };
-  };
+  const observation = (row: number, column: number): Observation => distributionObservation(view, row, column, data.rows[row], data.rows[row].cells[column]);
   // The p95 line sits on each drawable window's bucket row. Non-ok windows, source gaps and hidden buckets break it.
   // An overflow window has no finite estimate, so `quantile` is the whole line and `finite` is its solid part.
   const line = { columns, breaks: data.quantiles.map(window => window.breakBefore), rows: data.rows.length, rowCentre: (row: number) => top + (data.rows.length - .5 - row) * cellHeight, gaps };
@@ -348,7 +396,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   } : undefined;
   const windowAt = inspection.active ? data.quantiles[inspection.active.observation.column] : undefined;
   const histogram = inspection.active && windowAt ? <DistributionWindowHistogram
-    buckets={data.rows.map((row, bucket): WindowHistogramBucket => ({ bucket, label: cellLabel(row.lower, row.upper, unit), value: row.cells[inspection.active!.observation.column].value, state: row.cells[inspection.active!.observation.column].state, fill: cellFill(row.cells[inspection.active!.observation.column]) })).reverse()}
+    buckets={data.rows.map((row, bucket): WindowHistogramBucket => ({ bucket, label: cellLabel(row.lower, row.upper, unit, widget.options?.decimals, fullData.bounds), value: row.cells[inspection.active!.observation.column].value, state: row.cells[inspection.active!.observation.column].state, fill: cellFill(row.cells[inspection.active!.observation.column]) })).reverse()}
     selected={inspection.active.observation.row} windowQuantile={windowAt} bucketLabel={bucketLabel} unit={unit} densityUnit={densityUnit} decimals={widget.options?.decimals}
     showList={inspection.active.pinned || data.rows.length <= hoverHistogramLimit} /> : undefined;
   const locate = (event: PointerEvent<SVGSVGElement>) => {
@@ -363,7 +411,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     if (!inspection.enabled) return;
     if (event.key === "Tab" && !event.shiftKey && inspection.active?.pinned && inspection.focusPanel()) { event.preventDefault(); return; }
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss("escape"); return; }
-    let row = inspection.active?.observation.row ?? 0, column = inspection.active?.observation.column ?? data.timestamps.length - 1;
+    let row = inspection.active?.observation.row ?? 0, column = Math.max(0, inspection.active?.observation.column ?? data.timestamps.length - 1);
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
     else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, "keyboard"); return; } else return;
@@ -371,12 +419,16 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, "keyboard");
   };
   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
+  // Arrow moves change only aria-describedby, which screen readers do not re-announce; this polite line says each keyboard step.
+  const keyboardStep = inspection.active?.owner === "keyboard" ? inspection.active.observation : undefined;
+  const keyboardSummary = keyboardStep && [keyboardStep.bucket, new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }).format(new Date(keyboardStep.timestamp)), typeof keyboardStep.value === "number" ? formatMetric(keyboardStep.value, keyboardStep.unit, false, widget.options?.decimals) : "No data"].filter(Boolean).join(", ");
   return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
+    <span className={styles.srOnly} aria-live="polite">{keyboardSummary}</span>
     <div className={styles.plot} ref={ref} data-chart-entering={entering || undefined}>
       <svg ref={setAnchor} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
         onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value); else if (inspection.active && !inspection.active.pinned && inspection.active.owner === "pointer") inspection.dismiss(); }}
-        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
+        onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.togglePin(value); }}>
         <PlotHatchDefs id={id} />
         <rect x={left} y={top} width={plotWidth} height={plotHeight} className={heatmapStyles.plotBackground} aria-hidden="true" />
         {timeTicks(data.timestamps, plotWidth).map(index => <line key={index} x1={columnX(data.timestamps[index])} x2={columnX(data.timestamps[index])} y1={top} y2={top + plotHeight} className={heatmapStyles.gridLine} aria-hidden="true" />)}
@@ -606,7 +658,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       {emptyZoom ? <div role="status">No recorded observations in this window. Reset chart zoom to return to the full view.</div> : <svg ref={setAnchor} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${directional ? "Outbound traffic below zero" : "Stacked observations"}.${inspection.enabled && data.timestamps.length ? " Arrow keys inspect values; Enter pins." : ""}`} tabIndex={inspection.enabled && data.timestamps.length ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={data.timestamps.length ? keys : undefined}
         onFocus={() => { if (data.timestamps.length) inspection.focus(observation(0, data.timestamps.length - 1)); }}
         onPointerMove={event => { if (!data.timestamps.length) return; const value = locate(event); if (value && event.pointerType !== "touch") inspection.show(value); }}
-        onClick={event => { if (!data.timestamps.length) return; const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.show(value, true); }}>
+        onClick={event => { if (!data.timestamps.length) return; const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.togglePin(value); }}>
         <defs><clipPath id={`${id}-clip`}><rect x={left} y={top} width={plotWidth} height={plotHeight} /></clipPath></defs>
         {bars && <PlotHatchDefs id={id} />}
         {ticks.map((value, index) => <g key={index}>{widget.options?.showGrid !== false && <line x1={left} x2={width - right} y1={y(value)} y2={y(value)} className={styles.gridLine} />}{showAxis && <text data-value-axis x={left - 7} y={y(value)} textAnchor="end" dominantBaseline="middle" className={styles.tick}>{tickLabels[index]}</text>}</g>)}

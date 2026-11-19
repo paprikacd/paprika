@@ -70,7 +70,7 @@ describe("capacity meter presentation", () => {
   it("shows a radial scale without converting missing latest data into an old value", () => {
     const { rerender, container } = render(<ThresholdGauge widget={{ ...widget, config: { display: "radial" } }} result={result(125)} />);
     expect(screen.getByRole("meter")).toHaveAttribute("aria-valuenow", "100");
-    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", "125%");
+    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", "125.00%");
     expect(container.querySelector('[stroke-dasharray="100 100"]')).not.toBeNull();
     rerender(<ThresholdGauge widget={{ ...widget, config: { display: "radial" } }} result={result(null)} />);
     expect(screen.queryByRole("meter")).not.toBeInTheDocument();

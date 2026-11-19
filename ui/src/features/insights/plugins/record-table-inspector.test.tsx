@@ -8,6 +8,31 @@ afterEach(cleanup)
 const widget: Widget = { id: "records", title: "Requests", type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "db", query: "SELECT", unit: "", options: { decimals: 2 }, layout: { x: 0, y: 0, w: 6, h: 4 } }
 const result: QueryResult = { records: { columns: [{ key: "service", type: "string" }, { key: "ratio", type: "number", unit: "%" }, { key: "active", type: "boolean" }], rows: [["api", 12.345, false], ["worker", null, true]], truncated: false } }
 
+describe("record table cell panel reads as the cell does", () => {
+  it("heads the panel with the cell's own unit step and shows the recorded value exactly, so a small value never reads zero", () => {
+    const latency: QueryResult = { records: { columns: [{ key: "service", type: "string" }, { key: "latency", type: "number", unit: "ms" }], rows: [["api", 0.4]] } };
+    render(<RecordTable widget={{ ...widget, options: { decimals: 0 } }} result={latency} />);
+    fireEvent.pointerEnter(screen.getByText("400 us").closest("td")!, { pointerType: "mouse" });
+    const tip = screen.getByRole("tooltip");
+    expect(tip).toHaveTextContent("400 us");
+    expect(tip).toHaveTextContent("Recorded value0.4 ms");
+    expect(tip).not.toHaveTextContent(/(^|\s)0 ms/);
+  });
+
+  it("shows an identifier or date-part column's recorded value as stored, without grouping", () => {
+    const ids: QueryResult = { records: { columns: [{ key: "order_id", type: "number" }, { key: "year", type: "number" }, { key: "count", type: "number" }], rows: [[10022, 2026, 18432]] } };
+    render(<RecordTable widget={{ ...widget, options: { decimals: 2 } }} result={ids} />);
+    const order = screen.getByText("10022").closest("td")!;
+    const year = screen.getByText("2026").closest("td")!;
+    fireEvent.pointerEnter(order, { pointerType: "mouse" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Recorded value10022");
+    fireEvent.pointerLeave(order, { pointerType: "mouse" });
+    fireEvent.pointerEnter(year, { pointerType: "mouse" });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Recorded value2026");
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("2,026");
+  });
+});
+
 describe("record table cell inspection", () => {
   it("inspects the hovered recorded value and keyboard-navigates without selecting a row", () => {
     const select = vi.fn()
@@ -18,7 +43,8 @@ describe("record table cell inspection", () => {
     fireEvent.pointerEnter(value, { pointerType: "mouse" })
     expect(screen.getByRole("tooltip")).toHaveTextContent("ratio")
     expect(screen.getByRole("tooltip")).toHaveTextContent("12.35%")
-    expect(screen.getByRole("tooltip")).toHaveTextContent("12.345")
+    // The heading reads the cell (two decimal places); the recorded value is the stored number, exact.
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Recorded value12.345%")
     fireEvent.pointerLeave(value, { pointerType: "mouse" })
     first.focus()
     fireEvent.keyDown(first, { key: "ArrowRight" })

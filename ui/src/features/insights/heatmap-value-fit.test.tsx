@@ -39,7 +39,8 @@ function heatmap(series: number) {
     type: "heatmap",
     providerId: "prometheus",
     query: "fit",
-    unit: "ms",
+    // No unit to scale: the value keeps its full digits at three decimals, so the text is long enough to need fitting.
+    unit: "",
     layout: { x: 0, y: 0, w: 6, h: 4 },
     options: { decimals: 3, showLabels: false, showValues: true, showLegend: false },
   };

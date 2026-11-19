@@ -77,3 +77,18 @@ export function statusHistoryLayout(series: readonly Series[], maxPoints: number
     sampled: rows.some(row => row.points.length < row.ordered.length), duplicateTimes, domain: { start, end },
   };
 }
+
+/**
+ * Pointer hit slices for one lane of status-history marks, in pixels from the lane's left edge.
+ * Each mark's slice is at least `halfWidth` either side of its centre (so a sub-pixel mark keeps a
+ * usable target), but never reaches the midpoint to a neighbour. Slices therefore never overlap, and
+ * a point on a mark's centre or inside its drawn edges resolves to that mark.
+ */
+export function historyHitSlices(marks: readonly { centre: number; halfWidth: number }[], laneWidth: number): { start: number; end: number }[] {
+  return marks.map(({ centre, halfWidth }, index) => {
+    const previous = marks[index - 1], next = marks[index + 1];
+    const lower = previous ? (previous.centre + centre) / 2 : -Infinity;
+    const upper = next ? (centre + next.centre) / 2 : Infinity;
+    return { start: Math.max(0, centre - halfWidth, lower), end: Math.min(laneWidth, centre + halfWidth, upper) };
+  });
+}

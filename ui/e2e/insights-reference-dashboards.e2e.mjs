@@ -359,7 +359,7 @@ try {
       const editor=page.getByRole("region",{name:"Widget editor",exact:true})
       await editor.getByRole("tab",{name:"Options",exact:true}).click()
       await editor.getByRole("spinbutton",{name:"Column 1 maximum",exact:true}).fill(String(maximum))
-      await until(async()=> (await tile(widget.id).locator('[data-cell-display="bar"]').first().getAttribute("aria-label"))?.includes(`to ${maximum}%`),"Column scale must preview in the widget before Apply")
+      await until(async()=> (await tile(widget.id).locator('[data-cell-display="bar"]').first().getAttribute("aria-label"))?.includes(`to ${maximum}.0%`),"Column scale must preview in the widget before Apply")
       await editor.getByRole("button",{name:"Apply changes",exact:true}).click()
     }
     await editScale(200)

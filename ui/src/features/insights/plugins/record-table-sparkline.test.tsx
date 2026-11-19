@@ -35,7 +35,7 @@ describe("record table history cells", () => {
     for (const [index, text] of [[0, "No history"], [1, "No history"], [2, "Invalid history"], [3, "Invalid history"], [4, "Invalid history"], [5, "No data"]] as const)
       expect(within(screen.getAllByRole("row")[index + 1]).getByText(text)).toBeInTheDocument()
     expect(within(screen.getAllByRole("row")[6]).getByRole("img")).toHaveAccessibleDescription(/Latest observation is missing/)
-    expect(within(screen.getAllByRole("row")[6]).getByRole("img")).toHaveAccessibleDescription(/Latest valid sample in history: 12.345%/)
+    expect(within(screen.getAllByRole("row")[6]).getByRole("img")).toHaveAccessibleDescription(/Latest valid sample in history: 12.35%/)
   })
 
   it("accepts history only from a string result column and preserves configuration in all document forms", () => {
@@ -68,5 +68,20 @@ describe("record table history cells", () => {
     rerender(<RecordTable widget={colored} result={{ records: { ...frame, columns: [...result.records!.columns, { key: "risk", type: "string" }] } }} />)
     expect(screen.getByRole("alert")).toHaveTextContent("requires a numeric column")
     expect(() => tableCellStylesSchema.parse([{ column: "trend", display: "color-text", thresholdColumn: "risk" }])).toThrow()
+  })
+
+  it("formats the color meaning and the history summary with the widget's decimals, never float noise", () => {
+    const pair = JSON.stringify([{ timestamp: "2026-10-28T12:00:00Z", value: 1.123 }, { timestamp: "2026-10-28T12:01:00Z", value: 2.2 }]);
+    const sparkline = (decimals?: number): Widget => ({ ...widget, options: { ...(decimals === undefined ? {} : { decimals }), thresholds: [{ value: 0, color: "#13c8a1", label: "Low" }, { value: 70, color: "#ef5a46", label: "High" }] }, config: { cellStyles: [{ column: "trend", display: "sparkline", thresholdColumn: "risk" }] } });
+    const frame = { columns: [...result.records!.columns, { key: "risk", type: "number" as const }], rows: [["A", pair, 5.878749999999975]] };
+    const expected: [number | undefined, string, string][] = [[undefined, "Color by risk: 5.88 · Low", "Minimum 1.12; maximum 2.2."], [0, "Color by risk: 6 · Low", "Minimum 1; maximum 2."], [3, "Color by risk: 5.879 · Low", "Minimum 1.123; maximum 2.200."]];
+    for (const [decimals, meaning, summary] of expected) {
+      const { container, unmount } = render(<RecordTable widget={sparkline(decimals)} result={{ records: frame }} />);
+      const history = container.querySelector('[data-cell-display="sparkline"][data-history-state="valid"]');
+      expect(history?.querySelector("[data-history-color-meaning]")?.textContent).toBe(meaning);
+      expect(container.querySelector("desc")?.textContent).toContain(summary);
+      expect(container.textContent).not.toMatch(/\d\.\d{6,}/);
+      unmount();
+    }
   })
 })

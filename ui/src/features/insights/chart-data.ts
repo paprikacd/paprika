@@ -197,16 +197,31 @@ export function seriesName(series: Series, index: number) {
   );
 }
 
+const exactInteger = new Intl.NumberFormat("en", { maximumFractionDigits: 0, useGrouping: true });
+const exactNumber = new Intl.NumberFormat("en", { maximumSignificantDigits: 12, useGrouping: true });
+
+/**
+ * The exact value, for rows labelled "exact" only (Source details, observation tables). It keeps 12 significant digits
+ * at every magnitude, so floating-point noise such as 5.878749999999975 reads as 5.87875, 0.1 + 0.2 as 0.3 and
+ * 1.23456789012345e-10 as 0.000000000123456789012 rounded to 12 digits, and groups digits.
+ */
 export function exactMetric(value: number, unit = "") {
   if (!Number.isFinite(value)) return "—";
-  return `${String(value)}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`;
+  const suffix = unit === "%" ? "%" : unit ? ` ${unit}` : "";
+  // Integers that are safe to represent keep every digit, so a byte counter or an ID is not rounded.
+  if (Number.isSafeInteger(value)) return `${exactInteger.format(value === 0 ? 0 : value)}${suffix}`;
+  const rounded = Number(value.toPrecision(12)) || 0;
+  // Below the fixed-point range (about 1e-12 with 20 places) the exponent form is the only one that keeps the value.
+  if (rounded !== 0 && Math.abs(rounded) < 1e-12) return `${rounded.toExponential()}${suffix}`;
+  return `${exactNumber.format(rounded)}${suffix}`;
 }
 
-/** Detail views stay exact in Auto mode; explicit precision only rounds the label. */
+/**
+ * Metric text outside the exact rows. Explicit decimals set the places; Auto (unset) is the reading precision with unit
+ * scaling, so no display shows raw floating-point digits.
+ */
 export function formatMetricDetails(value: number, unit = "", decimals?: number) {
-  return decimals === undefined || !Number.isFinite(decimals)
-    ? exactMetric(value, unit)
-    : formatMetric(value, unit, false, decimals);
+  return formatMetric(value, unit, false, decimals);
 }
 
 /** A time interval in Unix milliseconds. */

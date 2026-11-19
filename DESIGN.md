@@ -115,7 +115,7 @@ Compact metric legends keep their series in one horizontal row, with readings be
 
 The richer chart vocabulary includes stacked areas/bars, mirrored directional traffic, bucket distribution heatmaps, segmented and radial capacity meters, supplied-coordinate maps, directed pipeline diagrams and UTC incident calendars. Each is a configurable renderer in the existing builder. Distribution color represents bucket density; thresholds represent explicit limits; meter fills represent the measured fraction. Never substitute a status heatmap for a distribution or fabricate coordinates, missing observations or healthy days. Guided settings expose only capabilities the renderer implements, with advanced JSON retained.
 
-Time-based plots share the exact observation timestamp through a dashboard-scoped cursor. Hover remains transient; click/tap or Enter pins the inspector; Escape dismisses it. A result refresh clears stale observations and cursors. Details-only charts do not launch extra queries. Query-backed tooltip widgets remain an explicit authoring choice.
+Time-based plots share the exact observation timestamp through a dashboard-scoped cursor. Hover remains transient; click/tap or Enter pins the inspector; Escape dismisses it. An automatic refresh keeps an open observation on the same series, sample, bucket and time, or day, with its new values, and closes it only when its key is no longer in the result; pins follow the same rule. A manual "Refresh data" currently remounts every widget, so it clears pins and open inspectors (a known gap, not the intended behaviour). Distribution cells are keyed by bucket bounds and timestamp, geo bins by their cell key, and calendar days by their UTC date. Cursors clear on refresh. Details-only charts do not launch extra queries. Query-backed tooltip widgets remain an explicit authoring choice.
 
 The October 2026 component studies in `output/imagegen/` guide presentation, not dashboard schema or invented data. Prefer thin readable lines, low-opacity areas, quiet horizontal grids, compact aligned legends and tabular values. Area charts may use a vertical gradient fill per series that fades to transparent at the baseline; no glow or blur on marks. An observation card should remain beside the selected track where space permits. Its history keeps the selected series' color in both themes; an explicit authored color takes priority. The selected observation and latest history value remain separately labelled. Never invent deltas or combine incompatible units just to reproduce a concept image.
 
@@ -124,6 +124,10 @@ Keep motion brief and functional, using Gamma's standard or exponential decelera
 ## Do's and Don'ts
 
 - Keep the data and its available actions readable at rest, including on mobile.
+- Honour the widget's decimal places in every number it shows. Auto is reading precision and never prints float noise; the exact value appears only in rows labelled exact.
+- With decimal places set, the unit is chosen first and the places apply to the scaled number (`269.49 TiB`). A whole number
+  with no unit is never padded (`84`), identifier columns are shown as stored, and axis ticks take their step's precision.
+  The full rules are in `docs/design/insights/UX-CONTRACT.md` under Number display.
 - Extend a shared Gamma adapter when behavior recurs; preserve provenance and accessibility.
 - Do not expose a style control that does nothing for the selected widget.
 - Do not replace this dashboard with landing-page styling or migrate its control library during a review.

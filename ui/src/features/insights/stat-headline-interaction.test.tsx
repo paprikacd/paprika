@@ -89,7 +89,7 @@ describe("single value reading", () => {
     fireEvent.keyDown(plot, { key: "Enter" });
     expect(screen.getByRole("tooltip")).toHaveTextContent("Pinned");
     fireEvent.keyDown(plot, { key: "Enter" });
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Move to inspect");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Click, tap or press Enter to keep open");
     fireEvent.keyDown(plot, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).toBeNull();
   });

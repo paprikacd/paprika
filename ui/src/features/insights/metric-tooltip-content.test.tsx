@@ -39,3 +39,15 @@ it("places the sample time before expandable source metadata and retains the ful
   expect(details).toHaveTextContent(series.name);
   expect(details).toHaveTextContent("123.456 ms");
 });
+it("reads the headline at reading precision and keeps the exact value in Source details", () => {
+  const noisy = { name: "latency{service=\"api\"}", labels: { service: "api" }, points: [{ timestamp: 1000, value: 5.878749999999975 }] };
+  const { container } = render(<MetricDetails widget={{ ...widget, unit: "observations/s" }} series={noisy} index={0} point={noisy.points[0]} unit="observations/s" />);
+  expect(container.querySelector('[data-metric-value="5.878749999999975"]')).toHaveTextContent("5.88 observations/s");
+  expect(container.querySelector("details")).toHaveTextContent("5.87875 observations/s");
+});
+it("keeps the subject visible on the series line when an authored tooltip title replaces the heading", () => {
+  const { container } = render(<MetricDetails widget={{ ...widget, options: { tooltipTitle: "Custom CPU title" } }} series={series} index={0} point={series.points[0]} unit="ms" subject="node-03" seriesLabel="Node CPU" />);
+  expect(screen.getByText("Custom CPU title")).toBeVisible();
+  expect(container.querySelector(".tooltipSeries, [class*='tooltipSeries']")).toHaveTextContent("node-03");
+  expect(screen.getByText("Node CPU")).toBeVisible();
+});

@@ -13,16 +13,16 @@ describe("multi-series threshold gauges", () => {
   it.each(["linear", "segmented", "radial"] as const)("identifies out-of-scale %s readings without changing exact values or missingness", display => {
     const values = [558, 100, -12, null];
     const { container } = render(<ThresholdGauge widget={{ ...widget, config: { display, seriesMode: "all" } }} result={{ series: values.map((value, i) => ({ name: `node-${i}`, labels: {}, points: [{ timestamp: 2000, value }] })) }} />);
-    expect(screen.getByRole("img", { name: "Above scale maximum: 100 GB" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Below scale minimum: 0 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Above scale maximum: 100.00 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Below scale minimum: 0.00 GB" })).toBeInTheDocument();
     expect(container.querySelectorAll("[data-gauge-outside-scale]")).toHaveLength(2);
     expect(container.querySelector('[data-gauge-value="558"]')).toHaveTextContent("558.00");
     expect(container.querySelector('[data-gauge-value="unknown"]')).toHaveTextContent("No data");
     const meters = screen.getAllByRole("meter");
     expect(meters[0]).toHaveAttribute("aria-valuenow", "100");
-    expect(meters[0]).toHaveAttribute("aria-valuetext", "558 GB");
-    fireEvent.focus(screen.getByRole("button", { name: /node-0: 558 GB/ }));
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Above scale maximum: 100 GB");
+    expect(meters[0]).toHaveAttribute("aria-valuetext", "558.00 GB");
+    fireEvent.focus(screen.getByRole("button", { name: /node-0: 558.00 GB/ }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Above scale maximum: 100.00 GB");
   });
 
   it.each(["linear", "segmented", "radial"] as const)("keeps %s gauges finite across extreme signed bounds", display => {
@@ -65,7 +65,7 @@ describe("multi-series threshold gauges", () => {
   it("preserves the existing first-series default", () => {
     render(<ThresholdGauge widget={widget} result={result} />);
     expect(screen.getAllByRole("meter")).toHaveLength(1);
-    expect(screen.getByRole("meter", { name: "Free disk space" })).toHaveAttribute("aria-valuetext", "22.718 GB");
+    expect(screen.getByRole("meter", { name: "Free disk space" })).toHaveAttribute("aria-valuetext", "22.72 GB");
     expect(screen.queryByRole("region", { name: "Free disk space gauges" })).not.toBeInTheDocument();
   });
   it("renders a six-gauge radial bank with individually labeled exact observations", () => {
@@ -74,7 +74,7 @@ describe("multi-series threshold gauges", () => {
     expect(bank).toHaveAttribute("data-gauge-columns", "3");
     expect(bank).toHaveStyle({ "--gauge-columns": "3" });
     expect(within(bank).getAllByRole("meter")).toHaveLength(6);
-    expect(screen.getByRole("meter", { name: "Free disk space: sda6" })).toHaveAttribute("aria-valuetext", "37.718 GB");
+    expect(screen.getByRole("meter", { name: "Free disk space: sda6" })).toHaveAttribute("aria-valuetext", "37.72 GB");
     expect(container.querySelectorAll('[data-gauge-display="radial"]')).toHaveLength(6);
     expect(screen.getByText("22.72")).toBeInTheDocument();
     for (let index = 1; index <= 6; index++) expect(screen.getByText(`sda${index}`)).toBeInTheDocument();
@@ -86,7 +86,7 @@ describe("multi-series threshold gauges", () => {
     const values = [...container.querySelectorAll<HTMLElement>("[data-gauge-value]")];
     expect(values[0].style.getPropertyValue("--gauge-status-color")).toBe("#d05b61");
     expect(values[3].style.getPropertyValue("--gauge-status-color")).toBe("#59a56b");
-    expect(screen.getByRole("meter", { name: "Free disk space: sda1" })).toHaveAttribute("aria-valuetext", "22.718 GB · Critical");
+    expect(screen.getByRole("meter", { name: "Free disk space: sda1" })).toHaveAttribute("aria-valuetext", "22.72 GB · Critical");
     rerender(<ThresholdGauge widget={{ ...bankWidget, options: { ...bankWidget.options, textColor: "#18293a" } }} result={result} />);
     expect(container.querySelector<HTMLElement>("[data-gauge-value]")!.style.color).toBe("#18293a");
   });
@@ -128,18 +128,18 @@ describe("multi-series threshold gauges", () => {
     const trigger = screen.getByRole("button", { name: /Inspect value for Free disk space:/ });
     fireEvent.focus(trigger);
     expect(screen.getByRole("tooltip")).toHaveTextContent("Critical");
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Below 30 GB");
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Scale: 0 to 100 GB");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Below 30.00 GB");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Scale: 0.00 GB to 100.00 GB");
     expect(screen.getByRole("tooltip").querySelector('[data-gauge-threshold-swatch]')).toHaveStyle({ background: "#d05b61" });
     fireEvent.blur(trigger);
     rerender(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, thresholds } }} result={{ series: [{ ...result.series![0], points: [{ timestamp: 3000, value: 42 }] }] }} />);
     fireEvent.focus(screen.getByRole("button", { name: /Inspect value for Free disk space:/ }));
-    expect(screen.getByRole("tooltip")).toHaveTextContent("≥ 30 GB and < 60 GB");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("≥ 30.00 GB and < 60.00 GB");
     fireEvent.blur(screen.getByRole("button", { name: /Inspect value for Free disk space:/ }));
     rerender(<ThresholdGauge widget={{ ...widget, options: { ...widget.options, thresholds } }} result={{ series: [{ ...result.series![0], points: [{ timestamp: 4000, value: null }] }] }} />);
     fireEvent.focus(screen.getByRole("button", { name: /Inspect value for Free disk space:/ }));
     expect(screen.getByRole("tooltip")).toHaveTextContent("Unknown");
-    expect(screen.getByRole("tooltip")).not.toHaveTextContent("Below 30 GB");
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("Below 30.00 GB");
   });
   it("discloses actual bank overflow and keeps the last gauge keyboard and pointer accessible", () => {
     let availableHeight = 210;
@@ -233,7 +233,7 @@ describe("multi-series threshold gauges", () => {
     render(<ThresholdGauge widget={{ ...widget, config: { seriesMode: "all", label: "Disk" } }} result={{ series: [{ ...result.series![0], points: [{ timestamp: 2000, value: 112.3456 }] }] }} onContextChange={select} />);
     expect(screen.getByText("Disk · sda1")).toBeInTheDocument();
     expect(screen.getByRole("meter")).toHaveAttribute("aria-valuenow", "100");
-    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", "112.3456 GB");
+    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", "112.35 GB");
     fireEvent.focus(screen.getByRole("button", { name: /Select signal/ }));
     expect(select.mock.calls.at(-1)![0].value).toBe(112.3456);
   });
@@ -280,7 +280,7 @@ describe("multi-series threshold gauges", () => {
     const track = container.querySelector('[data-gauge-display="linear"]')!;
     expect(track).toHaveAttribute("data-gauge-orientation", "vertical");
     expect(track.querySelector('[data-gauge-solid-fill]')).toHaveStyle({ height: "12.5%" });
-    expect(track).toHaveAttribute("aria-valuetext", "12.5%");
+    expect(track).toHaveAttribute("aria-valuetext", "12.50%");
     expect(screen.getByRole("region", { name: "Free disk space gauges" })).toHaveAttribute("data-gauge-columns", "4");
     rerender(<ThresholdGauge widget={{ ...widget, config: { display: "radial", orientation: "vertical" } }} result={result} />);
     expect(container.querySelector('[data-gauge-display="radial"]')).not.toHaveAttribute("data-gauge-orientation");
@@ -317,7 +317,7 @@ describe("multi-series threshold gauges", () => {
     height = 260;
     act(() => resize.forEach(callback => callback([], {} as ResizeObserver)));
     expect(track).toHaveAttribute("data-gauge-rendering", "segmented");
-    expect(track).toHaveAttribute("aria-valuetext", "22.718 GB");
+    expect(track).toHaveAttribute("aria-valuetext", "22.72 GB");
   });
   it("bounds separated cells at four pixels without altering configured segment counts", () => {
     for (const segments of [8, 24, 60]) for (const extent of [23, 32, 96, 120, 239, 240, 360, 600]) {
@@ -355,7 +355,7 @@ describe("multi-series threshold gauges", () => {
     act(() => resize.forEach(callback => callback([], {} as ResizeObserver)));
     expect(Number.parseFloat(arc.style.height)).toBe(50);
     expect(Number.parseFloat(arc.style.width)).toBeCloseTo(50 * 200 / 114, 5);
-    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", "22.718 GB");
+    expect(screen.getByRole("meter")).toHaveAttribute("aria-valuetext", "22.72 GB");
   });
   it("suppresses nested inspection in an embedded bank", () => {
     const select = vi.fn();

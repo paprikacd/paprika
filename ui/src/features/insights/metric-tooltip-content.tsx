@@ -2,12 +2,14 @@
 import { useMemo, type ReactNode } from "react";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import type { Widget } from "./schema";
-import { seriesName, formatMetricDetails, exactMetric, fullDateTimeOptions, type Point, type Series } from "./chart-data";
+import { seriesName, exactMetric, fullDateTimeOptions, type Point, type Series } from "./chart-data";
+import { formatMetric } from "./units";
 import { validTimestamp } from "./widget-context";
 import configStyles from "./chart-styles.module.css";
 
-export function metricTooltipTitle(widget: Widget | undefined, series: Series, index: number) {
-  return widget?.options?.tooltipTitle?.trim() || widget?.title || seriesName(series, index);
+/** The heading: the authored tooltip title, then the subject the caller names (a monitor or a day), then the widget title. */
+export function metricTooltipTitle(widget: Widget | undefined, series: Series, index: number, subject?: string) {
+  return widget?.options?.tooltipTitle?.trim() || subject || widget?.title || seriesName(series, index);
 }
 
 export function MetricDetails({
@@ -20,6 +22,7 @@ export function MetricDetails({
   description = "Latest valid sample",
   timestampFirst = false,
   compact = false,
+  subject,
   seriesLabel,
   children,
 }: {
@@ -32,10 +35,13 @@ export function MetricDetails({
   description?: string;
   timestampFirst?: boolean;
   compact?: boolean;
+  /** The cell or row this reading belongs to; it heads the panel unless the widget sets a tooltip title. */
+  subject?: string;
   seriesLabel?: string;
   children?: ReactNode;
 }) {
   const timeZone = useDashboardTimeZone();
+  const authoredTitle = widget?.options?.tooltipTitle?.trim();
   const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const value =
     typeof point?.value === "number" && Number.isFinite(point.value)
@@ -50,17 +56,18 @@ export function MetricDetails({
     <>
       <div className={configStyles.tooltipHeader} data-tooltip-compact={compact || undefined}>
         <strong className={configStyles.tooltipTitle}>
-          {metricTooltipTitle(widget, series, index)}
+          {metricTooltipTitle(widget, series, index, subject)}
         </strong>
+        {authoredTitle && subject && subject !== authoredTitle && <span className={configStyles.tooltipSeries}>{subject}</span>}
         {seriesLabel && <span className={configStyles.tooltipSeries}>{seriesLabel}</span>}
       </div>
       {timestampFirst && <div className={configStyles.plotTooltipTime}><span>{description}</span>{timestamp}</div>}
       <div className={configStyles.tooltipReading}>
         {widget?.options?.tooltipValueLabel && <span className={configStyles.tooltipEyebrow}>{widget.options.tooltipValueLabel}</span>}
         <strong
-          data-metric-value={value === undefined ? undefined : String(value)}
+          data-metric-value={value === undefined ? "missing" : String(value)}
         >
-          {value === undefined ? "No data" : formatMetricDetails(value, widget?.options?.tooltipShowUnit === false ? "" : unit, widget?.options?.tooltipDecimals ?? decimals ?? widget?.options?.decimals)}
+          {value === undefined ? "No data" : formatMetric(value, widget?.options?.tooltipShowUnit === false ? "" : unit, false, widget?.options?.tooltipDecimals ?? decimals ?? widget?.options?.decimals)}
         </strong>
         {children}
       </div>

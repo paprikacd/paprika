@@ -5,7 +5,8 @@
 // is automatic for recognised durations (ns, us, ms, s), IEC bytes, B/s, SI bit rates and per-second rates of counting
 // nouns; the scaled unit is chosen after rounding. Axes also abbreviate unrecognised units (1.5K W). Percent keeps the
 // older Auto precision and never shows 100 unless the value is exactly 100. Authored unit text is never rewritten when
-// nothing scales. An authored `decimals` option fixes the fraction digits exactly and never rescales. Exact observation
+// nothing scales. An authored `decimals` option fixes the fraction digits of the scaled value ("269.494 TiB"), and a
+// measured value with a unit always takes them; only a whole number with no unit stays whole. Exact observation
 // details are formatted elsewhere (chart-data.ts).
 //
 // Axes take their domain and ticks from `axisScale`, and the chart draws exactly those ticks, so each gridline sits at
@@ -103,7 +104,9 @@ function plainText(value: number, places: number, grouping = true) {
 
 function fixedText(value: number, digits: number, compact = false) {
   const options = { ...(compact ? { notation: "compact" as const } : {}), minimumFractionDigits: digits, maximumFractionDigits: digits };
-  return formatFor(`fixed-${compact}-${digits}`, options).format(value === 0 ? 0 : value);
+  const text = formatFor(`fixed-${compact}-${digits}`, options).format(value === 0 ? 0 : value);
+  // A small negative value rounded to zero keeps no sign: "-0.000" reads "0.000".
+  return /^-0([.,]0*)?$/.test(text) ? text.slice(1) : text;
 }
 
 const significantFormat = new Intl.NumberFormat("en", { useGrouping: false, maximumSignificantDigits: SIGNIFICANT_FIGURES });
@@ -232,6 +235,38 @@ function readingText(value: number, guards: readonly number[]) {
   return keepingSides(value, guards, readingPlaces(magnitude), textAt => plainText(value, textAt));
 }
 
+const IDENTIFIER_TOKENS = new Set(["id", "year", "day"]);
+
+/**
+ * Whether a column names an identifier or a date part by its last word (order_id, orderId, year, day). Such a column
+ * counts nothing, so its whole numbers are shown as stored. A word before the last ("cost_per_year") does not count.
+ * Callers apply this only to columns with no unit: a measure with a unit ("retention_day" in ms) is never an identifier.
+ */
+export function isIdentifierColumn(name: string) {
+  const tokens = name.replace(/([a-z\d])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const last = tokens[tokens.length - 1] ?? "";
+  // "per" marks a rate ("cost_per_year" counts dollars a year), so the last word is not an identifier or a date part.
+  return IDENTIFIER_TOKENS.has(last) && tokens[tokens.length - 2] !== "per";
+}
+
+/**
+ * A whole number in an identifier or date-part column with no unit is shown as stored: no grouping, no padded decimals.
+ * Other values take the widget's decimals and unit; a unit-less count is grouped ("18,432"), a measure with a unit is
+ * never an identifier, so it keeps its unit and decimals ("78.000%").
+ */
+export function recordNumberText(value: number, unit: string, name: string, decimals?: number): string {
+  if (Number.isInteger(value) && Math.abs(value) < 1e21 && unit === "" && isIdentifierColumn(name)) return `${value}`;
+  return formatRecordValue(value, unit, decimals);
+}
+
+/**
+ * A whole number with no unit is a count, an id or a position, so decimals never pad it ("18,432", not "18,432.000").
+ * A value with a unit keeps the widget's decimals.
+ */
+function keepsWhole(value: number, unit: string) {
+  return unit === "" && Number.isInteger(value);
+}
+
 /** Record text never uses an exponent: every digit stays, grouped, up to the digit limit. */
 function recordText(value: number, guards: readonly number[]) {
   const magnitude = Math.abs(value);
@@ -252,12 +287,19 @@ function needsExtraDigits(value: number, guards: readonly number[]) {
 export function formatReading(value: number, unit = "", options: FormatOptions = {}): Reading {
   if (!Number.isFinite(value)) return { value: "—", unit };
   const { compact = false, decimals, precision = "reading", keepSides = [] } = options;
+  if (unit === "%" && decimals === undefined) return { value: percentText(value, keepSides), unit };
+  const { steps, index } = unitsFor(unit, compact);
+  // The unit is chosen first, as in Auto, and the authored decimals then apply to the scaled number ("269.494 TiB").
+  // Record precision never rescales a value: valueCellText scales a table cell on its own unit step instead.
+  // A whole number with no unit stays whole only while nothing scales ("18,432"); a compact prefix ("18.4K") takes the decimals.
   if (decimals !== undefined && Number.isFinite(decimals)) {
     const digits = Math.max(0, Math.min(MAX_DECIMALS, Math.floor(decimals)));
-    return { value: fixedText(value, digits, compact), unit };
+    const candidate = precision === "record" ? index : chooseStep(steps, index, value);
+    if (!keepsWhole(value, unit) || candidate !== index) {
+      const scaled = inStep(value, steps, index, candidate);
+      return { value: `${fixedText(scaled, digits)}${scaled === 0 ? "" : steps[candidate].prefix}`, unit: candidate === index ? unit : steps[candidate].unit };
+    }
   }
-  if (unit === "%") return { value: percentText(value, keepSides), unit };
-  const { steps, index } = unitsFor(unit, compact);
   let candidate = precision === "record" ? index : chooseStep(steps, index, value);
   let scaled = inStep(value, steps, index, candidate);
   let guards = keepSides.map(guard => inStep(guard, steps, index, candidate));
@@ -290,26 +332,54 @@ export function formatRecordValue(value: number, unit = "", decimals?: number): 
  * or a pair of extremes never mixes "1.03 s" with "640 ms". `number` formats one value of the scale without its unit;
  * `unit` is the shared display unit.
  */
-export function sharedScale(values: readonly number[], unit = "", options: { compact?: boolean; scaleDown?: boolean } = {}): { unit: string; number(value: number): string } {
-  if (unit === "%") return { unit, number: value => (Number.isFinite(value) ? percentText(value, []) : "—") };
+export function sharedScale(values: readonly number[], unit = "", options: { compact?: boolean; scaleDown?: boolean; decimals?: number; axis?: readonly number[] } = {}): { unit: string; number(value: number): string; bound(value: number): string } {
+  if (unit === "%") {
+    const places = options.decimals !== undefined && Number.isFinite(options.decimals) ? Math.max(0, Math.min(MAX_DECIMALS, Math.floor(options.decimals))) : undefined;
+    const text = (value: number) => (!Number.isFinite(value) ? "—" : places === undefined ? percentText(value, []) : fixedText(value, places));
+    return { unit, number: text, bound: text };
+  }
   const finite = values.filter(Number.isFinite);
   const { steps, index } = unitsFor(unit, options.compact ?? false);
   const largest = finite.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
   // With `scaleDown: false` the authored unit is the floor: a reading scales up past it, never down (0.4 ms stays ms).
   const candidate = options.scaleDown === false ? Math.max(index, chooseStep(steps, index, largest)) : chooseStep(steps, index, largest);
   const step = steps[candidate];
+  // The axis a bound must not read alike with, in the scale's unit. A scale without an axis has no neighbours: its
+  // values are data, and a bound must not be widened to tell itself apart from a stray value.
+  const neighbours = (options.axis ?? []).filter(Number.isFinite).map(value => inStep(value, steps, index, candidate));
   return {
     unit: candidate === index ? unit : step.unit,
     number: value => {
       if (!Number.isFinite(value)) return "—";
       const scaled = inStep(value, steps, index, candidate);
-      return `${readingText(scaled, [])}${scaled === 0 ? "" : step.prefix}`;
+      const prefix = scaled === 0 ? "" : step.prefix;
+      if (options.decimals !== undefined && Number.isFinite(options.decimals) && (!keepsWhole(value, unit) || candidate !== index)) return `${fixedText(scaled, Math.max(0, Math.min(MAX_DECIMALS, Math.floor(options.decimals))))}${prefix}`;
+      return `${readingText(scaled, [])}${prefix}`;
+    },
+    // A bound of the scale keeps its own value: with decimals set it takes more places (up to 8) only when rounding would change it.
+    bound: value => {
+      if (!Number.isFinite(value)) return "—";
+      const scaled = inStep(value, steps, index, candidate);
+      const prefix = scaled === 0 ? "" : step.prefix;
+      if (options.decimals !== undefined && Number.isFinite(options.decimals)) return `${boundText(scaled, keepsWhole(value, unit) ? 0 : options.decimals, neighbours)}${prefix}`;
+      return `${readingText(scaled, [])}${prefix}`;
     },
   };
 }
 
+/**
+ * One record cell's text on its own scale: a value takes the unit step it reads in, so "1.000 KiB" can sit beside
+ * "269.486 TiB" in one column. Record text never uses an exponent, so an exponent form falls back to record precision.
+ */
+export function valueCellText(value: number, unit: string, decimals?: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const scale = sharedScale([value], unit, { decimals });
+  const text = `${scale.number(value)}${unitSuffix(scale.unit)}`;
+  return /\de[-+]?\d/.test(text) ? formatRecordValue(value, unit, decimals) : text;
+}
+
 /** `sharedScale` for a list: each value with the shared unit. */
-export function formatSharedScale(values: readonly number[], unit = "", options: { compact?: boolean } = {}): string[] {
+export function formatSharedScale(values: readonly number[], unit = "", options: { compact?: boolean; decimals?: number } = {}): string[] {
   const scale = sharedScale(values, unit, options);
   return values.map(value => (Number.isFinite(value) ? `${scale.number(value)}${unitSuffix(scale.unit)}` : "—"));
 }
@@ -320,17 +390,90 @@ export function formatSharedScale(values: readonly number[], unit = "", options:
  */
 export function formatRange(lower: number, upper: number, unit = "", options: FormatOptions = {}): string {
   if (!Number.isFinite(lower) || !Number.isFinite(upper)) return "—";
-  if (unit === "%") return `${percentText(lower, [])}%–${percentText(upper, [])}%`;
-  const { compact = false } = options;
+  if (unit === "%" && options.decimals === undefined) return `${percentText(lower, [])}%–${percentText(upper, [])}%`;
+  const { compact = false, decimals } = options;
   const { steps, index } = unitsFor(unit, compact);
+  // Both bounds share one scale, so the range never mixes units; authored decimals then apply to each scaled bound.
   const candidate = chooseStep(steps, index, Math.max(Math.abs(lower), Math.abs(upper)));
   const step = steps[candidate];
   const unitText = candidate === index ? unit : step.unit;
   const text = (value: number) => {
     const scaled = inStep(value, steps, index, candidate);
-    return `${readingText(scaled, [])}${scaled === 0 ? "" : step.prefix}${unitSuffix(unitText)}`;
+    const number = decimals !== undefined && Number.isFinite(decimals) && (!keepsWhole(value, unit) || candidate !== index) ? fixedText(scaled, Math.max(0, Math.min(MAX_DECIMALS, Math.floor(decimals)))) : readingText(scaled, []);
+    return `${number}${scaled === 0 ? "" : step.prefix}${unitSuffix(unitText)}`;
   };
   return `${text(lower)}–${text(upper)}`;
+}
+
+/** Fraction digits of a number's shortest decimal form; Infinity when that form uses an exponent. */
+function decimalPlaces(value: number) {
+  const text = String(value);
+  if (text.includes("e")) return Number.POSITIVE_INFINITY;
+  const point = text.indexOf(".");
+  return point < 0 ? 0 : text.length - point - 1;
+}
+
+/** The most places a bound widens to, unless the authored decimals already ask for more. */
+const MAX_BOUND_WIDEN_DECIMALS = 5;
+
+/**
+ * One bound at the authored decimals. A bound with a short exact form (0.5, 1.2, 0.25) shows that form when the authored
+ * places would not show it, so "0.5 s" never reads "1 s" at zero places. Otherwise the authored places apply (a
+ * scaled 272.84841053 TiB reads "273" at zero decimals), and the places grow, up to five, only when the authored
+ * places would round a non-zero bound to zero or make it read as a neighbouring bound. A bound whose exact form is
+ * longer is never extended for its own sake.
+ */
+function boundText(value: number, decimals: number, neighbours: readonly number[] = []) {
+  const start = Math.max(0, Math.min(MAX_DECIMALS, Math.round(decimals)));
+  const limit = Math.max(start, MAX_BOUND_WIDEN_DECIMALS);
+  const textAt = (digits: number, number: number) => new Intl.NumberFormat("en", { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: true }).format(number);
+  const exact = Number(value.toPrecision(12));
+  const own = decimalPlaces(exact);
+  if (own > start && own <= limit) return textAt(own, value);
+  // A neighbour with a short exact form reads that form (its own text, see above), so it is compared as shown.
+  const shownAs = (other: number, digits: number) => {
+    const places = decimalPlaces(Number(other.toPrecision(12)));
+    return textAt(places > start && places <= limit ? places : digits, other);
+  };
+  const faithful = (digits: number) => {
+    const shown = Number(textAt(digits, value).replace(/,/g, ""));
+    if (value !== 0 && shown === 0) return false;
+    return neighbours.every(other => other === value || shownAs(other, digits) !== textAt(digits, value));
+  };
+  let digits = start;
+  while (digits < limit && !faithful(digits)) digits++;
+  return textAt(digits, value);
+}
+
+/**
+ * Bounds that name neighbouring buckets or thresholds. With authored decimals each bound keeps its own value (see
+ * `boundText`). Auto puts every bound of the axis on one shared scale, so "100 ms" never sits beside "0 s" on it.
+ * `axis` is the full list the bounds belong to; it defaults to the bounds themselves.
+ */
+export function formatBounds(values: readonly number[], unit = "", decimals?: number, axis: readonly number[] = values): string[] {
+  if (decimals !== undefined && Number.isFinite(decimals)) {
+    // The axis picks one unit, as in Auto; each bound then keeps its own value at the authored decimals (extended only when needed).
+    const { steps, index } = unitsFor(unit, false);
+    const finite = axis.filter(Number.isFinite);
+    const candidate = chooseStep(steps, index, finite.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0));
+    const step = steps[candidate], unitText = candidate === index ? unit : step.unit;
+    // Neighbours are the whole axis, in the same scale, so two adjacent bounds never print alike.
+    const neighbours = finite.map(value => inStep(value, steps, index, candidate));
+    return values.map(value => {
+      if (!Number.isFinite(value)) return "—";
+      const scaled = inStep(value, steps, index, candidate);
+      return `${boundText(scaled, keepsWhole(value, unit) ? 0 : decimals, neighbours)}${scaled === 0 ? "" : step.prefix}${unitSuffix(unitText)}`;
+    });
+  }
+  const scale = sharedScale(axis, unit);
+  return values.map(value => (Number.isFinite(value) ? `${scale.number(value)}${unitSuffix(scale.unit)}` : "—"));
+}
+
+/** A range of two bounds, formatted by `formatBounds` with the same rules for the decimals and the shared scale. */
+export function formatRangeBounds(lower: number, upper: number, unit = "", decimals?: number, axis: readonly number[] = [lower, upper]): string {
+  if (!Number.isFinite(lower) || !Number.isFinite(upper)) return "—";
+  const [from, to] = formatBounds([lower, upper], unit, decimals, axis);
+  return `${from}–${to}`;
 }
 
 /** Smallest number of fraction digits (up to 8) that writes every tick exactly. */
@@ -356,6 +499,14 @@ function digitsFromStep(ticks: readonly number[]) {
   if (!Number.isFinite(step) || step <= 0) return digitsNeeded(ticks);
   const stepDigits = digitsNeeded([roundedMagnitude(step)]);
   return Math.min(stepDigits, Math.max(0, SIGNIFICANT_FIGURES - 1 - Math.floor(Math.log10(step) + 1e-12)));
+}
+
+/**
+ * Fraction digits that print a tick step at its own precision (0.25 takes two, 250 takes none). Axes label their ticks
+ * with these digits, so a widget's decimals govern readings and the labels follow the step.
+ */
+export function stepPlaces(step: number): number {
+  return digitsFromStep([0, step]);
 }
 
 /** Ticks that are zero within float noise of the largest tick become exactly zero, so none reads "-0.0". */
@@ -503,22 +654,9 @@ export function axisScale(
   const { compact = false, decimals, count = 5, fixedDomain = false } = options;
   const finiteDomain = domain.every(Number.isFinite);
   const customTicks = options.ticks?.filter(Number.isFinite);
-  if (decimals !== undefined && Number.isFinite(decimals)) {
-    // A tick step below the last printed decimal would print two labels alike ("1, 1, 0"), so the step is at least that.
-    const minStep = 10 ** -decimals;
-    const axis = finiteDomain && !customTicks
-      ? fixedDomain ? { domain: [domain[0], domain[1]] as [number, number], ticks: ticksWithin(domain, count, minStep) } : niceAxis(domain, count, minStep)
-      : { domain: [domain[0], domain[1]] as [number, number], ticks: customTicks ?? [] };
-    return {
-      unit,
-      domain: axis.domain,
-      ticks: [...axis.ticks],
-      label: (value, withUnit = true) => {
-        const reading = formatReading(value, unit, { compact, decimals });
-        return withUnit ? joinReading(reading) : reading.value;
-      },
-    };
-  }
+  // The unit is chosen for the whole axis, as in Auto, so every tick shares it. An authored decimal count sets the
+  // smallest tick step in that unit, so two ticks never print alike; the tick labels then take the step's precision.
+  const minStep = decimals !== undefined && Number.isFinite(decimals) ? 10 ** -Math.max(0, Math.min(MAX_DECIMALS, Math.floor(decimals))) : 0;
   const { steps, index } = unitsFor(unit, compact);
   const span = customTicks ? customTicks.reduce((maximum, tick) => Math.max(maximum, Math.abs(tick)), 0) : Math.max(...domain.map(Math.abs));
   const candidate = chooseStep(steps, index, Number.isFinite(span) ? span : 0);
@@ -533,8 +671,8 @@ export function axisScale(
     scaledTicks = cleanZeros(customTicks.map(toScaled));
     digits = digitsFromStep(scaledTicks);
   } else if (finiteDomain) {
-    if (!fixedDomain) outDomain = niceAxis(scaledDomain, count).domain;
-    scaledTicks = cleanZeros(ticksWithin(outDomain, count));
+    if (!fixedDomain) outDomain = niceAxis(scaledDomain, count, minStep).domain;
+    scaledTicks = cleanZeros(ticksWithin(outDomain, count, minStep));
     digits = digitsNeeded(scaledTicks);
   }
   const labelsFor = (places: number) => scaledTicks.map(value => fixedText(value, places));

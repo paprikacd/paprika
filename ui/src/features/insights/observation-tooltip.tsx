@@ -5,9 +5,9 @@ import { createPortal } from "react-dom";
 import { correctPortalPosition, installTooltipPointerTracking, isTooltipHoverSuppressed, pointerOverAnchor } from "./tooltip-pointer";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
 import { GammaButton } from "./gamma/button";
-import { TooltipInstructions } from "./tooltip-instructions";
+import { TooltipPinHint } from "./tooltip-content";
 import configStyles from "./chart-styles.module.css";
-import { placeTooltip, tooltipLimit, type TooltipObstacle, type TooltipPlacementOptions, type TooltipPosition, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
+import { placePointerAvoiding, placeTooltip, tooltipLimit, type TooltipObstacle, type TooltipPlacementOptions, type TooltipPosition, type TooltipTarget, type TooltipViewport } from "./tooltip-position";
 import { attachTooltipDismissal, useTooltipDismiss, type TooltipDismissalTarget } from "./tooltip-dismiss";
 import { isRestoringTooltipFocus, restoreTooltipFocus, tooltipFocusOwner, withTooltipDismissReason, type TooltipDismissReason } from "./tooltip-focus";
 import { registerNestedPanel, TooltipOwnerContext, tooltipScopeFor, useProvidedTooltipScope } from "./tooltip-interaction";
@@ -75,6 +75,28 @@ export interface ObservationTooltipProps {
 }
 
 /** One panel for an observation. Its scope gives a pinned owner precedence, and its dismissal path is shared. */
+/**
+ * The area an inspector may use: the dashboard canvas when the anchor sits in one (dialogs and charts outside a dashboard
+ * keep the viewport), and the other widgets and toolbars that overlap that area as obstacles. Toolbars and the attention
+ * strip carry `data-tooltip-obstacle` and weigh 8, so placement avoids them before it avoids other widgets.
+ */
+function canvasViewportAndObstacles(anchor: Element, widget: Element, visibleViewport: TooltipViewport): { viewport: TooltipViewport; obstacles: TooltipObstacle[] } {
+  const canvas = anchor.closest('[data-testid="dashboard-canvas"]');
+  const canvasBounds = canvas?.getBoundingClientRect();
+  const canvasLeft = Math.max(visibleViewport.left ?? 0, canvasBounds?.left ?? (visibleViewport.left ?? 0));
+  const canvasRight = Math.min((visibleViewport.left ?? 0) + visibleViewport.width, canvasBounds?.right ?? ((visibleViewport.left ?? 0) + visibleViewport.width));
+  const viewport = canvasBounds && canvasRight - canvasLeft >= 240 ? { ...visibleViewport, left: canvasLeft, width: canvasRight - canvasLeft } : visibleViewport;
+  const obstacles: TooltipObstacle[] = [...document.querySelectorAll("[data-widget-id], [data-tooltip-obstacle]")].flatMap(other => {
+    if (other === widget || other.contains(widget) || widget.contains(other)) return [];
+    const bounds = other.getBoundingClientRect();
+    const viewportLeft = viewport.left ?? 0, viewportTop = viewport.top ?? 0;
+    return bounds.width > 0 && bounds.height > 0 && bounds.right > viewportLeft && bounds.left < viewportLeft + viewport.width && bounds.bottom > viewportTop && bounds.top < viewportTop + viewport.height
+      ? [{ left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, weight: other.hasAttribute("data-tooltip-obstacle") ? 8 : 1 }]
+      : [];
+  });
+  return { viewport, obstacles };
+}
+
 export function ObservationTooltip({
   id,
   anchor,
@@ -217,12 +239,15 @@ export function ObservationTooltip({
       if (pointer && !retained) pointerAnchor.current = { element: anchor, x: (pointer.x - anchorBounds.left) / (anchorBounds.width || 1), y: (pointer.y - anchorBounds.top) / (anchorBounds.height || 1) };
       else if (!pointer) pointerAnchor.current = null;
       if (pointer) {
+        // A pointer preview stays inside the dashboard canvas and off the attention strip and toolbar, like the outside placement.
+        const pointerWidget = anchor.closest("[data-widget-id]") ?? anchor.parentElement ?? anchor;
+        const { viewport: pointerViewport, obstacles: pointerObstacles } = canvasViewportAndObstacles(anchor, pointerWidget, visibleViewport);
         const target: TooltipTarget = { kind: "pointer", point: pointer };
-        const limit = tooltipLimit(target, visibleViewport, settings);
+        const limit = tooltipLimit(target, pointerViewport, settings);
         element.style.maxWidth = `${limit.width}px`;
         element.style.maxHeight = `${limit.height}px`;
         const size = element.getBoundingClientRect();
-        const next = placeTooltip(target, size, visibleViewport, settings);
+        const next = placePointerAvoiding(target, size, pointerViewport, pointerObstacles, settings);
         element.style.maxHeight = `${next.maxHeight ?? limit.height}px`;
         const origin = { x: next.placement.endsWith("-left") ? 1 : 0, y: next.placement.startsWith("pointer-top") ? 1 : 0 };
         // CSS translates from this corner as content grows, without waiting for
@@ -235,24 +260,7 @@ export function ObservationTooltip({
       if (avoidWidget) {
         const widget = anchor.closest("[data-widget-id]") ?? anchor.parentElement ?? anchor;
         const widgetBounds = widget.getBoundingClientRect();
-        // Keep inspectors inside the dashboard canvas rather than covering
-        // navigation or the settings panel alongside it. Dialogs and charts
-        // outside a dashboard retain the ordinary viewport bounds.
-        const canvas = anchor.closest('[data-testid="dashboard-canvas"]');
-        const canvasBounds = canvas?.getBoundingClientRect();
-        const canvasLeft = Math.max(visibleViewport.left ?? 0, canvasBounds?.left ?? (visibleViewport.left ?? 0));
-        const canvasRight = Math.min((visibleViewport.left ?? 0) + visibleViewport.width, canvasBounds?.right ?? ((visibleViewport.left ?? 0) + visibleViewport.width));
-        const tooltipViewport = canvasBounds && canvasRight - canvasLeft >= 240
-          ? { ...visibleViewport, left: canvasLeft, width: canvasRight - canvasLeft }
-          : visibleViewport;
-        const obstacles: TooltipObstacle[] = [...document.querySelectorAll("[data-widget-id], [data-tooltip-obstacle]")].flatMap(other => {
-          if (other === widget || other.contains(widget) || widget.contains(other)) return [];
-          const bounds = other.getBoundingClientRect();
-          const viewportLeft = tooltipViewport.left ?? 0, viewportTop = tooltipViewport.top ?? 0;
-          return bounds.width > 0 && bounds.height > 0 && bounds.right > viewportLeft && bounds.left < viewportLeft + tooltipViewport.width && bounds.bottom > viewportTop && bounds.top < viewportTop + tooltipViewport.height
-            ? [{ left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, weight: other.hasAttribute("data-tooltip-obstacle") ? 8 : 1 }]
-            : [];
-        });
+        const { viewport: tooltipViewport, obstacles } = canvasViewportAndObstacles(anchor, widget, visibleViewport);
         const target: TooltipTarget = { kind: "outside", anchor: anchorBounds, widget: widgetBounds, obstacles };
         // Clear a previous placement's height restriction before measuring.
         // Otherwise an expanding tooltip is scored as if its clipped height
@@ -447,6 +455,7 @@ export function ObservationDetails({
   pointerPreview = true,
   className,
   revision,
+  observationKey,
   externalAnchor,
   avoidWidget = true,
   selectOnFocus = true,
@@ -462,6 +471,11 @@ export function ObservationDetails({
   pointerPreview?: boolean;
   className?: string;
   revision?: unknown;
+  /**
+   * A stable identity for the observation (a hex bin, a UTC day). While the key stays in the data, an open panel survives a
+   * refresh and follows the new reading; it closes only when the key leaves. Used instead of `revision` when set.
+   */
+  observationKey?: string;
   externalAnchor?: Element;
   avoidWidget?: boolean;
   /** Some contexts change dashboard variables only on explicit activation. */
@@ -474,6 +488,8 @@ export function ObservationDetails({
   mark?: boolean;
 }) {
   const id = useId();
+  // The panel is tied to the stable key when there is one, so a refresh that keeps the key keeps the panel open.
+  const retention: unknown = observationKey ?? revision;
   const [active, setActive] = useState<{
     anchor: Element;
     pinned: boolean;
@@ -484,7 +500,7 @@ export function ObservationDetails({
     // A pinned observation is only ever closed by its owner.
     onDismiss: () => setActive(current => current && !current.pinned ? null : current),
     pinned: !!active?.pinned,
-    revision,
+    revision: retention,
     enabled,
     engaged: () => interaction.current.focused || interaction.current.hovered || interaction.current.panel,
   });
@@ -505,7 +521,7 @@ export function ObservationDetails({
         setActive((current) =>
           current?.pinned
             ? current
-            : { anchor: externalAnchor, pinned: false, revision },
+            : { anchor: externalAnchor, pinned: false, revision: retention },
         );
     });
     return () => {
@@ -513,15 +529,15 @@ export function ObservationDetails({
       interactionState.hovered = false;
       hide.schedule();
     };
-  }, [externalAnchor, enabled, revision, hide]);
-  if (active && (active.revision !== revision || !enabled)) {
+  }, [externalAnchor, enabled, retention, hide]);
+  if (active && (active.revision !== retention || !enabled)) {
     setActive(null);
   }
   const show = (anchor: HTMLButtonElement, pinned = false) => {
     hide.cancel();
     if (!enabled) return;
 
-    setActive({ anchor, pinned, revision });
+    setActive({ anchor, pinned, revision: retention });
   };
   if (!enabled && !onSelect)
     return <span className={className}>{children}</span>;
@@ -583,14 +599,7 @@ export function ObservationDetails({
           }}
         >
           {details}
-          <div className={configStyles.tooltipFooter}>
-            <small><TooltipInstructions /></small>
-            <small>
-              {active.pinned
-                ? "Pinned · tap again to close"
-                : "Click or tap to keep open"}
-            </small>
-          </div>
+          <TooltipPinHint pinned={active.pinned} />
         </ObservationTooltip>
       )}
     </>
