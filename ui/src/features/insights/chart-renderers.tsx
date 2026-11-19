@@ -1,10 +1,9 @@
 "use client";
 
+import { useObservationOwner } from "./observation-owner";
 import { ChartTable } from "./chart-table";
 import {
   Fragment,
-  useCallback,
-  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -16,7 +15,6 @@ import {
 import { useTraceFetcher } from "./trace-waterfall";
 import { TraceDialog } from "./trace-dialog";
 import { MetricDetails } from "./metric-tooltip-content";
-import { TooltipPinHint } from "./tooltip-content";
 import { isRestoringTooltipFocus } from "./tooltip-focus";
 export { MetricDetails } from "./metric-tooltip-content";
 import { useDashboardWindow } from "./dashboard-window";
@@ -784,20 +782,6 @@ export function Heatmap({
 }) {
   const embedded = useEmbeddedWidget();
   const { ref: cellsRef, width: cellsWidth } = usePlotSize();
-  const [active, setActive] = useState<{
-    index: number;
-    key: string;
-    anchor: HTMLButtonElement;
-    pinned: boolean;
-  } | null>(null);
-  const interaction = useRef<{
-    focused: HTMLButtonElement | null;
-    hovered: HTMLButtonElement | null;
-    tooltipHovered: boolean;
-  }>({ focused: null, hovered: null, tooltipHovered: false });
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
   const tooltipId = useId();
   // One tab stop for the grid: the focused cell keeps it, and the arrow keys move it, as status-grid does.
   const [keyboardIndex, setKeyboardIndex] = useState(0);
@@ -805,32 +789,6 @@ export function Heatmap({
   const thresholds = options.thresholds?.length
     ? options.thresholds
     : DEFAULT_HEATMAP_THRESHOLDS;
-  const clearHide = useCallback(() => {
-    clearTimeout(hideTimer.current);
-    hideTimer.current = undefined;
-  }, []);
-  const dismiss = useCallback(() => {
-    clearHide();
-
-    interaction.current.tooltipHovered = false;
-    setActive(null);
-  }, [clearHide]);
-  const scheduleHide = useCallback(() => {
-    clearHide();
-    hideTimer.current = setTimeout(() => {
-      const state = interaction.current;
-      setActive((current) =>
-        current &&
-        !current.pinned &&
-        state.focused !== current.anchor &&
-        state.hovered !== current.anchor &&
-        !state.tooltipHovered
-          ? null
-          : current,
-      );
-    }, 180);
-  }, [clearHide]);
-  useEffect(() => clearHide, [clearHide]);
   const cells = useMemo(
     () =>
       series.slice(0, MAX_ROWS).map((entry, index) => {
@@ -858,13 +816,14 @@ export function Heatmap({
       }),
     [series],
   );
-  const selected =
-    active && cells[active.index]?.key === active.key
-      ? cells[active.index]
-      : undefined;
-  if (active && !selected) {
-    setActive(null);
-  }
+  // Cells are kept by position and key: a reordered series closes its pinned panel, as before.
+  const cellKeys = useMemo(() => cells.map((cell, index) => `${index}\u0000${cell.key}`), [cells]);
+  const owner = useObservationOwner({
+    enabled: options.showTooltip !== false && !embedded,
+    retention: { keys: cellKeys },
+  });
+  const active = owner.active ? { ...owner.active, index: cellKeys.indexOf(owner.active.key) } : undefined;
+  const selected = active ? cells[active.index] : undefined;
   const selectedThreshold =
     selected?.value === undefined
       ? undefined
@@ -910,6 +869,7 @@ export function Heatmap({
           const valueText = valueTexts[index];
           const valueStyle = { "--value-em": heatmapValueEm(valueText), "--value-glyphs": heatmapValueGlyphs(valueText) } as CSSProperties;
           const label = `${heatmapSubjects[index] ?? cell.name}: ${valueText}${threshold?.label ? ` · ${threshold.label}` : ""}`;
+          const trigger = owner.trigger(cellKeys[index]);
           if (embedded)
             return (
               <div
@@ -962,22 +922,8 @@ export function Heatmap({
                   ? active?.index === index && active.pinned
                   : undefined
               }
-              onPointerEnter={(event) => {
-                if (event.pointerType === "touch") return;
-                interaction.current.hovered = event.currentTarget;
-                clearHide();
-                if (!active?.pinned && options.showTooltip !== false)
-                  setActive({
-                    index,
-                    key: cell.key,
-                    anchor: event.currentTarget,
-                    pinned: false,
-                  });
-              }}
-              onPointerLeave={() => {
-                interaction.current.hovered = null;
-                scheduleHide();
-              }}
+              onPointerEnter={trigger.onPointerEnter}
+              onPointerLeave={trigger.onPointerLeave}
               onFocus={(event) => {
                 setKeyboardIndex(index);
                 onContextChange?.({
@@ -985,22 +931,11 @@ export function Heatmap({
                   labels: cell.labels,
                   value: cell.value ?? null,
                 });
-                interaction.current.focused = event.currentTarget;
-                clearHide();
-                // Returning focus to a cell after Escape must not reopen the preview it just closed.
-                if (options.showTooltip !== false && !isRestoringTooltipFocus()) {
-                  setActive({
-                    index,
-                    key: cell.key,
-                    anchor: event.currentTarget,
-                    pinned: false,
-                  });
-                }
+                // Returning focus to a cell after Escape must not reopen the preview it just closed; it still holds the focus.
+                if (isRestoringTooltipFocus()) owner.holdFocus(event.currentTarget);
+                else trigger.onFocus(event);
               }}
-              onBlur={() => {
-                interaction.current.focused = null;
-                scheduleHide();
-              }}
+              onBlur={trigger.onBlur}
               onClick={(event) => {
                 onContextChange?.({
                   series: cell.name,
@@ -1008,17 +943,7 @@ export function Heatmap({
                   value: cell.value ?? null,
                 });
                 if (options.showTooltip === false) return;
-                if (active?.index === index && active.pinned) dismiss();
-                else {
-                  clearHide();
-
-                  setActive({
-                    index,
-                    key: cell.key,
-                    anchor: event.currentTarget,
-                    pinned: true,
-                  });
-                }
+                trigger.onClick(event);
               }}
             >
               {options.showLabels !== false && (
@@ -1037,15 +962,9 @@ export function Heatmap({
           anchor={active.anchor}
           avoidWidget
           pinned={active.pinned}
-          onDismiss={dismiss}
-          onEnter={() => {
-            interaction.current.tooltipHovered = true;
-            clearHide();
-          }}
-          onLeave={() => {
-            interaction.current.tooltipHovered = false;
-            scheduleHide();
-          }}
+          onDismiss={owner.dismiss}
+          onEnter={owner.panelEnter}
+          onLeave={owner.panelLeave}
         >
           <MetricDetails
             widget={widget}
@@ -1094,7 +1013,6 @@ export function Heatmap({
               color={widget.color}
             />
           )}
-          <TooltipPinHint pinned={active.pinned} />
         </ObservationTooltip>
       )}
       {options.showLegend !== false && (

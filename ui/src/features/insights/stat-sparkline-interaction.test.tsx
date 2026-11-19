@@ -1,13 +1,43 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StatSparkline } from "./stat-sparkline";
 import type { Widget } from "./schema";
 
-vi.mock("./observation-tooltip", () => ({ ObservationTooltip: ({ children }: { children: React.ReactNode }) => <div role="tooltip">{children}</div> }));
+// The real panel renders the pin hint itself, unless a host opts out, so the stand-in does the same.
+vi.mock("./observation-tooltip", async () => {
+  const { TooltipPinHint } = await import("./tooltip-content");
+  return { ObservationTooltip: ({ children, pinned, pinHint = true, onEnter, onLeave }: { children: React.ReactNode; pinned?: boolean; pinHint?: boolean; onEnter?: () => void; onLeave?: () => void }) => <div role="tooltip" onPointerEnter={onEnter} onPointerLeave={onLeave}>{children}{pinHint && <TooltipPinHint pinned={!!pinned} />}</div> };
+});
 vi.mock("./metric-tooltip-content", () => ({ MetricDetails: ({ point }: { point: { value: number | null; timestamp: number } }) => <span>{point.value === null ? "No data" : String(point.value)} at {point.timestamp}</span> }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const widget: Widget = { id: "s", title: "Rate", type: "stat", providerId: "p", query: "rate", unit: "req/s", layout: { x: 0, y: 0, w: 3, h: 1 }, options: { showSparkline: true } };
 const series = { name: "api", labels: {}, points: [{ timestamp: 1000, value: 5 }, { timestamp: 2000, value: null }, { timestamp: 3000, value: 8 }] };
+
+describe("stat history hover hold", () => {
+  it("keeps the preview open while the pointer is in it, even when the sparkline blurs", () => {
+    vi.useFakeTimers();
+    try {
+      render(<StatSparkline widget={widget} series={series} name="api" unit="req/s" />);
+      const svg = screen.getByRole("img");
+      vi.spyOn(svg, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 50, 240, 64));
+      const event = new MouseEvent("pointermove", { bubbles: true, clientX: 200, clientY: 60 });
+      Object.defineProperty(event, "pointerType", { value: "mouse" });
+      fireEvent(svg, event);
+      expect(screen.getByRole("tooltip")).toBeInTheDocument();
+      fireEvent.pointerLeave(svg);
+      fireEvent.pointerEnter(screen.getByRole("tooltip"));
+      fireEvent.focus(svg);
+      fireEvent.blur(svg);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByRole("tooltip")).toBeInTheDocument();
+      fireEvent.pointerLeave(screen.getByRole("tooltip"));
+      act(() => vi.advanceTimersByTime(180));
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("stat history scrub", () => {
   it("supports exact missing samples, keyboard navigation, pin, and Escape", () => {

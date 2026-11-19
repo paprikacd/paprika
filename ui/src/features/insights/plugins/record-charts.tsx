@@ -11,11 +11,12 @@ import { formatTimeTick } from "../chart-data"
 import { displaySeriesNames, fallbackIdentityTitle } from "../series-display"
 import { truncationNote } from "../truncation"
 import { TimeWindowLens } from "../time-window-lens"
-import { TooltipPinHint } from "../tooltip-content"
 import { assignSeriesColors } from "../series-colors"
 import { seriesSlot } from "../series-palette"
 import type { ObservationWindow } from "../time-window"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
+import { useObservationOwner } from "../observation-owner"
+import { isRestoringTooltipFocus } from "../tooltip-focus"
 import styles from "./records.module.css"
 import tooltipStyles from "../chart-styles.module.css"
 
@@ -61,12 +62,11 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const frame=result.records
   const data=useMemo(()=>frame?.rows.length?plotData(frame,configSchema.parse(widget.config??{})):undefined,[frame,widget.config])
   const [selected,setSelected]=useState<{source:NonNullable<typeof data>; window:ObservationWindow}>()
-  const [inspection,setInspection]=useState<{revision:object; seriesIndex:number; point:Datum; pinned:boolean; anchor:SVGSVGElement}>()
-  const hideTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined)
-  useEffect(()=>()=>clearTimeout(hideTimer.current),[])
   const zoom=selected && selected.source===data?selected.window:undefined
   const tooltipEnabled=widget.options?.showTooltip!==false
   const revision=useMemo(()=>({data,zoom,tooltipEnabled}),[data,zoom,tooltipEnabled])
+  // Points are kept by their series and position in it; a new data set or zoom closes the panel.
+  const owner=useObservationOwner({enabled:tooltipEnabled,retention:{revision}})
   const accessiblePoints=useMemo(()=>data?.series.slice(0,24).flatMap((entry,seriesIndex)=>entry.points.filter(point=>!zoom||point.x>=zoom.start&&point.x<=zoom.end).slice(0,bar?100:1000).filter(point=>point.value!==null).map(point=>({seriesIndex,point})))??[],[data,zoom,bar])
   const lensSeries=useMemo(()=>data?.xColumn.type==="timestamp"?data.series.slice(0,24).map(entry=>({name:entry.name,labels:{},points:entry.points.map(point=>({timestamp:point.x,value:point.value}))})):[],[data])
   // Each column keeps its colour across zoom and refresh. Records carry no labels, so the series name is its identity.
@@ -138,9 +138,20 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
   const xAxis=numericX?axisScale([minX,maxX],"",{decimals:widget.options?.decimals,ticks}):undefined
   const xTickText=(x:number)=>xAxis?(identifierX?(Number.isInteger(x)?String(x):xAxis.label(x).replace(/,(?=\d{3})/g,"")):xAxis.label(x)):xText(x)
   const select=(entry:PlotSeries,point:Datum)=>onContextChange?.({series:entry.name,value:point.value,labels:Object.fromEntries(frame.columns.flatMap((column,i)=>point.row[i]===null?[]:[[column.key,String(point.row[i])]])),...(data.xColumn.type==="timestamp"?{timestamp:point.x}:{})})
-  const current=tooltipEnabled&&inspection?.revision===revision?inspection:undefined
-  const show=(seriesIndex:number,point:Datum,pinned=false)=>{const anchor=plot.current;if(!anchor||!tooltipEnabled)return;clearTimeout(hideTimer.current);setInspection(previous=>previous?.revision===revision&&previous.seriesIndex===seriesIndex&&previous.point===point&&previous.pinned===pinned&&previous.anchor===anchor?previous:{revision,seriesIndex,point,pinned,anchor})}
-  const hide=()=>{clearTimeout(hideTimer.current);hideTimer.current=setTimeout(()=>setInspection(value=>value?.pinned?value:undefined),180)}
+  const keyOf=(seriesIndex:number,point:Datum)=>`${seriesIndex}:${series[seriesIndex].points.indexOf(point)}`
+  const openPosition=owner.active?.key.split(":").map(Number)
+  const openPoint=openPosition?series[openPosition[0]]?.points[openPosition[1]]:undefined
+  const current=owner.active&&openPosition&&openPoint?{seriesIndex:openPosition[0],point:openPoint,pinned:owner.active.pinned,anchor:owner.active.anchor}:undefined
+  // A hover or focus previews; a click pins. The owner keeps a pin from being replaced by a preview.
+  const pinPoint=(seriesIndex:number,point:Datum)=>{if(plot.current&&tooltipEnabled)owner.pin(keyOf(seriesIndex,point),plot.current)}
+  // Selecting the pinned point again releases it, as on every other observation owner; any other point is pinned and selected.
+  const togglePoint=(seriesIndex:number,point:Datum)=>{if(current?.pinned&&current.point===point&&current.seriesIndex===seriesIndex){owner.dismiss();return}pinPoint(seriesIndex,point);select(series[seriesIndex],point)}
+  const focusPoint=(seriesIndex:number,point:Datum)=>{
+    if(!plot.current||!tooltipEnabled)return
+    // Focus returned after a dismissal holds the plot without reopening the preview it just closed.
+    if(isRestoringTooltipFocus())owner.holdFocus(plot.current)
+    else owner.engage(keyOf(seriesIndex,point),plot.current,"focus")
+  }
   const nearest=(clientX:number,clientY:number)=>{
     const box=plot.current?.getBoundingClientRect();if(!box?.width||!box.height)return undefined
     const x=(clientX-box.left)*bounds.width/box.width,y=(clientY-box.top)*bounds.height/box.height
@@ -177,11 +188,12 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     return new DOMRect(box.left+x*box.width/bounds.width-3,box.top+y*box.height/bounds.height-3,6,6)
   }
   return <div className={styles.wrapper} data-record-chart-host=""><svg ref={plot} className={styles.recordChart} viewBox={`0 0 ${bounds.width} ${bounds.height}`} role="group" aria-label={widget.title} aria-describedby={current?tooltipId:undefined} tabIndex={tooltipEnabled?0:undefined}
-    onPointerMove={event=>{if(event.pointerType==="touch"||current?.pinned)return;const hit=nearest(event.clientX,event.clientY);if(hit)show(hit.seriesIndex,hit.point);else hide()}}
-    onPointerLeave={hide}
-    onClick={event=>{if(event.target instanceof Element&&event.target.hasAttribute("data-record-mark"))return;const hit=nearest(event.clientX,event.clientY);if(!hit)return;if(current?.pinned&&current.point===hit.point&&current.seriesIndex===hit.seriesIndex){setInspection(undefined);return}show(hit.seriesIndex,hit.point,true);select(series[hit.seriesIndex],hit.point)}}
-    onFocus={event=>{if(event.target!==event.currentTarget||current||!accessiblePoints.length)return;show(accessiblePoints[0].seriesIndex,accessiblePoints[0].point)}}
-    onKeyDown={event=>{if(!tooltipEnabled||event.target!==event.currentTarget)return;if(event.key==="Escape"){setInspection(undefined);return}if(event.key==="Enter"&&current){event.preventDefault();show(current.seriesIndex,current.point,!current.pinned);return}if(!["ArrowLeft","ArrowRight"].includes(event.key)||!accessiblePoints.length)return;event.preventDefault();const index=current?accessiblePoints.findIndex(item=>item.seriesIndex===current.seriesIndex&&item.point===current.point):-1;const next=Math.max(0,Math.min(accessiblePoints.length-1,index+(event.key==="ArrowRight"?1:-1)));show(accessiblePoints[next].seriesIndex,accessiblePoints[next].point)}}>
+    onPointerMove={event=>{if(event.pointerType==="touch"||!plot.current||current?.pinned)return;const hit=nearest(event.clientX,event.clientY);if(hit&&tooltipEnabled)owner.engage(keyOf(hit.seriesIndex,hit.point),plot.current,"pointer");else if(owner.active)owner.engage(owner.active.key,plot.current,"pointer");else owner.leave(plot.current,"pointer")}}
+    onPointerLeave={()=>{if(plot.current)owner.leave(plot.current,"pointer")}}
+    onBlur={()=>{if(plot.current)owner.leave(plot.current,"focus")}}
+    onClick={event=>{if(event.target instanceof Element&&event.target.hasAttribute("data-record-mark"))return;const hit=nearest(event.clientX,event.clientY);if(!hit)return;togglePoint(hit.seriesIndex,hit.point)}}
+    onFocus={event=>{if(event.target!==event.currentTarget||current||!accessiblePoints.length)return;focusPoint(accessiblePoints[0].seriesIndex,accessiblePoints[0].point)}}
+    onKeyDown={event=>{if(!tooltipEnabled||event.target!==event.currentTarget)return;if(event.key==="Escape"){owner.dismiss();return}if(event.key==="Enter"&&current){event.preventDefault();if(current.pinned)owner.dismiss();else pinPoint(current.seriesIndex,current.point);return}if(!["ArrowLeft","ArrowRight"].includes(event.key)||!accessiblePoints.length)return;event.preventDefault();const index=current?accessiblePoints.findIndex(item=>item.seriesIndex===current.seriesIndex&&item.point===current.point):-1;const next=Math.max(0,Math.min(accessiblePoints.length-1,index+(event.key==="ArrowRight"?1:-1)));const target=accessiblePoints[next];if(current?.pinned)pinPoint(target.seriesIndex,target.point);else focusPoint(target.seriesIndex,target.point)}}>
     {identityTitle&&<title>{`${identityTitle} · ${series[0].name}`}</title>}<defs><clipPath id={unique}><rect data-record-plot-height={plotHeight} x={plotLeft-2} y={plotTop-6} width={plotWidth+4} height={plotHeight+8}/></clipPath></defs>
     {leftTicks.map(({tick,fraction})=><g key={`l${tick}`}><line x1={plotLeft} x2={plotRight} y1={plotBottom-fraction*plotHeight} y2={plotBottom-fraction*plotHeight} stroke="var(--gamma-border)"/><text x={plotLeft-6} y={plotBottom+4-fraction*plotHeight} textAnchor="end">{leftLabels.label(tick)}</text></g>)}
     {series.some(s=>s.right)&&rightTicks.map(({tick,fraction})=><text key={`r${tick}`} x={plotRight+6} y={plotBottom+4-fraction*plotHeight}>{rightLabels.label(tick)}</text>)}
@@ -194,16 +206,15 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
       const color=colorOf(index), unit=entry.unit==="percent"?"%":entry.unit||widget.unit
       return <g key={index} aria-label={entry.name}>{!bar&&<path d={path} fill="none" stroke={color} strokeWidth={widget.options?.lineWidth??1.7}/>}{entry.points.slice(0,bar?100:1000).map((point,i)=>{
         if(point.value===null)return null
-        const title=`${entry.name} · ${xText(point.x,true)} · ${formatMetric(point.value,unit,false,widget.options?.decimals)}`, selectPoint=()=>select(entry,point), zero=scale(0,entry.right),y=scale(point.value,entry.right)
-        const inspect=()=>show(index,point,true)
-        const props={onClick:()=>{inspect();selectPoint()},onFocus:()=>show(index,point),onKeyDown:(event:React.KeyboardEvent<SVGElement>)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();inspect();selectPoint()}},role:onContextChange?"button" as const:"img" as const,tabIndex:onContextChange?0:undefined,"aria-label":title,"data-record-mark":true,fill:color}
+        const title=`${entry.name} · ${xText(point.x,true)} · ${formatMetric(point.value,unit,false,widget.options?.decimals)}`, zero=scale(0,entry.right),y=scale(point.value,entry.right)
+        const props={onClick:()=>togglePoint(index,point),onFocus:()=>focusPoint(index,point),onKeyDown:(event:React.KeyboardEvent<SVGElement>)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();togglePoint(index,point)}},role:onContextChange?"button" as const:"img" as const,tabIndex:onContextChange?0:undefined,"aria-label":title,"data-record-mark":true,fill:color}
         return bar?<rect key={i} {...props} x={xScale(point.x)+(index-series.length/2)*barWidth} y={Math.min(zero,y)} width={barWidth} height={Math.max(1,Math.abs(y-zero))}/>:<circle key={i} {...props} cx={xScale(point.x)} cy={y} r={entry.points.length<80?2.5:1.5}/>
       })}</g>
     })}</g>
-  </svg>{current&&<ObservationTooltip id={tooltipId} anchor={current.anchor} anchorRect={anchorRect} preferSide avoidWidget pinned={current.pinned} onDismiss={()=>setInspection(undefined)} onEnter={()=>clearTimeout(hideTimer.current)} onLeave={hide}>
+  </svg>{current&&<ObservationTooltip id={tooltipId} anchor={current.anchor} anchorRect={anchorRect} preferSide avoidWidget pinned={current.pinned} onDismiss={()=>owner.dismiss()} onEnter={()=>owner.panelEnter()} onLeave={()=>owner.panelLeave()}>
     <div data-record-observation={current.point.x}><div className={tooltipStyles.plotTooltipTime}><span>Selected observation</span><span>{xText(current.point.x,true)}</span></div><div className={tooltipStyles.plotTooltipValues}><ul><li className={tooltipStyles.plotTooltipSelected}><i aria-hidden="true" style={{background:colorOf(current.seriesIndex)}}/><span>{series[current.seriesIndex].name}</span><strong>{formatMetric(current.point.value!,series[current.seriesIndex].unit==="percent"?"%":series[current.seriesIndex].unit||widget.unit,false,widget.options?.decimals)}</strong></li></ul></div>
       {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":contextText(value).length>128?`${contextText(value).slice(0,128)}…`:contextText(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
-      <TooltipPinHint pinned={current.pinned} /></div>
+      </div>
   </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colorOf(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
   {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{truncationNote(result)&&<span>{truncationNote(result)}</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }

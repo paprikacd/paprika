@@ -15,7 +15,6 @@ import type {
   ChartValue,
 } from "@tanstack/charts";
 import { MetricDetails } from "./metric-tooltip-content";
-import { TooltipPinHint } from "./tooltip-content";
 import { ObservationDrilldowns } from "./observation-drilldowns";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
@@ -303,7 +302,6 @@ export function usePlotTooltip(
               unit={widget.unit}
               color={current.point.color || widget.color}
             />}
-            <TooltipPinHint pinned={current.pinned} />
           </div>
         </ObservationTooltip>
       ) : null,

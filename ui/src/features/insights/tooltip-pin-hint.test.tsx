@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { ObservationTooltip } from "./observation-tooltip";
 import { TOOLTIP_PIN_HINT_OPEN, TOOLTIP_PIN_HINT_PINNED, TooltipPinHint, tooltipPinHint } from "./tooltip-content";
 
 afterEach(cleanup);
@@ -28,20 +29,28 @@ describe("TooltipPinHint instructions", () => {
     expect(screen.queryByText(TOOLTIP_PIN_HINT_OPEN)).not.toBeInTheDocument();
   });
 
-  it("renders the shared pin hint as the footer itself, so the order is set in one place and footers never nest", () => {
-    // Each panel with a pin hint renders TooltipPinHint once, unwrapped: TooltipPinHint is already the tooltipFooter
-    // block, so a wrapper would stack two dividers and inset the hint differently from the body.
-    for (const file of ["plot-tooltip.tsx", "observation-tooltip.tsx", "chart-renderers.tsx"]) {
+  it("is rendered by ObservationTooltip by default, and only opts out with pinHint={false}", () => {
+    const anchor = document.createElement("button");
+    document.body.append(anchor);
+    const { unmount } = render(<ObservationTooltip id="with-hint" anchor={anchor} onDismiss={() => undefined}>Reading</ObservationTooltip>);
+    expect(screen.getByText(TOOLTIP_PIN_HINT_OPEN)).toBeInTheDocument();
+    unmount();
+    render(<ObservationTooltip id="without-hint" anchor={anchor} pinHint={false} onDismiss={() => undefined}>Reading</ObservationTooltip>);
+    expect(screen.queryByText(TOOLTIP_PIN_HINT_OPEN)).not.toBeInTheDocument();
+    expect(screen.getByText("Reading")).toBeInTheDocument();
+  });
+
+  it("is never rendered by a host: the observation panel owns the footer, so each host cannot forget or restyle it", () => {
+    for (const file of ["plot-tooltip.tsx", "observation-tooltip.tsx", "chart-renderers.tsx", "stat-sparkline.tsx", "plugins/record-charts.tsx", "plugins/metric-distributions.tsx", "plugins/records.tsx", "plugins/small-multiples.tsx", "plugins/status-grid.tsx", "plugins/uptime-views.tsx", "plugins/rich-metrics.tsx"]) {
       const source = readFileSync(join(process.cwd(), "src/features/insights", file), "utf8");
-      expect(source.match(/<TooltipPinHint\b/g), file).toHaveLength(1);
-      expect(source, file).not.toMatch(/tooltipFooter[}"`][^>]*>\s*<TooltipPinHint\b/);
+      expect(source.match(/<TooltipPinHint\b/g) ?? [], file).toHaveLength(file === "observation-tooltip.tsx" ? 1 : 0);
       expect(source, file).not.toContain("<TooltipInstructions");
       expect(source, file).not.toContain("TOOLTIP_PIN_HINT_PINNED");
     }
   });
 
   it("is the copy every hint panel shows, not hand-written wording", () => {
-    // Each panel that shows a pin hint renders the shared component or helper, and none repeats the copy by hand.
+    // No panel repeats the pin copy by hand; the wording comes from the shared helper.
     const panels = [
       "stat-sparkline.tsx",
       "plugins/record-charts.tsx",
@@ -54,7 +63,6 @@ describe("TooltipPinHint instructions", () => {
     ];
     for (const file of panels) {
       const source = readFileSync(join(process.cwd(), "src/features/insights", file), "utf8");
-      expect(source, file).toMatch(/<TooltipPinHint|tooltipPinHint\(|TOOLTIP_PIN_HINT_(OPEN|PINNED)/);
       expect(source, file).not.toMatch(/Enter or tap to (pin|release)|press Escape to close|Enter to pin|Pinned · press Escape|Move across the chart/);
     }
   });

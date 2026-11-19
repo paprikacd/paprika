@@ -1,15 +1,14 @@
 "use client"
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { arc, pie } from "d3-shape"
 import { z } from "zod"
 import { EmptyState, MetricDetails, ObservationTooltip, formatMetric, seriesName, thresholdForValue } from "../chart-renderers"
 import { thresholdPaint } from "../status"
 import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip"
 import type { Point, Series } from "../chart-data"
-import type { QueryResult, Threshold } from "../schema"
+import type { Threshold } from "../schema"
 import { validTimestamp } from "../widget-context"
-import { TooltipPinHint } from "../tooltip-content"
 import { truncationNote } from "../truncation"
 import { useEmbeddedWidget } from "../widget-presentation"
 import { compactSeriesLabels } from "../series-display"
@@ -19,6 +18,8 @@ import historyStyles from "./status-history.module.css"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
 import { historyHitSlices, statusHistoryLayout } from "./status-history-data"
 import { occurrenceKeys } from "../tooltip-identity"
+import { useObservationOwner } from "../observation-owner"
+import { isRestoringTooltipFocus } from "../tooltip-focus"
 
 const pieConfig = z.strictObject({ donut: z.boolean().optional() })
 const historyConfig = z.strictObject({ maxSeries: z.number().int().min(1).max(24).optional(), maxPoints: z.number().int().min(8).max(120).optional(), labelField: z.string().trim().min(1).max(128).optional(), showTimeAxis: z.boolean().optional(), segmented: z.boolean().optional() })
@@ -42,21 +43,9 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
   const config = pieConfig.parse(widget.config ?? {})
   const parentEmbedded = useEmbeddedWidget(), interactive = !embedded && !parentEmbedded
   const detailsEnabled = interactive && widget.options?.showTooltip !== false
-  const id = useId(), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const id = useId()
   const legendRef = useRef<HTMLDivElement>(null)
   const [legendOverflow,setLegendOverflow] = useState(false)
-  // The elements that own the pointer and focus: a preview closes only when its own mark is neither hovered nor focused.
-  const interaction = useRef<{ hovered: Element | null; focused: Element | null; panel: boolean }>({ hovered: null, focused: null, panel: false })
-  const [state, setState] = useState<{ entry: Series; point: Point; index: number; anchor: SVGGElement; pinned: boolean; revision: QueryResult }>()
-  const clearHide = useCallback(() => clearTimeout(timer.current), [])
-  const dismiss = useCallback(() => { clearHide(); interaction.current.panel = false; setState(undefined) }, [clearHide])
-  const scheduleHide = useCallback(() => {
-    clearHide(); timer.current = setTimeout(() => {
-      const current = interaction.current
-      setState(previous => previous && !previous.pinned && !current.panel && current.hovered !== previous.anchor && current.focused !== previous.anchor ? undefined : previous)
-    }, 180)
-  }, [clearHide])
-  useEffect(() => clearHide, [clearHide])
   useEffect(() => {
     const element=legendRef.current
     if(!element)return
@@ -71,11 +60,10 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
     return { series, name: seriesName(series,index), latest }
   }), [result])
   const positive = samples.filter(sample => typeof sample.latest?.value === "number" && Number.isFinite(sample.latest.value) && sample.latest.value > 0)
-  const active = detailsEnabled && state?.revision === result ? state : undefined
-  const show = (entry: Series, point: Point, index: number, anchor: SVGGElement, pin = false) => {
-    if (!detailsEnabled) return
-    clearHide(); setState(previous => previous?.pinned && !pin ? previous : { entry, point, index, anchor, pinned: pin, revision: result })
-  }
+  // A slice is keyed by its position in the result. A new result closes the panel, as it always has.
+  const owner = useObservationOwner({ enabled: detailsEnabled, retention: { revision: result } })
+  const active = owner.active ? { ...owner.active, index: Number(owner.active.key) } : undefined
+  const current = active ? positive[active.index] : undefined
   if (!positive.length) return <EmptyState />
   // Normalizing before summation preserves finite relative shares even when
   // adding the original values would overflow to Infinity.
@@ -91,19 +79,19 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
       const activate = (anchor: SVGGElement) => {
         if (!interactive) return
         onContextChange?.({ labels:sample.series.labels, value:sample.latest!.value!, series:sample.name, timestamp:sample.latest!.timestamp })
-        if (active?.pinned && active.anchor === anchor) dismiss()
-        else show(sample.series,sample.latest!,index,anchor,true)
+        owner.toggle(String(index), anchor)
       }
       const actionable = interactive && (detailsEnabled || !!onContextChange)
-      return <g key={index} role={actionable ? "button" : "img"} tabIndex={actionable ? 0 : undefined} aria-label={`${sample.name}: ${formatted}`} aria-describedby={active?.anchor.dataset.pieIndex === String(index) ? id : undefined} aria-pressed={detailsEnabled ? !!(active?.pinned && active.anchor.dataset.pieIndex === String(index)) : undefined} data-pie-index={index} data-pie-value={sample.latest!.value!} data-pie-timestamp={sample.latest!.timestamp}
-        onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hovered = event.currentTarget; show(sample.series,sample.latest!,index,event.currentTarget) } }}
-        onPointerLeave={event => { if (interaction.current.hovered === event.currentTarget) interaction.current.hovered = null; scheduleHide() }}
-        onFocus={event => { interaction.current.focused = event.currentTarget; show(sample.series,sample.latest!,index,event.currentTarget) }}
-        onBlur={event => { if (interaction.current.focused === event.currentTarget) interaction.current.focused = null; scheduleHide() }}
+      const trigger = owner.trigger(String(index))
+      return <g key={index} role={actionable ? "button" : "img"} tabIndex={actionable ? 0 : undefined} aria-label={`${sample.name}: ${formatted}`} aria-describedby={active?.key === String(index) ? id : undefined} aria-pressed={detailsEnabled ? !!(active?.pinned && active.key === String(index)) : undefined} data-pie-index={index} data-pie-value={sample.latest!.value!} data-pie-timestamp={sample.latest!.timestamp}
+        onPointerEnter={trigger.onPointerEnter}
+        onPointerLeave={trigger.onPointerLeave}
+        onFocus={trigger.onFocus}
+        onBlur={trigger.onBlur}
         onClick={event => activate(event.currentTarget)}
         onKeyDown={event => { if (event.key === "Enter" || event.key === " ") {event.preventDefault();activate(event.currentTarget)} }}><path transform="translate(180 105)" d={path(slice) ?? ""} fill={`var(--record-color-${index%6})`} stroke="var(--gamma-border)" strokeWidth={.5}/></g>
     })}</svg>
-    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}><MetricDetails widget={widget} series={{...active.entry,name:positive[active.index].name}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} description="Latest observation" timestampFirst>{total > 0 && <span>Share of positive observations: {formatMetric(weight(active.point.value!) / total * 100,"%",false,widget.options?.decimals)}</span>}</MetricDetails><TooltipPinHint pinned={active.pinned} /></ObservationTooltip>}
+    {current && active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={owner.dismiss} onEnter={owner.panelEnter} onLeave={owner.panelLeave}><MetricDetails widget={widget} series={{...current.series,name:current.name}} index={active.index} point={current.latest!} unit={widget.unit} decimals={widget.options?.decimals} description="Latest observation" timestampFirst>{total > 0 && <span>Share of positive observations: {formatMetric(weight(current.latest!.value!) / total * 100,"%",false,widget.options?.decimals)}</span>}</MetricDetails></ObservationTooltip>}
     {widget.options?.showLegend !== false && <><div ref={legendRef} className={`${styles.legend} ${styles.pieLegend}`} role="region" aria-label={`Legend for ${widget.title}`} tabIndex={legendOverflow ? 0 : undefined}>{positive.map((sample,index) => <span key={index} role="group" title={sample.name} aria-label={`${sample.name}: ${formatMetric(sample.latest!.value!,widget.unit,false,widget.options?.decimals)}`}><i aria-hidden="true" style={{background:`var(--record-color-${index%6})`}} />{displayNames[index]} <b>{formatMetric(sample.latest!.value!,widget.unit,false,widget.options?.decimals)}</b></span>)}</div>{legendOverflow && <p className={styles.note}>Scroll the legend to see more series.</p>}</>}
     {positive.length < samples.length && <p className={styles.note}>{samples.length-positive.length} zero, missing or negative latest values have no slice area</p>}
     {truncationNote(result) && <p className={styles.note}>{truncationNote(result)}</p>}
@@ -178,11 +166,7 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   const series = useMemo(() => result.series ?? [], [result.series])
   const parentEmbedded = useEmbeddedWidget(), interactive = !embedded && !parentEmbedded
   const detailsEnabled = interactive && widget.options?.showTooltip !== false
-  const id = useId(), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // The marks that own the pointer and focus: a preview closes only when its own sample is neither hovered nor focused.
-  const interaction = useRef<{ hovered: HTMLButtonElement | null; focused: HTMLButtonElement | null; panel: boolean }>({ hovered: null, focused: null, panel: false })
-  // The sample is named by its series label and timestamp, so a refresh keeps it open with its new value.
-  const [state, setState] = useState<{ identity: HistoryIdentity; anchor: HTMLButtonElement; pinned: boolean }>()
+  const id = useId()
   const historyRef = useRef<HTMLDivElement>(null)
   const [keyboardKey, setKeyboardKey] = useState("0-0")
   // The focused sample that shows a keyboard ring; the ring is its own element, above the run frame.
@@ -190,39 +174,26 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   // The measured track sizes each mark, so thin marks keep their fill and get no frame.
   const track = useTrackSize(historyRef, "[data-history-track]", result)
   const sizeOf = (percent: number) => track && { width: percent / 100 * track.width, height: track.height }
-  const clearHide = useCallback(() => clearTimeout(timer.current), [])
-  const dismiss = useCallback(() => { clearHide(); interaction.current.panel = false; setState(undefined) }, [clearHide])
-  const scheduleHide = useCallback(() => {
-    clearHide(); timer.current = setTimeout(() => {
-      const current = interaction.current
-      setState(previous => previous && !previous.pinned && !current.panel && current.hovered !== previous.anchor && current.focused !== previous.anchor ? undefined : previous)
-    }, 180)
-  }, [clearHide])
-  useEffect(() => clearHide, [clearHide])
   const labelOf = (entry: Series, index: number) => historyLabel(entry, index, config.labelField)
-  const show = (identity: HistoryIdentity, anchor: HTMLButtonElement, pin = false) => {
-    if (!detailsEnabled) return
-    clearHide(); setState(previous => previous?.pinned && !pin ? previous : { identity, anchor, pinned: pin })
-  }
   const thresholds = useMemo(() => widget.options?.thresholds ?? [], [widget.options?.thresholds])
   // Not memoised: the layout is cheap, and the hover and pin lookups below read it on every render.
   const data = statusHistoryLayout(series.slice(0, maxSeries), maxPoints, thresholds)
-  // A sample that left the result closes its preview and releases its pin; a sample that stays keeps its anchor on the current mark.
   const labelField = config.labelField
   const rowKeys = historyRowKeys(data.rows.map(row => row.entry), labelField)
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- a stale pin must be released once its sample has left the result
-  useEffect(() => { if (state && !findHistorySample(data.rows, rowKeys, state.identity)) setState(undefined) }, [state, data, rowKeys])
-  // The anchor and the identity follow the sample: after a refresh the identity records the timestamp it resolved to, so the next refresh resolves from there.
-  useLayoutEffect(() => {
-    const found = state && findHistorySample(data.rows, rowKeys, state.identity)
-    if (!state || !found) return
-    const element = historyRef.current?.querySelector<HTMLButtonElement>(`[data-history-key="${found.index}-${found.cell}"]`)
-    const identity = historyIdentity(rowKeys, found.index, data.rows[found.index].cells, found.cell)
-    const moved = identity.timestamp !== state.identity.timestamp || identity.occurrence !== state.identity.occurrence
-    if ((element && element !== state.anchor) || moved) setState(previous => previous && previous.identity === state.identity ? { ...previous, identity, anchor: element ?? previous.anchor } : previous)
-  }, [state, data, rowKeys])
-  const located = detailsEnabled && state ? findHistorySample(data.rows, rowKeys, state.identity) : undefined
-  const active = located && state ? { entry: located.entry, point: located.point, index: located.index, cell: located.cell, anchor: state.anchor, pinned: state.pinned } : undefined
+  // A sample is kept under its identity. When a refresh moves its timestamp, the owner resolves the same sample by its row and place.
+  const keyOfCell = (row: number, cell: number) => JSON.stringify(historyIdentity(rowKeys, row, data.rows[row].cells, cell))
+  const sampleKeys = data.rows.flatMap((row, rowIndex) => row.cells.map((_, cellIndex) => keyOfCell(rowIndex, cellIndex)))
+  const resolveSample = (key: string) => {
+    const found = findHistorySample(data.rows, rowKeys, JSON.parse(key) as HistoryIdentity)
+    return found ? keyOfCell(found.index, found.cell) : undefined
+  }
+  const locateSample = (key: string) => {
+    const found = findHistorySample(data.rows, rowKeys, JSON.parse(key) as HistoryIdentity)
+    return found ? historyRef.current?.querySelector<HTMLButtonElement>(`[data-history-key="${found.index}-${found.cell}"]`) ?? null : null
+  }
+  const owner = useObservationOwner({ enabled: detailsEnabled, retention: { keys: sampleKeys, resolve: resolveSample }, locate: locateSample })
+  const located = owner.active ? findHistorySample(data.rows, rowKeys, JSON.parse(owner.active.key) as HistoryIdentity) : undefined
+  const active = located && owner.active ? { entry: located.entry, point: located.point, index: located.index, cell: located.cell, anchor: owner.active.anchor, pinned: owner.active.pinned } : undefined
   if (!data.rows.length) return <EmptyState />
   const keys = data.rows.flatMap((row, rowIndex) => row.cells.map((_, cellIndex) => `${rowIndex}-${cellIndex}`))
   const tabKey = keys.includes(keyboardKey) ? keyboardKey : keys[0]
@@ -300,16 +271,17 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
       const mark = markGeometry(point, left, width), edge = mark.edge
       const position = { left: `${mark.centre}%`, width: `${Math.max(0, mark.width)}%`, ...(color ? { background: color } : {}) }
       if (!interactive) return <span key={i} aria-hidden="true" data-history-edge={edge} className={`${historyStyles.mark} ${finite ? "" : historyStyles.unknown}`} style={position} />
-      return <button key={i} type="button" tabIndex={`${index}-${i}` === tabKey ? 0 : -1} aria-label={title} aria-describedby={`${id}-keys${active?.index === index && active.cell === i ? ` ${id}` : ""}`} aria-pressed={detailsEnabled && active?.index === index && active.cell === i ? active.pinned : undefined} data-history-key={`${index}-${i}`} data-history-edge={edge} data-history-timestamp={point.timestamp} data-history-value={point.value ?? "unknown"} className={`${historyStyles.mark} ${finite ? "" : historyStyles.unknown}`} style={position}
-        onPointerEnter={event => { if (event.pointerType !== "touch") { interaction.current.hovered = event.currentTarget; show(historyIdentity(rowKeys,index,cells,i),event.currentTarget) } }}
-        onPointerLeave={event => { if (interaction.current.hovered === event.currentTarget) interaction.current.hovered = null; scheduleHide() }}
-        onFocus={event => { setKeyboardKey(`${index}-${i}`); setRingKey(event.currentTarget.matches(":focus-visible") ? `${index}-${i}` : undefined); interaction.current.focused = event.currentTarget; show(historyIdentity(rowKeys,index,cells,i),event.currentTarget) }}
+      const markKey = keyOfCell(index, i), trigger = owner.trigger(markKey), isOpen = owner.active?.key === markKey
+      return <button key={i} type="button" tabIndex={`${index}-${i}` === tabKey ? 0 : -1} aria-label={title} aria-describedby={`${id}-keys${isOpen ? ` ${id}` : ""}`} aria-pressed={detailsEnabled && isOpen ? owner.active?.pinned : undefined} data-history-key={`${index}-${i}`} data-history-edge={edge} data-history-timestamp={point.timestamp} data-history-value={point.value ?? "unknown"} className={`${historyStyles.mark} ${finite ? "" : historyStyles.unknown}`} style={position}
+        onPointerEnter={trigger.onPointerEnter}
+        onPointerLeave={trigger.onPointerLeave}
+        onFocus={event => { setKeyboardKey(`${index}-${i}`); setRingKey(event.currentTarget.matches(":focus-visible") ? `${index}-${i}` : undefined); if (isRestoringTooltipFocus()) owner.holdFocus(event.currentTarget); else trigger.onFocus(event) }}
         onKeyDown={event => navigate(event,index,i)}
-        onBlur={event => { setRingKey(undefined); if (interaction.current.focused === event.currentTarget) interaction.current.focused = null; scheduleHide() }}
-        onClick={event => { onContextChange?.({labels:entry.labels,value:finite ? point.value : null,series:name,timestamp:point.timestamp}); if (active?.pinned && active.anchor === event.currentTarget) dismiss(); else show(historyIdentity(rowKeys,index,cells,i),event.currentTarget,true) }}>{hits[i] && <span aria-hidden="true" data-history-hit={`${index}-${i}`} className={historyStyles.hit} style={hitStyle(hits[i], mark, edge)} />}</button>
+        onBlur={event => { setRingKey(undefined); trigger.onBlur(event) }}
+        onClick={event => { onContextChange?.({labels:entry.labels,value:finite ? point.value : null,series:name,timestamp:point.timestamp}); owner.toggle(markKey, event.currentTarget) }}>{hits[i] && <span aria-hidden="true" data-history-hit={`${index}-${i}`} className={historyStyles.hit} style={hitStyle(hits[i], mark, edge)} />}</button>
     })}{runFrames(cells)}{focusRing(index, cells)}</div></div>
   })}</div></div>{ticks.length > 0 && <div className={historyStyles.timeAxis} role="group" aria-label={`Status history time scale in ${timeZone}`}><span title={timeZone}>{zoneLabel}</span><div className={historyStyles.tickRow}>{ticks.map((tick,index) => <time key={index} dateTime={new Date(tick.timestamp).toISOString()} title={new Date(tick.timestamp).toISOString()}>{tick.label}</time>)}</div></div>}<div className={`${styles.note} ${historyStyles.footer}`}>{widget.options?.showLegend !== false && <div className={historyStyles.legend} role="group" aria-label="Status history legend">{thresholds.map((threshold,index) => <span key={index}>{threshold.status ? <StatusChip status={threshold.status} color={threshold.color} label={legendLabel(threshold,index)} /> : <><i style={{background:thresholdPaint(threshold)}} />{legendLabel(threshold,index)}</>}</span>)}{!thresholds.length && <span><i style={{background:widget.color ?? "var(--gamma-accent, #53876a)"}} />Observed</span>}<span><i className={historyStyles.unknown} />Unknown</span>{hasMixed && <span><i className={historyStyles.mixed} />Mixed / uncertain</span>}</div>}<span title="Empty intervals are unobserved" aria-label="Earlier to latest; empty intervals are unobserved">Earlier → latest</span>{series.length > maxSeries ? <span>Sampled view · {Math.min(maxSeries,series.length)} of {series.length} series</span> : data.sampled && <span>Sampled</span>}{hasMixed && widget.options?.showLegend === false && <span>Striped intervals: mixed / uncertain</span>}{data.duplicateTimes && <span>Multiple observations share a timestamp</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}</div>
-    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={dismiss} onEnter={() => { interaction.current.panel = true; clearHide() }} onLeave={() => { interaction.current.panel = false; scheduleHide() }}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} subject={labelFor(active.entry,active.index)} seriesLabel={widget.title} description="Recorded sample">{activeThreshold?.status ? <StatusChip status={activeThreshold.status} color={activeThreshold.color} label={activeThreshold.label} /> : activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails><TooltipPinHint pinned={active.pinned} /></ObservationTooltip>}
+    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={() => owner.dismiss()} onEnter={() => owner.panelEnter()} onLeave={() => owner.panelLeave()}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} subject={labelFor(active.entry,active.index)} seriesLabel={widget.title} description="Recorded sample">{activeThreshold?.status ? <StatusChip status={activeThreshold.status} color={activeThreshold.color} label={activeThreshold.label} /> : activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails></ObservationTooltip>}
   </div>
 }
 
