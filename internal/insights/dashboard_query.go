@@ -105,10 +105,15 @@ type DashboardQueryWidget struct {
 	Attention string `json:"attention,omitempty"`
 	// Breaches is set for time-series widgets with an author-declared warning or critical status.
 	Breaches *DashboardBreaches `json:"breaches,omitempty"`
+	// SLO is set for an slo-summary widget: its authored objective evaluated over the window.
+	// It is a reading of the objective, not a health verdict, and it leaves threshold unchanged.
+	SLO *DashboardSLO `json:"slo,omitempty"`
 	// Comparison is a stat's change against its earlier window, when the stat declares one. See DashboardComparison.
 	Comparison *DashboardComparison `json:"comparison,omitempty"`
 	// seriesCap is how many leading series the visualization draws, for band widgets.
 	seriesCap int
+	// sloConfig is the validated objective of an slo-summary widget, set at planning.
+	sloConfig *sloConfig
 	// rankTable is a record-table's rank with the styles and thresholds it reads, set only when rank is declared.
 	rankTable *dashboardRankedTable
 }
@@ -200,10 +205,13 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 // resolution, admission and the caller's deadline; neither has its own path.
 func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, options DashboardSummaryOptions) {
 	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
-	queries := planDashboardQueries(result, selected, saved, definitions, start, end, func(providerID, template string) *DashboardQueryError {
+	queries := planDashboardQueries(result, selected, saved, definitions, start, end, func(providerID, template string, slo bool) *DashboardQueryError {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
 		if err != nil {
 			return nil // Execution reports the cached provider failure as a signal.
+		}
+		if slo && provider.public.Type != "prometheus" {
+			return &DashboardQueryError{Code: "invalid_query", Message: "slo-summary widgets need a Prometheus provider."}
 		}
 		if err := validateSQLTemplate(provider.public.Type, template); err != nil {
 			return &DashboardQueryError{Code: "invalid_query", Message: err.Error()}
@@ -218,7 +226,20 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 	result.Attention = applyDashboardAttention(result)
 }
 
-func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, validators ...func(string, string) *DashboardQueryError) []Query {
+// dashboardQueryValidator checks a planned query's provider and template. slo is set for
+// slo-summary widgets, whose query is compiled from config and needs a Prometheus provider.
+type dashboardQueryValidator func(providerID, template string, slo bool) *DashboardQueryError
+
+// dashboardWidgetStep is the query step for a widget. An slo-summary widget uses one step
+// that spans the range, so its range query returns only the window's start and end points.
+func dashboardWidgetStep(widget *dashboardReadWidget, rangeStep, start, end float64) float64 {
+	if isSLOSummaryWidget(widget) {
+		return sloStepSeconds(start, end)
+	}
+	return rangeStep
+}
+
+func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, validators ...dashboardQueryValidator) []Query {
 	seenSaved := make(map[string]bool)
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
@@ -236,7 +257,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 			output.SavedQueryID = widget.QueryRef.ID
 		}
 		query, resolutionError := resolveDashboardWidget(widget, saved, result.Variables, definitions)
-		query.Start, query.End, query.Step = start, end, result.Range.StepSeconds
+		query.Start, query.End, query.Step = start, end, dashboardWidgetStep(widget, result.Range.StepSeconds, start, end)
 		if resolutionError == nil {
 			resolutionError = validatePlannedDashboardQuery(widget, &query, saved, validators)
 		}
@@ -278,11 +299,17 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 		}
 	}
 	dashboardWidgetBandOutput(&output, widget)
+	if isSLOSummaryWidget(widget) {
+		// An invalid config never reaches here: resolveSLOSummaryQuery refuses it at planning.
+		if cfg, err := validateSLOSummaryConfig(widget.Config); err == nil {
+			output.sloConfig = &cfg
+		}
+	}
 	dashboardWidgetRankOutput(&output, widget)
 	return output
 }
 
-func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, validators []func(string, string) *DashboardQueryError) {
+func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, validators []dashboardQueryValidator) {
 	source := widget.AnnotationSource
 	if source == nil {
 		return
@@ -314,18 +341,21 @@ func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQuery
 	}
 }
 
-func validatePlannedDashboardQuery(widget *dashboardReadWidget, query *Query, saved map[string]dashboardSavedSnapshot, validators []func(string, string) *DashboardQueryError) *DashboardQueryError {
+func validatePlannedDashboardQuery(widget *dashboardReadWidget, query *Query, saved map[string]dashboardSavedSnapshot, validators []dashboardQueryValidator) *DashboardQueryError {
 	if len(validators) > 0 {
 		template := widget.Query
 		if widget.QueryRef != nil {
 			template = saved[widget.QueryRef.ID].Query.Query
 		}
-		if failure := validators[0](query.ProviderID, template); failure != nil {
+		if failure := validators[0](query.ProviderID, template, isSLOSummaryWidget(widget)); failure != nil {
 			return failure
 		}
 	}
 	if validateQuery(query) != nil {
 		return &DashboardQueryError{Code: "invalid_query", Message: "The resolved widget query is invalid."}
+	}
+	if isSLOSummaryWidget(widget) && len(query.Query) > sloMaxQueryLength {
+		return &DashboardQueryError{Code: "invalid_query", Message: "The slo-summary query is longer than 8192 characters after variables are expanded."}
 	}
 	return nil
 }
@@ -548,7 +578,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		}
 		for i := range result.Widgets {
 			widget := &result.Widgets[i]
-			applyDashboardSignal(widget, &signal, raw, query.End)
+			applyDashboardSignal(widget, &signal, raw, query.End, options.MaxSeries)
 			applyDashboardAnnotation(widget, &signal, columns, result)
 		}
 		if executed {

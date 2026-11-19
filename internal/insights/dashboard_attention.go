@@ -2,7 +2,7 @@ package insights
 
 // dashboardAttentionBasis states what the attention counts, so no reader mistakes it
 // for a health verdict.
-const dashboardAttentionBasis = "author-declared warning and critical statuses, query failures and staleness only; not a health verdict"
+const dashboardAttentionBasis = "author-declared warning and critical statuses and objectives, query failures and staleness only; not a health verdict"
 
 // DashboardAttention is a dashboard-level count of widgets that need attention. Each
 // widget is counted once, under its most severe reason: critical, warning, failed or
@@ -74,6 +74,9 @@ func dashboardWidgetAttention(widget *DashboardQueryWidget, failed bool) string 
 // applies to the widget (a matched stat, gauge, status view or heatmap band) or, for a
 // time series, whether a breach at this level lies in the returned window.
 func dashboardWidgetDeclares(widget *DashboardQueryWidget, level string) bool {
+	if dashboardSLODeclares(widget.SLO, level) {
+		return true
+	}
 	if widget.Threshold != nil && widget.Threshold.State == "matched" && widget.Threshold.Status == level {
 		return true
 	}

@@ -35,6 +35,21 @@ IDs here are placeholders; run the steps in order.
 2. **Start from a starter when one fits.** First-party starters are `service-overview`,
    `slo-burn-rate`, `namespace-capacity` and `paprika-control-plane`; `get_insights_schema` notes describe each. No MCP tool lists them.
 
+   **SLO objective recipe.** An `slo-summary` widget is `type: plugin`, `pluginId: slo-summary`,
+   `dataKind: metrics` and `providerId` of a Prometheus provider; its `config` holds the objective and
+   no query. Fields: `objective` (percent, 50 to 99.9999, at most four decimals), `period` (`1d`, `7d`,
+   `28d` or `30d`), `total` (a counter selector such as `http_requests_total{service=~"api"}`), exactly
+   one of `bad` or `good` (a counter selector), optional `burnAlerts` (`multiwindow` by default, `page`
+   or `none`), optional `groupBy` (one label, for services mode) and `maxRows` (1 to 12, default 6).
+   A selector is a metric name with optional matchers: no functions, ranges or offsets. A `groupBy`
+   total selector needs a matcher on that label, or `slo.group-unbounded` warns. The `maxRows` cap follows the
+   preset for a 30-day period: 6 under `multiwindow` (16 series per group), 10 under `page` (10 series per
+   group), 12 under `none` (2 series per group). More groups than the cap are truncated and the state is
+   `partial`. The cap is the provider's 100-series limit divided by the series per group, then limited to 12.
+   Read `slo.state` (`meeting`, `at_risk`, `breaching`, `unknown` or `partial`) with its `reasons`:
+   `no_traffic` is not zero errors, and `incomplete` means the result was truncated. The state describes
+   the authored objective, not service health. Do not write a `queryRef` or `options.thresholds`; both are lint errors or warnings.
+
 3. **Reuse saved queries.** Check `list_saved_queries` and `get_saved_query` before inventing
    PromQL or SQL. Create new ones with `create_saved_query` before `create_dashboard`
    references them. Paprika's `paprika_*` metrics are listed in [paprika-signals.md](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/paprika-signals.md).
@@ -73,6 +88,8 @@ IDs here are placeholders; run the steps in order.
    Under the 130 KiB cap, optional detail can be omitted; `omitted` names what was dropped,
    and `widget_ids` narrows the query to recover it.
    `state` describes data availability, never service health or SLO compliance. An
+   `slo-summary` widget's `slo` object is an evaluation of its authored objective
+   (`state` meeting, at_risk, breaching, unknown or partial), not service health; say so when you report it. An
    unavailable provider is not zero traffic. Overrides apply only to this call, never to saved defaults.
 
 8. **Render, when advertised.** `render_dashboard` is listed only when the

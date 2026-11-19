@@ -26,7 +26,7 @@ for (const query of all) {
   // window may correctly contain no event, especially as the demo ages;
   // exercise the seeded historical incidents over the board's 30-day window.
   const end = Math.floor(Date.now() / 1000);
-  const incidentHistory = ["local-ab-reliability-room-incidents", "local-reliability-attention", "local-reliability-events", "local-reliability-severity", "local-signal-incidents"].includes(query.id);
+  const incidentHistory = ["local-ab-reliability-room-incidents", "local-reliability-events", "local-reliability-severity", "local-signal-incidents"].includes(query.id);
   // Company and node histories are discrete hourly observations, seeded for two days;
   // a one-hour range can correctly be empty as the demo stack ages.
   const discreteHistory = ["local-ab-fleet-atlas-resources", "local-ab-market-lens-history", "local-market-sector-history", "local-market-company-history", "local-ab-collection-control-failures", "local-edge-blocked-requests", "local-edge-gateway-events"].includes(query.id);

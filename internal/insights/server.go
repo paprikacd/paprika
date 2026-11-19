@@ -570,14 +570,16 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 	}).replay(w)
 }
 
-// saveDashboard runs a save under the mutation lock and returns its response
-// unwritten. The whole check runs under the lock, for two reasons. The stored
-// version must be read in the same critical section as the write, so the overlap
-// check and the write see the same dashboard. And unchecked saves are not capped
-// by the check slots: the lock is what runs their validation one document at a
-// time, which bounds their memory. Moving the schema pass out of the lock needs
-// every array a document can make large bounded first, so it stays here until
-// then. A save of a valid dashboard takes well under a millisecond under it.
+// saveDashboard runs a save and returns its response unwritten. The schema pass
+// and lint run under the mutation lock, for two reasons. The stored version must be
+// read in the same critical section as the write, so the overlap check and the
+// write see the same dashboard. And unchecked saves are not capped by the check
+// slots: the lock is what runs their validation one document at a time, which
+// bounds their memory. Provider types are the one exception: they are looked up
+// before the lock, so a rejected document can still cost those bounded lookups.
+// Moving the schema pass out of the lock needs every array a document can make
+// large bounded first, so it stays here until then. A save of a valid dashboard
+// takes well under a millisecond under the lock.
 //
 // release frees the check slot and the body budget. It runs after the lock is
 // released, and before the caller writes the response.
@@ -585,12 +587,16 @@ func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool
 	defer release()
 	out := &bufferedResponse{}
 	id := r.PathValue("id")
+	// Provider types are resolved before the lock, because a catalog call can be slow and holding the lock across
+	// it would hold every other save and delete. The lookup is bounded by sloProviderLookupTimeout and capped at
+	// maxDashboardWidgets slo-summary widgets, whether or not the schema later accepts the document.
+	providerTypes := s.providerTypesBounded(r, doc)
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
 	// Schema findings and error-severity lint findings reject the save. Warnings
 	// and info are returned in the checks field of a successful save. An overlap
 	// the stored version already has is a warning, so it does not reject the save.
-	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues)
+	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues, func() map[string]string { return providerTypes })
 	if findings.hasErrors() {
 		writeSchemaFindings(out, findings)
 		return out
@@ -738,7 +744,7 @@ func (s *Server) decodeCheck(w http.ResponseWriter, r *http.Request) (*checkRequ
 		writeError(w, 400, "variables apply only when execute is true")
 		return nil, nil, false
 	}
-	return &request, s.checkReport(request.Document), true
+	return &request, s.checkReport(r, request.Document), true
 }
 
 // validationErrorBody is the 400 response to a rejected save. Error keeps the
@@ -778,7 +784,7 @@ func writeCheckReport(w http.ResponseWriter, status int, report *insightsv1.Chec
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if _, err := w.Write(data); err != nil {
+	if _, err := w.Write(data); err != nil { //nolint:gosec // A JSON check report served as application/json, never HTML.
 		slog.Debug("could not write insights check report")
 	}
 }

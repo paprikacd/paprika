@@ -11,6 +11,7 @@ import { registerRichMetricPlugins } from "./rich-metrics";
 import { registerOperationalRecordPlugins } from "./operational-records";
 import { registerGeoHeatmapPlugin } from "./geo-heatmap";
 import { registerStatusGridPlugin } from "./status-grid";
+import { registerSloSummaryPlugin } from "./slo-summary";
 import { registerUptimeViews } from "./uptime-views";
 import { registerSmallMultiplesPlugin } from "./small-multiples";
 import {
@@ -353,6 +354,7 @@ export function registerDefaultWidgetPlugins() {
   registerRichMetricPlugins();
   registerOperationalRecordPlugins();
   registerGeoHeatmapPlugin();
+  registerSloSummaryPlugin();
   if (getWidgetDefinition("plugin", "threshold-gauge")) return;
   registerWidgetPlugin({
     id: "threshold-gauge",

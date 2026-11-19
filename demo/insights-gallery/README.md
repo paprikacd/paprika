@@ -293,12 +293,14 @@ land check against the pinned source:
 curl -fsSL -o /tmp/paprika-ne50-land.geojson https://raw.githubusercontent.com/nvkelso/natural-earth-vector/693f11422f4e08d2da4566b854dda53eb7c39fb3/geojson/ne_50m_land.geojson
 python3 demo/insights-gallery/verify-geography-land.py /tmp/paprika-ne50-land.geojson
 ```
-Reliability Room uses 30-day probe samples for availability and remaining
-budget against a 99.9% target. Its request-error counter varies independently
+Reliability Room uses 30-day request-error counters for one SLO card (availability,
+remaining budget and burn pairs against a 99.9% objective) and one services card
+grouped by service. Both are slo-summary widgets compiled from their config, so the
+SLO card, the services card and the burn rates share one SLI. Remaining budget is not
+clamped, so an overspent objective reads below zero. Its service-state timeline still
+reads probe samples. Its request-error counter varies independently
 and includes two 9-hour synthetic incidents per service; their recorded
-PostgreSQL intervals align with the Prometheus error-rate spikes. Its service
-comparison table is a separately seeded PostgreSQL probe set; burn rates use request-error counters, so the two
-signals are not interchangeable. Timeline cells show the worst observed probe
+PostgreSQL intervals align with the Prometheus error-rate spikes. Timeline cells show the worst observed probe
 in each three-hour lookback. Incident rows can focus the dashboard time range
 and trace panel using the recorded incident start and duration.
 The incident calendar colors each recorded UTC day by the maximum explicit

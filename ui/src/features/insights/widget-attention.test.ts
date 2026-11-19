@@ -207,3 +207,41 @@ describe("records", () => {
     });
   });
 });
+
+describe("slo-summary objectives in attention", () => {
+  // Every window of the 30d multiwindow preset reads the same total and bad, labelled as the compiled query labels them.
+  const windows = ["5m", "30m", "1h", "2h", "6h", "1d", "3d", "30d"];
+  const sloResult = (total: number, bad: number): QueryResult => ({
+    series: windows.flatMap((window) => [
+      { name: window, labels: { slo_window: window, slo_part: "total" }, points: [{ timestamp: 1000, value: total }] },
+      { name: window, labels: { slo_window: window, slo_part: "bad" }, points: [{ timestamp: 1000, value: bad }] },
+    ]),
+  });
+  const sloWidget = { type: "plugin" as const, pluginId: "slo-summary", config: { objective: 99.9, period: "30d", total: "requests", bad: "errors" } };
+
+  it("counts a breaching objective as critical and an at-risk one as warning", () => {
+    expect(widgetAttention(sloWidget, { result: sloResult(1000000, 2000) }).reason).toBe("critical");
+    // 1000 failures over 1000000 requests spend the whole budget, and a healthy short window keeps the pair quiet.
+    expect(widgetAttention(sloWidget, { result: sloResult(1000000, 0) }).reason).toBe("");
+  });
+
+  it("counts an unknown objective for nothing", () => {
+    expect(widgetAttention(sloWidget, { result: { series: [] } }).reason).toBe("");
+  });
+
+  it("counts a truncated grouped objective by its evaluated groups, and a partial one for nothing", () => {
+    // Two services at the 30d multiwindow preset: "bad" is breaching on its budget and "good" meets it.
+    const serviceSeries = (service: string, total: number, bad: number) => sloResult(total, bad).series!.map((entry) => ({ ...entry, labels: { ...entry.labels, service } }));
+    const groupedConfig = { ...sloWidget.config, groupBy: "service" };
+    const breaching = { series: [...serviceSeries("bad", 1000000, 2000), ...serviceSeries("good", 1000000, 0)], truncated: true };
+    expect(widgetAttention({ ...sloWidget, config: groupedConfig }, { result: breaching }).reason).toBe("critical");
+    const meetingOnly = { series: serviceSeries("good", 1000000, 0), truncated: true };
+    const attention = widgetAttention({ ...sloWidget, config: groupedConfig }, { result: meetingOnly });
+    expect(attention.facts.slo).toBe("partial");
+    expect(attention.reason).toBe("");
+  });
+
+  it("reads an invalid objective config as no declared status", () => {
+    expect(widgetAttention({ ...sloWidget, config: { objective: 100 } }, { result: sloResult(1000000, 2000) }).facts.slo).toBeNull();
+  });
+});

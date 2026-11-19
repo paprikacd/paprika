@@ -138,7 +138,7 @@ func applyDashboardRecordRanking(widget *DashboardQueryWidget, signal *Dashboard
 // applyDashboardSignal applies one executed signal to a widget bound to it. Stat bands read
 // the displayed summary; the other evaluations need the drawn series, so they read the raw
 // result, which is nil when the provider did not answer.
-func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult, end float64) {
+func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal, raw *QueryResult, end float64, maxSeries int) {
 	if widget.SignalID != signal.ID {
 		return
 	}
@@ -152,6 +152,7 @@ func applyDashboardSignal(widget *DashboardQueryWidget, signal *DashboardSignal,
 	}
 	applyDashboardFreshness(widget, signal, raw, end)
 	applyDashboardBreaches(widget, signal, raw)
+	applyDashboardSLO(widget, signal, raw, maxSeries, end)
 }
 
 // applyDashboardThreshold evaluates a stat on the last valid value it displays.

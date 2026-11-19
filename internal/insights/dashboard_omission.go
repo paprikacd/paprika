@@ -24,6 +24,7 @@ var dashboardOmissionSteps = []dashboardOmissionStep{
 	{name: "breaches", drop: dropDashboardWidgetBreaches},
 	{name: "bandSeries", drop: dropDashboardBandSeriesDetail},
 	{name: "sample", drop: dropDashboardSampleDetail},
+	{name: "sloBurn", drop: dropDashboardSLOBurn},
 }
 
 // DashboardOmissionStepNames is the name of each omission step, in the order the ladder applies them.

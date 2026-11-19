@@ -19,6 +19,7 @@ describe("observation timer lint guard", () => {
     "src/features/insights/chart-renderers.tsx",
     "src/features/insights/fixture-renderers.tsx",
     "src/features/insights/stat-sparkline.tsx",
+    "src/features/insights/plugins/slo-summary.tsx",
   ])("rejects setTimeout in %s", async filePath => {
     expect(await ruleIdsFor(filePath, scheduled)).toContain("no-restricted-syntax");
   }, 120_000);

@@ -28,6 +28,7 @@ type attentionConformance struct {
 				} `json:"summary"`
 			} `json:"breaches"`
 			Freshness *string `json:"freshness"`
+			SLO       *string `json:"slo"`
 		} `json:"widgets"`
 		Expected struct {
 			Widgets   int               `json:"widgets"`
@@ -73,6 +74,9 @@ func attentionResult(t *testing.T, fixture attentionConformance, index int) *Das
 		}
 		if entry.Freshness != nil {
 			widget.Sample = &DashboardSample{State: *entry.Freshness}
+		}
+		if entry.SLO != nil {
+			widget.SLO = &DashboardSLO{State: *entry.SLO}
 		}
 		result.Widgets = append(result.Widgets, widget)
 	}

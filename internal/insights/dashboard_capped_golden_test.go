@@ -34,6 +34,8 @@ func cappedGoldenFixture() *DashboardQueryResult {
 	result.Signals = []DashboardSignal{{ID: "q1", Kind: "metrics", ProviderID: "prometheus", State: "ok"}}
 	result.QueryCount = DashboardQueryCount{Planned: 1, Executed: 1}
 	result.State = "ok"
+	// The sloBurn step drops only slo-summary burn windows, so one widget carries an objective.
+	result.Widgets[0].SLO = sloDetailObjective()
 	return result
 }
 

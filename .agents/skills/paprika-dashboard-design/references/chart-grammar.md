@@ -111,7 +111,7 @@ Define a delta's comparison, direction and unit. A change from 20% to 25% is +5 
 
 Attach thresholds to a named user policy, limit, SLO, or documented source. Show the relevant window and denominator. Do not invent an 80% critical CPU threshold or a universal latency SLO.
 
-Represent an SLO burn rate relative to the defined budget. Keep alert state, service health, and data availability separate. Treat zero traffic explicitly rather than claiming 0% errors proves good service.
+Represent an SLO burn rate relative to the defined budget. For an objective, use one `slo-summary` widget (config: objective, period, total, bad or good selectors, optional groupBy); its state evaluates the authored objective and is not service health. Keep alert state, service health, and data availability separate. Treat zero traffic explicitly rather than claiming 0% errors proves good service.
 
 Show prediction/uncertainty bands only when supplied or calculated by an identified method. Label estimates, samples, and partial coverage. An event near a spike supports investigation, not an automatic causal claim.
 

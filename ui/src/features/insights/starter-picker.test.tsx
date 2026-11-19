@@ -113,7 +113,8 @@ describe("starter picker", () => {
     expect(props.getStarter).toHaveBeenCalledWith("slo-burn-rate");
     const reviewed = vi.mocked(props.onReviewBundle!).mock.calls[0][0];
     expect(reviewed.dashboards.map((dashboard) => dashboard.id)).toEqual(["slo-burn-rate"]);
-    expect(reviewed.dashboards[0].widgets).toHaveLength(5);
+    expect(reviewed.dashboards[0].widgets).toHaveLength(3);
+    expect(reviewed.dashboards[0].widgets.map((widget) => widget.id)).toContain("slo-summary");
     expect(props.onImportBundle).not.toHaveBeenCalled();
   });
 

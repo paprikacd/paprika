@@ -213,8 +213,32 @@ func validateWidgetPluginFields(widget map[string]json.RawMessage) error {
 	if json.Unmarshal(widget["dataKind"], &dataKind) != nil || !slices.Contains([]string{"metrics", "traces", "records"}, dataKind) {
 		return fieldErr("dataKind", "plugin widgets require metrics, traces or records dataKind")
 	}
+	return validateWidgetPluginConfig(id, widget)
+}
+
+// validateWidgetPluginConfig checks a plugin widget's config. An slo-summary widget requires the objective config.
+func validateWidgetPluginConfig(id string, widget map[string]json.RawMessage) error {
+	if id == sloSummaryPluginID {
+		return validateSLOSummaryWidget(widget)
+	}
 	if raw, ok := widget["config"]; ok {
 		return in("config", validatePluginConfig(raw))
+	}
+	return nil
+}
+
+// validateSLOSummaryWidget requires the objective config. The config is checked by the same rules the
+// query compiler uses, so a saved document always compiles.
+func validateSLOSummaryWidget(widget map[string]json.RawMessage) error {
+	raw, ok := widget["config"]
+	if !ok {
+		return fieldErr("config", "slo-summary widgets require an objective config")
+	}
+	if err := validatePluginConfig(raw); err != nil {
+		return in("config", err)
+	}
+	if _, err := validateSLOSummaryConfig(raw); err != nil {
+		return fieldErr("config", "slo-summary config is invalid: "+err.Error())
 	}
 	return nil
 }

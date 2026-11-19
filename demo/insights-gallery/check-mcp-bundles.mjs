@@ -53,6 +53,8 @@ const selected = {
   "local-gallery-edge-watch": { variables: { gateway: "delta", location: "Tokyo sample 2" }, widget: "geo-selected-detail", field: "label", value: "Tokyo sample 2" },
   "local-gallery-market-lens": { variables: { sector: "Financials", company: "DEMO003" }, widget: "selected-company", field: "ticker", value: "DEMO003" },
   "local-gallery-reliability-room": { variables: { service: "payments" } },
+  // The first-party control-plane starter, as the gallery copies it. It has no alternate selection.
+  "local-gallery-control-plane": { variables: {} },
   "local-gallery-collection-control": { variables: { pipeline: "delta", source: "tempo" }, widget: "selected-source-detail", field: "source", value: "tempo" },
   "local-gallery-signal-kit": { variables: { service: "payments", cluster: "delta" } },
   "local-gallery-availability-lab": { variables: { service: "payments", cluster: "delta" } },
@@ -132,20 +134,16 @@ for (const id of Object.keys(selected)) {
     }
     for (const [key, value] of Object.entries(variables)) assert.equal(bundle.variables[key], value, `${id}/${name}: variable ${key}`);
     if (id === "local-gallery-reliability-room") {
-      const widget = bundle.widgets.find(item => item.id === "budget");
-      const signal = signalFor(bundle, "budget");
-      const last = signal?.series?.find(series => series.index === signal.primarySeries)?.last;
-      const thresholds = saved.document.widgets.find(item => item.id === "budget")?.options?.thresholds;
-      assert.ok(widget && last && thresholds?.length, "Budget must have an observed value and authored visual bands");
-      let selected = thresholds[0];
-      for (const threshold of thresholds) {
-        if (threshold.value > last.value) break;
-        selected = threshold;
-      }
-      const band = { state: "matched", boundary: selected.value, ...(selected.status ? { status: selected.status } : {}), ...(selected.color ? { color: selected.color } : {}), ...(selected.label ? { label: selected.label } : {}) };
-      assert.deepEqual(widget.threshold, band, "MCP band must match the displayed primary value and widget's own thresholds");
-      const bandText = `widget "budget": configured visual band="matched"; boundary=${selected.value}${selected.status ? `; status=${JSON.stringify(selected.status)}` : ""}${selected.color ? `; color=${JSON.stringify(selected.color)}` : ""}`;
-      assert.ok(contextText.includes(bandText), "Compact text must identify the configured budget band");
+      // The SLO card and the services card are read-only objective evaluations. Their budgets are not clamped, so an
+      // overspent objective reads below zero; check-reliability compares the same readings with independent PromQL.
+      const sloCard = bundle.widgets.find(item => item.id === "slo")?.slo, servicesCard = bundle.widgets.find(item => item.id === "services-attention")?.slo;
+      assert.ok(sloCard && servicesCard, "The SLO card and the services card must return readings through MCP");
+      for (const slo of [sloCard, servicesCard]) assert.equal(slo.objective, 99.9, `${id}: objective`), assert.equal(slo.period, "30d", `${id}: period`);
+      assert.equal(sloCard.groups.length, 1, "The single-mode card has one group");
+      assert.ok(Number.isFinite(sloCard.groups[0].availability) && Number.isFinite(sloCard.groups[0].budgetRemaining), "The SLO card must report availability and budget");
+      assert.deepEqual(servicesCard.groups.map(group => group.labels.service).sort(), ["catalog", "checkout", "payments", "worker"], "The services card must list every service group");
+      assert.equal(servicesCard.groupsOmitted, 0, "The services card must not omit a bounded group");
+      assert.ok(servicesCard.groups.every(group => Number.isFinite(group.availability) && group.budgetRemaining <= 100), "Each service group must report an availability and a budget at most 100%");
     }
     if (id === "local-gallery-market-lens") {
       for (const widgetID of ["history", "selected-company-history"]) {
@@ -182,7 +180,7 @@ for (const id of Object.keys(selected)) {
       assert.ok(trace && traceLine, "The selected service must have a real trace sample in both response forms");
       assert.ok(traceLine.includes(`trace=${JSON.stringify(trace.traceId)}`) && traceLine.includes(`status=${JSON.stringify(trace.status)}`), "Compact text must expose the sampled trace identity and status");
       if (trace.durationMs !== undefined) assert.ok(traceLine.includes(`duration=${trace.durationMs} ms`));
-      if (trace.startTime !== undefined) assert.ok(traceLine.includes(`start=${trace.startTime} ms`));
+      if (trace.startTime !== undefined) assert.ok(traceLine.includes(`start=${Math.round(trace.startTime)} ms`), "Compact text rounds the trace start to whole milliseconds");
       const rate = signalFor(bundle, "request-history");
       assert.deepEqual(new Set(rate?.series?.map(series => series.labels.service)), new Set([variables.service ?? "checkout", "catalog", "worker"]), "Service Pulse must show the selected service with catalog and worker rates");
       const text = response.content.find(item => item.type === "text")?.text ?? "";
@@ -279,7 +277,8 @@ for (const id of Object.keys(selected)) {
       if (widget.annotationSource?.endColumn) {
         assert.equal(reportedWidget.annotationColumns?.end, widget.annotationSource.endColumn, `${id}/${name}/${widget.id}: annotation interval end mapping missing`);
       }
-      assert.ok(savedIds.has(widget.queryRef.id), `${id}/${name}/${widget.id}: saved query missing`);
+      // Only a widget that names a saved query has one to find; inline and config-compiled queries (slo-summary) have none.
+      if (widget.queryRef) assert.ok(savedIds.has(widget.queryRef.id), `${id}/${name}/${widget.id}: saved query missing`);
       const signal = signalFor(bundle, widget.id);
       assert.ok(signal, `${id}/${name}/${widget.id}: no signal`);
       if (hasExpectedExamples && widget.id === "expected-empty") {

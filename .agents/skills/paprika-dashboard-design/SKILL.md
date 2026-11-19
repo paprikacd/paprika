@@ -158,6 +158,15 @@ Record each gate as **pass**, **fail**, **unverified**, or **not applicable with
 
 Never average a failed gate into a high beauty score. Never claim runtime verification from a manifest, source scan, screenshot alone, or an unexecuted test command.
 
+## SLO objective cards (`slo-summary`)
+
+- Config, not query: `objective` (percent, 50 to 99.9999), `period` (`1d`, `7d`, `28d`, `30d`), `total` and exactly one of `bad` or `good` as counter selectors, optional `burnAlerts` (`multiwindow` default, `page`, `none`), `groupBy` and `maxRows` (1 to 12, default 6; the effective cap per preset is in the bullets below).
+- Prometheus providers only (`slo.provider-type` is an error otherwise). No `queryRef`, no `options.thresholds`.
+- Services mode (`groupBy`): the `maxRows` cap follows the preset for a 30-day period: 6 under `multiwindow` (16 series per group against the 100-series provider cap), 10 under `page` (10 series per group), 12 under `none` (2 series per group). More groups are truncated and read `partial`. A total selector without a matcher on the groupBy label warns (`slo.group-unbounded`); only `=` or `=~` with a non-empty value other than `.*` or `.+` bounds the label.
+- Label suggestions in the selector inputs are deferred; authors type the selectors.
+- Read `slo.state` as the state of the authored objective: `meeting`, `at_risk`, `breaching`, `unknown` (`no_traffic`, `no_data`, `incomplete`) or `partial`. Never report it as service health.
+- A negative budget is shown as overspend, never clamped to 0. Burn factors follow the widget's decimals and keep their own value.
+
 ## Status and colour vocabulary
 
 Use these terms exactly; the contracts are in `DESIGN.md` and `docs/design/insights/UX-CONTRACT.md`.

@@ -32,6 +32,8 @@ import { PluginConfigEditor } from "./plugin-config-editor";
 import { SeriesColorEditor } from "./plugins/series-color-editor";
 import type { InsightsClient } from "./client";
 import { QueryBuilder, type QueryFetcher } from "./query-builder";
+import { SloSourceEditor } from "./slo-source-editor";
+import { sloSummaryPluginId } from "./slo";
 import { GammaTabs } from "./gamma/tabs";
 import { GammaSwitch } from "./gamma/switch";
 import { DrilldownEditor } from "./drilldown-editor";
@@ -849,8 +851,10 @@ export function WidgetEditor({
   const pendingEventLoss = !!pendingDefinition && !!draft.annotationSource &&
     !supportsAnnotationSource(pendingDefinition.type, pendingDefinition.id);
   const sourceStatus = useSourceStatus();
+  // An SLO objective compiles PromQL, so only Prometheus providers can run it.
+  const sloDraft = draft.type === "plugin" && draft.pluginId === sloSummaryPluginId;
   const compatible = providers.filter((provider) =>
-    provider.capabilities.includes(widgetKind(draft)),
+    provider.capabilities.includes(widgetKind(draft)) && (!sloDraft || provider.type === "prometheus"),
   );
   const linkedQuery = library.queries.find(
     (entry) => entry.id === draft.queryRef?.id,
@@ -1047,8 +1051,10 @@ export function WidgetEditor({
       setPendingVisualization(value);
       return;
     }
-    const provider = providers.find((item) => item.id === draft.providerId && item.capabilities.includes(capability)) ??
-      providers.find((item) => item.capabilities.includes(capability));
+    // An SLO objective compiles PromQL, so switching to it keeps a Prometheus provider and never a provider of another type.
+    const objectiveOnly = type === "plugin" && definition.id === sloSummaryPluginId;
+    const usable = (item: Provider) => item.capabilities.includes(capability) && (!objectiveOnly || item.type === "prometheus");
+    const provider = providers.find((item) => item.id === draft.providerId && usable(item)) ?? providers.find(usable);
     const next: Widget = {
       ...draft,
       type,
@@ -1070,6 +1076,11 @@ export function WidgetEditor({
               : {}),
           }
         : next.options;
+      // An SLO summary takes its status from the objective, so bands carried over from another visualization would be ignored.
+      if (definition.id === sloSummaryPluginId && next.options?.thresholds !== undefined) {
+        next.options = { ...next.options };
+        delete next.options.thresholds;
+      }
     } else {
       delete next.pluginId;
       delete next.dataKind;
@@ -1139,11 +1150,13 @@ export function WidgetEditor({
               label: definition.label,
               description: definition.description,
             })),
-            ...(draft.type === "plugin" && !getWidgetDefinition(draft)
+            // An unlisted plugin is absent from the list but still registered, so it keeps its own label.
+            ...(draft.type === "plugin" && !definitions.some((definition) => definition.type === "plugin" && definition.id === draft.pluginId)
               ? [
                   {
                     value: `plugin:${draft.pluginId}`,
-                    label: `Unavailable plugin · ${draft.pluginId}`,
+                    label: getWidgetDefinition(draft)?.label ?? `Unavailable plugin · ${draft.pluginId}`,
+                    description: getWidgetDefinition(draft)?.description,
                   },
                 ]
               : []),
@@ -1288,18 +1301,23 @@ export function WidgetEditor({
                         ]}
                       />
                     </label>
-                    <QueryBuilder
-                      key={editorRevision}
-                      live
-                      onValidityChange={setQueryDraftValid}
-                      widget={draft}
-                      provider={providers.find((provider) => provider.id === draft.providerId)}
-                      parameters={library.variables?.map((variable) => ({ ...variable, type: "string" }))}
-                      client={client}
-                      range={range}
-                      queryFetcher={queryFetcher}
-                      onChange={(query) => setDraft({ ...draft, query })}
-                    />
+                    {draft.type === "plugin" && draft.pluginId === sloSummaryPluginId ? (
+                      // The objective is compiled from the configuration at run time, so there is no free query to edit.
+                      <SloSourceEditor config={pluginConfig} onConfig={setPluginConfig} onQuery={(query) => history.update(current => current.draft.query === query ? current : { ...current, draft: { ...current.draft, query } })} />
+                    ) : (
+                      <QueryBuilder
+                        key={editorRevision}
+                        live
+                        onValidityChange={setQueryDraftValid}
+                        widget={draft}
+                        provider={providers.find((provider) => provider.id === draft.providerId)}
+                        parameters={library.variables?.map((variable) => ({ ...variable, type: "string" }))}
+                        client={client}
+                        range={range}
+                        queryFetcher={queryFetcher}
+                        onChange={(query) => setDraft({ ...draft, query })}
+                      />
+                    )}
                   </>
                 )}
                 {!workspace && draft.type === "plugin" && (

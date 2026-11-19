@@ -49,6 +49,7 @@ const pluginIcons = {
   "uptime-calendar": CalendarDays,
   "uptime-timeline": ChartNoAxesCombined,
   "small-multiples": Grid2X2,
+  "slo-summary": Gauge,
 }
 
 export function WidgetLibrary({

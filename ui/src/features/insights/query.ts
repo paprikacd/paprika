@@ -8,6 +8,8 @@ import {
   type Widget,
 } from "./schema";
 import { jitter, REPLAY_DELAY_CAP_MS } from "./replay-timing";
+import { parseSloConfig } from "./slo-config";
+import { compileSloQuery, sloStep, sloSummaryPluginId } from "./slo";
 import {
   createQueryDiagnosticLedger,
   diagnosticFailure,
@@ -440,14 +442,44 @@ interface QueryState {
   settled?: { key: string; fetcher?: QueryFetcher };
 }
 
+/** The window a widget's query is asked for. */
+export interface WidgetRange {
+  start: number;
+  end: number;
+  step: number;
+}
+
+const isSloWidget = (widget: Widget) => widget.type === "plugin" && widget.pluginId === sloSummaryPluginId;
+
+/**
+ * The request a widget sends. An slo-summary widget runs the PromQL compiled from its objective config, not the stored
+ * query text, which is editor output. It uses one step that spans the range, so the query returns the window's start
+ * and end points. A config that does not compile sends an empty query, which the query path treats as an empty state with
+ * no request. A saved query reference is never sent with an SLO widget, because the provider has no saved-query form of it.
+ */
+export function effectiveWidgetRequest(widget: Widget, range: WidgetRange): QueryRequest {
+  const { providerId, query, type, dataKind } = widget;
+  const kind = widgetKind({ type, dataKind });
+  if (isSloWidget(widget)) {
+    let compiled = "";
+    try {
+      compiled = compileSloQuery(parseSloConfig(widget.config));
+    } catch {
+      compiled = "";
+    }
+    return { providerId, query: compiled, kind, start: range.start, end: range.end, step: sloStep(range.start, range.end) };
+  }
+  return { providerId, query, kind, start: range.start, end: range.end, step: range.step, ...(widget.queryRef ? { queryRef: widget.queryRef } : {}) };
+}
+
 /**
  * A widget owns only its current query. Moving, resizing, renaming or recoloring
  * it does not refetch data. In-flight requests and polling are cancelled when
  * the query changes or the widget leaves the canvas.
  */
 export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
-  const { providerId, query, type, dataKind } = widget;
-  const referenceKey = widget.queryRef ? JSON.stringify(widget.queryRef) : "";
+  const { providerId, type, dataKind } = widget;
+  const referenceKey = widget.queryRef && !isSloWidget(widget) ? JSON.stringify(widget.queryRef) : "";
   const queryRef = useMemo(
     () =>
       referenceKey
@@ -468,7 +500,9 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
   const debounceRef = useRef(debounceMs);
   useEffect(() => { debounceRef.current = debounceMs; }, [debounceMs]);
   const kind = widgetKind({ type, dataKind });
-  const request: QueryRequest = { providerId, query, kind, start, end, step, ...(queryRef ? { queryRef } : {}) };
+  const request = effectiveWidgetRequest(widget, { start, end, step });
+  const query = request.query;
+  const executedStep = request.step;
   const { key, resolved: requestIdentity, revision: fetcherRevision } = queryIdentity(request, fetcher);
   // A series is what the widget asks for. Its window and step only move it through time, so they never start a new one.
   const series = JSON.stringify([widget.id, providerId, query, kind, referenceKey, requestIdentity ?? null]);
@@ -540,7 +574,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
             kind,
             start,
             end,
-            step,
+            step: executedStep,
             ...(queryRef ? { queryRef } : {}),
           },
           signal,
@@ -626,7 +660,7 @@ export function useWidgetQuery(widget: Widget, options: WidgetQueryOptions) {
     kind,
     start,
     end,
-    step,
+    executedStep,
     refreshInterval,
     enabled,
     fetcherRevision,

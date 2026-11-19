@@ -7,6 +7,7 @@ import { ROW_RANK, rankRows, rankSchema, rankTableError } from "./plugins/record
 import { tableCellStylesSchema } from "./plugins/record-table-cells";
 import type { QueryResult, Threshold, Widget } from "./schema";
 import { validTimestamp } from "./widget-context";
+import { evaluateSlo, validateSloConfig, type SloConfig, type SloOverallState } from "./slo";
 
 /*
  * Dashboard attention, the UI port of internal/insights/dashboard_attention.go. The reducer below is the same rule
@@ -31,6 +32,11 @@ export interface AttentionFacts {
   /** Breaches of a time series within its window, per level. */
   breaches: { summary: { level: BreachLevel; intervals: number; samples: number }[] } | null;
   freshness: FreshnessState | null;
+  /**
+   * The objective state of an slo-summary widget. breaching counts as critical and at_risk as warning; meeting and unknown
+   * count for nothing. Absent or null for other widgets.
+   */
+  slo?: SloOverallState | null;
 }
 
 /** The reasons a widget needs attention, most severe first. */
@@ -55,7 +61,8 @@ export interface AttentionRollup {
 export function attentionReason(facts: AttentionFacts): AttentionReason | "" {
   const declares = (level: BreachLevel) =>
     (facts.threshold?.state === "matched" && facts.threshold.status === level) ||
-    (facts.breaches?.summary.some((entry) => entry.level === level && (entry.intervals > 0 || entry.samples > 0)) ?? false);
+    (facts.breaches?.summary.some((entry) => entry.level === level && (entry.intervals > 0 || entry.samples > 0)) ?? false) ||
+    (level === "critical" ? facts.slo === "breaching" : facts.slo === "at_risk");
   if (declares("critical")) return "critical";
   if (declares("warning")) return "warning";
   if (facts.failure !== "none") return "failed";
@@ -195,6 +202,11 @@ export interface WidgetAttention {
   partial: boolean;
 }
 
+/** The objective state an slo-summary widget reads from its config and result, or null when the config is invalid. */
+function sloStateOf(config: unknown, result: QueryResult): SloOverallState | null {
+  return validateSloConfig(config) === undefined ? evaluateSlo(config as SloConfig, result).state : null;
+}
+
 /**
  * A ranked record table's band: the worst declared status over its loaded rows, unknown when no row declares one, and
  * null when the rank cannot be drawn or the rows did not load. Undefined when the table declares no rank. The Go side
@@ -217,7 +229,7 @@ function rankedTableThreshold(widget: AttentionWidget, result: QueryResult): Att
 /** One widget's facts from its source outcome, as the Go side reads them from the executed signal. */
 export function extractAttentionFacts(widget: AttentionWidget, source: AttentionSource): { facts: AttentionFacts; band?: Threshold; ageSeconds?: number } {
   const thresholds = widget.options?.thresholds;
-  const notJudged = { threshold: null, breaches: null, freshness: null };
+  const notJudged = { threshold: null, breaches: null, freshness: null, slo: null };
   if (source.failure) {
     return { facts: { failure: source.failure, signal: source.failure === "planning" ? "none" : "error", ...notJudged } };
   }
@@ -226,6 +238,9 @@ export function extractAttentionFacts(widget: AttentionWidget, source: Attention
   const truncated = result.truncated === true || result.records?.truncated === true;
   const signal: AttentionSignal = hasUsableData(result) ? "ok" : truncated ? "partial" : "empty";
 
+  if (widget.pluginId === "slo-summary") {
+    return { facts: { failure: "none", signal, threshold: null, breaches: null, freshness: "no_threshold", slo: sloStateOf(widget.config, result) } };
+  }
   if (widget.type === "plugin" && widget.pluginId === "record-table") {
     const ranked = rankedTableThreshold(widget, result);
     if (ranked !== undefined) return { facts: { failure: "none", signal, threshold: ranked, breaches: null, freshness: "no_threshold" } };

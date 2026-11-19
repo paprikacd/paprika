@@ -133,7 +133,7 @@ func requireReviewProbeWithinCap(t *testing.T, endGap int, widgets []map[string]
 // 1,210 bytes under the cap.
 func TestDashboardQueryReviewProbeStatusBandedReturnsWithinTheCap(t *testing.T) {
 	kinds := []string{"timeseries", "stat", "heatmap", "status-grid", "threshold-gauge", "status-history"}
-	// The probe has no ranked record table, so the rankingRows step drops nothing and is not reported.
+	// The probe has no ranked record table and no slo-summary widget, so the rankingRows and sloBurn steps drop nothing and are not reported.
 	wantOmitted := []string{"breachIntervals", "breaches", "bandSeries", "sample"}
 	requireReviewProbeWithinCap(t, 0, reviewProbeWidgets(kinds, true, 0), wantOmitted)
 }
