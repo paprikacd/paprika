@@ -11,6 +11,16 @@ import { supportsDashboardSelection } from "./selection-support"
 import type { QueryFields } from "./query-connections"
 
 /** Explicitly map a selected record/series to this dashboard's runtime filters. */
+
+// Each visualization names the mark a reader activates, so the help matches what a click or Enter does.
+function selectionHelp(type: Widget["type"]) {
+  if (type === "table" || type === "traces") return "Click or press Enter on a row to update the mapped dashboard filters.";
+  if (type === "heatmap") return "Click or press Enter on a cell to update the mapped dashboard filters.";
+  if (type === "bar") return "Click or press Enter on a bar or legend entry to update the mapped dashboard filters.";
+  if (type === "timeseries") return "Click or press Enter on a legend entry, or use Filter dashboard in a pinned tooltip, to update the mapped dashboard filters.";
+  return "Click a record or series to update the mapped dashboard filters.";
+}
+
 export function SelectionEditor({ widget, onChange, queryFields }: { widget: Widget; onChange: (next: Widget) => void; queryFields?: QueryFields }) {
   const listId = useId()
   const { variables } = useSavedQueryLibrary()
@@ -35,7 +45,7 @@ export function SelectionEditor({ widget, onChange, queryFields }: { widget: Wid
   const available = variables.filter(v => !bindings.some(b => b.variable === v.name))
   return <section className={styles.card} aria-label="Dashboard selection filters">
     <strong>Filter this dashboard on selection</strong>
-    <p className={styles.help}>Click a record or series to update the mapped dashboard filters. Saved defaults remain unchanged.</p>
+    <p className={styles.help}>{selectionHelp(widget.type)} Saved defaults remain unchanged.</p>
     {bindings.map((binding, index) => {
       const selectedLabel = queryFields?.labels.find(label => label.name === binding.value)
       const missing = binding.source === "label" && !!binding.value && hasFieldSnapshot && !fieldNames.includes(binding.value) && !queryFields?.partial

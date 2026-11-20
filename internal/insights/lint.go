@@ -49,7 +49,7 @@ const (
 // lintRules is the registry, in report order. A new rule is added to the
 // file for its family and to this list; the drift test then requires its summary
 // in the composition guidance.
-var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules, sloLintRules, tableLintRules)
+var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, variableLintRules, pluginLintRules, colorLintRules, sloLintRules, tableLintRules, selectionLintRules)
 
 // lintDocument is the part of a schema-valid document the rules read. It is
 // decoded once per call, so every rule sees the same snapshot and the cost stays

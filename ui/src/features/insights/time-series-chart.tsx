@@ -1,7 +1,7 @@
 "use client";
 
 // The time-series renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
-import { memo, useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useCallback, useId, useLayoutEffect, useMemo, useState } from "react";
 import { areaY } from "@tanstack/charts/area";
 import { crosshair } from "@tanstack/charts/crosshair";
 import { d3Curve } from "@tanstack/charts/d3/shape";
@@ -66,7 +66,9 @@ import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./ch
 import { TimeWindowLens } from "./time-window-lens";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { autoAxisDomain, niceDomain } from "./units";
-import { validTimestamp } from "./widget-context";
+import { metricContext, selectionContextReason, validTimestamp } from "./widget-context";
+import { useRovingLegend } from "./legend-roving";
+import { useAppliedFilter } from "./selection-state";
 import { thresholdPaint } from "./status";
 import { breachBands, breachEmphasisPoints, breachSummary, clampBreaches, timeSeriesBreaches, type BreachLevel, type SeriesBreachInterval } from "./breaches";
 import { BreachSummary } from "./breach-summary";
@@ -183,10 +185,12 @@ export function TimeSeriesChart({
   widget,
   series,
   onContextChange,
+  onActivate,
 }: {
   widget: Widget;
   series: Series[];
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }) {
   const { ref, width, height } = usePlotSize();
   // Band labels inherit the plot's font family, so they are measured in it. The family is read once, when the plot mounts.
@@ -231,7 +235,13 @@ export function TimeSeriesChart({
   // A lone generic series is identified by the widget's authored title; see fallbackIdentityTitle.
   const identityTitle = useMemo(() => fallbackIdentityTitle(widget, visibleSeries), [widget, visibleSeries]);
   const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
-  const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels);
+  const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels, onActivate);
+  // A legend entry activates its series when the widget has selection bindings. Without them the legend stays a static list.
+  const legendActivates = !!onActivate && !!widget.selectionBindings?.length;
+  const legendId = useId();
+  const legendContexts = useMemo(() => visibleSeries.slice(0, MAX_SERIES).map((entry, index) => metricContext(entry, index)), [visibleSeries]);
+  // Each legend context is checked against the same binding rules a selection applies, so a missing label disables its entry.
+  const legendReasons = useMemo(() => legendContexts.map(context => selectionContextReason(widget.selectionBindings, context)), [legendContexts, widget.selectionBindings]);
   // Colours are assigned over the whole result, so zooming, hiding and the series cut never recolour a series.
   const seriesColors = useMemo(() => widgetSeriesColors(series, widget), [series, widget]);
   const domain = useMemo(
@@ -258,6 +268,8 @@ export function TimeSeriesChart({
       }),
     [visibleSeries, seriesColors],
   );
+  const legendRoving = useRovingLegend(data.length);
+  const isApplied = useAppliedFilter();
   // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
   // Each fade meets the visible zero line, which is the plot edge nearest zero when the domain excludes zero.
   const baseline = visibleBaseline(domain);
@@ -640,7 +652,7 @@ export function TimeSeriesChart({
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
       {reservesBreachLine && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
-        <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 ? 0 : undefined}>
+        <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 && !legendActivates ? 0 : undefined}>
           {data.map((entry, index) => {
             // Deliberately not hidden for one series: DESIGN.md keeps identity footer rows, and this footer
             // carries the latest reading and its aria labels. A lone generic series shows only its swatch and
@@ -649,14 +661,10 @@ export function TimeSeriesChart({
             const reading = entry.latest
               ? `${formatMetricDetails(entry.latest.value, widget.unit, options.decimals)} at ${new Date(entry.latest.timestamp).toISOString()}`
               : undefined;
-            return (
-              <span
-                className={styles.legendItem}
-                role="listitem"
-                key={`${entry.name}-${index}`}
-                title={options.showTooltip === false ? undefined : titled ? `${identityTitle} · ${entry.name}` : entry.name}
-                aria-label={titled ? (reading ? `${identityTitle}, latest valid sample: ${reading}` : `${identityTitle}: no valid sample`) : undefined}
-              >
+            const itemLabel = titled ? (reading ? `${identityTitle}, latest valid sample: ${reading}` : `${identityTitle}: no valid sample`) : undefined;
+            const reason = legendActivates ? legendReasons[index] : undefined;
+            const content = (
+              <>
                 <span
                   className={styles.swatch}
                   aria-hidden="true"
@@ -678,6 +686,44 @@ export function TimeSeriesChart({
                     ? formatMetric(entry.latest.value, widget.unit, false, options.decimals)
                     : "—"}
                 </span>
+              </>
+            );
+            if (legendActivates) {
+              // The entry is a button, so the keyboard and touch activate it the same way. A missing label keeps it
+              // focusable with aria-disabled and its reason, rather than hiding the series.
+              return (
+                <span className={`${styles.legendItem} ${styles.legendAction}`} role="listitem" key={`${entry.name}-${index}`}>
+                  <button
+                    type="button"
+                    ref={legendRoving.ref(index)}
+                    className={styles.legendButton}
+                    tabIndex={index === legendRoving.tabStop ? 0 : -1}
+                    aria-label={itemLabel}
+                    aria-disabled={reason ? "true" : undefined}
+                    aria-describedby={reason ? `${legendId}-${index}` : undefined}
+                    title={reason ?? `Filter: ${entry.name}`}
+                    data-legend-series={entry.name}
+                    data-filter-active={isApplied(legendContexts[index]) ? "" : undefined}
+                    aria-current={isApplied(legendContexts[index]) ? "true" : undefined}
+                    onFocus={legendRoving.onFocus(index)}
+                    onClick={() => { if (!reason) onActivate?.(legendContexts[index]); }}
+                    onKeyDown={legendRoving.onKeyDown(index)}
+                  >
+                    {content}
+                  </button>
+                  {reason && <span id={`${legendId}-${index}`} hidden>{reason}</span>}
+                </span>
+              );
+            }
+            return (
+              <span
+                className={styles.legendItem}
+                role="listitem"
+                key={`${entry.name}-${index}`}
+                title={options.showTooltip === false ? undefined : titled ? `${identityTitle} · ${entry.name}` : entry.name}
+                aria-label={itemLabel}
+              >
+                {content}
               </span>
             );
           })}

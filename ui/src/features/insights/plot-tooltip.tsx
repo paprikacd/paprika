@@ -29,6 +29,8 @@ import { useChartCursorPublisher } from "./chart-cursor";
 import { GammaButton } from "./gamma/button";
 import type { DrilldownContext } from "./drilldown";
 import { useWidgetDrilldown } from "./widget-drilldown";
+import { metricContext, selectionContextReason } from "./widget-context";
+import { useAppliedFilter } from "./selection-state";
 
 export interface PlotDatum extends Point {
   seriesIndex: number;
@@ -77,10 +79,13 @@ export function usePlotTooltip(
   onContextChange?: (context: DrilldownContext) => void,
   // Use the host's plotted-series labels so inspection and its legend agree.
   displayLabels?: readonly string[],
+  // A deliberate filter of the dashboard by the pinned series. Only the pinned tooltip's action calls it.
+  onActivate?: (context: DrilldownContext) => void,
 ) {
   const id = useId();
   useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
   const cursor = useChartCursorPublisher();
+  const isApplied = useAppliedFilter();
   const openDrilldown = useWidgetDrilldown();
   const revision = useMemo(
     () => ({ series, view: widget.options?.tooltipView, unit: widget.unit, color: widget.color, seriesColors: widget.options?.seriesColors, options: widget.options, title: widget.title }),
@@ -92,6 +97,8 @@ export function usePlotTooltip(
   const [active, setActive] = useState<ActivePoint | null>(null);
   const [showAllPeers, setShowAllPeers] = useState(false);
   const interaction = useRef({ panel: false, focused: false });
+  // True while the pointer is over the plot. TanStack also moves its focus on hover, which must not change a bar's context.
+  const pointerOver = useRef(false);
   // The hover grace is shared with every other owner; a pinned observation is never hidden by it.
   const hover = useTooltipDismiss({
     onDismiss: () => setActive((current) => (current?.pinned ? current : null)),
@@ -134,6 +141,8 @@ export function usePlotTooltip(
       }
       const anchor = scene.current?.svg;
       if (!anchor || !series[point.datum.seriesIndex]) return;
+      // Keyboard focus on a bar sets only the drilldown context, as a table row does. Activation is a separate step in onSelect.
+      if (widget.type === "bar" && !pointerOver.current) onContextChange?.(metricContext(series[point.datum.seriesIndex], point.datum.seriesIndex));
       hover.cancel();
       const peers = widget.type === "timeseries" ? coincidentPoints(scene.current?.points ?? [], point, series) : [];
       setActive((current) => ({
@@ -144,10 +153,17 @@ export function usePlotTooltip(
         peers,
       }));
     },
-    [enabled, series, revision, hover, widget.type],
+    [enabled, series, revision, hover, widget.type, onContextChange],
   );
   const onSelect = useCallback(
     (point: PlotPoint | null) => {
+      // A bar is a discrete mark: its click or Enter sets its drilldown context, filters the dashboard and pins it, as records-bar does.
+      // This runs with the tooltip off too, so a bar filters the dashboard whenever the widget can.
+      if (widget.type === "bar" && point && series[point.datum.seriesIndex]) {
+        const context = metricContext(series[point.datum.seriesIndex], point.datum.seriesIndex);
+        onContextChange?.(context);
+        onActivate?.(context);
+      }
       if (!enabled) return;
       if (!point || (active?.pinned && active.revision === revision)) {
         dismiss();
@@ -158,7 +174,7 @@ export function usePlotTooltip(
       hover.cancel();
       setActive({ point, anchor, pinned: true, revision, peers: widget.type === "timeseries" ? coincidentPoints(scene.current?.points ?? [], point, series) : [] });
     },
-    [enabled, active, revision, series, dismiss, hover, widget.type],
+    [enabled, active, revision, series, dismiss, hover, widget.type, onActivate, onContextChange],
   );
   const current = enabled && active?.revision === revision ? active : null;
   const selectedTimestamp = current?.point.datum.timestamp;
@@ -228,13 +244,31 @@ export function usePlotTooltip(
   // Only compare plotted observations with exactly the same timestamp; do not
   // interpolate or substitute the latest value from a different series.
   const peersAtTime = current?.peers ?? [];
+  // The action names its series and sets only that series' bindings, so its context carries no timestamp.
+  const filterAction = current && entry && widget.type === "timeseries" && onActivate
+    ? (() => {
+        const seriesIndex = current.point.datum.seriesIndex;
+        const context = metricContext(entry, seriesIndex);
+        return {
+          context,
+          name: displayLabels?.[seriesIndex] ?? seriesName(entry, seriesIndex),
+          reason: selectionContextReason(widget.selectionBindings, context),
+          applied: isApplied(context),
+        };
+      })()
+    : undefined;
   return {
     extension,
     onRender,
     onFocusChange,
     onSelect,
-    onInteract: () => {
+    // Pointer input (move, down) and keyboard input (key down) both arm the tooltip; only the pointer kind marks hover.
+    onInteract: (event?: { type?: string }) => {
       armedRevision.current = revision;
+      pointerOver.current = !event?.type?.startsWith("key");
+    },
+    onPointerLeave: () => {
+      pointerOver.current = false;
     },
     onFocus: () => {
       armedRevision.current = revision;
@@ -287,6 +321,16 @@ export function usePlotTooltip(
               {peersAtTime.length > 5 && <button type="button" className={styles.plotTooltipExpand} aria-expanded={showAllPeers} onClick={() => setShowAllPeers(value => !value)}>
                 {showAllPeers ? "Show fewer plotted series" : `Show ${peersAtTime.length - 5} more plotted series`}
               </button>}
+            </div>}
+            {current.pinned && filterAction && <div className={styles.tooltipActions}>
+              {filterAction.applied
+                ? <GammaButton size="sm" variant="secondary" disabled aria-current="true" data-filter-active="">
+                    Filtered by {filterAction.name}
+                  </GammaButton>
+                : <GammaButton size="sm" variant="secondary" disabled={!!filterAction.reason} onClick={() => onActivate?.(filterAction.context)}>
+                    Filter dashboard by {filterAction.name}
+                  </GammaButton>}
+              {filterAction.reason && <span className={styles.plotTooltipCaption}>{filterAction.reason}</span>}
             </div>}
             {current.pinned && widget.type === "timeseries" && !!widget.drilldowns?.length && (openDrilldown || onContextChange) && <>
               <ObservationDrilldowns widget={widget} context={{ series: seriesName(entry, current.point.datum.seriesIndex), labels: entry.labels, value: point.value, timestamp: point.timestamp }} />

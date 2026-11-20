@@ -35,6 +35,10 @@ import type { Widget } from "./schema";
 import { thresholdPaint } from "./status";
 import { compactSeriesLabels } from "./series-display";
 import { useWidgetPresentation } from "./widget-presentation";
+import { useRovingLegend } from "./legend-roving";
+import { metricContext, selectionContextReason } from "./widget-context";
+import { useAppliedFilter } from "./selection-state";
+import type { DrilldownContext } from "./drilldown";
 
 /** One row per displayed series. A series with no valid sample keeps its row (`noData`), so TanStack reserves its band. */
 type BarRow = {
@@ -66,7 +70,12 @@ function barNiceCount(showAxis: boolean, axisTicks: number, height: number) {
   return showAxis ? axisTicks : Math.max(2, Math.min(7, Math.floor((height - 2 * BAR_NO_AXIS_MARGIN) / 48)));
 }
 
-export function BarChart({ widget, series }: { widget: Widget; series: Series[] }) {
+export function BarChart({ widget, series, onContextChange, onActivate }: {
+  widget: Widget;
+  series: Series[];
+  onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
+}) {
   const { ref, width, height } = usePlotSize();
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: embedded, anchor: ref });
@@ -76,7 +85,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
   const options = widget.options ?? EMPTY_OPTIONS;
   const tooltipEnabled =
     !embedded && options.showTooltip !== false;
-  const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled);
+  const plotTooltip = usePlotTooltip(widget, series, tooltipEnabled, onContextChange, undefined, onActivate);
   const displayLabels = useMemo(() => compactSeriesLabels(series.slice(0, MAX_SERIES)), [series]);
   // Colours come from the whole result, so the bar of one service keeps its colour in every widget.
   const seriesColors = useMemo(() => widgetSeriesColors(series, widget), [series, widget]);
@@ -104,6 +113,11 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       }),
     [series, seriesColors, options.thresholds, displayLabels],
   );
+  // A legend entry activates its series when the widget has selection bindings. Without them the legend stays a static list.
+  const legendActivates = !!onActivate && !!widget.selectionBindings?.length;
+  const legendRoving = useRovingLegend(rows.length);
+  const isApplied = useAppliedFilter();
+  const legendContexts = useMemo(() => rows.map(row => metricContext(series[row.seriesIndex], row.seriesIndex)), [rows, series]);
   const noDataRows = useMemo(() => rows.filter((row) => row.noData), [rows]);
   const values = useMemo(() => rows.flatMap((row) => (row.noData ? [] : [row.value])), [rows]);
   const domain = useMemo(
@@ -308,6 +322,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
         onKeyDownCapture={tooltipEnabled ? plotTooltip.onInteract : undefined}
         onFocusCapture={tooltipEnabled ? plotTooltip.onFocus : undefined}
         onBlurCapture={tooltipEnabled ? plotTooltip.onBlur : undefined}
+        onPointerLeave={tooltipEnabled ? plotTooltip.onPointerLeave : undefined}
       >
         {showAxis && separateUnit && <span className={styles.axisUnit} title={yScale.unit} data-chart-axis-unit>{yScale.unit}</span>}
         <Chart
@@ -319,7 +334,7 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
           tabIndex={embedded ? -1 : undefined}
           onRender={embedded ? associateDescription : plotTooltip.onRender}
           onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
-          onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
+          onSelect={tooltipEnabled || onActivate ? plotTooltip.onSelect : undefined}
           ariaDescription={accessibleDescription}
         />
         {noDataRows.length > 0 && <PlotHatchSvg id={hatch} />}
@@ -327,20 +342,50 @@ export function BarChart({ widget, series }: { widget: Widget; series: Series[] 
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer>
       {options.showLegend !== false && (
-        <div className={`${styles.legend} ${styles.barLegend}`} role="list" aria-label="Latest values by category" tabIndex={0}>
-          {rows.map((row) => {
+        <div className={`${styles.legend} ${styles.barLegend}`} role="list" aria-label="Latest values by category" tabIndex={legendActivates ? undefined : 0}>
+          {rows.map((row, index) => {
             const name = row.displayName === row.name ? row.name : <><span aria-hidden="true">{row.displayName}</span><span className={styles.srOnly}>{row.name}</span></>;
-            return row.noData ? (
-              <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name} data-no-data-series={row.name}>
+            const content = row.noData ? (
+              <>
                 <span className={`${hatchStyles.hatch} ${hatchStyles.swatch} ${styles.noDataKey}`} aria-hidden="true" />
                 <span className={styles.legendName}>{name}</span>
                 <span className={`${styles.legendValue} ${styles.noDataValue}`}>No data</span>
-              </span>
+              </>
             ) : (
-              <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name}>
+              <>
                 <span className={styles.swatch} aria-hidden="true" style={{ background: row.color }} />
                 <span className={styles.legendName}>{name}</span>
                 <span className={styles.legendValue} aria-label={`${row.name}, latest valid sample: ${formatMetricDetails(row.value, widget.unit, options.decimals)} at ${new Date(row.timestamp).toISOString()}`} data-legend-value={row.value} data-legend-timestamp={row.timestamp}>{formatMetric(row.value, widget.unit, false, options.decimals)}</span>
+              </>
+            );
+            const noDataAttribute = row.noData ? row.name : undefined;
+            if (legendActivates) {
+              const reason = selectionContextReason(widget.selectionBindings, legendContexts[index]);
+              return (
+                <span className={`${styles.legendItem} ${styles.legendAction}`} role="listitem" key={row.seriesIndex} data-no-data-series={noDataAttribute}>
+                  <button
+                    type="button"
+                    ref={legendRoving.ref(index)}
+                    className={styles.legendButton}
+                    tabIndex={index === legendRoving.tabStop ? 0 : -1}
+                    aria-disabled={reason ? "true" : undefined}
+                    aria-describedby={reason ? `${hatch}-legend-${index}` : undefined}
+                    title={reason ?? `Filter: ${row.name}`}
+                    data-filter-active={isApplied(legendContexts[index]) ? "" : undefined}
+                    aria-current={isApplied(legendContexts[index]) ? "true" : undefined}
+                    onFocus={legendRoving.onFocus(index)}
+                    onClick={() => { if (!reason) onActivate?.(legendContexts[index]); }}
+                    onKeyDown={legendRoving.onKeyDown(index)}
+                  >
+                    {content}
+                  </button>
+                  {reason && <span id={`${hatch}-legend-${index}`} hidden>{reason}</span>}
+                </span>
+              );
+            }
+            return (
+              <span className={styles.legendItem} role="listitem" key={row.seriesIndex} title={row.name} data-no-data-series={noDataAttribute}>
+                {content}
               </span>
             );
           })}

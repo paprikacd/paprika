@@ -56,11 +56,12 @@ func TestAuthoringGuidanceTypeScriptIsGenerated(t *testing.T) {
 func TestAuthoringGuidanceListsAreWellFormedAndSplit(t *testing.T) {
 	composition, workflow := DashboardComposition(), DashboardWorkflow()
 	// About a dozen lines: each lint rule's line plus the guidance lint cannot check. The cap
-	// is 20: the table.shared-thresholds, slo-summary and plugin.record-rank summaries each need
-	// their own line, and the three variable-source rules add three more. Lint summaries must equal a
-	// composition line verbatim, so a summary cannot be folded into another rule's sentence.
+	// is 21: the table.shared-thresholds, slo-summary and plugin.record-rank summaries each need
+	// their own line, the three variable-source rules add three more, and the two selection rules share
+	// one line for the selection model. Lint summaries must equal a composition line verbatim, so a summary
+	// cannot be folded into another rule's sentence.
 	require.GreaterOrEqual(t, len(composition), 10)
-	require.LessOrEqual(t, len(composition), 20)
+	require.LessOrEqual(t, len(composition), 21)
 	require.GreaterOrEqual(t, len(workflow), 5)
 	require.LessOrEqual(t, len(workflow), 10)
 	seen := map[string]bool{}

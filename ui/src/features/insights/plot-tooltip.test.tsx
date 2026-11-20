@@ -845,7 +845,8 @@ describe("point and row tooltip hosts", () => {
       "datetime",
       "1970-01-01T00:00:02.000Z",
     );
-    expect(selected).not.toHaveBeenCalled();
+    // Focus sets the drilldown context only. Activation (click or Enter) is what filters, and this host never wires it.
+    expect(selected).toHaveBeenLastCalledWith(expect.objectContaining({ labels: expect.any(Object) }));
   });
   it("opens metric row subviews through the existing details control, using the exact row sample", async () => {
     const fetcher = vi.fn().mockResolvedValue(child);

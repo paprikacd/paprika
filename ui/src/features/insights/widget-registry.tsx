@@ -16,8 +16,16 @@ export interface WidgetRendererProps {
   result: QueryResult;
   /** Embedded tooltip rendering must remain static: no nested tooltip or inspector. */
   embedded?: boolean;
-  /** A deliberate selected signal, used by host-controlled dashboard drilldowns. */
+  /**
+   * Reports the signal under focus, hover or a series pick. It sets the drilldown link context and must never change dashboard filters.
+   * Selectable plugins still activate through this callback until they migrate to onActivate, so for them it can change filters.
+   */
   onContextChange?: (context: DrilldownContext) => void;
+  /**
+   * A deliberate activation (click, Enter or Space) of a mark, which may change dashboard filters. A renderer calls it
+   * for activation and falls back to onContextChange when it is not passed.
+   */
+  onActivate?: (context: DrilldownContext) => void;
 }
 export interface WidgetDefinition {
   id: string;

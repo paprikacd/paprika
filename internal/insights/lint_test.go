@@ -89,6 +89,8 @@ func TestLintRegistryIsWellFormed(t *testing.T) {
 		"stat.compare-arrow":                     insightsv1.Severity_SEVERITY_WARNING,
 		"table.shared-thresholds":                insightsv1.Severity_SEVERITY_WARNING,
 		"plugin.record-rank":                     insightsv1.Severity_SEVERITY_ERROR,
+		"selection.inactive-binding":             insightsv1.Severity_SEVERITY_WARNING,
+		"selection.self-filter":                  insightsv1.Severity_SEVERITY_WARNING,
 	}
 	if len(lintRules) != len(want) {
 		t.Fatalf("registry has %d rules, want %d", len(lintRules), len(want))

@@ -60,6 +60,7 @@ export interface WidgetVisualizationProps {
   sourceState?: { status: "pending" | "unavailable" | "signin"; label: string };
   onRetry?: () => void;
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }
 
 class RendererBoundary extends Component<
@@ -93,11 +94,13 @@ function RegisteredRenderer({
   result,
   definition,
   onContextChange,
+  onActivate,
 }: {
   widget: Widget;
   result: QueryResult;
   definition: WidgetDefinition;
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
   if (widgetKind(widget) !== definition.dataKind)
@@ -116,6 +119,7 @@ function RegisteredRenderer({
       result={result}
       embedded={embedded}
       onContextChange={embedded ? undefined : onContextChange}
+      onActivate={embedded ? undefined : onActivate}
     />
   );
 }
@@ -138,6 +142,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   providerName,
   onEditQuery,
   onContextChange,
+  onActivate,
 }: WidgetVisualizationProps) {
   // Registered plugins may arrive after a host loads an optional bundle.
   useWidgetDefinitions();
@@ -238,6 +243,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
               result={result}
               definition={definition}
               onContextChange={onContextChange}
+              onActivate={onActivate}
             />
           </TooltipWidgetDataProvider>
         </RendererBoundary>

@@ -42,6 +42,7 @@ import configStyles from "./chart-styles.module.css";
 import styles from "./charts.module.css";
 import contextStyles from "./widget-context.module.css";
 import type { DrilldownContext } from "./drilldown";
+import { useAppliedFilter } from "./selection-state";
 import { readableTextColor, widgetTextColor } from "./appearance";
 import {
   contextKey,
@@ -320,22 +321,23 @@ function MetricTable({
   widget,
   series,
   onContextChange,
+  onActivate,
 }: {
   widget: Widget;
   series: Series[];
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }) {
-  const [selected, setSelected] = useState<string>();
+  const isApplied = useAppliedFilter();
   const [hoveredRow, setHoveredRow] = useState<{
     index: number;
     entry: Series;
     anchor: HTMLTableRowElement;
   }>();
-  const select = (entry: Series, index: number) => {
-    const context = metricContext(entry, index);
-    setSelected(contextKey(context));
-    onContextChange?.(context);
-  };
+  // Focus only sets the drilldown context. A row is the applied filter when the dashboard's variables hold its selection.
+  const activate = onActivate ?? onContextChange;
+  const focusRow = (entry: Series, index: number) => onContextChange?.(metricContext(entry, index));
+  const activateRow = (entry: Series, index: number) => activate?.(metricContext(entry, index));
   // Each row's extremes, and one display scale per column, so a column compares in one unit ("1.03 s" beside "1.21 s").
   const tableRows = series.slice(0, MAX_ROWS).map(entry => {
     let min = Infinity;
@@ -397,24 +399,29 @@ function MetricTable({
                 }}
                 onPointerLeave={() => setHoveredRow(undefined)}
                 tabIndex={onContextChange ? 0 : undefined}
-                aria-selected={
-                  onContextChange
-                    ? selected === contextKey(metricContext(entry, index))
-                    : undefined
+                data-filter-active={
+                  isApplied(metricContext(entry, index)) ? "" : undefined
+                }
+                aria-current={
+                  isApplied(metricContext(entry, index)) ? "true" : undefined
                 }
                 className={
                   onContextChange ? contextStyles.interactiveRow : undefined
                 }
-                onFocus={() => onContextChange && select(entry, index)}
-                onClick={() => onContextChange && select(entry, index)}
+                onFocus={() => onContextChange && focusRow(entry, index)}
+                onClick={(event) => {
+                  // The series name is its own button: its click activates through onSelect, so the row must not repeat it.
+                  if (!activate || !event.currentTarget.contains(event.target as Node) || (event.target as Element).closest("button")) return;
+                  activateRow(entry, index);
+                }}
                 onKeyDown={(event) => {
                   if (
-                    onContextChange &&
+                    activate &&
                     event.target === event.currentTarget &&
                     (event.key === "Enter" || event.key === " ")
                   ) {
                     event.preventDefault();
-                    select(entry, index);
+                    activateRow(entry, index);
                   }
                 }}
               >
@@ -422,6 +429,8 @@ function MetricTable({
                   <ObservationDetails
                     label={`Inspect series ${fullName}`}
                     enabled={widget.options?.showTooltip !== false}
+                    onSelect={activate && widget.options?.showTooltip !== false ? () => activateRow(entry, index) : undefined}
+                    selectOnFocus={false}
                     revision={entry}
                     externalAnchor={
                       hoveredRow?.index === index && hoveredRow.entry === entry
@@ -492,13 +501,15 @@ function TraceList({
   widget,
   traces,
   onContextChange,
+  onActivate,
 }: {
   widget: Widget;
   traces: Trace[];
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
-  const [selected, setSelected] = useState<string>();
+  const isApplied = useAppliedFilter();
   const [expandedTrace, setExpandedTrace] = useState<string>();
   const fetchTrace = useTraceFetcher();
   const list = useRef<HTMLDivElement>(null);
@@ -523,11 +534,10 @@ function TraceList({
     void document.fonts?.ready.then(measure);
     return () => { cancelled = true; observer?.disconnect(); };
   }, [traces, expandedTrace]);
-  const select = (trace: Trace) => {
-    const context = traceContext(trace);
-    setSelected(contextKey(context));
-    onContextChange?.(context);
-  };
+  // Focus only sets the drilldown context. A trace row is the applied filter when the dashboard's variables hold its selection.
+  const activate = onActivate ?? onContextChange;
+  const focusTrace = (trace: Trace) => onContextChange?.(traceContext(trace));
+  const activateTrace = (trace: Trace) => activate?.(traceContext(trace));
   // Search results carry no trace status, so the column is shown only when a row reports one.
   const reportsStatus = traces.some((trace) => statusReported(trace.status));
   const maximum = Math.max(
@@ -581,26 +591,32 @@ function TraceList({
             return (
               <Fragment key={`${trace.traceId}-${index}`}><tr
                 tabIndex={onContextChange ? 0 : undefined}
-                aria-selected={
-                  onContextChange
-                    ? selected === contextKey(traceContext(trace))
-                    : undefined
+                data-filter-active={
+                  isApplied(traceContext(trace)) ? "" : undefined
+                }
+                aria-current={
+                  isApplied(traceContext(trace)) ? "true" : undefined
                 }
                 className={
                   onContextChange ? contextStyles.interactiveRow : undefined
                 }
                 onFocus={(event) => {
-                  if (onContextChange && !(event.target as HTMLElement).closest("[data-trace-waterfall-toggle]")) select(trace);
+                  if (onContextChange && !(event.target as HTMLElement).closest("[data-trace-waterfall-toggle]")) focusTrace(trace);
                 }}
-                onClick={() => onContextChange && select(trace)}
+                onClick={(event) => {
+                  // The waterfall toggle expands the trace and must not change filters. Portalled details are not part of the row.
+                  const target = event.target as Element;
+                  if (!activate || !event.currentTarget.contains(target) || target.closest("[data-trace-waterfall-toggle], dialog")) return;
+                  activateTrace(trace);
+                }}
                 onKeyDown={(event) => {
                   if (
-                    onContextChange &&
+                    activate &&
                     event.target === event.currentTarget &&
                     (event.key === "Enter" || event.key === " ")
                   ) {
                     event.preventDefault();
-                    select(trace);
+                    activateTrace(trace);
                   }
                 }}
               >
@@ -788,12 +804,15 @@ export function Heatmap({
   widget,
   series,
   onContextChange,
+  onActivate,
 }: {
   widget: Widget;
   series: Series[];
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }) {
   const embedded = useEmbeddedWidget();
+  const isApplied = useAppliedFilter();
   const { ref: cellsRef, width: cellsWidth } = usePlotSize();
   const tooltipId = useId();
   // One tab stop for the grid: the focused cell keeps it, and the arrow keys move it, as status-grid does.
@@ -923,6 +942,8 @@ export function Heatmap({
                 ...criticalStroke(threshold),
               }}
               aria-label={label}
+              data-filter-active={isApplied({ series: cell.name, labels: cell.labels, value: cell.value ?? null }) ? "" : undefined}
+              aria-current={isApplied({ series: cell.name, labels: cell.labels, value: cell.value ?? null }) ? "true" : undefined}
               tabIndex={index === tabIndex ? 0 : -1}
               onKeyDown={(event) => navigateCells(event, index)}
               aria-describedby={
@@ -938,6 +959,7 @@ export function Heatmap({
               onPointerEnter={trigger.onPointerEnter}
               onPointerLeave={trigger.onPointerLeave}
               onFocus={(event) => {
+                // Focus, including arrow-key movement, only sets the drilldown context.
                 setKeyboardIndex(index);
                 onContextChange?.({
                   series: cell.name,
@@ -950,7 +972,8 @@ export function Heatmap({
               }}
               onBlur={trigger.onBlur}
               onClick={(event) => {
-                onContextChange?.({
+                // A click, or Enter and Space which the browser turns into one, activates the cell and pins its panel.
+                (onActivate ?? onContextChange)?.({
                   series: cell.name,
                   labels: cell.labels,
                   value: cell.value ?? null,
@@ -1068,17 +1091,19 @@ export function BuiltinWidgetRenderer({
   widget,
   result,
   onContextChange,
+  onActivate,
 }: {
   widget: Widget;
   result: QueryResult;
   onContextChange?: (context: DrilldownContext) => void;
+  onActivate?: (context: DrilldownContext) => void;
 }) {
   const series = result.series ?? [];
   switch (widget.type) {
     case "timeseries":
-      return <TimeSeriesChart widget={widget} series={series} onContextChange={onContextChange} />;
+      return <TimeSeriesChart widget={widget} series={series} onContextChange={onContextChange} onActivate={onActivate} />;
     case "bar":
-      return <BarChart widget={widget} series={series} />;
+      return <BarChart widget={widget} series={series} onContextChange={onContextChange} onActivate={onActivate} />;
     case "stat":
       return (
         <Stat
@@ -1094,6 +1119,7 @@ export function BuiltinWidgetRenderer({
           widget={widget}
           series={series}
           onContextChange={onContextChange}
+          onActivate={onActivate}
         />
       );
     case "traces":
@@ -1102,6 +1128,7 @@ export function BuiltinWidgetRenderer({
           widget={widget}
           traces={result.traces ?? []}
           onContextChange={onContextChange}
+          onActivate={onActivate}
         />
       );
     case "heatmap":
@@ -1110,6 +1137,7 @@ export function BuiltinWidgetRenderer({
           widget={widget}
           series={series}
           onContextChange={onContextChange}
+          onActivate={onActivate}
         />
       );
     default:

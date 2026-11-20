@@ -2182,6 +2182,7 @@ export default function InsightsApp({
                 active={!exploring}
                 onDrilldown={drilldown}
                 onSelection={selectDashboardContext}
+                variables={variableValues}
                 onTimeRange={selectDashboardTime}
                 providers={providers}
                 fetcher={fetcher}
