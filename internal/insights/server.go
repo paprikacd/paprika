@@ -53,6 +53,13 @@ type Server struct {
 	queries          chan struct{}
 	queryWaiting     chan struct{}
 	queryWaitTimeout time.Duration
+	// dashboardParallelism is how many queries one dashboard read runs at once. A read runs its first query on
+	// its own slot and takes the others from dashboardExtra, a pool all reads share and only ever try without waiting.
+	dashboardParallelism int
+	dashboardExtra       *dashboardSlotPool
+	// dashboardFault, when set by a test, runs before each dashboard query of the named phase ("main" or
+	// "comparison"). It is nil in production.
+	dashboardFault func(phase string, query *Query)
 	// catalogPhases caps how many shared queries may be resolving the catalog at
 	// once. catalogWaiting bounds the queue for those phases; a shared query waits
 	// up to catalogWaitTimeout for a phase before it fails with a retry hint.
@@ -129,7 +136,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{capacity: capacity, store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, capacity.QueryConcurrency), queryWaiting: make(chan struct{}, capacity.QueryQueue), queryWaitTimeout: capacity.QueryWait, catalogPhases: make(chan struct{}, capacity.CatalogConcurrency), catalogWaiting: make(chan struct{}, capacity.CatalogQueue), catalogWaitTimeout: capacity.CatalogWait, queryBudget: defaultQueryBudget, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
+	s := &Server{capacity: capacity, store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, capacity.QueryConcurrency), queryWaiting: make(chan struct{}, capacity.QueryQueue), queryWaitTimeout: capacity.QueryWait, dashboardParallelism: capacity.DashboardQueryParallelism, dashboardExtra: newDashboardSlotPool(capacity.DashboardQueryParallelism - 1), catalogPhases: make(chan struct{}, capacity.CatalogConcurrency), catalogWaiting: make(chan struct{}, capacity.CatalogQueue), catalogWaitTimeout: capacity.CatalogWait, queryBudget: defaultQueryBudget, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
 	if err := s.createInstruments(); err != nil {
 		return nil, err
 	}

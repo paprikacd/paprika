@@ -14,7 +14,7 @@ import (
 // no capacity behaves as before.
 func TestCapacityDefaultsMatchTheHistoricalPools(t *testing.T) {
 	got := Capacity{}.withDefaults()
-	assert.Equal(t, Capacity{QueryConcurrency: 16, QueryQueue: 64, QueryWait: 2 * time.Second, CatalogConcurrency: 4, CatalogQueue: 16, CatalogWait: 5 * time.Second}, got)
+	assert.Equal(t, Capacity{QueryConcurrency: 16, QueryQueue: 64, QueryWait: 2 * time.Second, CatalogConcurrency: 4, CatalogQueue: 16, CatalogWait: 5 * time.Second, DashboardQueryParallelism: 2}, got)
 	require.NoError(t, got.validate(defaultQueryBudget))
 }
 
@@ -26,6 +26,8 @@ func TestCapacityValidationRejectsOutOfRangeValues(t *testing.T) {
 		"too many catalog waiters":                      {CatalogQueue: maxCapacityCount + 1},
 		"a sub-millisecond query wait":                  {QueryWait: time.Microsecond},
 		"a negative catalog wait":                       {CatalogWait: -time.Second},
+		"a dashboard parallelism above four":            {DashboardQueryParallelism: 5},
+		"a negative dashboard parallelism":              {DashboardQueryParallelism: -1},
 		"two waits that exceed the query budget":        {QueryWait: 15 * time.Second, CatalogWait: 10 * time.Second},
 		"two waits that reach the query budget exactly": {QueryWait: 17 * time.Second, CatalogWait: 5 * time.Second},
 	} {
@@ -34,21 +36,26 @@ func TestCapacityValidationRejectsOutOfRangeValues(t *testing.T) {
 		})
 	}
 	require.NoError(t, Capacity{QueryWait: 16 * time.Second, CatalogWait: 5 * time.Second}.withDefaults().validate(budget), "two waits just under the budget are valid")
+	for _, parallelism := range []int{1, 4} {
+		require.NoError(t, Capacity{DashboardQueryParallelism: parallelism}.withDefaults().validate(budget), "parallelism %d is valid", parallelism)
+	}
 }
 
 // NewServer sizes its pools and reports the effective capacity.
 func TestNewServerSizesItsPoolsFromCapacity(t *testing.T) {
 	store, err := OpenStore(t.TempDir())
 	require.NoError(t, err)
-	s, err := NewServer(Config{Token: testToken, Capacity: &Capacity{QueryConcurrency: 3, QueryQueue: 5, QueryWait: 7 * time.Second, CatalogConcurrency: 2, CatalogQueue: 9, CatalogWait: 4 * time.Second}}, store)
+	s, err := NewServer(Config{Token: testToken, Capacity: &Capacity{QueryConcurrency: 3, QueryQueue: 5, QueryWait: 7 * time.Second, CatalogConcurrency: 2, CatalogQueue: 9, CatalogWait: 4 * time.Second, DashboardQueryParallelism: 3}}, store)
 	require.NoError(t, err)
+	assert.Equal(t, 3, s.dashboardParallelism)
+	assert.Equal(t, 2, cap(s.dashboardExtra.slots), "the process shares parallelism minus one extra slots")
 	assert.Equal(t, 3, cap(s.queries))
 	assert.Equal(t, 5, cap(s.queryWaiting))
 	assert.Equal(t, 7*time.Second, s.queryWaitTimeout)
 	assert.Equal(t, 2, cap(s.catalogPhases))
 	assert.Equal(t, 9, cap(s.catalogWaiting))
 	assert.Equal(t, 4*time.Second, s.catalogWaitTimeout)
-	assert.Equal(t, Capacity{QueryConcurrency: 3, QueryQueue: 5, QueryWait: 7 * time.Second, CatalogConcurrency: 2, CatalogQueue: 9, CatalogWait: 4 * time.Second}, s.Capacity())
+	assert.Equal(t, Capacity{QueryConcurrency: 3, QueryQueue: 5, QueryWait: 7 * time.Second, CatalogConcurrency: 2, CatalogQueue: 9, CatalogWait: 4 * time.Second, DashboardQueryParallelism: 3}, s.Capacity())
 	defaults, err := NewServer(Config{Token: testToken}, store)
 	require.NoError(t, err)
 	assert.Equal(t, Capacity{}.withDefaults(), defaults.Capacity(), "without a capacity the defaults apply")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -302,6 +303,64 @@ func TestObserveWidgetQueryWireCost(t *testing.T) {
 		assert.Equal(t, 1, counts.count("tool:query_metrics"))
 		assert.Equal(t, 2, counts.posts(), "gateway requests for one widget query, served")
 	})
+}
+
+// A dashboard read over the Observe REST path lists the catalog once and sends one data request per metric widget.
+// At parallelism 2 the gateway sees two data requests in flight: the first answer waits for a second request, so the
+// overlap is shown by arrival rather than by timing. The wait's timeout only stops a regression from hanging the test.
+func TestObserveDashboardReadListsOnceAndOverlapsItsQueries(t *testing.T) {
+	const metricWidgets = 4
+	var inFlight, peak, arrivals atomic.Int32
+	second := make(chan struct{})
+	gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/list_observability_providers":
+			writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
+		case "/query_metrics":
+			current := inFlight.Add(1)
+			defer inFlight.Add(-1)
+			for {
+				seen := peak.Load()
+				if current <= seen || peak.CompareAndSwap(seen, current) {
+					break
+				}
+			}
+			switch arrivals.Add(1) {
+			case 1:
+				select {
+				case <-second:
+				case <-time.After(5 * time.Second):
+				case <-r.Context().Done():
+					return
+				}
+			case 2:
+				close(second)
+			}
+			writeJSON(w, 200, map[string]any{"state": "OK", "data": json.RawMessage(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1700000000.25,"4.25"]]}]}}`)})
+		default:
+			t.Errorf("unexpected gateway path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer gateway.Close()
+	store, err := OpenStore(t.TempDir())
+	require.NoError(t, err)
+	s, err := NewServer(Config{Token: testToken, ObservabilityURL: gateway.URL, Capacity: &Capacity{DashboardQueryParallelism: 2}}, store)
+	require.NoError(t, err)
+	widgets := make([]map[string]any, 0, metricWidgets)
+	for i := range metricWidgets {
+		widget := queryReadWidget(fmt.Sprintf("w%d", i), fmt.Sprintf(`up{service="s%d"}`, i))
+		widget["providerId"] = observeProviderID("prod/prom")
+		widgets = append(widgets, widget)
+	}
+	putReadDashboard(t, s, widgets...)
+	counts := countObserveWire(s)
+	result := readDashboardResult(t, request(t, s.Handler(), http.MethodPost, "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), observeHeaders("alice")))
+	require.Equal(t, "ok", result.State)
+	require.Equal(t, metricWidgets, result.QueryCount.Executed)
+	assert.Equal(t, 1, counts.count("rest:"+observeRESTProvidersPath), "catalog listings per dashboard read")
+	assert.Equal(t, metricWidgets, counts.count("rest:"+observeRESTQueryPath), "data requests per dashboard read")
+	assert.Equal(t, int32(2), peak.Load(), "data requests in flight at the gateway at parallelism 2")
 }
 
 // observeHeldGateway serves the catalog and metrics fixtures, but holds a

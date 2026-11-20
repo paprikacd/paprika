@@ -31,10 +31,14 @@ type DashboardQueryError struct {
 // DashboardSignal describes observations, not an inferred service health verdict.
 // PrimarySeries is the original provider index used by a Single value widget.
 type DashboardSignal struct {
-	ID                string                   `json:"id"`
-	Kind              string                   `json:"kind,omitempty"`
-	ProviderID        string                   `json:"providerId,omitempty"`
-	State             string                   `json:"state"`
+	ID         string `json:"id"`
+	Kind       string `json:"kind,omitempty"`
+	ProviderID string `json:"providerId,omitempty"`
+	State      string `json:"state"`
+	// LatencyMs is the signal's time in whole milliseconds, from asking for Insights
+	// admission to the gateway's answer. It includes the admission wait and gateway
+	// queueing. It is absent when the query was not admitted.
+	LatencyMs         *int64                   `json:"latencyMs,omitempty"`
 	Error             *DashboardQueryError     `json:"error,omitempty"`
 	Series            []DashboardSeriesSummary `json:"series,omitempty"`
 	Traces            *DashboardTraceSummary   `json:"traces,omitempty"`

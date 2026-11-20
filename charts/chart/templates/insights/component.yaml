@@ -37,6 +37,24 @@
 {{- fail (printf "insights.capacity.catalogConcurrency=%d exceeds the gateway's queryProviderConcurrency plus queryProviderQueue (%d): the gateway would refuse the extra catalog reads" (int $capacity.catalogConcurrency) (add $gatewayProviderConcurrency $gatewayProviderQueue)) }}
 {{- end }}
 {{- end }}
+{{- /* The dashboard parallelism the binary runs with: null takes its built-in, 2. Each read holds one gateway
+      orchestration slot and up to parallelism-1 more data requests, so the effective value may not exceed the
+      per-provider bulkhead, and the gateway must keep a work slot free for console reads. Parallelism 1 is the
+      serial path, which adds no load beyond master, so it is not checked. */}}
+{{- $parallelism := 2 }}
+{{- if not (kindIs "invalid" $capacity.dashboardQueryParallelism) }}{{ $parallelism = int $capacity.dashboardQueryParallelism }}{{ end }}
+{{- if gt $parallelism 1 }}
+{{- if gt $parallelism $gatewayProviderConcurrency }}
+{{- fail (printf "insights.capacity.dashboardQueryParallelism (effective %d) exceeds the gateway's queryProviderConcurrency (%d): the extra queries would queue at its per-provider bulkhead. Set dashboardQueryParallelism to %d or lower" $parallelism $gatewayProviderConcurrency $gatewayProviderConcurrency) }}
+{{- end }}
+{{- $gatewayWorkSlots := $gatewayQueryConcurrency }}
+{{- if and (not (kindIs "invalid" $gateway.httpWorkSlots)) (gt (int $gateway.httpWorkSlots) 0) }}{{ $gatewayWorkSlots = int $gateway.httpWorkSlots }}{{ end }}
+{{- $gatewayDashboardSlots := min 2 $gatewayQueryConcurrency }}
+{{- if and (not (kindIs "invalid" $gateway.httpDashboardSlots)) (gt (int $gateway.httpDashboardSlots) 0) }}{{ $gatewayDashboardSlots = int $gateway.httpDashboardSlots }}{{ end }}
+{{- if ge (add $gatewayDashboardSlots (sub $parallelism 1)) $gatewayWorkSlots }}
+{{- fail (printf "insights.capacity.dashboardQueryParallelism (effective %d) plus the gateway's httpDashboardSlots (%d) must stay below its httpWorkSlots (%d), so console reads keep a work slot. Lower dashboardQueryParallelism; 1 runs reads serially" $parallelism $gatewayDashboardSlots $gatewayWorkSlots) }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- /* The two waits must sum to less than the Insights query budget (22s), or the
       binary refuses to start. Waits are whole seconds or milliseconds. */}}
@@ -137,6 +155,9 @@ spec:
             {{- end }}
             {{- if not (kindIs "invalid" $capacity.catalogQueueWait) }}
             - --catalog-queue-wait={{ $capacity.catalogQueueWait }}
+            {{- end }}
+            {{- if not (kindIs "invalid" $capacity.dashboardQueryParallelism) }}
+            - --dashboard-query-parallelism={{ $capacity.dashboardQueryParallelism }}
             {{- end }}
           ports:
             - name: http

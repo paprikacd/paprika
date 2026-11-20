@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Comparison windows, as offsets from the selected range. "previous" is the equal window immediately before the range.
@@ -139,29 +140,56 @@ func captureDashboardComparisons(result *DashboardQueryResult, signalID string, 
 	}
 }
 
-// executeDashboardComparisons queries each distinct earlier window once, in order, while the budget lasts, then gives each
-// comparing widget its outcome. A failure or a missed budget never changes the result's state or attention.
-func (s *Server) executeDashboardComparisons(r *http.Request, options DashboardSummaryOptions, result *DashboardQueryResult, cache *dashboardQueryProviders) {
+// executeDashboardComparisons queries each distinct earlier window once, within the read's limits, then gives each
+// comparing widget its outcome. A window that no displayed sample needs is marked without a query. A failure, a
+// panic or a missed budget never changes the result's state or attention. Outcomes are merged under one lock, so
+// the output does not depend on the order the windows finish in.
+func (s *Server) executeDashboardComparisons(r *http.Request, options DashboardSummaryOptions, result *DashboardQueryResult, cache *dashboardQueryProviders, limits dashboardLimits) {
+	var pending []int
 	for unique := range result.comparisonQueries {
-		query := &result.comparisonQueries[unique]
 		if !comparisonHasCurrentSample(result, unique) {
 			// No displayed sample means there is nothing to compare, so the earlier window is not queried.
 			markComparisons(result, unique, "unavailable", "no_current_sample")
 			continue
 		}
-		if r.Context().Err() != nil {
-			markComparisons(result, unique, "not_run", "time_budget")
-			continue
+		pending = append(pending, unique)
+	}
+	if len(pending) == 0 {
+		return
+	}
+	var merge sync.Mutex
+	run := func(k int) {
+		unique := pending[k]
+		if s.dashboardFault != nil {
+			s.dashboardFault("comparison", &result.comparisonQueries[unique])
 		}
-		signal, executed, _, raw := s.executeDashboardQuery(r, query, options, cache)
+		signal, executed, _, raw := s.executeDashboardQuery(r, &result.comparisonQueries[unique], options, cache)
+		merge.Lock()
+		defer merge.Unlock()
 		if executed {
 			result.QueryCount.Comparison.Executed++
 		}
-		for i := range result.comparisons {
-			plan := &result.comparisons[i]
-			if plan.unique == unique {
-				finishDashboardComparison(result, plan, &signal, raw)
-			}
+		finishDashboardComparisons(result, unique, &signal, raw)
+	}
+	providerOf := func(k int) string { return result.comparisonQueries[pending[k]].ProviderID }
+	tasks := runDashboardBounded(r.Context(), len(pending), providerOf, limits, run)
+	for k := range tasks {
+		switch {
+		case tasks[k].Panicked != nil:
+			failure := classifyQueryFailure(tasks[k].Panicked)
+			finishDashboardComparisons(result, pending[k], &DashboardSignal{State: "error", Error: failure}, nil)
+		case !tasks[k].Started:
+			markComparisons(result, pending[k], "not_run", "time_budget")
+		}
+	}
+}
+
+// finishDashboardComparisons gives every comparing stat that shares one earlier-window query its outcome.
+func finishDashboardComparisons(result *DashboardQueryResult, unique int, signal *DashboardSignal, raw *QueryResult) {
+	for i := range result.comparisons {
+		plan := &result.comparisons[i]
+		if plan.unique == unique {
+			finishDashboardComparison(result, plan, signal, raw)
 		}
 	}
 }

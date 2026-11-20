@@ -311,6 +311,12 @@ zero for an empty response. The former counts the bounded provider response,
 not total source cardinality; the latter counts fetched series omitted from the
 compact summary. Both are independent of `providerTruncated`.
 
+Each admitted signal reports `latencyMs`, a whole-millisecond time from asking for
+Insights admission to the gateway's answer. It includes the admission wait and gateway
+queueing, so a slow value can be provider time, queueing, waiting for admission or any mix. It is absent when
+the query was never admitted, for example when admission was refused or the request
+was cancelled first. It is structured content only; the text synopsis does not show it.
+
 ## Targeted drilldown
 
 Default responses omit histories, layouts and query expressions. Ask for a widget
@@ -369,6 +375,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Structured result | 130 KiB. Optional detail is omitted in a fixed order and named in `omitted`; 413 only when the never-dropped facts (see Omitted detail) still exceed it |
 | Text synopsis | At most 8 KiB |
 | Execution | 22-second budget for the whole read; shared-catalog calls draw on it, each capped at 20 seconds, with partial timeout results when possible |
+| Parallelism | 2 queries at once per read by default, configurable 1–4 with `dashboardQueryParallelism`; 1 runs them one at a time. At most `parallelism` − 1 extra slots are shared by the whole process, and a read runs at most `min(parallelism, 2)` queries against one provider. Stat comparisons follow the same limit |
 | Shared catalog | 4 concurrent catalog phases; a waiting query gets one within 5 seconds (16 waiters), else 429 with `Retry-After: 1`; a listing's own cap is 10 seconds. A `/query` has one 22-second budget covering the wait, the admission wait, the listing and the data call |
 
 Repeated identical queries execute once within a call. Results are not cached
@@ -382,10 +389,33 @@ rendering semantics.
 ## Execution and admission
 
 The read travels through Observe MCP → authenticated API Insights proxy →
-Insights runtime → Observe MCP → provider. The fixed POST route
-`/api/insights/query-dashboard` is authorized as a read; other POST routes retain
-their write rules. Delegated provider requests preserve caller identity and
-provider permissions.
+Insights runtime → the gateway's REST data route `/observe/api/query` → provider,
+one request per query, with the caller's delegated bearer. MCP is not on the
+nested path. The fixed POST route `/api/insights/query-dashboard` is authorized as
+a read; other POST routes retain their write rules. Delegated provider requests
+preserve caller identity and provider permissions.
+
+Insights runs the distinct planned queries of one read with bounded parallelism.
+`dashboardQueryParallelism` (default 2, 1–4; 1 is the serial path) sets how many
+run at once for one read. Each read runs its first query on its own slot and takes
+further slots from one pool shared by the process, which holds one fewer than the
+limit. A read only tries that pool without waiting, so a read never queues behind
+another read. Across all reads the process therefore has at most one query per
+read plus `parallelism` − 1 extra queries in flight. With a limit above 1, a read
+that spans providers runs at most `parallelism` − 1 queries at once against any one
+of them, so a slow provider cannot hold every slot. Each query's outcome is merged at its plan position,
+so the result matches the serial read, apart from `latencyMs`. A query's error stays
+in its own signal, and a panic becomes that query's error. The earlier-window queries
+of stat comparisons run after the main queries under the same limit. Dry runs share
+the main phase and plan no comparisons.
+
+Each signal reports `latencyMs`: from asking for Insights admission to the gateway's
+answer, including the admission wait and gateway queueing. It is absent when the query
+was never admitted.
+The chart checks the effective `dashboardQueryParallelism` (unset is 2) against the gateway, except at 1: it may not
+exceed the gateway's `queryProviderConcurrency`, and the gateway's `httpDashboardSlots`
+plus `dashboardQueryParallelism` minus one must stay below its `httpWorkSlots`, so
+console reads keep a work slot.
 
 Dashboard orchestration has two dedicated admission slots. Its nested provider
 calls use the normal four-slot data pool, while discovery retains its existing

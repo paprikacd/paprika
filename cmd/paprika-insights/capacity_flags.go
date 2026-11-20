@@ -16,6 +16,7 @@ type capacityFlags struct {
 	catalogConcurrency *int
 	catalogQueue       *int
 	catalogQueueWait   *time.Duration
+	dashboardParallel  *int
 }
 
 func registerCapacityFlags(fs *flag.FlagSet) *capacityFlags {
@@ -26,16 +27,18 @@ func registerCapacityFlags(fs *flag.FlagSet) *capacityFlags {
 		catalogConcurrency: fs.Int("catalog-concurrency", 0, "Shared-catalog phases at once (0 takes the default, 4)"),
 		catalogQueue:       fs.Int("catalog-queue", 0, "Shared queries that may wait for a catalog phase (0 takes the default, 16)"),
 		catalogQueueWait:   fs.Duration("catalog-queue-wait", 0, "Longest a shared query waits for a catalog phase before a 429 (0 takes the default, 5s)"),
+		dashboardParallel:  fs.Int("dashboard-query-parallelism", 0, "Queries one dashboard read runs at once, 1 to 4 (0 takes the default, 2; 1 runs them one at a time)"),
 	}
 }
 
 func (f *capacityFlags) capacity() insights.Capacity {
 	return insights.Capacity{
-		QueryConcurrency:   *f.queryConcurrency,
-		QueryQueue:         *f.queryQueue,
-		QueryWait:          *f.queryQueueWait,
-		CatalogConcurrency: *f.catalogConcurrency,
-		CatalogQueue:       *f.catalogQueue,
-		CatalogWait:        *f.catalogQueueWait,
+		QueryConcurrency:          *f.queryConcurrency,
+		QueryQueue:                *f.queryQueue,
+		QueryWait:                 *f.queryQueueWait,
+		CatalogConcurrency:        *f.catalogConcurrency,
+		CatalogQueue:              *f.catalogQueue,
+		CatalogWait:               *f.catalogQueueWait,
+		DashboardQueryParallelism: *f.dashboardParallel,
 	}
 }

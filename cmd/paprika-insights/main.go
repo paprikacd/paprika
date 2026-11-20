@@ -71,7 +71,8 @@ func run() error {
 	defer stop()
 	effective := service.Capacity()
 	slog.Info("Insights capacity", "queryConcurrency", effective.QueryConcurrency, "queryQueue", effective.QueryQueue, "queryQueueWait", effective.QueryWait.String(),
-		"catalogConcurrency", effective.CatalogConcurrency, "catalogQueue", effective.CatalogQueue, "catalogQueueWait", effective.CatalogWait.String())
+		"catalogConcurrency", effective.CatalogConcurrency, "catalogQueue", effective.CatalogQueue, "catalogQueueWait", effective.CatalogWait.String(),
+		"dashboardQueryParallelism", effective.DashboardQueryParallelism)
 	slog.Info("Paprika Insights listening", "address", listener.Addr().String(), "providers", len(cfg.Providers), "development", *dev)
 	return serve(ctx, server, listener)
 }

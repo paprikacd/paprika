@@ -175,7 +175,7 @@ func TestDashboardQueryComparisonWithNoBudgetIsNotRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/", nil)
-	(&Server{}).executeDashboardComparisons(req, DashboardSummaryOptions{}, result, &dashboardQueryProviders{})
+	(&Server{}).executeDashboardComparisons(req, DashboardSummaryOptions{}, result, &dashboardQueryProviders{}, newDashboardLimits(2, false, nil))
 	if got := result.Widgets[0].Comparison; got.State != "not_run" || got.Reason != "time_budget" {
 		t.Fatalf("an exhausted budget must read as not run: %+v", got)
 	}

@@ -23,11 +23,17 @@ func dashboard(id, title string) Dashboard {
 
 func testService(t *testing.T, providers ...ProviderConfig) (*Server, *Store) {
 	t.Helper()
+	return testServiceWithDashboardParallelism(t, 0, providers...)
+}
+
+// testServiceWithDashboardParallelism is testService with a dashboard read parallelism. Zero takes the default.
+func testServiceWithDashboardParallelism(t *testing.T, parallelism int, providers ...ProviderConfig) (*Server, *Store) {
+	t.Helper()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewServer(Config{Token: testToken, Providers: providers}, store)
+	s, err := NewServer(Config{Token: testToken, Providers: providers, Capacity: &Capacity{DashboardQueryParallelism: parallelism}}, store)
 	if err != nil {
 		t.Fatal(err)
 	}

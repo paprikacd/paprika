@@ -850,6 +850,84 @@ tasks:
           --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
           --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
           --set insights.capacity.queryConcurrency=26 --set insights.capacity.catalogConcurrency=10
+        # The dashboard parallelism is emitted only when set, is refused above the gateway's per-provider
+        # bulkhead and above its work slots less console reads, and is schema-bounded to 1-4.
+        if helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test 2>&1 | grep -q -- '--dashboard-query-parallelism'; then
+          echo "FAIL[insights-parallelism-unset]: dashboard parallelism rendered without a value"; rc=1
+        fi
+        check_render insights-parallelism-explicit --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set insights.capacity.dashboardQueryParallelism=2
+        if ! helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test --set insights.capacity.dashboardQueryParallelism=1 2>&1 | grep -q -- '- --dashboard-query-parallelism=1$'; then
+          echo "FAIL[insights-parallelism-flag]: --dashboard-query-parallelism was not emitted"; rc=1
+        fi
+        expect_fail insights-parallelism-schema --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test --set insights.capacity.dashboardQueryParallelism=5
+        # The work pool is large (8 slots), so only the per-provider bulkhead (2) can refuse parallelism 4. The grep
+        # pins that check's message, not the work-slot one.
+        if helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.queryConcurrency=8 \
+          --set observabilityGateway.capacity.queryProviderConcurrency=2 \
+          --set insights.capacity.dashboardQueryParallelism=4 2>&1 | grep -qF "dashboardQueryParallelism (effective 4) exceeds the gateway's queryProviderConcurrency (2)"; then
+          echo "ok[insights-parallelism-above-provider-bulkhead] (rejected by the provider bulkhead check)"
+        else
+          echo "FAIL[insights-parallelism-above-provider-bulkhead]: parallelism 4 was not refused by the queryProviderConcurrency check"; rc=1
+        fi
+        expect_fail insights-parallelism-above-work-slots --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.queryProviderConcurrency=4 \
+          --set insights.capacity.dashboardQueryParallelism=4
+        check_render insights-parallelism-within-gateway --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.queryConcurrency=8 \
+          --set observabilityGateway.capacity.queryProviderConcurrency=4 \
+          --set insights.capacity.dashboardQueryParallelism=4
+        # An unset parallelism runs at the built-in 2, so the gateway checks apply to it too. A gateway with two
+        # work slots refuses 2 unless the operator lowers it, and an explicit 1 renders there.
+        check_render insights-parallelism-unset-gateway-defaults --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret'
+        if helm template paprika charts/chart --namespace paprika-system --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.queryConcurrency=2 2>&1 | grep -q 'dashboardQueryParallelism (effective 2)'; then
+          echo "ok[insights-parallelism-unset-small-gateway] (rejected as expected)"
+        else
+          echo "FAIL[insights-parallelism-unset-small-gateway]: unset parallelism passed a gateway with two work slots"; rc=1
+        fi
+        check_render insights-parallelism-serial-small-gateway --set deploymentMode=split --set insights.enabled=true \
+          --set insights.token.existingSecretName=insights-test \
+          --set observabilityGateway.enabled=true --set auth.enabled=true \
+          --set mcp.publicURL=https://insights.example.com \
+          --set 'observabilityGateway.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'observabilityGateway.extraEnv[0].value=test-token-secret' \
+          --set observabilityGateway.capacity.queryConcurrency=2 \
+          --set insights.capacity.dashboardQueryParallelism=1
         check_render gateway-capacity --set deploymentMode=split \
           --set observabilityGateway.enabled=true --set auth.enabled=true \
           --set mcp.publicURL=https://capacity.example.com \
