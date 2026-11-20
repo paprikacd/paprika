@@ -97,7 +97,7 @@ describe("phone variables chip and sheet", () => {
     expect(onApply).not.toHaveBeenCalled();
     sheet = openSheet();
     expect(within(sheet).getByLabelText("Location")).toHaveValue("Sydney");
-    fireEvent.click(within(sheet).getByRole("button", { name: "Apply values" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Update view" }));
     expect(onApply).toHaveBeenCalledExactlyOnceWith({ cluster: "omega", location: "Sydney" });
     expect(chip()).toHaveAccessibleName("Dashboard variables: Cluster omega, Location Sydney");
   });

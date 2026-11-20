@@ -99,6 +99,7 @@ import { ChecksList } from "./checks-list"
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
+import { applyChartToDashboard } from "./chart-apply"
 import { TimeRangeControl, dashboardRange, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
@@ -142,6 +143,8 @@ const ShortcutList = lazy(() => import("./shortcut-list").then(module => ({ defa
 // The inspector is opened on demand, so its code stays out of the first view.
 const QueryInspector = lazy(() => import("./query-inspector").then(module => ({ default: module.QueryInspector })))
 const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
+// Shown after a save that leaves a dirty chart draft out of the dashboard. Closing the chart editor clears it.
+const UNAPPLIED_CHART_NOTICE = "Saved. Chart changes are still unapplied."
 
 const AIBuilder = lazy(() =>
   import("./ai").then((module) => ({ default: module.AIBuilder })),
@@ -322,7 +325,8 @@ export default function InsightsApp({
   const [message, setMessage] = useState("")
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   // An action on the notice, such as Undo after a removal. It shows only while its text is the message on screen.
-  const [messageAction, setMessageAction] = useState<{ text: string; label: string; name: string; run: () => void; document?: Dashboard }>()
+  // chartEditor marks an action that only works while the chart editor is open, so closing the editor removes it.
+  const [messageAction, setMessageAction] = useState<{ text: string; label: string; name: string; run: () => void; document?: Dashboard; chartEditor?: boolean }>()
   // The removal notice describes one document. Once any change moves the dashboard away from it (Undo from the toolbar or
   // the keyboard, or a later edit), the notice and its Undo action are out of date, so both go. This adjusts state while
   // rendering, when the dashboard changes, rather than in an effect.
@@ -492,6 +496,11 @@ export default function InsightsApp({
   const viewDashboard = useMemo(() => viewedDashboard(dashboard, currentRoute), [dashboard, currentRoute])
   const viewDiffers = editing && viewDiffersFromDefaults(dashboard, viewDashboard)
   const saveButton = useRef<HTMLButtonElement>(null)
+  // The notice's Save now runs the latest save. It works from view mode too, where the header save button is gone.
+  const saveLatest = useRef<() => void>(() => {})
+  useLayoutEffect(() => {
+    saveLatest.current = () => { if (!busy) void save() }
+  })
   // Edit chosen from the phone menu moves focus to the title field, which also announces the edit state.
   const titleField = useRef<HTMLInputElement>(null)
   const focusTitleOnEdit = useRef(false)
@@ -589,14 +598,37 @@ export default function InsightsApp({
     removeTile,
     openShortcuts: () => setShortcutsOpen(true),
   })
-  // Save removes the Save button on the phone shell, so focus moves to the Dashboard actions trigger, as Edit does on master.
+  // A successful save moves focus, so it is lost when the save button goes. Each save bumps the revision, so the focus
+  // effect also runs when the save came from view mode, where editing and the document may not change.
   const actionsRegion = useRef<HTMLDivElement>(null)
-  const focusActionsOnView = useRef(false)
+  const [saveRevision, setSaveRevision] = useState(0)
+  // The tile to focus after a save, if the save was Apply and save. An empty object means the plain save.
+  const focusAfterSave = useRef<{ widget?: string } | null>(null)
   useLayoutEffect(() => {
-    if (!focusActionsOnView.current) return
-    focusActionsOnView.current = false
-    if (phoneShell) actionsRegion.current?.querySelector<HTMLButtonElement>("button")?.focus()
-  }, [editing, phoneShell])
+    const after = focusAfterSave.current
+    if (!after || editing) return
+    focusAfterSave.current = null
+    const root = layoutRoot.current
+    if (after.widget !== undefined) {
+      const tile = Array.from(root?.querySelectorAll<HTMLElement>("[data-widget-id]") ?? [])
+        .find((element) => element.dataset.widgetId === after.widget)
+      if (tile) {
+        // Tiles are not focusable in view mode, so the focus target gets a -1 tab index for this focus call only.
+        if (!tile.hasAttribute("tabindex")) {
+          tile.tabIndex = -1
+          tile.addEventListener("blur", () => tile.removeAttribute("tabindex"), { once: true })
+        }
+        tile.focus()
+        return
+      }
+    }
+    // The phone shell keeps Edit in the Dashboard actions menu, so its trigger takes focus. Elsewhere Edit is a button.
+    const buttons = Array.from(actionsRegion.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+    const target = phoneShell
+      ? buttons[0]
+      : buttons.find((button) => (button.getAttribute("aria-label") ?? button.textContent?.trim()) === "Edit dashboard")
+    target?.focus()
+  }, [editing, dashboard, saveRevision, phoneShell])
   const previewWidget = widgetPreview?.id === currentWidget?.id ? widgetPreview : currentWidget
   const builderPanel = useBuilderPanelFocus(
     panel && !exploring
@@ -923,6 +955,9 @@ export default function InsightsApp({
     setSelected(undefined)
     setWidgetPreview(undefined)
     setWidgetDraftDirty(false)
+    // The unapplied-chart notice and its action are only true while that chart's editor is open.
+    setMessageAction(current => current?.chartEditor ? undefined : current)
+    setMessage(current => current === UNAPPLIED_CHART_NOTICE ? "" : current)
   }, [])
   const selectWidget = useCallback((id: string) => {
     if (bundleImportActive.current) return
@@ -1045,7 +1080,7 @@ export default function InsightsApp({
     })
     setEditing(true)
     close()
-    setMessage("Document applied. Review the canvas, then save your dashboard.")
+    setMessage("Dashboard draft replaced. Review the canvas, then save the dashboard.")
   }
   function syncVariableDefinitions(next: Dashboard) {
     if (!currentRoute?.variables) return
@@ -1093,7 +1128,14 @@ export default function InsightsApp({
     })
   }
   async function save() {
-    if (!widgetDraftValid) {
+    await saveDocument(dashboard)
+  }
+  /**
+   * Writes a dashboard document. Apply and save passes the document it has just applied, since this render still
+   * holds the one from before the apply, and chartApplied, since this render still holds the chart's dirty flag.
+   */
+  async function saveDocument(doc: Dashboard, options: { chartApplied?: boolean; focusWidget?: string } = {}) {
+    if (!options.chartApplied && !widgetDraftValid) {
       setError("Fix the invalid widget settings before saving, or close its editor to keep the last valid preview.")
       return
     }
@@ -1103,10 +1145,10 @@ export default function InsightsApp({
     setBusy(true)
     try {
       // The document as the save writes it, so the stored copy and the editor agree with what the server holds.
-      const parsed = dashboardAsSent(dashboard)
+      const parsed = dashboardAsSent(doc)
       // Normalize trimmed form values before the request, so a completed save
       // never overwrites edits made while the request was in flight.
-      if (documentFingerprint(parsed) !== documentFingerprint(dashboard))
+      if (documentFingerprint(parsed) !== documentFingerprint(doc))
         update(parsed)
       if (activeExample) {
         const persisted = activeExample.readRepositoryExampleWorkspace(localStorage).dashboards.find(item => item.id === parsed.id)
@@ -1124,8 +1166,11 @@ export default function InsightsApp({
       if (request !== openRequest.current) return
       setSaved(documentFingerprint(parsed))
       // An unapplied chart draft is not part of the saved dashboard. Saving keeps the chart editor and its draft open.
-      if (widgetDraftDirty) {
-        setMessage("Saved. Chart changes are still unapplied.")
+      if (!options.chartApplied && widgetDraftDirty) {
+        const text = UNAPPLIED_CHART_NOTICE
+        setMessage(text)
+        // The name starts with the visible label, so voice control can say "Apply and save" and reach it.
+        setMessageAction({ text, label: "Apply and save", name: "Apply and save chart", run: () => chartCommands.current?.applyAndSave(), chartEditor: true })
         return
       }
       setMessage(
@@ -1133,7 +1178,9 @@ export default function InsightsApp({
           ? "Example saved in this browser."
           : "Dashboard saved.",
       )
-      focusActionsOnView.current = phoneViewport
+      // Apply and save moves focus to the chart's tile. A plain save moves it to Edit, or to the actions trigger on the phone.
+      focusAfterSave.current = { widget: options.focusWidget }
+      setSaveRevision((value) => value + 1)
       setEditing(false)
       close()
     } catch (error) {
@@ -2094,15 +2141,16 @@ export default function InsightsApp({
             {dashboard.widgets.length ? (
               <DashboardCanvas
                 dashboard={viewDashboard}
+                sidePanelOpen={!!panel && panel !== "widget"}
                 focus={editingWidget && currentWidget && previewWidget ? {
                   widget: previewWidget,
-                  render: preview => <section ref={builderPanel} tabIndex={-1}>
+                  render: (preview, previewFootprints) => <section ref={builderPanel} tabIndex={-1}>
                 <LazyPanelBoundary label="Widget editor" unsaved={dirty || widgetDraftDirty} onClose={leaveWidget}>
                 <Suspense fallback={<WidgetEditorSkeleton preview={preview} onClose={leaveWidget} />}>
                     <WidgetEditor
                       key={currentWidget.id}
                       widget={currentWidget}
-                      workspace={{ preview, dashboardTitle: dashboard.title, onDiscard: close, widgets: dashboard.widgets }}
+                      workspace={{ preview, previewFootprints, dashboardTitle: dashboard.title, dashboardDirty: dirty, saveBusy: busy || !widgetDraftValid, onSaveDashboard: save, onDiscard: close, widgets: dashboard.widgets }}
                       onPreview={setWidgetPreview}
                       onDirtyChange={setWidgetDraftDirty}
                       dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
@@ -2115,17 +2163,26 @@ export default function InsightsApp({
                       onClose={leaveWidget}
                       onCommands={registerChartCommands}
                       onDraftValidityChange={setWidgetDraftValid}
-                      onApply={(next, layout) => {
-                        update(current => ({
-                          ...current,
-                          widgets: current.widgets.map(w => {
-                            if (w.id === next.id) return next
-                            const placed = layout?.find(item => item.i === w.id)
-                            return placed ? { ...w, layout: { ...w.layout, x: placed.x, y: placed.y, w: placed.w, h: placed.h } } : w
-                          }),
-                        }))
+                      onApply={(next, layout, options) => {
+                        const applied = applyChartToDashboard(latestDocument.current, next, layout)
+                        if (options?.save && !busy) {
+                          // Normalizing the form values joins the apply in one undo step: the document is written as it
+                          // is applied, so the save below has nothing left to normalize. A document that will not
+                          // parse is left as it is, and the save reports the error.
+                          let sent = applied
+                          try { sent = dashboardAsSent(applied) } catch { /* reported by saveDocument */ }
+                          update(sent)
+                          close()
+                          void saveDocument(sent, { chartApplied: true, focusWidget: next.id })
+                          return
+                        }
+                        update(applied)
                         close()
-                        setMessage("Chart changes applied. Save the dashboard to keep them.")
+                        // The notice offers the save as its action, so the user need not find the header button.
+                        const text = "Chart changes applied. Save the dashboard to keep them."
+                        setMessage(text)
+                        // Named "Save now", not "Save dashboard": the header button keeps that name, and e2e suites find it by name.
+                        setMessageAction({ text, label: "Save now", name: "Save now", run: () => saveLatest.current() })
                       }}
                       onDelete={() => {
                         update({
@@ -2339,6 +2396,11 @@ export default function InsightsApp({
                     update(next)
                     setEditing(true)
                   }}
+                  onDetailsChange={(next, group) => {
+                    update(next, { group })
+                    setEditing(true)
+                  }}
+                  onDetailsEnd={endGroup}
                   onDuplicate={duplicateDashboard}
                   onDelete={deleteDashboard}
                   onImportBundle={importBundle}

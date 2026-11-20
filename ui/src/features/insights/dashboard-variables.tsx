@@ -308,7 +308,7 @@ function VariablesEditor({
           disabled={!dirty || stale}
           onClick={apply}
         >
-          Apply variables
+          Update variables
         </GammaButton>
       </div>
       {saved && (
@@ -376,7 +376,7 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
   const dirty = (dashboard.variables ?? []).some(
     ({ name }) => draft[name] !== initial[name],
   );
-  // A typed value stages until Apply values, and so does a sourced variable that accepts typing beside its list.
+  // A typed value stages until Update view, and so does a sourced variable that accepts typing beside its list.
   const hasTextInputs = dashboard.variables?.some((variable) => !variable.options || Boolean(variable.source));
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange]);
   function apply(next: VariableValues) {
@@ -465,7 +465,7 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
           variant="primary"
           disabled={!dirty}
         >
-          Apply values
+          Update view
         </GammaButton>
         {dirty && (
           <GammaButton
@@ -665,7 +665,7 @@ function VariableSourceField({ variable, parentLabel, id, value, snapshot, onAct
   }
   if (value !== undefined && !choices.some((choice) => choice.value === value))
     choices.push({ value, label: value || "Empty value", description: known ? "Not in current values" : undefined });
-  // Values a viewer picks from the loaded list or the saved fallback apply at once; anything typed stages until Apply values.
+  // Values a viewer picks from the loaded list or the saved fallback apply at once; anything typed stages until Update view.
   const listed = new Set(state === "ready" ? snapshot!.values : fallback ? variable.options! : []);
   const emptyMessage = state === "needs_variable"
     ? `Set ${parentLabel(snapshot!.parent!)} to load values`

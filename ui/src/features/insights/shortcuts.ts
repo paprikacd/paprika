@@ -1,7 +1,7 @@
 // Keyboard shortcut core for Insights. Pure functions, no React. The dispatcher that
 // attaches them to the document lives in use-insights-shortcuts.ts.
 
-export type ShortcutId = "undo" | "redo" | "save" | "apply" | "delete"
+export type ShortcutId = "undo" | "redo" | "save" | "apply" | "applyAndSave" | "delete"
 
 export type ShortcutScope = "global" | "dashboard" | "chart" | "tile"
 
@@ -23,6 +23,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   { id: "redo", label: "Redo", mac: "⌘⇧Z", other: "Ctrl+Shift+Z or Ctrl+Y", aria: "Control+Shift+Z Meta+Shift+Z Control+Y", scope: "global" },
   { id: "save", label: "Save dashboard", mac: "⌘S", other: "Ctrl+S", aria: "Control+S Meta+S", scope: "dashboard" },
   { id: "apply", label: "Apply changes", mac: "⌘↵", other: "Ctrl+Enter", aria: "Control+Enter Meta+Enter", scope: "chart" },
+  { id: "applyAndSave", label: "Apply and save", mac: "⌘⇧S", other: "Ctrl+Shift+S", aria: "Control+Shift+S Meta+Shift+S", scope: "chart" },
   { id: "delete", label: "Remove tile", mac: "Delete / Backspace", other: "Delete / Backspace", aria: "Delete Backspace", scope: "tile" },
 ]
 
@@ -47,7 +48,7 @@ export function matchShortcut(event: ShortcutKeyEvent, isMac: boolean): Shortcut
   if (!mod) return undefined
   if (key === "z") return event.shiftKey ? "redo" : "undo"
   if (key === "y" && !isMac && !event.shiftKey) return "redo"
-  if (key === "s" && !event.shiftKey) return "save"
+  if (key === "s") return event.shiftKey ? "applyAndSave" : "save"
   if (key === "Enter" && !event.shiftKey) return "apply"
   return undefined
 }
@@ -66,7 +67,7 @@ export type ShortcutTargetEvent = { target: EventTarget | null; defaultPrevented
 /**
  * True when the shortcut must leave the key press to the element or overlay it landed on.
  * Plain fields keep undo, redo and delete, but save and apply still work there. CodeMirror
- * keeps its own undo, redo, apply and delete, but save still works there.
+ * keeps its own undo, redo, apply and delete, but save and Apply and save still work there.
  */
 export function shouldYield(event: ShortcutTargetEvent, id: ShortcutId): boolean {
   if (event.defaultPrevented) return true
@@ -74,7 +75,7 @@ export function shouldYield(event: ShortcutTargetEvent, id: ShortcutId): boolean
   const doc = element?.ownerDocument ?? (typeof document !== "undefined" ? document : null)
   if (doc?.querySelector(OVERLAY_SELECTOR)) return true
   if (!element) return false
-  if (element.closest(".cm-editor")) return id !== "save"
+  if (element.closest(".cm-editor")) return id !== "save" && id !== "applyAndSave"
   if (element.closest(FIELD_SELECTOR)) return id === "undo" || id === "redo" || id === "delete"
   return false
 }

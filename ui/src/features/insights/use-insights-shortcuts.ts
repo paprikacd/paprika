@@ -14,8 +14,12 @@ export type ChartCommands = {
   undo: () => void
   redo: () => void
   apply: () => void
+  /** Applies the draft, then saves the dashboard. It takes the same path as the Apply and save button. */
+  applyAndSave: () => void
   /** False while the draft is stale or invalid, when Apply changes is disabled. */
   canApply: boolean
+  /** False unless Apply and save has something to do: a valid current draft, and a chart or dashboard that has changed. */
+  canApplyAndSave: boolean
 }
 
 export type InsightsShortcutTargets = {
@@ -78,6 +82,14 @@ export function useInsightsShortcuts(root: RefObject<HTMLElement | null>, target
         if (!chart || !chart.canApply || current.blocked) return
         event.preventDefault()
         if (!event.repeat) chart.apply()
+        return
+      }
+      if (id === "applyAndSave") {
+        // Same guard as Apply changes: it needs an open chart whose draft is valid and current. The save then runs as Save dashboard does.
+        const chart = current.chart.current
+        if (!chart || !chart.canApplyAndSave || current.blocked) return
+        event.preventDefault()
+        if (!event.repeat) chart.applyAndSave()
         return
       }
       if (id === "delete") {

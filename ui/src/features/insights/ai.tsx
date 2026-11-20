@@ -9,6 +9,7 @@ import styles from "./ai.module.css"
 import { GammaButton } from "./gamma/button"
 import { GammaTextarea } from "./gamma/input"
 import { useSavedQueryLibrary } from "./saved-query-context"
+import { documentChangeSummary, documentChangeText } from "./document-change"
 
 export { buildAIContext, dashboardToOpenUI, insightsLibrary, parseOpenUIDashboard } from "./openui"
 
@@ -81,15 +82,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
     }
   }
 
-  const oldIds = new Set(dashboard.widgets.map((widget) => widget.id))
-  const newIds = new Set(reviewed?.document.widgets.map((widget) => widget.id) ?? [])
-  const added = reviewed?.document.widgets.filter((widget) => !oldIds.has(widget.id)).length ?? 0
-  const removed = dashboard.widgets.filter((widget) => !newIds.has(widget.id)).length
-  const changed =
-    reviewed?.document.widgets.filter((widget) => {
-      const before = dashboard.widgets.find((item) => item.id === widget.id)
-      return before && JSON.stringify(before) !== JSON.stringify(widget)
-    }).length ?? 0
+  const change = reviewed ? documentChangeSummary(dashboard, reviewed.document) : null
 
   return (
     <section className={styles.panel} aria-label="Build with AI">
@@ -191,7 +184,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
               <strong>Definition valid · {reviewed.document.widgets.length} widgets</strong>
             </div>
             <p>
-              {added} added · {changed} changed · {removed} removed
+              {change ? documentChangeText(change) : ""}
             </p>
             <p>
               {reviewed.document.title} · {reviewed.document.timeRange} window
@@ -215,7 +208,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
           disabled={!reviewed || !isCurrent || (usesSaved(reviewed.document) && savedLibraryBlocked)}
           onClick={apply}
         >
-          Apply to canvas
+          Replace dashboard draft
         </GammaButton>
         <p className={styles.hint}>
           Applying replaces the current draft. You can undo it before saving.

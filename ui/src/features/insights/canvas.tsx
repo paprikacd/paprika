@@ -53,7 +53,7 @@ import {
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
 import { widgetTextColor } from "./appearance";
-import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, type CanvasMode } from "./responsive-layout";
+import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
 import {
   dragSettle,
   gridPlacement,
@@ -677,6 +677,12 @@ const Tile = memo(function Tile({
   return sameFields(beforeContent, afterContent) && beforeLayout.w === afterLayout.w && beforeLayout.h === afterLayout.h;
 });
 
+/**
+ * The pixel box the focused tile takes on the dashboard: `dashboard` in the standard grid, `compact` in the dense view.
+ * Absent until the canvas has been measured with the dashboard on screen.
+ */
+export type PreviewFootprints = { dashboard?: TileFootprint; compact?: TileFootprint };
+
 /** The sizing minimum of each widget's definition, keyed by widget id. Unlisted plugins count too. */
 export function minimumHeightsOf(widgets: readonly Widget[]): Map<string, number> {
   return new Map(widgets.map(widget => {
@@ -706,6 +712,7 @@ export function DashboardCanvas({
   onModeChange,
   focus,
   variables,
+  sidePanelOpen = false,
 }: {
   dashboard: Dashboard;
   active?: boolean;
@@ -726,9 +733,11 @@ export function DashboardCanvas({
   onTimeRange?: (window: ObservationWindow) => void;
   onModeChange?: (mode: CanvasMode) => void;
   /** Compose the editor around the same tile/query owner used on the dashboard. */
-  focus?: { widget: Widget; render: (preview: ReactNode) => ReactNode };
+  focus?: { widget: Widget; render: (preview: ReactNode, footprints?: PreviewFootprints) => ReactNode };
   /** The dashboard's current variable values. A mark whose selection already holds them shows as the applied filter. */
   variables?: VariableValues;
+  /** A builder side panel beside the canvas narrows it, so its width is not the dashboard grid's. */
+  sidePanelOpen?: boolean;
 }) {
   // Keyed on the id and variables, not the dashboard object: a layout edit must not re-render every tile.
   const selectionScope = useMemo<SelectionScope>(
@@ -753,6 +762,11 @@ export function DashboardCanvas({
   const measured = mounted && width > 0;
   const mode = measured || shownMode === undefined ? canvasMode(width, shownMode) : shownMode;
   if (measured && mode !== shownMode) setShownMode(mode);
+  // Focus mode lays the canvas out inside the workbench, and a side panel narrows it, so neither width says anything
+  // about the dashboard grid. The last measurement taken with the full grid on screen is kept for the preview's footprint.
+  const [unfocusedGrid, setUnfocusedGrid] = useState<{ width: number; mode: CanvasMode }>();
+  // Adjusted while rendering, as the shown mode is, so the next render already has it.
+  if (!focus && !sidePanelOpen && measured && (unfocusedGrid?.width !== width || unfocusedGrid.mode !== mode)) setUnfocusedGrid({ width, mode });
   useEffect(() => { if (mounted) onModeChange?.(mode); }, [mode, mounted, onModeChange]);
   const draggable = editing && mode === "wide" && !focus;
   // Subscribing re-renders the canvas when the registry changes. The heights themselves come from every registered
@@ -848,6 +862,16 @@ export function DashboardCanvas({
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
   ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
+  const previewFootprints: PreviewFootprints | undefined = focus && unfocusedGrid ? (() => {
+    // The staged widget replaces its saved copy, so the footprint follows the Layout tab. A new widget is appended.
+    const widgets = dashboard.widgets.some(item => item.id === focus.widget.id)
+      ? dashboard.widgets.map(item => item.id === focus.widget.id ? focus.widget : item)
+      : [...dashboard.widgets, focus.widget];
+    const footprint = (dense: boolean) => tileFootprint(widgets, focus.widget.id, {
+      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets),
+    });
+    return { dashboard: footprint(false), compact: footprint(true) };
+  })() : undefined;
   const stackedView = mode === "stacked" && !editing;
   const tiles = (focus ? [focus.widget] : orderedWidgets).map((widget, index) => (
               <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
@@ -919,7 +943,7 @@ export function DashboardCanvas({
       >
         {draggable && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
         <ChartCursorProvider key={dashboard.id}>
-        {mounted && (focus ? focus.render(tiles) : stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
+        {mounted && (focus ? focus.render(tiles, previewFootprints) : stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
             width={width}
             layout={layout}

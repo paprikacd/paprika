@@ -31,7 +31,7 @@ describe("dashboard variable declarations", () => {
     fireEvent.click(screen.getByRole("option", { name: "Typed list" }));
     expect(screen.getByLabelText("Variable 1 option 2")).toHaveValue("worker");
     expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(onApply.mock.lastCall?.[0].variables).toEqual([{ name: "service", label: "Service", defaultValue: "api", options: ["api", "worker"] }]);
   });
   it("stages declarations, validates unique names and preserves unset versus empty defaults", () => {
@@ -43,7 +43,7 @@ describe("dashboard variable declarations", () => {
       target: { value: "service" },
     });
     expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(screen.getByRole("alert")).toHaveTextContent("unique");
     expect(onApply).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Variable 2 name"), {
@@ -54,7 +54,7 @@ describe("dashboard variable declarations", () => {
     });
     fireEvent.click(switches[0]);
     fireEvent.click(switches[1]);
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         variables: [
@@ -73,7 +73,7 @@ describe("dashboard variable declarations", () => {
     fireEvent.change(screen.getByLabelText("Variable 1 name"), {
       target: { value: "__proto__" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(screen.getByRole("alert")).toHaveTextContent("reserved");
     expect(onApply).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Variable 1 name"), {
@@ -85,7 +85,7 @@ describe("dashboard variable declarations", () => {
         onApply={onApply}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(onApply).toHaveBeenLastCalledWith(
       expect.objectContaining({
         title: "Renamed elsewhere",
@@ -100,7 +100,7 @@ describe("dashboard variable declarations", () => {
     );
     expect(screen.getByRole("alert")).toHaveTextContent("changed elsewhere");
     expect(
-      screen.getByRole("button", { name: "Apply variables" }),
+      screen.getByRole("button", { name: "Update variables" }),
     ).toBeDisabled();
     expect(screen.getByLabelText("Variable 1 name")).toHaveValue("deployment");
     fireEvent.click(screen.getByRole("button", { name: "Reload variables" }));
@@ -126,15 +126,15 @@ describe("dashboard variable declarations", () => {
     fireEvent.change(screen.getByLabelText("Variable 1 display label"), {
       target: { value: "Selected service" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(
-      screen.getByRole("button", { name: "Apply variables" }),
+      screen.getByRole("button", { name: "Update variables" }),
     ).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Variable 1 default value"), {
       target: { value: "worker" },
     });
     expect(screen.queryByRole("alert")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(applied).toHaveBeenCalledTimes(2);
     expect(applied.mock.lastCall?.[0].variables[0].defaultValue).toBe("worker");
   });
@@ -168,7 +168,7 @@ describe("dashboard variable declarations", () => {
 });
 
 describe("dashboard variable value bar", () => {
-  it("applies only the selected dropdown while preserving staged text for Apply values", () => {
+  it("applies only the selected dropdown while preserving staged text for Update view", () => {
     const onApply = vi.fn();
     function Harness() {
       const [values, setValues] = useState({ service: "api", region: "east" });
@@ -181,7 +181,7 @@ describe("dashboard variable value bar", () => {
     fireEvent.click(screen.getByRole("option", { name: "worker" }));
     expect(onApply).toHaveBeenCalledExactlyOnceWith({ service: "worker", region: "east" });
     expect(screen.getByLabelText("Region")).toHaveValue("west");
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }));
     expect(onApply).toHaveBeenLastCalledWith({ service: "worker", region: "west" });
   });
   it("applies dropdown selections immediately, preserving focus and exact values", () => {
@@ -194,7 +194,7 @@ describe("dashboard variable value bar", () => {
     }
     render(<Harness />);
     const trigger = screen.getByRole("combobox", { name: "Service" });
-    expect(screen.queryByRole("button", { name: "Apply values" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Update view" })).toBeNull();
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("option", { name: choices[1] }));
     expect(onApply).toHaveBeenCalledExactlyOnceWith({ service: choices[1] });
@@ -223,7 +223,7 @@ describe("dashboard variable value bar", () => {
     const onApply = vi.fn();
     render(<VariableBar dashboard={dashboard} values={{}} onApply={onApply} />);
     expect(screen.getByLabelText("Service")).toHaveValue("api");
-    expect(screen.getByRole("button", { name: "Apply values" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Update view" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Service"), {
       target: { value: 'api" or 1 == 1' },
     });
@@ -285,7 +285,7 @@ describe("dashboard variable value bar", () => {
     fireEvent.change(screen.getByLabelText("Service"), { target: { value: "pending" } });
     rerender(<VariableBar dashboard={{ ...dashboard, id: "other" }} values={values} onApply={onApply} />);
     expect(screen.getByLabelText("Service")).toHaveValue("api");
-    expect(screen.getByRole("button", { name: "Apply values" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Update view" })).toBeDisabled();
     expect(onApply).not.toHaveBeenCalled();
   });
 
@@ -297,7 +297,7 @@ describe("dashboard variable value bar", () => {
     fireEvent.change(screen.getByLabelText("Service"), {
       target: { value: "worker" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }));
     expect(onApply).toHaveBeenCalledWith({ service: "worker" });
     rerender(
       <VariableBar
@@ -364,7 +364,7 @@ describe("dashboard variable value sources", () => {
     expect(loaders.metadata).not.toHaveBeenCalled();
   });
 
-  it("keeps a free-text source's typed value until Apply values and marks an unknown value", async () => {
+  it("keeps a free-text source's typed value until Update view and marks an unknown value", async () => {
     const onApply = vi.fn();
     const loaders = loaderFor({ service: ["api"] });
     function Typed() {
@@ -379,7 +379,7 @@ describe("dashboard variable value sources", () => {
     expect(typed).toHaveTextContent("Not in current values");
     fireEvent.click(typed);
     expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }));
     expect(onApply).toHaveBeenLastCalledWith({ cluster: "omega", service: "checkout" });
   });
 
@@ -392,13 +392,13 @@ describe("dashboard variable value sources", () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ cluster: "delta" }));
   });
 
-  it("accepts a typed value next to a saved fallback list and stages it until Apply values", async () => {
+  it("accepts a typed value next to a saved fallback list and stages it until Update view", async () => {
     const onApply = vi.fn();
     const loaders = loaderFor({ cluster: new Error("provider down") });
     render(<VariableBar dashboard={{ ...dashboard, variables: [{ ...sourced.variables![0], options: ["omega", "delta"] }] }} values={{ cluster: "omega" }} range={range} loaders={loaders} onApply={onApply} />);
     fireEvent.change(screen.getByRole("combobox", { name: "Cluster" }), { target: { value: "prod" } });
     expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }));
     expect(onApply).toHaveBeenLastCalledWith(expect.objectContaining({ cluster: "prod" }));
   });
 

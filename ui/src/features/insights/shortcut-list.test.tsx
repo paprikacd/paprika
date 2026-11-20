@@ -10,6 +10,8 @@ describe("shortcutGroups", () => {
     expect(apple).toContain("Apply changes=⌘↵")
     expect(other).toContain("Undo=Ctrl+Z")
     expect(other).toContain("Apply changes=Ctrl+Enter")
+    expect(apple).toContain("Apply and save=⌘⇧S")
+    expect(other).toContain("Apply and save=Ctrl+Shift+S")
     expect(other).toContain("Remove tile=Delete or Backspace")
   })
 })

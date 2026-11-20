@@ -68,7 +68,7 @@ describe("time window lens", () => {
     const result = screen.getByRole("region", { name: "Previous period results" })
     expect(within(result).getByText("+10 req/s")).toBeInTheDocument()
     expect(previous).toHaveBeenCalledWith({ start: 1000, end: 4000 }, expect.any(AbortSignal))
-    fireEvent.click(screen.getByRole("button", { name: "Apply to dashboard" }))
+    fireEvent.click(screen.getByRole("button", { name: "Use for all charts" }))
     expect(apply).toHaveBeenCalledWith({ start: 1000, end: 4000 })
   })
   it("only enables the overlay after a uniquely matched prior series has real values", async () => {

@@ -39,9 +39,17 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key("Backspace", other), false)).toBeUndefined()
   })
 
-  it("ignores Shift on save and apply, and Alt on everything", () => {
-    expect(matchShortcut(key("S", { ...mac, shiftKey: true }), true)).toBeUndefined()
+  it("maps Shift+Mod+S to apply and save, and keeps plain Mod+S as save", () => {
+    expect(matchShortcut(key("S", { ...mac, shiftKey: true }), true)).toBe("applyAndSave")
+    expect(matchShortcut(key("S", { ...other, shiftKey: true }), false)).toBe("applyAndSave")
+    expect(matchShortcut(key("s", mac), true)).toBe("save")
+    expect(matchShortcut(key("S", { ctrlKey: true, metaKey: true, shiftKey: true }), true)).toBeUndefined()
+    expect(matchShortcut(key("S", { ...other, shiftKey: true }), true)).toBeUndefined()
+  })
+
+  it("ignores Shift on apply, and Alt on everything", () => {
     expect(matchShortcut(key("Enter", { ...mac, shiftKey: true }), true)).toBeUndefined()
+    expect(matchShortcut(key("S", { ...mac, altKey: true, shiftKey: true }), true)).toBeUndefined()
     expect(matchShortcut(key("z", { ...mac, altKey: true }), true)).toBeUndefined()
   })
 
@@ -92,11 +100,12 @@ describe("shouldYield", () => {
     }
   })
 
-  it("keeps save and apply in plain inputs, since they have no native meaning there", () => {
+  it("keeps save, apply and apply and save in plain inputs, since they have no native meaning there", () => {
     const host = mount('<input aria-label="Title">')
     const input = host.querySelector("input")
     expect(shouldYield(event(input), "save")).toBe(false)
     expect(shouldYield(event(input), "apply")).toBe(false)
+    expect(shouldYield(event(input), "applyAndSave")).toBe(false)
   })
 
   it("yields to CodeMirror for undo, redo, apply and delete, but not for save", () => {
@@ -107,19 +116,20 @@ describe("shouldYield", () => {
     expect(shouldYield(event(line), "apply")).toBe(true)
     expect(shouldYield(event(line), "delete")).toBe(true)
     expect(shouldYield(event(line), "save")).toBe(false)
+    expect(shouldYield(event(line), "applyAndSave")).toBe(false)
   })
 
   it("does not yield for an ordinary target", () => {
     const host = mount("<article tabindex='0'>Tile</article>")
     const tile = host.querySelector("article")
-    for (const id of ["undo", "redo", "save", "apply", "delete"] as const) expect(shouldYield(event(tile), id), id).toBe(false)
+    for (const id of ["undo", "redo", "save", "apply", "applyAndSave", "delete"] as const) expect(shouldYield(event(tile), id), id).toBe(false)
   })
 
   it("yields every shortcut while a dialog, menu or listbox is open", () => {
     for (const overlay of ['<div role="menu"></div>', '<div role="listbox"></div>', '<dialog open></dialog>']) {
       const host = mount(`<article tabindex="0">Tile</article>${overlay}`)
       const tile = host.querySelector("article")
-      for (const id of ["undo", "redo", "save", "apply", "delete"] as const) expect(shouldYield(event(tile), id), `${overlay} ${id}`).toBe(true)
+      for (const id of ["undo", "redo", "save", "apply", "applyAndSave", "delete"] as const) expect(shouldYield(event(tile), id), `${overlay} ${id}`).toBe(true)
     }
   })
 
@@ -142,13 +152,15 @@ describe("labelFor and the shortcut table", () => {
     expect(labelFor("redo", true)).toBe("⌘⇧Z")
     expect(labelFor("save", false)).toBe("Ctrl+S")
     expect(labelFor("apply", true)).toBe("⌘↵")
+    expect(labelFor("applyAndSave", true)).toBe("⌘⇧S")
+    expect(labelFor("applyAndSave", false)).toBe("Ctrl+Shift+S")
     expect(labelFor("delete", false)).toBe("Delete / Backspace")
   })
 
   it("lists each id once with an aria-keyshortcuts value", () => {
     const ids = SHORTCUTS.map((shortcut) => shortcut.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids.sort()).toEqual(["apply", "delete", "redo", "save", "undo"])
+    expect(ids.sort()).toEqual(["apply", "applyAndSave", "delete", "redo", "save", "undo"])
     for (const shortcut of SHORTCUTS) expect(shortcut.aria.length).toBeGreaterThan(0)
   })
 })

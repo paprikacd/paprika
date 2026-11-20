@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, FileUp, Braces, X } from "lucide-react";
 import {
   parseDashboard,
@@ -19,6 +19,7 @@ import {
   type PortableImportProps,
 } from "./portable-import-panel";
 import { useSavedQueryLibrary } from "./saved-query-context";
+import { documentChangeSummary, documentChangeText } from "./document-change";
 import {
   ChecksList,
   checkCountsText,
@@ -118,6 +119,14 @@ export function DocumentEditor({
   const [valid, setValid] = useState(false);
   const [base, setBase] = useState(() => JSON.stringify(dashboard));
   const stale = base !== JSON.stringify(dashboard);
+  // The source as it parses now, so the editor can say what Replace would change. Bundles and invalid text give none.
+  const pending = useMemo(() => {
+    try {
+      return parseDashboard(source, format);
+    } catch {
+      return null;
+    }
+  }, [source, format]);
   // Read after an await, when the render that started the apply is no longer current.
   const latest = useRef({ dashboard, base });
   useEffect(() => {
@@ -507,6 +516,11 @@ export function DocumentEditor({
           headingRef={checksHeading}
         />
       )}
+      {pending && (
+        <p className={styles.muted} data-document-change="">
+          Against the canvas: {documentChangeText(documentChangeSummary(dashboard, pending))}
+        </p>
+      )}
       <div className={styles.panelFooter}>
         <GammaButton
           size="sm"
@@ -534,7 +548,7 @@ export function DocumentEditor({
           disabled={stale || applying}
           onClick={() => void apply()}
         >
-          Apply to canvas
+          Replace dashboard draft
         </GammaButton>
       </div>
     </section>

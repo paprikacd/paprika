@@ -208,6 +208,13 @@ describe("query editor", () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it("names the compact generated-query action Use, not Apply", () => {
+    const expression = "sum by (service) (rate(requests_total[5m]))"
+    render(<QueryBuilder widget={{ ...widget, query: expression }} compact onChange={vi.fn()} />)
+    fireEvent.click(screen.getByRole("tab", { name: "Builder" }))
+    expect(screen.getByRole("button", { name: "Use generated query" })).toHaveTextContent(/^Use$/)
+  })
+
   it("keeps compact TraceQL editing available without a PromQL builder tab", () => {
     render(<QueryBuilder widget={{ ...widget, type: "traces", query: "{}" }} compact defaultExpanded onChange={vi.fn()} />)
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument()

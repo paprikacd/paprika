@@ -2,11 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Layout } from "react-grid-layout";
-import { DashboardCanvas } from "./canvas";
+import { DashboardCanvas, type PreviewFootprints } from "./canvas";
+import { tileFootprint } from "./responsive-layout";
 import { exampleDashboard, exampleProviders } from "./example";
 import type { QueryResult, Widget } from "./schema";
 
-const probe = vi.hoisted(() => ({ render: vi.fn(), layout: [] as Layout }));
+const probe = vi.hoisted(() => ({ render: vi.fn(), layout: [] as Layout, width: 1100 }));
 vi.mock("./charts", () => ({
   WidgetVisualization: (props: { widget: Widget; result?: QueryResult }) => {
     probe.render(props);
@@ -18,7 +19,7 @@ vi.mock("react-grid-layout", async () => {
   const core = await import("react-grid-layout/core");
   return {
     default: ({ children, layout }: { children: ReactNode; layout: Layout }) => { probe.layout = layout; return <div>{children}<span className="react-resizable-handle" data-testid="resize" /></div>; },
-    useContainerWidth: () => ({ width: 1100, containerRef: useRef(null), mounted: true }),
+    useContainerWidth: () => ({ width: probe.width, containerRef: useRef(null), mounted: true }),
     verticalCompactor: core.verticalCompactor,
   };
 });
@@ -100,4 +101,68 @@ it("keeps chart DOM and focus in place during editing, then restores visual read
   expect(document.activeElement).toBe(focused);
   view.rerender(<DashboardCanvas {...props} dashboard={moved} editing={false} />);
   expect(order()).toEqual(["Second", "First"]);
+});
+
+it("keeps a side panel's narrower width out of the focused preview's footprint", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const widget = { ...exampleDashboard.widgets[0], layout: { x: 0, y: 0, w: 3, h: 1 } };
+  const dashboard = { ...exampleDashboard, widgets: [widget] };
+  const seen: Array<PreviewFootprints | undefined> = [];
+  const focus = {
+    widget,
+    render: (preview: ReactNode, footprints?: PreviewFootprints) => { seen.push(footprints); return <section>{preview}</section>; },
+  };
+  const fetcher = vi.fn(async () => ({ series: [{ name: "primary", labels: {}, points: [{ timestamp: 3500000, value: 42 }] }] }));
+  const props = { dashboard, providers: exampleProviders, fetcher, end: 3600, editing: true, onSelect: vi.fn(), onLayout: vi.fn() };
+  try {
+    const view = render(<DashboardCanvas {...props} />);
+    // The side panel narrows the canvas to 700px. Its measurement must not replace the full-grid width.
+    probe.width = 700;
+    view.rerender(<DashboardCanvas {...props} sidePanelOpen />);
+    view.rerender(<DashboardCanvas {...props} sidePanelOpen focus={focus} />);
+    expect(seen.at(-1)?.dashboard).toEqual(tileFootprint([widget], widget.id, { mode: "wide", width: 1100 }));
+  } finally {
+    probe.width = 1100;
+  }
+});
+
+it("has no footprint when a side panel was open before any full-grid measurement, so the preview says approximate", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const widget = { ...exampleDashboard.widgets[0], layout: { x: 0, y: 0, w: 3, h: 1 } };
+  const dashboard = { ...exampleDashboard, widgets: [widget] };
+  const seen: Array<PreviewFootprints | undefined> = [];
+  const focus = {
+    widget,
+    render: (preview: ReactNode, footprints?: PreviewFootprints) => { seen.push(footprints); return <section>{preview}</section>; },
+  };
+  const props = { dashboard, providers: exampleProviders, fetcher: vi.fn(async () => ({ series: [] })), end: 3600, editing: true, onSelect: vi.fn(), onLayout: vi.fn() };
+  try {
+    // The panel is open from the start, so no measurement of the full grid is ever taken.
+    probe.width = 700;
+    const view = render(<DashboardCanvas {...props} sidePanelOpen />);
+    view.rerender(<DashboardCanvas {...props} sidePanelOpen focus={focus} />);
+    expect(seen.at(-1)?.dashboard).toBeUndefined();
+  } finally {
+    probe.width = 1100;
+  }
+});
+
+it("gives a focused preview the tile footprint from the last measurement taken without focus", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const widget = { ...exampleDashboard.widgets[0], layout: { x: 0, y: 0, w: 3, h: 1 } };
+  const dashboard = { ...exampleDashboard, widgets: [widget] };
+  const seen: Array<PreviewFootprints | undefined> = [];
+  const focus = {
+    widget,
+    render: (preview: ReactNode, footprints?: PreviewFootprints) => { seen.push(footprints); return <section>{preview}</section>; },
+  };
+  const fetcher = vi.fn(async () => ({ series: [{ name: "primary", labels: {}, points: [{ timestamp: 3500000, value: 42 }] }] }));
+  const props = { dashboard, providers: exampleProviders, fetcher, end: 3600, editing: true, onSelect: vi.fn(), onLayout: vi.fn() };
+  const view = render(<DashboardCanvas {...props} focus={focus} />);
+  // Nothing was measured with the dashboard on screen, so the preview has no footprint yet.
+  expect(seen.at(-1)).toBeUndefined();
+  view.rerender(<DashboardCanvas {...props} />);
+  view.rerender(<DashboardCanvas {...props} focus={focus} />);
+  expect(seen.at(-1)?.dashboard).toEqual(tileFootprint([widget], widget.id, { mode: "wide", width: 1100 }));
+  expect(seen.at(-1)?.compact).toEqual(tileFootprint([widget], widget.id, { mode: "wide", width: 1100, dense: true }));
 });

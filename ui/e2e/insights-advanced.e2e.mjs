@@ -190,7 +190,6 @@ try {
       await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
       await manager().getByLabel("Name", { exact: true }).fill("Production overview")
       await manager().getByLabel("Folder", { exact: true }).fill("Production/Payments")
-      await manager().getByRole("button", { name: "Apply dashboard details" }).click()
       await save()
       const tree = page.getByRole("navigation", { name: "Dashboard library" })
       await tree.getByRole("button", { name: "Production", exact: true }).waitFor()
@@ -200,7 +199,6 @@ try {
       await page.getByLabel("Dashboard title", { exact: true }).fill("Staging overview")
       await page.getByRole("button", { name: "Manage dashboards", exact: true }).click()
       await manager().getByLabel("Folder", { exact: true }).fill("Staging")
-      await manager().getByRole("button", { name: "Apply dashboard details" }).click()
       await save()
       await tree
         .getByRole("button", { name: "Staging overview", exact: true })

@@ -34,7 +34,7 @@ export const VIEW_HISTORY: Readonly<Record<ViewAction, ViewHistory>> = {
   keep: "none",
   // A removed declaration drops the values it owned.
   prune: "replace",
-  // Deliberate filter steps: each dropdown apply or Apply values is a Back step.
+  // Deliberate filter steps: each dropdown apply or Update view is a Back step.
   variables: "push",
   // A clicked mark or row is a deliberate filter step too.
   selection: "push",

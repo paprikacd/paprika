@@ -28,6 +28,7 @@ export function shortcutGroups(isMac: boolean): ShortcutGroup[] {
       rows: [
         { label: "Undo and redo chart changes", keys: `${keys("undo")} and ${keys("redo")}` },
         { label: "Apply changes", keys: keys("apply") },
+        { label: "Apply and save", keys: keys("applyAndSave") },
         { label: "Run the query, in the query text", keys: keys("apply") },
       ],
     },

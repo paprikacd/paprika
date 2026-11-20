@@ -58,7 +58,9 @@ try {
       await editor.getByRole('heading', { name: 'Request latency', exact: true, level: 2 }).waitFor();
       assert.equal(await page.locator('[data-widget-id]').count(), 1, 'Only the selected chart is mounted');
       assert.equal(await page.getByRole('complementary', { name: 'Insights navigation' }).count(), 0);
-      assert.equal(await page.getByRole('button', { name: 'Save dashboard', exact: true }).isVisible(), false);
+      // The header's Save dashboard is hidden in focus; the workbench offers its own above 520px.
+      const visibleSaves = await page.getByRole('button', { name: 'Save dashboard', exact: true }).evaluateAll(buttons => buttons.filter(button => button.offsetParent !== null).length);
+      assert.equal(visibleSaves, width > 520 ? 1 : 0, 'Only the workbench Save dashboard is shown in focus');
       const plotHeight = await chart.locator('[data-chart-footer]').evaluate(footer => footer.previousElementSibling.getBoundingClientRect().height);
       assert.ok(plotHeight >= 130, `Focused plots retain useful height: ${plotHeight}px`);
       await page.screenshot({ path: resolve(output, `${theme}-${width}-focused.png`) });

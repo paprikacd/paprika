@@ -18,9 +18,10 @@ vi.mock("./canvas", () => ({
     editing: boolean
     onSelect: (id: string) => void
   }) => focus ? focus.render(<div data-testid="mock-canvas" />) : <div data-testid="mock-canvas">
-    {editing && dashboard.widgets.map(widget => (
-      <article key={widget.id} data-widget-id={widget.id} tabIndex={0}>
-        <button data-widget-edit={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>
+    {dashboard.widgets.map(widget => (
+      // Tiles are drawn in view mode too, so focus after a save has a tile to land on. Only edit mode has the edit control.
+      <article key={widget.id} data-widget-id={widget.id} tabIndex={editing ? 0 : undefined}>
+        {editing && <button data-widget-edit={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>}
       </article>
     ))}
   </div>,
@@ -280,7 +281,8 @@ describe("Insights application state", () => {
     fireEvent.click(await screen.findByRole("option", { name: /Created from tooltip/ }))
     expect(screen.getByLabelText("Tooltip saved query template")).toHaveValue("sum(rate(http_requests_total[5m]))")
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }))
-    fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
+    // The header save button; the notice after Apply also offers "Save now", so the title tells them apart.
+    fireEvent.click(screen.getByTitle("Save dashboard (Ctrl+S)"))
     await waitFor(() => expect(api.save).toHaveBeenCalledOnce())
     const persisted = vi.mocked(api.save).mock.calls[0][0]
     expect(persisted.widgets[0].title).toBe("Unapplied source widget")
@@ -494,7 +496,7 @@ describe("Insights application state", () => {
 
   describe("keyboard shortcuts with a chart open", () => {
     const latency = { id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } } as const
-    async function openChart() {
+    async function openChart(dashboardTitle: string | null = "Dashboard renamed") {
       const api = client()
       const dashboard: Dashboard = { ...first, widgets: [{ ...latency }] }
       vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
@@ -503,7 +505,7 @@ describe("Insights application state", () => {
       render(<InsightsApp client={api} />)
       await screen.findByRole("heading", { name: "Dashboard A" })
       fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
-      fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Dashboard renamed" } })
+      if (dashboardTitle !== null) fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: dashboardTitle } })
       fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
       await screen.findByRole("textbox", { name: /^Title$/ }, { timeout: 5000 })
       return api
@@ -535,6 +537,157 @@ describe("Insights application state", () => {
       expect(await screen.findByRole("button", { name: "Edit Chart held" })).toBeInTheDocument()
     })
 
+    it("applies and saves the dashboard with Control+Shift+S in one step", async () => {
+      const api = await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart saved" } })
+      expect(fireEvent.keyDown(document.body, { key: "S", ctrlKey: true, shiftKey: true })).toBe(false)
+      expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+      expect(api.save).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(api.save).mock.calls[0][0].widgets.find(widget => widget.id === "latency")?.title).toBe("Chart saved")
+      expect(screen.queryByRole("textbox", { name: /^Title$/ })).not.toBeInTheDocument()
+    })
+
+    it("undoes Apply and save in one step, even when the dashboard title is trimmed on save", async () => {
+      // The save trims the dashboard title, so the trimming must join the apply's undo step rather than add one.
+      await openChart("Dashboard renamed   ")
+      fireEvent.change(chartTitle(), { target: { value: "Chart undone" } })
+      fireEvent.keyDown(document.body, { key: "S", ctrlKey: true, shiftKey: true })
+      expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+      fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+      await screen.findByRole("button", { name: "Edit Chart undone" })
+      // One undo returns to the dashboard before the apply, with its own untrimmed title: the trim is not a second step.
+      fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+      expect(await screen.findByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Edit Chart undone" })).not.toBeInTheDocument()
+      expect(screen.getByLabelText("Dashboard title")).toHaveValue("Dashboard renamed   ")
+    })
+
+    it("moves focus to the saved chart's tile after Apply and save", async () => {
+      await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart focused" } })
+      fireEvent.keyDown(document.body, { key: "S", ctrlKey: true, shiftKey: true })
+      expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+      expect(document.activeElement).toBe(document.querySelector('[data-widget-id="latency"]'))
+    })
+
+    it("ignores Control+Shift+S and disables Apply and save while the chart and dashboard are both clean", async () => {
+      const api = await openChart(null)
+      expect(fireEvent.keyDown(document.body, { key: "S", ctrlKey: true, shiftKey: true })).toBe(true)
+      expect(api.save).not.toHaveBeenCalled()
+      expect(screen.queryByText("Dashboard saved.")).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole("button", { name: "Chart actions" }))
+      expect(await screen.findByRole("menuitem", { name: "Apply and save dashboard" })).toHaveAttribute("aria-disabled", "true")
+    })
+
+    it("names the clean-state Save dashboard button with its Control+S shortcut", async () => {
+      await openChart(null)
+      const saves = screen.getAllByRole("button", { name: "Save dashboard" })
+      // The header button and the workbench button share a name; each names the shortcut.
+      expect(saves).toHaveLength(2)
+      for (const save of saves) {
+        expect(save).toHaveAttribute("aria-keyshortcuts", "Control+S Meta+S")
+        expect(save).toHaveAttribute("title", "Save dashboard (Ctrl+S)")
+      }
+    })
+
+    it("ignores Control+Shift+S while the chart draft is invalid", async () => {
+      const api = await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart invalid" } })
+      fireEvent.change(screen.getByLabelText("Left inset (px)"), { target: { value: "1" } })
+      await waitFor(() => expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled())
+      expect(fireEvent.keyDown(document.body, { key: "S", ctrlKey: true, shiftKey: true })).toBe(true)
+      expect(api.save).not.toHaveBeenCalled()
+      expect(screen.queryByText("Dashboard saved.")).not.toBeInTheDocument()
+    })
+
+    it("saves the applied dashboard from the notice action after Apply", async () => {
+      const api = await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart noticed" } })
+      fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })
+      const notice = await screen.findByText("Chart changes applied. Save the dashboard to keep them.")
+      expect(api.save).not.toHaveBeenCalled()
+      fireEvent.click(within(notice.parentElement!).getByRole("button", { name: "Save now" }))
+      expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+      expect(api.save).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(api.save).mock.calls[0][0].widgets.find(widget => widget.id === "latency")?.title).toBe("Chart noticed")
+    })
+
+    it("saves from the Save now notice after Preview has left edit mode", async () => {
+      const api = await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart previewed" } })
+      fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })
+      await screen.findByText("Chart changes applied. Save the dashboard to keep them.")
+      fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+      await waitFor(() => expect(screen.queryByRole("textbox", { name: /^Title$/ })).not.toBeInTheDocument())
+      expect(api.save).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole("button", { name: "Save now" }))
+      expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+      expect(api.save).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(api.save).mock.calls[0][0].widgets.find(widget => widget.id === "latency")?.title).toBe("Chart previewed")
+    })
+
+          it("keeps keyboard focus on Edit dashboard after Save now from view mode", async () => {
+        await openChart()
+        fireEvent.change(chartTitle(), { target: { value: "Chart kept focus" } })
+        fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })
+        await screen.findByText("Chart changes applied. Save the dashboard to keep them.")
+        fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+        await waitFor(() => expect(screen.queryByRole("textbox", { name: /^Title$/ })).not.toBeInTheDocument())
+        fireEvent.click(screen.getByRole("button", { name: "Save now" }))
+        expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+        // The Save now button leaves the DOM with the notice, so focus moves to Edit dashboard rather than the body.
+        await waitFor(() => expect(screen.getByRole("button", { name: "Edit dashboard" })).toHaveFocus())
+      })
+
+      it("moves focus to Edit dashboard after a plain save from edit mode", async () => {
+        const api = await openChart()
+        fireEvent.change(chartTitle(), { target: { value: "Chart plain save" } })
+        fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })
+        await screen.findByText("Chart changes applied. Save the dashboard to keep them.")
+        fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
+        expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+        expect(api.save).toHaveBeenCalledTimes(1)
+        expect(screen.getByRole("button", { name: "Edit dashboard" })).toHaveFocus()
+      })
+
+      it("focuses the saved chart's tile after Apply and save, and drops its temporary tab index on blur", async () => {
+        await openChart()
+        fireEvent.change(chartTitle(), { target: { value: "Chart tile focus" } })
+        fireEvent.keyDown(document.body, { key: "S", ctrlKey: true, shiftKey: true })
+        expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+        const tile = document.querySelector<HTMLElement>('[data-widget-id="latency"]')
+        expect(document.activeElement).toBe(tile)
+        expect(tile).toHaveAttribute("tabindex", "-1")
+        // The temporary tab index goes once the tile loses focus, so the tile is not left in the tab order.
+        act(() => tile!.blur())
+        expect(tile).not.toHaveAttribute("tabindex")
+      })
+
+it("applies and saves the chart from the action on the unapplied-chart notice", async () => {
+      const api = await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart from notice" } })
+      fireEvent.keyDown(document.body, { key: "s", ctrlKey: true })
+      const notice = await screen.findByText("Saved. Chart changes are still unapplied.")
+      await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1))
+      fireEvent.click(within(notice.parentElement!).getByRole("button", { name: "Apply and save chart" }))
+      expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+      expect(api.save).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(api.save).mock.calls[1][0].widgets.find(widget => widget.id === "latency")?.title).toBe("Chart from notice")
+    })
+
+    it("drops the unapplied-chart notice and its action once the chart editor is discarded", async () => {
+      const api = await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart left" } })
+      fireEvent.keyDown(document.body, { key: "s", ctrlKey: true })
+      await screen.findByText("Saved. Chart changes are still unapplied.")
+      await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1))
+      fireEvent.click(screen.getByRole("button", { name: "Back to dashboard" }))
+      fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Discard chart changes?" })).getByRole("button", { name: "Discard changes" }))
+      await waitFor(() => expect(screen.queryByText("Saved. Chart changes are still unapplied.")).not.toBeInTheDocument())
+      expect(screen.queryByRole("button", { name: "Apply and save chart" })).not.toBeInTheDocument()
+      expect(api.save).toHaveBeenCalledTimes(1)
+    })
+
     it("ignores Control+Enter while the chart draft is invalid", async () => {
       await openChart()
       fireEvent.change(chartTitle(), { target: { value: "Chart invalid" } })
@@ -554,6 +707,9 @@ describe("Insights application state", () => {
 
     it("names apply and the chart undo and redo shortcuts on their buttons", async () => {
       await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart hinted" } })
+      expect(screen.getByRole("button", { name: "Apply and save" })).toHaveAttribute("aria-keyshortcuts", "Control+Shift+S Meta+Shift+S")
+      expect(screen.getByRole("button", { name: "Apply and save" })).toHaveAttribute("title", "Apply and save (Ctrl+Shift+S)")
       expect(screen.getByRole("button", { name: "Apply changes" })).toHaveAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter")
       expect(screen.getByRole("button", { name: "Apply changes" })).toHaveAttribute("title", "Apply changes (Ctrl+Enter)")
       expect(screen.getByRole("button", { name: "Undo chart change" })).toHaveAttribute("title", "Undo (Ctrl+Z)")
@@ -1086,6 +1242,57 @@ describe("Insights findings wiring", () => {
     expect(warningItem).toHaveTextContent("Only a warning here.")
     fireEvent.click(within(errorItem).getByRole("button", { name: "Show widget Request latency" }))
     expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Request latency")
+  })
+
+  /** Opens the Request latency chart. The editor mounts lazily, so this waits for its title field, not the skeleton. */
+  async function openLatencyChart() {
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
+    await screen.findByRole("textbox", { name: /^Title$/ }, { timeout: 5000 })
+    return screen.getByRole("region", { name: "Widget editor" })
+  }
+
+  it("Apply and save applies the chart draft and saves the dashboard in one step", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    const editor = await openLatencyChart()
+    fireEvent.change(within(editor).getByRole("textbox", { name: /^Title$/ }), { target: { value: "Latency applied" } })
+    fireEvent.click(within(editor).getByRole("button", { name: "Apply and save" }))
+    await waitFor(() => expect(api.save).toHaveBeenCalledOnce())
+    expect(vi.mocked(api.save).mock.calls[0][0].widgets[0].title).toBe("Latency applied")
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument())
+    expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Edit dashboard" })).toBeInTheDocument()
+  })
+
+  it("Save dashboard from the workbench saves the dashboard when the chart draft is clean", async () => {
+    const api = clientWithLatency()
+    await renderLatency(api)
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Renamed before chart" } })
+    fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
+    await screen.findByRole("textbox", { name: /^Title$/ }, { timeout: 5000 })
+    const editor = screen.getByRole("region", { name: "Widget editor" })
+    expect(within(editor).getByText(/Renamed before chart · Unsaved changes/)).toBeInTheDocument()
+    fireEvent.click(within(editor).getByRole("button", { name: "Save dashboard" }))
+    await waitFor(() => expect(api.save).toHaveBeenCalledOnce())
+    expect(vi.mocked(api.save).mock.calls[0][0].title).toBe("Renamed before chart")
+    expect(await screen.findByText("Dashboard saved.")).toBeInTheDocument()
+  })
+
+  it("keeps an applied chart and shows the save checks when Apply and save is rejected", async () => {
+    const api = clientWithLatency()
+    vi.mocked(api.save).mockRejectedValue(new InsightsHTTPError("Dashboard rejected by checks", 400, null, report([
+      finding({ message: "Layout overlaps another widget.", severity: Severity.ERROR }),
+    ])))
+    await renderLatency(api)
+    const editor = await openLatencyChart()
+    fireEvent.change(within(editor).getByRole("textbox", { name: /^Title$/ }), { target: { value: "Latency rejected" } })
+    fireEvent.click(within(editor).getByRole("button", { name: "Apply and save" }))
+    expect(await screen.findByText("Dashboard rejected by checks")).toBeInTheDocument()
+    expect(await screen.findByRole("region", { name: "Save checks" })).toHaveTextContent("Layout overlaps another widget.")
+    expect(screen.queryByRole("region", { name: "Widget editor" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Edit Latency rejected" })).toBeInTheDocument()
   })
 
   async function reviewLibrary(api: InsightsClient, incoming: Dashboard) {

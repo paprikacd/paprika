@@ -58,7 +58,7 @@ describe("variable value sources in the editor", () => {
     );
     expect(screen.getByText("Fallback choices")).toBeInTheDocument();
     expect(screen.getByLabelText("Variable 1 option 1")).toHaveValue("api");
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(onApply.mock.lastCall?.[0].variables).toEqual([
       {
@@ -144,7 +144,7 @@ describe("variable value sources in the editor", () => {
     fireEvent.click(screen.getByRole("option", { name: new RegExp("^Edge services") }));
     fireEvent.change(screen.getByRole("textbox", { name: "Variable 1 column or label" }), { target: { value: "service" } });
     expect(await screen.findByRole("alert")).toHaveTextContent("Preview failed: no rows");
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(onApply.mock.lastCall?.[0].variables[0].source).toEqual({ type: "savedQuery", queryRef: { id: "edge-services" }, field: "service" });
   });
 });

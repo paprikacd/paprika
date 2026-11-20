@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { builderPanelPlan, canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat } from "./responsive-layout"
+import { builderPanelPlan, canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint } from "./responsive-layout"
 import { exampleDashboard } from "./example"
 import type { Widget } from "./schema"
 
@@ -347,5 +347,50 @@ describe("builder panels beside the canvas", () => {
     expect(firstWide(true)).toBe(1270)
     expect(outcome(1280, true)).toEqual({ panel: 342, canvas: 890 })
     expect(outcome(1512, true)).toEqual({ panel: 440, canvas: 1024 })
+  })
+})
+
+describe("tileFootprint", () => {
+  const base = exampleDashboard.widgets[0]
+  const stat = (id: string, layout: Widget["layout"]): Widget => ({ ...base, id, type: "stat", layout })
+
+  it("gives the standard grid's column width and 74px row pitch", () => {
+    const widgets: Widget[] = [stat("three", { x: 0, y: 0, w: 3, h: 1 }), { ...base, id: "wide", type: "timeseries", layout: { x: 0, y: 1, w: 12, h: 4 } }]
+    // At 1271px the column is (1271 - 11 * 16) / 12 = 91.25px, so 3 columns are 3 * 91.25 + 2 * 16 and one row is 58px.
+    const three = tileFootprint(widgets, "three", { mode: "wide", width: 1271 })!
+    expect(three.width).toBeCloseTo(305.75, 6)
+    expect(three.height).toBe(58)
+    const full = tileFootprint(widgets, "wide", { mode: "wide", width: 1271 })!
+    expect(full.width).toBeCloseTo(1271, 6)
+    expect(full.height).toBe(4 * 74 - 16)
+  })
+
+  it("follows the dense viewing projection: 25px rows, 8px horizontal and 4px vertical gaps", () => {
+    const widgets: Widget[] = [stat("three", { x: 0, y: 0, w: 3, h: 1 }), { ...base, id: "wide", type: "timeseries", layout: { x: 0, y: 1, w: 12, h: 4 } }]
+    const projected = denseCanvasLayout(widgets, "wide", 1271).find(item => item.i === "three")!
+    const dense = tileFootprint(widgets, "three", { mode: "wide", width: 1271, dense: true })!
+    expect(dense.height).toBe(projected.h * 29 - 4)
+    expect(dense.width).toBeCloseTo(3 * ((1271 - 88) / 12) + 2 * 8, 6)
+    expect(tileFootprint(widgets, "three", { mode: "wide", width: 1271, dense: true })).not.toEqual(tileFootprint(widgets, "three", { mode: "wide", width: 1271 }))
+  })
+
+  it("follows the compact projection rather than the saved width", () => {
+    // A lone stat saved at 12 columns is a half-width card in compact mode: 6 columns of (700 - 176) / 12 plus 5 gaps.
+    const widgets: Widget[] = [stat("only", { x: 0, y: 0, w: 12, h: 1 })]
+    expect(tileFootprint(widgets, "only", { mode: "compact", width: 700 })!.width).toBeCloseTo(6 * ((700 - 176) / 12) + 5 * 16, 6)
+  })
+
+  it("draws the wide grid's saved height, not a renderer minimum the grid never applies", () => {
+    const widgets: Widget[] = [stat("tall", { x: 0, y: 0, w: 3, h: 1 })]
+    // The wide grid keeps the saved single row (58px) even when the renderer declares 500px, so the footprint matches it.
+    expect(tileFootprint(widgets, "tall", { mode: "wide", width: 1271, minimumHeights: new Map([["tall", 500]]) })!.height).toBe(58)
+    // In the compact projection the minimum is already in the row count: 7 rows, which is 7 * 74 - 16 px.
+    expect(tileFootprint(widgets, "tall", { mode: "compact", width: 700, minimumHeights: new Map([["tall", 500]]) })!.height).toBe(7 * 74 - 16)
+  })
+
+  it("is absent without a measured width or for a widget outside the projection", () => {
+    const widgets: Widget[] = [stat("one", { x: 0, y: 0, w: 3, h: 1 })]
+    expect(tileFootprint(widgets, "one", { mode: "wide", width: 0 })).toBeUndefined()
+    expect(tileFootprint(widgets, "missing", { mode: "wide", width: 1271 })).toBeUndefined()
   })
 })

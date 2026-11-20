@@ -3,6 +3,9 @@ import type { Widget } from "./schema"
 
 export type CanvasMode = "wide" | "compact" | "stacked"
 
+/** The wide grid's column count, as the canvas passes it to react-grid-layout. */
+const GRID_COLUMNS = 12
+
 /** A canvas enters the wide grid at 960px and keeps it down to 880px. The gap stops a panel or a scrollbar that
  * narrows the canvas by a few pixels from flipping the projection back and forth. */
 export const WIDE_RETURN_WIDTH = 960
@@ -242,3 +245,46 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
   }
   return fine
 }
+
+/** The pixel size one tile takes on the canvas it was measured for. */
+export interface TileFootprint {
+  width: number
+  height: number
+}
+
+export interface TileFootprintOptions {
+  mode: CanvasMode
+  /** The canvas width the projection was computed for, in pixels. Zero or less has no footprint. */
+  width: number
+  /** The dense viewing projection (25px rows, 8 by 4 gaps), which applies only in the wide grid. */
+  dense?: boolean
+  referenceCompact?: boolean
+  minimumHeights?: ReadonlyMap<string, number>
+}
+
+/**
+ * The pixel box a tile occupies on a canvas of the given width and projection, from the same layout the canvas renders.
+ * It takes the grid's column width and row pitch as react-grid-layout computes them, so a footprint matches the tile on
+ * screen. Undefined when the width is unknown or the widget is not in the projection.
+ */
+export function tileFootprint(widgets: readonly Widget[], id: string, options: TileFootprintOptions): TileFootprint | undefined {
+  if (!(options.width > 0)) return undefined
+  const dense = !!options.dense && options.mode === "wide"
+  const layout = dense
+    ? denseCanvasLayout(widgets, options.mode, options.width, options.referenceCompact, options.minimumHeights)
+    : canvasLayout(widgets, options.mode, options.width, options.minimumHeights)
+  const item = layout.find(entry => entry.i === id)
+  if (!item) return undefined
+  const rowHeight = dense ? 25 : 58
+  const [gapX, gapY] = dense ? [8, 4] : [16, 16]
+  const columnWidth = (options.width - (GRID_COLUMNS - 1) * gapX) / GRID_COLUMNS
+  const span = item.h * (rowHeight + gapY) - gapY
+  // The wide grid draws the saved height as it is, so the footprint does too. The compact projection already counts a
+  // renderer's minimum in its rows; the guard keeps that minimum for any caller that passes one without those rows.
+  const height = options.mode === "wide" ? span : Math.max(span, options.minimumHeights?.get(id) ?? 0)
+  return {
+    width: item.w * columnWidth + (item.w - 1) * gapX,
+    height,
+  }
+}
+
