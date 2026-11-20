@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Layout } from "react-grid-layout";
@@ -7,7 +7,11 @@ import { tileFootprint } from "./responsive-layout";
 import { exampleDashboard, exampleProviders } from "./example";
 import type { QueryResult, Widget } from "./schema";
 
-const probe = vi.hoisted(() => ({ render: vi.fn(), layout: [] as Layout, width: 1100 }));
+const probe = vi.hoisted(() => ({
+  render: vi.fn(), layout: [] as Layout, width: 1100,
+  resizeConfig: undefined as { enabled: boolean; handles: string[] } | undefined,
+  onResizeStart: undefined as undefined | ((...args: unknown[]) => void),
+}));
 vi.mock("./charts", () => ({
   WidgetVisualization: (props: { widget: Widget; result?: QueryResult }) => {
     probe.render(props);
@@ -18,7 +22,12 @@ vi.mock("react-grid-layout", async () => {
   const { useRef } = await import("react");
   const core = await import("react-grid-layout/core");
   return {
-    default: ({ children, layout }: { children: ReactNode; layout: Layout }) => { probe.layout = layout; return <div>{children}<span className="react-resizable-handle" data-testid="resize" /></div>; },
+    default: ({ children, layout, resizeConfig, onResizeStart }: { children: ReactNode; layout: Layout; resizeConfig?: { enabled: boolean; handles: string[] }; onResizeStart?: (...args: unknown[]) => void }) => {
+      probe.layout = layout;
+      probe.resizeConfig = resizeConfig;
+      probe.onResizeStart = onResizeStart;
+      return <div>{children}<span className="react-resizable-handle" data-testid="resize" /></div>;
+    },
     useContainerWidth: () => ({ width: probe.width, containerRef: useRef(null), mounted: true }),
     verticalCompactor: core.verticalCompactor,
   };
@@ -69,6 +78,29 @@ it("moves loaded charts without rebuilding them, while size, style, data and cal
   fireEvent.click(screen.getByRole("button", { name: `Edit ${dashboard.widgets[0].title}` }));
   expect(selected).toHaveBeenCalledWith(dashboard.widgets[0].id);
   expect(props.onSelect).not.toHaveBeenCalled();
+});
+
+it("offers south, east, west and south-east resize handles only while the wide canvas is being edited", () => {
+  const dashboard = { ...exampleDashboard, widgets: [exampleDashboard.widgets[0]] };
+  const props = { dashboard, providers: exampleProviders, fetcher: vi.fn(), end: 3600, onSelect: vi.fn(), onLayout: vi.fn(), active: false };
+  const view = render(<DashboardCanvas {...props} editing />);
+  expect(probe.resizeConfig).toEqual({ enabled: true, handles: ["s", "e", "w", "se"], enableUserSelectHack: false });
+  view.rerender(<DashboardCanvas {...props} editing={false} />);
+  expect(probe.resizeConfig).toMatchObject({ enabled: false });
+});
+
+it("names the grabbed handle on the canvas so the resize cursor follows the axis", () => {
+  const dashboard = { ...exampleDashboard, widgets: [exampleDashboard.widgets[0]] };
+  const props = { dashboard, providers: exampleProviders, fetcher: vi.fn(), end: 3600, onSelect: vi.fn(), onLayout: vi.fn(), active: false };
+  render(<DashboardCanvas {...props} editing />);
+  const canvas = screen.getByTestId("dashboard-canvas");
+  const handle = document.createElement("span");
+  handle.className = "react-resizable-handle react-resizable-handle-w";
+  const event = new Event("mousedown");
+  Object.defineProperty(event, "target", { value: handle });
+  act(() => probe.onResizeStart?.(probe.layout, null, null, null, event, null));
+  expect(canvas).toHaveAttribute("data-layout-resizing", "true");
+  expect(canvas).toHaveAttribute("data-layout-resize", "w");
 });
 
 it("suppresses native selection only on edit handles and clears a gesture when editing ends", () => {

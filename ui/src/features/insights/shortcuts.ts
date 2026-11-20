@@ -1,7 +1,7 @@
 // Keyboard shortcut core for Insights. Pure functions, no React. The dispatcher that
 // attaches them to the document lives in use-insights-shortcuts.ts.
 
-export type ShortcutId = "undo" | "redo" | "save" | "apply" | "applyAndSave" | "delete"
+export type ShortcutId = "undo" | "redo" | "save" | "apply" | "applyAndSave" | "delete" | "duplicate"
 
 export type ShortcutScope = "global" | "dashboard" | "chart" | "tile"
 
@@ -25,6 +25,8 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   { id: "apply", label: "Apply changes", mac: "⌘↵", other: "Ctrl+Enter", aria: "Control+Enter Meta+Enter", scope: "chart" },
   { id: "applyAndSave", label: "Apply and save", mac: "⌘⇧S", other: "Ctrl+Shift+S", aria: "Control+Shift+S Meta+Shift+S", scope: "chart" },
   { id: "delete", label: "Remove tile", mac: "Delete / Backspace", other: "Delete / Backspace", aria: "Delete Backspace", scope: "tile" },
+  // Mod+D is the browser's bookmark key, so it is taken only on a focused tile or its chips in edit mode (see the dispatcher).
+  { id: "duplicate", label: "Duplicate tile", mac: "⌘D", other: "Ctrl+D", aria: "Control+D Meta+D", scope: "tile" },
 ]
 
 /** The subset of KeyboardEvent that matching reads. */
@@ -50,6 +52,7 @@ export function matchShortcut(event: ShortcutKeyEvent, isMac: boolean): Shortcut
   if (key === "y" && !isMac && !event.shiftKey) return "redo"
   if (key === "s") return event.shiftKey ? "applyAndSave" : "save"
   if (key === "Enter" && !event.shiftKey) return "apply"
+  if (key === "d" && !event.shiftKey) return "duplicate"
   return undefined
 }
 

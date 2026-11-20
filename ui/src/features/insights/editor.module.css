@@ -70,8 +70,8 @@
   .focusBody { display: flex; flex-direction: column; }
   .previewWorkspace { display: contents; }
   .chartPreview { order: 0; height: max(350px, calc(var(--widget-preview-min-height, 260px) + 60px)); padding: 16px; }
-  .chartSettings { order: 1; padding: 20px 16px; border-left: 0; border-top: 1px solid var(--gamma-border); overflow: visible; }
-  .queryWorkspace { order: 2; padding: 20px 16px; overflow: visible; }
+  .queryWorkspace { order: 1; padding: 20px 16px; overflow: visible; }
+  .chartSettings { order: 2; padding: 20px 16px; border-left: 0; border-top: 1px solid var(--gamma-border); overflow: visible; }
   .queryWorkspace [role="tabpanel"] > .stack { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 520px) {
@@ -79,9 +79,16 @@
   .focusHeader { gap: 8px; }
   .focusIdentity { flex-basis: calc(100% - 52px); }
   .focusActions { width: 100%; }
-  .focusActions .historyAction { display: none; }
-  .focusActions > button:nth-last-child(2) { margin-left: auto; }
   .chartPreview { height: max(320px, calc(var(--widget-preview-min-height, 260px) + 60px)); }
+}
+/* Below 360px the action row cannot hold its five controls on one line, so it wraps rather than pushing Apply off the page. */
+@media (max-width: 360px) {
+  .focusActions { flex-wrap: wrap; }
+}
+/* Undo and redo stay 32px on screen; touch gets a 44px hit area that does not change the row's layout. */
+@media (pointer: coarse) {
+  .focusActions .historyAction { position: relative; }
+  .focusActions .historyAction::before { content: ""; position: absolute; inset: -6px; }
 }
 .heading {
   display: flex;

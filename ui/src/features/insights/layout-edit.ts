@@ -59,6 +59,11 @@ function sharesColumns(a: Box, b: Box): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w
 }
 
+/** Two boxes cover at least one common cell. */
+function overlaps(a: Box, b: Box): boolean {
+  return sharesColumns(a, b) && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
 /** Reading order of the saved layout: top to bottom, then left to right, with the id breaking exact ties. */
 function readingOrder(a: LayoutItem, b: LayoutItem): number {
   return a.y - b.y || a.x - b.x || (a.i < b.i ? -1 : a.i > b.i ? 1 : 0)
@@ -170,6 +175,38 @@ export function resizeLayout(layout: Layout, id: string, dw: number, dh: number)
   if (h > (subject.maxH ?? GRID_COLUMNS)) return { blocked: `Already at the maximum height of ${subject.maxH ?? GRID_COLUMNS} rows` }
   if (h < (subject.minH ?? 1)) return { blocked: `Already at the minimum height of ${subject.minH ?? 1} ${(subject.minH ?? 1) === 1 ? "row" : "rows"}` }
   return { layout: arrange(layout, id, { x: subject.x, y: subject.y, w, h }, new Set()) }
+}
+
+/**
+ * Where the copy settled. "beside" keeps the source's row; "elsewhere" means the compactor lifted it into another row,
+ * so it is not beside the source any more.
+ */
+export type DuplicatePlacement = "beside" | "below" | "elsewhere"
+
+export type DuplicateEdit = { layout: Layout; placement: DuplicatePlacement } | { blocked: string }
+
+/**
+ * The layout with a copy of `sourceId` added as `copyId`. The copy goes beside the source, at the same size, when a
+ * free slot of 12 columns exists there; otherwise it goes directly below, in the source's columns, and the widgets
+ * under the source move down. `size` is the copy's footprint and defaults to the source's. The source itself is never
+ * resized. Both placements settle through `arrange`, so the result is stable under the compactor.
+ */
+export function duplicateLayout(layout: Layout, sourceId: string, copyId: string, size?: { w: number; h: number }): DuplicateEdit {
+  const source = layout.find((item) => item.i === sourceId);
+  if (!source) return { blocked: "This widget is not on the canvas" };
+  const copy = size ?? { w: source.w, h: source.h };
+  const beside: Box = { x: source.x + source.w, y: source.y, w: copy.w, h: copy.h };
+  if (beside.x + beside.w <= GRID_COLUMNS && !layout.some((item) => overlaps(item, beside))) {
+    const withCopy = [...layout, { ...source, i: copyId, ...beside }];
+    const settled = arrange(withCopy, copyId, beside, new Set());
+    // A free slot beside a lower source can still settle up in the next free row (the compactor lifts it), so report where it landed.
+    const landed = settled.find((item) => item.i === copyId)!;
+    return { layout: settled, placement: landed.y === source.y ? "beside" : "elsewhere" };
+  }
+  // Half a row above the next row seeds the copy after the source and before everything below it in its columns.
+  const below: Box = { x: Math.min(source.x, GRID_COLUMNS - copy.w), y: source.y + source.h - 0.5, w: copy.w, h: copy.h };
+  const withCopy = [...layout, { ...source, i: copyId, ...below }];
+  return { layout: arrange(withCopy, copyId, below, new Set()), placement: "below" };
 }
 
 /**

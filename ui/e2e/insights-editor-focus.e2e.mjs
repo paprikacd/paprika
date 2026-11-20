@@ -12,8 +12,9 @@ await mkdir(output, { recursive: true });
 const browser = await chromium.launch();
 const reports = [];
 try {
-  for (const theme of ['light', 'dark']) for (const width of [1512, 768, 390]) {
-    const context = await browser.newContext({ viewport: { width, height: 1050 }, reducedMotion: 'reduce', ...(width === 390 ? { isMobile: true, hasTouch: true } : {}) });
+  // 360px joins the light pass only: it checks the narrowest header row without doubling the dark run.
+  for (const theme of ['light', 'dark']) for (const width of theme === 'light' ? [1512, 768, 390, 360] : [1512, 768, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 1050 }, reducedMotion: 'reduce', ...(width <= 390 ? { isMobile: true, hasTouch: true } : {}) });
     const page = await context.newPage(); page.setDefaultTimeout(10_000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await context.addInitScript(theme => localStorage.setItem('paprika-insights-theme', theme), theme);
@@ -47,14 +48,8 @@ try {
       const beforeQueries = queries;
       await edit('Request latency');
       const editor = page.getByRole('region', { name: 'Widget editor', exact: true });
-      const history = async name => {
-        const button = editor.getByRole('button', { name, exact: true });
-        if (await button.isVisible()) await button.click();
-        else {
-          await editor.getByRole('button', { name: 'Chart actions', exact: true }).click();
-          await page.getByRole('menuitem', { name, exact: true }).click();
-        }
-      };
+      // Undo and redo are visible buttons at every width; the Chart actions menu no longer repeats them.
+      const history = async name => editor.getByRole('button', { name, exact: true }).click();
       await editor.getByRole('heading', { name: 'Request latency', exact: true, level: 2 }).waitFor();
       assert.equal(await page.locator('[data-widget-id]').count(), 1, 'Only the selected chart is mounted');
       assert.equal(await page.getByRole('complementary', { name: 'Insights navigation' }).count(), 0);
@@ -66,6 +61,21 @@ try {
       await page.screenshot({ path: resolve(output, `${theme}-${width}-focused.png`) });
       if (width <= 950) {
         const sections = editor.getByRole('navigation', { name: 'Chart editor sections', exact: true });
+        assert.deepEqual(await sections.getByRole('button').allInnerTexts(), ['Preview', 'Query', 'Settings'], 'Section navigation follows the stacked order');
+        const tops = await editor.evaluate(root => ['Chart data', 'Chart settings'].map(name => root.querySelector(`[aria-label="${name}"]`).getBoundingClientRect().top));
+        assert.ok(tops[0] < tops[1], `Chart data stacks above Chart settings (${tops.join(' < ')})`);
+        if (width <= 520) {
+          // The header row holds visible undo and redo, and touch gets a 44px hit area around each.
+          for (const name of ['Undo chart change', 'Redo chart change']) {
+            const button = editor.getByRole('button', { name, exact: true });
+            assert.equal(await button.isVisible(), true, `${name} is visible at ${width}px`);
+            const hit = await button.evaluate(element => ({ coarse: matchMedia('(pointer: coarse)').matches, width: parseFloat(getComputedStyle(element, '::before').width), height: parseFloat(getComputedStyle(element, '::before').height) }));
+            assert.equal(hit.coarse, true, 'Touch emulation reports a coarse pointer');
+            assert.ok(hit.width >= 44 && hit.height >= 44, `${name} hit area is 44px on touch (got ${hit.width}x${hit.height})`);
+          }
+          const header = await editor.evaluate(() => [...document.querySelectorAll('[aria-label="Widget editor"] > header button')].map(button => button.getBoundingClientRect()).filter(box => box.width > 0).map(box => ({ left: box.left, right: box.right })));
+          assert.ok(header.every(box => box.left >= 0 && box.right <= width), `The header action row fits ${width}px`);
+        }
         await sections.getByRole('button', { name: 'Query', exact: true }).click();
         assert.equal(await editor.getByRole('region', { name: 'Chart data', exact: true }).evaluate(element => element === document.activeElement), true);
         const bounds = await editor.getByRole('tablist', { name: 'Chart data', exact: true }).boundingBox();

@@ -18,6 +18,15 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key("Enter", other), false)).toBe("apply")
   })
 
+  it("maps Mod+D to duplicate on each platform, and not Shift+Mod+D or Alt+Mod+D", () => {
+    expect(matchShortcut(key("d", mac), true)).toBe("duplicate")
+    expect(matchShortcut(key("d", other), false)).toBe("duplicate")
+    expect(matchShortcut(key("D", { ...other, shiftKey: true }), false)).toBeUndefined()
+    expect(matchShortcut(key("d", { ...mac, altKey: true }), true)).toBeUndefined()
+    expect(matchShortcut(key("d", {}), true)).toBeUndefined()
+    expect(matchShortcut(key("d", other), true)).toBeUndefined()
+  })
+
   it("does not treat the other platform's modifier as the shortcut key", () => {
     expect(matchShortcut(key("z", other), true)).toBeUndefined()
     expect(matchShortcut(key("z", mac), false)).toBeUndefined()
@@ -66,7 +75,7 @@ describe("matchShortcut", () => {
   it("ignores keys with no shortcut", () => {
     expect(matchShortcut(key("k", mac), true)).toBeUndefined()
     expect(matchShortcut(key("a", other), false)).toBeUndefined()
-    expect(matchShortcut(key("d", mac), true)).toBeUndefined()
+    expect(matchShortcut(key("g", mac), true)).toBeUndefined()
   })
 })
 
@@ -160,7 +169,7 @@ describe("labelFor and the shortcut table", () => {
   it("lists each id once with an aria-keyshortcuts value", () => {
     const ids = SHORTCUTS.map((shortcut) => shortcut.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids.sort()).toEqual(["apply", "applyAndSave", "delete", "redo", "save", "undo"])
+    expect(ids.sort()).toEqual(["apply", "applyAndSave", "delete", "duplicate", "redo", "save", "undo"])
     for (const shortcut of SHORTCUTS) expect(shortcut.aria.length).toBeGreaterThan(0)
   })
 })

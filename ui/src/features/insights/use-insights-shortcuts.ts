@@ -37,6 +37,8 @@ export type InsightsShortcutTargets = {
   save: () => void
   /** Removes the tile with this widget id, as one undoable change. */
   removeTile: (widgetId: string) => void
+  /** Copies the saved tile with this widget id beside it, as one undoable change. */
+  duplicateTile: (widgetId: string) => void
   /** Opens the keyboard shortcut list. */
   openShortcuts: () => void
 }
@@ -97,9 +99,22 @@ export function useInsightsShortcuts(root: RefObject<HTMLElement | null>, target
         if (!current.editing || current.chartOpen || current.blocked || event.repeat) return
         if (!(target instanceof Element)) return
         const tile = target.closest<HTMLElement>("article[data-widget-id]")
-        if (!tile || !(target === tile || target.hasAttribute("data-widget-edit"))) return
+        if (!tile || !(target === tile || target.hasAttribute("data-widget-edit") || target.hasAttribute("data-widget-actions"))) return
         event.preventDefault()
         current.removeTile(tile.dataset.widgetId ?? "")
+        return
+      }
+      if (id === "duplicate") {
+        // Mod+D is the browser's bookmark key, so it is taken only where Delete is: a focused tile or its chips in edit mode.
+        // The open-overlay rule in shouldYield keeps it away from an open menu.
+        if (!current.editing || current.chartOpen) return
+        if (!(target instanceof Element)) return
+        const tile = target.closest<HTMLElement>("article[data-widget-id]")
+        if (!tile || !(target === tile || target.hasAttribute("data-widget-edit") || target.hasAttribute("data-widget-actions"))) return
+        // In scope, the key is ours even when the copy is skipped: a held or blocked Mod+D must not reach the bookmark dialog.
+        event.preventDefault()
+        if (current.blocked || event.repeat) return
+        current.duplicateTile(tile.dataset.widgetId ?? "")
         return
       }
       if (id === "undo" || id === "redo") {

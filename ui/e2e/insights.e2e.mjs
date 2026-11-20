@@ -159,6 +159,50 @@ try {
     return { before: widget(before, "requests").layout, lowered: widget(lowered, "requests").layout, moved: beforeResize, resized: afterResize, undoRedo: true }
   })
 
+  await check("edge handles resize one saved widget per drag, and each drag undoes in one step", async () => {
+    const start = await readDocument()
+    const target = "latency"
+    const canvas = await page.getByTestId("dashboard-canvas").boundingBox()
+    const column = (canvas.width + 16) / 12
+    const handle = (edge) => page.locator(`.react-grid-item:has([data-widget-id="${target}"]) > .react-resizable-handle-${edge}`)
+    const before = widget(start, target).layout
+    assert.ok(before.x > 0, "The west-edge drag needs a widget that can move left")
+    // Edge handles are 8px strips with no rotation, not react-resizable's centred corner glyphs.
+    const edge = await handle("e").evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { width: parseFloat(style.width), transform: style.transform, cursor: style.cursor }
+    })
+    assert.deepEqual(edge, { width: 8, transform: "none", cursor: "ew-resize" }, "East handle is an 8px edge strip")
+    // The grip pill is the handle's ::after. react-resizable's own corner glyph would win a tie, so check the computed pill.
+    const pill = async (edge) => handle(edge).evaluate((element) => {
+      const style = getComputedStyle(element, "::after")
+      return { width: parseFloat(style.width), height: parseFloat(style.height), border: parseFloat(style.borderRightWidth) + parseFloat(style.borderBottomWidth) }
+    })
+    assert.deepEqual(await pill("e"), { width: 3, height: 32, border: 0 }, "East handle shows a 3x32 pill, not a corner glyph")
+    assert.deepEqual(await pill("s"), { width: 32, height: 3, border: 0 }, "South handle shows a 32x3 pill, not a corner glyph")
+    // Action triggers sit in the title's strip: no tile's title may run under its actions trigger.
+    const titleUnderAction = await page.$$eval("[data-widget-actions]", (triggers) => triggers.flatMap((trigger) => {
+      const heading = trigger.closest("article")?.querySelector("h3")
+      if (!heading) return []
+      const a = trigger.getBoundingClientRect()
+      const b = heading.getBoundingClientRect()
+      return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom ? [trigger.dataset.widgetActions] : []
+    }))
+    assert.deepEqual(titleUnderAction, [], "No title runs under its tile's actions trigger")
+    await pointerDrag(handle("e"), column, 0)
+    const east = widget(await readDocument(), target).layout
+    assert.ok(east.w > before.w && east.x === before.x, "East edge drag must widen the widget from its right side")
+    await pointerDrag(handle("w"), -column, 0)
+    const west = widget(await readDocument(), target).layout
+    assert.ok(west.x < east.x && west.w > east.w, "West edge drag must move the left edge and widen the widget")
+    await pointerDrag(handle("s"), 0, 74)
+    const south = widget(await readDocument(), target).layout
+    assert.ok(south.h > west.h && south.x === west.x && south.w === west.w, "South edge drag must change only the height")
+    for (let undo = 0; undo < 3; undo += 1) await page.getByRole("button", { name: "Undo", exact: true }).click()
+    assert.deepEqual(widget(await readDocument(), target).layout, before, "Each edge drag is one undo step")
+    return { before, east, west, south }
+  })
+
   await check("JSON and YAML editing apply atomically and reject invalid source", async () => {
     let editor = await sourceEditor()
     const updated = { ...resizedDocument, title: "JSON edited overview" }
