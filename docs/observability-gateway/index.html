@@ -180,7 +180,7 @@ startup.</p>
 <td>4</td>
 <td>Insights admission (<code>acquireQuery</code>, <code>internal/insights/server.go</code>)</td>
 <td>16 executing, 64 waiting, 2 s wait. The shared catalog has its own pool: 4 phases, 16 waiting, 5 s</td>
-<td><code>--query-concurrency</code>, <code>--query-queue</code>, <code>--query-queue-wait</code>, <code>--catalog-concurrency</code>, <code>--catalog-queue</code>, <code>--catalog-queue-wait</code>; chart <code>insights.capacity.*</code> (unset values emit no flag)</td>
+<td><code>--query-concurrency</code>, <code>--query-queue</code>, <code>--query-queue-wait</code>, <code>--catalog-concurrency</code>, <code>--catalog-queue</code>, <code>--catalog-queue-wait</code>, <code>--dashboard-query-parallelism</code> (per read); chart <code>insights.capacity.*</code> (unset values emit no flag)</td>
 <td><code>/query</code>: <strong>429</strong> &quot;too many active queries; retry shortly&quot;. Its <code>Retry-After</code> is the pool's observed hold time, 1 to 10 s (1 s before any sample). A busy catalog is <strong>429</strong> with the same computed hint. Dashboard queries: a per-signal <code>rate_limited</code> error inside a 200 response, not an HTTP 429 (<code>dashboardProviderError</code>)</td>
 <td>Yes, after Retry-After</td>
 </tr>
@@ -299,7 +299,7 @@ timeout upstream. The chain, outermost first:</p>
 </tr>
 <tr>
 <td>Insights dashboard query</td>
-<td>22 s budget, one phase at a time</td>
+<td>22 s budget; up to <code>dashboardQueryParallelism</code> queries at once per read (2 by default)</td>
 <td><code>internal/insights/dashboard_query.go</code></td>
 </tr>
 <tr>
