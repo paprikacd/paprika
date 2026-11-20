@@ -846,6 +846,18 @@ configurable: `--query-concurrency`, `--query-queue`, `--query-queue-wait`,
 unset takes the default, and the chart emits a flag only when its value is set.
 Setting queue counts to zero is not possible: zero means the default.
 
+A dashboard read runs its queries with bounded parallelism. `--dashboard-query-parallelism`
+(chart: `insights.capacity.dashboardQueryParallelism`) sets how many run at once for one
+read: 2 by default, 1 to 4, and 1 runs them one at a time. The process shares
+one fewer extra slot than the limit among all reads, so the most queries from one
+process at once is the number of reads plus the limit minus one. The read's own
+slot is always its first. Stat comparisons run under the same limit after the main
+queries. Each signal reports `latencyMs`, from asking for Insights admission to the gateway's answer.
+With the chart and the gateway enabled, an effective parallelism above 1 (unset is 2)
+that exceeds the gateway's `queryProviderConcurrency`, or one where `httpDashboardSlots`
+plus parallelism minus one reaches the gateway's `httpWorkSlots`, fails the render.
+Parallelism 1 is not checked.
+
 A query to an Observe-backed provider then passes the gateway's HTTP pools and its
 execution budget, so the gateway's own limits, not Insights' 16, usually bind
 first. At defaults a single provider runs 2 queries at once. With the chart,

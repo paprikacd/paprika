@@ -1171,6 +1171,13 @@ insights:
     catalogConcurrency: null
     catalogQueue: null
     catalogQueueWait: null
+    # Queries one dashboard read runs at once (1-4). Built-in: 2. 1 runs them one
+    # at a time. With observabilityGateway.enabled, the effective value (null is
+    # 2) must not exceed the gateway's queryProviderConcurrency, and
+    # dashboardQueryParallelism minus one plus the gateway's httpDashboardSlots
+    # must stay below its httpWorkSlots, so console reads keep a work slot. Both
+    # checks are skipped at 1.
+    dashboardQueryParallelism: null
   extraEnv: []
   extraEnvFrom: []
   persistence:

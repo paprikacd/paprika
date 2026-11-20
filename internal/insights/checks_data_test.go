@@ -297,55 +297,76 @@ func TestDryRunDeduplicatesQueriesAndReportsEachWidget(t *testing.T) {
 	require.Equal(t, "DATA_STATE_EMPTY", stateOf(report, "/widgets/1"))
 }
 
-func TestDryRunRunsQueriesOneAtATimeWithinTheBound(t *testing.T) {
-	provider, p := newDataProvider(t, func(_ string, end float64) (int, string) {
-		return http.StatusOK, promMatrix(promSeries("up", pair(end-60, "1")))
-	})
-	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
-	widgets := make([]string, 0, maxDashboardWidgets)
-	for i := range maxDashboardWidgets {
-		widgets = append(widgets, dataWidgetJSON(fmt.Sprintf("w%02d", i), "timeseries", fmt.Sprintf("q%02d", i), "req/s", i*4, ""))
+// The dry run runs its queries through the same bounded execution as query_dashboard. At the default parallelism
+// it overlaps at most two; at parallelism 1 it runs one at a time.
+func TestDryRunRunsQueriesWithinTheReadLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		parallelism int
+		maxPeak     int32
+	}{{"default", 0, 2}, {"serial", 1, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, p := newDataProvider(t, func(_ string, end float64) (int, string) {
+				time.Sleep(5 * time.Millisecond)
+				return http.StatusOK, promMatrix(promSeries("up", pair(end-60, "1")))
+			})
+			s, _ := testServiceWithDashboardParallelism(t, tc.parallelism, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+			widgets := make([]string, 0, maxDashboardWidgets)
+			for i := range maxDashboardWidgets {
+				widgets = append(widgets, dataWidgetJSON(fmt.Sprintf("w%02d", i), "timeseries", fmt.Sprintf("q%02d", i), "req/s", i*4, ""))
+			}
+			report, _ := executeDryRunRequest(t, s, documentOf("demo", widgets...), nil)
+			require.Equal(t, int32(maxDashboardWidgets), p.calls.Load())
+			require.LessOrEqual(t, p.peak.Load(), tc.maxPeak, "the dry run stays within the read's parallelism")
+			require.Positive(t, p.peak.Load())
+			require.Len(t, report.Widgets, maxDashboardWidgets)
+			require.Empty(t, dataFindingsOf(report))
+		})
 	}
-	report, _ := executeDryRunRequest(t, s, documentOf("demo", widgets...), nil)
-	require.Equal(t, int32(maxDashboardWidgets), p.calls.Load())
-	require.Equal(t, int32(1), p.peak.Load(), "query_dashboard runs one provider query at a time; so does the dry run")
-	require.Len(t, report.Widgets, maxDashboardWidgets)
-	require.Empty(t, dataFindingsOf(report))
 }
 
 func TestDryRunCancellationStopsTheFanOut(t *testing.T) {
 	// The provider holds every request until the caller gives up or the test ends.
-	released := make(chan struct{})
-	var calls atomic.Int32
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		select {
-		case <-r.Context().Done():
-		case <-released:
-		}
-	}))
-	t.Cleanup(func() { close(released); provider.Close() })
-	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	for _, tc := range []struct {
+		name        string
+		parallelism int
+		started     int32
+	}{{"default", 0, 2}, {"serial", 1, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			released := make(chan struct{})
+			var calls atomic.Int32
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				select {
+				case <-r.Context().Done():
+				case <-released:
+				}
+			}))
+			t.Cleanup(func() { close(released); provider.Close() })
+			s, _ := testServiceWithDashboardParallelism(t, tc.parallelism, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	document := documentOf("demo", dataWidgetJSON("a", "timeseries", "one", "req/s", 0, ""), dataWidgetJSON("b", "timeseries", "two", "req/s", 4, ""))
-	body, err := json.Marshal(map[string]any{"document": json.RawMessage(document), "execute": true})
-	require.NoError(t, err)
-	r := httptest.NewRequestWithContext(ctx, "POST", "/api/dashboards/validate", bytes.NewReader(body))
-	r.Header.Set("Authorization", "Bearer "+testToken)
-	w := httptest.NewRecorder()
-	started := time.Now()
-	s.Handler().ServeHTTP(w, r)
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			document := documentOf("demo", dataWidgetJSON("a", "timeseries", "one", "req/s", 0, ""), dataWidgetJSON("b", "timeseries", "two", "req/s", 4, ""), dataWidgetJSON("c", "timeseries", "three", "req/s", 8, ""))
+			body, err := json.Marshal(map[string]any{"document": json.RawMessage(document), "execute": true})
+			require.NoError(t, err)
+			r := httptest.NewRequestWithContext(ctx, "POST", "/api/dashboards/validate", bytes.NewReader(body))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			w := httptest.NewRecorder()
+			started := time.Now()
+			s.Handler().ServeHTTP(w, r)
 
-	require.Less(t, time.Since(started), 10*time.Second, "the dry run ends with its caller's deadline, not the provider's")
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	require.Equal(t, int32(1), calls.Load(), "the second query never starts once the deadline has passed")
-	var report dataReport
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &report))
-	require.Empty(t, dataFindingsOf(&report), "a timed-out or canceled query is not a dashboard fault")
-	require.Equal(t, "DATA_STATE_UNAVAILABLE", stateOf(&report, "/widgets/0"))
-	require.Equal(t, "DATA_STATE_UNAVAILABLE", stateOf(&report, "/widgets/1"))
+			require.Less(t, time.Since(started), 10*time.Second, "the dry run ends with its caller's deadline, not the provider's")
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			require.Equal(t, tc.started, calls.Load(), "queries that have not started by the deadline never start")
+			var report dataReport
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &report))
+			require.Empty(t, dataFindingsOf(&report), "a timed-out or canceled query is not a dashboard fault")
+			for i := range 3 {
+				require.Equal(t, "DATA_STATE_UNAVAILABLE", stateOf(&report, fmt.Sprintf("/widgets/%d", i)))
+			}
+		})
+	}
 }
 
 func TestDryRunNeverExecutesADocumentThatCannotBeSaved(t *testing.T) {

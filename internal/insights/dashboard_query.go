@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
@@ -208,9 +209,10 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // runDashboardPlan plans the selected widgets and then executes their distinct
-// queries one at a time, in order, filling result. queryDashboard and the dry run
-// of the validate endpoint both call it, so they share planning, provider
-// resolution, admission and the caller's deadline; neither has its own path.
+// queries within the read's parallelism limit, filling result in plan order.
+// queryDashboard and the dry run of the validate endpoint both call it, so they
+// share planning, provider resolution, admission and the caller's deadline;
+// neither has its own path.
 func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, options DashboardSummaryOptions) {
 	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
 	queries := planDashboardQueries(result, selected, saved, definitions, start, end, func(providerID, template string, slo bool) *DashboardQueryError {
@@ -567,39 +569,81 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 	return DashboardQueryRange{Start: start.Format(time.RFC3339Nano), End: end.Format(time.RFC3339Nano), StepSeconds: step}, startSeconds, endSeconds, nil
 }
 
+// executeDashboardQueries runs the planned queries within the read's limits and fills result.Signals in
+// plan order. Each outcome is merged under one lock. The merge does not depend on order: an outcome only
+// touches the widgets bound to its own signal, the counts add up, and the state only moves to partial or
+// ok. A query whose worker panics becomes an error signal and never fails its siblings.
 func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, options DashboardSummaryOptions, result *DashboardQueryResult, caches ...*dashboardQueryProviders) {
 	cache := &dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
 	if len(caches) > 0 {
 		cache = caches[0]
 	}
-	for index := range queries {
-		query := &queries[index]
-		signal, executed, columns, raw := s.executeDashboardQuery(r, query, options, cache)
-		signal.ID = fmt.Sprintf("q%d", index+1)
-		captureDashboardComparisons(result, signal.ID, raw)
-		signal.Kind = query.Kind
-		// Do not disclose a provider selected by a saved query unless this
-		// caller was authorized to resolve it. A denied provider still has a
-		// signal kind and a sanitized execution error.
-		if cache.clients[query.ProviderID] != nil {
-			signal.ProviderID = query.ProviderID
+	result.Signals = make([]DashboardSignal, len(queries))
+	var merge sync.Mutex
+	run := func(index int) {
+		if s.dashboardFault != nil {
+			s.dashboardFault("main", &queries[index])
 		}
-		for i := range result.Widgets {
-			widget := &result.Widgets[i]
-			applyDashboardSignal(widget, &signal, raw, query.End, options.MaxSeries)
-			applyDashboardAnnotation(widget, &signal, columns, result)
-		}
-		if executed {
-			result.QueryCount.Executed++
-		}
-		if signal.Error != nil || signal.State == "partial" {
-			result.State = "partial"
-		} else if signal.State == "ok" && result.State != "partial" {
-			result.State = "ok"
-		}
-		result.Signals = append(result.Signals, signal)
+		signal, executed, columns, raw := s.executeDashboardQuery(r, &queries[index], options, cache)
+		merge.Lock()
+		defer merge.Unlock()
+		applyDashboardQueryOutcome(result, index, &queries[index], options, cache, &signal, executed, columns, raw)
 	}
-	s.executeDashboardComparisons(r, options, result, cache)
+	limits := newDashboardLimits(s.dashboardParallelism, dashboardQueriesSpanProviders(queries), s.dashboardExtra)
+	tasks := runDashboardBounded(r.Context(), len(queries), func(i int) string { return queries[i].ProviderID }, limits, run)
+	for index := range tasks {
+		switch {
+		case tasks[index].Panicked != nil:
+			// The worker is gone and reported no outcome, so the panic becomes this signal's error. Its
+			// raw result is never used. The panic value is not reported, because it can carry provider detail.
+			merge.Lock()
+			applyDashboardQueryOutcome(result, index, &queries[index], options, cache, &DashboardSignal{State: "error", Error: classifyQueryFailure(tasks[index].Panicked)}, false, nil, nil)
+			merge.Unlock()
+		case !tasks[index].Started:
+			// The context ended before this query started. Running it now reports the context error
+			// without provider I/O, which is what the serial path did for the remaining queries.
+			run(index)
+		}
+	}
+	s.executeDashboardComparisons(r, options, result, cache, limits)
+}
+
+// applyDashboardQueryOutcome merges one query's outcome into result at its plan position. The caller holds
+// the merge lock.
+func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders, signal *DashboardSignal, executed bool, columns []dataframe.Column, raw *QueryResult) {
+	signal.ID = fmt.Sprintf("q%d", index+1)
+	captureDashboardComparisons(result, signal.ID, raw)
+	signal.Kind = query.Kind
+	// Do not disclose a provider selected by a saved query unless this
+	// caller was authorized to resolve it. A denied provider still has a
+	// signal kind and a sanitized execution error.
+	if cache.hasClient(query.ProviderID) {
+		signal.ProviderID = query.ProviderID
+	}
+	for i := range result.Widgets {
+		widget := &result.Widgets[i]
+		applyDashboardSignal(widget, signal, raw, query.End, options.MaxSeries)
+		applyDashboardAnnotation(widget, signal, columns, result)
+	}
+	if executed {
+		result.QueryCount.Executed++
+	}
+	if signal.Error != nil || signal.State == "partial" {
+		result.State = "partial"
+	} else if signal.State == "ok" && result.State != "partial" {
+		result.State = "ok"
+	}
+	result.Signals[index] = *signal
+}
+
+// dashboardQueriesSpanProviders reports whether the planned queries name more than one provider.
+func dashboardQueriesSpanProviders(queries []Query) bool {
+	for i := range queries {
+		if queries[i].ProviderID != queries[0].ProviderID {
+			return true
+		}
+	}
+	return false
 }
 
 func dashboardPrimaryObservation(signal *DashboardSignal, requireValue bool) *Point {
@@ -633,29 +677,49 @@ func applyDashboardAnnotation(widget *DashboardQueryWidget, signal *DashboardSig
 	}
 }
 
+// dashboardQueryProviders holds the providers one read resolved. Queries of a read run concurrently, so the
+// maps are guarded by mu. Resolution itself runs outside mu.
 type dashboardQueryProviders struct {
+	mu      sync.Mutex
 	clients map[string]*providerClient
 	errors  map[string]error
+}
+
+// hasClient reports whether the provider with this ID resolved for the read.
+func (c *dashboardQueryProviders) hasClient(id string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.clients[id] != nil
 }
 
 func (s *Server) dashboardQueryProvider(r *http.Request, id string, cache *dashboardQueryProviders) (*providerClient, error) {
 	if err := r.Context().Err(); err != nil {
 		return nil, fmt.Errorf("dashboard query context: %w", err)
 	}
-	if err, known := cache.errors[id]; known {
-		return nil, err
+	cache.mu.Lock()
+	cachedErr, known := cache.errors[id]
+	cachedClient, resolved := cache.clients[id]
+	cache.mu.Unlock()
+	if known {
+		return nil, cachedErr
 	}
-	if provider, known := cache.clients[id]; known {
-		return provider, nil
+	if resolved {
+		return cachedClient, nil
 	}
+	// Planning resolves every provider before execution, so this is normally a cache hit. Two queries
+	// that miss together may both resolve the same provider; the results are the same and the last write wins.
 	provider, err := s.resolveProvider(r, id)
 	if err != nil {
 		if r.Context().Err() != nil {
 			err = fmt.Errorf("dashboard provider lookup: %w", r.Context().Err())
 		}
+		cache.mu.Lock()
 		cache.errors[id] = err
+		cache.mu.Unlock()
 	} else {
+		cache.mu.Lock()
 		cache.clients[id] = provider
+		cache.mu.Unlock()
 	}
 	return provider, err
 }
@@ -672,15 +736,29 @@ func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options Da
 		return DashboardSignal{State: "error", Error: &DashboardQueryError{Code: "incompatible_provider", Message: "The provider does not support this widget's data kind."}}, false, nil, nil
 	}
 	raw, executed, err := s.runProviderQuery(r.Context(), provider, query)
+	latency := dashboardSignalLatency(executed, raw.Diagnostics)
 	if err != nil {
-		return DashboardSignal{State: "error", Error: classifyQueryFailure(err)}, executed, nil, nil
+		return DashboardSignal{State: "error", LatencyMs: latency, Error: classifyQueryFailure(err)}, executed, nil, nil
 	}
 	// Compact before beginning another query; never retain all raw results.
 	var columns []dataframe.Column
 	if raw.Records != nil {
 		columns = raw.Records.Columns
 	}
-	return summarizeDashboardResult(&raw, options), executed, columns, &raw
+	signal := summarizeDashboardResult(&raw, options)
+	signal.LatencyMs = latency
+	return signal, executed, columns, &raw
+}
+
+// dashboardSignalLatency is the receipt's total: the time from asking for Insights admission to the gateway's
+// answer. It includes the admission wait and gateway queueing. It is nil when the query was not admitted,
+// because no gateway work then happened.
+func dashboardSignalLatency(admitted bool, diagnostics *QueryDiagnostics) *int64 {
+	if !admitted || diagnostics == nil {
+		return nil
+	}
+	latency := max(int64(math.Round(diagnostics.TotalMs)), 0)
+	return &latency
 }
 
 func validateAnnotationColumns(columns []dataframe.Column, mapping *dashboardReadAnnotationColumns) *DashboardQueryError {

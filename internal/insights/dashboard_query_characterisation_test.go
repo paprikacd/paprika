@@ -50,8 +50,9 @@ func TestDashboardQueryCharacterisesBaseOutputWithoutStatusThresholds(t *testing
 
 // stripAdditiveDashboardFields removes the fields this contract adds for documents
 // without status thresholds: the top-level attention summary, omitted list, variable
-// definitions and warnings, per-widget attention, breaches, bandSeries and sample, and
-// freshness objects that carry no staleAfterSeconds threshold.
+// definitions and warnings, per-widget attention, breaches, bandSeries and sample,
+// freshness objects that carry no staleAfterSeconds threshold, and each signal's
+// latencyMs, which depends on timing and so cannot be pinned by a golden.
 func stripAdditiveDashboardFields(t *testing.T, raw []byte) []byte {
 	t.Helper()
 	var document map[string]any
@@ -60,6 +61,12 @@ func stripAdditiveDashboardFields(t *testing.T, raw []byte) []byte {
 	delete(document, "omitted")
 	delete(document, "variableDefinitions")
 	delete(document, "warnings")
+	signals, _ := document["signals"].([]any)
+	for _, entry := range signals {
+		if signal, ok := entry.(map[string]any); ok {
+			delete(signal, "latencyMs")
+		}
+	}
 	widgets, _ := document["widgets"].([]any)
 	for _, entry := range widgets {
 		widget, ok := entry.(map[string]any)

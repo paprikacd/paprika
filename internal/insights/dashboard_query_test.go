@@ -300,8 +300,11 @@ func TestReturnedSampleThresholdValidation(t *testing.T) {
 
 func TestDashboardQueryDefaultsSelectionAndNoFallback(t *testing.T) {
 	var queries []string
+	var queriesMu sync.Mutex
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queriesMu.Lock()
 		queries = append(queries, r.URL.Query().Get("query"))
+		queriesMu.Unlock()
 		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
 	defer provider.Close()
@@ -314,14 +317,20 @@ func TestDashboardQueryDefaultsSelectionAndNoFallback(t *testing.T) {
 	inline := queryReadWidget("inline", `up{service={{service}}}`)
 	putReadDashboard(t, s, first, missing, inline)
 	result := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
-	if result.State != "partial" || len(queries) != 2 || queries[0] != `up{service="saved-default"}` || queries[1] != `up{service="checkout"}` || result.Widgets[1].Error.Code != "missing_saved_query" {
+	// The read's queries run concurrently, so the provider sees them in no fixed order.
+	slices.Sort(queries)
+	if result.State != "partial" || len(queries) != 2 || queries[0] != `up{service="checkout"}` || queries[1] != `up{service="saved-default"}` || result.Widgets[1].Error.Code != "missing_saved_query" {
 		t.Fatalf("default/fallback semantics queries=%v result=%+v", queries, result)
 	}
 	if result.Widgets[0].SavedQueryID != "requests" || result.Widgets[1].SavedQueryID != "missing-query" || result.Widgets[1].SignalID != "" || result.Widgets[2].SavedQueryID != "" || result.Signals[0].Kind != "metrics" {
 		t.Fatalf("resolved, missing and inline provenance must remain distinct: %+v", result)
 	}
+	queriesMu.Lock()
 	queries = nil
+	queriesMu.Unlock()
 	result = readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","widget_ids":["inline","saved"],`+dashboardQueryWindow+`}`), nil))
+	queriesMu.Lock()
+	defer queriesMu.Unlock()
 	if result.State != "empty" || result.Widgets[0].ID != "saved" || result.Widgets[1].ID != "inline" || len(result.Widgets) != 2 || len(queries) != 2 {
 		t.Fatalf("selection must keep saved dashboard order: %+v", result)
 	}
@@ -366,9 +375,12 @@ func TestDashboardQuerySnapshotReleasesMutationLockBeforeIO(t *testing.T) {
 	started, resume := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	var queries []string
+	var queriesMu sync.Mutex
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		once.Do(func() { close(started); <-resume })
+		queriesMu.Lock()
 		queries = append(queries, r.URL.Query().Get("query"))
+		queriesMu.Unlock()
 		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
 	defer provider.Close()
@@ -406,6 +418,10 @@ func TestDashboardQuerySnapshotReleasesMutationLockBeforeIO(t *testing.T) {
 	}
 	close(resume)
 	result := readDashboardResult(t, <-response)
+	// The two queries run concurrently, so the provider sees them in no fixed order.
+	queriesMu.Lock()
+	slices.Sort(queries)
+	queriesMu.Unlock()
 	if len(queries) != 2 || queries[1] != `up{service="saved-default"}` || result.Dashboard.Title != "Service overview" || result.Dashboard.ETag != oldDashboardETag || result.SavedQueries[0].ETag != oldSavedETag {
 		t.Fatalf("read mixed document revisions: queries=%v result=%+v", queries, result)
 	}
@@ -426,22 +442,40 @@ func TestDashboardQueryPartialProviderFailureAndCancellation(t *testing.T) {
 		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1792972800,"1"]]}]}}`)
 	}))
 	defer provider.Close()
-	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
-	putReadDashboard(t, s, queryReadWidget("good", "up"), queryReadWidget("bad", "bad"), queryReadWidget("wait", "wait"), queryReadWidget("later", "later"))
-	w := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","widget_ids":["good","bad"],`+dashboardQueryWindow+`}`), nil)
-	result := readDashboardResult(t, w)
-	if result.State != "partial" || result.Signals[0].State != "ok" || result.Signals[1].Error.Code != "provider_error" || strings.Contains(w.Body.String(), "secret") {
-		t.Fatalf("provider partial failure: %s", w.Body)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
-	r := httptest.NewRequestWithContext(ctx, "POST", "/api/query-dashboard", strings.NewReader(`{"id":"overview","widget_ids":["good","wait","later"],`+dashboardQueryWindow+`}`))
-	r.Header.Set("Authorization", "Bearer "+testToken)
-	w = httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, r)
-	result = readDashboardResult(t, w)
-	if result.State != "partial" || result.QueryCount.Executed != 2 || result.Signals[0].State != "ok" || result.Signals[1].Error.Code != "timeout" || result.Signals[2].Error.Code != "timeout" || calls.Load() != 4 {
-		t.Fatalf("deadline should preserve completed signals and stop I/O: %+v calls=%d", result, calls.Load())
+	for _, tc := range []struct {
+		parallelism int
+		// later is the state of the third widget. It starts only when a slot is free before the deadline.
+		later string
+	}{{parallelism: 1, later: "timeout"}, {parallelism: 2, later: "ok"}} {
+		t.Run(fmt.Sprintf("parallelism %d", tc.parallelism), func(t *testing.T) {
+			s, _ := testServiceWithDashboardParallelism(t, tc.parallelism, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+			putReadDashboard(t, s, queryReadWidget("good", "up"), queryReadWidget("bad", "bad"), queryReadWidget("wait", "wait"), queryReadWidget("later", "later"))
+			w := request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","widget_ids":["good","bad"],`+dashboardQueryWindow+`}`), nil)
+			result := readDashboardResult(t, w)
+			if result.State != "partial" || result.Signals[0].State != "ok" || result.Signals[1].Error.Code != "provider_error" || strings.Contains(w.Body.String(), "secret") {
+				t.Fatalf("provider partial failure: %s", w.Body)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+			defer cancel()
+			before := calls.Load()
+			r := httptest.NewRequestWithContext(ctx, "POST", "/api/query-dashboard", strings.NewReader(`{"id":"overview","widget_ids":["good","wait","later"],`+dashboardQueryWindow+`}`))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			w = httptest.NewRecorder()
+			s.Handler().ServeHTTP(w, r)
+			result = readDashboardResult(t, w)
+			// The wait query holds its slot until the deadline. Every query that was admitted made one provider call, and no
+			// query starts after the deadline.
+			later := result.Signals[2].State
+			if later == "error" {
+				later = result.Signals[2].Error.Code
+			}
+			if result.State != "partial" || result.Signals[0].State != "ok" || result.Signals[1].Error.Code != "timeout" || later != tc.later {
+				t.Fatalf("deadline should preserve completed signals and stop I/O: %+v", result)
+			}
+			if got := int(calls.Load() - before); got != result.QueryCount.Executed {
+				t.Fatalf("provider calls %d differ from executed queries %d", got, result.QueryCount.Executed)
+			}
+		})
 	}
 }
 

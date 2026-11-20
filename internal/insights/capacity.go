@@ -17,6 +17,9 @@ type Capacity struct {
 	CatalogConcurrency int           `json:"catalogConcurrency,omitempty"`
 	CatalogQueue       int           `json:"catalogQueue,omitempty"`
 	CatalogWait        time.Duration `json:"catalogWait,omitempty"`
+	// DashboardQueryParallelism is how many queries one dashboard read runs at once, 1 to 4. 1 runs them one
+	// after another. The process shares one extra slot pool of this size minus one among all reads.
+	DashboardQueryParallelism int `json:"dashboardQueryParallelism,omitempty"`
 }
 
 // The defaults. They are the values the admission pools had before they were
@@ -28,6 +31,8 @@ const (
 	defaultCatalogConcurrency = 4
 	defaultCatalogQueue       = 16
 	defaultCatalogWait        = 5 * time.Second
+	// defaultDashboardQueryParallelism lets a dashboard read overlap its provider queries.
+	defaultDashboardQueryParallelism = 2
 	// maxCapacityCount bounds each count, so a typo cannot allocate a large pool.
 	maxCapacityCount = 1024
 )
@@ -61,6 +66,9 @@ func (c Capacity) withDefaults() Capacity {
 	if c.CatalogWait == 0 {
 		c.CatalogWait = defaultCatalogWait
 	}
+	if c.DashboardQueryParallelism == 0 {
+		c.DashboardQueryParallelism = defaultDashboardQueryParallelism
+	}
 	return c
 }
 
@@ -79,6 +87,9 @@ func (c Capacity) validate(budget time.Duration) error {
 		if count.value < 1 || count.value > maxCapacityCount {
 			return fmt.Errorf("insights %s must be between 1 and %d", count.name, maxCapacityCount)
 		}
+	}
+	if c.DashboardQueryParallelism < 1 || c.DashboardQueryParallelism > dashboardMaxParallelism {
+		return fmt.Errorf("insights dashboard query parallelism must be between 1 and %d", dashboardMaxParallelism)
 	}
 	for _, wait := range []struct {
 		name  string
