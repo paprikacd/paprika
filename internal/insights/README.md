@@ -722,13 +722,57 @@ state does not prove that egress works.
 The Observe MCP should keep answering through the observability-gateway. If a path fails,
 the policy's ingress and egress lists are the first place to check.
 
+## Dashboard revision history
+
+Each save that changes a dashboard's bytes appends a revision below `--data-dir`:
+
+- `revisions/<id>/index.json` is the protojson `DashboardRevisionIndex`: the metadata
+  of every kept revision, oldest first, and the next number to use.
+- `revisions/<id>/<n>.json` holds the exact bytes of revision `n`.
+
+The current document stays `<id>.json` and is the source of truth. Its revision is
+the head and is always the newest kept revision. A save whose bytes equal the head
+adds no revision. Revision numbers only grow, so a pruned number is never reused.
+
+Retention is fixed in the binary: the last 20 revisions per dashboard, and 64 MiB of
+revision bytes across all dashboards. Over the budget, the oldest non-head revision of
+any dashboard is pruned first, and a head is never pruned. Deleting a dashboard
+deletes its history.
+
+A failed history write does not fail the save. The failure is logged and counted in
+`paprika_insights_revision_write_failures_total`, and the document is kept. Startup repairs
+history. For each dashboard with no index it appends a `baseline` revision of the
+current document, which is how existing dashboards get revision 1 after an upgrade.
+A head that differs from the document, as after a crash between the two writes, also
+gets a `baseline` revision. Files a crash left unreferenced are removed.
+
+A corrupt `index.json` does not stop startup. After startup succeeds, the directory,
+with its revision files, moves to `quarantine/revisions/<id>.<unix-nanos>/` and the
+history restarts from the current document. Until then the dashboard's history reads as
+empty and writes to it are refused and counted, so the save still succeeds. If that move
+fails, the failure is counted and the history stays refused until the next start; startup
+does not fail. An index that exists but cannot be read is not moved, because its files
+may be the only copy.
+
+A revision directory left on disk with no loaded dashboard, such as after a quarantined
+document or a failed delete, is moved aside when the same id is created again, so the new
+history never writes over it.
+
+Baseline revisions record their saved-query pins once the saved-query store opens, at the
+same startup, so restoring a baseline reports saved-query drift like any other revision.
+
+The store records each revision's author, source and message when a caller passes
+them to `PutRevision`. The author is the principal's subject and display name, never
+an email. `Put` passes none of them.
+
 ## Startup quarantine and downgrades
 
 When the store opens, a dashboard or saved query that fails validation no longer
 stops Insights. Startup moves the file to `<data-dir>/quarantine/<kind>/<id>.<unix-nanos>.json`,
 where `<kind>` is `dashboard` or `saved_query`, logs a warning with the kind, id and
 reason, increments `paprika_insights_store_quarantined_total{kind}`, and serves the
-valid documents. The quarantine tree is never read as store entries. A second start
+valid documents. A corrupt revision index moves the same way to `quarantine/revisions/`
+(see [Dashboard revision history](#dashboard-revision-history)). The quarantine tree is never read as store entries. A second start
 does not quarantine anything again, because the invalid file has already left the
 store directory. A create with a quarantined id is a new document; the quarantined
 copy is kept and never overwritten.

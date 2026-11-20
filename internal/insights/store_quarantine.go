@@ -79,6 +79,46 @@ func quarantineStoredDocument(root, dir, kind, id string, reason error) error {
 	return nil
 }
 
+// quarantineRevisionHistory moves a corrupt revision directory aside so the history can be rebuilt from the current
+// document. The moved files are kept for an operator to read.
+func quarantineRevisionHistory(root, id string, reason error) error {
+	destination, err := moveRevisionHistoryAside(root, id)
+	if err != nil {
+		return err
+	}
+	slog.Warn("quarantined corrupt revision history; the dashboard's history was rebuilt from its current document", "kind", quarantineKindRevisions, "id", id, "reason", reason.Error(), "moved_to", destination)
+	recordQuarantine(quarantineKindRevisions)
+	return nil
+}
+
+// moveRevisionHistoryAside renames <root>/revisions/<id> to <root>/quarantine/revisions/<id>.<unix-nanos> and syncs both
+// parents. It returns the new location. It records no metric, so it can run on a request path.
+func moveRevisionHistoryAside(root, id string) (string, error) {
+	target := filepath.Join(root, quarantineDirName, "revisions")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		return "", fmt.Errorf("create quarantine directory: %w", err)
+	}
+	if err := errors.Join(syncDirectory(root), syncDirectory(filepath.Join(root, quarantineDirName))); err != nil {
+		return "", fmt.Errorf("quarantine revision history %s: %w", id, err)
+	}
+	// An earlier quarantined copy is never overwritten, so a taken name moves the stamp on.
+	var destination string
+	for stamp := time.Now().UnixNano(); ; stamp++ {
+		destination = filepath.Join(target, fmt.Sprintf("%s.%d", id, stamp))
+		if _, err := os.Lstat(destination); err != nil { //nolint:gosec // id is a dashboard id the store has validated; it names a directory under the data root
+			break
+		}
+	}
+	source := filepath.Join(root, revisionsDirName, id)
+	if err := os.Rename(source, destination); err != nil { //nolint:gosec // as above
+		return "", fmt.Errorf("quarantine revision history %s: %w", id, err)
+	}
+	if err := errors.Join(syncDirectory(filepath.Join(root, revisionsDirName)), syncDirectory(target)); err != nil {
+		return "", fmt.Errorf("quarantine revision history %s: %w", id, err)
+	}
+	return destination, nil
+}
+
 // logQuarantineSummary writes the one line an operator reads after a startup that moved documents. The per-document
 // warnings name each file; this line gives the count, the kinds and the directory to check after a downgrade or upgrade.
 func logQuarantineSummary(root string, dashboards, savedQueries int) {

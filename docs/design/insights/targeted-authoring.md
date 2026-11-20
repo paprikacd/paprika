@@ -99,6 +99,31 @@ remain local, and a stale draft save receives a conflict.
 
 Whole-document deletion and provider configuration are not exposed here.
 
+## Revisions
+
+Every saved dashboard write records a revision, and the last 20 per dashboard are
+kept under a shared byte budget. The MCP tools are `list_dashboard_revisions`
+(newest first), `get_dashboard_revision` (the exact stored document and its
+content ETag) and `restore_dashboard_revision`.
+
+A restore is a write, so it needs `paprika:insights:write`, the human's Insights
+write permission and the dashboard's current ETag from `get_dashboard`. It saves
+the stored document through the same validation and conflict checks as a save,
+and records a new revision. Restoring content identical to the current document
+adds no revision. A revision that fails the current rules is refused with its
+findings. Revision ETags are content hashes, so restoring a revision brings back
+its old ETag; a client that holds that ETag can write again, and the bytes it
+writes are the ones it expects.
+
+Saved queries are not part of a dashboard revision. Each revision pins the ETag of
+every saved query it reads. A restore reports the pins that no longer match in
+`driftedSavedQueries` and leaves the saved queries as they are.
+
+`create_dashboard`, `update_dashboard` and `patch_dashboard` accept an optional
+`message`, up to 200 characters without control characters. Saved-query writes do
+not accept one. The author stored with a revision is the principal's subject and
+display name, never the email address.
+
 ## Verification
 
 `ui/e2e/insights-observe-authoring.e2e.mjs` exercises the authenticated MCP →

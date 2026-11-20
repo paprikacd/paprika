@@ -82,7 +82,11 @@ IDs here are placeholders; run the steps in order.
    `patch` cannot change `id`, `schemaVersion` or `widgets`; edit widgets with `widget_edits`
    (`update`, `add`, `remove`; the batch saves atomically). An overlapping add moves to the
    first free slot; `placements` reports where. Saved queries use `update_saved_query` and
-   `patch_saved_query`; their `id`, `schemaVersion`, provider and kind cannot change. Read `checks`. Open UI views refresh external updates while retaining unsaved local drafts. On
+   `patch_saved_query`; their `id`, `schemaVersion`, provider and kind cannot change. Read `checks`.
+   Dashboard writes take an optional `message`. To undo a dashboard change, use
+   `list_dashboard_revisions`, read the one to return to with `get_dashboard_revision`, then
+   `restore_dashboard_revision` with the current ETag (it needs paprika:insights:write). A restore
+   is a new revision and does not restore saved queries: report `driftedSavedQueries`. Open UI views refresh external updates while retaining unsaved local drafts. On
    a conflict, reread, compare and reapply only the intended edit; never silently overwrite
    or retry blindly.
 

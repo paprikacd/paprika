@@ -10,7 +10,9 @@ import {
   type SavedQuery,
   type SavedQueryEntry,
 } from "./schema"
+import type { JsonValue } from "@bufbuild/protobuf"
 import { CheckFinding, CheckReport, Severity, Source } from "@/gen/paprika/insights/v1/checks_pb"
+import { DashboardRevisionList } from "@/gen/paprika/insights/v1/revisions_pb"
 import { jitter, REPLAY_DELAY_CAP_MS } from "./replay-timing"
 import { dashboardAsSent } from "./layout-compaction"
 import { validateSavedQueryTemplate } from "./saved-queries"
@@ -100,6 +102,19 @@ export interface InsightsClient {
   listStarters?(signal?: AbortSignal): Promise<StarterSummary[]>
   /** One starter as a portable bundle for the import review. Reading it writes nothing. */
   getStarter?(id: string, signal?: AbortSignal): Promise<DashboardBundle>
+  /** The retained revisions of a dashboard, newest first. Absent for hosts that predate revision history. */
+  listRevisions?(id: string, signal?: AbortSignal): Promise<DashboardRevisionList>
+  /**
+   * Restores a stored revision as the dashboard's new revision. etag is the dashboard's current ETag; a stale one is
+   * rejected with the reload message. revision is the number the restore created, or 0 when the server named none,
+   * which happens only when the dashboard's history is unavailable.
+   */
+  restoreRevision?(
+    id: string,
+    revision: number,
+    etag: string,
+    message?: string,
+  ): Promise<{ dashboard: Dashboard; etag?: string; revision: number }>
   query(request: QueryRequest, signal: AbortSignal, options?: QueryCallOptions): Promise<QueryResult>
   providerConfigs(signal?: AbortSignal): Promise<ProviderConfig[]>
   saveProvider(config: ProviderConfig): Promise<void>
@@ -578,6 +593,27 @@ export function createInsightsClient(
     getStarter: (id, signal) => cachedRead(`/starters/${encodeURIComponent(id)}`, body => {
       return parseDashboardBundle(JSON.stringify(body), "json")
     }, signal),
+    // The listing is the server's protojson, so it is read with the generated decoder. Unknown fields are ignored so an
+    // older client keeps working when the server adds one.
+    listRevisions: async (id, signal) => DashboardRevisionList.fromJson(
+      await readJSON<JsonValue>(await request(`/dashboards/${encodeURIComponent(id)}/revisions`, { signal })),
+      { ignoreUnknownFields: true },
+    ),
+    // A restore is a conditional write: If-Match carries the dashboard's current ETag, so a stale view is refused with
+    // the same reload message as a stale save. The message is percent-encoded, as the server expects.
+    restoreRevision: async (id, revision, etag, message) => {
+      const headers: Record<string, string> = { "If-Match": etag }
+      if (message) headers["X-Insights-Revision-Message"] = encodeURIComponent(message)
+      const response = await request(`/dashboards/${encodeURIComponent(id)}/revisions/${revision}/restore`, {
+        method: "POST",
+        headers,
+      })
+      return {
+        dashboard: storedDashboardSchema.parse(await readJSON<Record<string, unknown>>(response)),
+        etag: documentETag(response),
+        revision: Number(response.headers.get("X-Paprika-Revision") ?? 0),
+      }
+    },
     // Reads keep a stored zone as saved (storedDashboardSchema), so one dashboard's zone never fails the whole list.
     list: (signal) => cachedRead("/dashboards", body => {
       return ((body.dashboards ?? []) as unknown[]).map((item: unknown) => storedDashboardSchema.parse(item))

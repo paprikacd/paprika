@@ -18,7 +18,7 @@ func insightsPatchTool(c *InsightsAuthoringClient, singular, collection string) 
 	extra := ""
 	detail := "Saved-query id, schemaVersion, providerId and kind cannot be changed."
 	if collection == "dashboards" {
-		properties += `,"widget_edits":` + insightsWidgetEditsSchema
+		properties += insightsRevisionMessageProperty(singular) + `,"widget_edits":` + insightsWidgetEditsSchema
 		required = `["id","etag"]`
 		extra = `,"anyOf":[{"required":["patch"]},{"required":["widget_edits"]}]`
 		detail = "Dashboard patch cannot change id, schemaVersion or widgets. Use widget_edits to add, update or remove widgets by ID; widget IDs cannot change. All edits are saved atomically."

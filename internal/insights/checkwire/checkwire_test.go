@@ -56,3 +56,37 @@ func TestCountSaturates(t *testing.T) {
 	require.Equal(t, uint32(0), Count(-1))
 	require.Equal(t, uint32(7), Count(7))
 }
+
+func TestMarshalRevisionListIsCompactAndStable(t *testing.T) {
+	list := &insightsv1.DashboardRevisionList{
+		DashboardId:    "telesis-health",
+		RetentionLimit: 20,
+		CurrentEtag:    `"abc"`,
+		Revisions: []*insightsv1.DashboardRevision{{
+			Number:              2,
+			Etag:                `"abc"`,
+			Author:              &insightsv1.RevisionAuthor{Subject: "sub-1", Name: "Ada"},
+			Source:              insightsv1.RevisionSource_REVISION_SOURCE_RESTORE,
+			Message:             "Restored revision 1",
+			CreatedAtUnixMs:     1700000000000,
+			RestoredFrom:        1,
+			SavedQueries:        []*insightsv1.SavedQueryPin{{Id: "q1", Etag: `"e1"`}},
+			DriftedSavedQueries: []*insightsv1.SavedQueryPin{{Id: "q1", Etag: `"e1"`}},
+		}},
+	}
+	first, err := Marshal(list)
+	require.NoError(t, err)
+	require.Contains(t, string(first), `"source":"REVISION_SOURCE_RESTORE"`)
+	require.Contains(t, string(first), `"createdAtUnixMs":"1700000000000"`)
+	require.Contains(t, string(first), `"driftedSavedQueries":[{"id":"q1","etag":"\"e1\""}]`)
+	for i := 0; i < 20; i++ {
+		again, err := Marshal(list)
+		require.NoError(t, err)
+		require.Equal(t, string(first), string(again))
+	}
+
+	var decoded insightsv1.DashboardRevisionList
+	require.NoError(t, Unmarshal(first, &decoded))
+	require.Equal(t, list.GetRevisions()[0].GetEtag(), decoded.GetRevisions()[0].GetEtag())
+	require.Equal(t, insightsv1.RevisionSource_REVISION_SOURCE_RESTORE, decoded.GetRevisions()[0].GetSource())
+}

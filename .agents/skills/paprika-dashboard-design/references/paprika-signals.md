@@ -121,6 +121,7 @@ is in the block below the table.
 | `paprika_insights_dashboard_upload_refusals_total` | `paprika_insights_dashboard_upload_refusals` | Counter | `route` | Dashboard saves and dry runs refused because the request-body budget was full, by route | — | — |
 | `paprika_insights_queries_total` | `paprika_insights_queries` | Counter | `kind`, `outcome`, `provider` | Provider queries by outcome | — | — |
 | `paprika_insights_query_duration_seconds` | `paprika_insights_query_duration_seconds` | Histogram | `kind`, `outcome`, `provider` | Provider query duration | — | — |
+| `paprika_insights_revision_write_failures_total` | `paprika_insights_revision_write_failures` | Counter | — | Dashboard history writes that failed; the save itself was kept | — | — |
 | `paprika_insights_store_quarantined_total` | `paprika_insights_store_quarantined` | Counter | `kind` | Stored dashboards and saved queries moved to quarantine at startup because they failed validation | — | — |
 | `paprika_mcp_tool_calls_total` | `paprika.mcp.tool.calls` | Counter | `tool`, `outcome` | Number of MCP tool calls by tool and outcome | — | — |
 | `paprika_mcp_tool_duration_milliseconds` | `paprika.mcp.tool.duration` | Histogram | `tool`, `outcome` | Duration of MCP tool invocations by tool and outcome | — | — |

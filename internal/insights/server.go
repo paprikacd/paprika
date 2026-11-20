@@ -137,6 +137,8 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err := commitStartupQuarantine(store, savedQueries); err != nil {
 		return nil, err
 	}
+	// Baselines are seeded before the saved-query store opens, so their pins are recorded here.
+	store.backfillBaselinePins(s.savedQueryPins)
 	return s, nil
 }
 
@@ -153,7 +155,10 @@ func (s *Server) createInstruments() error {
 		return fmt.Errorf("create query duration histogram: %w", err)
 	}
 	s.uploadRefusals, err = newUploadRefusalCounter(meter)
-	return err
+	if err != nil {
+		return err
+	}
+	return registerRevisionFailureCounter(meter, s.store)
 }
 
 // commitStartupQuarantine moves the documents the stores could not read into quarantine. The counts are read first
@@ -197,6 +202,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
+	api.HandleFunc("GET /api/dashboards/{id}/revisions", s.listDashboardRevisions)
+	api.HandleFunc("GET /api/dashboards/{id}/revisions/{revision}", s.getDashboardRevision)
+	api.HandleFunc("POST /api/dashboards/{id}/revisions/{revision}/restore", s.restoreDashboardRevision)
 	mux.Handle("/api/", s.authenticate(s.scopeObserveCatalog(api)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -542,6 +550,11 @@ func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
+	meta, err := s.revisionMetaFromHeaders(r.Header)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// The body counts against the body budget while it is read and while an admitted
 	// save needs the document. An admitted save frees the budget after its lock and check
 	// slot are released and before its response is written. A refused save frees it before
@@ -564,7 +577,8 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		releaseCheck = releaseSlot
 	}
-	s.saveDashboard(r, doc, checks, func() {
+	req := saveRequest{ifMatch: r.Header.Get("If-Match"), ifNoneMatch: r.Header.Get("If-None-Match"), meta: meta}
+	s.saveDashboard(r, doc, checks, &req, func() {
 		body.release()
 		releaseCheck()
 	}).replay(w)
@@ -583,7 +597,7 @@ func (s *Server) putDashboard(w http.ResponseWriter, r *http.Request) {
 //
 // release frees the check slot and the body budget. It runs after the lock is
 // released, and before the caller writes the response.
-func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool, release func()) *bufferedResponse {
+func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool, req *saveRequest, release func()) *bufferedResponse {
 	defer release()
 	out := &bufferedResponse{}
 	id := r.PathValue("id")
@@ -596,17 +610,30 @@ func (s *Server) saveDashboard(r *http.Request, doc json.RawMessage, checks bool
 	// Schema findings and error-severity lint findings reject the save. Warnings
 	// and info are returned in the checks field of a successful save. An overlap
 	// the stored version already has is a warning, so it does not reject the save.
-	findings := saveReport(id, doc, s.storedDashboard(id), checkwire.MaxIssues, func() map[string]string { return providerTypes })
+	current := s.storedDashboard(id)
+	findings := saveReport(id, doc, current, checkwire.MaxIssues, func() map[string]string { return providerTypes })
 	if findings.hasErrors() {
 		writeSchemaFindings(out, findings)
 		return out
 	}
-	tag, err := s.store.Put(id, doc, r.Header.Get("If-Match"), r.Header.Get("If-None-Match"))
+	meta := req.meta
+	meta.SavedQueries = s.savedQueryPins(doc)
+	if req.restored != nil {
+		meta.RestoredFrom = req.restored.GetNumber()
+		meta.DriftedSavedQueries = s.driftedSavedQueries(req.restored.GetSavedQueries())
+	}
+	tag, head, err := s.store.PutRevision(id, doc, req.ifMatch, req.ifNoneMatch, meta)
 	if err != nil {
 		storeError(out, err)
 		return out
 	}
+	// A restore of the current document adds no revision, so it names no restored-from revision either.
+	restoredFrom := meta.RestoredFrom
+	if current != nil && etag(current) == tag {
+		restoredFrom = 0
+	}
 	setDocumentETag(out, tag)
+	setRevisionHeaders(out, head, restoredFrom)
 	if checks {
 		writeSavedDocument(out, 200, doc, findings)
 		return out
