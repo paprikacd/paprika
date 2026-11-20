@@ -7,6 +7,33 @@ const app = new URL(process.env.INSIGHTS_E2E_URL ?? "http://127.0.0.1:3199")
 const api = new URL(process.env.PAPRIKA_GALLERY_BASE_URL ?? "http://127.0.0.1:57263")
 assert.equal(app.hostname, "127.0.0.1")
 assert.equal(api.hostname, "127.0.0.1")
+// Reliability Room is the tallest reference board; its compact canvas must not grow past standard.
+// It runs in its own context, so its localStorage writes do not fire storage events on the page under test.
+async function reliabilityCanvasHeights(browser, theme) {
+  const context = await browser.newContext({ viewport: { width: 1512, height: 1024 }, colorScheme: theme, reducedMotion: "reduce" })
+  await context.addInitScript(theme => { localStorage.setItem("paprika-insights-theme", theme) }, theme)
+  const page = await context.newPage()
+  await page.route(url => ["/api/", "/auth/"].some(prefix => url.pathname.startsWith(prefix)), async route => {
+    const original = new URL(route.request().url()), destination = new URL(original.pathname + original.search, api)
+    const headers = { ...route.request().headers() }; delete headers.origin; delete headers.host
+    await route.fulfill({ response: await route.fetch({ url: destination.href, headers }) })
+  })
+  const path = "/dashboard/insights/?dashboard=local-gallery-reliability-room"
+  const heights = {}
+  try {
+    for (const compact of ["false", "true"]) {
+      await page.goto(new URL(path, app).href, { waitUntil: "networkidle" })
+      await page.evaluate(value => localStorage.setItem("paprika-insights-compact-view", value), compact)
+      await page.reload({ waitUntil: "networkidle" })
+      await page.locator('[data-widget-id="calendar"] [data-observed]').first().waitFor()
+      await page.waitForFunction(expected => document.querySelector('[data-testid="dashboard-canvas"]').dataset.density === expected, compact === "true" ? "compact" : "standard")
+      heights[compact === "true" ? "compact" : "standard"] = (await page.getByTestId("dashboard-canvas").boundingBox()).height
+    }
+  } finally {
+    await context.close()
+  }
+  return heights
+}
 const browser = await chromium.launch({ headless: true })
 try {
   for (const theme of ["light", "dark"]) for (const width of [1512, 1332, 1000, 390]) {
@@ -41,7 +68,12 @@ try {
       if (width >= 1200) await page.waitForFunction(height => document.querySelector('[data-testid="dashboard-canvas"]').getBoundingClientRect().height < height * .9, before.height)
       const after = await canvas.boundingBox()
       if (width >= 1200) {
-        assert.ok(after.height < before.height * .8, `Compact view should materially reduce canvas height: ${before.height} -> ${after.height}`)
+        assert.equal(await page.evaluate(() => document.querySelector("[data-compact-shell]") !== null), true, `Compact view must apply the desktop shell in ${theme} at ${width}px`)
+        if (width === 1512) {
+          const heights = await reliabilityCanvasHeights(browser, theme)
+          assert.ok(heights.compact <= heights.standard + 1, `Reliability Room compact canvas must not be taller than standard in ${theme}: ${heights.standard} -> ${heights.compact}`)
+        }
+        assert.ok(after.height < before.height * .9, `Compact view should materially reduce canvas height: ${before.height} -> ${after.height}`)
         const boxes = await page.locator('[data-widget-id]').evaluateAll(nodes => nodes.map(node => {
           const b = node.getBoundingClientRect(); return { id: node.dataset.widgetId, x:b.x, y:b.y, right:b.right, bottom:b.bottom }
         }))

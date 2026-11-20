@@ -363,7 +363,7 @@ export default function InsightsApp({
   const [compactNavigationExpanded, setCompactNavigationExpanded] = useState(false)
   const compactDesktop = useSyncExternalStore(subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot)
   const finePointer = useSyncExternalStore(subscribeFinePointer, finePointerSnapshot, compactDesktopServerSnapshot)
-  const compactShell = dense && !editing && resolvedTheme === "dark" && compactDesktop
+  const compactShell = dense && !editing && compactDesktop
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const isMobile = useMobileNavigation()
   const phoneViewport = usePhoneShell()
@@ -1904,7 +1904,7 @@ export default function InsightsApp({
             {canvasMode === "wide" && <>
             <span className={styles.divider} />
             <GammaButton size="sm" variant="quiet" iconOnly={compactShell} aria-label={compactShell ? "Compact view" : undefined} aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
-              title={editing ? "Compact view is available when previewing" : canvasMode !== "wide" ? "Compact view is available when the dashboard canvas is wider" : "Use a denser wide-screen layout without changing the saved dashboard"}
+              title={editing ? "Compact view is available when previewing" : canvasMode !== "wide" ? "Compact view is available when the dashboard canvas is wider" : "Icon rail, one-row header and a tighter grid. The saved dashboard is unchanged."}
               className={dense && !editing ? styles.activeTool : ""} onClick={() => setDense(!dense)}>
               <PanelTop size={14} />{!compactShell && " Compact view"}
             </GammaButton>

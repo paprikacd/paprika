@@ -358,7 +358,7 @@
 @media (min-width: 1024px) and (pointer: fine) {
   /* Select the existing styled-cell vocabulary, not a dashboard ID or a new
      table schema. Other compact tables keep their accepted geometry. */
-  :global([data-insights-theme="dark"][data-density="compact"]) .compactTable:has(td[data-styled-cell="sparkline"]):has(td[data-styled-cell="bar-segments"]):has(td[data-styled-cell="status-badge"]) {
+  :global([data-compact-shell]) .compactTable:has(td[data-styled-cell="sparkline"]):has(td[data-styled-cell="bar-segments"]):has(td[data-styled-cell="status-badge"]) {
     & :is(th, td) { padding-inline: 2px; }
   }
 }
