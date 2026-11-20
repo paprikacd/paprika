@@ -19,7 +19,7 @@ const dashboardDocumentSchema = `{"type":"object","description":"Canonical UI da
 // RegisterInsightsTools adds document authoring only when the authenticated
 // Insights proxy is configured. Telemetry tools retain their read-only scope.
 func RegisterInsightsTools(registry *mcp.Registry, c *InsightsAuthoringClient, usage *UsageTracker) error {
-	tools := make([]mcp.Tool, 0, 14)
+	tools := make([]mcp.Tool, 0, 17)
 	tools = append(tools, insightsListTool(c, "list_insights_providers", "providers"), insightsListTool(c, "list_saved_queries", "saved-queries"), insightsListTool(c, "list_dashboards", "dashboards"), insightsQueryDashboardTool(c), insightsSchemaTool(c), insightsValidateTool(c))
 	if c.renderer != nil {
 		tools = append(tools, insightsRenderDashboardTool(c))
@@ -27,6 +27,7 @@ func RegisterInsightsTools(registry *mcp.Registry, c *InsightsAuthoringClient, u
 	for _, document := range []struct{ singular, collection, schema string }{{"saved_query", "saved-queries", savedQueryDocumentSchema}, {"dashboard", "dashboards", dashboardDocumentSchema}} {
 		tools = append(tools, insightsGetTool(c, document.singular, document.collection), insightsPutTool(c, document.singular, document.collection, document.schema, true), insightsPutTool(c, document.singular, document.collection, document.schema, false), insightsPatchTool(c, document.singular, document.collection))
 	}
+	tools = append(tools, insightsRevisionTools(c)...)
 	for i := range tools {
 		tools[i].Invoke = unavailableAsToolError(tools[i].Invoke)
 		if usage != nil {
@@ -102,11 +103,11 @@ func insightsPutTool(c *InsightsAuthoringClient, singular, collection, documentS
 		action, required, extra = "update", `["document","etag"]`, `,"etag":`+insightsETagSchema
 		description = "Update a document only if its exact ETag is still current. Get the latest first; a conflict requires reviewing and rebuilding the change, never blindly retrying."
 	}
-	return mcp.Tool{Name: action + "_" + singular, Description: description + " Requires paprika:observe, paprika:insights:write and human Insights write permission. The document is validated by the same service as the UI. Active clean UI views refresh automatically; unsaved drafts are preserved." + insightsCompositionPointer(singular), Scope: mcp.ScopeInsightsWrite, InputSchema: json.RawMessage(`{"type":"object","properties":{"document":` + documentSchema + extra + `},"required":` + required + `,"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
-		args, err := decodeInsightsAuthoringArgs(raw)
+	return mcp.Tool{Name: action + "_" + singular, Description: description + " Requires paprika:observe, paprika:insights:write and human Insights write permission. The document is validated by the same service as the UI. Active clean UI views refresh automatically; unsaved drafts are preserved." + insightsCompositionPointer(singular), Scope: mcp.ScopeInsightsWrite, InputSchema: json.RawMessage(`{"type":"object","properties":{"document":` + documentSchema + extra + insightsRevisionMessageProperty(singular) + `},"required":` + required + `,"additionalProperties":false}`), Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
+		args, err := decodeInsightsToolArgs[insightsWriteArgs](raw)
 		if err != nil {
 			return nil, err
 		}
-		return insightsWriteResult(c.put(ctx, collection, args, create))
+		return insightsWriteResult(c.put(ctx, collection, &args, create))
 	}}
 }

@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { checksFromError, createInsightsClient, InsightsHTTPError, type InsightsSession } from "./client"
 import { Severity } from "@/gen/paprika/insights/v1/checks_pb"
+import { RevisionSource } from "@/gen/paprika/insights/v1/revisions_pb"
 import type { Dashboard, SavedQuery } from "./schema"
 
 const dashboard: Dashboard = {
@@ -126,6 +127,55 @@ describe("Insights renewable sessions", () => {
     switchAccount()
     finish({ providers: [{ id: "private-provider" }] })
     await expect(pending).rejects.toThrow(/session changed/)
+  })
+})
+
+describe("Insights revision history client", () => {
+  const revisionList = {
+    dashboardId: "production",
+    retentionLimit: 20,
+    currentEtag: '"current"',
+    revisions: [
+      { number: 2, etag: '"current"', author: { subject: "human", name: "Ada" }, source: "REVISION_SOURCE_MCP", message: "Retitle", createdAtUnixMs: "1700000000000", widgetCount: 0, title: "Production", restoredFrom: 0, savedQueries: [], driftedSavedQueries: [], sizeBytes: 120, futureField: true },
+      { number: 1, etag: '"first"', source: "REVISION_SOURCE_BASELINE", createdAtUnixMs: "1699999999000", widgetCount: 0, title: "Production", restoredFrom: 0, savedQueries: [], driftedSavedQueries: [], sizeBytes: 110 },
+    ],
+  }
+
+  it("lists revisions with the generated decoder and ignores fields it does not know", async () => {
+    const fetcher = mockFetch(response(revisionList))
+    const list = await createInsightsClient().listRevisions!("production")
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/dashboards/production/revisions")
+    expect(list.dashboardId).toBe("production")
+    expect(list.revisions.map((revision) => revision.number)).toEqual([2, 1])
+    expect(list.revisions[0].source).toBe(RevisionSource.MCP)
+    expect(list.revisions[0].author?.name).toBe("Ada")
+    expect(list.revisions[0].createdAtUnixMs).toBe(1700000000000n)
+  })
+
+  it("restores with the current ETag and the encoded message, and reports the revision it created", async () => {
+    const restored = { ...dashboard, title: "Initial" }
+    const fetcher = mockFetch(response(restored, 200, { ETag: '"restored"', "X-Paprika-Revision": "3", "X-Paprika-Restored-From": "1" }))
+    const result = await createInsightsClient().restoreRevision!("production", 1, '"current"', "Restore note")
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/dashboards/production/revisions/1/restore")
+    expect(fetcher.mock.calls[0][1].method).toBe("POST")
+    expect(fetcher.mock.calls[0][1].headers.get("If-Match")).toBe('"current"')
+    expect(fetcher.mock.calls[0][1].headers.get("X-Insights-Revision-Message")).toBe("Restore%20note")
+    expect(result.dashboard.title).toBe("Initial")
+    expect(result.etag).toBe('"restored"')
+    expect(result.revision).toBe(3)
+  })
+
+  it("sends no message header when none is given", async () => {
+    const fetcher = mockFetch(response(dashboard, 200, { ETag: '"restored"', "X-Paprika-Revision": "3" }))
+    await createInsightsClient().restoreRevision!("production", 1, '"current"')
+    expect(fetcher.mock.calls[0][1].headers.has("X-Insights-Revision-Message")).toBe(false)
+  })
+
+  it("reports a stale restore with the reload message and writes nothing", async () => {
+    const fetcher = mockFetch(response({ error: "stale" }, 412))
+    const api = createInsightsClient()
+    await expect(api.restoreRevision!("production", 1, '"old"')).rejects.toThrow("This dashboard changed on the server")
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 })
 

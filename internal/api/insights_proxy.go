@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/insights/revisionsource"
 )
 
 const InsightsPrefix = "/api/insights"
@@ -117,7 +118,7 @@ func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, err
 			pr.Out.URL.RawPath = ""
 			// Allow only API data, concurrency and receipt-opt-in headers, never end-user secrets.
 			pr.Out.Header = make(http.Header)
-			for _, name := range []string{"Content-Type", "If-Match", "If-None-Match", "X-Insights-Diagnostics"} {
+			for _, name := range []string{"Content-Type", "If-Match", "If-None-Match", "X-Insights-Diagnostics", "X-Insights-Revision-Message"} {
 				if v := pr.In.Header.Get(name); v != "" {
 					pr.Out.Header.Set(name, v)
 				}
@@ -126,6 +127,9 @@ func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, err
 			pr.Out.Header.Set("Authorization", "Bearer "+token)
 			if delegated, ok := pr.In.Context().Value(insightsObserveTokenKey{}).(string); ok {
 				pr.Out.Header.Set("X-Paprika-Observe-Token", delegated)
+			}
+			if stamp, ok := pr.In.Context().Value(insightsRevisionStampKey{}).(insightsRevisionStamp); ok {
+				setInsightsRevisionHeaders(pr.Out.Header, stamp)
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
@@ -142,6 +146,40 @@ func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, err
 	return proxy, nil
 }
 
+// insightsRevisionStamp is who is writing and from where, read from the request context by the proxy handler. It comes
+// from the authenticated principal and the in-process caller, never from the browser's headers, so a revision cannot
+// name another author. Only the subject and display name are kept; the email address is never forwarded. The name is
+// percent-encoded so the header stays ASCII.
+type insightsRevisionStamp struct {
+	subject string
+	name    string
+	source  string
+}
+
+type insightsRevisionStampKey struct{}
+
+func revisionStampFor(ctx context.Context) insightsRevisionStamp {
+	stamp := insightsRevisionStamp{source: "ui"}
+	if principal := auth.PrincipalFromContext(ctx); principal != nil && principal.Subject != "" {
+		stamp.subject = principal.Subject
+		stamp.name = url.PathEscape(principal.Name)
+	}
+	if revisionsource.From(ctx) == revisionsource.MCP {
+		stamp.source = "mcp"
+	}
+	return stamp
+}
+
+func setInsightsRevisionHeaders(header http.Header, stamp insightsRevisionStamp) {
+	if stamp.subject != "" {
+		header.Set("X-Paprika-Revision-Author-Subject", stamp.subject)
+		if stamp.name != "" {
+			header.Set("X-Paprika-Revision-Author-Name", stamp.name)
+		}
+	}
+	header.Set("X-Paprika-Revision-Source", stamp.source)
+}
+
 func insightsProxyRequestHandler(proxy http.Handler, cfg auth.Config, issuer string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, InsightsPrefix+"/") {
@@ -150,6 +188,7 @@ func insightsProxyRequestHandler(proxy http.Handler, cfg auth.Config, issuer str
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 28*time.Second)
 		defer cancel()
+		ctx = context.WithValue(ctx, insightsRevisionStampKey{}, revisionStampFor(ctx))
 		if issuer != "" {
 			principal := auth.PrincipalFromContext(ctx)
 			if principal == nil || principal.Subject == "" {

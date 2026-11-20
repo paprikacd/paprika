@@ -112,7 +112,7 @@ func newInsightsPatchHarness(t *testing.T) *insightsPatchHarness {
 
 func (h *insightsPatchHarness) seed(t *testing.T, collection, document string) *insightsDocumentResult {
 	t.Helper()
-	result, err := h.c.put(patchEditor(t), collection, insightsAuthoringArgs{Document: json.RawMessage(document)}, true)
+	result, err := h.c.put(patchEditor(t), collection, &insightsWriteArgs{insightsAuthoringArgs: insightsAuthoringArgs{Document: json.RawMessage(document)}}, true)
 	require.NoError(t, err)
 	return result
 }
@@ -282,7 +282,7 @@ func TestInsightsPatchRejectsStaleAndRacingWrites(t *testing.T) {
 	concurrentDone := make(chan struct{})
 	h.hookMu.Lock()
 	h.afterGet = func() {
-		concurrent, concurrentErr = h.c.put(patchEditor(t), "dashboards", insightsAuthoringArgs{Document: json.RawMessage(strings.Replace(patchDashboardFixture, "Service overview", "Concurrent title", 1)), ETag: initial.ETag}, false)
+		concurrent, concurrentErr = h.c.put(patchEditor(t), "dashboards", &insightsWriteArgs{insightsAuthoringArgs: insightsAuthoringArgs{Document: json.RawMessage(strings.Replace(patchDashboardFixture, "Service overview", "Concurrent title", 1)), ETag: initial.ETag}}, false)
 		close(concurrentDone)
 	}
 	h.hookMu.Unlock()

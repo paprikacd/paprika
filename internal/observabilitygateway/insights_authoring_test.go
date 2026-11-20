@@ -39,6 +39,7 @@ type authoringHarness struct {
 	token    string
 	auditor  *authoringAudit
 	registry *mcp.Registry
+	dataDir  string
 }
 
 func TestInsightsAuthoringPublicOrigin(t *testing.T) {
@@ -58,7 +59,8 @@ func newAuthoringHarness(t *testing.T) *authoringHarness {
 	t.Helper()
 	secret := []byte(rand.Text())
 	serviceToken := rand.Text() + rand.Text()
-	store, err := insights.OpenStore(t.TempDir())
+	dataDir := t.TempDir()
+	store, err := insights.OpenStore(dataDir)
 	require.NoError(t, err)
 	service, err := insights.NewServer(insights.Config{Token: serviceToken, Providers: []insights.ProviderConfig{{ID: "prometheus", Name: "Metrics", Type: "prometheus", URL: "https://metrics.example.test"}}}, store)
 	require.NoError(t, err)
@@ -78,7 +80,7 @@ func newAuthoringHarness(t *testing.T) *authoringHarness {
 	require.NoError(t, observe.RegisterInsightsTools(registry, authoring, nil))
 	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: "human", Groups: []string{"editors"}, Audience: auth.ConsoleAPIAudience, Secret: secret})
 	require.NoError(t, err)
-	return &authoringHarness{invoker: mcp.NewInvoker(registry, nil, nil, auditor), proxy: proxy, token: token, auditor: auditor, registry: registry}
+	return &authoringHarness{invoker: mcp.NewInvoker(registry, nil, nil, auditor), proxy: proxy, token: token, auditor: auditor, registry: registry, dataDir: dataDir}
 }
 
 func authoringPrincipal(groups []string, write bool) *auth.Principal {
@@ -236,7 +238,7 @@ func TestInsightsAuthoringListsAreCompactAndToolsDoNotExposeDeletion(t *testing.
 	require.NoError(t, err)
 	require.Contains(t, string(dashboards["dashboards"]), `"widgetCount":0`)
 	require.NotContains(t, string(dashboards["dashboards"]), `"widgets"`)
-	require.Len(t, h.registry.All(), 14)
+	require.Len(t, h.registry.All(), 17)
 	for _, tool := range h.registry.All() {
 		require.False(t, strings.HasPrefix(tool.Name, "delete_"))
 		require.True(t, json.Valid(tool.InputSchema))

@@ -31,6 +31,7 @@ type insightsPatchArgs struct {
 	ETag               string               `json:"etag"`
 	Patch              json.RawMessage      `json:"patch,omitempty"`
 	WidgetEdits        []insightsWidgetEdit `json:"widget_edits,omitempty"` //nolint:tagliatelle // MCP arguments use snake_case.
+	Message            string               `json:"message,omitempty"`
 	inputBytes         int
 	widgetEditsPresent bool
 }
@@ -65,7 +66,7 @@ func decodeInsightsPatchArgs(raw json.RawMessage) (*insightsPatchArgs, error) {
 		return args, invalidInsightsPatch("patch arguments must be bounded JSON without duplicate keys")
 	}
 	fields, err := insightsPatchObject(raw)
-	if err != nil || !insightsPatchFields(fields, "id", "etag", "patch", "widget_edits") {
+	if err != nil || !insightsPatchFields(fields, "id", "etag", "patch", "widget_edits", "message") {
 		return args, invalidInsightsPatch("invalid patch argument fields")
 	}
 	if json.Unmarshal(raw, args) != nil {
@@ -134,7 +135,7 @@ func (c *InsightsAuthoringClient) patch(ctx context.Context, collection string, 
 		return nil, err
 	}
 	putAudits = true
-	result, err = c.put(ctx, collection, insightsAuthoringArgs{Document: document, ETag: args.ETag}, false)
+	result, err = c.put(ctx, collection, &insightsWriteArgs{insightsAuthoringArgs: insightsAuthoringArgs{Document: document, ETag: args.ETag}, Message: args.Message}, false)
 	return withInsightsPlacements(result, placements), err
 }
 

@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 	"unicode/utf16"
 )
 
@@ -36,6 +38,18 @@ type Store struct {
 	documents map[string]Dashboard
 	// quarantine holds the invalid documents OpenStore found. They move only in commitQuarantine.
 	quarantine []pendingQuarantine
+	// revisions holds the in-memory history index of each dashboard; see revision_store.go.
+	revisions map[string]*revisionHistory
+	// revisionBytes is the blob bytes of every retained revision. revisionBudget and revisionLimit bound it.
+	revisionBytes  int64
+	revisionBudget int64
+	revisionLimit  int
+	// pendingRevisions holds the corrupt revision indexes OpenStore found. They move only in commitQuarantine.
+	pendingRevisions []pendingRevisionQuarantine
+	// revisionWriteFailures counts history writes that failed while the save itself succeeded.
+	revisionWriteFailures atomic.Int64
+	// now is the clock for revision timestamps. Nil means time.Now.
+	now func() time.Time
 }
 
 // OpenStore uses a single-writer, atomic-file store suitable for a single
@@ -52,10 +66,17 @@ func OpenStore(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read dashboard store: %w", err)
 	}
-	s := &Store{dir: dir, documents: make(map[string]Dashboard)}
+	s := &Store{
+		dir:            dir,
+		documents:      make(map[string]Dashboard),
+		revisions:      make(map[string]*revisionHistory),
+		revisionBudget: maxRevisionStoreBytes,
+		revisionLimit:  maxRevisionsPerDashboard,
+	}
 	if err := s.loadEntries(dir, entries); err != nil {
 		return nil, err
 	}
+	s.reconcileRevisions()
 	return s, nil
 }
 
@@ -112,7 +133,11 @@ func readStoredDashboard(dir, name, id string) (data []byte, staleZone, invalid 
 func (s *Store) commitQuarantine() error {
 	var err error
 	s.quarantine, err = commitPendingQuarantine(s.quarantine)
-	return err
+	if err != nil {
+		return err
+	}
+	s.commitRevisionQuarantine()
+	return nil
 }
 
 func (s *Store) List() []Dashboard {
@@ -143,32 +168,8 @@ func (s *Store) Get(id string) (document Dashboard, version string, err error) {
 // Put checks HTTP preconditions while holding the same lock used by persistence.
 // If-Match is optional for clients that intentionally choose last-write-wins.
 func (s *Store) Put(id string, document Dashboard, ifMatch, ifNoneMatch string) (string, error) {
-	if err := validateDashboard(id, document); err != nil {
-		return "", err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previous, exists := s.documents[id]
-	if err := preconditions(previous, exists, ifMatch, ifNoneMatch); err != nil {
-		return "", err
-	}
-	if !exists && len(s.documents) >= maxDashboards {
-		return "", ErrCapacity
-	}
-	total := len(document)
-	for key, doc := range s.documents {
-		if key != id {
-			total += len(doc)
-		}
-	}
-	if total > maxStoreBytes {
-		return "", ErrCapacity
-	}
-	if err := s.persist(id, document); err != nil {
-		return "", err
-	}
-	s.documents[id] = bytes.Clone(document)
-	return etag(document), nil
+	tag, _, err := s.PutRevision(id, document, ifMatch, ifNoneMatch, RevisionMeta{})
+	return tag, err
 }
 
 func (s *Store) Delete(id, ifMatch string) error {
@@ -185,6 +186,7 @@ func (s *Store) Delete(id, ifMatch string) error {
 		return fmt.Errorf("delete dashboard: %w", err)
 	}
 	delete(s.documents, id)
+	s.removeRevisionHistoryLocked(id)
 	return syncDirectory(s.dir)
 }
 

@@ -436,6 +436,8 @@ When Insights is configured, the same MCP endpoint additionally exposes:
 | `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |
 | `update_saved_query`, `update_dashboard` | `paprika:observe` + `paprika:insights:write` | Update a document using the exact ETag from its latest read |
 | `patch_saved_query`, `patch_dashboard` | `paprika:observe` + `paprika:insights:write` | Edit selected fields and dashboard widgets by ID, atomically against the current ETag |
+| `list_dashboard_revisions`, `get_dashboard_revision` | `paprika:observe` | Read a dashboard's retained revisions, newest first, and the exact document of one |
+| `restore_dashboard_revision` | `paprika:observe` + `paprika:insights:write` | Restore a revision as a new revision, against the current ETag |
 
 All document tools also enforce the user's global `insights` read/write RBAC.
 The authoring scope grants no fleet operations or provider configuration.
@@ -454,6 +456,16 @@ field, and arrays replace in full. Dashboard widgets use `widget_edits` with
 `add`, `update` or `remove` operations addressed by stable widget ID. A batch is
 validated and persisted once; any invalid edit or ETag conflict leaves the
 document unchanged. See the [targeted authoring contract](../design/insights/targeted-authoring.md).
+
+Each dashboard keeps its last 20 saved revisions. A dashboard write made through
+MCP records the agent's `paprika:observe` principal (subject and display name,
+never email) and an optional `message` of up to 200 characters, passed to
+`create_dashboard`, `update_dashboard` or `patch_dashboard`. A restore is a new
+revision: it needs the current ETag, and restoring the content already current
+adds nothing. Restore does not bring back saved queries. Any saved query that
+changed since the revision is listed in `driftedSavedQueries`, so the result
+never looks like a full rollback. A revision that no longer passes the current
+rules is refused with its findings and nothing is saved.
 
 The tools use the same persistent Insights service as the UI. Open workspaces
 refresh externally saved changes while protecting unsaved local drafts.

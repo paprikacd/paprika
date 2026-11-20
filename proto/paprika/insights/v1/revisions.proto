@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package paprika.insights.v1;
+
+option go_package = "github.com/benebsworth/paprika/internal/api/paprika/insights/v1;insightsv1";
+
+// Wire form: every JSON encoding of these messages is protojson with the
+// standard names. Enum values appear as their proto names (REVISION_SOURCE_UI)
+// and fields as lowerCamelCase (createdAtUnixMs).
+
+// RevisionSource says what wrote a dashboard revision.
+enum RevisionSource {
+  REVISION_SOURCE_UNSPECIFIED = 0;
+  // A save from the Insights UI.
+  REVISION_SOURCE_UI = 1;
+  // A write through the MCP authoring tools.
+  REVISION_SOURCE_MCP = 2;
+  // A restore of an earlier revision. restored_from names it.
+  REVISION_SOURCE_RESTORE = 3;
+  // A revision seeded at startup for a dashboard that had no history, or
+  // whose history was repaired after a crash. Its author and message are
+  // unknown.
+  REVISION_SOURCE_BASELINE = 4;
+}
+
+// RevisionAuthor identifies the principal who saved a revision. Email is never
+// stored: subject is the stable identity and name is the display name.
+message RevisionAuthor {
+  string subject = 1;
+  string name = 2;
+}
+
+// SavedQueryPin records the ETag of one saved query a dashboard referenced
+// when the revision was written.
+message SavedQueryPin {
+  string id = 1;
+  string etag = 2;
+}
+
+// DashboardRevision is the metadata of one stored revision. The document bytes
+// are not part of it; they are read by revision number.
+message DashboardRevision {
+  // number is monotonic per dashboard and is never reused after pruning.
+  uint32 number = 1;
+  // etag is the quoted sha256 of the stored document bytes.
+  string etag = 2;
+  RevisionAuthor author = 3;
+  RevisionSource source = 4;
+  // message is at most 200 UTF-16 units.
+  string message = 5;
+  int64 created_at_unix_ms = 6;
+  uint32 size_bytes = 7;
+  uint32 widget_count = 8;
+  string title = 9;
+  // restored_from is 0 unless source is REVISION_SOURCE_RESTORE.
+  uint32 restored_from = 10;
+  // saved_queries lists the saved queries the document referenced.
+  repeated SavedQueryPin saved_queries = 11;
+  // drifted_saved_queries is set on REVISION_SOURCE_RESTORE only. It lists the
+  // saved queries whose current ETag differs from the pin in the revision
+  // restored from. Restore never changes saved queries.
+  repeated SavedQueryPin drifted_saved_queries = 12;
+}
+
+// DashboardRevisionList is the HTTP and MCP response for a dashboard's history.
+message DashboardRevisionList {
+  string dashboard_id = 1;
+  // revisions are newest first.
+  repeated DashboardRevision revisions = 2;
+  // retention_limit is the number of revisions kept per dashboard.
+  uint32 retention_limit = 3;
+  // current_etag is the ETag of the current document.
+  string current_etag = 4;
+}
+
+// DashboardRevisionIndex is the on-disk index.json for one dashboard's history.
+message DashboardRevisionIndex {
+  uint32 schema_version = 1;
+  string dashboard_id = 2;
+  // next_number is the number the next revision takes.
+  uint32 next_number = 3;
+  // revisions are oldest first.
+  repeated DashboardRevision revisions = 4;
+}

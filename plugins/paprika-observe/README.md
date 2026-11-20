@@ -127,7 +127,9 @@ Targeted edits use `patch_saved_query` and `patch_dashboard`: nested objects
 merge, `null` removes a field, and arrays replace. Dashboard `widget_edits`
 add, update or remove widgets by stable ID in one atomic save. Full-document
 replacements remain available through `update_saved_query` and
-`update_dashboard`. Every edit requires the exact ETag
+`update_dashboard`. A dashboard's retained revisions are listed with
+`list_dashboard_revisions` and read with `get_dashboard_revision`;
+`restore_dashboard_revision` writes one back as a new revision. Every edit requires the exact ETag
 returned by the last read. A conflict requires a fresh read and review of both
 changes; do not retry an overwrite with a wildcard ETag. Query provider/kind
 identity and existing dashboard parameter bindings remain protected by the

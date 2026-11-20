@@ -24,6 +24,7 @@ import (
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/revisionsource"
 )
 
 var insightsDocumentID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$`)
@@ -76,6 +77,14 @@ type insightsAuthoringArgs struct {
 	ETag       string          `json:"etag,omitempty"`
 }
 
+// insightsWriteArgs are the arguments of a create or update. Only a write takes a message, so the other authoring
+// tools keep rejecting it as an unknown field.
+type insightsWriteArgs struct {
+	insightsAuthoringArgs
+	// Message is the optional note a dashboard save records with its revision. Saved queries have no revisions.
+	Message string `json:"message,omitempty"`
+}
+
 func decodeInsightsAuthoringArgs(raw json.RawMessage) (insightsAuthoringArgs, error) {
 	var args insightsAuthoringArgs
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -123,14 +132,27 @@ func (c *InsightsAuthoringClient) request(ctx context.Context, method, path stri
 // requestAuthorized keeps the action explicit for read-only POST operations.
 // Its callers use fixed routes; arbitrary authoring routes cannot opt into read access.
 func (c *InsightsAuthoringClient) requestAuthorized(ctx context.Context, method, path string, document json.RawMessage, headers http.Header, write bool, limit int64) (body json.RawMessage, tag string, err error) {
-	credential, err := c.credential(ctx, write)
+	body, responseHeader, err := c.send(ctx, method, path, document, headers, write, limit)
 	if err != nil {
 		return nil, "", err
+	}
+	return body, responseHeader.Get("ETag"), nil
+}
+
+// send performs one authorized call and returns the response headers beside the body, for the calls whose
+// response names a revision. Every write is marked as an MCP write, so the revision it records names this source.
+func (c *InsightsAuthoringClient) send(ctx context.Context, method, path string, document json.RawMessage, headers http.Header, write bool, limit int64) (json.RawMessage, http.Header, error) {
+	credential, err := c.credential(ctx, write)
+	if err != nil {
+		return nil, nil, err
+	}
+	if write {
+		ctx = revisionsource.With(ctx, revisionsource.MCP)
 	}
 	// The origin is deliberately synthetic: this transport calls only the injected proxy.
 	req, err := http.NewRequestWithContext(ctx, method, "http://insights.in-process/api/insights/"+path, bytes.NewReader(document))
 	if err != nil {
-		return nil, "", connect.NewError(connect.CodeInvalidArgument, errors.New("invalid Insights request"))
+		return nil, nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid Insights request"))
 	}
 	req.Header = headers.Clone()
 	if req.Header == nil {
@@ -140,27 +162,27 @@ func (c *InsightsAuthoringClient) requestAuthorized(ctx context.Context, method,
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.client.Do(req) // #nosec G704 -- Fixed in-process origin and injected transport; no caller-selected network destination.
 	if err != nil {
-		return nil, "", insightsTransportError(ctx)
+		return nil, nil, insightsTransportError(ctx)
 	}
 	return readInsightsResponseLimit(resp, limit)
 }
 
-func readInsightsResponseLimit(resp *http.Response, limit int64) (payload json.RawMessage, tag string, err error) {
+func readInsightsResponseLimit(resp *http.Response, limit int64) (payload json.RawMessage, header http.Header, err error) {
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	closeErr := resp.Body.Close()
 	if readErr != nil || closeErr != nil {
-		return nil, "", connect.NewError(connect.CodeUnavailable, errors.New("insights response could not be read"))
+		return nil, nil, connect.NewError(connect.CodeUnavailable, errors.New("insights response could not be read"))
 	}
 	if int64(len(body)) > limit {
-		return nil, "", connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds its size limit"))
+		return nil, nil, connect.NewError(connect.CodeResourceExhausted, errors.New("insights response exceeds its size limit"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", insightsStatusError(resp.StatusCode, body, resp.Header)
+		return nil, nil, insightsStatusError(resp.StatusCode, body, resp.Header)
 	}
 	if !json.Valid(body) {
-		return nil, "", connect.NewError(connect.CodeInternal, errors.New("insights returned invalid JSON"))
+		return nil, nil, connect.NewError(connect.CodeInternal, errors.New("insights returned invalid JSON"))
 	}
-	return body, resp.Header.Get("ETag"), nil
+	return body, resp.Header, nil
 }
 
 func insightsTransportError(ctx context.Context) error {
@@ -356,14 +378,17 @@ func splitInsightsChecks(body json.RawMessage) (json.RawMessage, *insightsv1.Che
 	return document, report, nil
 }
 
-func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, args insightsAuthoringArgs, create bool) (result *insightsDocumentResult, err error) {
-	var identity struct {
-		ID string `json:"id"`
+// validateInsightsWriteMessage refuses a revision message on any collection but dashboards, which are the only ones with
+// revisions.
+func validateInsightsWriteMessage(collection, message string) error {
+	if message != "" && collection != "dashboards" {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("only dashboards take a revision message"))
 	}
-	if json.Unmarshal(args.Document, &identity) != nil || !insightsDocumentID.MatchString(identity.ID) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("document must contain a valid id"))
-	}
-	defer func() { c.auditMutation(ctx, collection, identity.ID, create, err) }()
+	return nil
+}
+
+// insightsWriteHeaders are the preconditions and the revision message of a create or update.
+func insightsWriteHeaders(args *insightsWriteArgs, create bool) (http.Header, error) {
 	headers := make(http.Header)
 	if create {
 		headers.Set("If-None-Match", "*")
@@ -372,6 +397,27 @@ func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, ar
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("update requires the exact ETag returned by get; wildcard and weak ETags are not allowed"))
 		}
 		headers.Set("If-Match", args.ETag)
+	}
+	if args.Message != "" {
+		headers.Set(insightsRevisionMessageHeader, url.PathEscape(args.Message))
+	}
+	return headers, nil
+}
+
+func (c *InsightsAuthoringClient) put(ctx context.Context, collection string, args *insightsWriteArgs, create bool) (result *insightsDocumentResult, err error) {
+	var identity struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(args.Document, &identity) != nil || !insightsDocumentID.MatchString(identity.ID) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("document must contain a valid id"))
+	}
+	defer func() { c.auditMutation(ctx, collection, identity.ID, create, err) }()
+	if err = validateInsightsWriteMessage(collection, args.Message); err != nil {
+		return nil, err
+	}
+	headers, err := insightsWriteHeaders(args, create)
+	if err != nil {
+		return nil, err
 	}
 	// Dashboard saves ask for their warnings beside the saved document. The
 	// document itself is returned without them. Saved queries have no checks.
@@ -409,14 +455,19 @@ func (c *InsightsAuthoringClient) documentResult(collection, id string, body jso
 }
 
 func (c *InsightsAuthoringClient) auditMutation(ctx context.Context, collection, id string, create bool, err error) {
+	action := "update"
+	if create {
+		action = "create"
+	}
+	c.auditAction(ctx, collection, id, action, err)
+}
+
+// auditAction records one Insights write made through MCP. A restore is recorded as its own action.
+func (c *InsightsAuthoringClient) auditAction(ctx context.Context, collection, id, action string, err error) {
 	p := auth.PrincipalFromContext(ctx)
 	subject := ""
 	if p != nil {
 		subject = p.Subject
-	}
-	action := "update"
-	if create {
-		action = "create"
 	}
 	outcome := ""
 	if err != nil {
