@@ -2,14 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { dashboardActionItems, type DashboardActionHandlers } from "./dashboard-actions";
 
 function handlers(): DashboardActionHandlers {
-  return { edit: vi.fn(), togglePanel: vi.fn(), inspectQueries: vi.fn(), refresh: vi.fn() };
+  return { edit: vi.fn(), togglePanel: vi.fn(), inspectQueries: vi.fn(), refresh: vi.fn(), shortcuts: vi.fn() };
 }
 
 describe("dashboardActionItems", () => {
-  it("keeps the Manage and Build with AI pair outside the phone shell", () => {
-    const items = dashboardActionItems({ phoneShell: false, refreshInterval: 0, customRange: false }, handlers());
-    expect(items.map(item => item.label)).toEqual(["Manage dashboards", "Build with AI"]);
+  it("keeps the Manage and Build with AI pair outside the phone shell, with the shortcut list", () => {
+    const h = handlers();
+    const items = dashboardActionItems({ phoneShell: false, refreshInterval: 0, customRange: false }, h);
+    expect(items.map(item => item.label)).toEqual(["Manage dashboards", "Build with AI", "Keyboard shortcuts"]);
     expect(items.every(item => item.group === undefined)).toBe(true);
+    items.find(item => item.label === "Keyboard shortcuts")?.onSelect();
+    expect(h.shortcuts).toHaveBeenCalledOnce();
   });
 
   it("lists every phone action in groups, Edit first", () => {

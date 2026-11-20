@@ -12,6 +12,7 @@ import { chromium } from "playwright"
 
 const baseURL = process.env.INSIGHTS_E2E_URL || "http://127.0.0.1:3015"
 const baseline = process.argv.includes("--baseline")
+const keyboardOnly = process.env.INSIGHTS_BUILDER_KEYBOARD_ONLY === "1"
 const output = resolve(fileURLToPath(new URL("../../", import.meta.url)), "artifacts/insights/builder")
 const phase = baseline ? "baseline" : "final"
 const reports = [], pageErrors = [], screenshots = []
@@ -472,12 +473,116 @@ async function tooltipBounds() {
     }, withTooltip(200, true, true), series)
   }
 }
+// The shortcut list is a modal over the page: it has an opaque Insights background and sits centred in the viewport.
+async function shortcutListLayout(width) {
+  await check("keyboard shortcut list is opaque and centred", width, async ({ page }) => {
+    await page.keyboard.press("?")
+    const list = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true })
+    await list.waitFor()
+    const background = await list.evaluate(element => getComputedStyle(element).backgroundColor)
+    assert.doesNotMatch(background, /^(transparent|rgba\(0, 0, 0, 0\))$/, `The list has no background: ${background}`)
+    const rect = await list.boundingBox(), viewport = page.viewportSize()
+    assert.ok(rect, "The list is laid out")
+    assert.ok(Math.abs(rect.x + rect.width / 2 - viewport.width / 2) <= 2, `The list is not horizontally centred: ${JSON.stringify(rect)}`)
+    assert.ok(Math.abs(rect.y + rect.height / 2 - viewport.height / 2) <= 2, `The list is not vertically centred: ${JSON.stringify(rect)}`)
+    await inViewport(page, list)
+    await page.keyboard.press("Escape")
+    await list.waitFor({ state: "detached" })
+  })
+}
+// Keyboard shortcuts in a real browser: Save is claimed only while editing, CodeMirror keeps its own undo and
+// run key, the chart editor applies on Mod+Enter, a focused tile is removed with an Undo notice, and "?" lists the keys.
+async function keyboardShortcuts(width) {
+  await check("keyboard shortcuts for save, chart undo, query run, apply, tile removal and the list", width, async ({ page, queries, calls }) => {
+    const mod = await page.evaluate(() => (/Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "Meta" : "Control"))
+    const pageURL = page.url()
+    await page.evaluate(() => {
+      window.__keyEvents = []
+      window.addEventListener("keydown", event => window.__keyEvents.push({ key: event.key, prevented: event.defaultPrevented }))
+    })
+    const lastKey = () => page.evaluate(() => window.__keyEvents.at(-1))
+    const puts = () => calls.filter(call => call.method === "PUT").length
+    await openDashboardEditor(page)
+    const title = page.getByRole("textbox", { name: "Dashboard title", exact: true })
+    const putsBefore = puts()
+    await title.fill("Keyboard saved overview")
+    await title.focus()
+    await page.keyboard.press(`${mod}+s`)
+    await page.getByText("All changes saved", { exact: true }).waitFor()
+    assert.equal(puts(), putsBefore + 1, "Mod+S saves once, through the Save dashboard path")
+    assert.deepEqual(await lastKey(), { key: "s", prevented: true }, "Mod+S is claimed while editing")
+    assert.equal(page.url(), pageURL, "Mod+S does not navigate")
+
+    const panel = await widgetEditor(page, "Request traffic")
+    const raw = panel.getByRole("textbox", { name: /^PromQL query/ })
+    const original = await queryEditorValue(raw)
+    await raw.click()
+    await page.keyboard.press("End")
+    await page.keyboard.type(" # typed")
+    assert.equal(await queryEditorValue(raw), `${original} # typed`)
+    await page.keyboard.press(`${mod}+z`)
+    assert.equal(await queryEditorValue(raw), original, "CodeMirror undoes its own typing, not the chart history")
+    assert.equal(await panel.getByRole("textbox", { name: /^Title$/ }).inputValue(), "Request traffic")
+
+    // A new expression, so the run is a fresh request rather than a cached repeat of the last one.
+    const edited = `${original} * 1`
+    await page.keyboard.type(" * 1")
+    assert.equal(await queryEditorValue(raw), edited)
+    const runs = queries.length
+    await page.keyboard.press(`${mod}+Enter`)
+    for (let attempt = 0; attempt < 50 && queries.length === runs; attempt++) await page.waitForTimeout(100)
+    assert.ok(queries.length > runs, "Mod+Enter in the query text runs the query")
+    assert.equal(await queryEditorValue(raw), edited, "Mod+Enter in the query text adds no blank line")
+
+    const chartTitle = panel.getByRole("textbox", { name: /^Title$/ })
+    await chartTitle.fill("Request traffic (keys)")
+    // Save with an unapplied chart keeps the draft and its editor; only Apply changes moves the draft into the dashboard.
+    await page.keyboard.press(`${mod}+s`)
+    await page.getByText("Saved. Chart changes are still unapplied.", { exact: true }).waitFor()
+    assert.equal(await chartTitle.inputValue(), "Request traffic (keys)", "Mod+S keeps the unapplied chart draft")
+    await chartTitle.focus()
+    await page.keyboard.press(`${mod}+Enter`)
+    await page.getByText("Chart changes applied. Save the dashboard to keep them.", { exact: true }).waitFor()
+
+    const chip = page.getByRole("button", { name: "Edit Request traffic (keys)", exact: true })
+    await chip.focus()
+    await page.keyboard.press("Delete")
+    await page.getByText("Removed Request traffic (keys).", { exact: true }).waitFor()
+    assert.equal(await page.getByRole("button", { name: "Edit Request traffic (keys)", exact: true }).count(), 0)
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-widget-id")), "health", "focus moves to the next tile")
+    const notice = page.getByText("Removed Request traffic (keys).", { exact: true }).locator("xpath=..")
+    await notice.getByRole("button", { name: "Undo remove Request traffic (keys)", exact: true }).click()
+    await page.getByRole("button", { name: "Edit Request traffic (keys)", exact: true }).waitFor()
+
+    await page.keyboard.press("?")
+    const list = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true })
+    await list.waitFor()
+    await page.keyboard.press("Escape")
+    await list.waitFor({ state: "detached" })
+
+    await page.getByRole("button", { name: "Preview", exact: true }).click()
+    await page.getByRole("heading", { name: "Keyboard saved overview", exact: true }).waitFor()
+    const putsView = puts()
+    await page.keyboard.press(`${mod}+s`)
+    assert.deepEqual(await lastKey(), { key: "s", prevented: false }, "Mod+S is not claimed in view mode")
+    assert.equal(puts(), putsView, "Mod+S in view mode does not save")
+    return { putsBefore }
+  })
+}
 try {
   await mkdir(output, { recursive: true })
-  for (const width of [1512, 390]) await surfaceAudit(width)
-  if (!baseline) {
-    for (const width of [1512, 390]) { await queryAudit(width); await providerAudit(width); await tooltipAuthoring(width); await tooltipInteraction(width) }
-    await tooltipBounds()
+  if (keyboardOnly) {
+    // CI runs only the keyboard checks in their own step, so a regression in them does not wait for the full smoke list.
+    await keyboardShortcuts(1512)
+    for (const width of [1512, 390]) await shortcutListLayout(width)
+  } else {
+    for (const width of [1512, 390]) await surfaceAudit(width)
+    if (!baseline) {
+      for (const width of [1512, 390]) { await queryAudit(width); await providerAudit(width); await tooltipAuthoring(width); await tooltipInteraction(width) }
+      await keyboardShortcuts(1512)
+      for (const width of [1512, 390]) await shortcutListLayout(width)
+      await tooltipBounds()
+    }
   }
 } finally {
   await browser.close()

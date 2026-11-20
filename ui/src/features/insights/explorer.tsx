@@ -613,6 +613,7 @@ export function Explorer({
                 parameters={draft.parameters}
                 onValidityChange={setQueryValid}
                 onChange={(query) => updateQuery({ query })}
+                onSubmit={() => { void run() }}
                 showRunControl={false}
                 defaultExpanded={!persisted && !draft.query.query}
                 compact

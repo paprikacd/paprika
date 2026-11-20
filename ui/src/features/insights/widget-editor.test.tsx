@@ -34,6 +34,39 @@ describe("widget inspector", () => {
     expect(screen.getByRole("tab", { name: "Options" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("Meter label")).toBeVisible();
   });
+  it("undoes a burst of chart title typing in one step", () => {
+    render(<WidgetEditor {...editorProps()} onPreview={vi.fn()} />);
+    const original = (screen.getByLabelText("Title") as HTMLInputElement).value;
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: `${original} a` } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: `${original} ab` } });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: `${original} abc` } });
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(screen.getByLabelText("Title")).toHaveValue(original);
+    expect(screen.getByRole("button", { name: "Undo chart change" })).toBeDisabled();
+  });
+  it("undoes a burst of chart description typing in one step", () => {
+    render(<WidgetEditor {...editorProps()} onPreview={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
+    const description = () => screen.getByLabelText("Description");
+    const original = (description() as HTMLInputElement).value;
+    fireEvent.change(description(), { target: { value: `${original}a` } });
+    fireEvent.change(description(), { target: { value: `${original}ab` } });
+    fireEvent.change(description(), { target: { value: `${original}abc` } });
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(description()).toHaveValue(original);
+    expect(screen.getByRole("button", { name: "Undo chart change" })).toBeDisabled();
+  });
+  it("undoes a burst of query text edits in one step", () => {
+    render(<WidgetEditor {...editorProps()} onPreview={vi.fn()} />);
+    const query = () => screen.getByRole("textbox", { name: "PromQL query" });
+    const original = readQueryEditor(query());
+    changeQueryEditor(query(), `${original} `);
+    changeQueryEditor(query(), `${original} or`);
+    changeQueryEditor(query(), `${original} or vector(0)`);
+    fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
+    expect(readQueryEditor(query())).toBe(original);
+    expect(screen.getByRole("button", { name: "Undo chart change" })).toBeDisabled();
+  });
   it("stages layout moves with the chart and restores them through local undo", () => {
     const callbacks = editorProps(), onPreview = vi.fn();
     const below = { ...widget, id: "below", title: "Below", layout: { ...widget.layout, y: 4 } };
@@ -55,11 +88,15 @@ describe("widget inspector", () => {
     render(<WidgetEditor {...callbacks} onPreview={onPreview} onDirtyChange={onDirtyChange}
       workspace={{ preview: <div>Canonical chart preview</div>, dashboardTitle: "Operations", onDiscard: discard, widgets: [widget] }} />);
     expect(screen.getByRole("region", { name: "Chart preview" })).toHaveTextContent("Canonical chart preview");
+    // Edits to one field less than a second apart share an undo step, so the pause between them is explicit.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Staged chart" } });
     expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Staged chart" }));
     expect(callbacks.onApply).not.toHaveBeenCalled();
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    clock.mockReturnValue(3_000);
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "" } });
+    clock.mockRestore();
     expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled();
     expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Staged chart" }));
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));

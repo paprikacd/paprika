@@ -532,6 +532,15 @@
   color: var(--gamma-accent-text);
   flex-shrink: 0;
 }
+/* The shortcut list sits beside the hint text; only the last action, Preview, takes the free space. */
+.editHint .shortcutsButton {
+  margin-left: 0;
+}
+@media (hover: none) {
+  .editHint .shortcutsButton {
+    display: none;
+  }
+}
 .compactEditHint {
   display: none;
 }

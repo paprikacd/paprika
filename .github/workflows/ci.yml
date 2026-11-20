@@ -504,10 +504,13 @@ jobs:
           INSIGHTS_PRESENTATION_OUTPUT: ${{ github.workspace }}/artifacts/insights/presentation
           INSIGHTS_QUERY_INSPECTOR_OUTPUT: ${{ github.workspace }}/artifacts/insights/query-inspector
 
-      - name: Generate reference dashboards through the UI
+      - name: Generate reference dashboards and check keyboard shortcuts through the UI
         timeout-minutes: 10
-        run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs
+        run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs e2e/insights-builder.e2e.mjs
         working-directory: ui
+        env:
+          # Only the builder script reads this: it runs its keyboard shortcut checks alone.
+          INSIGHTS_BUILDER_KEYBOARD_ONLY: "1"
 
       - name: Check Insights visual structure baseline
         timeout-minutes: 10

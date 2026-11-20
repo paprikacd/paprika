@@ -527,7 +527,7 @@ const Tile = memo(function Tile({
     <article
       ref={element}
       tabIndex={onNudge ? 0 : undefined}
-      aria-keyshortcuts={onNudge ? LAYOUT_KEYSHORTCUTS : undefined}
+      aria-keyshortcuts={onNudge ? `${LAYOUT_KEYSHORTCUTS} Delete Backspace` : undefined}
       onKeyDownCapture={onNudge ? layoutKey : undefined}
       onBlur={releaseFocusTarget}
       className={`${styles.tile} ${selected && !focused ? styles.selectedTile : ""}`}

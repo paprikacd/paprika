@@ -18,7 +18,11 @@ vi.mock("./canvas", () => ({
     editing: boolean
     onSelect: (id: string) => void
   }) => focus ? focus.render(<div data-testid="mock-canvas" />) : <div data-testid="mock-canvas">
-    {editing && dashboard.widgets.map(widget => <button key={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>)}
+    {editing && dashboard.widgets.map(widget => (
+      <article key={widget.id} data-widget-id={widget.id} tabIndex={0}>
+        <button data-widget-edit={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>
+      </article>
+    ))}
   </div>,
 }))
 
@@ -359,6 +363,336 @@ describe("Insights application state", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dashboard B" }))
     await screen.findByRole("heading", { name: "Dashboard B" })
     expect(window.confirm).not.toHaveBeenCalled()
+  })
+
+  it("undoes a burst of dashboard title typing in one step", async () => {
+    const api = client()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    const original = (screen.getByLabelText("Dashboard title") as HTMLInputElement).value
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: `${original} a` } })
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: `${original} ab` } })
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: `${original} abc` } })
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }))
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue(original)
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled()
+  })
+
+  it("undoes a burst of dashboard title typing with Control+Z outside any field", async () => {
+    const api = client()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    const title = screen.getByLabelText("Dashboard title") as HTMLInputElement
+    const original = title.value
+    fireEvent.change(title, { target: { value: `${original} a` } })
+    fireEvent.change(title, { target: { value: `${original} ab` } })
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue(original)
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true, shiftKey: true })
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue(`${original} ab`)
+  })
+
+  it("leaves Control+Z inside the title field to the browser", async () => {
+    const api = client()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    const title = screen.getByLabelText("Dashboard title") as HTMLInputElement
+    const original = title.value
+    fireEvent.change(title, { target: { value: `${original} typed` } })
+    expect(fireEvent.keyDown(title, { key: "z", ctrlKey: true })).toBe(true)
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue(`${original} typed`)
+  })
+
+  it("saves with Control+S exactly once, prevents the browser save, and keeps the document saved", async () => {
+    const api = client()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Keyboard saved" } })
+    expect(fireEvent.keyDown(document.body, { key: "s", ctrlKey: true })).toBe(false)
+    await screen.findByRole("heading", { name: "Keyboard saved" })
+    expect(api.save).toHaveBeenCalledTimes(1)
+    expect(screen.getByText("All changes saved")).toBeInTheDocument()
+  })
+
+  it("does not intercept Control+S in view mode", async () => {
+    const api = client()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    expect(fireEvent.keyDown(document.body, { key: "s", ctrlKey: true })).toBe(true)
+    expect(api.save).not.toHaveBeenCalled()
+  })
+
+  it("does not run Control+S or undo while a confirmation is open", async () => {
+    const api = client()
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Pending title" } })
+    fireEvent.click(screen.getByRole("button", { name: "Dashboard B" }))
+    await screen.findByRole("alertdialog", { name: "Discard unsaved changes?" })
+    expect(fireEvent.keyDown(document.body, { key: "s", ctrlKey: true })).toBe(true)
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+    expect(api.save).not.toHaveBeenCalled()
+    expect(screen.getByLabelText("Dashboard title")).toHaveValue("Pending title")
+  })
+
+  it("saves with Control+S but keeps an unapplied chart draft and its editor open", async () => {
+    const api = client()
+    const dashboard: Dashboard = {
+      ...first,
+      widgets: [{ id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } }],
+    }
+    vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
+    vi.mocked(api.list).mockResolvedValue([dashboard, second])
+    vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === dashboard.id ? dashboard : second, etag: '"v1"' }))
+    render(<InsightsApp client={api} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
+    fireEvent.change(await screen.findByRole("textbox", { name: "Title" }, { timeout: 5000 }), { target: { value: "Unapplied latency title" } })
+    expect(fireEvent.keyDown(document.body, { key: "s", ctrlKey: true })).toBe(false)
+    await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText("Saved. Chart changes are still unapplied.")).toBeInTheDocument()
+    expect(screen.queryByText("Dashboard saved.")).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Unapplied latency title")
+  })
+
+  it("uses the Command modifier on Apple platforms", async () => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true })
+    try {
+      const api = client()
+      render(<InsightsApp client={api} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+      const title = screen.getByLabelText("Dashboard title") as HTMLInputElement
+      const original = title.value
+      fireEvent.change(title, { target: { value: `${original} mac` } })
+      fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+      expect(screen.getByLabelText("Dashboard title")).toHaveValue(`${original} mac`)
+      fireEvent.keyDown(document.body, { key: "z", metaKey: true })
+      expect(screen.getByLabelText("Dashboard title")).toHaveValue(original)
+      expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("title", "Undo (⌘Z)")
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).platform
+    }
+  })
+
+  it("names the undo, redo and save shortcuts on their buttons", async () => {
+    render(<InsightsApp client={client()} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("aria-keyshortcuts", "Control+Z Meta+Z")
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("title", "Undo (Ctrl+Z)")
+    expect(screen.getByRole("button", { name: "Redo" })).toHaveAttribute("aria-keyshortcuts", "Control+Shift+Z Meta+Shift+Z Control+Y")
+    expect(screen.getByRole("button", { name: "Save dashboard" })).toHaveAttribute("aria-keyshortcuts", "Control+S Meta+S")
+    expect(screen.getByRole("button", { name: "Save dashboard" })).toHaveAttribute("title", "Save dashboard (Ctrl+S)")
+  })
+
+  describe("keyboard shortcuts with a chart open", () => {
+    const latency = { id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } } as const
+    async function openChart() {
+      const api = client()
+      const dashboard: Dashboard = { ...first, widgets: [{ ...latency }] }
+      vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
+      vi.mocked(api.list).mockResolvedValue([dashboard, second])
+      vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === dashboard.id ? dashboard : second, etag: '"v1"' }))
+      render(<InsightsApp client={api} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+      fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Dashboard renamed" } })
+      fireEvent.click(screen.getByRole("button", { name: "Edit Request latency" }))
+      await screen.findByRole("textbox", { name: /^Title$/ }, { timeout: 5000 })
+      return api
+    }
+    const chartTitle = () => screen.getByRole("textbox", { name: /^Title$/ }) as HTMLInputElement
+
+    it("undoes the chart change with Control+Z and leaves the dashboard alone", async () => {
+      await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart renamed" } })
+      fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+      expect(chartTitle()).toHaveValue("Request latency")
+      expect(screen.getByLabelText("Dashboard title")).toHaveValue("Dashboard renamed")
+    })
+
+    it("applies the chart draft with Control+Enter outside the query text", async () => {
+      await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart applied" } })
+      expect(fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })).toBe(false)
+      expect(await screen.findByRole("button", { name: "Edit Chart applied" })).toBeInTheDocument()
+    })
+
+    it("applies once when Control+Enter is held", async () => {
+      await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart held" } })
+      // A held key sends repeats; only the first press applies.
+      expect(fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true, repeat: true })).toBe(false)
+      expect(screen.queryByRole("button", { name: "Edit Chart held" })).not.toBeInTheDocument()
+      fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })
+      expect(await screen.findByRole("button", { name: "Edit Chart held" })).toBeInTheDocument()
+    })
+
+    it("ignores Control+Enter while the chart draft is invalid", async () => {
+      await openChart()
+      fireEvent.change(chartTitle(), { target: { value: "Chart invalid" } })
+      fireEvent.change(screen.getByLabelText("Left inset (px)"), { target: { value: "1" } })
+      const apply = screen.getByRole("button", { name: "Apply changes" })
+      await waitFor(() => expect(apply).toBeDisabled())
+      expect(fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true })).toBe(true)
+      expect(screen.queryByRole("button", { name: "Edit Chart invalid" })).not.toBeInTheDocument()
+    })
+
+    it("does not change the dashboard with Control+Z while the chart has no history", async () => {
+      await openChart()
+      fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+      expect(screen.getByLabelText("Dashboard title")).toHaveValue("Dashboard renamed")
+      expect(chartTitle()).toHaveValue("Request latency")
+    })
+
+    it("names apply and the chart undo and redo shortcuts on their buttons", async () => {
+      await openChart()
+      expect(screen.getByRole("button", { name: "Apply changes" })).toHaveAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter")
+      expect(screen.getByRole("button", { name: "Apply changes" })).toHaveAttribute("title", "Apply changes (Ctrl+Enter)")
+      expect(screen.getByRole("button", { name: "Undo chart change" })).toHaveAttribute("title", "Undo (Ctrl+Z)")
+      expect(screen.getByRole("button", { name: "Redo chart change" })).toHaveAttribute("aria-keyshortcuts", "Control+Shift+Z Meta+Shift+Z Control+Y")
+    })
+  })
+
+  describe("removing a focused tile", () => {
+    const latency = { id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } } as const
+    const signal = { id: "signal", title: "Signal", type: "timeseries", providerId: "metrics", query: "down", unit: "", layout: { x: 6, y: 0, w: 6, h: 4 } } as const
+    function tilesClient(widgets: Dashboard["widgets"] = [{ ...latency }, { ...signal }]) {
+      const api = client()
+      const dashboard: Dashboard = { ...first, widgets }
+      vi.mocked(api.list).mockResolvedValue([dashboard, second])
+      vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === dashboard.id ? dashboard : second, etag: '"v1"' }))
+      return api
+    }
+    async function editTiles(api: InsightsClient) {
+      render(<InsightsApp client={api} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    }
+
+    it("removes the focused tile on Delete, moves focus to the next tile and offers Undo", async () => {
+      await editTiles(tilesClient())
+      const chip = screen.getByRole("button", { name: "Edit Request latency" })
+      chip.focus()
+      fireEvent.keyDown(chip, { key: "Delete" })
+      expect(screen.queryByRole("button", { name: "Edit Request latency" })).toBeNull()
+      expect(screen.getByText("Removed Request latency.")).toBeInTheDocument()
+      expect(document.activeElement).toHaveAttribute("data-widget-id", "signal")
+    })
+
+    it("restores the tile with the notice's Undo action, and Control+Z also restores it", async () => {
+      await editTiles(tilesClient())
+      const chip = screen.getByRole("button", { name: "Edit Request latency" })
+      fireEvent.keyDown(chip, { key: "Backspace" })
+      const notice = screen.getByText("Removed Request latency.").parentElement!
+      fireEvent.click(within(notice).getByRole("button", { name: "Undo remove Request latency" }))
+      expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+      expect(screen.getByText("Restored Request latency.")).toBeInTheDocument()
+      expect(document.activeElement).toHaveAttribute("data-widget-id", "latency")
+      expect(screen.queryByText("Removed Request latency.")).toBeNull()
+      fireEvent.keyDown(screen.getByRole("button", { name: "Edit Request latency" }), { key: "Delete" })
+      expect(screen.queryByRole("button", { name: "Edit Request latency" })).toBeNull()
+      fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+      expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+    })
+
+    it("moves focus to the title when the last tile is removed", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      fireEvent.keyDown(screen.getByRole("button", { name: "Edit Request latency" }), { key: "Delete" })
+      expect(document.activeElement).toBe(screen.getByLabelText("Dashboard title"))
+    })
+
+    it("never removes a tile from a text field", async () => {
+      await editTiles(tilesClient())
+      const title = screen.getByLabelText("Dashboard title")
+      title.focus()
+      fireEvent.keyDown(title, { key: "Backspace" })
+      fireEvent.keyDown(title, { key: "Delete" })
+      expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Edit Signal" })).toBeInTheDocument()
+    })
+
+    it("ignores Delete outside a tile, and keeps the tile when the key is held", async () => {
+      await editTiles(tilesClient())
+      fireEvent.keyDown(document.body, { key: "Delete" })
+      const chip = screen.getByRole("button", { name: "Edit Request latency" })
+      fireEvent.keyDown(chip, { key: "Delete", repeat: true })
+      expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+    })
+
+    it("withdraws the removal notice and its Undo once a later edit changes the dashboard", async () => {
+      await editTiles(tilesClient())
+      fireEvent.keyDown(screen.getByRole("button", { name: "Edit Request latency" }), { key: "Delete" })
+      expect(screen.getByRole("button", { name: "Undo remove Request latency" })).toBeInTheDocument()
+      fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Edited after removal" } })
+      // The notice's Undo could only revert the later edit now, so it is gone with the notice.
+      expect(screen.queryByText("Removed Request latency.")).toBeNull()
+      expect(screen.queryByRole("button", { name: /^Undo remove/ })).toBeNull()
+      expect(screen.getByLabelText("Dashboard title")).toHaveValue("Edited after removal")
+    })
+
+    it("withdraws the removal notice when Control+Z restores the tile", async () => {
+      await editTiles(tilesClient())
+      fireEvent.keyDown(screen.getByRole("button", { name: "Edit Request latency" }), { key: "Delete" })
+      fireEvent.keyDown(document.body, { key: "z", ctrlKey: true })
+      expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+      expect(screen.queryByText("Removed Request latency.")).toBeNull()
+      expect(screen.queryByRole("button", { name: /^Undo remove/ })).toBeNull()
+    })
+  })
+
+  describe("the keyboard shortcut list", () => {
+    it("renders inside the Insights theme scope, so its tokens resolve", async () => {
+      render(<InsightsApp client={client()} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.keyDown(document.body, { key: "?" })
+      const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" })
+      const scope = dialog.closest("[data-insights-theme]")
+      expect(scope).not.toBeNull()
+      expect(scope).toBe(document.querySelector("[data-insights-theme]"))
+    })
+
+    it("opens with ? outside text fields and closes on cancel", async () => {
+      render(<InsightsApp client={client()} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.keyDown(document.body, { key: "?", shiftKey: true })
+      const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" })
+      expect(within(dialog).getByText("Save dashboard (while editing)")).toBeInTheDocument()
+      fireEvent(dialog, new Event("cancel", { cancelable: true }))
+      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull()
+    })
+
+    it("does not open for ? typed into the title field", async () => {
+      render(<InsightsApp client={client()} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+      const title = screen.getByLabelText("Dashboard title")
+      expect(fireEvent.keyDown(title, { key: "?", shiftKey: true })).toBe(true)
+      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull()
+    })
+
+    it("opens from the Editing canvas hint and names the platform keys", async () => {
+      Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true })
+      try {
+        render(<InsightsApp client={client()} />)
+        await screen.findByRole("heading", { name: "Dashboard A" })
+        fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+        fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }))
+        const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" })
+        expect(within(dialog).getByText("⌘Z")).toBeInTheDocument()
+        fireEvent.click(within(dialog).getByRole("button", { name: "Close keyboard shortcuts" }))
+        expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull()
+      } finally {
+        delete (navigator as unknown as Record<string, unknown>).platform
+      }
+    })
   })
 
   it("does not close a new dashboard draft when an older save finishes", async () => {
