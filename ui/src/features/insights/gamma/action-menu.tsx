@@ -38,6 +38,8 @@ export function GammaActionMenu({
   disabled = false,
   iconOnly = true,
   openerName,
+  triggerProps,
+  onOpen,
 }: {
   label?: string;
   trigger?: ReactNode;
@@ -47,6 +49,10 @@ export function GammaActionMenu({
   iconOnly?: boolean;
   /** Names the trigger as the opener of any builder panel its items open, so focus returns to the trigger. */
   openerName?: string;
+  /** Extra attributes for the trigger button, such as a data hook a caller finds it by. */
+  triggerProps?: Record<string, string>;
+  /** Runs when the menu opens, so the caller can rebuild items that depend on state at open time. */
+  onOpen?: () => void;
 }) {
   const id = useId();
   const [isOpen, setOpen] = useState(false);
@@ -81,6 +87,7 @@ export function GammaActionMenu({
   function show(last = false) {
     lastOnOpen.current = last;
     typed.current = { value: "", at: 0 };
+    onOpen?.();
     setOpen(true);
   }
   function renderItem(item: GammaActionMenuItem) {
@@ -152,6 +159,7 @@ export function GammaActionMenu({
         className={className}
         disabled={disabled}
         data-panel-opener={openerName}
+        {...triggerProps}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}

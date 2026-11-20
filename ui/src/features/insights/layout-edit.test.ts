@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dragLayout,
   dragSettle,
+  duplicateLayout,
   layoutMoveBlockers,
   layoutMoveForKey,
   layoutResizeForKey,
@@ -166,6 +167,80 @@ describe("keyboard keys and resizing", () => {
     expect(resizeLayout([item("a", 0, 0, 1, 4)], "a", -1, 0)).toEqual({ blocked: "Already at the minimum width of 1 column" });
     expect(resizeLayout([item("a", 0, 0, 6, 2, { minH: 2 })], "a", 0, -1)).toEqual({ blocked: "Already at the minimum height of 2 rows" });
     expect(resizeLayout([item("a", 0, 0, 6, 12, { maxH: 12 })], "a", 0, 1)).toEqual({ blocked: "Already at the maximum height of 12 rows" });
+  });
+});
+
+describe("duplicating a widget", () => {
+  it("does not call a copy beside its source when the compactor lifts it into another row", () => {
+    // The right half is empty above B, so the slot beside B is free, but the copy settles at the top beside A.
+    const lifted = [item("a", 0, 0, 6, 4), item("b", 0, 4, 6, 4)];
+    const edit = duplicateLayout(lifted, "b", "copy");
+    expect(edit).toMatchObject({ placement: "elsewhere" });
+    expect(boxes(settled(edit))).toEqual({ a: [0, 0, 6, 4], b: [0, 4, 6, 4], copy: [6, 0, 6, 4] });
+  });
+
+  it("places the copy beside the source, at the same size, when the slot is free", () => {
+    const pair = [item("a", 0, 0, 6, 4), item("b", 0, 4, 6, 4)];
+    const edit = duplicateLayout(pair, "a", "copy");
+    expect(edit).toMatchObject({ placement: "beside" });
+    expect(boxes(settled(edit))).toEqual({ a: [0, 0, 6, 4], b: [0, 4, 6, 4], copy: [6, 0, 6, 4] });
+  });
+
+  it("places the copy below the source when the source reaches the last column", () => {
+    const edit = duplicateLayout(stacked, "c", "copy");
+    expect(edit).toMatchObject({ placement: "below" });
+    expect(boxes(settled(edit))).toEqual({ a: [0, 0, 6, 4], b: [0, 4, 6, 4], c: [6, 0, 6, 8], copy: [6, 8, 6, 8] });
+  });
+
+  it("places the copy below when the slot beside the source is taken, and moves only the widgets under the source", () => {
+    const edit = duplicateLayout(stacked, "a", "copy");
+    expect(edit).toMatchObject({ placement: "below" });
+    expect(boxes(settled(edit))).toEqual({ a: [0, 0, 6, 4], copy: [0, 4, 6, 4], b: [0, 8, 6, 4], c: [6, 0, 6, 8] });
+  });
+
+  it("moves a full-width band down under a full-width source and keeps the stats in one row", () => {
+    const row = [
+      item("a", 0, 0, 12, 4),
+      item("s1", 0, 4, 3, 2), item("s2", 3, 4, 3, 2), item("s3", 6, 4, 3, 2), item("s4", 9, 4, 3, 2),
+      item("b", 0, 6, 12, 4),
+    ];
+    const edit = duplicateLayout(row, "a", "copy");
+    expect(edit).toMatchObject({ placement: "below" });
+    expect(boxes(settled(edit))).toEqual({
+      a: [0, 0, 12, 4], copy: [0, 4, 12, 4],
+      s1: [0, 8, 3, 2], s2: [3, 8, 3, 2], s3: [6, 8, 3, 2], s4: [9, 8, 3, 2],
+      b: [0, 10, 12, 4],
+    });
+  });
+
+  it("places a narrow widget below its own columns when the slot beside it is taken", () => {
+    const row = [item("top", 0, 0, 12, 4), item("s1", 0, 4, 3, 2), item("s2", 3, 4, 3, 2), item("b", 0, 6, 12, 4)];
+    const edit = duplicateLayout(row, "s1", "copy");
+    expect(edit).toMatchObject({ placement: "below" });
+    expect(boxes(settled(edit))).toEqual({ top: [0, 0, 12, 4], s1: [0, 4, 3, 2], copy: [0, 6, 3, 2], b: [0, 8, 12, 4], s2: [3, 4, 3, 2] });
+  });
+
+  it("settles both placements, so the compactor does not move the copy again", () => {
+    const beside = [item("a", 0, 0, 6, 4), item("b", 0, 4, 6, 4), item("t", 6, 0, 6, 2)];
+    expect(duplicateLayout(beside, "a", "copy")).toMatchObject({ placement: "below" });
+    for (const edit of [duplicateLayout(stacked, "a", "copy"), duplicateLayout(stacked, "c", "copy"), duplicateLayout(stacked, "b", "copy"), duplicateLayout(beside, "b", "copy")]) {
+      const next = settled(edit);
+      expect(boxes(verticalCompactor.compact(next, 12))).toEqual(boxes(next));
+      expect(firstOverlap(next)).toBeUndefined();
+    }
+  });
+
+  it("sizes the copy from its own footprint and leaves the source's box alone", () => {
+    const pair = [item("a", 0, 0, 6, 4), item("b", 0, 4, 6, 4)];
+    const edit = duplicateLayout(pair, "a", "copy", { w: 4, h: 3 });
+    expect(edit).toMatchObject({ placement: "beside" });
+    expect(boxes(settled(edit))).toEqual({ a: [0, 0, 6, 4], b: [0, 4, 6, 4], copy: [6, 0, 4, 3] });
+    const narrowSlot = duplicateLayout(stacked, "a", "copy", { w: 3, h: 2 });
+    expect(boxes(settled(narrowSlot))).toEqual({ a: [0, 0, 6, 4], copy: [0, 4, 3, 2], b: [0, 6, 6, 4], c: [6, 0, 6, 8] });
+  });
+
+  it("is blocked for a widget that is not on the canvas", () => {
+    expect(duplicateLayout(stacked, "missing", "copy")).toEqual({ blocked: "This widget is not on the canvas" });
   });
 });
 

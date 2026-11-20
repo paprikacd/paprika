@@ -65,7 +65,8 @@ try {
   const measureTiles = page => page.evaluate(widgetIds => widgetIds.map(id => {
     const card = document.querySelector(`[data-widget-id="${id}"]`);
     const box = node => { if (!node) return null; const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
-    const chip = card.querySelector("[data-widget-edit]");
+    // Tiles too narrow for both controls show only the actions trigger, which then carries Edit chart.
+    const chip = [...card.querySelectorAll("[data-widget-edit], [data-widget-actions]")].find(node => node.getClientRects().length > 0) ?? null;
     const chipStyle = chip ? getComputedStyle(chip) : null;
     const h3 = card.querySelector("h3");
     return {
@@ -123,7 +124,7 @@ try {
       for (const id of editIds) await page.locator(`[data-widget-id="${id}"] [data-metric-value]`).first().waitFor();
       const view = Object.fromEntries((await measureTiles(page)).map(entry => [entry.id, entry]));
       await openDashboardEditor(page);
-      for (const id of editIds) await page.locator(`[data-widget-id="${id}"] [data-widget-edit]`).waitFor();
+      for (const id of editIds) await page.locator(`[data-widget-id="${id}"] :is([data-widget-edit], [data-widget-actions]):visible`).first().waitFor();
       assertEditGeometry(view, await measureTiles(page), "fine 1512");
       // Keyboard focus draws its ring inside the chip, where the tile's overflow clip cannot cut it.
       for (const id of ["side", "roomy"]) {
@@ -149,7 +150,7 @@ try {
       await page.locator('[data-widget-id="side"] [data-metric-value]').first().waitFor();
       const view = Object.fromEntries((await measureTiles(page)).map(entry => [entry.id, entry]));
       await openDashboardEditor(page);
-      for (const id of editIds) await page.locator(`[data-widget-id="${id}"] [data-widget-edit]`).waitFor();
+      for (const id of editIds) await page.locator(`[data-widget-id="${id}"] :is([data-widget-edit], [data-widget-actions]):visible`).first().waitFor();
       assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), true, "touch context must report a coarse pointer");
       const edit = await measureTiles(page);
       assertEditGeometry(view, edit, "touch 1512");

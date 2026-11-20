@@ -667,6 +667,60 @@ await check("layout moves from the inspector work on the compact canvas, which i
   return { direction: enabled[0], enabled, before, after }
 })
 
+await check("the edit-mode tile menu moves a widget in reading order below wide and announces its place", async () => {
+  await resizeCanvasHost(panelPage, 768)
+  await editIn(panelPage)
+  const articles = panelPage.locator('[data-testid="dashboard-canvas"] article[data-widget-id]')
+  const readingOrder = () => articles.evaluateAll((nodes) => nodes.map((node) => node.dataset.widgetId))
+  const before = await readingOrder()
+  const id = before[0]
+  await panelPage.locator(`[data-widget-actions="${id}"]`).click()
+  await panelPage.getByRole("menuitem", { name: "Move down", exact: true }).click()
+  await settle(panelPage)
+  const after = await readingOrder()
+  assert.notDeepEqual(after, before, "Move down from the tile menu must change the reading order on the compact canvas")
+  const announced = await panelPage.locator('[data-testid="dashboard-canvas"] [aria-live="polite"]').textContent()
+  const match = /^Moved .+ down: (\d+)(?:st|nd|rd|th) of (\d+)\.$/.exec(announced)
+  assert.ok(match, `The step must announce its reading-order place: ${announced}`)
+  assert.equal(Number(match[2]), after.length, "The announced total must count every widget")
+  await panelPage.getByRole("button", { name: "Undo", exact: true }).click()
+  await settle(panelPage)
+  assert.deepEqual(await readingOrder(), before, "Undo restores the reading order")
+  return { id, announced, before, after }
+})
+
+await check("at 390px touch, the tile menu duplicates and removes a widget without horizontal overflow, and Undo restores each", async () => {
+  const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce", timezoneId: "UTC" })
+  const target = await touch.newPage()
+  observe(target)
+  activePage = target
+  await target.goto(`${baseURL}/dashboard/insights/?example=1`, { waitUntil: "networkidle" })
+  await editIn(target)
+  const tiles = target.locator('[data-testid="dashboard-canvas"] article[data-widget-id]')
+  const noOverflow = async (where) => assert.ok(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${where} must not scroll horizontally at 390px`)
+  const start = await tiles.count()
+  await target.locator('[data-widget-actions="requests"]').click()
+  await noOverflow("The open tile menu")
+  await target.getByRole("menuitem", { name: /^Duplicate/ }).click()
+  await settle(target)
+  assert.equal(await tiles.count(), start + 1, "Duplicate adds one tile")
+  await noOverflow("The duplicate")
+  await target.getByRole("button", { name: /^Undo duplicate / }).click()
+  await settle(target)
+  assert.equal(await tiles.count(), start, "Undo removes the duplicate")
+  await target.locator('[data-widget-actions="latency"]').click()
+  await target.getByRole("menuitem", { name: /^Remove/ }).click()
+  await settle(target)
+  assert.equal(await tiles.count(), start - 1, "Remove takes one tile away")
+  await noOverflow("The removal")
+  await target.getByRole("button", { name: /^Undo remove / }).click()
+  await settle(target)
+  assert.equal(await tiles.count(), start, "Undo restores the removed tile")
+  await noOverflow("The restored canvas")
+  await touch.close()
+  return { start }
+})
+
 // Focus, Explore, the Compact view rail, resizing while a panel is open, and a sidebar the user showed over a panel.
 async function focusedOpenerName(target) {
   return target.evaluate(() => document.activeElement?.dataset?.panelOpener ?? null)

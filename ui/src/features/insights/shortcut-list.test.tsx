@@ -13,6 +13,8 @@ describe("shortcutGroups", () => {
     expect(apple).toContain("Apply and save=⌘⇧S")
     expect(other).toContain("Apply and save=Ctrl+Shift+S")
     expect(other).toContain("Remove tile=Delete or Backspace")
+    expect(other).toContain("Duplicate tile=Ctrl+D")
+    expect(apple).toContain("Duplicate tile=⌘D")
   })
 })
 

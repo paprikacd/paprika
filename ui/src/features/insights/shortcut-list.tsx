@@ -36,6 +36,7 @@ export function shortcutGroups(isMac: boolean): ShortcutGroup[] {
       title: "Tiles (editing, a focused tile)",
       rows: [
         { label: "Remove tile", keys: "Delete or Backspace" },
+        { label: "Duplicate tile", keys: keys("duplicate") },
         { label: "Move tile", keys: alt },
         { label: "Resize tile", keys: altShift },
       ],

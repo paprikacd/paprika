@@ -1,5 +1,7 @@
 import { changeQueryEditor, readQueryEditor } from "./query-code-editor.test-utils";
 import { useState } from "react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -112,6 +114,17 @@ describe("widget inspector", () => {
     render(<WidgetEditor {...callbacks}
       workspace={{ preview: null, dashboardTitle: "Operations", dashboardDirty: true, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: vi.fn(), widgets: [widget] }} />);
     expect(screen.getByText(/Operations · Unsaved changes/)).toBeInTheDocument();
+  });
+  it("tells the Layout tab that positions refer to the wide grid on screens below wide", () => {
+    const callbacks = editorProps();
+    const base = { preview: null, dashboardTitle: "Operations", dashboardDirty: false, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: vi.fn(), widgets: [widget] };
+    const { unmount } = render(<WidgetEditor {...callbacks} workspace={{ ...base, canvasMode: "compact" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
+    expect(screen.getByText("Positions refer to the wide layout. On this screen widgets follow reading order.")).toBeInTheDocument();
+    unmount();
+    render(<WidgetEditor {...callbacks} workspace={{ ...base, canvasMode: "wide" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
+    expect(screen.queryByText(/Positions refer to the wide layout/)).not.toBeInTheDocument();
   });
   it("stages focused edits, keeps the last valid preview, and applies only on request", () => {
     const callbacks = editorProps(), onPreview = vi.fn(), onDirtyChange = vi.fn(), discard = vi.fn();
@@ -1540,6 +1553,27 @@ describe("widget editor workbench shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chart actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove chart" }));
     expect(callbacks.onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("lists the section navigation as Preview, Query and Settings, matching the stacked order", () => {
+    render(<WidgetEditor {...editorProps()} />);
+    const nav = screen.getByRole("navigation", { name: "Chart editor sections" });
+    expect([...nav.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Preview", "Query", "Settings"]);
+    const css = readFileSync(join(process.cwd(), "src/features/insights/editor.module.css"), "utf8");
+    const stacked = css.slice(css.indexOf("@media (max-width: 950px)"), css.indexOf("@media (max-width: 520px)"));
+    expect(stacked).toMatch(/\.chartPreview \{ order: 0;/);
+    expect(stacked).toMatch(/\.queryWorkspace \{ order: 1;/);
+    expect(stacked).toMatch(/\.chartSettings \{ order: 2;/);
+  });
+
+  it("keeps undo and redo as visible buttons rather than Chart actions menu items", () => {
+    render(<WidgetEditor {...editorProps()} />);
+    expect(screen.getByRole("button", { name: "Undo chart change" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Redo chart change" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Chart actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Undo chart change" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Redo chart change" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Duplicate chart" })).toBeInTheDocument();
   });
 
   it("disables Duplicate chart while the draft is invalid", () => {

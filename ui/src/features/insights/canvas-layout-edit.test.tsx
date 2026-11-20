@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Compactor, Layout, LayoutItem } from "react-grid-layout";
 import { DashboardCanvas } from "./canvas";
+import { visibleTileControl } from "./tile-controls";
 import { exampleDashboard, exampleProviders } from "./example";
 import { useDashboardHistory } from "./history";
 import type { Dashboard } from "./schema";
@@ -205,4 +206,143 @@ it("records a keyboard move as one document edit that Undo restores", () => {
   // render or the layout before Undo.
   fireEvent.keyDown(screen.getByRole("article", { name: "Requests" }), { key: "ArrowDown", altKey: true });
   expect(positions(rgl.props.layout)).toEqual({ requests: [0, 4, 6, 4], errors: [0, 0, 6, 4] });
+});
+
+// The tile actions menu: the same steps as the keys, offered at every width in edit mode.
+function renderEdit(dashboard: Dashboard, props: Partial<Parameters<typeof DashboardCanvas>[0]> = {}) {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  const onLayout = vi.fn();
+  render(
+    <DashboardCanvas
+      dashboard={dashboard}
+      providers={exampleProviders}
+      fetcher={fetcher()}
+      end={3600}
+      editing
+      onSelect={vi.fn()}
+      onLayout={onLayout}
+      {...props}
+    />,
+  );
+  return { onLayout };
+}
+const menuLabels = () => screen.getAllByRole("menuitem").map((item) => item.getAttribute("data-label"));
+
+it("offers no tile actions menu in view mode", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  render(<DashboardCanvas dashboard={stackedDashboard()} providers={exampleProviders} fetcher={fetcher()} end={3600} editing={false} onSelect={vi.fn()} onLayout={vi.fn()} />);
+  expect(document.querySelector("[data-widget-actions]")).toBeNull();
+});
+
+it("lists every wide-canvas step, Duplicate and Remove under the tile's actions menu", () => {
+  renderEdit(stackedDashboard(), { onDuplicate: vi.fn(), onRemove: vi.fn() });
+  const trigger = screen.getByRole("button", { name: "Actions for Requests" });
+  expect(trigger).toHaveAttribute("data-widget-actions", "requests");
+  fireEvent.click(trigger);
+  expect(menuLabels()).toEqual(["Edit chart", "Duplicate", "Move up", "Move down", "Move left", "Move right", "Taller", "Shorter", "Wider", "Narrower", "Remove"]);
+});
+
+it("hides the wide-only Left, Right, Wider and Narrower steps below the wide canvas", () => {
+  rgl.width = 700;
+  renderEdit(stackedDashboard());
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  expect(menuLabels()).toEqual(["Edit chart", "Move up", "Move down", "Taller", "Shorter"]);
+});
+
+it("Move down from the menu settles the same layout as the key and announces it", () => {
+  const { onLayout } = renderEdit(stackedDashboard());
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Move down" }));
+  expect(onLayout).toHaveBeenCalledTimes(1);
+  expect(positions(onLayout.mock.calls[0][0])).toEqual({ requests: [0, 4, 6, 4], errors: [0, 0, 6, 4] });
+  expect(liveText()).toBe("Moved Requests down, below Errors: row 5, columns 1 to 6.");
+});
+
+it("below wide, a menu move edits the saved grid and announces the reading-order place", () => {
+  rgl.width = 700;
+  const { onLayout } = renderEdit(stackedDashboard());
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Move down" }));
+  expect(positions(onLayout.mock.calls[0][0])).toEqual({ requests: [0, 4, 6, 4], errors: [0, 0, 6, 4] });
+  expect(liveText()).toBe("Moved Requests down: 2nd of 2.");
+});
+
+it("Edit chart, Duplicate and Remove from the menu call the canvas's handlers for that tile", () => {
+  const onSelect = vi.fn();
+  const onDuplicate = vi.fn();
+  const onRemove = vi.fn();
+  renderEdit(stackedDashboard(), { onSelect, onDuplicate, onRemove });
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Errors" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit chart" }));
+  expect(onSelect).toHaveBeenCalledWith("errors");
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Errors" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /^Duplicate/ }));
+  expect(onDuplicate).toHaveBeenCalledWith("errors");
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Errors" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
+  expect(onRemove).toHaveBeenCalledWith("errors");
+});
+
+it("disables Duplicate with its reason at the widget limit and does not call it", () => {
+  const onDuplicate = vi.fn();
+  renderEdit(stackedDashboard(), { onDuplicate, duplicateBlocked: "A dashboard supports up to 48 widgets." });
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  const duplicate = screen.getByRole("menuitem", { name: /Duplicate/ });
+  expect(duplicate).toHaveAttribute("aria-disabled", "true");
+  expect(duplicate).toHaveTextContent("A dashboard supports up to 48 widgets.");
+  fireEvent.click(duplicate);
+  expect(onDuplicate).not.toHaveBeenCalled();
+});
+
+it("leaves Duplicate and Remove out when the host does not pass them", () => {
+  renderEdit(stackedDashboard());
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  expect(menuLabels()).not.toContain("Duplicate");
+  expect(menuLabels()).not.toContain("Remove");
+});
+
+it("focus falls back past a hidden Edit chip to the visible actions trigger", () => {
+  document.body.innerHTML = '<div id="tile"><button data-widget-edit="a"></button><button data-widget-actions="a"></button></div>';
+  const tile = document.getElementById("tile")!;
+  const gear = tile.querySelector<HTMLElement>("[data-widget-edit]")!;
+  gear.checkVisibility = () => false;
+  expect(visibleTileControl(tile, "[data-widget-edit], [data-widget-actions]")).toBe(tile.querySelector("[data-widget-actions]"));
+  document.body.innerHTML = "";
+});
+
+it("disables a step that would change nothing, with its reason, and does not run it", () => {
+  const { onLayout } = renderEdit(stackedDashboard());
+  // Requests is the top row, so Move up has nowhere to go.
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  const up = screen.getByRole("menuitem", { name: /Move up/ });
+  expect(up).toHaveAttribute("aria-disabled", "true");
+  expect(up).toHaveTextContent("Nothing above this widget in its columns");
+  fireEvent.click(up);
+  expect(onLayout).not.toHaveBeenCalled();
+  expect(screen.getByRole("menuitem", { name: /Move down/ })).not.toHaveAttribute("aria-disabled");
+});
+
+it("a menu's own Alt+Arrow keys do not also move the tile they are portalled from", () => {
+  const { onLayout } = renderEdit(stackedDashboard());
+  fireEvent.click(screen.getByRole("button", { name: "Actions for Requests" }));
+  fireEvent.keyDown(screen.getByRole("menuitem", { name: "Move down" }), { key: "ArrowDown", altKey: true });
+  expect(onLayout).not.toHaveBeenCalled();
+});
+
+it("the context-menu key and Shift+F10 on a focused tile open its actions menu, as a right-click would", () => {
+  renderCanvas(stackedDashboard());
+  const requests = screen.getByRole("article", { name: "Requests" });
+  fireEvent.keyDown(requests, { key: "ContextMenu" });
+  expect(screen.getByRole("menuitem", { name: "Edit chart" })).toBeInTheDocument();
+  // The native contextmenu event that follows the key is cancelled, so the browser menu does not open over it.
+  expect(fireEvent.contextMenu(requests)).toBe(false);
+  // A later right-click is left to the browser.
+  expect(fireEvent.contextMenu(requests)).toBe(true);
+  fireEvent.keyDown(document.activeElement ?? requests, { key: "Escape" });
+  fireEvent.keyDown(requests, { key: "F10", shiftKey: true });
+  expect(screen.getByRole("menuitem", { name: "Edit chart" })).toBeInTheDocument();
+  // F10 without Shift is left to the browser and the page.
+  fireEvent.keyDown(document.activeElement ?? requests, { key: "Escape" });
+  expect(fireEvent.keyDown(requests, { key: "F10" })).toBe(true);
+  expect(screen.queryByRole("menuitem", { name: "Edit chart" })).toBeNull();
 });

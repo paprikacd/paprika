@@ -99,7 +99,7 @@ try {
       // inspect and save the resulting document. Movement-only optimizations
       // must not suppress a changed size or leave the gesture guard behind.
       const resized = page.locator('[data-widget-id="hex-map"]');
-      const resizeHandle = resized.locator('..').locator('.react-resizable-handle');
+      const resizeHandle = resized.locator('..').locator('.react-resizable-handle-se');
       await resizeHandle.scrollIntoViewIfNeeded();
       const originalSize = await resized.boundingBox(), grip = await resizeHandle.boundingBox();
       const resizeQueries = fixture.calls.filter(call => call.path === '/query').length;
