@@ -684,6 +684,16 @@ not become historical series unless the source supplies timestamps. See the
 <td><code>paprika:observe</code> + <code>paprika:insights:write</code></td>
 <td>Edit selected fields and dashboard widgets by ID, atomically against the current ETag</td>
 </tr>
+<tr>
+<td><code>list_dashboard_revisions</code>, <code>get_dashboard_revision</code></td>
+<td><code>paprika:observe</code></td>
+<td>Read a dashboard's retained revisions, newest first, and the exact document of one</td>
+</tr>
+<tr>
+<td><code>restore_dashboard_revision</code></td>
+<td><code>paprika:observe</code> + <code>paprika:insights:write</code></td>
+<td>Restore a revision as a new revision, against the current ETag</td>
+</tr>
 </tbody>
 </table></div>
 <p>All document tools also enforce the user's global <code>insights</code> read/write RBAC.
@@ -702,6 +712,15 @@ field, and arrays replace in full. Dashboard widgets use <code>widget_edits</cod
 <code>add</code>, <code>update</code> or <code>remove</code> operations addressed by stable widget ID. A batch is
 validated and persisted once; any invalid edit or ETag conflict leaves the
 document unchanged. See the <a href="https://github.com/paprikacd/paprika/blob/master/docs/design/insights/targeted-authoring.md">targeted authoring contract</a>.</p>
+<p>Each dashboard keeps its last 20 saved revisions. A dashboard write made through
+MCP records the agent's <code>paprika:observe</code> principal (subject and display name,
+never email) and an optional <code>message</code> of up to 200 characters, passed to
+<code>create_dashboard</code>, <code>update_dashboard</code> or <code>patch_dashboard</code>. A restore is a new
+revision: it needs the current ETag, and restoring the content already current
+adds nothing. Restore does not bring back saved queries. Any saved query that
+changed since the revision is listed in <code>driftedSavedQueries</code>, so the result
+never looks like a full rollback. A revision that no longer passes the current
+rules is refused with its findings and nothing is saved.</p>
 <p>The tools use the same persistent Insights service as the UI. Open workspaces
 refresh externally saved changes while protecting unsaved local drafts.
 Provider credentials and the Insights service token never enter tool responses.
