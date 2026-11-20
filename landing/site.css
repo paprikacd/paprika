@@ -218,3 +218,8 @@ figcaption{font-size:13px;line-height:1.4;color:var(--muted)}
 @media(max-width:600px){.release-proof{padding:82px 0 88px}.release-proof-head{margin-bottom:30px}.release-proof-model{box-shadow:8px 8px 0 var(--steel-pale)}.release-proof-model iframe{height:650px}.release-proof-model figcaption{font-size:13px}.release-proof-notes{margin-top:28px}.release-proof-notes ol{grid-template-columns:1fr;gap:0}.release-proof-notes li{grid-template-columns:30px minmax(0,1fr);gap:12px}.release-proof-model figcaption a{margin-left:0}}
 @media(max-width:600px){.promotion-art picture{aspect-ratio:auto;overflow:visible}.promotion-art img{position:static;width:100%;height:auto}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}.motion-ready [data-enter]:not(.is-visible){opacity:1;transform:none}}
+
+/* Optional analytics controls are rendered only after verified configuration. */
+.analytics-choice { padding-block: 1.5rem; border-top: 1px solid currentColor; }
+.analytics-choice button { padding: .65rem 1rem; margin: .5rem .75rem .5rem 0; cursor: pointer; }
+.analytics-choice button:disabled { opacity: .6; cursor: default; }
