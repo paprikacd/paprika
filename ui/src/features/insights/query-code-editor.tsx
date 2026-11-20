@@ -55,6 +55,8 @@ export interface QueryCodeEditorProps {
   disabled?: boolean
   className?: string
   onValidityChange?: (valid: boolean) => void
+  /** Runs the query for Mod-Enter in the query text. Without it, Mod-Enter inserts a blank line, as CodeMirror does. */
+  onSubmit?: () => void
 }
 
 export function QueryCodeEditor(props: QueryCodeEditorProps) {
@@ -65,7 +67,7 @@ export function QueryCodeEditor(props: QueryCodeEditorProps) {
 }
 
 function SQLQueryEditor(props: QueryCodeEditorProps) {
-  const { value, onChange, parameters = noParameters, onValidityChange, disabled, kind } = props
+  const { value, onChange, parameters = noParameters, onValidityChange, disabled, kind, onSubmit } = props
   const [draft, setDraft] = useState(() => readSQLQuery(value, parameters))
   const emitted = useRef(value)
   const issue = sqlQueryIssue(draft, parameters, kind === "records")
@@ -96,10 +98,10 @@ function SQLQueryEditor(props: QueryCodeEditorProps) {
     <PlainQueryCodeEditor {...props} language="sql" parameters={noParameters} onValidityChange={undefined} value={draft.sql} onChange={sql => update({ sql })} />
     <div className={styles.sqlTools}>
       <div><span className={styles.bindingLabel}>Bound parameters</span>
-        <PlainQueryCodeEditor value={draft.parameters} language="json" label="SQL parameters" parameters={parameters} disabled={disabled} className={styles.bindingEditor} onChange={parameters => update({ parameters, envelope: true })} />
+        <PlainQueryCodeEditor value={draft.parameters} language="json" label="SQL parameters" parameters={parameters} disabled={disabled} className={styles.bindingEditor} onSubmit={onSubmit} onChange={parameters => update({ parameters, envelope: true })} />
       </div>
       {(kind !== "records" || draft.projection.trim()) && <div><span className={styles.bindingLabel}>Metric projection (optional)</span>
-        <PlainQueryCodeEditor value={draft.projection} language="json" label="SQL metric projection" disabled={disabled} className={styles.bindingEditor} onChange={projection => update({ projection, envelope: true })} />
+        <PlainQueryCodeEditor value={draft.projection} language="json" label="SQL metric projection" disabled={disabled} className={styles.bindingEditor} onSubmit={onSubmit} onChange={projection => update({ projection, envelope: true })} />
       </div>}
     </div>
     <p className={styles.notice}>Use <code>$1</code>, <code>$2</code> in SQL and ordered values such as <code>{"[{{service}}, 30]"}</code> below. Values are bound separately; keep placeholders out of SQL.</p>
@@ -108,15 +110,15 @@ function SQLQueryEditor(props: QueryCodeEditorProps) {
   </div>
 }
 
-function PlainQueryCodeEditor({ value, onChange, language: requestedLanguage, provider, providerId, kind, client, parameters = noParameters, sqlConfig, label, disabled = false, className = "", onValidityChange }: QueryCodeEditorProps) {
+function PlainQueryCodeEditor({ value, onChange, language: requestedLanguage, provider, providerId, kind, client, parameters = noParameters, sqlConfig, label, disabled = false, className = "", onValidityChange, onSubmit }: QueryCodeEditorProps) {
   const language = requestedLanguage ?? providerQueryLanguage(provider, kind)
   const name = queryLanguageNames[language]
   const accessibleLabel = label ?? `${name} query`
   const helpId = useId()
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
-  const latest = useRef({ value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters })
-  useLayoutEffect(() => { latest.current = { value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters } }, [value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters])
+  const latest = useRef({ value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters, onSubmit })
+  useLayoutEffect(() => { latest.current = { value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters, onSubmit } }, [value, onChange, disabled, accessibleLabel, onValidityChange, language, parameters, onSubmit])
   const editable = useRef(new Compartment())
   const languageConfig = useRef(new Compartment())
   const accessibility = useRef(new Compartment())
@@ -147,6 +149,14 @@ function PlainQueryCodeEditor({ value, onChange, language: requestedLanguage, pr
           keymap.of([
             { key: "Tab", run: current => completionStatus(current.state) === "active" && acceptCompletion(current) },
             { key: "Escape", run: current => closeCompletion(current) },
+            // Mod-Enter submits the query when the host supplies onSubmit. Without it, the key falls through to
+            // CodeMirror's insertBlankLine.
+            { key: "Mod-Enter", run: () => {
+              const submit = latest.current.onSubmit
+              if (!submit) return false
+              submit()
+              return true
+            } },
             ...closeBracketsKeymap, ...completionKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap,
           ]),
           syntaxHighlighting(syntaxColors),

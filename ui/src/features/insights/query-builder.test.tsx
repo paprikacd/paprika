@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { useState } from "react"
 import { QueryBuilder, buildPromQL, type GuidedQuery } from "./query-builder"
-import { changeQueryEditor, readQueryEditor } from "./query-code-editor.test-utils"
+import { changeQueryEditor, queryEditorView, readQueryEditor } from "./query-code-editor.test-utils"
 import type { InsightsClient, ProviderMetadata } from "./client"
 import type { QueryRequest, QueryResult, Widget } from "./schema"
 
@@ -339,6 +339,20 @@ describe("query editor", () => {
     )
     expect(screen.queryByText("stale result")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Run query" })).toBeEnabled()
+  })
+  it("runs the query for Control+Enter in the query text, or hands it to the host's onSubmit", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ series: [] })
+    const onSubmit = vi.fn()
+    const range = { start: 100, end: 700 }
+    const { rerender } = render(<QueryBuilder widget={widget} onChange={vi.fn()} range={range} queryFetcher={fetcher} />)
+    const textbox = screen.getByRole("textbox", { name: "PromQL query" })
+    act(() => { queryEditorView(textbox).focus() })
+    textbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true }))
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+    rerender(<QueryBuilder widget={widget} onChange={vi.fn()} range={range} queryFetcher={fetcher} onSubmit={onSubmit} />)
+    textbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
   it("clears a completed preview when the dashboard query context changes", async () => {
     const apiFetcher = vi.fn().mockResolvedValue({ series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 11 }, { timestamp: 2000, value: 12 }] }] })

@@ -490,9 +490,12 @@ export function QueryBuilder({
   compact = false,
   live = false,
   onValidityChange,
+  onSubmit,
 }: {
   widget: Widget
   onChange: (query: string) => void
+  /** Runs the query for Mod-Enter in the query text. Defaults to this builder's own run. Explore passes its run. */
+  onSubmit?: () => void
   client?: InsightsClient
   provider?: Provider
   parameters?: readonly QueryEditorParameter[]
@@ -586,6 +589,7 @@ export function QueryBuilder({
           client={client}
           parameters={parameters}
           onValidityChange={language === "sql" || language === "json" ? editorValidity : undefined}
+          onSubmit={onSubmit ?? (() => { void run() })}
           value={widget.query}
           onChange={(query) => {
             setCodeRevision(revision => revision + 1)

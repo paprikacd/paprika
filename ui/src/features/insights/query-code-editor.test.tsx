@@ -106,6 +106,41 @@ describe("query code editor", () => {
     expect(tab.defaultPrevented).toBe(false)
   })
 
+  it("submits the query for Control+Enter without inserting a blank line when onSubmit is given", () => {
+    const onSubmit = vi.fn(), onChange = vi.fn()
+    render(<QueryCodeEditor value="up" onChange={onChange} onSubmit={onSubmit} />)
+    const textbox = screen.getByRole("textbox", { name: "PromQL query" })
+    act(() => { queryEditorView(textbox).focus() })
+    const enter = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true })
+    textbox.dispatchEvent(enter)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(enter.defaultPrevented).toBe(true)
+    expect(readQueryEditor(textbox)).toBe("up")
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it("submits the query from the SQL bindings and projection editors too", () => {
+    const onSubmit = vi.fn()
+    const initial = '{"sql":"SELECT value FROM events WHERE service=$1","parameters":[{{service}}],"projection":{"value":"value"}}'
+    render(<QueryCodeEditor value={initial} onChange={vi.fn()} onSubmit={onSubmit} parameters={[{ name: "service", type: "string" }]} kind="metrics" provider={{ id: "pg", name: "PostgreSQL", type: "postgresql", capabilities: ["metrics", "records"] }} />)
+    for (const name of ["SQL parameters", "SQL metric projection"]) {
+      const textbox = screen.getByRole("textbox", { name })
+      act(() => { queryEditorView(textbox).focus() })
+      const enter = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true })
+      textbox.dispatchEvent(enter)
+      expect(enter.defaultPrevented, name).toBe(true)
+    }
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps CodeMirror's blank line for Control+Enter when no onSubmit is given", () => {
+    render(<QueryCodeEditor value="up" onChange={vi.fn()} />)
+    const textbox = screen.getByRole("textbox", { name: "PromQL query" })
+    act(() => { queryEditorView(textbox).focus(); queryEditorView(textbox).dispatch({ selection: { anchor: 2 } }) })
+    textbox.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(readQueryEditor(textbox)).toBe("up\n")
+  })
+
   it("keeps typed templates intact and reports provider syntax issues", async () => {
     function Editor() {
       const [value, setValue] = useState("up{service={{service}},region={{region}}}")

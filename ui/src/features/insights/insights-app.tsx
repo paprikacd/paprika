@@ -87,6 +87,8 @@ import { useMobileNavigation, usePhoneShell } from "./use-mobile-navigation"
 import { dashboardActionItems } from "./dashboard-actions"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
+import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
+import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { useCanvasDensity } from "./canvas-density"
@@ -135,6 +137,8 @@ function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
 }
 
 const Explorer = lazy(() => import("./explorer").then(module => ({ default: module.Explorer })))
+// The shortcut list opens only on request, so it loads then rather than with the first view.
+const ShortcutList = lazy(() => import("./shortcut-list").then(module => ({ default: module.ShortcutList })))
 // The inspector is opened on demand, so its code stays out of the first view.
 const QueryInspector = lazy(() => import("./query-inspector").then(module => ({ default: module.QueryInspector })))
 const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
@@ -234,7 +238,7 @@ export default function InsightsApp({
 }: InsightsAppProps) {
   const { theme, resolvedTheme, setTheme } = useInsightsTheme()
   const history = useDashboardHistory(exampleDashboard)
-  const { dashboard, update, reset, undo, redo, canUndo, canRedo } = history
+  const { dashboard, update, endGroup, reset, undo, redo, canUndo, canRedo } = history
   const latestDocument = useRef(dashboard)
   useLayoutEffect(() => { latestDocument.current = dashboard }, [dashboard])
   const [mode, setMode] = useState<
@@ -316,6 +320,21 @@ export default function InsightsApp({
   >(null)
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  // An action on the notice, such as Undo after a removal. It shows only while its text is the message on screen.
+  const [messageAction, setMessageAction] = useState<{ text: string; label: string; name: string; run: () => void; document?: Dashboard }>()
+  // The removal notice describes one document. Once any change moves the dashboard away from it (Undo from the toolbar or
+  // the keyboard, or a later edit), the notice and its Undo action are out of date, so both go. This adjusts state while
+  // rendering, when the dashboard changes, rather than in an effect.
+  const [noticeDashboard, setNoticeDashboard] = useState(dashboard)
+  if (noticeDashboard !== dashboard) {
+    setNoticeDashboard(dashboard)
+    const after = messageAction?.document
+    if (after && dashboard !== after && JSON.stringify(dashboard) !== JSON.stringify(after)) {
+      if (message === messageAction.text) setMessage("")
+      setMessageAction(undefined)
+    }
+  }
   const [error, setError] = useState("")
   // Findings a rejected save carried. They show only while their error message is the one on screen.
   const [saveFindings, setSaveFindings] = useState<{ message: string; report: CheckReport }>()
@@ -506,8 +525,70 @@ export default function InsightsApp({
   )
   const editingWidget = panel === "widget" && !!currentWidget
   const focusedWidget = editingWidget && !exploring
+  // Removes a tile from the dashboard, as one undo step, and moves focus to the neighbouring tile or the title.
+  const pendingTileFocus = useRef<string | undefined>(undefined)
+  const removeTile = useCallback((widgetId: string) => {
+    const index = dashboard.widgets.findIndex((widget) => widget.id === widgetId)
+    if (index < 0) return
+    const removed = dashboard.widgets[index]
+    const next = { ...dashboard, widgets: dashboard.widgets.filter((widget) => widget.id !== widgetId) }
+    const neighbour = next.widgets[index] ?? next.widgets[index - 1]
+    update(next)
+    pendingTileFocus.current = neighbour?.id ?? "title"
+    const text = `Removed ${removed.title}.`
+    setError("")
+    setMessage(text)
+    setMessageAction({
+      text,
+      label: "Undo",
+      name: `Undo remove ${removed.title}`,
+      document: next,
+      // Undo only while the removal is still the latest change, so a later edit is never reverted by this notice.
+      run: () => {
+        if (JSON.stringify(latestDocument.current) !== JSON.stringify(next)) {
+          setMessageAction(undefined)
+          setMessage("Could not undo: the dashboard changed since the removal.")
+          return
+        }
+        // Focus returns to the restored tile once its change renders.
+        pendingTileFocus.current = removed.id
+        undo()
+        setMessage(`Restored ${removed.title}.`)
+      },
+    })
+  }, [dashboard, update, undo])
+  useLayoutEffect(() => {
+    const target = pendingTileFocus.current
+    if (target === undefined) return
+    pendingTileFocus.current = undefined
+    if (target === "title") {
+      titleField.current?.focus()
+      return
+    }
+    const tile = Array.from(layoutRoot.current?.querySelectorAll<HTMLElement>("[data-widget-id]") ?? [])
+      .find((element) => element.dataset.widgetId === target)
+    if (!tile) return
+    if (tile.hasAttribute("tabindex")) tile.focus()
+    else tile.querySelector<HTMLElement>("[data-widget-edit]")?.focus()
+  }, [dashboard])
   // The phone shell is a view: editing, a focused chart and Explore keep their full chrome.
   const phoneShell = phoneViewport && !editing && !focusedWidget && !exploring
+  // Keyboard shortcuts for the dashboard. Chart history and apply are routed to the chart editor in a later change.
+  const applePlatform = isApplePlatform()
+  // The open chart editor registers its undo, redo and apply here. A ref, so registering never re-renders the page.
+  const chartCommands = useRef<ChartCommands | null>(null)
+  const registerChartCommands = useCallback((commands: ChartCommands | null) => { chartCommands.current = commands }, [])
+  useInsightsShortcuts(layoutRoot, {
+    editing,
+    chartOpen: editingWidget,
+    chart: chartCommands,
+    blocked: busy || importingBundle || exploring,
+    undoDashboard: undo,
+    redoDashboard: redo,
+    save: () => saveButton.current?.click(),
+    removeTile,
+    openShortcuts: () => setShortcutsOpen(true),
+  })
   // Save removes the Save button on the phone shell, so focus moves to the Dashboard actions trigger, as Edit does on master.
   const actionsRegion = useRef<HTMLDivElement>(null)
   const focusActionsOnView = useRef(false)
@@ -914,7 +995,7 @@ export default function InsightsApp({
     if (!focusedWidget) return
     const keydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented ||
-        document.querySelector('dialog[open], [role="dialog"], [role="tooltip"], [role="listbox"], [role="menu"]')) return
+        document.querySelector(OVERLAY_SELECTOR)) return
       event.preventDefault()
       void leaveWidget()
     }
@@ -1042,6 +1123,11 @@ export default function InsightsApp({
       ])
       if (request !== openRequest.current) return
       setSaved(documentFingerprint(parsed))
+      // An unapplied chart draft is not part of the saved dashboard. Saving keeps the chart editor and its draft open.
+      if (widgetDraftDirty) {
+        setMessage("Saved. Chart changes are still unapplied.")
+        return
+      }
       setMessage(
         mode === "example"
           ? "Example saved in this browser."
@@ -1726,8 +1812,9 @@ export default function InsightsApp({
                 aria-label="Dashboard title"
                 maxLength={120}
                 value={dashboard.title}
+                onBlur={() => endGroup()}
                 onChange={(e) =>
-                  update({ ...dashboard, title: e.target.value })
+                  update({ ...dashboard, title: e.target.value }, { group: "dashboard:title" })
                 }
               />
             ) : (
@@ -1748,6 +1835,7 @@ export default function InsightsApp({
                 togglePanel: name => openBuilderPanel(panel === name ? null : name),
                 inspectQueries: () => setInspectingQueries(value => !value),
                 refresh: changeViewRefresh,
+                shortcuts: () => setShortcutsOpen(true),
               })}
             /> : <>
             <GammaButton data-panel-opener="manage" size="sm" variant="secondary"
@@ -1767,7 +1855,7 @@ export default function InsightsApp({
             </GammaButton>
             </>}
             {!phoneShell && (editing ? (
-              <GammaButton ref={saveButton} size="sm" variant="primary" className={styles.primary} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
+              <GammaButton ref={saveButton} size="sm" variant="primary" className={styles.primary} aria-keyshortcuts={ariaKeyshortcutsFor("save")} title={hintFor("save", applePlatform)} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
                 {busy ? (
                   <Loader2 size={15} className={styles.spin} />
                 ) : (
@@ -1829,6 +1917,8 @@ export default function InsightsApp({
                 <GammaButton iconOnly size="sm" variant="quiet"
                   className={styles.iconButton}
                   aria-label="Undo"
+                  aria-keyshortcuts={ariaKeyshortcutsFor("undo")}
+                  title={hintFor("undo", applePlatform)}
                   disabled={!canUndo}
                   onClick={undo}
                 >
@@ -1837,6 +1927,8 @@ export default function InsightsApp({
                 <GammaButton iconOnly size="sm" variant="quiet"
                   className={styles.iconButton}
                   aria-label="Redo"
+                  aria-keyshortcuts={ariaKeyshortcutsFor("redo")}
+                  title={hintFor("redo", applePlatform)}
                   disabled={!canRedo}
                   onClick={redo}
                 >
@@ -1933,12 +2025,20 @@ export default function InsightsApp({
           >
             {!error && <Check size={14} />}
             <span>{error || message}</span>
+            {!error && messageAction?.text === message && (
+              <GammaButton size="sm" variant="secondary" aria-label={messageAction.name} onClick={() => {
+                const action = messageAction
+                setMessageAction(undefined)
+                action.run()
+              }}>{messageAction.label}</GammaButton>
+            )}
             <GammaButton iconOnly size="sm" variant="quiet"
               className={styles.iconButton}
               aria-label="Dismiss message"
               onClick={() => {
                 setError("")
                 setMessage("")
+                setMessageAction(undefined)
               }}
             >
               <X size={14} />
@@ -1974,6 +2074,12 @@ export default function InsightsApp({
                 <span className={styles.compactEditHint}>
                   Arrange widgets in the Layout tab.
                 </span>
+                {/* Phone-width layouts and touch-only devices have no use for the list, so it stays hidden there. */}
+                {!phoneViewport && (
+                  <GammaButton size="sm" variant="quiet" className={styles.shortcutsButton} onClick={() => setShortcutsOpen(true)}>
+                    Keyboard shortcuts
+                  </GammaButton>
+                )}
                 <GammaButton size="sm" variant="quiet"
                   disabled={importingBundle}
                   onClick={() => {
@@ -2007,6 +2113,7 @@ export default function InsightsApp({
                       queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(previewWidget ?? currentWidget, range) ? queryFieldSnapshot.fields : undefined}
                       result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
                       onClose={leaveWidget}
+                      onCommands={registerChartCommands}
                       onDraftValidityChange={setWidgetDraftValid}
                       onApply={(next, layout) => {
                         update(current => ({
@@ -2246,6 +2353,7 @@ export default function InsightsApp({
         </div>
         </section>
       </div>
+    {shortcutsOpen && <Suspense fallback={null}><ShortcutList isMac={applePlatform} onClose={() => setShortcutsOpen(false)} /></Suspense>}
     </div>
     </SourceStatusContext.Provider>
     </SavedQueryLibraryProvider>

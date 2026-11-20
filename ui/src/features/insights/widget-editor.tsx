@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
 import { useDraftHistory } from "./history";
+import { isApplePlatform, type ChartCommands } from "./use-insights-shortcuts";
+import { ariaKeyshortcutsFor, hintFor } from "./shortcuts";
 import { ChartAppearancePresets } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
 import { providerOption, QuerySourceIcon } from "./source-identity";
@@ -766,6 +768,7 @@ export function WidgetEditor({
   dashboards = [],
   queryFields,
   result,
+  onCommands,
 }: {
   widget: Widget;
   providers: Provider[];
@@ -784,6 +787,8 @@ export function WidgetEditor({
   queryFields?: import("./query-connections").QueryFields;
   /** The widget's loaded result, when the host has one. Plugin configuration checks use it. */
   result?: QueryResult;
+  /** Receives the chart's undo, redo and apply commands for the host's keyboard shortcuts, and null on unmount. */
+  onCommands?: (commands: ChartCommands | null) => void;
 }) {
   const definitions = useWidgetDefinitions();
   const library = useSavedQueryLibrary();
@@ -808,7 +813,8 @@ export function WidgetEditor({
   };
   const history = useDraftHistory(initialDraft);
   const { draft, size, pluginConfig, tooltipPluginConfig, layout: stagedLayout } = history.present;
-  const setDraft = (draft: Widget) => history.update(current => ({ ...current, draft }));
+  // A group name merges a burst of keystrokes in one field into one undo step (see useDraftHistory).
+  const setDraft = (draft: Widget, group?: string) => history.update(current => ({ ...current, draft }), group ? { group } : undefined);
   const setSize = (size: { w: number; h: number } | null) => history.update(current => ({ ...current, size }));
   const setPluginConfig = (pluginConfig: string) => history.update(current => ({ ...current, pluginConfig }));
   const setTooltipPluginConfig = (tooltipPluginConfig: string) => history.update(current => ({ ...current, tooltipPluginConfig }));
@@ -1032,6 +1038,18 @@ export function WidgetEditor({
     if (stagedLayout) onApply(preview, stagedLayout);
     else onApply(preview);
   }
+  // The host's keyboard shortcuts act through these. Registered on every render, so they see the current draft.
+  useEffect(() => {
+    // Undo and redo are no-ops without history. travel() remounts the editor, so it must not run then.
+    onCommands?.({
+      undo: () => { if (history.canUndo) travel("undo") },
+      redo: () => { if (history.canRedo) travel("redo") },
+      apply,
+      canApply: !stale && !error && !!preview,
+    });
+  });
+  useEffect(() => () => onCommands?.(null), [onCommands]);
+  const applePlatform = isApplePlatform();
   function chooseVisualization(value: string, acceptReplacement = false) {
     const definition = definitions.find((item) =>
       (item.type === "plugin" ? `plugin:${item.id}` : item.type) === value,
@@ -1118,11 +1136,12 @@ export function WidgetEditor({
         Title
         <GammaInput
           value={draft.title}
+          onBlur={() => history.endGroup()}
           aria-invalid={draft.title.length === 0 || undefined}
           aria-describedby={draft.title.length === 0 ? errorId : undefined}
           maxLength={120}
           onChange={(event) =>
-            setDraft({ ...draft, title: event.target.value })
+            setDraft({ ...draft, title: event.target.value }, "chart:title")
           }
         />
       </label>
@@ -1296,7 +1315,7 @@ export function WidgetEditor({
                     </label>
                     {draft.type === "plugin" && draft.pluginId === sloSummaryPluginId ? (
                       // The objective is compiled from the configuration at run time, so there is no free query to edit.
-                      <SloSourceEditor config={pluginConfig} onConfig={setPluginConfig} onQuery={(query) => history.update(current => current.draft.query === query ? current : { ...current, draft: { ...current.draft, query } })} />
+                      <SloSourceEditor config={pluginConfig} onConfig={setPluginConfig} onQuery={(query) => history.update(current => current.draft.query === query ? current : { ...current, draft: { ...current.draft, query } }, { group: "chart:query" })} />
                     ) : (
                       <QueryBuilder
                         key={editorRevision}
@@ -1308,7 +1327,7 @@ export function WidgetEditor({
                         client={client}
                         range={range}
                         queryFetcher={queryFetcher}
-                        onChange={(query) => setDraft({ ...draft, query })}
+                        onChange={(query) => setDraft({ ...draft, query }, "chart:query")}
                       />
                     )}
                   </>
@@ -1450,10 +1469,11 @@ export function WidgetEditor({
                   Description
                   <GammaInput
                     value={draft.description ?? ""}
+                    onBlur={() => history.endGroup()}
                     maxLength={500}
                     placeholder="A little context for your team"
                     onChange={(event) =>
-                      setDraft({ ...draft, description: event.target.value })
+                      setDraft({ ...draft, description: event.target.value }, "chart:description")
                     }
                   />
                 </label>
@@ -1578,10 +1598,10 @@ export function WidgetEditor({
             { id: "duplicate", label: "Duplicate chart", icon: <Copy size={14} />, disabled: stale || !!error, onSelect: onDuplicate },
             { id: "remove", label: "Remove chart", icon: <Trash2 size={14} />, onSelect: onDelete },
           ]} />
-          <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Undo chart change" disabled={!history.canUndo} onClick={() => travel("undo")}><Undo2 size={16} /></GammaButton>
-          <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Redo chart change" disabled={!history.canRedo} onClick={() => travel("redo")}><Redo2 size={16} /></GammaButton>
+          <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Undo chart change" aria-keyshortcuts={ariaKeyshortcutsFor("undo")} title={hintFor("undo", applePlatform)} disabled={!history.canUndo} onClick={() => travel("undo")}><Undo2 size={16} /></GammaButton>
+          <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Redo chart change" aria-keyshortcuts={ariaKeyshortcutsFor("redo")} title={hintFor("redo", applePlatform)} disabled={!history.canRedo} onClick={() => travel("redo")}><Redo2 size={16} /></GammaButton>
           <GammaButton variant="secondary" size="sm" onClick={workspace.onDiscard}>Discard</GammaButton>
-          <GammaButton variant="primary" size="sm" disabled={stale || !!error} onClick={apply}>Apply changes</GammaButton>
+          <GammaButton variant="primary" size="sm" aria-keyshortcuts={ariaKeyshortcutsFor("apply")} title={hintFor("apply", applePlatform)} disabled={stale || !!error} onClick={apply}>Apply changes</GammaButton>
         </div>
         <nav className={styles.editorSections} aria-label="Chart editor sections">
           <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(previewRef.current)}>Preview</GammaButton>

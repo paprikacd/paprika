@@ -93,6 +93,16 @@ describe("phone shell header", () => {
     expect(screen.queryByRole("button", { name: "Edit dashboard" })).not.toBeInTheDocument();
   });
 
+  it("hides the Keyboard shortcuts hint while editing at phone width", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Edge Watch" });
+    const { menu } = await openPhoneMenu();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Edit dashboard" }));
+    await screen.findByLabelText("Dashboard title");
+    expect(screen.getByText("Editing canvas", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Keyboard shortcuts" })).not.toBeInTheDocument();
+  });
+
   it("Save returns focus to the Dashboard actions trigger, not the page body", async () => {
     const { client } = setup();
     await screen.findByRole("heading", { name: "Edge Watch" });
@@ -217,7 +227,7 @@ describe("description clamp in the app", () => {
 });
 
 describe("tablet width keeps the full header", () => {
-  it("shows Edit as a visible button and only the Manage and Build with AI menu items", async () => {
+  it("shows Edit as a visible button and only the Manage, Build with AI and Keyboard shortcuts menu items", async () => {
     const { container } = setup({ width: 800 });
     await screen.findByRole("heading", { name: "Edge Watch" });
     expect(container.querySelector("[data-phone-shell]")).toBeNull();
@@ -225,7 +235,7 @@ describe("tablet width keeps the full header", () => {
     expect(screen.getByRole("button", { name: "Choose custom time range" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Auto refresh" })).toBeInTheDocument();
     const { menu } = await openPhoneMenu();
-    expect(within(menu).getAllByRole("menuitem").map(item => item.textContent)).toEqual(["Manage dashboards", "Build with AI"]);
+    expect(within(menu).getAllByRole("menuitem").map(item => item.textContent)).toEqual(["Manage dashboards", "Build with AI", "Keyboard shortcuts"]);
     expect(within(menu).queryByRole("group")).not.toBeInTheDocument();
   });
 });

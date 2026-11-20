@@ -1,4 +1,4 @@
-import { Braces, Clock3, Pencil, Settings2, Sparkles } from "lucide-react"
+import { Braces, Clock3, Keyboard, Pencil, Settings2, Sparkles } from "lucide-react"
 import type { GammaActionMenuItem } from "./gamma/action-menu"
 import type { Dashboard } from "./schema"
 
@@ -18,6 +18,8 @@ export interface DashboardActionHandlers {
   togglePanel: (panel: DashboardPanelName) => void
   inspectQueries: () => void
   refresh: (refresh: Dashboard["refreshInterval"]) => void
+  /** Opens the keyboard shortcut list. */
+  shortcuts: () => void
 }
 
 const refreshOptions: readonly { value: Dashboard["refreshInterval"]; label: string }[] = [
@@ -39,6 +41,7 @@ export function dashboardActionItems(
     return [
       { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => handlers.togglePanel("manage") },
       { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => handlers.togglePanel("ai") },
+      { id: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard size={15} />, onSelect: handlers.shortcuts },
     ]
   }
   const fixed = state.customRange ? "Fixed custom range" : undefined
