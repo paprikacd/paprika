@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F22",
+  "featureName": "Promotion candidate workbench",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Exact shared scenario from the six-direction gallery.",
+    "application": "checkout",
+    "route": "staging → production",
+    "target": "mel-prod / production",
+    "accepted": {
+      "version": "v2.8.0",
+      "release": "rel-280",
+      "configuration": "cfg-042"
+    },
+    "candidate": {
+      "version": "v2.8.1",
+      "release": "rel-281",
+      "configuration": "cfg-042"
+    },
+    "verification": "Passed",
+    "approval": "Required",
+    "production": "v2.8.0",
+    "imageText": [
+      "Review promotion",
+      "checkout · staging → production",
+      "Accepted production",
+      "v2.8.0 · rel-280 · cfg-042",
+      "Candidate",
+      "v2.8.1 · rel-281 · cfg-042",
+      "mel-prod / production",
+      "Verification Passed",
+      "Approval Required",
+      "Review approval",
+      "Inspect changes",
+      "Production remains on v2.8.0",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "Verification passed is not approval or deployment. Production still runs the accepted release.",
+    "Candidate review binds full release UID and desired target configuration; display aliases are synthetic.",
+    "Review approval opens a deliberate candidate-specific review; generic stage approval is a different operation."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/239"
+  ]
+}

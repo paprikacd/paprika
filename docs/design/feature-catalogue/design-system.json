@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "designSystem": "Paprika Working System v1",
+  "role": "design reference; not a generated runtime token system",
+  "colors": {
+    "navy": "#1d2d3d",
+    "ground": "#f2f2f3",
+    "surface": "#ffffff",
+    "ink": "#1d1f20",
+    "mutedInk": "#62686f",
+    "steelSelection": "#5980a6",
+    "steelActionForSmallWhiteText": "#416180",
+    "actionText": "#ffffff"
+  },
+  "type": {
+    "working": "Barlow",
+    "headings": "Barlow Condensed",
+    "identifiers": "system monospace",
+    "numbers": "tabular",
+    "titlePx": [
+      32,
+      40
+    ],
+    "sectionPx": [
+      20,
+      24
+    ],
+    "bodyPx": [
+      14,
+      20
+    ],
+    "longProsePx": [
+      16,
+      24
+    ],
+    "metadataPx": [
+      12,
+      16
+    ],
+    "codePx": [
+      13,
+      18
+    ],
+    "sizePairMeaning": "font size / line height"
+  },
+  "geometry": {
+    "status": "proposed starting conventions; not pixel measurements of artboards",
+    "spacingScalePx": [
+      4,
+      8,
+      12,
+      16,
+      24,
+      32
+    ],
+    "pagePaddingPx": 24,
+    "surfacePaddingPx": 16,
+    "globalBarPx": 56,
+    "breadcrumbStripPx": 44,
+    "sectionRailPx": 160,
+    "tableRowPx": [
+      40,
+      48
+    ],
+    "compactRowPx": 32,
+    "controlHeightPx": [
+      36,
+      40
+    ],
+    "inspectorWidthPx": [
+      320,
+      480
+    ],
+    "mainPanelGeometry": "Follow maintained console tokens"
+  },
+  "contrastChecks": [
+    {
+      "foreground": "#ffffff",
+      "background": "#5980a6",
+      "ratio": 4.147679,
+      "ordinaryText45To1": false
+    },
+    {
+      "foreground": "#ffffff",
+      "background": "#416180",
+      "ratio": 6.468816,
+      "ordinaryText45To1": true
+    },
+    {
+      "foreground": "#62686f",
+      "background": "#ffffff",
+      "ratio": 5.631538,
+      "ordinaryText45To1": true
+    }
+  ],
+  "runtimeOwners": {
+    "mainTokens": "ui/src/app/globals.css",
+    "fonts": "ui/src/app/layout.tsx",
+    "insightsTheme": "ui/src/features/insights/gamma/gamma-theme.module.css",
+    "insightsBehavior": "docs/design/insights/UX-CONTRACT.md"
+  }
+}

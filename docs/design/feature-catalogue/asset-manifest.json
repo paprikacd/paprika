@@ -1,0 +1,1260 @@
+{
+  "schemaVersion": 1,
+  "designSystem": "Paprika Working System v1",
+  "canonicalCount": 29,
+  "explorationCount": 44,
+  "totalPNGCount": 73,
+  "totalBytes": 120047992,
+  "copyPolicy": "Original final PNG bytes; no resizing or re-encoding",
+  "qaBoundary": "Concept imagery checked for material fixture, identity, state and action errors. No runtime behavior, accessibility or responsive test claim.",
+  "assets": [
+    {
+      "studyId": "F01U",
+      "featureId": "F01",
+      "kind": "canonical",
+      "path": "assets/f01u.png",
+      "sha256": "f2bb9aa1fc27a59169394f24a2493d8276a4298beb815060c9836d98f77479ec",
+      "gitBlobSha": "5a2e787090a144608bb5b940f8e8187d2d780932",
+      "bytes": 1674012,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root+artistic_directions",
+        "note": "Final corrected timeline/coverage labels reviewed."
+      }
+    },
+    {
+      "studyId": "F02U",
+      "featureId": "F02",
+      "kind": "canonical",
+      "path": "assets/f02u.png",
+      "sha256": "20035f604efff308a3717e295a03679a9362a09e33a8c63cee04d4fe88616af5",
+      "gitBlobSha": "bdc21f032b0695314e00e21cac30ed5888dfa8f2",
+      "bytes": 1509938,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions"
+      }
+    },
+    {
+      "studyId": "F03U",
+      "featureId": "F03",
+      "kind": "canonical",
+      "path": "assets/f03u.png",
+      "sha256": "4eafeac34dd0d293b413ec2ceb4d28eeb0e10089c27dffc2df3ea8f2ec0f5a21",
+      "gitBlobSha": "9ea4f8bf78c5e671f3f6670042f23a772ee62378",
+      "bytes": 1731813,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root+artistic_directions",
+        "note": "Final corrected timeline/coverage labels reviewed."
+      }
+    },
+    {
+      "studyId": "F04U",
+      "featureId": "F04",
+      "kind": "canonical",
+      "path": "assets/f04u.png",
+      "sha256": "10d00207e58cae9f14e714675d523ae8b96b1d9352f1bc4c2fd95e56a51ac7c7",
+      "gitBlobSha": "e8591e12577676cd518192cbba75200fd4b1e828",
+      "bytes": 1685764,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Correctedleboundaryunitseconds/string and bucketvaluecount visually verified."
+      }
+    },
+    {
+      "studyId": "F05U",
+      "featureId": "F05",
+      "kind": "canonical",
+      "path": "assets/f05u.png",
+      "sha256": "cbc63f77c2b514a5a21b6a7c768d8da4342495330338d05bed1290d7d1d8ccdd",
+      "gitBlobSha": "c91e6594a7deff9aa327339975253aa70f5d37c4",
+      "bytes": 1530550,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Exactconversion,proposednotvalidated,Apply/Saveunavailable."
+      }
+    },
+    {
+      "studyId": "F06U",
+      "featureId": "F06",
+      "kind": "canonical",
+      "path": "assets/f06u.png",
+      "sha256": "8102b760d97543bec2f4a390dfd9680ba5295518248799ef1cba0437121a2703",
+      "gitBlobSha": "e5c4e3811177f2a8a455725e2bad8c27b0af950d",
+      "bytes": 1628180,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Selectedclientpeer and sourcegapdistinct;twoexactrows;Notpublishedremoved;logsnotqueried."
+      }
+    },
+    {
+      "studyId": "F07U",
+      "featureId": "F07",
+      "kind": "canonical",
+      "path": "assets/f07u.png",
+      "sha256": "0c4c1888e57789264592701da42e0936a1a21d171c18f7a15e6f1a4c980b6db6",
+      "gitBlobSha": "2140f2adf53c9d341494ed5474c667208b7b659f",
+      "bytes": 1755170,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Finalexclusiveledgerverified:500→600samples=5→6s,Other+10samples/+20%;incorrectredundantsecondslabelremoved."
+      }
+    },
+    {
+      "studyId": "F08U",
+      "featureId": "F08",
+      "kind": "canonical",
+      "path": "assets/f08u.png",
+      "sha256": "d2da3c19fcf43b82d66187a742acdc1164f80477d586e01f896819ac81c7c784",
+      "gitBlobSha": "ba116a456c2303b6049f542395984697f1c922d6",
+      "bytes": 1668203,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Exactallocationledgerandunitdenominators,unallocatedexcluded."
+      }
+    },
+    {
+      "studyId": "F09U",
+      "featureId": "F09",
+      "kind": "canonical",
+      "path": "assets/f09u.png",
+      "sha256": "00cc584c7cdd2ce48082f970046288c3585b4ec19e79d78d035a44e2a413c28d",
+      "gitBlobSha": "37afa6f840a903d6c5cdad1db32869538e0e2fab",
+      "bytes": 1768221,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS after targeted image edit and visual recheck. The diagram is now explicitly illustrative service context, not captured observed topology. Preserved saved partial snapshot at 09:53 UTC for [09:41,09:53), 72 metric observations = 12 timestamps × 3 series × 2 cohorts, 5 traces, and logs not captured because the source was unavailable. Editable notes remain distinct from immutable results; Compare with current creates a separate observation."
+      }
+    },
+    {
+      "studyId": "F10U",
+      "featureId": "F10",
+      "kind": "canonical",
+      "path": "assets/f10u.png",
+      "sha256": "6852bece7c3643992476f835100bb25c26363d019e151c44c4b8768b88bcd5ea",
+      "gitBlobSha": "e35f621df3e05ad2988e238941116a44fe5ee8d4",
+      "bytes": 1683476,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS after targeted image edit and visual recheck. The unsupported 6-hour Pass state is now Review. Preserved request-based 30-day target 99.9%, allowed ratio 0.1%, 1,000,000 eligible requests, 1,000 failures allowed, 400 used, 600 remaining and 60% budget remaining. One hour: 250/50,000 = 0.5% = 5× burn. Six hours: 320/200,000 = 0.16% = 1.6× burn. Actions remain investigative."
+      }
+    },
+    {
+      "studyId": "F11U",
+      "featureId": "F11",
+      "kind": "canonical",
+      "path": "assets/f11u.png",
+      "sha256": "a2114088921ae1484f09fc3d47135a58ae64dd190b4dce83e22e7788947ed9d5",
+      "gitBlobSha": "2383d2b26c287f21bd8eb1aeaa48035421c14e29",
+      "bytes": 1593154,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS original. Six observations are 0.5%, 1.2%, 1.3%, 1.4%, 0.8%, 0.6%; rule >1%, hold 120 seconds, evaluation cadence 60 seconds. Pending [09:01,09:03), firing [09:03,09:04), normal at 09:04. One firing episode lasts 60 seconds. Simulation and no-data-policy requirement are explicit; no activation or notification action."
+      }
+    },
+    {
+      "studyId": "F12U",
+      "featureId": "F12",
+      "kind": "canonical",
+      "path": "assets/f12u.png",
+      "sha256": "757b24c36f8311481499fa8a351926634f060a915c8128a4c786127c7151f303",
+      "gitBlobSha": "8bee47edb5f8f1f35665268121a4e7d780cc856e",
+      "bytes": 1650069,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS after targeted image edit and visual recheck. The related-edge note now says absence does not establish deletion or zero traffic. Both graphs and the exact ledger retain 5 before, 6 after, 4 persisting, 2 newly observed and 1 no longer observed, across 09:00–09:15 and 09:15–09:30 UTC. The supplied-record scope and lack of an exact first-observation instant are explicit. Actions inspect path or edge evidence only."
+      }
+    },
+    {
+      "studyId": "F13U",
+      "featureId": "F13",
+      "kind": "canonical",
+      "path": "assets/f13u.png",
+      "sha256": "2bec434e101ed16945e334b03b8d0c63b40d0e04982ad0cd9d151bf85335fea1",
+      "gitBlobSha": "073743569311ca8af10415c99eaf3aa8d9aae5f8",
+      "bytes": 1745181,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS original. Location and total counts reconcile: 60 scheduled, 59 executed, 57 passed, 2 failed, 1 missing. Selected Frankfurt failed run totals 180 + 240 + 310 + 1,500 = 2,230 ms; Confirmation is Not run. Successful-run comparison totals 1,700 ms. Imported recorded runs and test traffic are explicit; actions inspect failed steps or retained evidence."
+      }
+    },
+    {
+      "studyId": "F14U",
+      "featureId": "F14",
+      "kind": "canonical",
+      "path": "assets/f14u.png",
+      "sha256": "1d25a90203c52af7e9e8b00896a185086c66fa3d2005d4958fc68987b211844b",
+      "gitBlobSha": "30e6ddf72dffd8cc3b07e7bb5a098fa39a3d1010",
+      "bytes": 1607938,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS original. Complete synthetic capture inventory totals 10,000→14,000 series (+40%): requests_total 6,000→10,000 and duration_bucket 4,000→4,000. Identity projection maps 10,000 request identities to 2,000 keys with 8,000 excess rows; including 4,000 unchanged histogram identities gives 14,000 input rows→6,000 keys. Bounded source sample and complete capture are distinguished. No collector mutation or savings claim."
+      }
+    },
+    {
+      "studyId": "F15U",
+      "featureId": "F15",
+      "kind": "canonical",
+      "path": "assets/f15u.png",
+      "sha256": "66ddf2ee28382c0a859e402df39a2fd1a5631b170ec4ad67ceec4c760d30086f",
+      "gitBlobSha": "7b6c819ae2d27650d326e3a67a768685e858f241",
+      "bytes": 1645157,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS original. Eight query rows show seven Complete and one Error. Selected q7 exclusive phases are Queue 700 ms + Provider 800 ms + Transfer 60 ms + Normalization 40 ms = 1,600 ms. Configured refresh target is 1,000 ms, with execution-relative ruler; no concurrent-duration sum or scheduler guarantee. Inspect/export receipt actions do not execute a query. Lane geometry is illustrative; the exact measured ledger is authoritative."
+      }
+    },
+    {
+      "studyId": "F16U",
+      "featureId": "F16",
+      "kind": "canonical",
+      "path": "assets/f16u.png",
+      "sha256": "2c46fd24f6f0d353ee9de624a8e0c272d5578a1afa3527f4db2bf06d0b14c9ab",
+      "gitBlobSha": "e256bb9a0bbe6a9eabdc9af8d8e789c8a110b9fa",
+      "bytes": 1507311,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "details": "PASS original. r12→r13 has exactly three changes: window 30→60 minutes, query service checkout-api→payment-svc, series color blue→teal. Summary is two data changes and one appearance change. Previews are explicitly schematic. Restore r12 as draft enters a separate reviewed draft/save path and creates a new revision, rather than overwriting current results or restoring historical telemetry."
+      }
+    },
+    {
+      "studyId": "F17U",
+      "featureId": "F17",
+      "kind": "canonical",
+      "path": "assets/f17u.png",
+      "sha256": "5152fa1f606447506606cbc6b7ceba191441b6fc59e10f89915b77e14c5ef3d4",
+      "gitBlobSha": "84bdc1d4f860110001d25ad96f25bf880f97ce3e",
+      "bytes": 1552357,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Exact supplied fixture and guarded action semantics visually checked; schematic geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F18U",
+      "featureId": "F18",
+      "kind": "canonical",
+      "path": "assets/f18u.png",
+      "sha256": "53d9985deeb894ffb324c76fe581b5f2ef4af8873316e65005ed9ce118f1e012",
+      "gitBlobSha": "f07c4d3fc57e6df4d50bfe00d213d28d5edb984a",
+      "bytes": 1651578,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Exact supplied fixture and guarded action semantics visually checked; schematic geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F19U",
+      "featureId": "F19",
+      "kind": "canonical",
+      "path": "assets/f19u.png",
+      "sha256": "5bbe00825d080d55ad532762af353c6c737f00aa9c0ab544ef63272585bd116e",
+      "gitBlobSha": "368bba43db48695a70bd21cee62e908a2de9cd9f",
+      "bytes": 1537862,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Exact supplied fixture and guarded action semantics visually checked; schematic geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F20U",
+      "featureId": "F20",
+      "kind": "canonical",
+      "path": "assets/f20u.png",
+      "sha256": "34a11d593a4b832b103aabcae226cb340067f0ac11c48208dfa6a886c9a405f4",
+      "gitBlobSha": "770da6951614e3788b83687baca61c83ad7a4872",
+      "bytes": 1446897,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "5%canary,80/10000=.8%pass,340>300fail,4/4pass,2pass1failBlocked,Advanceunavailable."
+      }
+    },
+    {
+      "studyId": "F21U",
+      "featureId": "F21",
+      "kind": "canonical",
+      "path": "assets/f21u.png",
+      "sha256": "7956fdcd0d6f332da59b7cd245ce4d9f5b3aa889cbd4f4f9db43afd8a7bc5518",
+      "gitBlobSha": "fb7ce8edb093bed02fb68b1d2530e23ac2dbbaec",
+      "bytes": 1627833,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Exact12/8/3/1 and desired/observed fields reconcile. Names and ownership context synthetic. Actionability requires review; navigation-only actions."
+      }
+    },
+    {
+      "studyId": "F22U",
+      "featureId": "F22",
+      "kind": "canonical",
+      "path": "assets/f22u.png",
+      "sha256": "759ef7f8c9bf4af57924890e4a399e44bfe47eed182c1d4029a44ffa6865e5ea",
+      "gitBlobSha": "d0de16633cdb1fab4cb19c4335d79a02c28ea2a5",
+      "bytes": 1565843,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F23U",
+      "featureId": "F23",
+      "kind": "canonical",
+      "path": "assets/f23u.png",
+      "sha256": "d3b8e51d913df732260888d382b3137a37093afe4e6bbeec2dfe09a98ed4cb2f",
+      "gitBlobSha": "a644dff8af7b92990a2efc6e17c8d2946d165a03",
+      "bytes": 1420411,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Master visual reference. Exact2digests and environment binding; publicationreviewnotdeploy."
+      }
+    },
+    {
+      "studyId": "F24U",
+      "featureId": "F24",
+      "kind": "canonical",
+      "path": "assets/f24u.png",
+      "sha256": "d5b0479f4c9b886a2d9e84f9a89f22a9c0a696fae2412e71fe16f3cb6d506c45",
+      "gitBlobSha": "0d0a071b1eb9f330fc2956e367130df8c6648221",
+      "bytes": 1526452,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F25U",
+      "featureId": "F25",
+      "kind": "canonical",
+      "path": "assets/f25u.png",
+      "sha256": "48bb26fff9864240361ad572a6da08f1f094d8d46989820cf70b6d4cb1e70774",
+      "gitBlobSha": "fbb9c61261eb2896e04b56f897d1b8565e51eb6c",
+      "bytes": 1593197,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F26U",
+      "featureId": "F26",
+      "kind": "canonical",
+      "path": "assets/f26u.png",
+      "sha256": "08812b6458043247587edd5a4788149f3e26c9882fbf55b1d0b0ac28b2529473",
+      "gitBlobSha": "2e7c392e252d90f8e21bd7a3308e8be06de61f9f",
+      "bytes": 1633083,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction",
+        "details": {
+          "status": "pass",
+          "method": "Actual generated local PNG inspected with view_image after editing.",
+          "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-c38bf834-f000-4ab8-a957-bb9857bcab6e.png",
+          "checks": [
+            "Complete agenda now includes 15:15–15:30 Allowed / Eligible before the selected 15:30–16:00 row.",
+            "Original allow, maintenance and settlement rules are unchanged.",
+            "Combined block remains 14:15–15:15; next eligible remains 15:15–16:00 AEDT / 04:15–05:00 UTC.",
+            "Date, timezone, current time, selected future interval and read-only actions remain correct."
+          ]
+        }
+      }
+    },
+    {
+      "studyId": "F27U",
+      "featureId": "F27",
+      "kind": "canonical",
+      "path": "assets/f27u.png",
+      "sha256": "bc5a8f670c695f23e8b1f3f4b3198acb325ae4044e493ea36fc142913fd42340",
+      "gitBlobSha": "f9c8e72315d4b1412756a674cfee70895e4344c1",
+      "bytes": 1610467,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction",
+        "details": {
+          "status": "pass",
+          "method": "Actual generated local PNG inspected with view_image after editing.",
+          "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-02b8501c-c572-4224-bde3-73295219f1f8.png",
+          "checks": [
+            "New execution ID now reads Assigned after acceptance; no future UID is fabricated.",
+            "All dependency arrows were removed; the six icons are a non-causal status strip.",
+            "Three preserved and three affected steps retain their exact results/dispositions.",
+            "Old Job terminal, Active Pods 0 and Deletion complete remain intact; Review retry is available and no execution is claimed."
+          ]
+        }
+      }
+    },
+    {
+      "studyId": "F28U",
+      "featureId": "F28",
+      "kind": "canonical",
+      "path": "assets/f28u.png",
+      "sha256": "d4950dd5eea8494a6188f79cbd640334d8934f75bc9a241ac23489efe5160176",
+      "gitBlobSha": "60b73e9734658a32df6bcf48c4c3781302790d9f",
+      "bytes": 1609551,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction",
+        "details": {
+          "status": "pass",
+          "method": "Actual generated local PNG inspected with view_image after editing.",
+          "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-954ee10d-4c61-4a40-8d55-33b1eba4f8fa.png",
+          "checks": [
+            "The member inspector now spells the controller RollingSync.",
+            "All three pinned versions, release identities and readiness states remain unchanged.",
+            "Payments remains selected and Ready; overall plan remains Planning / Needs review.",
+            "Only Review version set and Open member actions are shown."
+          ]
+        }
+      }
+    },
+    {
+      "studyId": "F29U",
+      "featureId": "F29",
+      "kind": "canonical",
+      "path": "assets/f29u.png",
+      "sha256": "3cb60ff66dd36f26ff5288fcfeadae28c0bfc743887f0dc77d4d78d8a0fb7b19",
+      "gitBlobSha": "1599d288266aa43f366fc78609fc87d6a8f37dcb",
+      "bytes": 1640661,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction",
+        "details": {
+          "status": "pass",
+          "method": "Actual generated local PNG inspected with view_image after editing.",
+          "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-05891952-9f44-4dd2-b768-cd80cb4eae6a.png",
+          "checks": [
+            "Header badge now reads Recorded history.",
+            "Verification started has status Started; Window eligible has status Eligible.",
+            "All seven timestamps and event names are preserved.",
+            "Apply completed remains distinct from later Health failed; Rollback preview requested remains Pending, not executed.",
+            "Journal identity, date, timezone and read-only inspection action remain correct."
+          ]
+        }
+      }
+    },
+    {
+      "studyId": "F01A",
+      "featureId": "F01",
+      "kind": "exploration",
+      "path": "assets/explorations/f01a.png",
+      "sha256": "2f1f0793df43d65c77bb29ebe12ce0c16cba582586d5569cab6b6981c9118e29",
+      "gitBlobSha": "0ad148817c98cfb748ad0351c7b9b43629a23af0",
+      "bytes": 1603418,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F01B",
+      "featureId": "F01",
+      "kind": "exploration",
+      "path": "assets/explorations/f01b.png",
+      "sha256": "a9f0b6e21d385b16ba1069797667d666552e10fe25918720cbc8f44a00cd4595",
+      "gitBlobSha": "f1851275857accdb489ac99fab05d147d74c94a3",
+      "bytes": 1602031,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F02A",
+      "featureId": "F02",
+      "kind": "exploration",
+      "path": "assets/explorations/f02a.png",
+      "sha256": "74e17037647d5bc47193ead1aa501e32c8a1d1d681bc0d5a7b798140f6adee27",
+      "gitBlobSha": "ee13d043b13bbeda5ca792976e25d486464cc0a2",
+      "bytes": 1604747,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F02B",
+      "featureId": "F02",
+      "kind": "exploration",
+      "path": "assets/explorations/f02b.png",
+      "sha256": "5e378224276a1ce5b96ba149f2d25a38c1d2ae21c733d9f0b003c47a3e28a360",
+      "gitBlobSha": "cd73a705edd651ffcbe44970c8ecf6fce0bd5a03",
+      "bytes": 1556593,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F03A",
+      "featureId": "F03",
+      "kind": "exploration",
+      "path": "assets/explorations/f03a.png",
+      "sha256": "f697416e58d7115209a233ee5e97a6871af5c98c9158ac00c1b4facdd4d2530a",
+      "gitBlobSha": "8433e9def5b1d6f6be2a485b501c997b864d590a",
+      "bytes": 1714991,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F03B",
+      "featureId": "F03",
+      "kind": "exploration",
+      "path": "assets/explorations/f03b.png",
+      "sha256": "a151b0a51d8093e78822723e1dd171c04765967fd9282f918b63b30892825a0a",
+      "gitBlobSha": "1ab7d4397e51c4d9cffd64489ec1f03b0407c8e0",
+      "bytes": 1699888,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F04A",
+      "featureId": "F04",
+      "kind": "exploration",
+      "path": "assets/explorations/f04a.png",
+      "sha256": "1f481d8f3458d20030b8f639bbe269ff24180d3abf691568a24275a8b4decba4",
+      "gitBlobSha": "21e9c110c77188be40f672a9b4d5c22c03d55783",
+      "bytes": 1693364,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F04B",
+      "featureId": "F04",
+      "kind": "exploration",
+      "path": "assets/explorations/f04b.png",
+      "sha256": "e4d6a230ea2cfac52e2daf7b9572bee5b4fece4cd1ada7e4c320f11df4fa11ac",
+      "gitBlobSha": "02f9abba9ca09a8b317da20da521af9f8e37710e",
+      "bytes": 1724415,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F05A",
+      "featureId": "F05",
+      "kind": "exploration",
+      "path": "assets/explorations/f05a.png",
+      "sha256": "d4e19e3d98dd5c8c71c9eadcb75f5242cd5e95bff6c89ab83fc4c4cbbf885fe5",
+      "gitBlobSha": "66cb19f1afd61f73a1b0ffbef3736554d0cc25c0",
+      "bytes": 1678190,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F05B",
+      "featureId": "F05",
+      "kind": "exploration",
+      "path": "assets/explorations/f05b.png",
+      "sha256": "7e4631760aeeaa6c231f452a85c51e4a889a5d1f66b857d31d3646712d9a9bbb",
+      "gitBlobSha": "d3a23a13535c92d4b04c7d6cd18e13d621d0764d",
+      "bytes": 1707389,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F06A",
+      "featureId": "F06",
+      "kind": "exploration",
+      "path": "assets/explorations/f06a.png",
+      "sha256": "d070e78b1d7b643bae18b59834b5c263ce5c2e802cca1dc8208489a31965e2a5",
+      "gitBlobSha": "3518c556355a935747a0d92a2d1322e3edae8839",
+      "bytes": 1752937,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Selected span arithmetic, peer identity and not-queried logs corrected. Extra unselected synthetic spans illustrative."
+      }
+    },
+    {
+      "studyId": "F06B",
+      "featureId": "F06",
+      "kind": "exploration",
+      "path": "assets/explorations/f06b.png",
+      "sha256": "a5e45d1a240377a46268cc7ed28cea07525431ee73765a1d598c189d9e1f3b60",
+      "gitBlobSha": "d16e7b1787c9f5d9cae6bac744d277edf923c137",
+      "bytes": 1699545,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Remotepeer explicit, paymentheartbeatgap, relatedlogsnotqueried. Extra unselectedsyntheticspans illustrative."
+      }
+    },
+    {
+      "studyId": "F07A",
+      "featureId": "F07",
+      "kind": "exploration",
+      "path": "assets/explorations/f07a.png",
+      "sha256": "b0b2cb0cc2e8bd3210226ab7da9bfb424a6fa9a1e1f1d3009f0ea41f1ea110b3",
+      "gitBlobSha": "b7fb4600a9e4b5579830f2e0732330bd48ecdfd7",
+      "bytes": 1802358,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Final corrective text and exact ledger reviewed."
+      }
+    },
+    {
+      "studyId": "F07B",
+      "featureId": "F07",
+      "kind": "exploration",
+      "path": "assets/explorations/f07b.png",
+      "sha256": "b5c1b1ab287af9ebcbb20d92b51c28cbdc2122584928047748d7f0da14f7de37",
+      "gitBlobSha": "89ccea53aa22c739de8f647acbf64586b3cf9f8a",
+      "bytes": 1751206,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Schematicequalwidthrowsandexclusiveledgerreconcile10ms/sample;CPU/perrequest/shareclear."
+      }
+    },
+    {
+      "studyId": "F08A",
+      "featureId": "F08",
+      "kind": "exploration",
+      "path": "assets/explorations/f08a.png",
+      "sha256": "9ce51ba76f3b877bb62d73948c2e15cb1262e51bfc3e643082a942b15629ed82",
+      "gitBlobSha": "098eb72a835538e258ff1f6f24ab855d8c7503dd",
+      "bytes": 1791562,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F08B",
+      "featureId": "F08",
+      "kind": "exploration",
+      "path": "assets/explorations/f08b.png",
+      "sha256": "8a28fedea73a9bf94b8bc6403effaf753ec2f851a237733383a9199e7a22a9a4",
+      "gitBlobSha": "b62d8611a331873c531b6d4b1de4cb7dd651df01",
+      "bytes": 1752399,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Corrected completion denominator and exact ledger verified."
+      }
+    },
+    {
+      "studyId": "F09A",
+      "featureId": "F09",
+      "kind": "exploration",
+      "path": "assets/explorations/f09a.png",
+      "sha256": "426ea2548d600996a002ad12e254e1bd7a8f8a64d4826e0f87e08646da9d9a23",
+      "gitBlobSha": "7bb9362793c2a1c8859f4b88b89d1188bb2664a3",
+      "bytes": 1911242,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Corrected selected observation09:52 inside half-open bounds."
+      }
+    },
+    {
+      "studyId": "F09B",
+      "featureId": "F09",
+      "kind": "exploration",
+      "path": "assets/explorations/f09b.png",
+      "sha256": "726d862b48f2718d8b24f05834c0c7b76b766fd26d81ccc65019e9e1b5baad43",
+      "gitBlobSha": "8bec0557214a0267c98870ec339bae19a6d50ffe",
+      "bytes": 1817055,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F10A",
+      "featureId": "F10",
+      "kind": "exploration",
+      "path": "assets/explorations/f10a.png",
+      "sha256": "47d97b44e9ac54a4a6d487ca922e9355e861162a222a477924b77d687f79c3ae",
+      "gitBlobSha": "1e37320917dae8394c02a30607382649ccc6139f",
+      "bytes": 1627966,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F10B",
+      "featureId": "F10",
+      "kind": "exploration",
+      "path": "assets/explorations/f10b.png",
+      "sha256": "7e63d9904ce30321baa1861aade3139c9ba11528e6c367056e6369c6566e23c7",
+      "gitBlobSha": "029e54b75d1b15afbb055780dc201b164676c259",
+      "bytes": 1685924,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F11A",
+      "featureId": "F11",
+      "kind": "exploration",
+      "path": "assets/explorations/f11a.png",
+      "sha256": "12010132b6059fe1e649ebbbfd10f705419c5c086369e6c07b6a19fa20ee09b0",
+      "gitBlobSha": "861d23c26fde75921452838bcc21fd3c8ed2ca4c",
+      "bytes": 1583704,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F11B",
+      "featureId": "F11",
+      "kind": "exploration",
+      "path": "assets/explorations/f11b.png",
+      "sha256": "33fdeb557b5e59fdc816e72bddb6c1098e1faf0c5f833125d7ee4bce461505d1",
+      "gitBlobSha": "2dd83c88cc87d57e2823a42188f62cc8ce1032bd",
+      "bytes": 1598338,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F12A",
+      "featureId": "F12",
+      "kind": "exploration",
+      "path": "assets/explorations/f12a.png",
+      "sha256": "1137ccf0ac39bdfa265b7db380423e898a52fcf8867fb7491ef1cd8f306ec38f",
+      "gitBlobSha": "d4170ce86ec04e7c85374120d00e8d093024f9ad",
+      "bytes": 1813639,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Final corrective text and exact ledger reviewed."
+      }
+    },
+    {
+      "studyId": "F12B",
+      "featureId": "F12",
+      "kind": "exploration",
+      "path": "assets/explorations/f12b.png",
+      "sha256": "698ec7a095f02b559c0f5842604e6cbdc78660f591c758cd452cedde1332879d",
+      "gitBlobSha": "300fba91f8c310ec8d0919063ed9fc9d8c348f4e",
+      "bytes": 1680895,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F13A",
+      "featureId": "F13",
+      "kind": "exploration",
+      "path": "assets/explorations/f13a.png",
+      "sha256": "b7e753a91003780daea1d746ab20416740413ebc2f08313dad0283cce2ab52de",
+      "gitBlobSha": "cc2a4f3d8955919e40385dc35dcd0ad4ea5e59d6",
+      "bytes": 1659024,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F13B",
+      "featureId": "F13",
+      "kind": "exploration",
+      "path": "assets/explorations/f13b.png",
+      "sha256": "8af201c3052c423fbfb0632aafc7f75cb0d4a6bb4d218badcf9aced7b992f86c",
+      "gitBlobSha": "683080bfa3848e2c46a08c9815bcaf2b157a41ce",
+      "bytes": 1776323,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F14A",
+      "featureId": "F14",
+      "kind": "exploration",
+      "path": "assets/explorations/f14a.png",
+      "sha256": "e616d0c1bb1cf35ec7c0262775fd708fd7890eb81aa8c791ab8f29cdd73fac64",
+      "gitBlobSha": "58e2ca898fddd4bb79bb916aa6a1ef451b839f4a",
+      "bytes": 1651476,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F14B",
+      "featureId": "F14",
+      "kind": "exploration",
+      "path": "assets/explorations/f14b.png",
+      "sha256": "4a676a78920a7628f2004c5a1a6fb0931c87542278843c9c657fd89707ef80ca",
+      "gitBlobSha": "1bf2fdeacd981e6eb1306ed66322242c0f9f9ae9",
+      "bytes": 1662461,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F15A",
+      "featureId": "F15",
+      "kind": "exploration",
+      "path": "assets/explorations/f15a.png",
+      "sha256": "66f26a63adc0577d5048983c7470d21cdad13bb7e41a9dcde82b00745f4dc254",
+      "gitBlobSha": "01fa560cfcaebff3b6d3edaafa5537cd08110583",
+      "bytes": 1586045,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F15B",
+      "featureId": "F15",
+      "kind": "exploration",
+      "path": "assets/explorations/f15b.png",
+      "sha256": "546f7587d847ba2d3a009f9969f104b4e45bd9bdf1bd46c629fc71ca9169f8a6",
+      "gitBlobSha": "8d6ef998c53fc59acfe38297cab64b82ae55d1e8",
+      "bytes": 1706177,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Final corrective text and exact ledger reviewed."
+      }
+    },
+    {
+      "studyId": "F23A",
+      "featureId": "F23",
+      "kind": "exploration",
+      "path": "assets/explorations/f23a.png",
+      "sha256": "7b1e83fe19397c30d6c12bc9f2b8ac7ed6e00106e1d5c646ef55aae936f18e91",
+      "gitBlobSha": "61d92c2e5fb0430abaaa19965e8eb901aaae011a",
+      "bytes": 1552053,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F23B",
+      "featureId": "F23",
+      "kind": "exploration",
+      "path": "assets/explorations/f23b.png",
+      "sha256": "dfbb80b7f6d6b732cfd593655a1816eb2cb8c4684cff47e1df4ea0a252742c52",
+      "gitBlobSha": "41fb4aa9df91cf4b6df09a68e05eddd13c337792",
+      "bytes": 1497180,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F24A",
+      "featureId": "F24",
+      "kind": "exploration",
+      "path": "assets/explorations/f24a.png",
+      "sha256": "2e84d98449b281b0580fe8e8df447094a9a3154c302375a04865271fe92342fe",
+      "gitBlobSha": "4decab698e31c4be0dbc4d36a9c53bf55d6cea74",
+      "bytes": 1703663,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F24B",
+      "featureId": "F24",
+      "kind": "exploration",
+      "path": "assets/explorations/f24b.png",
+      "sha256": "6bf402bd4ea3810097fc6e88ef37d1eb3f588f5752274c98f5e69617b3084ef2",
+      "gitBlobSha": "7f50f7bdcc1f6e2b5caa69a2a85eeb64e3c3754d",
+      "bytes": 1546399,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F25A",
+      "featureId": "F25",
+      "kind": "exploration",
+      "path": "assets/explorations/f25a.png",
+      "sha256": "76cc45988a9c955898eb54a0b2ba226eb684148c7d3cebf8b6253374a80dce9d",
+      "gitBlobSha": "fdf8f3c61caefc3ec47a4a27a44e9885cabaccb3",
+      "bytes": 1651915,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F25B",
+      "featureId": "F25",
+      "kind": "exploration",
+      "path": "assets/explorations/f25b.png",
+      "sha256": "0d6030badc5ae764e559805ee5f82a4aa638412d4524097ec57d4dc81e5bd310",
+      "gitBlobSha": "d4493057e25be4b2230f37bbce9f4217595cf4d1",
+      "bytes": 1475217,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F26A",
+      "featureId": "F26",
+      "kind": "exploration",
+      "path": "assets/explorations/f26a.png",
+      "sha256": "046b01d5051101daec1892d153dea7eb0f2f53f369931d2d090af4c0b275f5a9",
+      "gitBlobSha": "44ae48ae796b2fee2407193b4b9227d3f15a58ae",
+      "bytes": 1630911,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F26B",
+      "featureId": "F26",
+      "kind": "exploration",
+      "path": "assets/explorations/f26b.png",
+      "sha256": "63c00804beee317e6d266cfdf2c7640268b2fbe4d623960c3f521b8175def256",
+      "gitBlobSha": "d0ee26eb74cf5cf5ecfdb80631bdb589420b1b98",
+      "bytes": 1668562,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F27A",
+      "featureId": "F27",
+      "kind": "exploration",
+      "path": "assets/explorations/f27a.png",
+      "sha256": "9b06b7c061d2c431f430c090474c8aa3540f61a99b8e8562599a2eb2ad3488d5",
+      "gitBlobSha": "7e29da64c65fe45e2588ca339b357a0ab7958815",
+      "bytes": 1692225,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F27B",
+      "featureId": "F27",
+      "kind": "exploration",
+      "path": "assets/explorations/f27b.png",
+      "sha256": "dec3149e34a3a8362fa574e2d903e2d6bdf2590ea6b85afb4ee258ec74cb146a",
+      "gitBlobSha": "be7e212b9a3217b02211430bad096be01dc0bb73",
+      "bytes": 1735800,
+      "width": 1585,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F28A",
+      "featureId": "F28",
+      "kind": "exploration",
+      "path": "assets/explorations/f28a.png",
+      "sha256": "8976c0f2b6570db17b9c2e4719428c4fc01ecf1757993c8085886ad279742c3c",
+      "gitBlobSha": "e45389ae90787d1ac7d402859919505dc66ef015",
+      "bytes": 1540401,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F28B",
+      "featureId": "F28",
+      "kind": "exploration",
+      "path": "assets/explorations/f28b.png",
+      "sha256": "d2a8f574f70b050622f426f777fdcc5318d5b758d9b08eeead06fd3de04953e7",
+      "gitBlobSha": "cadbebb21e66471330c221f2b2b9a0fe9c2c582f",
+      "bytes": 1512277,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F29A",
+      "featureId": "F29",
+      "kind": "exploration",
+      "path": "assets/explorations/f29a.png",
+      "sha256": "117fc012677b7ef337613c5fe2aa60e91069a1187f8ff3890a656ede3bb61b7c",
+      "gitBlobSha": "d5efca46361fa97970110ee742d66a42a4edb15a",
+      "bytes": 1610322,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F29B",
+      "featureId": "F29",
+      "kind": "exploration",
+      "path": "assets/explorations/f29b.png",
+      "sha256": "6a9bd142823b823b1a612e59144abfb5420e7743645e19e9397fc79c4f7c7c4b",
+      "gitBlobSha": "6306caca02f37f5a15d24839d603bab824acefd2",
+      "bytes": 1535436,
+      "width": 1586,
+      "height": 992,
+      "mimeType": "image/png",
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    }
+  ]
+}

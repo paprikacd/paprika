@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F28",
+  "featureName": "Multi-application release-train plan",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Native primary mixed-readiness fixture.",
+    "plan": "train-2026.11",
+    "revision": "03",
+    "target": "mel-prod / production",
+    "owner": "commerce-prod · RollingSync",
+    "members": [
+      {
+        "name": "checkout",
+        "version": "v2.8.1",
+        "release": "rel-281",
+        "state": "Verifying"
+      },
+      {
+        "name": "payments",
+        "version": "v1.14.0",
+        "release": "rel-pay-114",
+        "state": "Ready",
+        "selected": true
+      },
+      {
+        "name": "inventory",
+        "version": "v3.6.2",
+        "release": "rel-inv-362",
+        "state": "Blocked by window"
+      }
+    ],
+    "planState": "Needs review",
+    "imageText": [
+      "Release train plan",
+      "train-2026.11 · revision 03",
+      "mel-prod / production",
+      "checkout · v2.8.1 · rel-281 · Verifying",
+      "payments · v1.14.0 · rel-pay-114 · Ready",
+      "inventory · v3.6.2 · rel-inv-362 · Blocked by window",
+      "Owner · commerce-prod RollingSync",
+      "Needs review",
+      "Review version set",
+      "Open member",
+      "Planning only",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "Pin each member identity; refreshing changed membership or candidates creates a new review version.",
+    "Show current RollingSync ownership as existing controller context; do not invent a wave engine or unsupported dependency graph.",
+    "Ready applies only to payments in this fixture; the version set still needs review.",
+    "Use save/review/export and existing member workflow links only.",
+    "No Deploy all, group approval, atomic release or collective rollback in the first slice."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/245"
+  ]
+}

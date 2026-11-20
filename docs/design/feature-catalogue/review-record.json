@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "status": "All final concept images passed visual review",
+  "publicationNotes": [
+    "All canonical artboards are design concepts with synthetic data. Native fixtures govern exact values; charts and diagrams are schematic.",
+    "The canonical contract uses #416180 for small-white-text filled actions; #5980a6 remains selection/focus. Some raster color samples are approximate.",
+    "Prototype codes and incidental local-rail labels are study annotations, not a committed information architecture. Implement maintained routes and active-surface navigation."
+  ],
+  "earlierExplorationNotes": {
+    "F24": "The raster uses version-tag aliases in its image-change rows. The native rollback specification remains authoritative for immutable digest binding.",
+    "F25": "Read the selected prune as a proposed change that has not been applied. The raster's resource-kind rail is not an exhaustive capability report.",
+    "F02": "The comparison uses the half-open interval [09:41, 09:53) UTC. Extra p50/p99 labels and time-series texture in the rasters are illustrative and are not part of the authoritative fixture.",
+    "F03": "Metrics: 12/12 expected one-minute bins. The payment-svc heartbeat signal has a separate gap [09:47, 09:50). Trace sampling policy is 10%; collection coverage remains unknown.",
+    "F04": "The le label is a source string; any numerical upper-bound view must explicitly parse it and retain the original label. The 128 inspected series are a bounded sample.",
+    "F29": "Use the combined target mel-prod / production consistently. The inspector’s environment/target aliases are illustrative; production bindings retain their actual cluster and namespace identity.",
+    "F06": "The selected root/client span values and exact log-query state are authoritative. Additional unselected span names, IDs and durations in exploratory studies are synthetic composition examples, not additional fixture evidence. The selected remote peer is bank-gateway; the expected heartbeat-log gap belongs to payment-svc.",
+    "F07": "Call-path geometry is schematic. The exclusive ledger governs CPU time, per-request normalization and sample shares; a sample weighs 10 ms.",
+    "F15": "Scheduler lane geometry is illustrative; the exclusive phase ledger contains the measured durations. Query data-window bounds are distinct from relative execution elapsed time."
+  },
+  "assetReviewSource": "asset-manifest.json",
+  "authority": "Native fixtures and unchanged implementation acceptance criteria govern exact semantics; raster geometry is illustrative",
+  "runtimeValidationClaimed": false,
+  "canonicalCount": 29,
+  "explorationCount": 44,
+  "totalReviewedPNGCount": 73
+}

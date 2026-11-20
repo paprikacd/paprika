@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F15",
+  "featureName": "Query stage and queue inspector",
+  "synthetic": true,
+  "summary": "Eight queries: 7 complete and 1 error. Selected query q7 takes 1,600 ms: 700 ms queued + 800 ms at the provider + 60 ms transfer + 40 ms normalization. The configured refresh reference is 1,000 ms, not a guarantee. Concurrent durations are not summed.",
+  "data": {
+    "queryCount": 8,
+    "complete": 7,
+    "error": 1,
+    "selectedQuery": "q7",
+    "selectedDurationMs": 1600,
+    "exclusivePhases": [
+      {
+        "phase": "Queue",
+        "durationMs": 700
+      },
+      {
+        "phase": "Provider",
+        "durationMs": 800
+      },
+      {
+        "phase": "Transfer",
+        "durationMs": 60
+      },
+      {
+        "phase": "Normalization",
+        "durationMs": 40
+      }
+    ],
+    "configuredRefreshReferenceMs": 1000
+  },
+  "constraints": [
+    "Execution receipts are proposed. The current scheduler's cache and deduplication behavior are an existing foundation.",
+    "Each phase names its clock and measurement owner. Exclusive phases and nested spans are different.",
+    "Unavailable provider timing remains unknown, not 0. Returned series count is not input cardinality or storage cost.",
+    "Shared, deduplicated and cached work retains attributable identities without double charging.",
+    "Cancellation, timeout, partial-result and error states remain distinct. Diagnostics use the canonical bounded scheduler."
+  ],
+  "actions": {
+    "enabled": [
+      "Inspect execution receipt",
+      "Inspect bound query"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Query on hover",
+      "Query on theme/layout change",
+      "Treat target as scheduler guarantee"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/230",
+    "https://github.com/paprikacd/paprika/issues/216",
+    "https://github.com/paprikacd/paprika/issues/219"
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F08",
+  "featureName": "Cost allocation and release economics",
+  "synthetic": true,
+  "summary": "Separate synthetic 24-hour AUD allocation pool. Compute control/canary/unallocated/total: 76/84/20/180; Database 26/30/16/72; Network 12/12/6/30; Observability 6/6/6/18. Totals A$120/A$132/A$48/A$300. Each cohort has 100,000 unique attempts with no retries; completions 99,600/93,800. Cost per 1,000 attempts A$1.20→A$1.32 (+10%); per 1,000 completions A$1.204819→A$1.407249 (+16.8017%), displayed A$1.205→A$1.407 (+16.8%).",
+  "data": {
+    "currency": "AUD",
+    "allocationIntervalHours": 24,
+    "rows": [
+      {
+        "category": "Compute",
+        "control": 76,
+        "canary": 84,
+        "unallocated": 20,
+        "total": 180
+      },
+      {
+        "category": "Database",
+        "control": 26,
+        "canary": 30,
+        "unallocated": 16,
+        "total": 72
+      },
+      {
+        "category": "Network",
+        "control": 12,
+        "canary": 12,
+        "unallocated": 6,
+        "total": 30
+      },
+      {
+        "category": "Observability",
+        "control": 6,
+        "canary": 6,
+        "unallocated": 6,
+        "total": 18
+      }
+    ],
+    "totals": {
+      "control": 120,
+      "canary": 132,
+      "unallocated": 48,
+      "total": 300
+    },
+    "attemptsEach": 100000,
+    "retries": 0,
+    "completions": {
+      "control": 99600,
+      "canary": 93800
+    },
+    "costPer1000AttemptsAUD": {
+      "control": 1.2,
+      "canary": 1.32,
+      "increasePercent": 10
+    },
+    "costPer1000CompletionsAUD": {
+      "control": 1.204819,
+      "canary": 1.407249,
+      "increasePercent": 16.8017,
+      "displayControl": "A$1.205",
+      "displayCanary": "A$1.407",
+      "displayIncrease": "+16.8%"
+    },
+    "unallocatedIncludedInCohortRatios": false
+  },
+  "constraints": [
+    "This is a separate 24-hour allocation pool in AUD, not the twelve-minute incident window and not a monthly cost field.",
+    "Rows and columns reconcile to A$300. The A$48 unallocated balance remains visible and is excluded from both cohort unit-cost ratios.",
+    "Keep attempts and completions distinct; the synthetic fixture has no retries.",
+    "Selecting a cell inspects its allocation rule and source rows; it does not silently reallocate cost.",
+    "Basis, currency, interval and population remain explicit; missing or zero outcome denominators disable dependent ratios.",
+    "Allocation estimates are distinct from provider billing; do not fabricate an invoice or silently rescale monthly observations."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/225"
+  ]
+}

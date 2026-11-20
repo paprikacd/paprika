@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F02",
+  "featureName": "Release comparison",
+  "synthetic": true,
+  "summary": "Synthetic checkout-api / production / eu-west-1 / /checkout over [09:41, 09:53) UTC. Concurrent control v2.8.0 and canary v2.8.1 each have 100,000 requests. Control: 400 errors, 0.4%, p95 210 ms. Canary: 6,200 errors, 6.2%, p95 940 ms. Error-ratio difference: +5.8 percentage points.",
+  "data": {
+    "scope": {
+      "service": "checkout-api",
+      "environment": "production",
+      "region": "eu-west-1",
+      "route": "/checkout"
+    },
+    "windowUTC": {
+      "start": "09:41",
+      "endExclusive": "09:53"
+    },
+    "cohorts": [
+      {
+        "name": "control",
+        "version": "v2.8.0",
+        "requests": 100000,
+        "errors": 400,
+        "errorPercent": 0.4,
+        "p95Ms": 210
+      },
+      {
+        "name": "canary",
+        "version": "v2.8.1",
+        "requests": 100000,
+        "errors": 6200,
+        "errorPercent": 6.2,
+        "p95Ms": 940
+      }
+    ],
+    "errorDifferencePercentagePoints": 5.8
+  },
+  "constraints": [
+    "Apply the same selected route, region and interval to both cohorts; show comparison eligibility before interpreting a delta.",
+    "Check bounds, version labels, instrumentation and available populations. Equal request counts alone do not establish comparability or causality.",
+    "The p95 values are independently specified summaries; they require compatible distributions or explicitly scoped source summaries.",
+    "Do not treat individual endpoint example rows as a partition of the selected-route total.",
+    "Selection inspects a population or opens related evidence; it does not approve or promote the candidate.",
+    "Keep blue/control and coral/canary identity or equivalent explicit cohort labels stable under selection and normalization."
+  ],
+  "actions": null,
+  "clarification": "The selected interval is [09:41, 09:53) UTC. Only the supplied error ratios and p95 summaries belong to this fixture; extra percentile labels or curve texture in older studies are illustrative.",
+  "sourcePage": "https://chatgpt.com/space/page_fca6170dff808191bc520e4365f1490b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/218"
+  ]
+}

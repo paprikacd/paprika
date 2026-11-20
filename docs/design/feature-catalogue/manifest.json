@@ -1,0 +1,2448 @@
+{
+  "schemaVersion": 1,
+  "designSystem": "Paprika Working System v1",
+  "date": "2026-11-11",
+  "status": "proposed design catalogue",
+  "repository": "paprikacd/paprika",
+  "sourceBaselineCommit": "17a651ab8edf20337ac5319af93ae7fb2c389b47",
+  "featureCount": 29,
+  "implementationIssueCount": 30,
+  "spaceIndex": "https://chatgpt.com/space/page_33e4ede12ad88191af7ba4843bc74534",
+  "systemPageURL": "https://chatgpt.com/space/page_83d1294312088191bf8b0b831d680eb2",
+  "sourcePages": {
+    "kb": "https://chatgpt.com/space/page_6ae45780924881918c18270064f72c2c",
+    "direction": "https://chatgpt.com/space/page_956c0483705c8191a694894abf25e041",
+    "gallery": "https://chatgpt.com/space/page_d8c61d09ef2c8191a6b6c568855ce5f6",
+    "investigation": "https://chatgpt.com/space/page_fca6170dff808191bc520e4365f1490b",
+    "authoring": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+    "operations": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+    "release": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0"
+  },
+  "authority": {
+    "behavior": "linked implementation issue scope and acceptance criteria",
+    "fixture": "fixtures/*.json",
+    "visualSystem": "design-system.md",
+    "artwork": "proposed synthetic visual references"
+  },
+  "features": [
+    {
+      "id": "F01",
+      "name": "Incident replay",
+      "collection": "investigation",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f01-incident-replay.md",
+      "fixturePath": "fixtures/f01.json",
+      "canonicalImage": {
+        "studyId": "F01U",
+        "path": "assets/f01u.png",
+        "alt": "Incident replay in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "f2bb9aa1fc27a59169394f24a2493d8276a4298beb815060c9836d98f77479ec",
+        "gitBlobSha": "5a2e787090a144608bb5b940f8e8187d2d780932",
+        "bytes": 1674012,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root+artistic_directions",
+          "note": "Final corrected timeline/coverage labels reviewed."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/222"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/221"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_fca6170dff808191bc520e4365f1490b",
+      "sourceHeading": "Incident replay",
+      "anatomy": [
+        "A shared time ruler above aligned metric, service-state, deployment and evidence tracks; one transport strip and one stable selected-observation inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "Event history places a record by occurrence time; Known then makes it visible only after its Paprika receipt time. The timeout is excluded from Known then before 09:46:00.",
+        "Occurrence, collector observation and Paprika receipt are three distinct clocks.",
+        "Replay is paused initially; controls move the playhead or selected evidence, not live production state.",
+        "Do not auto-start, smooth through missing observations, or animate numeric readings between fabricated intermediate values.",
+        "The heartbeat-log gap belongs only to the affected signal. Do not imply that every signal is missing there.",
+        "Historical queries alone do not establish what was known at the time; immutable capture ownership is required."
+      ],
+      "explorationStudyIds": [
+        "F01A",
+        "F01B"
+      ]
+    },
+    {
+      "id": "F02",
+      "name": "Release comparison",
+      "collection": "investigation",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f02-release-comparison.md",
+      "fixturePath": "fixtures/f02.json",
+      "canonicalImage": {
+        "studyId": "F02U",
+        "path": "assets/f02u.png",
+        "alt": "Release comparison in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "20035f604efff308a3717e295a03679a9362a09e33a8c63cee04d4fe88616af5",
+        "gitBlobSha": "bdc21f032b0695314e00e21cac30ed5888dfa8f2",
+        "bytes": 1509938,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions"
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/218"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_fca6170dff808191bc520e4365f1490b",
+      "sourceHeading": "Release comparison",
+      "anatomy": [
+        "A control/delta/canary ledger with common-scale comparisons, paired distributions, ranked endpoint evidence and a population/eligibility inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "Apply the same selected route, region and interval to both cohorts; show comparison eligibility before interpreting a delta.",
+        "Check bounds, version labels, instrumentation and available populations. Equal request counts alone do not establish comparability or causality.",
+        "The p95 values are independently specified summaries; they require compatible distributions or explicitly scoped source summaries.",
+        "Do not treat individual endpoint example rows as a partition of the selected-route total.",
+        "Selection inspects a population or opens related evidence; it does not approve or promote the candidate.",
+        "Keep blue/control and coral/canary identity or equivalent explicit cohort labels stable under selection and normalization."
+      ],
+      "explorationStudyIds": [
+        "F02A",
+        "F02B"
+      ]
+    },
+    {
+      "id": "F03",
+      "name": "Evidence coverage",
+      "collection": "investigation",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f03-evidence-coverage.md",
+      "fixturePath": "fixtures/f03.json",
+      "canonicalImage": {
+        "studyId": "F03U",
+        "path": "assets/f03u.png",
+        "alt": "Evidence coverage in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "4eafeac34dd0d293b413ec2ceb4d28eeb0e10089c27dffc2df3ea8f2ec0f5a21",
+        "gitBlobSha": "9ea4f8bf78c5e671f3f6670042f23a772ee62378",
+        "bytes": 1731813,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root+artistic_directions",
+          "note": "Final corrected timeline/coverage labels reviewed."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/216"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_fca6170dff808191bc520e4365f1490b",
+      "sourceHeading": "Evidence coverage",
+      "anatomy": [
+        "A service-by-signal-by-time matrix with a stable selected-source provenance column and explicit received, expected-but-missing, sampled and uninstrumented states."
+      ],
+      "actions": null,
+      "constraints": [
+        "Missing expected heartbeat observations justify a gap; quiet ordinary logs alone do not.",
+        "A configured 10% trace sampling policy is not a measured 10% coverage claim.",
+        "Distinguish received observations, missing expected observations, sampled traces and uninstrumented sources.",
+        "Selecting an observation highlights its exact source interval and query without moving the matrix.",
+        "Candidate explanations keep supporting, contrary and missing evidence separate; do not show an opaque confidence percentage.",
+        "The matrix describes available evidence, not inferred health or root cause."
+      ],
+      "explorationStudyIds": [
+        "F03A",
+        "F03B"
+      ]
+    },
+    {
+      "id": "F04",
+      "name": "Source compatibility explorer",
+      "collection": "authoring",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f04-source-compatibility-explorer.md",
+      "fixturePath": "fixtures/f04.json",
+      "canonicalImage": {
+        "studyId": "F04U",
+        "path": "assets/f04u.png",
+        "alt": "Source compatibility explorer in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "10d00207e58cae9f14e714675d523ae8b96b1d9352f1bc4c2fd95e56a51ac7c7",
+        "gitBlobSha": "e8591e12577676cd518192cbba75200fd4b1e828",
+        "bytes": 1685764,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Correctedleboundaryunitseconds/string and bucketvaluecount visually verified."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/220"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+      "sourceHeading": "Source compatibility explorer",
+      "anatomy": [
+        "A provider tree beside an expansive schema workspace, exact sample rows, a selected-field semantic inspector and a visualization-prerequisite rail."
+      ],
+      "actions": null,
+      "constraints": [
+        "Observed metadata is distinct from inference; visualization compatibility checks type, unit, grain and required roles.",
+        "The p95 view requires an actual derived query rather than renaming a bucket field.",
+        "128 inspected series is not global cardinality.",
+        "Use in panel transfers the source/query and valid bindings to the existing editor; it does not silently save a dashboard.",
+        "Partial discovery retains inspected bounds and truncation; authentication errors remain attached to their source.",
+        "Cancelled discovery cannot replace a newer selected scope."
+      ],
+      "explorationStudyIds": [
+        "F04A",
+        "F04B"
+      ]
+    },
+    {
+      "id": "F05",
+      "name": "Panel binding repair",
+      "collection": "authoring",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f05-panel-binding-repair.md",
+      "fixturePath": "fixtures/f05.json",
+      "canonicalImage": {
+        "studyId": "F05U",
+        "path": "assets/f05u.png",
+        "alt": "Panel binding repair in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "cbc63f77c2b514a5a21b6a7c768d8da4342495330338d05bed1290d7d1d8ccdd",
+        "gitBlobSha": "c91e6594a7deff9aa327339975253aa70f5d37c4",
+        "bytes": 1530550,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Exactconversion,proposednotvalidated,Apply/Saveunavailable."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/219"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+      "sourceHeading": "Panel binding repair",
+      "anatomy": [
+        "A retained last-valid preview, slim binding-role rail, proposed-mapping inspector, exact source rows and a small configuration difference."
+      ],
+      "actions": null,
+      "constraints": [
+        "Unit conversion must be an executable supported operation, not a suffix change.",
+        "If the canonical owner cannot represent the conversion, keep the repair unresolved or change the query through its supported path.",
+        "Invalid mapping cannot Apply; preserve the last valid preview and original scope.",
+        "Apply changes the dashboard session; Save persists a revision. Do not imply that preview or Apply durably saves the document.",
+        "Save conflicts preserve the local repair and require explicit reconciliation with the newer revision.",
+        "Presentation edits remain query-free. The separate request_count/duration_ms conflict demo is a different fixture and must not be merged into this artboard."
+      ],
+      "explorationStudyIds": [
+        "F05A",
+        "F05B"
+      ]
+    },
+    {
+      "id": "F06",
+      "name": "Related trace and log evidence",
+      "collection": "authoring",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f06-related-trace-and-log-evidence.md",
+      "fixturePath": "fixtures/f06.json",
+      "canonicalImage": {
+        "studyId": "F06U",
+        "path": "assets/f06u.png",
+        "alt": "Related trace and log evidence in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "8102b760d97543bec2f4a390dfd9680ba5295518248799ef1cba0437121a2703",
+        "gitBlobSha": "e5c4e3811177f2a8a455725e2bad8c27b0af950d",
+        "bytes": 1628180,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Selectedclientpeer and sourcegapdistinct;twoexactrows;Notpublishedremoved;logsnotqueried."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/217"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/216"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+      "sourceHeading": "Related trace and log evidence",
+      "anatomy": [
+        "A broad trace waterfall with readable span hierarchy, thin metric context, a stable selected-span inspector and an explicitly queried related-log region beneath."
+      ],
+      "actions": null,
+      "constraints": [
+        "Keep relative elapsed offsets, span duration and absolute UTC timestamps distinct and arithmetically consistent.",
+        "A client span to bank-gateway does not imply instrumentation inside the external bank service.",
+        "Run related-log query is an explicit bounded action; selection or hover does not silently query a provider.",
+        "A verified trace/span-ID match is distinct from an approximate service-and-time search.",
+        "No matching logs, absent identifiers, a query error and missing collection are separate states; a gap is not evidence of no errors.",
+        "Preserve authorized source boundaries and exact scope. Real parent and child spans may overlap rather than being sequential."
+      ],
+      "explorationStudyIds": [
+        "F06A",
+        "F06B"
+      ]
+    },
+    {
+      "id": "F07",
+      "name": "Differential profile comparison",
+      "collection": "authoring",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f07-differential-profile-comparison.md",
+      "fixturePath": "fixtures/f07.json",
+      "canonicalImage": {
+        "studyId": "F07U",
+        "path": "assets/f07u.png",
+        "alt": "Differential profile comparison in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "0c4c1888e57789264592701da42e0936a1a21d171c18f7a15e6f1a4c980b6db6",
+        "gitBlobSha": "2140f2adf53c9d341494ed5474c667208b7b659f",
+        "bytes": 1755170,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Finalexclusiveledgerverified:500→600samples=5→6s,Other+10samples/+20%;incorrectredundantsecondslabelremoved."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/223",
+        "https://github.com/paprikacd/paprika/issues/224"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+      "sourceHeading": "Differential profile comparison",
+      "anatomy": [
+        "Two compatible aligned profile views, a ranked exclusive-attribution difference ledger, a nearby normalization selector and one selected call-path inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "CPU time, CPU per request and share are different normalization choices; state the selected measure.",
+        "Exclusive attribution totals reconcile; do not add inclusive parent frames as disjoint costs.",
+        "Sample type, units, duration, workload denominator and symbol identity must be compatible before numerical comparison.",
+        "Incompatible CPU versus allocation profiles block comparison; unmatched or missing symbols remain visible using stable raw frames.",
+        "Imported comparison and authorized live production profiling are separate backlog items.",
+        "Raster stack geometry is schematic; the exact native ledger governs numerical meaning."
+      ],
+      "explorationStudyIds": [
+        "F07A",
+        "F07B"
+      ]
+    },
+    {
+      "id": "F08",
+      "name": "Cost allocation and release economics",
+      "collection": "authoring",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f08-cost-allocation-and-release-economics.md",
+      "fixturePath": "fixtures/f08.json",
+      "canonicalImage": {
+        "studyId": "F08U",
+        "path": "assets/f08u.png",
+        "alt": "Cost allocation and release economics in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "d2da3c19fcf43b82d66187a742acdc1164f80477d586e01f896819ac81c7c784",
+        "gitBlobSha": "ba116a456c2303b6049f542395984697f1c922d6",
+        "bytes": 1668203,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Exactallocationledgerandunitdenominators,unallocatedexcluded."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/225"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+      "sourceHeading": "Cost allocation and release economics",
+      "anatomy": [
+        "A reconciled category-by-cohort allocation ledger, a visible unallocated column, a selected-allocation inspector and a denominator-aware unit-cost comparison."
+      ],
+      "actions": null,
+      "constraints": [
+        "This is a separate 24-hour allocation pool in AUD, not the twelve-minute incident window and not a monthly cost field.",
+        "Rows and columns reconcile to A$300. The A$48 unallocated balance remains visible and is excluded from both cohort unit-cost ratios.",
+        "Keep attempts and completions distinct; the synthetic fixture has no retries.",
+        "Selecting a cell inspects its allocation rule and source rows; it does not silently reallocate cost.",
+        "Basis, currency, interval and population remain explicit; missing or zero outcome denominators disable dependent ratios.",
+        "Allocation estimates are distinct from provider billing; do not fabricate an invoice or silently rescale monthly observations."
+      ],
+      "explorationStudyIds": [
+        "F08A",
+        "F08B"
+      ]
+    },
+    {
+      "id": "F09",
+      "name": "Saved investigation casebook",
+      "collection": "authoring",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f09-saved-investigation-casebook.md",
+      "fixturePath": "fixtures/f09.json",
+      "canonicalImage": {
+        "studyId": "F09U",
+        "path": "assets/f09u.png",
+        "alt": "Saved investigation casebook in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "00cc584c7cdd2ce48082f970046288c3585b4ec19e79d78d035a44e2a413c28d",
+        "gitBlobSha": "37afa6f840a903d6c5cdad1db32869538e0e2fab",
+        "bytes": 1768221,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS after targeted image edit and visual recheck. The diagram is now explicitly illustrative service context, not captured observed topology. Preserved saved partial snapshot at 09:53 UTC for [09:41,09:53), 72 metric observations = 12 timestamps × 3 series × 2 cohorts, 5 traces, and logs not captured because the source was unavailable. Editable notes remain distinct from immutable results; Compare with current creates a separate observation."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/221"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/222"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+      "sourceHeading": "Saved investigation casebook",
+      "anatomy": [
+        "A compact case index, readable investigation narrative, distinct note types, a capture-revision spine and an evidence manifest with selected captured detail."
+      ],
+      "actions": null,
+      "constraints": [
+        "Observation, candidate explanation and next action are separate note types.",
+        "Captured evidence is immutable; editable notes can evolve independently.",
+        "Selecting captured evidence restores its recorded query identity, bounds, units, revision and selected observation.",
+        "Compare with current creates a separate current observation and cannot overwrite the saved capture.",
+        "Logs not captured is a source-unavailable state, not zero logs or no errors. Keep partial capture visibly partial.",
+        "Sharing a case does not broaden source authorization; reopening preserves exact captured results and gaps."
+      ],
+      "explorationStudyIds": [
+        "F09A",
+        "F09B"
+      ]
+    },
+    {
+      "id": "F10",
+      "name": "SLO decision workbench",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f10-slo-decision-workbench.md",
+      "fixturePath": "fixtures/f10.json",
+      "canonicalImage": {
+        "studyId": "F10U",
+        "path": "assets/f10u.png",
+        "alt": "SLO decision workbench in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "6852bece7c3643992476f835100bb25c26363d019e151c44c4b8768b88bcd5ea",
+        "gitBlobSha": "e35f621df3e05ad2988e238941116a44fe5ee8d4",
+        "bytes": 1683476,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS after targeted image edit and visual recheck. The unsupported 6-hour Pass state is now Review. Preserved request-based 30-day target 99.9%, allowed ratio 0.1%, 1,000,000 eligible requests, 1,000 failures allowed, 400 used, 600 remaining and 60% budget remaining. One hour: 250/50,000 = 0.5% = 5× burn. Six hours: 320/200,000 = 0.16% = 1.6× burn. Actions remain investigative."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/226"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/216"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "SLO decision workbench",
+      "anatomy": [
+        "Broad error-budget ledger",
+        "Aligned 1-hour and 6-hour burn rows",
+        "Schematic history with exact selected-window population inspector"
+      ],
+      "actions": {
+        "enabled": [
+          "Investigate window",
+          "Inspect population"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Activate alert policy",
+          "Dispatch notification"
+        ]
+      },
+      "constraints": [
+        "Request-based and HTTP-probe-based SLIs remain distinct.",
+        "Aggregate counts within the same population and bounds before computing ratios. The 1-hour population is contained in the 6-hour and 30-day populations.",
+        "The historical 6-hour observations must be adequate; do not substitute coarsened display buckets.",
+        "Missing, stale, zero-volume and insufficient-coverage states are distinct. Never infer a depletion date.",
+        "Investigation retains the exact source, scope and bounds."
+      ],
+      "explorationStudyIds": [
+        "F10A",
+        "F10B"
+      ]
+    },
+    {
+      "id": "F11",
+      "name": "Historical rule dry run",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f11-historical-rule-dry-run.md",
+      "fixturePath": "fixtures/f11.json",
+      "canonicalImage": {
+        "studyId": "F11U",
+        "path": "assets/f11u.png",
+        "alt": "Historical rule dry run in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "a2114088921ae1484f09fc3d47135a58ae64dd190b4dce83e22e7788947ed9d5",
+        "gitBlobSha": "2383d2b26c287f21bd8eb1aeaa48035421c14e29",
+        "bytes": 1593154,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS original. Six observations are 0.5%, 1.2%, 1.3%, 1.4%, 0.8%, 0.6%; rule >1%, hold 120 seconds, evaluation cadence 60 seconds. Pending [09:01,09:03), firing [09:03,09:04), normal at 09:04. One firing episode lasts 60 seconds. Simulation and no-data-policy requirement are explicit; no activation or notification action."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/227"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/222"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Historical rule dry run",
+      "anatomy": [
+        "Compact rule editor",
+        "Aligned observation,predicate and evaluation-state tracks",
+        "Selected firing-episode receipt with exact intervals"
+      ],
+      "actions": {
+        "enabled": [
+          "Run historical evaluation",
+          "Inspect episode",
+          "Compare rule revisions"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Enable policy",
+          "Send notifications",
+          "Invoke operational action"
+        ]
+      },
+      "constraints": [
+        "A new versioned, bounded evaluator is proposed. Existing instant-query analysis is not a native alert-state engine.",
+        "Persist the engine and version, cadence, warm-up, initial state, hold duration, recovery semantics, query and rule revisions, and input identity.",
+        "Elapsed duration determines transitions. Two positive observations do not alone establish 120 seconds.",
+        "An unknown 09:02 observation cannot imply firing at 09:03 when the no-data policy is unspecified.",
+        "Missing, stale, invalid and counter-reset semantics are explicit. No external-engine parity is claimed."
+      ],
+      "explorationStudyIds": [
+        "F11A",
+        "F11B"
+      ]
+    },
+    {
+      "id": "F12",
+      "name": "Observed dependency changes",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f12-observed-dependency-changes.md",
+      "fixturePath": "fixtures/f12.json",
+      "canonicalImage": {
+        "studyId": "F12U",
+        "path": "assets/f12u.png",
+        "alt": "Observed dependency changes in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "757b24c36f8311481499fa8a351926634f060a915c8128a4c786127c7151f303",
+        "gitBlobSha": "8bee47edb5f8f1f35665268121a4e7d780cc856e",
+        "bytes": 1650069,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS after targeted image edit and visual recheck. The related-edge note now says absence does not establish deletion or zero traffic. Both graphs and the exact ledger retain 5 before, 6 after, 4 persisting, 2 newly observed and 1 no longer observed, across 09:00–09:15 and 09:15–09:30 UTC. The supplied-record scope and lack of an exact first-observation instant are explicit. Actions inspect path or edge evidence only."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/228"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/216",
+        "https://github.com/paprikacd/paprika/issues/218"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Observed dependency changes",
+      "anatomy": [
+        "Before/after dependency graphs with identical node positions",
+        "Exact change ledger",
+        "Selected payment→risk→bank path inspector;edge-table alternative"
+      ],
+      "actions": {
+        "enabled": [
+          "Inspect path",
+          "Open edge table"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Discover services automatically",
+          "Delete missing edge",
+          "Change routing"
+        ]
+      },
+      "constraints": [
+        "Compare compatible supplied edge records. Automatic discovery is separate work.",
+        "Canonical identity retains the service, environment and provider.",
+        "Positions and camera remain stable. Graph limits and collapsed content are disclosed.",
+        "The existing renderer limit is 64 nodes and 200 edges. Sampling, pairing failures and partial coverage remain inspectable.",
+        "A missing edge means no longer observed, not deleted or zero traffic. Metric deltas require compatible definitions, units and populations."
+      ],
+      "explorationStudyIds": [
+        "F12A",
+        "F12B"
+      ]
+    },
+    {
+      "id": "F13",
+      "name": "Synthetic journey monitoring",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f13-synthetic-journey-monitoring.md",
+      "fixturePath": "fixtures/f13.json",
+      "canonicalImage": {
+        "studyId": "F13U",
+        "path": "assets/f13u.png",
+        "alt": "Synthetic journey monitoring in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "2bec434e101ed16945e334b03b8d0c63b40d0e04982ad0cd9d151bf85335fea1",
+        "gitBlobSha": "073743569311ca8af10415c99eaf3aa8d9aae5f8",
+        "bytes": 1745181,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS original. Location and total counts reconcile: 60 scheduled, 59 executed, 57 passed, 2 failed, 1 missing. Selected Frankfurt failed run totals 180 + 240 + 310 + 1,500 = 2,230 ms; Confirmation is Not run. Successful-run comparison totals 1,700 ms. Imported recorded runs and test traffic are explicit; actions inspect failed steps or retained evidence."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/237"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/216",
+        "https://github.com/paprikacd/paprika/issues/221"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Synthetic journey monitoring",
+      "anatomy": [
+        "Selected-run ordered step waterfall",
+        "Location/run outcome ledger",
+        "Retained failure-evidence viewport and selected-step inspector"
+      ],
+      "actions": {
+        "enabled": [
+          "Inspect failed step",
+          "Open retained evidence"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Provision runner",
+          "Execute journey",
+          "Schedule native browser run",
+          "Configure operational credentials"
+        ]
+      },
+      "constraints": [
+        "The first slice imports or exposes external recorded runs. Native execution, scheduling, retry and credentials are separate work.",
+        "Runner, browser and journey versions, location, and assertion definitions govern compatibility.",
+        "A missing run requires a schedule manifest. Without one, coverage is unknown.",
+        "Not run is not a 0 ms pass. Step and elapsed intervals must reconcile.",
+        "Artifacts are sanitized and authorized. Trace links require verified correlation. Label the observations as test traffic."
+      ],
+      "explorationStudyIds": [
+        "F13A",
+        "F13B"
+      ]
+    },
+    {
+      "id": "F14",
+      "name": "Telemetry cardinality changes",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f14-telemetry-cardinality-changes.md",
+      "fixturePath": "fixtures/f14.json",
+      "canonicalImage": {
+        "studyId": "F14U",
+        "path": "assets/f14u.png",
+        "alt": "Telemetry cardinality changes in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "1d25a90203c52af7e9e8b00896a185086c66fa3d2005d4958fc68987b211844b",
+        "gitBlobSha": "30e6ddf72dffd8cc3b07e7bb5a098fa39a3d1010",
+        "bytes": 1607938,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS original. Complete synthetic capture inventory totals 10,000→14,000 series (+40%): requests_total 6,000→10,000 and duration_bucket 4,000→4,000. Identity projection maps 10,000 request identities to 2,000 keys with 8,000 excess rows; including 4,000 unchanged histogram identities gives 14,000 input rows→6,000 keys. Bounded source sample and complete capture are distinguished. No collector mutation or savings claim."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/229"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/220"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Telemetry cardinality changes",
+      "anatomy": [
+        "Before/after complete-capture inventory ledger",
+        "Selected request_id label inspector",
+        "Expanded original-identity to projected-key collision detail"
+      ],
+      "actions": {
+        "enabled": [
+          "Inspect collisions",
+          "Inspect source identities"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Drop label",
+          "Mutate collector",
+          "Apply collection change",
+          "Claim cost savings"
+        ]
+      },
+      "constraints": [
+        "Series, distinct label values, projected keys, collision-group count and excess rows are different quantities.",
+        "Two truncated lower bounds cannot yield exact growth. Unmatched scopes are ineligible.",
+        "A complete or imported synthetic 14,000-row capture does not bypass the existing 1,000-series bounded reader.",
+        "Retain the full original identities in collision groups.",
+        "Projection does not change collection, prove semantic validity or predict savings."
+      ],
+      "explorationStudyIds": [
+        "F14A",
+        "F14B"
+      ]
+    },
+    {
+      "id": "F15",
+      "name": "Query stage and queue inspector",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f15-query-stage-and-queue-inspector.md",
+      "fixturePath": "fixtures/f15.json",
+      "canonicalImage": {
+        "studyId": "F15U",
+        "path": "assets/f15u.png",
+        "alt": "Query stage and queue inspector in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "66ddf2ee28382c0a859e402df39a2fd1a5631b170ec4ad67ceec4c760d30086f",
+        "gitBlobSha": "7b6c819ae2d27650d326e3a67a768685e858f241",
+        "bytes": 1645157,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS original. Eight query rows show seven Complete and one Error. Selected q7 exclusive phases are Queue 700 ms + Provider 800 ms + Transfer 60 ms + Normalization 40 ms = 1,600 ms. Configured refresh target is 1,000 ms, with execution-relative ruler; no concurrent-duration sum or scheduler guarantee. Inspect/export receipt actions do not execute a query. Lane geometry is illustrative; the exact measured ledger is authoritative."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/230"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/216",
+        "https://github.com/paprikacd/paprika/issues/219"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Query stage and queue inspector",
+      "anatomy": [
+        "Shared execution-relative elapsed-time ruler",
+        "Scheduler query swimlanes",
+        "Selected query exclusive-phase ledger and bound-query inspector"
+      ],
+      "actions": {
+        "enabled": [
+          "Inspect execution receipt",
+          "Inspect bound query"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Query on hover",
+          "Query on theme/layout change",
+          "Treat target as scheduler guarantee"
+        ]
+      },
+      "constraints": [
+        "Execution receipts are proposed. The current scheduler's cache and deduplication behavior are an existing foundation.",
+        "Each phase names its clock and measurement owner. Exclusive phases and nested spans are different.",
+        "Unavailable provider timing remains unknown, not 0. Returned series count is not input cardinality or storage cost.",
+        "Shared, deduplicated and cached work retains attributable identities without double charging.",
+        "Cancellation, timeout, partial-result and error states remain distinct. Diagnostics use the canonical bounded scheduler."
+      ],
+      "explorationStudyIds": [
+        "F15A",
+        "F15B"
+      ]
+    },
+    {
+      "id": "F16",
+      "name": "Dashboard revision diff",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f16-dashboard-revision-diff.md",
+      "fixturePath": "fixtures/f16.json",
+      "canonicalImage": {
+        "studyId": "F16U",
+        "path": "assets/f16u.png",
+        "alt": "Dashboard revision diff in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "2c46fd24f6f0d353ee9de624a8e0c272d5578a1afa3527f4db2bf06d0b14c9ab",
+        "gitBlobSha": "e256bb9a0bbe6a9eabdc9af8d8e789c8a110b9fa",
+        "bytes": 1507311,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "artistic_directions",
+          "details": "PASS original. r12→r13 has exactly three changes: window 30→60 minutes, query service checkout-api→payment-svc, series color blue→teal. Summary is two data changes and one appearance change. Previews are explicitly schematic. Restore r12 as draft enters a separate reviewed draft/save path and creates a new revision, rather than overwriting current results or restoring historical telemetry."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/231"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/219",
+        "https://github.com/paprikacd/paprika/issues/221"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Dashboard revision diff",
+      "anatomy": [
+        "Equal-size revision definition previews",
+        "Version spine",
+        "Semantic change ledger separating data from appearance",
+        "Selected field linked to affected panel"
+      ],
+      "actions": {
+        "enabled": [
+          "Inspect change",
+          "Restore r12 as draft"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Overwrite current revision directly",
+          "Restore historical telemetry",
+          "Silently restore referenced saved-query definitions"
+        ]
+      },
+      "constraints": [
+        "Durable immutable saved revisions are proposed. Existing in-memory undo is not durable persistence.",
+        "Restore creates a new guarded revision through a draft using the current ETag, retaining local work on conflicts.",
+        "Keep saved-query dependency references separate. Restoring a dashboard does not mutate those definitions.",
+        "Retention and migration are explicit.",
+        "Missing providers, permissions and history remain explicit. An old definition is not an evidence capture."
+      ],
+      "explorationStudyIds": []
+    },
+    {
+      "id": "F17",
+      "name": "Target environment preflight",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f17-target-environment-preflight.md",
+      "fixturePath": "fixtures/f17.json",
+      "canonicalImage": {
+        "studyId": "F17U",
+        "path": "assets/f17u.png",
+        "alt": "Target environment preflight in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "5152fa1f606447506606cbc6b7ceba191441b6fc59e10f89915b77e14c5ef3d4",
+        "gitBlobSha": "84bdc1d4f860110001d25ad96f25bf880f97ce3e",
+        "bytes": 1552357,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Exact supplied fixture and guarded action semantics visually checked; schematic geometry illustrative."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/232"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/220",
+        "https://github.com/paprikacd/paprika/issues/219"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Target environment preflight",
+      "anatomy": [
+        "Six-widget readiness ledger after portable-import provider mapping",
+        "Distinct authorization,schema,unit and sample-result fields",
+        "Selected Queue duration expected/returned inspector"
+      ],
+      "actions": {
+        "enabled": [
+          "Run bounded preflight",
+          "Review field and unit conversion"
+        ],
+        "disabled": [
+          "Create unresolved draft without explicit resolution or exclusion"
+        ],
+        "excluded": [
+          "Silently omit unresolved widgets",
+          "Include credentials in receipts",
+          "Execute foreign code",
+          "Deploy application"
+        ]
+      },
+      "constraints": [
+        "This is portable dashboard import target readiness, not deployment preflight.",
+        "Static validity, provider authorization and sampled compatibility are separate results.",
+        "Check tooltip queries and annotation sources as well as panel queries.",
+        "A field or unit mismatch requires a supported conversion, not relabelling seconds as milliseconds.",
+        "Use only explicit, bounded, cancellable host reads. Mapping, identity, authorization or query changes invalidate receipts.",
+        "Preserve existing conditional import behavior, reviewed ETags and partial-retry semantics. Creation requires resolution or explicit reviewed exclusion."
+      ],
+      "explorationStudyIds": []
+    },
+    {
+      "id": "F18",
+      "name": "Capacity scenario planner",
+      "collection": "operations",
+      "surface": "Insights",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f18-capacity-scenario-planner.md",
+      "fixturePath": "fixtures/f18.json",
+      "canonicalImage": {
+        "studyId": "F18U",
+        "path": "assets/f18u.png",
+        "alt": "Capacity scenario planner in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "53d9985deeb894ffb324c76fe581b5f2ef4af8873316e65005ed9ce118f1e012",
+        "gitBlobSha": "f07c4d3fc57e6df4d50bfe00d213d28d5edb984a",
+        "bytes": 1651578,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Exact supplied fixture and guarded action semantics visually checked; schematic geometry illustrative."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/233"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/225"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Capacity scenario planner",
+      "anatomy": [
+        "One dominant demand/scenario plot",
+        "Exact reserve and assumptions ledger",
+        "Selected usable-capacity boundary inspector",
+        "Missing-history state retains capacity without projecting"
+      ],
+      "actions": {
+        "enabled": [
+          "Compare scenario",
+          "Inspect assumptions"
+        ],
+        "disabled": [
+          "Dependent projection when history insufficient"
+        ],
+        "excluded": [
+          "Provision capacity",
+          "Scale workload",
+          "Promise autoscaling outcome",
+          "Claim schedulability"
+        ]
+      },
+      "constraints": [
+        "A historical aggregate-demand contract is proposed beyond the current snapshot sources.",
+        "Compute p95 from the aggregate-demand time series, not from a sum of per-host p95 values.",
+        "Recalculate reserve after changing allocatable capacity.",
+        "Label growth as an assumption, not a forecast. Requested, used, allocatable and scenario demand remain separate.",
+        "Insufficient or incompatible history disables projection; do not fill missing values with zero.",
+        "Aggregate headroom cannot prove placement or schedulability. Future HPA assumptions remain separate. No scaling writes occur."
+      ],
+      "explorationStudyIds": []
+    },
+    {
+      "id": "F19",
+      "name": "Runbook evidence checklist",
+      "collection": "operations",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f19-runbook-evidence-checklist.md",
+      "fixturePath": "fixtures/f19.json",
+      "canonicalImage": {
+        "studyId": "F19U",
+        "path": "assets/f19u.png",
+        "alt": "Runbook evidence checklist in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "5bbe00825d080d55ad532762af353c6c737f00aa9c0ab544ef63272585bd116e",
+        "gitBlobSha": "368bba43db48695a70bd21cee62e908a2de9cd9f",
+        "bytes": 1537862,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Exact supplied fixture and guarded action semantics visually checked; schematic geometry illustrative."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/234"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/221"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Runbook evidence checklist",
+      "anatomy": [
+        "Ordered numbered procedure rows",
+        "Stable selected-step evidence rail",
+        "Source,capture time,revision and ownership margin"
+      ],
+      "actions": {
+        "enabled": [
+          "Attach evidence",
+          "Inspect evidence",
+          "Open existing resource"
+        ],
+        "disabled": [
+          "Evaluate rollback while required owner approval is unresolved"
+        ],
+        "excluded": [
+          "Run arbitrary command",
+          "Bypass approval",
+          "Automatic remediation"
+        ]
+      },
+      "constraints": [
+        "A durable versioned checklist is proposed beyond the existing finding and playbook strings.",
+        "Checklist progress, observed condition and executed operation have separate states.",
+        "Owner, actor, time and evidence identity persist. Operator attestation is distinct from observed proof.",
+        "Attached proof retains its source, window and revision, and may become stale without silent refresh.",
+        "Diagnostic reads are bounded and authorized. Future actions reuse maintained pipeline owners."
+      ],
+      "explorationStudyIds": []
+    },
+    {
+      "id": "F20",
+      "name": "Rollout decision evidence",
+      "collection": "operations",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f20-rollout-decision-evidence.md",
+      "fixturePath": "fixtures/f20.json",
+      "canonicalImage": {
+        "studyId": "F20U",
+        "path": "assets/f20u.png",
+        "alt": "Rollout decision evidence in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "34a11d593a4b832b103aabcae226cb340067f0ac11c48208dfa6a886c9a405f4",
+        "gitBlobSha": "770da6951614e3788b83687baca61c83ad7a4872",
+        "bytes": 1446897,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "5%canary,80/10000=.8%pass,340>300fail,4/4pass,2pass1failBlocked,Advanceunavailable."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/235"
+      ],
+      "relatedIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/218",
+        "https://github.com/paprikacd/paprika/issues/221"
+      ],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Rollout decision evidence",
+      "anatomy": [
+        "Quiet rollout-stage strip",
+        "Dominant decision receipt",
+        "Open threshold/value/unit/outcome evidence ledger",
+        "Selected failed-check inspector with freshness and authority"
+      ],
+      "actions": {
+        "enabled": [
+          "Inspect decision",
+          "Open check evidence"
+        ],
+        "disabled": [
+          "Advance"
+        ],
+        "excluded": [
+          "Hold",
+          "Resume",
+          "Treat historical receipt as new authorization"
+        ]
+      },
+      "constraints": [
+        "The initial UI reads existing decisions. The typed evidence contract and durable history are proposed, not universally exposed today.",
+        "Keep typed threshold, value, unit, bounds, freshness, sample and coverage eligibility, policy, release, stage and authority together.",
+        "Missing, stale, partial, errored and inconclusive evidence cannot become Pass.",
+        "Human approval, automated-check and dry-run authority are distinct.",
+        "Existing actions revalidate the current release and policy. Historical evidence never authorizes a new action.",
+        "Do not introduce unsupported Hold or Resume controls."
+      ],
+      "explorationStudyIds": []
+    },
+    {
+      "id": "F21",
+      "name": "Fleet drift review",
+      "collection": "operations",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f21-fleet-drift-review.md",
+      "fixturePath": "fixtures/f21.json",
+      "canonicalImage": {
+        "studyId": "F21U",
+        "path": "assets/f21u.png",
+        "alt": "Fleet drift review in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "7956fdcd0d6f332da59b7cd245ce4d9f5b3aa889cbd4f4f9db43afd8a7bc5518",
+        "gitBlobSha": "fb7ce8edb093bed02fb68b1d2530e23ac2dbbaec",
+        "bytes": 1627833,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Exact12/8/3/1 and desired/observed fields reconcile. Names and ownership context synthetic. Actionability requires review; navigation-only actions."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/236"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+      "sourceHeading": "Fleet drift review",
+      "anatomy": [
+        "Broad cluster-state matrix",
+        "Selected deployment desired/observed semantic diff",
+        "Field ownership and existing exception context",
+        "Timestamped unknown/unreachable state"
+      ],
+      "actions": {
+        "enabled": [
+          "Open resource diff",
+          "Review scoped exception"
+        ],
+        "disabled": [],
+        "excluded": [
+          "Reconcile fleet",
+          "Mutate ignore rule in first slice",
+          "Automatically correct drift"
+        ]
+      },
+      "constraints": [
+        "The first read-only slice needs a bounded, authorized collector behind the currently NotConfigured fleet details.",
+        "Stable identity includes cluster, namespace, API group, version, kind and resource. Retain desired revision, resource version and observation time.",
+        "Unreachable or stale means Unknown, never Aligned.",
+        "Normalization, field ownership and existing ignore rules decide actionability. Two changed fields do not imply two actionable fields.",
+        "Show historical recurrence only when retained observations exist. Do not invent history.",
+        "Exception review navigates to the maintained owner. Do not introduce a second ignore or reconciliation mechanism."
+      ],
+      "explorationStudyIds": []
+    },
+    {
+      "id": "F22",
+      "name": "Promotion candidate workbench",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f22-promotion-candidate-workbench.md",
+      "fixturePath": "fixtures/f22.json",
+      "canonicalImage": {
+        "studyId": "F22U",
+        "path": "assets/f22u.png",
+        "alt": "Promotion candidate workbench in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "759ef7f8c9bf4af57924890e4a399e44bfe47eed182c1d4029a44ffa6865e5ea",
+        "gitBlobSha": "d0de16633cdb1fab4cb19c4335d79a02c28ea2a5",
+        "bytes": 1565843,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction"
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/239"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-01 · Promotion candidate workbench",
+      "anatomy": [
+        "Accepted-versus-candidate comparison desk, fixed target identity, separate evidence/authorization inspector and explicit review action."
+      ],
+      "actions": null,
+      "constraints": [
+        "Verification passed is not approval or deployment. Production still runs the accepted release.",
+        "Candidate review binds full release UID and desired target configuration; display aliases are synthetic.",
+        "Review approval opens a deliberate candidate-specific review; generic stage approval is a different operation."
+      ],
+      "explorationStudyIds": [],
+      "existingExplorationGallery": "https://chatgpt.com/space/page_d8c61d09ef2c8191a6b6c568855ce5f6"
+    },
+    {
+      "id": "F23",
+      "name": "Versioned artifact release composer",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f23-versioned-artifact-release-composer.md",
+      "fixturePath": "fixtures/f23.json",
+      "canonicalImage": {
+        "studyId": "F23U",
+        "path": "assets/f23u.png",
+        "alt": "Versioned artifact release composer in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "d3b8e51d913df732260888d382b3137a37093afe4e6bbeec2dfe09a98ed4cb2f",
+        "gitBlobSha": "a644dff8af7b92990a2efc6e17c8d2946d165a03",
+        "bytes": 1420411,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "root",
+          "note": "Master visual reference. Exact2digests and environment binding; publicationreviewnotdeploy."
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/240"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-02 · Versioned artifact release composer",
+      "anatomy": [
+        "Shared artifact identity header; two-row component digest ledger; target-specific manifest rows; selected production manifest inspector; publication review rail."
+      ],
+      "actions": null,
+      "constraints": [
+        "Shared artifact identity and target manifest identity remain distinct; staging and production have different immutable content.",
+        "The proposed publication endpoint preserves the legacy ApplyBundle guard.",
+        "Review/publication binds exact content, Application identity and expected current intent with revalidation.",
+        "Publishing alone does not request deployment; do not show rollout progress or a deployed badge.",
+        "Bindings match describes component correspondence only, not universal policy or deployment readiness."
+      ],
+      "explorationStudyIds": [
+        "F23A",
+        "F23B"
+      ]
+    },
+    {
+      "id": "F24",
+      "name": "Rollback plan and target binding",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f24-rollback-plan-and-target-binding.md",
+      "fixturePath": "fixtures/f24.json",
+      "canonicalImage": {
+        "studyId": "F24U",
+        "path": "assets/f24u.png",
+        "alt": "Rollback plan and target binding in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "d5b0479f4c9b886a2d9e84f9a89f22a9c0a696fae2412e71fe16f3cb6d506c45",
+        "gitBlobSha": "0d0a071b1eb9f330fc2956e367130df8c6648221",
+        "bytes": 1526452,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction"
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/241"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-03 · Rollback plan and target binding",
+      "anatomy": [
+        "Current-versus-restore identity comparison, controller-selected retained snapshot, resource change ledger and selected snapshot review inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "First slice presents the controller-selected restore target; alternate snapshot selection requires the extended server contract.",
+        "Reviewing or selecting a retained snapshot does not execute rollback.",
+        "Execution must bind current release UID, snapshot UID/hash, target/configuration and plan version.",
+        "Do not imply a new Release is necessarily created, Kubernetes changes are atomic, or migrations/external effects are reversed.",
+        "Keep Current release and Restore snapshot labels explicit throughout."
+      ],
+      "explorationStudyIds": [
+        "F24A",
+        "F24B"
+      ]
+    },
+    {
+      "id": "F25",
+      "name": "Target-aware deployment preflight",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f25-target-aware-deployment-preflight.md",
+      "fixturePath": "fixtures/f25.json",
+      "canonicalImage": {
+        "studyId": "F25U",
+        "path": "assets/f25u.png",
+        "alt": "Target-aware deployment preflight in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "48bb26fff9864240361ad572a6da08f1f094d8d46989820cf70b6d4cb1e70774",
+        "gitBlobSha": "fbb9c61261eb2896e04b56f897d1b8565e51eb6c",
+        "bytes": 1593197,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction"
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/242"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-04 · Target-aware deployment preflight",
+      "anatomy": [
+        "Fixed target/plan identity band, operation capability strip, three-row resource plan and selected proposed-prune inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "The selected prune is proposed only; inspection performs no persistent mutation.",
+        "Use the resolved target, not management-cluster observations or the legacy ApplyBundle dry-run path.",
+        "Admission results require an authorized supported dryRun=All path; unsupported checks remain explicit.",
+        "Two admission passes do not override the unsupported required hook or imply overall deployability.",
+        "No Deploy now action, automatic namespace creation or claim of atomic apply/eventual health."
+      ],
+      "explorationStudyIds": [
+        "F25A",
+        "F25B"
+      ]
+    },
+    {
+      "id": "F26",
+      "name": "Sync-window calendar and explanations",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f26-sync-window-calendar-and-explanations.md",
+      "fixturePath": "fixtures/f26.json",
+      "canonicalImage": {
+        "studyId": "F26U",
+        "path": "assets/f26u.png",
+        "alt": "Sync-window calendar and explanations in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "08812b6458043247587edd5a4788149f3e26c9882fbf55b1d0b0ac28b2529473",
+        "gitBlobSha": "2e7c392e252d90f8e21bd7a3308e8be06de61f9f",
+        "bytes": 1633083,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction",
+          "details": {
+            "status": "pass",
+            "method": "Actual generated local PNG inspected with view_image after editing.",
+            "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-c38bf834-f000-4ab8-a957-bb9857bcab6e.png",
+            "checks": [
+              "Complete agenda now includes 15:15–15:30 Allowed / Eligible before the selected 15:30–16:00 row.",
+              "Original allow, maintenance and settlement rules are unchanged.",
+              "Combined block remains 14:15–15:15; next eligible remains 15:15–16:00 AEDT / 04:15–05:00 UTC.",
+              "Date, timezone, current time, selected future interval and read-only actions remain correct."
+            ]
+          }
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/243"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-05 · Sync-window calendar and explanations",
+      "anatomy": [
+        "Selected-time context, non-scaled interval agenda, overlapping rule ledger and combined-decision inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "Use the combined policy; 14:45 is not the next eligible time because the settlement block continues to 15:15.",
+        "The selected future interval assumes unchanged rules and does not reserve or promise execution.",
+        "Window eligibility is separate from overall release readiness.",
+        "Use a non-scaled agenda with explicit interval labels; do not invent precise chart geometry.",
+        "No Schedule deployment, queue position or automatic manual override action."
+      ],
+      "explorationStudyIds": [
+        "F26A",
+        "F26B"
+      ]
+    },
+    {
+      "id": "F27",
+      "name": "Pipeline retry-impact preview",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f27-pipeline-retry-impact-preview.md",
+      "fixturePath": "fixtures/f27.json",
+      "canonicalImage": {
+        "studyId": "F27U",
+        "path": "assets/f27u.png",
+        "alt": "Pipeline retry-impact preview in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "bc5a8f670c695f23e8b1f3f4b3198acb325ae4044e493ea36fc142913fd42340",
+        "gitBlobSha": "f9c8e72315d4b1412756a674cfee70895e4344c1",
+        "bytes": 1610467,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction",
+          "details": {
+            "status": "pass",
+            "method": "Actual generated local PNG inspected with view_image after editing.",
+            "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-02b8501c-c572-4224-bde3-73295219f1f8.png",
+            "checks": [
+              "New execution ID now reads Assigned after acceptance; no future UID is fabricated.",
+              "All dependency arrows were removed; the six icons are a non-causal status strip.",
+              "Three preserved and three affected steps retain their exact results/dispositions.",
+              "Old Job terminal, Active Pods 0 and Deletion complete remain intact; Review retry is available and no execution is claimed."
+            ]
+          }
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/244"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-06 · Pipeline retry-impact preview",
+      "anatomy": [
+        "Selected Deploy step, six-step preserved/affected ledger, completed stop-check inspector and explicit scoped retry review."
+      ],
+      "actions": null,
+      "constraints": [
+        "Existing retry engine owns eligibility, prerequisites, descendant resets, retry budgets and stop checks.",
+        "The preview is non-mutating; a review is available because stop checks are complete in this fixture.",
+        "Do not assign a future execution UID before acceptance.",
+        "Skipped Smoke and Verify have no Job references for this attempt; do not invent them.",
+        "Do not imply all six steps rerun or broaden cancelled-execution retry semantics."
+      ],
+      "explorationStudyIds": [
+        "F27A",
+        "F27B"
+      ]
+    },
+    {
+      "id": "F28",
+      "name": "Multi-application release-train plan",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f28-multi-application-release-train-plan.md",
+      "fixturePath": "fixtures/f28.json",
+      "canonicalImage": {
+        "studyId": "F28U",
+        "path": "assets/f28u.png",
+        "alt": "Multi-application release-train plan in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "d4950dd5eea8494a6188f79cbd640334d8934f75bc9a241ac23489efe5160176",
+        "gitBlobSha": "60b73e9734658a32df6bcf48c4c3781302790d9f",
+        "bytes": 1609551,
+        "width": 1585,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction",
+          "details": {
+            "status": "pass",
+            "method": "Actual generated local PNG inspected with view_image after editing.",
+            "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-954ee10d-4c61-4a40-8d55-33b1eba4f8fa.png",
+            "checks": [
+              "The member inspector now spells the controller RollingSync.",
+              "All three pinned versions, release identities and readiness states remain unchanged.",
+              "Payments remains selected and Ready; overall plan remains Planning / Needs review.",
+              "Only Review version set and Open member actions are shown."
+            ]
+          }
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/245"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-07 · Multi-application release-train plan",
+      "anatomy": [
+        "Versioned plan header, three-member pinned identity matrix, owner-supplied RollingSync context and selected member inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "Pin each member identity; refreshing changed membership or candidates creates a new review version.",
+        "Show current RollingSync ownership as existing controller context; do not invent a wave engine or unsupported dependency graph.",
+        "Ready applies only to payments in this fixture; the version set still needs review.",
+        "Use save/review/export and existing member workflow links only.",
+        "No Deploy all, group approval, atomic release or collective rollback in the first slice."
+      ],
+      "explorationStudyIds": [
+        "F28A",
+        "F28B"
+      ]
+    },
+    {
+      "id": "F29",
+      "name": "Deployment execution journal",
+      "collection": "release",
+      "surface": "Main console",
+      "status": "proposed",
+      "designSystem": "Paprika Working System v1",
+      "specPath": "features/f29-deployment-execution-journal.md",
+      "fixturePath": "fixtures/f29.json",
+      "canonicalImage": {
+        "studyId": "F29U",
+        "path": "assets/f29u.png",
+        "alt": "Deployment execution journal in Paprika Working System v1, using synthetic data",
+        "status": "reviewed visual proposal",
+        "sha256": "3cb60ff66dd36f26ff5288fcfeadae28c0bfc743887f0dc77d4d78d8a0fb7b19",
+        "gitBlobSha": "1599d288266aa43f366fc78609fc87d6a8f37dcb",
+        "bytes": 1640661,
+        "width": 1586,
+        "height": 992,
+        "qa": {
+          "status": "pass",
+          "reviewer": "release_art_direction",
+          "details": {
+            "status": "pass",
+            "method": "Actual generated local PNG inspected with view_image after editing.",
+            "sourcePath": "/workspace/scratch/04bb6ca58d27/generated_images/exec-05891952-9f44-4dd2-b768-cd80cb4eae6a.png",
+            "checks": [
+              "Header badge now reads Recorded history.",
+              "Verification started has status Started; Window eligible has status Eligible.",
+              "All seven timestamps and event names are preserved.",
+              "Apply completed remains distinct from later Health failed; Rollback preview requested remains Pending, not executed.",
+              "Journal identity, date, timezone and read-only inspection action remain correct."
+            ]
+          }
+        }
+      },
+      "primaryIssueUrls": [
+        "https://github.com/paprikacd/paprika/issues/246"
+      ],
+      "relatedIssueUrls": [],
+      "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+      "sourceHeading": "REL-08 · Deployment execution journal",
+      "anatomy": [
+        "Vertical event ledger with distinct timestamps/causal identities, selected Apply completed event and typed fact inspector."
+      ],
+      "actions": null,
+      "constraints": [
+        "Apply completed is an operation outcome, not proof of workload health; later Health failed remains visible.",
+        "Rollback preview requested is not rollback execution or completion.",
+        "Recorded chronology does not itself prove causality; retain real event/attempt links and do not invent them.",
+        "The selected receipt is read-only; no event-derived action authority.",
+        "Typed gate decision receipts remain owned by #235; do not create a second decision store or guess missing history."
+      ],
+      "explorationStudyIds": [
+        "F29A",
+        "F29B"
+      ]
+    }
+  ],
+  "explorationCount": 44,
+  "explorations": [
+    {
+      "studyId": "F01A",
+      "featureId": "F01",
+      "name": "Incident replay",
+      "direction": 5,
+      "variant": "A",
+      "path": "assets/explorations/f01a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "2f1f0793df43d65c77bb29ebe12ce0c16cba582586d5569cab6b6981c9118e29",
+      "gitBlobSha": "0ad148817c98cfb748ad0351c7b9b43629a23af0",
+      "bytes": 1603418,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F01B",
+      "featureId": "F01",
+      "name": "Incident replay",
+      "direction": 4,
+      "variant": "B",
+      "path": "assets/explorations/f01b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "a9f0b6e21d385b16ba1069797667d666552e10fe25918720cbc8f44a00cd4595",
+      "gitBlobSha": "f1851275857accdb489ac99fab05d147d74c94a3",
+      "bytes": 1602031,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F02A",
+      "featureId": "F02",
+      "name": "Release comparison",
+      "direction": 1,
+      "variant": "A",
+      "path": "assets/explorations/f02a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "74e17037647d5bc47193ead1aa501e32c8a1d1d681bc0d5a7b798140f6adee27",
+      "gitBlobSha": "ee13d043b13bbeda5ca792976e25d486464cc0a2",
+      "bytes": 1604747,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F02B",
+      "featureId": "F02",
+      "name": "Release comparison",
+      "direction": 2,
+      "variant": "B",
+      "path": "assets/explorations/f02b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "5e378224276a1ce5b96ba149f2d25a38c1d2ae21c733d9f0b003c47a3e28a360",
+      "gitBlobSha": "cd73a705edd651ffcbe44970c8ecf6fce0bd5a03",
+      "bytes": 1556593,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F03A",
+      "featureId": "F03",
+      "name": "Evidence coverage",
+      "direction": 6,
+      "variant": "A",
+      "path": "assets/explorations/f03a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "f697416e58d7115209a233ee5e97a6871af5c98c9158ac00c1b4facdd4d2530a",
+      "gitBlobSha": "8433e9def5b1d6f6be2a485b501c997b864d590a",
+      "bytes": 1714991,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F03B",
+      "featureId": "F03",
+      "name": "Evidence coverage",
+      "direction": 4,
+      "variant": "B",
+      "path": "assets/explorations/f03b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "a151b0a51d8093e78822723e1dd171c04765967fd9282f918b63b30892825a0a",
+      "gitBlobSha": "1ab7d4397e51c4d9cffd64489ec1f03b0407c8e0",
+      "bytes": 1699888,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F04A",
+      "featureId": "F04",
+      "name": "Source compatibility explorer",
+      "direction": 4,
+      "variant": "A",
+      "path": "assets/explorations/f04a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "1f481d8f3458d20030b8f639bbe269ff24180d3abf691568a24275a8b4decba4",
+      "gitBlobSha": "21e9c110c77188be40f672a9b4d5c22c03d55783",
+      "bytes": 1693364,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F04B",
+      "featureId": "F04",
+      "name": "Source compatibility explorer",
+      "direction": 3,
+      "variant": "B",
+      "path": "assets/explorations/f04b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "e4d6a230ea2cfac52e2daf7b9572bee5b4fece4cd1ada7e4c320f11df4fa11ac",
+      "gitBlobSha": "02f9abba9ca09a8b317da20da521af9f8e37710e",
+      "bytes": 1724415,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F05A",
+      "featureId": "F05",
+      "name": "Panel binding repair",
+      "direction": 4,
+      "variant": "A",
+      "path": "assets/explorations/f05a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "d4e19e3d98dd5c8c71c9eadcb75f5242cd5e95bff6c89ab83fc4c4cbbf885fe5",
+      "gitBlobSha": "66cb19f1afd61f73a1b0ffbef3736554d0cc25c0",
+      "bytes": 1678190,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F05B",
+      "featureId": "F05",
+      "name": "Panel binding repair",
+      "direction": 6,
+      "variant": "B",
+      "path": "assets/explorations/f05b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "7e4631760aeeaa6c231f452a85c51e4a889a5d1f66b857d31d3646712d9a9bbb",
+      "gitBlobSha": "d3a23a13535c92d4b04c7d6cd18e13d621d0764d",
+      "bytes": 1707389,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F06A",
+      "featureId": "F06",
+      "name": "Related trace and log evidence",
+      "direction": 5,
+      "variant": "A",
+      "path": "assets/explorations/f06a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "d070e78b1d7b643bae18b59834b5c263ce5c2e802cca1dc8208489a31965e2a5",
+      "gitBlobSha": "3518c556355a935747a0d92a2d1322e3edae8839",
+      "bytes": 1752937,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Selected span arithmetic, peer identity and not-queried logs corrected. Extra unselected synthetic spans illustrative."
+      }
+    },
+    {
+      "studyId": "F06B",
+      "featureId": "F06",
+      "name": "Related trace and log evidence",
+      "direction": 2,
+      "variant": "B",
+      "path": "assets/explorations/f06b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "a5e45d1a240377a46268cc7ed28cea07525431ee73765a1d598c189d9e1f3b60",
+      "gitBlobSha": "d16e7b1787c9f5d9cae6bac744d277edf923c137",
+      "bytes": 1699545,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Remotepeer explicit, paymentheartbeatgap, relatedlogsnotqueried. Extra unselectedsyntheticspans illustrative."
+      }
+    },
+    {
+      "studyId": "F07A",
+      "featureId": "F07",
+      "name": "Differential profile comparison",
+      "direction": 2,
+      "variant": "A",
+      "path": "assets/explorations/f07a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "b0b2cb0cc2e8bd3210226ab7da9bfb424a6fa9a1e1f1d3009f0ea41f1ea110b3",
+      "gitBlobSha": "b7fb4600a9e4b5579830f2e0732330bd48ecdfd7",
+      "bytes": 1802358,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Final corrective text and exact ledger reviewed."
+      }
+    },
+    {
+      "studyId": "F07B",
+      "featureId": "F07",
+      "name": "Differential profile comparison",
+      "direction": 1,
+      "variant": "B",
+      "path": "assets/explorations/f07b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "b5c1b1ab287af9ebcbb20d92b51c28cbdc2122584928047748d7f0da14f7de37",
+      "gitBlobSha": "89ccea53aa22c739de8f647acbf64586b3cf9f8a",
+      "bytes": 1751206,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Schematicequalwidthrowsandexclusiveledgerreconcile10ms/sample;CPU/perrequest/shareclear."
+      }
+    },
+    {
+      "studyId": "F08A",
+      "featureId": "F08",
+      "name": "Cost allocation and release economics",
+      "direction": 1,
+      "variant": "A",
+      "path": "assets/explorations/f08a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "9ce51ba76f3b877bb62d73948c2e15cb1262e51bfc3e643082a942b15629ed82",
+      "gitBlobSha": "098eb72a835538e258ff1f6f24ab855d8c7503dd",
+      "bytes": 1791562,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F08B",
+      "featureId": "F08",
+      "name": "Cost allocation and release economics",
+      "direction": 4,
+      "variant": "B",
+      "path": "assets/explorations/f08b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "8a28fedea73a9bf94b8bc6403effaf753ec2f851a237733383a9199e7a22a9a4",
+      "gitBlobSha": "b62d8611a331873c531b6d4b1de4cb7dd651df01",
+      "bytes": 1752399,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Corrected completion denominator and exact ledger verified."
+      }
+    },
+    {
+      "studyId": "F09A",
+      "featureId": "F09",
+      "name": "Saved investigation casebook",
+      "direction": 6,
+      "variant": "A",
+      "path": "assets/explorations/f09a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "426ea2548d600996a002ad12e254e1bd7a8f8a64d4826e0f87e08646da9d9a23",
+      "gitBlobSha": "7bb9362793c2a1c8859f4b88b89d1188bb2664a3",
+      "bytes": 1911242,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Corrected selected observation09:52 inside half-open bounds."
+      }
+    },
+    {
+      "studyId": "F09B",
+      "featureId": "F09",
+      "name": "Saved investigation casebook",
+      "direction": 3,
+      "variant": "B",
+      "path": "assets/explorations/f09b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "726d862b48f2718d8b24f05834c0c7b76b766fd26d81ccc65019e9e1b5baad43",
+      "gitBlobSha": "8bec0557214a0267c98870ec339bae19a6d50ffe",
+      "bytes": 1817055,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F10A",
+      "featureId": "F10",
+      "name": "SLO decision workbench",
+      "direction": 1,
+      "variant": "A",
+      "path": "assets/explorations/f10a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "47d97b44e9ac54a4a6d487ca922e9355e861162a222a477924b77d687f79c3ae",
+      "gitBlobSha": "1e37320917dae8394c02a30607382649ccc6139f",
+      "bytes": 1627966,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F10B",
+      "featureId": "F10",
+      "name": "SLO decision workbench",
+      "direction": 5,
+      "variant": "B",
+      "path": "assets/explorations/f10b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "7e63d9904ce30321baa1861aade3139c9ba11528e6c367056e6369c6566e23c7",
+      "gitBlobSha": "029e54b75d1b15afbb055780dc201b164676c259",
+      "bytes": 1685924,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F11A",
+      "featureId": "F11",
+      "name": "Historical rule dry run",
+      "direction": 2,
+      "variant": "A",
+      "path": "assets/explorations/f11a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "12010132b6059fe1e649ebbbfd10f705419c5c086369e6c07b6a19fa20ee09b0",
+      "gitBlobSha": "861d23c26fde75921452838bcc21fd3c8ed2ca4c",
+      "bytes": 1583704,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F11B",
+      "featureId": "F11",
+      "name": "Historical rule dry run",
+      "direction": 6,
+      "variant": "B",
+      "path": "assets/explorations/f11b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "33fdeb557b5e59fdc816e72bddb6c1098e1faf0c5f833125d7ee4bce461505d1",
+      "gitBlobSha": "2dd83c88cc87d57e2823a42188f62cc8ce1032bd",
+      "bytes": 1598338,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root/delegated"
+      }
+    },
+    {
+      "studyId": "F12A",
+      "featureId": "F12",
+      "name": "Observed dependency changes",
+      "direction": 1,
+      "variant": "A",
+      "path": "assets/explorations/f12a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "1137ccf0ac39bdfa265b7db380423e898a52fcf8867fb7491ef1cd8f306ec38f",
+      "gitBlobSha": "d4170ce86ec04e7c85374120d00e8d093024f9ad",
+      "bytes": 1813639,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Final corrective text and exact ledger reviewed."
+      }
+    },
+    {
+      "studyId": "F12B",
+      "featureId": "F12",
+      "name": "Observed dependency changes",
+      "direction": 2,
+      "variant": "B",
+      "path": "assets/explorations/f12b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "698ec7a095f02b559c0f5842604e6cbdc78660f591c758cd452cedde1332879d",
+      "gitBlobSha": "300fba91f8c310ec8d0919063ed9fc9d8c348f4e",
+      "bytes": 1680895,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F13A",
+      "featureId": "F13",
+      "name": "Synthetic journey monitoring",
+      "direction": 2,
+      "variant": "A",
+      "path": "assets/explorations/f13a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "b7e753a91003780daea1d746ab20416740413ebc2f08313dad0283cce2ab52de",
+      "gitBlobSha": "cc2a4f3d8955919e40385dc35dcd0ad4ea5e59d6",
+      "bytes": 1659024,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F13B",
+      "featureId": "F13",
+      "name": "Synthetic journey monitoring",
+      "direction": 3,
+      "variant": "B",
+      "path": "assets/explorations/f13b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "8af201c3052c423fbfb0632aafc7f75cb0d4a6bb4d218badcf9aced7b992f86c",
+      "gitBlobSha": "683080bfa3848e2c46a08c9815bcaf2b157a41ce",
+      "bytes": 1776323,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F14A",
+      "featureId": "F14",
+      "name": "Telemetry cardinality changes",
+      "direction": 3,
+      "variant": "A",
+      "path": "assets/explorations/f14a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "e616d0c1bb1cf35ec7c0262775fd708fd7890eb81aa8c791ab8f29cdd73fac64",
+      "gitBlobSha": "58e2ca898fddd4bb79bb916aa6a1ef451b839f4a",
+      "bytes": 1651476,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F14B",
+      "featureId": "F14",
+      "name": "Telemetry cardinality changes",
+      "direction": 4,
+      "variant": "B",
+      "path": "assets/explorations/f14b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "4a676a78920a7628f2004c5a1a6fb0931c87542278843c9c657fd89707ef80ca",
+      "gitBlobSha": "1bf2fdeacd981e6eb1306ed66322242c0f9f9ae9",
+      "bytes": 1662461,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F15A",
+      "featureId": "F15",
+      "name": "Query stage and queue inspector",
+      "direction": 2,
+      "variant": "A",
+      "path": "assets/explorations/f15a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "66f26a63adc0577d5048983c7470d21cdad13bb7e41a9dcde82b00745f4dc254",
+      "gitBlobSha": "01fa560cfcaebff3b6d3edaafa5537cd08110583",
+      "bytes": 1586045,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "artistic_directions",
+        "note": "Material fixture/state/action review; lane geometry illustrative."
+      }
+    },
+    {
+      "studyId": "F15B",
+      "featureId": "F15",
+      "name": "Query stage and queue inspector",
+      "direction": 5,
+      "variant": "B",
+      "path": "assets/explorations/f15b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "546f7587d847ba2d3a009f9969f104b4e45bd9bdf1bd46c629fc71ca9169f8a6",
+      "gitBlobSha": "8d6ef998c53fc59acfe38297cab64b82ae55d1e8",
+      "bytes": 1706177,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root",
+        "note": "Final corrective text and exact ledger reviewed."
+      }
+    },
+    {
+      "studyId": "F23A",
+      "featureId": "F23",
+      "name": "Versioned artifact release composer",
+      "direction": 3,
+      "variant": "A",
+      "path": "assets/explorations/f23a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "7b1e83fe19397c30d6c12bc9f2b8ac7ed6e00106e1d5c646ef55aae936f18e91",
+      "gitBlobSha": "61d92c2e5fb0430abaaa19965e8eb901aaae011a",
+      "bytes": 1552053,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F23B",
+      "featureId": "F23",
+      "name": "Versioned artifact release composer",
+      "direction": 4,
+      "variant": "B",
+      "path": "assets/explorations/f23b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "dfbb80b7f6d6b732cfd593655a1816eb2cb8c4684cff47e1df4ea0a252742c52",
+      "gitBlobSha": "41fb4aa9df91cf4b6df09a68e05eddd13c337792",
+      "bytes": 1497180,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F24A",
+      "featureId": "F24",
+      "name": "Rollback plan and target binding",
+      "direction": 6,
+      "variant": "A",
+      "path": "assets/explorations/f24a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "2e84d98449b281b0580fe8e8df447094a9a3154c302375a04865271fe92342fe",
+      "gitBlobSha": "4decab698e31c4be0dbc4d36a9c53bf55d6cea74",
+      "bytes": 1703663,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F24B",
+      "featureId": "F24",
+      "name": "Rollback plan and target binding",
+      "direction": 1,
+      "variant": "B",
+      "path": "assets/explorations/f24b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "6bf402bd4ea3810097fc6e88ef37d1eb3f588f5752274c98f5e69617b3084ef2",
+      "gitBlobSha": "7f50f7bdcc1f6e2b5caa69a2a85eeb64e3c3754d",
+      "bytes": 1546399,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F25A",
+      "featureId": "F25",
+      "name": "Target-aware deployment preflight",
+      "direction": 4,
+      "variant": "A",
+      "path": "assets/explorations/f25a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "76cc45988a9c955898eb54a0b2ba226eb684148c7d3cebf8b6253374a80dce9d",
+      "gitBlobSha": "fdf8f3c61caefc3ec47a4a27a44e9885cabaccb3",
+      "bytes": 1651915,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F25B",
+      "featureId": "F25",
+      "name": "Target-aware deployment preflight",
+      "direction": 2,
+      "variant": "B",
+      "path": "assets/explorations/f25b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "0d6030badc5ae764e559805ee5f82a4aa638412d4524097ec57d4dc81e5bd310",
+      "gitBlobSha": "d4493057e25be4b2230f37bbce9f4217595cf4d1",
+      "bytes": 1475217,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_backlog"
+      }
+    },
+    {
+      "studyId": "F26A",
+      "featureId": "F26",
+      "name": "Sync-window calendar and explanations",
+      "direction": 5,
+      "variant": "A",
+      "path": "assets/explorations/f26a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "046b01d5051101daec1892d153dea7eb0f2f53f369931d2d090af4c0b275f5a9",
+      "gitBlobSha": "44ae48ae796b2fee2407193b4b9227d3f15a58ae",
+      "bytes": 1630911,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F26B",
+      "featureId": "F26",
+      "name": "Sync-window calendar and explanations",
+      "direction": 6,
+      "variant": "B",
+      "path": "assets/explorations/f26b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "63c00804beee317e6d266cfdf2c7640268b2fbe4d623960c3f521b8175def256",
+      "gitBlobSha": "d0ee26eb74cf5cf5ecfdb80631bdb589420b1b98",
+      "bytes": 1668562,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F27A",
+      "featureId": "F27",
+      "name": "Pipeline retry-impact preview",
+      "direction": 2,
+      "variant": "A",
+      "path": "assets/explorations/f27a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "9b06b7c061d2c431f430c090474c8aa3540f61a99b8e8562599a2eb2ad3488d5",
+      "gitBlobSha": "7e29da64c65fe45e2588ca339b357a0ab7958815",
+      "bytes": 1692225,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F27B",
+      "featureId": "F27",
+      "name": "Pipeline retry-impact preview",
+      "direction": 4,
+      "variant": "B",
+      "path": "assets/explorations/f27b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "dec3149e34a3a8362fa574e2d903e2d6bdf2590ea6b85afb4ee258ec74cb146a",
+      "gitBlobSha": "be7e212b9a3217b02211430bad096be01dc0bb73",
+      "bytes": 1735800,
+      "width": 1585,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "root"
+      }
+    },
+    {
+      "studyId": "F28A",
+      "featureId": "F28",
+      "name": "Multi-application release-train plan",
+      "direction": 5,
+      "variant": "A",
+      "path": "assets/explorations/f28a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "8976c0f2b6570db17b9c2e4719428c4fc01ecf1757993c8085886ad279742c3c",
+      "gitBlobSha": "e45389ae90787d1ac7d402859919505dc66ef015",
+      "bytes": 1540401,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F28B",
+      "featureId": "F28",
+      "name": "Multi-application release-train plan",
+      "direction": 1,
+      "variant": "B",
+      "path": "assets/explorations/f28b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "d2a8f574f70b050622f426f777fdcc5318d5b758d9b08eeead06fd3de04953e7",
+      "gitBlobSha": "cadbebb21e66471330c221f2b2b9a0fe9c2c582f",
+      "bytes": 1512277,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "release_art_direction"
+      }
+    },
+    {
+      "studyId": "F29A",
+      "featureId": "F29",
+      "name": "Deployment execution journal",
+      "direction": 2,
+      "variant": "A",
+      "path": "assets/explorations/f29a.png",
+      "status": "reviewed visual proposal",
+      "sha256": "117fc012677b7ef337613c5fe2aa60e91069a1187f8ff3890a656ede3bb61b7c",
+      "gitBlobSha": "d5efca46361fa97970110ee742d66a42a4edb15a",
+      "bytes": 1610322,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    },
+    {
+      "studyId": "F29B",
+      "featureId": "F29",
+      "name": "Deployment execution journal",
+      "direction": 5,
+      "variant": "B",
+      "path": "assets/explorations/f29b.png",
+      "status": "reviewed visual proposal",
+      "sha256": "6a9bd142823b823b1a612e59144abfb5420e7743645e19e9397fc79c4f7c7c4b",
+      "gitBlobSha": "6306caca02f37f5a15d24839d603bab824acefd2",
+      "bytes": 1535436,
+      "width": 1586,
+      "height": 992,
+      "qa": {
+        "status": "pass",
+        "reviewer": "delegated"
+      }
+    }
+  ],
+  "existingPromotionGallery": {
+    "url": "https://chatgpt.com/space/page_d8c61d09ef2c8191a6b6c568855ce5f6",
+    "studyCount": 6,
+    "archivePolicy": "Retained through existing Space gallery"
+  },
+  "researchCompanion": {
+    "path": "competitor-analysis.md",
+    "sourcePage": "https://chatgpt.com/space/page_e4546cbcba148191a29044971c5a57f5",
+    "assessmentDate": "2026-11-11",
+    "status": "Dated documentation and source analysis; not a new verification or measured benchmark"
+  }
+}

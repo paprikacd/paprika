@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F26",
+  "featureName": "Sync-window calendar and explanations",
+  "synthetic": true,
+  "summary": null,
+  "data": {
+    "source": "Native window fixture with the future 15:30 interval selected for explanation.",
+    "date": "11 Nov 2026",
+    "timezone": "Australia/Melbourne",
+    "now": "14:25 AEDT",
+    "nowUTC": "03:25 UTC",
+    "selected": "15:30 AEDT",
+    "rules": [
+      {
+        "name": "Allow",
+        "interval": "14:00–16:00"
+      },
+      {
+        "name": "Maintenance block",
+        "interval": "14:15–14:45"
+      },
+      {
+        "name": "Settlement block",
+        "interval": "14:40–15:15"
+      }
+    ],
+    "combinedBlock": "14:15–15:15",
+    "nextEligible": "15:15–16:00 AEDT",
+    "nextEligibleUTC": "04:15–05:00 UTC",
+    "selectedDecision": "Eligible by window rules",
+    "imageText": [
+      "Sync windows",
+      "11 Nov 2026 · Australia/Melbourne",
+      "Now 14:25 AEDT",
+      "Selected 15:30 AEDT",
+      "Eligible by window rules",
+      "Allow · 14:00–16:00",
+      "Maintenance block · 14:15–14:45",
+      "Settlement block · 14:40–15:15",
+      "Combined block · 14:15–15:15",
+      "Next eligible · 15:15–16:00 AEDT",
+      "04:15–05:00 UTC",
+      "Inspect rules",
+      "Concept · synthetic data"
+    ]
+  },
+  "constraints": [
+    "Use the combined policy; 14:45 is not the next eligible time because the settlement block continues to 15:15.",
+    "The selected future interval assumes unchanged rules and does not reserve or promise execution.",
+    "Window eligibility is separate from overall release readiness.",
+    "Use a non-scaled agenda with explicit interval labels; do not invent precise chart geometry.",
+    "No Schedule deployment, queue position or automatic manual override action."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_c1489ae2ec508191ab0dfa3188240ee0",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/243"
+  ]
+}

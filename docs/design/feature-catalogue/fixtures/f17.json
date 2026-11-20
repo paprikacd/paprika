@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F17",
+  "featureName": "Target environment preflight",
+  "synthetic": true,
+  "summary": "Six widgets: Request volume, Error ratio, Latency p95 and Trace list are Ready; Queue duration needs field and unit review; Cost by service is Denied. Four are ready and two need attention. Expected field: queue_ms. Returned field: queue_seconds. Bounded sample: 5 minutes, maximum 20 series.",
+  "data": {
+    "widgetCount": 6,
+    "ready": 4,
+    "needsAttention": 2,
+    "widgets": [
+      {
+        "name": "Request volume",
+        "status": "Ready"
+      },
+      {
+        "name": "Error ratio",
+        "status": "Ready"
+      },
+      {
+        "name": "Latency p95",
+        "status": "Ready"
+      },
+      {
+        "name": "Trace list",
+        "status": "Ready"
+      },
+      {
+        "name": "Queue duration",
+        "status": "Field and unit review"
+      },
+      {
+        "name": "Cost by service",
+        "status": "Denied"
+      }
+    ],
+    "selectedWidget": "Queue duration",
+    "expectedField": "queue_ms",
+    "returnedField": "queue_seconds",
+    "sampleWindowMinutes": 5,
+    "maxSeries": 20
+  },
+  "constraints": [
+    "This is portable dashboard import target readiness, not deployment preflight.",
+    "Static validity, provider authorization and sampled compatibility are separate results.",
+    "Check tooltip queries and annotation sources as well as panel queries.",
+    "A field or unit mismatch requires a supported conversion, not relabelling seconds as milliseconds.",
+    "Use only explicit, bounded, cancellable host reads. Mapping, identity, authorization or query changes invalidate receipts.",
+    "Preserve existing conditional import behavior, reviewed ETags and partial-retry semantics. Creation requires resolution or explicit reviewed exclusion."
+  ],
+  "actions": {
+    "enabled": [
+      "Run bounded preflight",
+      "Review field and unit conversion"
+    ],
+    "disabled": [
+      "Create unresolved draft without explicit resolution or exclusion"
+    ],
+    "excluded": [
+      "Silently omit unresolved widgets",
+      "Include credentials in receipts",
+      "Execute foreign code",
+      "Deploy application"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/232",
+    "https://github.com/paprikacd/paprika/issues/220",
+    "https://github.com/paprikacd/paprika/issues/219"
+  ]
+}

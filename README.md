@@ -12,6 +12,7 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 
 - [Self-host Paprika and create a first Application](docs/getting-started.md)
 - [Browse the feature guide](docs/features.md)
+- [Review the feature design catalogue](docs/design/feature-catalogue/README.md)
 - [Ask a question, report a bug, or suggest a feature](https://github.com/paprikacd/paprika/issues/new/choose)
 - [Contribute code, tests, documentation, or examples](CONTRIBUTING.md)
 - [Report security issues privately](SECURITY.md) and read the [Code of Conduct](CODE_OF_CONDUCT.md)

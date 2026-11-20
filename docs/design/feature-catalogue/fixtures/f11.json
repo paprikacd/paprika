@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F11",
+  "featureName": "Historical rule dry run",
+  "synthetic": true,
+  "summary": "At 09:00–09:05 UTC, observations are 0.5%, 1.2%, 1.3%, 1.4%, 0.8% and 0.6%. The rule is > 1% held for 120 seconds, evaluated every 60 seconds. Pending: [09:01, 09:03). Firing: [09:03, 09:04). Normal thereafter. There is one firing episode.",
+  "data": {
+    "timesUTC": [
+      "09:00",
+      "09:01",
+      "09:02",
+      "09:03",
+      "09:04",
+      "09:05"
+    ],
+    "errorPercent": [
+      0.5,
+      1.2,
+      1.3,
+      1.4,
+      0.8,
+      0.6
+    ],
+    "predicate": ">1%",
+    "holdSeconds": 120,
+    "cadenceSeconds": 60,
+    "pendingInterval": "[09:01,09:03)",
+    "firingInterval": "[09:03,09:04)",
+    "firingEpisodes": 1,
+    "selectedEpisode": "09:03–09:04UTC"
+  },
+  "constraints": [
+    "A new versioned, bounded evaluator is proposed. Existing instant-query analysis is not a native alert-state engine.",
+    "Persist the engine and version, cadence, warm-up, initial state, hold duration, recovery semantics, query and rule revisions, and input identity.",
+    "Elapsed duration determines transitions. Two positive observations do not alone establish 120 seconds.",
+    "An unknown 09:02 observation cannot imply firing at 09:03 when the no-data policy is unspecified.",
+    "Missing, stale, invalid and counter-reset semantics are explicit. No external-engine parity is claimed."
+  ],
+  "actions": {
+    "enabled": [
+      "Run historical evaluation",
+      "Inspect episode",
+      "Compare rule revisions"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Enable policy",
+      "Send notifications",
+      "Invoke operational action"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/227",
+    "https://github.com/paprikacd/paprika/issues/222"
+  ]
+}
