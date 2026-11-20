@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type FocusEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import ReactGridLayout, {
@@ -18,7 +19,7 @@ import ReactGridLayout, {
   type Compactor,
   type Layout,
 } from "react-grid-layout";
-import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, MoreHorizontal, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { sourceWaitMessage, useSourceStatus } from "./source-status";
 import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
@@ -62,7 +63,9 @@ import {
   layoutResizeForKey,
   moveLayout,
   resizeLayout,
+  savedLayout,
   type LayoutEdit,
+  type LayoutMove,
 } from "./layout-edit";
 import styles from "./insights.module.css";
 import "react-grid-layout/css/styles.css";
@@ -70,7 +73,7 @@ import "react-resizable/css/styles.css";
 import { GammaButton } from "./gamma/button";
 import { useSavedQueryLibrary } from "./saved-query-context";
 import { GammaSelect } from "./gamma/select";
-import { GammaActionMenu } from "./gamma/action-menu";
+import { GammaActionMenu, type GammaActionMenuItem } from "./gamma/action-menu";
 import contextStyles from "./widget-context.module.css";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
@@ -78,6 +81,7 @@ import { AttentionStoreProvider, SampleAsOfProvider, settledRequestEnd, useAtten
 import { AttentionStrip, type AutoRefresh } from "./attention-strip";
 import { isAttentionLevel, widgetAttention, WidgetAttentionContext, type AttentionFailure } from "./widget-attention";
 import { statusToken, thresholdPaint } from "./status";
+import { ariaKeyshortcutsFor } from "./shortcuts";
 
 const STAT_ICONS = {
   "arrow-down": ArrowDown,
@@ -212,6 +216,17 @@ function StatComparisonScope({ widget, compare, fetcher, start, end, enabled, de
   return <StatComparisonContext.Provider value={state}>{children}</StatComparisonContext.Provider>;
 }
 
+// The layout edit a key or menu step asks for, or undefined when the key is not a step. Shared by the step and its blocked check.
+function layoutStepEdit(widgets: readonly Widget[], layout: Layout, draggable: boolean, id: string, key: string, resize: boolean):
+  { resizing?: readonly [number, number]; direction?: LayoutMove; edit: LayoutEdit } | undefined {
+  const resizing = resize ? layoutResizeForKey(key) : undefined;
+  const direction = resize ? undefined : layoutMoveForKey(key);
+  if (!resizing && !direction) return undefined;
+  const base = draggable ? layout : savedLayout(widgets);
+  const edit = resizing ? resizeLayout(base, id, resizing[0], resizing[1]) : moveLayout(base, id, direction!);
+  return { resizing, direction, edit };
+}
+
 const Tile = memo(function Tile({
   widget,
   active,
@@ -232,6 +247,11 @@ const Tile = memo(function Tile({
   onQueryResult,
   onTimeRange,
   onNudge,
+  onStep,
+  stepBlocked,
+  onDuplicate,
+  onRemove,
+  duplicateBlocked,
   memory,
   memoryKey,
   selectionScope,
@@ -256,6 +276,14 @@ const Tile = memo(function Tile({
   onTimeRange?: (window: ObservationWindow) => void;
   /** Alt+Arrow moves and Alt+Shift+Arrow resizes the widget from the keyboard. Present only on the editable wide canvas. */
   onNudge?: (id: string, key: string, resize: boolean) => void;
+  /** The tile's actions menu runs the same steps as the keys, at every width. Present only in edit mode outside focus. */
+  onStep?: (id: string, key: string, resize: boolean) => void;
+  /** Why a step would change nothing right now, read when the menu opens. Blocked steps show disabled with this reason. */
+  stepBlocked?: (id: string, key: string, resize: boolean) => string | undefined;
+  onDuplicate?: (id: string) => void;
+  onRemove?: (id: string) => void;
+  /** Why Duplicate is unavailable, such as a dashboard at its widget limit. */
+  duplicateBlocked?: string;
   memory: Map<string, WidgetMemory>;
   memoryKey: string;
   /** The variable values a selection is compared against, so a mark can show that it is the applied filter. */
@@ -492,11 +520,33 @@ const Tile = memo(function Tile({
   }, [data, loading, selectionScope]);
   // A stable callback keeps the memoised visualization from re-rendering on every tile render in edit mode.
   const editQuery = useCallback(() => onSelect(widget.id), [onSelect, widget.id]);
+  // Opening the actions menu re-renders the tile, so blocked steps are read from the layout as it is then.
+  const [, setMenuOpens] = useState(0);
   // Capture runs before the focused control's own arrow handling (a sparkline or a selector), so Alt+Arrow
   // edits the layout whichever control in the tile has focus. Plain arrows and text fields keep their keys.
+  const keyMenuAt = useRef<number | null>(null);
+  const cancelKeyContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
+    const opened = keyMenuAt.current;
+    keyMenuAt.current = null;
+    if (opened !== null && event.timeStamp - opened < 1000) event.preventDefault();
+  };
   const layoutKey = (event: KeyboardEvent<HTMLElement>) => {
+    // The context-menu key and Shift+F10 open the tile's actions menu, as a right-click would. Only the tile itself
+    // handles them, so a menu or text field inside the tile keeps its own keys.
+    if (onNudge && editing && !focused && event.target === event.currentTarget && (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))) {
+      const trigger = event.currentTarget.querySelector<HTMLElement>("[data-widget-actions]");
+      if (trigger) {
+        event.preventDefault();
+        // Windows sends the native contextmenu event after the keydown, so that event is cancelled too.
+        keyMenuAt.current = event.timeStamp;
+        trigger.click();
+      }
+      return;
+    }
     if (!onNudge || !event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
     if (!(event.shiftKey ? layoutResizeForKey(event.key) : layoutMoveForKey(event.key))) return;
+    // The actions menu is portalled but its keys still bubble through the React tree; they belong to the menu.
+    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
     if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
     event.preventDefault();
     event.stopPropagation();
@@ -523,12 +573,44 @@ const Tile = memo(function Tile({
       onActivate={activatesThroughOnActivate && selectionEnabled ? activateFromTile : undefined}
     /></AppliedFilterProvider>
   );
+  // The actions menu runs the same steps as the keys. Wide-only moves and sizes are left out below wide, where a saved-grid
+  // Left or Wider changes nothing on screen. Blocked steps are announced when chosen, as the keys announce them.
+  const stepItem = (id: string, label: string, group: string, key: string, resize: boolean): GammaActionMenuItem => {
+    const blocked = stepBlocked?.(widget.id, key, resize);
+    return { id, label, group, description: blocked, disabled: !!blocked, onSelect: () => onStep?.(widget.id, key, resize) };
+  };
+  const actionItems: GammaActionMenuItem[] = [
+    { id: "edit", label: "Edit chart", onSelect: editQuery },
+    ...(onDuplicate ? [{
+      id: "duplicate",
+      label: "Duplicate",
+      description: duplicateBlocked ?? "Copy this chart next to it",
+      disabled: !!duplicateBlocked,
+      onSelect: () => onDuplicate(widget.id),
+    }] : []),
+    ...(onStep ? [
+      stepItem("move-up", "Move up", "Arrange", "ArrowUp", false),
+      stepItem("move-down", "Move down", "Arrange", "ArrowDown", false),
+      ...(draggable ? [
+        stepItem("move-left", "Move left", "Arrange", "ArrowLeft", false),
+        stepItem("move-right", "Move right", "Arrange", "ArrowRight", false),
+      ] : []),
+      stepItem("taller", "Taller", "Size", "ArrowDown", true),
+      stepItem("shorter", "Shorter", "Size", "ArrowUp", true),
+      ...(draggable ? [
+        stepItem("wider", "Wider", "Size", "ArrowRight", true),
+        stepItem("narrower", "Narrower", "Size", "ArrowLeft", true),
+      ] : []),
+    ] : []),
+    ...(onRemove ? [{ id: "remove", label: "Remove", danger: true, onSelect: () => onRemove(widget.id) }] : []),
+  ];
   return (
     <article
       ref={element}
       tabIndex={onNudge ? 0 : undefined}
-      aria-keyshortcuts={onNudge ? `${LAYOUT_KEYSHORTCUTS} Delete Backspace` : undefined}
+      aria-keyshortcuts={onNudge ? `${LAYOUT_KEYSHORTCUTS} Delete Backspace ${ariaKeyshortcutsFor("duplicate")}` : undefined}
       onKeyDownCapture={onNudge ? layoutKey : undefined}
+      onContextMenu={onNudge ? cancelKeyContextMenu : undefined}
       onBlur={releaseFocusTarget}
       className={`${styles.tile} ${selected && !focused ? styles.selectedTile : ""}`}
       data-intrinsic-stat={naturalHeight || undefined}
@@ -598,11 +680,25 @@ const Tile = memo(function Tile({
             variant="quiet"
             className={`${styles.iconButton} ${styles.editChip}`}
             aria-label={`Edit ${widget.title}`}
+            aria-keyshortcuts={ariaKeyshortcutsFor("duplicate")}
             data-widget-edit={widget.id}
             onClick={() => onSelect(widget.id)}
           >
             <Settings2 size={15} />
           </GammaButton>
+        )}
+        {editing && !focused && (
+          // The menu is a separate control from the drag grip, so a click on the grip never opens it. On a narrow tile the
+          // stylesheet hides the Edit chip and this trigger takes its place.
+          <GammaActionMenu
+            label={`Actions for ${widget.title}`}
+            iconOnly
+            className={`${styles.iconButton} ${styles.actionsChip}`}
+            triggerProps={{ "data-widget-actions": widget.id, "aria-keyshortcuts": ariaKeyshortcutsFor("duplicate") }}
+            trigger={<MoreHorizontal size={15} aria-hidden="true" />}
+            items={actionItems}
+            onOpen={() => setMenuOpens((count) => count + 1)}
+          />
         )}
       </div>
       {showSeriesPicker ? (
@@ -683,6 +779,13 @@ const Tile = memo(function Tile({
  */
 export type PreviewFootprints = { dashboard?: TileFootprint; compact?: TileFootprint };
 
+// The grab handle's axis (s, e, w or se) drives the resize cursor. Falls back to the corner.
+function resizeAxis(event: Event): string {
+  const handle = event.target instanceof Element ? event.target.closest(".react-resizable-handle") : null;
+  const axis = [...(handle?.classList ?? [])].find(name => name.startsWith("react-resizable-handle-"));
+  return axis ? axis.slice("react-resizable-handle-".length) : "se";
+}
+
 /** The sizing minimum of each widget's definition, keyed by widget id. Unlisted plugins count too. */
 export function minimumHeightsOf(widgets: readonly Widget[]): Map<string, number> {
   return new Map(widgets.map(widget => {
@@ -710,6 +813,9 @@ export function DashboardCanvas({
   onQueryResult,
   onTimeRange,
   onModeChange,
+  onDuplicate,
+  onRemove,
+  duplicateBlocked,
   focus,
   variables,
   sidePanelOpen = false,
@@ -732,6 +838,11 @@ export function DashboardCanvas({
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
   onTimeRange?: (window: ObservationWindow) => void;
   onModeChange?: (mode: CanvasMode) => void;
+  /** Edit-mode tile actions. Each is offered only when the host passes it, and the menu shows it only in edit mode. */
+  onDuplicate?: (id: string) => void;
+  onRemove?: (id: string) => void;
+  /** Why Duplicate is unavailable, shown as the menu item's description. */
+  duplicateBlocked?: string;
   /** Compose the editor around the same tile/query owner used on the dashboard. */
   focus?: { widget: Widget; render: (preview: ReactNode, footprints?: PreviewFootprints) => ReactNode };
   /** The dashboard's current variable values. A mark whose selection already holds them shows as the applied filter. */
@@ -790,6 +901,7 @@ export function DashboardCanvas({
       draggedId.current = undefined;
       canvas?.removeAttribute("data-layout-interacting");
       canvas?.removeAttribute("data-layout-resizing");
+      canvas?.removeAttribute("data-layout-resize");
     };
   }, [containerRef, dashboard.id, draggable]);
   const compactor = useMemo<Compactor>(() => ({
@@ -804,23 +916,28 @@ export function DashboardCanvas({
   // Host callbacks capture current routes/documents. Keep their tile-facing
   // identity stable so dropping one chart does not redraw every loaded chart,
   // while every interaction still reads the most recently committed state.
-  const interaction = useRef({ widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange });
+  const interaction = useRef({ widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange, onDuplicate, onRemove, draggable });
   useLayoutEffect(() => {
-    interaction.current = { widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange };
+    interaction.current = { widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange, onDuplicate, onRemove, draggable };
   });
   const openRelated = useCallback((link: Drilldown, context: DrilldownContext) => interaction.current.onDrilldown?.(link, context), []);
   const selectObservation = useCallback((widget: Widget, context: DrilldownContext) => interaction.current.onSelection?.(widget, context), []);
   const selectTime = useCallback((window: ObservationWindow) => interaction.current.onTimeRange?.(window), []);
-  const nudge = useCallback((id: string, key: string, resize: boolean) => {
-    const { widgets, layout, onLayout } = interaction.current;
+  const duplicateWidget = useCallback((id: string) => interaction.current.onDuplicate?.(id), []);
+  const removeWidget = useCallback((id: string) => interaction.current.onRemove?.(id), []);
+  // Keys and the tile's actions menu share this step. Below wide the step edits the saved grid, not the reflowed projection
+  // on screen (a compact projection changes widths), and the announcement names the place in saved reading order.
+  const stepBlocked = useCallback((id: string, key: string, resize: boolean) => {
+    const { widgets, layout, draggable } = interaction.current;
+    const attempt = layoutStepEdit(widgets, layout, draggable, id, key, resize);
+    return attempt && "blocked" in attempt.edit ? attempt.edit.blocked : undefined;
+  }, []);
+  const step = useCallback((id: string, key: string, resize: boolean) => {
+    const { widgets, onLayout, draggable } = interaction.current;
     const widget = widgets.find((item) => item.id === id);
-    const resizing = resize ? layoutResizeForKey(key) : undefined;
-    const direction = resize ? undefined : layoutMoveForKey(key);
-    if (!widget || (!resizing && !direction)) return;
-    const edit: LayoutEdit | undefined = resizing
-      ? resizeLayout(layout, id, resizing[0], resizing[1])
-      : direction ? moveLayout(layout, id, direction) : undefined;
-    if (!edit) return;
+    const attempt = widget ? layoutStepEdit(widgets, interaction.current.layout, draggable, id, key, resize) : undefined;
+    if (!widget || !attempt) return;
+    const { resizing, direction, edit } = attempt;
     if ("blocked" in edit) {
       setAnnouncement(`${widget.title}: ${edit.blocked}.`);
       return;
@@ -830,6 +947,12 @@ export function DashboardCanvas({
     if (resizing) {
       const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
       setAnnouncement(`Resized ${widget.title} to ${count(placed.w, "column")} by ${count(placed.h, "row")}.`);
+      return;
+    }
+    if (!draggable) {
+      const order = [...edit.layout].sort((a, b) => a.y - b.y || a.x - b.x || (a.i < b.i ? -1 : a.i > b.i ? 1 : 0));
+      const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th")}`;
+      setAnnouncement(`Moved ${widget.title} ${direction}: ${ordinal(order.findIndex((item) => item.i === id) + 1)} of ${order.length}.`);
       return;
     }
     const partner = edit.partner ? widgets.find((item) => item.id === edit.partner)?.title : undefined;
@@ -903,7 +1026,12 @@ export function DashboardCanvas({
                   onQueryFields={onQueryFields}
                   onQueryResult={onQueryResult}
                   onTimeRange={onTimeRange ? selectTime : undefined}
-                  onNudge={draggable ? nudge : undefined}
+                  onNudge={draggable ? step : undefined}
+                  onStep={editing && !focus ? step : undefined}
+                  stepBlocked={editing && !focus ? stepBlocked : undefined}
+                  onDuplicate={editing && !focus && onDuplicate ? duplicateWidget : undefined}
+                  onRemove={editing && !focus && onRemove ? removeWidget : undefined}
+                  duplicateBlocked={duplicateBlocked}
                   memory={memory}
                   memoryKey={`${dashboard.id}:${widget.id}`}
                   selectionScope={selectionScope}
@@ -941,7 +1069,7 @@ export function DashboardCanvas({
               event.target.closest(".insights-drag-handle, .react-resizable-handle")) event.preventDefault();
         }}
       >
-        {draggable && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
+        {editing && !focus && <div className={styles.srOnly} aria-live="polite">{announcement}</div>}
         <ChartCursorProvider key={dashboard.id}>
         {mounted && (focus ? focus.render(tiles, previewFootprints) : stackedView ? <div className={styles.stackedView}>{tiles}</div> : (
           <ReactGridLayout
@@ -958,7 +1086,7 @@ export function DashboardCanvas({
               handle: ".insights-drag-handle",
               enableUserSelectHack: false,
             }}
-            resizeConfig={{ enabled: draggable, handles: ["se"], enableUserSelectHack: false }}
+            resizeConfig={{ enabled: draggable, handles: ["s", "e", "w", "se"], enableUserSelectHack: false }}
             compactor={compactor}
             onDragStart={(_layout, item) => {
               draggedId.current = item?.i;
@@ -969,13 +1097,15 @@ export function DashboardCanvas({
               containerRef.current?.removeAttribute("data-layout-interacting");
               if (draggable) onLayout(next);
             }}
-            onResizeStart={() => {
+            onResizeStart={(_layout, _old, _next, _placeholder, event) => {
               containerRef.current?.setAttribute("data-layout-interacting", "true");
               containerRef.current?.setAttribute("data-layout-resizing", "true");
+              containerRef.current?.setAttribute("data-layout-resize", resizeAxis(event));
             }}
             onResizeStop={(next) => {
               containerRef.current?.removeAttribute("data-layout-interacting");
               containerRef.current?.removeAttribute("data-layout-resizing");
+              containerRef.current?.removeAttribute("data-layout-resize");
               if (draggable) onLayout(next);
             }}
           >

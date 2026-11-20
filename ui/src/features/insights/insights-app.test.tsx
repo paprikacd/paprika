@@ -11,21 +11,58 @@ import { readExampleWorkspace, writeExampleWorkspace } from "./example-storage"
 import { EXAMPLE_SAVED_QUERIES_KEY } from "./saved-query-storage"
 import { parseDashboardBundle, serializeDashboardLibrary } from "./workspace-transfer"
 
-vi.mock("./canvas", () => ({
-  DashboardCanvas: ({ focus, dashboard, editing, onSelect }: {
-    focus?: { render: (preview: ReactNode) => ReactNode }
-    dashboard: Dashboard
-    editing: boolean
-    onSelect: (id: string) => void
-  }) => focus ? focus.render(<div data-testid="mock-canvas" />) : <div data-testid="mock-canvas">
-    {dashboard.widgets.map(widget => (
-      // Tiles are drawn in view mode too, so focus after a save has a tile to land on. Only edit mode has the edit control.
-      <article key={widget.id} data-widget-id={widget.id} tabIndex={editing ? 0 : undefined}>
-        {editing && <button data-widget-edit={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>}
-      </article>
-    ))}
-  </div>,
-}))
+// When set, each tile mounts one commit after its dashboard change, as the real canvas can, so focus must wait for it.
+const lateTiles = vi.hoisted(() => ({ on: false }))
+vi.mock("./canvas", async () => {
+  const { useEffect, useState } = await import("react")
+  function LateMount({ children }: { children: ReactNode }) {
+    const [ready, setReady] = useState(!lateTiles.on)
+    useEffect(() => {
+      if (ready) return
+      const timer = setTimeout(() => setReady(true), 0)
+      return () => clearTimeout(timer)
+    }, [ready])
+    return ready ? children : null
+  }
+  // The real tile menu is tested in canvas-layout-edit.test.tsx. This stand-in offers the same Duplicate and Remove items.
+  function TileMenu({ id, title, duplicateBlocked, onDuplicate, onRemove }: {
+    id: string
+    title: string
+    duplicateBlocked?: string
+    onDuplicate?: (id: string) => void
+    onRemove?: (id: string) => void
+  }) {
+    const [open, setOpen] = useState(false)
+    return <>
+      <button aria-label={`Actions for ${title}`} onClick={() => setOpen(!open)}>More</button>
+      {open && <div role="menu">
+        {onDuplicate && <button role="menuitem" aria-disabled={!!duplicateBlocked || undefined} onClick={() => { setOpen(false); if (!duplicateBlocked) onDuplicate(id) }}>Duplicate{duplicateBlocked ? ` ${duplicateBlocked}` : ""}</button>}
+        {onRemove && <button role="menuitem" onClick={() => { setOpen(false); onRemove(id) }}>Remove</button>}
+      </div>}
+    </>
+  }
+  return {
+    DashboardCanvas: ({ focus, dashboard, editing, onSelect, onDuplicate, onRemove, duplicateBlocked }: {
+      focus?: { render: (preview: ReactNode) => ReactNode }
+      dashboard: Dashboard
+      editing: boolean
+      onSelect: (id: string) => void
+      onDuplicate?: (id: string) => void
+      onRemove?: (id: string) => void
+      duplicateBlocked?: string
+    }) => focus ? focus.render(<div data-testid="mock-canvas" />) : <div data-testid="mock-canvas">
+      {dashboard.widgets.map(widget => (
+        // Tiles are drawn in view mode too, so focus after a save has a tile to land on. Only edit mode has the edit control.
+        <LateMount key={widget.id}>
+          <article data-widget-id={widget.id} aria-label={widget.title} tabIndex={editing ? 0 : undefined}>
+            {editing && <button data-widget-edit={widget.id} onClick={() => onSelect(widget.id)}>Edit {widget.title}</button>}
+            {editing && <TileMenu id={widget.id} title={widget.title} duplicateBlocked={duplicateBlocked} onDuplicate={onDuplicate} onRemove={onRemove} />}
+          </article>
+        </LateMount>
+      ))}
+    </div>,
+  }
+})
 
 // Deliberately use a different object-key order from the canonical Zod output.
 const first: Dashboard = {
@@ -725,6 +762,7 @@ it("applies and saves the chart from the action on the unapplied-chart notice", 
       const dashboard: Dashboard = { ...first, widgets }
       vi.mocked(api.list).mockResolvedValue([dashboard, second])
       vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === dashboard.id ? dashboard : second, etag: '"v1"' }))
+      vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
       return api
     }
     async function editTiles(api: InsightsClient) {
@@ -801,6 +839,159 @@ it("applies and saves the chart from the action on the unapplied-chart notice", 
       expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
       expect(screen.queryByText("Removed Request latency.")).toBeNull()
       expect(screen.queryByRole("button", { name: /^Undo remove/ })).toBeNull()
+    })
+
+    // The Chart actions menu of the open editor. Its Remove and Duplicate use the same rules as the tile shortcuts.
+    async function openChartActions(name: string) {
+      fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }))
+      fireEvent.click(await screen.findByRole("button", { name: "Chart actions" }))
+    }
+    async function savedWidgets(api: InsightsClient) {
+      fireEvent.click(screen.getAllByRole("button", { name: "Save dashboard" })[0])
+      await waitFor(() => expect(api.save).toHaveBeenCalled())
+      return vi.mocked(api.save).mock.calls.at(-1)![0].widgets
+    }
+
+    it("removes the open chart through the same Undo notice as Delete, and restores it from there", async () => {
+      await editTiles(tilesClient())
+      await openChartActions("Request latency")
+      fireEvent.click(screen.getByRole("menuitem", { name: "Remove chart" }))
+      expect(screen.getByText("Removed Request latency.")).toBeInTheDocument()
+      // Focus moves to the neighbouring tile (its tile or its chip), not to the title the closed editor would fall back to.
+      expect(document.activeElement?.closest("[data-widget-id]")).toHaveAttribute("data-widget-id", "signal")
+      const notice = screen.getByText("Removed Request latency.").parentElement!
+      fireEvent.click(within(notice).getByRole("button", { name: "Undo remove Request latency" }))
+      expect(screen.getByRole("button", { name: "Edit Request latency" })).toBeInTheDocument()
+      expect(screen.getByText("Restored Request latency.")).toBeInTheDocument()
+    })
+
+    it("duplicates the open chart with its unapplied changes, beside the original, and leaves the original saved as it was", async () => {
+      const api = tilesClient([{ ...latency }])
+      await editTiles(api)
+      await openChartActions("Request latency")
+      fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Edited latency" } })
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate chart" }))
+      expect(screen.getByText("Duplicated with your unapplied changes; the original is unchanged.")).toBeInTheDocument()
+      const widgets = await savedWidgets(api)
+      expect(widgets.map(widget => widget.title)).toEqual(["Request latency", "Edited latency (copy)"])
+      expect(widgets[0].layout).toMatchObject({ x: 0, y: 0, w: 6, h: 4 })
+      expect(widgets[1].layout).toMatchObject({ x: 6, y: 0, w: 6, h: 4 })
+    })
+
+    it("says a clean chart duplicate has no unapplied changes to carry", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      await openChartActions("Request latency")
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate chart" }))
+      expect(screen.getByText("Duplicated Request latency beside it.")).toBeInTheDocument()
+      expect(screen.queryByText("Duplicated with your unapplied changes; the original is unchanged.")).toBeNull()
+    })
+
+    it("places the duplicate below the original when the slot beside it is taken", async () => {
+      const api = tilesClient()
+      await editTiles(api)
+      await openChartActions("Request latency")
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate chart" }))
+      const widgets = await savedWidgets(api)
+      expect(widgets.map(widget => widget.title)).toEqual(["Request latency", "Signal", "Request latency (copy)"])
+      expect(widgets[2].layout).toMatchObject({ x: 0, y: 4, w: 6, h: 4 })
+    })
+
+    it("undoes a chart duplicate from its notice and returns focus to the original tile", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      await openChartActions("Request latency")
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate chart" }))
+      const notice = screen.getByText("Duplicated Request latency beside it.").parentElement!
+      fireEvent.click(within(notice).getByRole("button", { name: "Undo duplicate Request latency" }))
+      expect(screen.getByText("Removed the copy.")).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Edit Request latency (copy)" })).toBeNull()
+      // Focus lands on the original tile's own control (its Edit chip, which the editor's close returns to), not on the removed copy.
+      expect(document.activeElement?.closest("[data-widget-id]")).toHaveAttribute("data-widget-id", "latency")
+      // The editor was showing the copy, so Undo closes it rather than leaving it on a tile that no longer exists.
+      expect(screen.queryByLabelText("Title")).toBeNull()
+    })
+
+    it("asks before undoing a duplicate whose copy has unapplied edits in the open editor", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      await openChartActions("Request latency")
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate chart" }))
+      const title = screen.getByLabelText("Title")
+      fireEvent.change(title, { target: { value: "Edited copy" } })
+      const notice = screen.getByText("Duplicated Request latency beside it.").parentElement!
+      fireEvent.click(within(notice).getByRole("button", { name: "Undo duplicate Request latency" }))
+      expect(await screen.findByRole("heading", { name: "Discard chart changes?" })).toBeInTheDocument()
+      expect(screen.getByLabelText("Title")).toHaveValue("Edited copy")
+      fireEvent.click(screen.getByRole("button", { name: "Discard changes" }))
+      await waitFor(() => expect(screen.queryByLabelText("Title")).toBeNull())
+      expect(screen.getByText("Removed the copy.")).toBeInTheDocument()
+    })
+  })
+
+  describe("the tile actions menu", () => {
+    const latency = { id: "latency", title: "Request latency", type: "timeseries", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 } } as const
+    const signal = { id: "signal", title: "Signal", type: "timeseries", providerId: "metrics", query: "down", unit: "", layout: { x: 6, y: 0, w: 6, h: 4 } } as const
+    function tilesClient(widgets: Dashboard["widgets"] = [{ ...latency }, { ...signal }]) {
+      const api = client()
+      const dashboard: Dashboard = { ...first, widgets }
+      vi.mocked(api.list).mockResolvedValue([dashboard, second])
+      vi.mocked(api.get).mockImplementation(async id => ({ dashboard: id === dashboard.id ? dashboard : second, etag: '"v1"' }))
+      vi.mocked(api.providers).mockResolvedValue([{ id: "metrics", name: "Metrics", type: "prometheus", capabilities: ["metrics"] }])
+      return api
+    }
+    async function editTiles(api: InsightsClient) {
+      render(<InsightsApp client={api} />)
+      await screen.findByRole("heading", { name: "Dashboard A" })
+      fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    }
+
+    it("duplicates a tile beside it from its menu, keeps the editor closed, and moves focus to the copy", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Request latency" }))
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Duplicate/ }))
+      expect(screen.getByText("Duplicated Request latency beside it.")).toBeInTheDocument()
+      expect(screen.queryByLabelText("Title")).toBeNull()
+      expect(document.activeElement).toHaveAttribute("aria-label", "Request latency (copy)")
+      expect(screen.getByRole("button", { name: "Actions for Request latency (copy)" })).toBeInTheDocument()
+    })
+
+    it("moves focus to a menu copy that mounts a commit after the change", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      lateTiles.on = true
+      try {
+        fireEvent.click(screen.getByRole("button", { name: "Actions for Request latency" }))
+        fireEvent.click(screen.getByRole("menuitem", { name: /^Duplicate/ }))
+        await waitFor(() => expect(document.activeElement).toHaveAttribute("aria-label", "Request latency (copy)"))
+      } finally {
+        lateTiles.on = false
+      }
+    })
+
+    it("undoes a menu duplicate from its notice in one step and returns focus to the original", async () => {
+      await editTiles(tilesClient([{ ...latency }]))
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Request latency" }))
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Duplicate/ }))
+      const notice = screen.getByText("Duplicated Request latency beside it.").parentElement!
+      fireEvent.click(within(notice).getByRole("button", { name: "Undo duplicate Request latency" }))
+      expect(screen.getByText("Removed the copy.")).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Actions for Request latency (copy)" })).toBeNull()
+      expect(document.activeElement).toHaveAttribute("data-widget-id", "latency")
+    })
+
+    it("disables menu Duplicate at the widget limit", async () => {
+      const full = Array.from({ length: 48 }, (_, index) => ({ ...latency, id: `chart-${index}`, title: `Chart ${index}`, layout: { x: 0, y: index * 4, w: 6, h: 4 } }))
+      await editTiles(tilesClient(full))
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Chart 0" }))
+      expect(screen.getByRole("menuitem", { name: /^Duplicate/ })).toHaveAttribute("aria-disabled", "true")
+    })
+
+    it("removes a tile from its menu through the same Undo notice as the editor, and restores it from there", async () => {
+      await editTiles(tilesClient())
+      fireEvent.click(screen.getByRole("button", { name: "Actions for Request latency" }))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }))
+      expect(screen.getByText("Removed Request latency.")).toBeInTheDocument()
+      const notice = screen.getByText("Removed Request latency.").parentElement!
+      fireEvent.click(within(notice).getByRole("button", { name: "Undo remove Request latency" }))
+      expect(screen.getByText("Restored Request latency.")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Actions for Request latency" })).toBeInTheDocument()
     })
   })
 
