@@ -221,7 +221,7 @@ describe("record charts", () => {
     const dialog=screen.getByRole("dialog")
     expect(within(dialog).getByText("+2.00 pp")).toBeInTheDocument()
     expect(within(dialog).getByText("+10.00 ms")).toBeInTheDocument()
-    expect(within(dialog).queryByRole("button",{name:/previous period|apply to dashboard/i})).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole("button",{name:/previous period|use for all charts/i})).not.toBeInTheDocument()
     expect(within(dialog).getByText("Zoom affects this chart only.")).toBeInTheDocument()
     fireEvent.change(within(dialog).getByRole("slider",{name:"Window start"}),{target:{value:"1"}})
     expect(within(dialog).getByText("Unavailable")).toBeInTheDocument()

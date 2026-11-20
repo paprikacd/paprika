@@ -704,7 +704,9 @@
 .dragHandle:active {
   cursor: grabbing;
 }
-.editingCanvas .tile:focus-visible {
+.editingCanvas .tile:focus-visible,
+/* A view-mode tile takes a -1 tab index only while it holds focus after Apply and save. */
+.tile[tabindex="-1"]:focus {
   outline: 2px solid var(--gamma-accent);
   outline-offset: 2px;
 }

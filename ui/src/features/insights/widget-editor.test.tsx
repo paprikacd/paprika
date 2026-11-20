@@ -71,7 +71,7 @@ describe("widget inspector", () => {
     const callbacks = editorProps(), onPreview = vi.fn();
     const below = { ...widget, id: "below", title: "Below", layout: { ...widget.layout, y: 4 } };
     render(<WidgetEditor {...callbacks} onPreview={onPreview}
-      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn(), widgets: [widget, below] }} />);
+      workspace={{ preview: null, dashboardTitle: "Operations", dashboardDirty: false, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: vi.fn(), widgets: [widget, below] }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
     fireEvent.click(screen.getByRole("button", { name: "Move widget down" }));
     expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ layout: expect.objectContaining({ y: 4 }) }));
@@ -83,10 +83,40 @@ describe("widget inspector", () => {
     expect(callbacks.onApply).toHaveBeenCalledWith(expect.objectContaining({ layout: expect.objectContaining({ y: 4 }) }),
       expect.arrayContaining([expect.objectContaining({ i: "below", y: 0 })]));
   });
+  it("Apply and save hands the save request to onApply only while the chart draft is dirty", () => {
+    const callbacks = editorProps(), onSaveDashboard = vi.fn();
+    const workspace = { preview: null, dashboardTitle: "Operations", dashboardDirty: true, saveBusy: false, onSaveDashboard, onDiscard: vi.fn(), widgets: [widget] };
+    const { unmount } = render(<WidgetEditor {...callbacks} workspace={workspace} />);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Saved chart" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply and save" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Saved chart" }), undefined, { save: true });
+    expect(onSaveDashboard).not.toHaveBeenCalled();
+    unmount();
+  });
+  it("offers Save dashboard, not Apply and save, when the chart draft is clean", () => {
+    const callbacks = editorProps(), onSaveDashboard = vi.fn();
+    render(<WidgetEditor {...callbacks}
+      workspace={{ preview: null, dashboardTitle: "Operations", dashboardDirty: true, saveBusy: false, onSaveDashboard, onDiscard: vi.fn(), widgets: [widget] }} />);
+    expect(screen.queryByRole("button", { name: "Apply and save" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+    expect(onSaveDashboard).toHaveBeenCalledOnce();
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+  });
+  it("disables Save dashboard when the dashboard has nothing to save, and marks an unsaved dashboard in the identity line", () => {
+    const callbacks = editorProps();
+    const { unmount } = render(<WidgetEditor {...callbacks}
+      workspace={{ preview: null, dashboardTitle: "Operations", dashboardDirty: false, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: vi.fn(), widgets: [widget] }} />);
+    expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+    expect(screen.getByText("Operations")).not.toHaveTextContent("Unsaved changes");
+    unmount();
+    render(<WidgetEditor {...callbacks}
+      workspace={{ preview: null, dashboardTitle: "Operations", dashboardDirty: true, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: vi.fn(), widgets: [widget] }} />);
+    expect(screen.getByText(/Operations · Unsaved changes/)).toBeInTheDocument();
+  });
   it("stages focused edits, keeps the last valid preview, and applies only on request", () => {
     const callbacks = editorProps(), onPreview = vi.fn(), onDirtyChange = vi.fn(), discard = vi.fn();
     render(<WidgetEditor {...callbacks} onPreview={onPreview} onDirtyChange={onDirtyChange}
-      workspace={{ preview: <div>Canonical chart preview</div>, dashboardTitle: "Operations", onDiscard: discard, widgets: [widget] }} />);
+      workspace={{ preview: <div>Canonical chart preview</div>, dashboardTitle: "Operations", dashboardDirty: false, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: discard, widgets: [widget] }} />);
     expect(screen.getByRole("region", { name: "Chart preview" })).toHaveTextContent("Canonical chart preview");
     // Edits to one field less than a second apart share an undo step, so the pause between them is explicit.
     const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
@@ -1483,7 +1513,7 @@ describe("widget editor workbench shell", () => {
   it("Discard calls the workspace's onDiscard and applies nothing", () => {
     const discard = vi.fn();
     const callbacks = editorProps({
-      workspace: { preview: null, dashboardTitle: "Operations", onDiscard: discard, widgets: [widget] },
+      workspace: { preview: null, dashboardTitle: "Operations", dashboardDirty: false, saveBusy: false, onSaveDashboard: vi.fn(), onDiscard: discard, widgets: [widget] },
     });
     render(<WidgetEditor {...callbacks} onPreview={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Unsaved" } });

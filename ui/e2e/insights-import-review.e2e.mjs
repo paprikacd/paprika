@@ -101,7 +101,7 @@ async function connect() {
 }
 async function chooseDashboard(action, title) { await selectGammaOption(page, dashboardAction(title), new RegExp(`^${action}(?:\\s|$)`)) }
 async function chooseQuery(action, name) { await selectGammaOption(page, queryAction(name), new RegExp(`^${action}(?:\\s|$)`)) }
-async function apply() { await importer().getByRole("button", { name: /^(Apply import choices|Import \d+ as new)$/ }).click() }
+async function apply() { await importer().getByRole("button", { name: /^(Import with these choices|Import \d+ as new)$/ }).click() }
 async function complete(count = 1) { await importer().getByRole("status").filter({ hasText: new RegExp(`^${count} dashboard decisions? completed\\.`) }).waitFor() }
 async function refresh() {
   await importer().getByRole("button", { name: "Refresh comparison", exact: true }).click()

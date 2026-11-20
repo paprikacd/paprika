@@ -754,9 +754,9 @@ async function authorAndLink(width) {
   const beforeTyping = queryRequests().length
   await variables.getByLabel("Selected service", { exact: true }).fill(enteredService)
   await frames(); assert.equal(queryRequests().length, beforeTyping, "Dashboard variable typing must not query before Apply")
-  await variables.getByRole("button", { name: "Apply values", exact: true }).click()
+  await variables.getByRole("button", { name: "Update view", exact: true }).click()
   await closeDashboardVariables(page)
-  await until(() => queryRequests().at(-1)?.params.query === exact, "Apply values did not update the live query reference")
+  await until(() => queryRequests().at(-1)?.params.query === exact, "Update view did not update the live query reference")
   await shot(`linked-dashboard-${width}.png`)
 
   await openExplorer()
@@ -1016,7 +1016,7 @@ try {
       const field = sourcePanel().getByRole("textbox", { name: "Dashboard source", exact: true }), text = await field.inputValue()
       assert.match(text, /queryRef/); assert.match(text, /tooltip-library/)
       await field.fill(text.replace("Explorer integration", `Explorer integration ${format}`))
-      await sourcePanel().getByRole("button", { name: "Apply to canvas", exact: true }).click()
+      await sourcePanel().getByRole("button", { name: "Replace dashboard draft", exact: true }).click()
       await sourcePanel().waitFor({ state: "hidden" }); await saveBoard()
       const saved = (await api("dashboards/explorer-board")).document
       assert.deepEqual(saved.widgets[0].queryRef, widget.queryRef); assert.deepEqual(saved.widgets[0].options.tooltipView.source, widget.options.tooltipView.source)
@@ -1028,7 +1028,7 @@ try {
     const ai = page.getByRole("region", { name: "Build with AI", exact: true })
     await ai.getByRole("textbox", { name: "AI-generated definition", exact: true }).fill(openUI(document))
     await ai.getByRole("button", { name: "Review definition", exact: true }).click()
-    await ai.getByRole("button", { name: "Apply to canvas", exact: true }).click()
+    await ai.getByRole("button", { name: "Replace dashboard draft", exact: true }).click()
     if (await ai.isVisible()) await ai.getByRole("button", { name: "Close AI builder", exact: true }).click()
     await saveBoard(); await page.reload({ waitUntil: "networkidle" })
     document = (await api("dashboards/explorer-board")).document

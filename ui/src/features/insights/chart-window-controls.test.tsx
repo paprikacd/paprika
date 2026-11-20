@@ -282,13 +282,13 @@ describe("window controls", () => {
     const end = screen.getByRole("slider", { name: "Window end" });
     fireEvent.keyDown(end, { key: "ArrowLeft", shiftKey: true });
     expect(end).toHaveAttribute("aria-valuenow", "9000");
-    expect(screen.getByRole("button", { name: "Apply window" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zoom to selection" })).toBeInTheDocument();
     expect(container.querySelector("[data-chart-window-zoomed]")).toBeNull();
     fireEvent.keyDown(end, { key: "Enter" });
     expect(container.querySelector("[data-chart-window-zoomed]")).not.toBeNull();
     expect(container.querySelector("[data-chart-window-end]")).toHaveAttribute("data-chart-window-end", "9000");
     expect(screen.getByRole("button", { name: "Undo zoom" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Apply window" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Zoom to selection" })).toBeNull();
   });
 
   it("discards a pending keyboard selection on Escape, and jumps to the limits with Home and End", () => {
@@ -346,7 +346,7 @@ describe("window controls", () => {
       expect(container.querySelector("[data-chart-window-zoomed]")).toBeNull();
       release(start, 300);
       expect(container.querySelector("[data-chart-window-zoomed]")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Apply window" }));
+      fireEvent.click(screen.getByRole("button", { name: "Zoom to selection" }));
       expect(container.querySelector("[data-chart-window-start]")).toHaveAttribute("data-chart-window-start", "3000");
       expect(container.querySelector("[data-chart-window-zoomed]")).not.toBeNull();
     });
@@ -412,7 +412,7 @@ describe("window controls", () => {
       expect(start).toHaveAttribute("aria-valuenow", "3000");
       fireEvent.keyDown(start, { key: "Escape" });
       expect(start).toHaveAttribute("aria-valuenow", "0");
-      expect(screen.queryByRole("button", { name: "Apply window" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Zoom to selection" })).toBeNull();
       move(start, 600);
       expect(start).toHaveAttribute("aria-valuenow", "0");
       release(start, 600);
@@ -431,7 +431,7 @@ describe("window controls", () => {
         expect(start).toHaveAttribute("aria-valuenow", "1000");
         expect(fireEvent.keyDown(start, { key: "Escape" })).toBe(false);
         expect(start).toHaveAttribute("aria-valuenow", "0");
-        expect(screen.queryByRole("button", { name: "Apply window" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Zoom to selection" })).toBeNull();
         expect(inspector).not.toHaveBeenCalled();
       } finally {
         unregister();

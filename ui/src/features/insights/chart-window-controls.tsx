@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type Keyb
 import type { Series } from "./chart-data";
 import { calendarDateTime, calendarRange } from "./chart-presentation";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
+import { GammaButton } from "./gamma/button";
 import { TimeWindowLens } from "./time-window-lens";
 import {
   formatWindowDuration,
@@ -317,7 +318,7 @@ export function ChartWindowControls({ state, selection, compare, label = "Chart 
       {selection.pending && <span className={styles.pending}> · Pending selection</span>}
     </p>
     <div className={styles.actions}>
-      {selection.pending && <button type="button" onClick={() => selection.apply()}>Apply window</button>}
+      {selection.pending && <GammaButton type="button" variant="secondary" size="sm" onClick={() => selection.apply()}>Zoom to selection</GammaButton>}
       {selection.pending && <button type="button" onClick={selection.cancel}>Discard selection</button>}
       {state.canUndo && <button type="button" onClick={state.undo}>Undo zoom</button>}
       {!compare && state.zoomed && <button type="button" onClick={state.reset}>Reset zoom</button>}

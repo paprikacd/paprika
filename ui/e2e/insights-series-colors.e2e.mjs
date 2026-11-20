@@ -24,7 +24,7 @@ try {
       await tile.locator('[data-series="Inbound"]').waitFor();
       assert.deepEqual(await colors(), { Inbound: "#00cee2", Outbound: "#a879ef" });
       await selectGammaOption(page, page.getByRole("combobox", { name: "Gateway", exact: true }), "edge-02");
-      const apply = page.getByRole("button", { name: "Apply values", exact: true });
+      const apply = page.getByRole("button", { name: "Update view", exact: true });
       if (await apply.count() && await apply.isEnabled()) await apply.click();
       await tile.scrollIntoViewIfNeeded();
       await tile.locator('[data-series="Inbound"]').waitFor();

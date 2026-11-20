@@ -509,7 +509,7 @@ jobs:
         run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs e2e/insights-builder.e2e.mjs
         working-directory: ui
         env:
-          # Only the builder script reads this: it runs its keyboard shortcut checks alone.
+          # Only the builder script reads this: it runs its keyboard shortcut, preview footprint and narrow workbench checks alone.
           INSIGHTS_BUILDER_KEYBOARD_ONLY: "1"
 
       - name: Check Insights visual structure baseline

@@ -1,7 +1,9 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import { useDraftHistory } from "./history";
 import { isApplePlatform, type ChartCommands } from "./use-insights-shortcuts";
 import { ariaKeyshortcutsFor, hintFor } from "./shortcuts";
+import { PREVIEW_SIZES, usePreviewSize, type PreviewSize } from "./preview-size";
+import type { PreviewFootprints } from "./canvas";
 import { ChartAppearancePresets } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
 import { providerOption, QuerySourceIcon } from "./source-identity";
@@ -12,6 +14,7 @@ import {
   ArrowUp,
   Copy,
   Plus,
+  Save,
   Trash2,
   Undo2,
   Redo2,
@@ -73,6 +76,9 @@ import {
 import { validateLinkedTooltip } from "./saved-query-editor";
 import { gridPlacement, layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit";
 import type { Layout } from "react-grid-layout";
+
+/** Apply changes writes the draft to the dashboard. With save, Apply and save also saves the dashboard. */
+export type ApplyOptions = { save?: boolean };
 
 export const widgetLabels = {
   timeseries: "Time series",
@@ -772,10 +778,22 @@ export function WidgetEditor({
 }: {
   widget: Widget;
   providers: Provider[];
-  onApply: (widget: Widget, layout?: Layout) => void;
+  onApply: (widget: Widget, layout?: Layout, options?: ApplyOptions) => void;
   onPreview?: (widget: Widget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  workspace: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets: Widget[] };
+  workspace: {
+    preview: ReactNode;
+    /** The tile's footprint on the dashboard, from the canvas. Absent until the dashboard has been measured. */
+    previewFootprints?: PreviewFootprints;
+    dashboardTitle: string;
+    /** The dashboard has changes that Save dashboard would write. Drives the identity line and the save button. */
+    dashboardDirty: boolean;
+    /** Save dashboard is blocked, for example while a save is running. */
+    saveBusy: boolean;
+    onSaveDashboard: () => void;
+    onDiscard: () => void;
+    widgets: Widget[];
+  };
   onDraftValidityChange?: (valid: boolean) => void;
   onClose: () => void;
   onDuplicate: () => void;
@@ -1032,10 +1050,11 @@ export function WidgetEditor({
     setQueryDraftValid(true);
     setEditorRevision(revision => revision + 1);
   }
-  function apply() {
+  function apply(options?: ApplyOptions) {
     if (stale || error || !preview) return;
     setPreviewRevision({ key: draftKey, widget: preview });
-    if (stagedLayout) onApply(preview, stagedLayout);
+    if (options) onApply(preview, stagedLayout, options);
+    else if (stagedLayout) onApply(preview, stagedLayout);
     else onApply(preview);
   }
   // The host's keyboard shortcuts act through these. Registered on every render, so they see the current draft.
@@ -1044,12 +1063,16 @@ export function WidgetEditor({
     onCommands?.({
       undo: () => { if (history.canUndo) travel("undo") },
       redo: () => { if (history.canRedo) travel("redo") },
-      apply,
+      apply: () => apply(),
+      applyAndSave: () => apply({ save: true }),
       canApply: !stale && !error && !!preview,
+      canApplyAndSave: !stale && !error && !!preview && !workspace.saveBusy && (dirty || workspace.dashboardDirty),
     });
   });
   useEffect(() => () => onCommands?.(null), [onCommands]);
   const applePlatform = isApplePlatform();
+  // Apply and save needs a valid, current draft, a save that is not running, and something changed to save.
+  const applySaveDisabled = stale || !!error || !!workspace.saveBusy || (!dirty && !workspace.dashboardDirty);
   function chooseVisualization(value: string, acceptReplacement = false) {
     const definition = definitions.find((item) =>
       (item.type === "plugin" ? `plugin:${item.id}` : item.type) === value,
@@ -1587,7 +1610,7 @@ export function WidgetEditor({
           <ArrowLeft size={16} aria-hidden="true" /><span>Back to dashboard</span>
         </GammaButton>
         <div className={styles.focusIdentity}>
-          <span>{workspace.dashboardTitle}</span>
+          <span>{workspace.dashboardTitle}{workspace.dashboardDirty ? " · Unsaved changes" : ""}</span>
           <h2>{draft.title || "Untitled chart"}</h2>
         </div>
         <span className={styles.draftState} role="status">{error ? "Draft needs attention" : dirty ? "Unapplied changes" : "Editing chart"}</span>
@@ -1596,12 +1619,18 @@ export function WidgetEditor({
             { id: "undo", label: "Undo chart change", icon: <Undo2 size={14} />, disabled: !history.canUndo, onSelect: () => travel("undo") },
             { id: "redo", label: "Redo chart change", icon: <Redo2 size={14} />, disabled: !history.canRedo, onSelect: () => travel("redo") },
             { id: "duplicate", label: "Duplicate chart", icon: <Copy size={14} />, disabled: stale || !!error, onSelect: onDuplicate },
+            { id: "apply-save", label: "Apply and save dashboard", icon: <Save size={14} />, disabled: applySaveDisabled, onSelect: () => apply({ save: true }) },
             { id: "remove", label: "Remove chart", icon: <Trash2 size={14} />, onSelect: onDelete },
           ]} />
           <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Undo chart change" aria-keyshortcuts={ariaKeyshortcutsFor("undo")} title={hintFor("undo", applePlatform)} disabled={!history.canUndo} onClick={() => travel("undo")}><Undo2 size={16} /></GammaButton>
           <GammaButton className={styles.historyAction} variant="quiet" size="sm" iconOnly aria-label="Redo chart change" aria-keyshortcuts={ariaKeyshortcutsFor("redo")} title={hintFor("redo", applePlatform)} disabled={!history.canRedo} onClick={() => travel("redo")}><Redo2 size={16} /></GammaButton>
           <GammaButton variant="secondary" size="sm" onClick={workspace.onDiscard}>Discard</GammaButton>
-          <GammaButton variant="primary" size="sm" aria-keyshortcuts={ariaKeyshortcutsFor("apply")} title={hintFor("apply", applePlatform)} disabled={stale || !!error} onClick={apply}>Apply changes</GammaButton>
+          {dirty ? (
+            <GammaButton className={styles.applySaveAction} variant="secondary" size="sm" aria-keyshortcuts={ariaKeyshortcutsFor("applyAndSave")} title={hintFor("applyAndSave", applePlatform)} disabled={applySaveDisabled} onClick={() => apply({ save: true })}>Apply and save</GammaButton>
+          ) : (
+            <GammaButton className={styles.applySaveAction} variant="secondary" size="sm" aria-keyshortcuts={ariaKeyshortcutsFor("save")} title={hintFor("save", applePlatform)} disabled={!workspace.dashboardDirty || workspace.saveBusy} onClick={workspace.onSaveDashboard}>Save dashboard</GammaButton>
+          )}
+          <GammaButton variant="primary" size="sm" aria-keyshortcuts={ariaKeyshortcutsFor("apply")} title={hintFor("apply", applePlatform)} disabled={stale || !!error} onClick={() => apply()}>Apply changes</GammaButton>
         </div>
         <nav className={styles.editorSections} aria-label="Chart editor sections">
           <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(previewRef.current)}>Preview</GammaButton>
@@ -1612,8 +1641,11 @@ export function WidgetEditor({
       <div className={styles.focusBody}>
         <div className={styles.previewWorkspace}>
           <section ref={previewRef} tabIndex={-1} className={styles.chartPreview} aria-label="Chart preview">
-            <div className={styles.previewHeading}><h3>Preview</h3><span>{error ? "Last valid chart" : "Live preview"}</span></div>
-            <div className={styles.previewCanvas}>{workspace.preview}</div>
+            <PreviewPane
+              preview={workspace.preview}
+              footprints={workspace.previewFootprints}
+              status={error ? "Last valid chart" : "Live preview"}
+            />
           </section>
           <section ref={queryRef} tabIndex={-1} className={styles.queryWorkspace} aria-label="Chart data">
             <GammaTabs variant="underline" label="Chart data" value={queryTab} onChange={setQueryTab} tabs={tabs.filter(item => item.id === "query" || item.id === "source")} />
@@ -1623,9 +1655,68 @@ export function WidgetEditor({
           <div className={styles.chartIdentity}>{identity}</div>
           {draftError}
           <GammaTabs variant="underline" label="Widget settings" value={settingsTab} onChange={setTab} tabs={settingsTabs} />
-          <p className={styles.focusSaveHint}>Apply returns to the dashboard. Save the dashboard to keep your changes.</p>
+          <p className={styles.focusSaveHint}>Apply changes to this chart on the dashboard. Save the dashboard to keep them.</p>
         </aside>
       </div>
     </section>
+  );
+}
+
+const previewSizeLabels: Record<PreviewSize, string> = { fill: "Fill", dashboard: "Dashboard size", compact: "Compact view" };
+
+/**
+ * The chart editor's preview. Fill gives the tile the whole pane. Dashboard size and Compact view draw it at its footprint
+ * on the dashboard, centred. A footprint wider than the pane is clamped and noted; a taller one scrolls the pane, never the chart.
+ * The choice is remembered per viewer and the control is hidden on narrow screens, where the workbench stacks.
+ */
+function PreviewPane({ preview, footprints, status }: { preview: ReactNode; footprints?: PreviewFootprints; status: string }) {
+  const [size, chooseSize] = usePreviewSize();
+  const pane = useRef<HTMLDivElement>(null);
+  const [paneWidth, setPaneWidth] = useState<number>();
+  useEffect(() => {
+    const element = pane.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => setPaneWidth(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const footprint = size === "dashboard" ? footprints?.dashboard : size === "compact" ? footprints?.compact : undefined;
+  const sized = size !== "fill";
+  const clamped = !!footprint && paneWidth !== undefined && footprint.width > paneWidth;
+  const note = !sized ? undefined
+    : !footprint ? "Approximate: the dashboard has not been measured yet, so the pane is shown."
+    : clamped ? `Shown at ${Math.round(paneWidth!)} of ${Math.round(footprint.width)} px wide.`
+    : undefined;
+  return (
+    <>
+      <div className={styles.previewHeading}>
+        <h3>Preview</h3>
+        <div role="group" aria-label="Preview size" className={styles.previewSizeControl}>
+          {PREVIEW_SIZES.map(option => (
+            <GammaButton
+              key={option}
+              size="sm"
+              variant={size === option ? "secondary" : "quiet"}
+              aria-pressed={size === option}
+              onClick={() => chooseSize(option)}
+            >
+              {previewSizeLabels[option]}
+            </GammaButton>
+          ))}
+        </div>
+        <span>{status}</span>
+      </div>
+      {note && <p role="status" className={styles.previewNote}>{note}</p>}
+      <div ref={pane} className={styles.previewCanvas} data-preview-size={size}>
+        {footprint ? (
+          <div
+            className={styles.previewSized}
+            style={{ "--preview-width": `${footprint.width}px`, "--preview-height": `${footprint.height}px` } as CSSProperties}
+          >
+            {preview}
+          </div>
+        ) : preview}
+      </div>
+    </>
   );
 }

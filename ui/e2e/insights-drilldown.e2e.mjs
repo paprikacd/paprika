@@ -132,10 +132,10 @@ try {
     await page.getByLabel("Service", { exact: true }).fill('worker"quoted')
     await page.waitForTimeout(150)
     assert.equal(requests.length, before, "Typing a draft variable must not issue provider queries")
-    await page.getByRole("button", { name: "Apply values", exact: true }).click()
+    await page.getByRole("button", { name: "Update view", exact: true }).click()
     await page.waitForTimeout(250)
     assert.ok(requests.some(item => item.query === 'up{service="worker\\"quoted"}'))
-    // Apply values is a Back step: one Back restores the drilldown's own value, a second reaches the source dashboard.
+    // Update view is a Back step: one Back restores the drilldown's own value, a second reaches the source dashboard.
     await page.goBack({ waitUntil: "networkidle" })
     await page.getByRole("heading", { name: "Service detail", exact: true }).waitFor()
     assert.equal(await page.getByLabel("Service", { exact: true }).inputValue(), "checkout-api")

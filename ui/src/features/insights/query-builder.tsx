@@ -466,7 +466,7 @@ function GuidedBuilder({
           disabled={!generated}
           onClick={() => onChange(generated)}
         >
-          <ArrowDown size={13} /> {compact ? "Apply" : "Use generated query"}
+          <ArrowDown size={13} /> {compact ? "Use" : "Use generated query"}
         </GammaButton>
       </div>
     </div>

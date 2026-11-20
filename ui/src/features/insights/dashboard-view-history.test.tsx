@@ -121,7 +121,7 @@ describe("dashboard view history characterisation", () => {
     record("load shared link")
 
     fireEvent.change(screen.getByLabelText("Service"), { target: { value: "checkout" } })
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }))
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }))
     record("apply text variable")
 
     fireEvent.click(screen.getByRole("combobox", { name: "env" }))
@@ -269,11 +269,11 @@ describe("dashboard view history characterisation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
     fireEvent.click(screen.getByRole("button", { name: "Add variable" }))
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }))
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     record("declare a variable")
 
     fireEvent.change(screen.getByLabelText("variable_1"), { target: { value: "active value" } })
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }))
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }))
     record("apply a variable value")
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }))
@@ -317,7 +317,7 @@ describe("dashboard view history characterisation", () => {
     expect(normalise(String(writeText.mock.calls.at(-1)?.[0]))).toBe(`${location.origin}/dashboard/insights/?dashboard=target&vars=%7B%22env%22%3A%22prod%22%2C%22service%22%3A%22default%22%7D&example=1`)
 
     fireEvent.change(screen.getByLabelText("Service"), { target: { value: "checkout" } })
-    fireEvent.click(screen.getByRole("button", { name: "Apply values" }))
+    fireEvent.click(screen.getByRole("button", { name: "Update view" }))
     record("example apply text variable")
 
     fireEvent.click(screen.getByRole("combobox", { name: "env" }))
@@ -336,7 +336,7 @@ describe("dashboard view history characterisation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
     fireEvent.click(await screen.findByRole("button", { name: "Remove variable 1" }))
-    fireEvent.click(screen.getByRole("button", { name: "Apply variables" }))
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     await settle()
     record("example remove a declared variable")
 
@@ -347,7 +347,7 @@ describe("dashboard view history characterisation", () => {
     const next = JSON.parse(code.value) as Dashboard
     delete next.variables
     fireEvent.change(code, { target: { value: JSON.stringify(next) } })
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }))
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }))
     await settle()
     record("example document removes every variable")
 

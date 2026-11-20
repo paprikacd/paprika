@@ -346,21 +346,21 @@ async function tooltipAuthoring(width) {
     const json = JSON.parse(await text.inputValue())
     assert.deepEqual(json.widgets[1].options.tooltipView, initial)
     json.widgets[1].options.tooltipView = { type: "timeseries", height: 120, showGrid: true, showAxis: true }
-    await text.fill(JSON.stringify(json, null, 2)); await source.getByRole("button", { name: "Apply to canvas", exact: true }).click()
+    await text.fill(JSON.stringify(json, null, 2)); await source.getByRole("button", { name: "Replace dashboard draft", exact: true }).click()
     await source.waitFor({ state: "hidden" })
     await activateDashboardAction(page, "Code")
     await source.getByRole("button", { name: "YAML", exact: true }).click()
     const yaml = await text.inputValue(); assert.match(yaml, /tooltipView:/)
-    await text.fill(yaml.replace("height: 120", "height: 200")); await source.getByRole("button", { name: "Apply to canvas", exact: true }).click()
+    await text.fill(yaml.replace("height: 120", "height: 200")); await source.getByRole("button", { name: "Replace dashboard draft", exact: true }).click()
     await source.waitFor({ state: "hidden" }); await save(page)
     assert.equal(documents.get(dashboard.id).widgets[1].options.tooltipView.height, 200)
     const aiDocument = structuredClone(documents.get(dashboard.id)); aiDocument.widgets[1].options.tooltipView.height = 160
     await activateDashboardAction(page, "Build with AI")
     const ai = page.getByRole("region", { name: "Build with AI", exact: true })
-    assert.equal(await ai.getByRole("button", { name: "Apply to canvas", exact: true }).isDisabled(), true)
+    assert.equal(await ai.getByRole("button", { name: "Replace dashboard draft", exact: true }).isDisabled(), true)
     await ai.getByRole("textbox", { name: "AI-generated definition", exact: true }).fill(toOpenUI(aiDocument))
     await ai.getByRole("button", { name: "Review definition", exact: true }).click()
-    await ai.getByRole("button", { name: "Apply to canvas", exact: true }).click()
+    await ai.getByRole("button", { name: "Replace dashboard draft", exact: true }).click()
     if (await ai.isVisible()) await ai.getByRole("button", { name: "Close AI builder", exact: true }).click()
     await save(page); await page.reload({ waitUntil: "networkidle" })
     assert.deepEqual(documents.get(dashboard.id).widgets[1].options.tooltipView, { type: "timeseries", height: 160, showGrid: true, showAxis: true })
@@ -554,13 +554,22 @@ async function keyboardShortcuts(width) {
     await notice.getByRole("button", { name: "Undo remove Request traffic (keys)", exact: true }).click()
     await page.getByRole("button", { name: "Edit Request traffic (keys)", exact: true }).waitFor()
 
+    // Apply and save: one shortcut moves the chart draft into the dashboard and saves it, ending in view mode.
+    const putsApplySave = puts()
+    const applySaveChart = await widgetEditor(page, "Request traffic (keys)")
+    await applySaveChart.getByRole("textbox", { name: /^Title$/ }).fill("Request traffic (applied)")
+    await page.keyboard.press(`${mod}+Shift+s`)
+    await page.getByText("Dashboard saved.", { exact: true }).waitFor()
+    assert.equal(puts(), putsApplySave + 1, "Mod+Shift+S applies and saves with one PUT")
+    await page.getByText("Request traffic (applied)", { exact: true }).first().waitFor()
+
     await page.keyboard.press("?")
     const list = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true })
     await list.waitFor()
     await page.keyboard.press("Escape")
     await list.waitFor({ state: "detached" })
 
-    await page.getByRole("button", { name: "Preview", exact: true }).click()
+    // Apply and save already left edit mode, so the view is reached without Preview.
     await page.getByRole("heading", { name: "Keyboard saved overview", exact: true }).waitFor()
     const putsView = puts()
     await page.keyboard.press(`${mod}+s`)
@@ -569,17 +578,68 @@ async function keyboardShortcuts(width) {
     return { putsBefore }
   })
 }
+// The workbench preview draws the tile at its staged footprint. The canvas measures its own width before the editor opens,
+// so the expected box is computed from the grid: 12 columns, 16px gutters and a 74px row pitch with a 16px tail.
+async function previewFootprint(width) {
+  await check("preview size box matches the staged footprint and grows with Height", width, async ({ page }) => {
+    const canvasWidth = await page.getByTestId("dashboard-canvas").evaluate(element => element.clientWidth)
+    const columnWidth = (canvasWidth - 11 * 16) / 12
+    const footprintWidth = columns => columns * columnWidth + (columns - 1) * 16
+    const footprintHeight = rows => rows * 74 - 16
+    const panel = await widgetEditor(page, "Request traffic")
+    await panel.getByRole("group", { name: "Preview size", exact: true }).getByRole("button", { name: "Dashboard size", exact: true }).click()
+    const sized = () => page.evaluate(() => {
+      const pane = document.querySelector('section[aria-label="Chart preview"]')
+      const element = [...(pane?.querySelectorAll("div") ?? [])].find(item => item.style.getPropertyValue("--preview-width"))
+      if (!element) return null
+      const box = element.getBoundingClientRect()
+      return { width: box.width, height: box.height }
+    })
+    // The fixture stages Request traffic at 8 columns by 5 rows.
+    await panel.getByRole("tab", { name: "Layout", exact: true }).click()
+    let box = await sized()
+    assert.ok(box, "Dashboard size renders the tile in a footprint box")
+    assert.ok(Math.abs(box.width - footprintWidth(8)) <= 1, `width ${box.width} is the 8-column footprint ${footprintWidth(8)}`)
+    assert.ok(Math.abs(box.height - footprintHeight(5)) <= 1, `height ${box.height} is the 5-row footprint ${footprintHeight(5)}`)
+    await selectGammaOption(page, panel.getByRole("combobox", { name: "Height", exact: true }), "6 rows")
+    for (let attempt = 0; attempt < 50 && Math.abs((box = await sized()).height - footprintHeight(6)) > 1; attempt++) await page.waitForTimeout(100)
+    assert.ok(Math.abs(box.height - footprintHeight(6)) <= 1, `Height 6 gives ${box.height}, expected ${footprintHeight(6)}`)
+    return { canvasWidth: Math.round(canvasWidth), width: Math.round(box.width), height: Math.round(box.height) }
+  })
+}
+// A phone-sized workbench stacks: the size control is hidden, the header save is hidden, and the menu keeps the save.
+async function narrowWorkbench(width) {
+  await check("narrow workbench hides the size control and keeps Apply and save in Chart actions", width, async ({ page, calls }) => {
+    const puts = () => calls.filter(call => call.method === "PUT").length
+    const panel = await widgetEditor(page, "Request traffic")
+    await panel.getByRole("textbox", { name: /^Title$/ }).fill("Narrow saved")
+    assert.equal(await panel.getByRole("group", { name: "Preview size", exact: true }).isVisible(), false, "the size control is hidden")
+    assert.equal(await panel.getByRole("button", { name: "Apply and save", exact: true }).isVisible(), false, "the header Apply and save is hidden")
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    assert.ok(overflow <= 0, `no horizontal page overflow at ${width}px (got ${overflow})`)
+    await panel.getByRole("button", { name: "Chart actions", exact: true }).click()
+    const before = puts()
+    await page.getByRole("menuitem", { name: "Apply and save dashboard", exact: true }).click()
+    await page.getByText("Dashboard saved.", { exact: true }).waitFor()
+    assert.equal(puts(), before + 1, "the menu item saves once")
+  })
+}
 try {
   await mkdir(output, { recursive: true })
   if (keyboardOnly) {
     // CI runs only the keyboard checks in their own step, so a regression in them does not wait for the full smoke list.
+    // The preview footprint and the narrow workbench ride along: they are the other checks CI runs from this script.
     await keyboardShortcuts(1512)
+    await previewFootprint(1512)
+    await narrowWorkbench(390)
     for (const width of [1512, 390]) await shortcutListLayout(width)
   } else {
     for (const width of [1512, 390]) await surfaceAudit(width)
     if (!baseline) {
       for (const width of [1512, 390]) { await queryAudit(width); await providerAudit(width); await tooltipAuthoring(width); await tooltipInteraction(width) }
       await keyboardShortcuts(1512)
+      await previewFootprint(1512)
+      await narrowWorkbench(390)
       for (const width of [1512, 390]) await shortcutListLayout(width)
       await tooltipBounds()
     }

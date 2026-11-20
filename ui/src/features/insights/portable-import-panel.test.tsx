@@ -367,7 +367,7 @@ describe("reviewed import decisions", () => {
     expect(within(impact).getByText("Saved dashboard")).toBeInTheDocument();
     expect(within(impact).getByText("On-call overview")).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", { name: "Apply import choices" }),
+      screen.getByRole("button", { name: "Import with these choices" }),
     );
     await waitFor(() => expect(onImportBundle).toHaveBeenCalledOnce());
     expect(onImportBundle.mock.calls[0][0]).toMatchObject({
@@ -395,7 +395,7 @@ describe("reviewed import decisions", () => {
       screen.queryByLabelText("Saved query review"),
     ).not.toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", { name: "Apply import choices" }),
+      screen.getByRole("button", { name: "Import with these choices" }),
     );
     await waitFor(() => expect(onImportBundle).toHaveBeenCalledOnce());
     expect(onImportBundle.mock.calls[0][0]).toMatchObject({
@@ -459,7 +459,7 @@ describe("reviewed import decisions", () => {
       "data source and kind cannot be replaced",
     );
     expect(
-      screen.getByRole("button", { name: "Apply import choices" }),
+      screen.getByRole("button", { name: "Import with these choices" }),
     ).toBeDisabled();
   });
 
@@ -483,7 +483,7 @@ describe("reviewed import decisions", () => {
     choose("Import dashboard Imported dashboard", "Replace existing");
     choose("Import query Service availability", "Replace existing");
     fireEvent.click(
-      screen.getByRole("button", { name: "Apply import choices" }),
+      screen.getByRole("button", { name: "Import with these choices" }),
     );
     await screen.findByText("Dashboard changed after review");
     fireEvent.click(screen.getByRole("button", { name: "Refresh comparison" }));
@@ -501,7 +501,7 @@ describe("reviewed import decisions", () => {
     ).toHaveTextContent("Create a copy");
     choose("Import query Service availability", "Replace existing");
     fireEvent.click(
-      screen.getByRole("button", { name: "Apply import choices" }),
+      screen.getByRole("button", { name: "Import with these choices" }),
     );
     await waitFor(() => expect(onImport).toHaveBeenCalledTimes(2));
     expect(onImport.mock.calls[1][0].sessionId).toBe(
@@ -628,7 +628,7 @@ describe("reviewed import decisions", () => {
     connect();
     choose("Import dashboard Imported dashboard", "Replace existing");
     fireEvent.click(
-      screen.getByRole("button", { name: "Apply import choices" }),
+      screen.getByRole("button", { name: "Import with these choices" }),
     );
     await screen.findByText(/Dashboard copy destinations are fixed/);
     fireEvent.click(

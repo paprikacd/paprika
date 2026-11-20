@@ -59,7 +59,7 @@ describe("dashboard source editor", () => {
           .value,
       ),
     ).toEqual(next);
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(onApply).toHaveBeenCalledWith(next);
   });
 
@@ -75,7 +75,7 @@ describe("dashboard source editor", () => {
     fireEvent.change(screen.getByLabelText("Dashboard source"), {
       target: { value: 'title: &title "x"\ndescription: *title' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
   });
@@ -94,14 +94,14 @@ describe("dashboard source editor", () => {
       <DocumentEditor dashboard={next} onApply={onApply} onClose={vi.fn()} />,
     );
     expect(
-      screen.getByRole("button", { name: "Apply to canvas" }),
+      screen.getByRole("button", { name: "Replace dashboard draft" }),
     ).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Load latest canvas" }));
     expect(screen.getByLabelText("Dashboard source")).toHaveValue(
       serializeDashboard(next, "yaml"),
     );
     expect(
-      screen.getByRole("button", { name: "Apply to canvas" }),
+      screen.getByRole("button", { name: "Replace dashboard draft" }),
     ).toBeEnabled();
   });
 
@@ -238,7 +238,7 @@ describe("dashboard source editor", () => {
         ),
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(
       screen.getByRole("heading", { name: "Review dashboard import" }),
     ).toBeInTheDocument();
@@ -280,7 +280,7 @@ describe("dashboard source editor", () => {
     fireEvent.change(screen.getByLabelText("Dashboard source"), {
       target: { value: source },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "references saved query “missing-query”, which is missing from the bundle",
     );
@@ -413,7 +413,7 @@ describe("dashboard source checks", () => {
     const onApply = vi.fn();
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Check" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(onApply).toHaveBeenCalledWith(dashboard);
   });
 
@@ -434,7 +434,7 @@ describe("dashboard source checks", () => {
     const onApply = vi.fn();
     const checkDocument = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.save));
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(await screen.findByRole("region", { name: "Dashboard checks" })).toBeInTheDocument();
     expect(checkDocument).toHaveBeenCalledTimes(1);
     expect(onApply).not.toHaveBeenCalled();
@@ -444,7 +444,7 @@ describe("dashboard source checks", () => {
     const onApply = vi.fn();
     const checkDocument = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.checkedSave.checks));
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     await waitFor(() => expect(onApply).toHaveBeenCalledWith(dashboard));
     // Warnings stay visible on the draft after it is applied.
     expect(within(screen.getByRole("region", { name: "Dashboard checks" })).getByText("1 warning")).toBeInTheDocument();
@@ -456,7 +456,7 @@ describe("dashboard source checks", () => {
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Could not check this dashboard: offline");
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     await waitFor(() => expect(onApply).toHaveBeenCalledWith(dashboard));
   });
 
@@ -490,7 +490,7 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
     const onApply = vi.fn();
     const checkDocument = vi.fn().mockResolvedValue(parseCheckReport(checkGolden.save));
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2 errors. Fix them before applying."));
     // Focus moves in a passive effect after the refusal renders, so wait for it rather than racing it.
     await waitFor(() => expect(screen.getByRole("heading", { name: "2 errors" })).toHaveFocus());
@@ -515,7 +515,7 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
       <DocumentEditor dashboard={current} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />
     );
     const { rerender } = render(view(dashboard));
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     rerender(view({ ...dashboard, title: "Changed on canvas" }));
     expect(screen.getByText(/The canvas changed while this editor was open/)).toBeInTheDocument();
     await act(async () => { resolve(new CheckReport({})); });
@@ -528,11 +528,11 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
       const onApply = vi.fn();
       const checkDocument = vi.fn(() => new Promise<CheckReport>(() => {}));
       render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
-      fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
-      expect(screen.getByRole("button", { name: "Apply to canvas" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
+      expect(screen.getByRole("button", { name: "Replace dashboard draft" })).toBeDisabled();
       await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
       expect(screen.getByRole("status")).toHaveTextContent("The check did not finish within 10 seconds.");
-      expect(screen.getByRole("button", { name: "Apply to canvas" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Replace dashboard draft" })).toBeEnabled();
       expect(onApply).toHaveBeenCalledWith(dashboard);
     } finally {
       vi.useRealTimers();
@@ -545,7 +545,7 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
     await screen.findByRole("region", { name: "Dashboard checks" });
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     await waitFor(() => expect(onApply).toHaveBeenCalledWith(dashboard));
     expect(checkDocument).toHaveBeenCalledTimes(1);
   });
@@ -556,7 +556,7 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
     const onApply = vi.fn();
     render(<DocumentEditor dashboard={dashboard} onApply={onApply} onClose={vi.fn()} checkDocument={checkDocument} />);
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply to canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }));
     expect(checkDocument).toHaveBeenCalledTimes(1);
     await act(async () => { resolve(new CheckReport({})); });
     await waitFor(() => expect(onApply).toHaveBeenCalledWith(dashboard));
@@ -571,5 +571,30 @@ describe("dashboard source checks: refusal, staleness and timing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check" }));
     fireEvent.click(await screen.findByRole("button", { name: "Show widget Widget a" }));
     expect(onFocusWidget).toHaveBeenCalledWith("a");
+  });
+
+  it("shows the widget changes that replacing the draft would make", () => {
+    const canvas = {
+      ...dashboard,
+      widgets: [
+        { id: "keep", title: "Keep", type: "stat", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 0, w: 4, h: 2 } },
+        { id: "drop", title: "Drop", type: "stat", providerId: "metrics", query: "up", unit: "", layout: { x: 4, y: 0, w: 4, h: 2 } },
+      ],
+    } as Dashboard;
+    render(<DocumentEditor dashboard={canvas} onApply={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText("Against the canvas: 0 added · 0 changed · 0 removed")).toBeInTheDocument();
+    const next = {
+      ...canvas,
+      widgets: [
+        { ...canvas.widgets[0], title: "Renamed" },
+        { id: "new", title: "New", type: "stat", providerId: "metrics", query: "up", unit: "", layout: { x: 0, y: 2, w: 4, h: 2 } },
+      ],
+    } as Dashboard;
+    fireEvent.change(screen.getByLabelText("Dashboard source"), {
+      target: { value: serializeDashboard(next, "yaml") },
+    });
+    expect(screen.getByText("Against the canvas: 1 added · 1 changed · 1 removed")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Dashboard source"), { target: { value: "title: [" } });
+    expect(screen.queryByText(/Against the canvas/)).not.toBeInTheDocument();
   });
 });

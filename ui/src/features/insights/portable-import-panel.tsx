@@ -1058,7 +1058,7 @@ export function PortableImportPanel({
                 ? "Importing…"
                 : allCopies
                   ? `Import ${pending.length} as new`
-                  : "Apply import choices"}
+                  : "Import with these choices"}
             </GammaButton>
             {(onReviewBundle || onRefreshQueries) && (
               <GammaButton

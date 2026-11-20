@@ -65,7 +65,7 @@ try {
       assert.equal(await chart.getByRole("group", { name: "Previous period overlay" }).count(), 0)
       await chart.getByRole("button", { name: /Compare window for/ }).click()
       await end.fill(String(Math.floor(Number(await end.getAttribute("max")) / 2)))
-      await dialog.getByRole("button", { name: "Apply to dashboard" }).click()
+      await dialog.getByRole("button", { name: "Use for all charts" }).click()
       const url = new URL(page.url())
       assert.ok(url.searchParams.has("from") && url.searchParams.has("to"), "The selected range must be shareable")
       assert.equal(JSON.parse(url.searchParams.get("vars")).service, "payments", "Shared service filter must survive time selection")

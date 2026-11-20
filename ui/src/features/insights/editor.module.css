@@ -42,6 +42,13 @@
 .previewHeading h3 { margin: 0; color: var(--gamma-ink); font-size: 12px; font-weight: 600; }
 .previewHeading > span { font-size: 11px; }
 .previewCanvas { flex: 1; min-height: 0; min-width: 0; }
+.previewSizeControl { display: flex; flex-wrap: wrap; gap: 4px; margin-inline: auto; }
+.previewNote { margin: 4px 0 0; font-size: 11px; color: var(--gamma-muted); }
+/* A sized preview draws the tile at its dashboard footprint, centred. A footprint wider than the pane is clamped by max-width,
+   and a taller one scrolls the pane. The control and the sizing are hidden on narrow screens, where the workbench stacks. */
+.previewCanvas[data-preview-size="dashboard"], .previewCanvas[data-preview-size="compact"] { overflow: auto; }
+.previewSized { display: flex; flex-direction: column; width: var(--preview-width); max-width: 100%; height: var(--preview-height); margin: 0 auto; }
+.previewSized > * { flex: 1; min-height: 0; }
 .queryWorkspace { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 24px 24px; border-top: 1px solid var(--gamma-border); background: var(--gamma-surface); }
 .queryWorkspace [role="tabpanel"] > .stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .queryWorkspace [role="tabpanel"] > .stack > :not(label) { grid-column: 1 / -1; }
@@ -51,6 +58,9 @@
 .chartSettings .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .focusSaveHint { color: var(--gamma-muted); font-size: 11px; line-height: 1.6; border-top: 1px solid var(--gamma-border); padding-top: 20px; margin: 24px 0 0; }
 @media (max-width: 950px) {
+  .previewSizeControl, .previewNote { display: none; }
+  .previewSized { width: auto; height: 100%; }
+  .previewCanvas[data-preview-size] { overflow: visible; }
   .editor.focusEditor { height: auto; min-height: 100dvh; }
   .focusHeader { position: sticky; top: 0; z-index: 6; padding: 12px 16px; gap: 12px; flex-wrap: wrap; }
   .focusHeader > button span { display: none; }
@@ -600,4 +610,8 @@
   padding: 0;
   margin: 0;
   min-width: 0;
+}
+
+@media (max-width: 520px) {
+  .applySaveAction { display: none; }
 }

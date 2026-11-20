@@ -55,7 +55,7 @@ try {
       assert.equal(await comparison.locator("time").first().getAttribute("datetime"), new Date(valid[0].time).toISOString())
       assert.equal(await comparison.locator("time").last().getAttribute("datetime"), new Date(valid.at(-1).time).toISOString())
       assert.equal(await comparison.locator('[data-label="Change"] span').getAttribute("aria-label"), `Exact change ${valid.at(-1).value - valid[0].value} pp`)
-      assert.equal(await dialog.getByRole("button", { name: /previous period|apply to dashboard/i }).count(), 0)
+      assert.equal(await dialog.getByRole("button", { name: /previous period|use for all charts/i }).count(), 0)
       await page.screenshot({ path: resolve(output, `comparison-${theme}-${width}.png`), animations: "disabled" })
       await dialog.getByRole("button", { name: "Zoom chart to window" }).click()
       assert.ok(await chart.locator("circle[aria-label]").count() < originalPoints, "Zoom shows the selected subset")
