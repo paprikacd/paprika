@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -42,10 +43,12 @@ import type {
   QueryResult,
   Widget,
 } from "./schema";
-import type { DrilldownContext } from "./drilldown";
+import type { DrilldownContext, VariableValues } from "./drilldown";
+import { AppliedFilterProvider, appliedFilterFor, type SelectionScope } from "./selection-state";
 import {
   contextKey,
   drilldownContextReason,
+  selectionContextReason,
   widgetContexts,
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
@@ -231,6 +234,7 @@ const Tile = memo(function Tile({
   onNudge,
   memory,
   memoryKey,
+  selectionScope,
 }: {
   widget: Widget;
   active: boolean;
@@ -254,6 +258,8 @@ const Tile = memo(function Tile({
   onNudge?: (id: string, key: string, resize: boolean) => void;
   memory: Map<string, WidgetMemory>;
   memoryKey: string;
+  /** The variable values a selection is compared against, so a mark can show that it is the applied filter. */
+  selectionScope?: SelectionScope;
 }) {
   const recordCellStyles = widget.config?.cellStyles;
   const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
@@ -411,17 +417,79 @@ const Tile = memo(function Tile({
     needsContext &&
     contexts.length > 1 &&
     !["heatmap", "table", "traces", "plugin"].includes(widget.type);
-  // These plugins call the host only for a deliberate click or keyboard activation.
-  // Other renderers can report focus/hover context and must not change filters.
+  // Only a widget with selectionBindings whose renderer activates on a deliberate click or keyboard press can change
+  // dashboard filters. Other renderers report focus, hover and series picks as drilldown context only.
   const selectionEnabled = supportsDashboardSelection(widget) &&
     !!widget.selectionBindings?.length && !!onSelection && !editing;
-  const selectContext = useCallback(
+  // Built-in renderers report a deliberate activation through onActivate. The allowlisted plugins still
+  // activate through onContextChange, so their wiring is unchanged until they migrate.
+  const activatesThroughOnActivate = widget.type !== "plugin";
+  // Focus, hover and series picks set only the drilldown link context.
+  const selectContextOnly = useCallback(
+    (next: DrilldownContext) => setSelection({ scope: contextScope, context: next, result: data }),
+    [contextScope, data],
+  );
+  const activateContext = useCallback(
     (next: DrilldownContext) => {
-      setSelection({ scope: contextScope, context: next, result: data });
+      selectContextOnly(next);
       if (selectionEnabled) onSelection?.(widget, next);
     },
-    [contextScope, data, widget, onSelection, selectionEnabled],
+    [selectContextOnly, widget, onSelection, selectionEnabled],
   );
+  const contextHandler = activatesThroughOnActivate ? selectContextOnly : activateContext;
+  // A selection can re-render its own source and unmount the element it activated (a table that filters by the row it
+  // shows drops that row). The pending target waits for the new variables to settle: if it is then gone, focus would
+  // fall to the page, so the tile takes focus and says so. A target that stays keeps its focus untouched.
+  const pendingFocus = useRef<{ target: Element; scope: SelectionScope | undefined } | null>(null);
+  const [refocused, setRefocused] = useState(false);
+  // The tile's tab stop while it holds a fallback focus; restored when focus leaves the tile itself.
+  const fallbackTabIndex = useRef<{ value: string | null } | null>(null);
+  const activateFromTile = useCallback((next: DrilldownContext) => {
+    // A context the bindings cannot read (a row without the bound label) sets only the drilldown context: it must not
+    // fail the whole selection with an error.
+    if (selectionContextReason(widget.selectionBindings, next)) {
+      selectContextOnly(next);
+      return;
+    }
+    const active = document.activeElement;
+    // Re-activating the applied mark changes no variables, so nothing re-renders and there is nothing to wait for.
+    const alreadyApplied = appliedFilterFor(selectionScope, widget.selectionBindings)(next);
+    pendingFocus.current = !alreadyApplied && active && element.current?.contains(active) ? { target: active, scope: selectionScope } : null;
+    setRefocused(false);
+    activateContext(next);
+  }, [activateContext, selectContextOnly, selectionScope, widget.selectionBindings]);
+  // Focus that moves to another control ends the wait: the user has taken focus elsewhere, so it must not come back.
+  const releaseFocusTarget = useCallback((event: FocusEvent<HTMLElement>) => {
+    const tile = event.currentTarget;
+    // The fallback tab stop ends with the fallback focus, so a later click on blank tile area does not focus the tile.
+    if (event.target === tile && fallbackTabIndex.current) {
+      if (fallbackTabIndex.current.value === null) tile.removeAttribute("tabindex");
+      else tile.setAttribute("tabindex", fallbackTabIndex.current.value);
+      fallbackTabIndex.current = null;
+    }
+    const next = event.relatedTarget;
+    if (next instanceof Node && !tile.contains(next)) pendingFocus.current = null;
+  }, []);
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current;
+    if (!pending) return;
+    if (!pending.target.isConnected) {
+      pendingFocus.current = null;
+      const tile = element.current;
+      // Only a lost focus moves to the tile. If the user moved focus to another control while the selection loaded,
+      // including another control in this tile, their focus stays where it is.
+      const active = document.activeElement;
+      const focusLost = !active || active === document.body;
+      if (!tile || !(focusLost || active === tile)) return;
+      fallbackTabIndex.current = { value: tile.getAttribute("tabindex") };
+      tile.tabIndex = -1;
+      tile.focus();
+      setRefocused(true);
+      return;
+    }
+    if (pending.scope !== selectionScope && !loading) pendingFocus.current = null;
+  // A row leaves only when its data or the variables change, so those are the only commits that can move it.
+  }, [data, loading, selectionScope]);
   // A stable callback keeps the memoised visualization from re-rendering on every tile render in edit mode.
   const editQuery = useCallback(() => onSelect(widget.id), [onSelect, widget.id]);
   // Capture runs before the focused control's own arrow handling (a sparkline or a selector), so Alt+Arrow
@@ -435,8 +503,9 @@ const Tile = memo(function Tile({
     onNudge(widget.id, event.key, event.shiftKey);
   };
   // The visualization is built once and placed inside the stat's comparison scope when it compares.
+  const isApplied = useMemo(() => appliedFilterFor(selectionScope, widget.selectionBindings), [selectionScope, widget.selectionBindings]);
   const visualization = (
-    <WidgetVisualization
+    <AppliedFilterProvider value={isApplied}><WidgetVisualization
       widget={widget}
       naturalHeight={naturalHeight}
       result={savedQueryLoading ? undefined : data}
@@ -449,9 +518,10 @@ const Tile = memo(function Tile({
       onEditQuery={editing ? editQuery : undefined}
       onRetry={error && active && engaged && !savedQueryLoading ? refresh : undefined}
       onContextChange={
-        (onDrilldown && needsContext) || selectionEnabled ? selectContext : undefined
+        (onDrilldown && needsContext) || selectionEnabled ? contextHandler : undefined
       }
-    />
+      onActivate={activatesThroughOnActivate && selectionEnabled ? activateFromTile : undefined}
+    /></AppliedFilterProvider>
   );
   return (
     <article
@@ -459,6 +529,7 @@ const Tile = memo(function Tile({
       tabIndex={onNudge ? 0 : undefined}
       aria-keyshortcuts={onNudge ? LAYOUT_KEYSHORTCUTS : undefined}
       onKeyDownCapture={onNudge ? layoutKey : undefined}
+      onBlur={releaseFocusTarget}
       className={`${styles.tile} ${selected && !focused ? styles.selectedTile : ""}`}
       data-intrinsic-stat={naturalHeight || undefined}
       data-widget-id={widget.id}
@@ -481,6 +552,7 @@ const Tile = memo(function Tile({
       }
     >
       {StatIcon && <span className={styles.statIcon} aria-hidden="true"><StatIcon size={18} /></span>}
+      {refocused && <span className={styles.srOnly} role="status">Dashboard filtered. Focus moved to {widget.title}.</span>}
       <div className={styles.tileHeader}>
         {draggable && (
           <span
@@ -551,7 +623,7 @@ const Tile = memo(function Tile({
             }))}
             onValueChange={(key) => {
               const next = contexts.find((entry) => contextKey(entry) === key);
-              if (next) selectContext(next);
+              if (next) selectContextOnly(next);
             }}
           />
         </div>
@@ -633,6 +705,7 @@ export function DashboardCanvas({
   onTimeRange,
   onModeChange,
   focus,
+  variables,
 }: {
   dashboard: Dashboard;
   active?: boolean;
@@ -654,7 +727,14 @@ export function DashboardCanvas({
   onModeChange?: (mode: CanvasMode) => void;
   /** Compose the editor around the same tile/query owner used on the dashboard. */
   focus?: { widget: Widget; render: (preview: ReactNode) => ReactNode };
+  /** The dashboard's current variable values. A mark whose selection already holds them shows as the applied filter. */
+  variables?: VariableValues;
 }) {
+  // Keyed on the id and variables, not the dashboard object: a layout edit must not re-render every tile.
+  const selectionScope = useMemo<SelectionScope>(
+    () => ({ dashboard: { id: dashboard.id, variables: dashboard.variables }, variables: variables ?? {} }),
+    [dashboard.id, dashboard.variables, variables],
+  );
   const library = useSavedQueryLibrary();
   // Per canvas, keyed by dashboard and widget id. A tile that remounts (a breakpoint swap, a return to the view) reads
   // its last outcome and draw-in record from here, so it neither shows a placeholder nor replays the draw-in.
@@ -802,6 +882,7 @@ export function DashboardCanvas({
                   onNudge={draggable ? nudge : undefined}
                   memory={memory}
                   memoryKey={`${dashboard.id}:${widget.id}`}
+                  selectionScope={selectionScope}
                 />
               </div>
             ));

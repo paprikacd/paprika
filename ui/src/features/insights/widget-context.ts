@@ -1,4 +1,4 @@
-import type { Drilldown, QueryResult, Widget } from "./schema";
+import type { Drilldown, DrilldownBinding, QueryResult, Widget } from "./schema";
 import type { DrilldownContext } from "./drilldown";
 
 type Series = NonNullable<QueryResult["series"]>[number];
@@ -75,7 +75,7 @@ export function widgetContexts(widget: Widget, result?: QueryResult) {
 }
 
 export function drilldownContextReason(
-  link: Drilldown,
+  link: Pick<Drilldown, "bindings">,
   context: DrilldownContext,
 ): string | undefined {
   for (const binding of link.bindings ?? []) {
@@ -99,4 +99,15 @@ export function drilldownContextReason(
     )
       return "Selected signal has no finite value";
   }
+}
+
+/**
+ * Whether a mark's context can set a widget's selection bindings, with the same rules a selection applies. The renderers
+ * disable a mark with this reason instead of letting activation fail.
+ */
+export function selectionContextReason(
+  bindings: readonly DrilldownBinding[] | undefined,
+  context: DrilldownContext,
+): string | undefined {
+  return bindings?.length ? drilldownContextReason({ bindings: [...bindings] }, context) : undefined;
 }

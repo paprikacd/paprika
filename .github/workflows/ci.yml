@@ -496,6 +496,7 @@ jobs:
           e2e/insights-tooltip-structure.e2e.mjs
           e2e/insights-tooltip-motion.e2e.mjs
           e2e/insights-hex-contour.e2e.mjs
+          e2e/insights-builtin-selection.e2e.mjs
           e2e/insights-phone-shell.e2e.mjs
         working-directory: ui
         env:

@@ -767,6 +767,52 @@
 }
 .chartFooter[data-timeseries-footer] .legendName { grid-column: 2; max-width: 160px; }
 .chartFooter[data-timeseries-footer] .legendValue { grid-column: 2; white-space: nowrap; text-align: left; font-size: 11px; }
+/* A legend entry that filters the dashboard is a button inside its listitem, so the list keeps its semantics. */
+.legendButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 2px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .legendButton:hover:not([aria-disabled="true"]) .legendName,
+  .legendButton:hover:not([aria-disabled="true"]) .legendValue { text-decoration: underline; text-underline-offset: 2px; }
+}
+.legendButton[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
+/* The applied filter: the entry whose selection the dashboard's variables already hold. */
+.legendButton[data-filter-active] {
+  background: var(--gamma-accent-soft, #f9ede6);
+  box-shadow: inset 2px 0 var(--gamma-accent, #bd512d);
+}
+@media (forced-colors: active) {
+  .legendButton[data-filter-active] { outline: 1px solid Highlight; outline-offset: -1px; }
+}
+.legendButton:focus-visible { outline: 2px solid var(--gamma-focus); outline-offset: 1px; }
+@media (pointer: coarse) {
+  .legendButton { min-height: 32px; }
+  /* The bar footer is short: three touch rows at 32px would scroll it, so its rows keep a 28px target. */
+  .barLegend .legendButton { min-height: 28px; }
+}
+.legendAction { display: flex; min-width: 0; }
+.chartFooter[data-timeseries-footer] .legendButton {
+  display: grid;
+  grid-template-columns: 14px max-content;
+  column-gap: 6px;
+  row-gap: 0;
+  align-items: center;
+}
+.chartFooter[data-timeseries-footer] .legendItem.legendAction { display: flex; }
 .chartActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 12px; min-height: 28px; }
 .chartFooter[data-timeseries-footer] > :only-child { margin-left: 0; }
 .chartFooter[data-timeseries-footer] > .notice,

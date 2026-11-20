@@ -8,6 +8,10 @@ const selectablePlugins = new Set([
   "records-line", "records-bar", "pie", "status-history", "geo-heatmap", "connection-map",
 ])
 
+// Built-in tables, heatmaps and traces activate only through onActivate, so focus never changes filters.
+const selectableBuiltins = new Set<Widget["type"]>(["timeseries", "bar", "table", "heatmap", "traces"]);
+
 export function supportsDashboardSelection(widget: Pick<Widget, "type" | "pluginId">) {
-  return widget.type === "plugin" && selectablePlugins.has(widget.pluginId ?? "")
+  if (widget.type !== "plugin") return selectableBuiltins.has(widget.type);
+  return selectablePlugins.has(widget.pluginId ?? "");
 }

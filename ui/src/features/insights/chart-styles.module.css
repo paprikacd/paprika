@@ -54,6 +54,11 @@
 .cell[data-status-stroke="critical"] {
   box-shadow: var(--status-inset);
 }
+/* The applied filter: the cell whose selection the dashboard's variables already hold. Focus and pressed rings replace it. */
+.cell[data-filter-active] {
+  outline: 2px solid var(--gamma-accent, #bd512d);
+  outline-offset: -3px;
+}
 .cell[aria-pressed="true"] {
   outline: 2px solid var(--gamma-ink, #27332e);
   outline-offset: -3px;

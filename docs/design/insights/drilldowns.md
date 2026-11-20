@@ -17,14 +17,13 @@ Library imports allocate all new IDs before rewriting links between imported das
 
 ### Filter this dashboard from a selection
 
-In a record treemap, table, list, matrix, record line/bar chart, or pie chart,
-the **Links** tab can map a selected field to a variable on the current
-dashboard. Add the variable first, then add a selection binding and choose
-its field or label. Clicking a mark or activating it with the keyboard applies
-the filter to other queries; hovering does not. Record values come from the
-selected row, including columns hidden from the table. A missing field stops
-the whole update and displays an error. Other current filters and saved
-defaults are preserved. Existing drilldown links continue to work.
+Timeseries, bar, table, heatmap and trace widgets, and the record treemap, table, list, matrix, record line/bar chart, pie, status-history, geo-heatmap and connection-map plugins, can set dashboard variables from a selection. Add the variable first, then add a selection binding on the widget's **Links** tab and choose its field or label. Activating a mark applies the filter to other queries:
+
+- A table row, trace row, heatmap cell or plugin mark: click it, or press Enter or Space.
+- A bar: click it, or press Enter on it or on its legend entry.
+- A timeseries: click a legend entry or press Enter or Space on it, or use **Filter dashboard by** in its pinned tooltip. Clicking a plot point only pins its tooltip.
+
+Hover and keyboard focus never filter. On the table and trace rows, heatmap cells and timeseries and bar legends, the mark whose selection the dashboard already shows is marked as applied (`data-filter-active` and `aria-current`). Bars in the plot and selectable plugins do not show that state yet. Re-selecting it adds no history step; clear the filter in the variable bar or with Back. Stat widgets cannot select. A binding kept on a stat or an unlisted plugin is retained but stays inactive, and lint warns about it. A missing field stops the whole update and displays an error. Other current filters and saved defaults are preserved. Existing drilldown links continue to work.
 
 The document representation uses the same bounded sources as drilldowns:
 
@@ -35,10 +34,12 @@ selectionBindings:
     value: symbol
 ```
 
-Only supported plugins activate these bindings; other visualizations retain
-their usual drilldown behavior. Selection updates URL view state rather than
-the persisted dashboard definition. Avoid binding a source widget's own query
-to a selection when the user should still see all available choices.
+Selection updates URL view state rather than the persisted dashboard
+definition. Do not bind a widget's own query to the variable it selects:
+selecting one of its marks narrows it to that one choice, and lint warns about
+it. Build filtered panels from an unfiltered overview chart grouped by the same
+label instead, for example a timeseries grouped by `service` with a `service`
+selection binding, driving the other panels that read `{{service}}`.
 
 Dashboards declare up to 20 named string variables. Each variable has a `name`, optional display `label`, optional `defaultValue`, and optional `options` for a dropdown. Names use letters, numbers and underscores, start with a letter or underscore, and are at most 64 characters. Values are at most 1,024 UTF-16 code units. Unset variables remain unset; a query that needs one reports an error before requesting data.
 

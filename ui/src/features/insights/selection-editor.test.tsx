@@ -101,3 +101,15 @@ it("explains and permits removal of inactive bindings without silently discardin
   delete expected.selectionBindings
   expect(onChange).toHaveBeenCalledExactlyOnceWith(expected)
 })
+
+it.each([
+  ["timeseries", "Click or press Enter on a legend entry, or use Filter dashboard in a pinned tooltip, to update the mapped dashboard filters."],
+  ["bar", "Click or press Enter on a bar or legend entry to update the mapped dashboard filters."],
+  ["table", "Click or press Enter on a row to update the mapped dashboard filters."],
+  ["traces", "Click or press Enter on a row to update the mapped dashboard filters."],
+  ["heatmap", "Click or press Enter on a cell to update the mapped dashboard filters."],
+] as const)("%s names the mark a reader activates in its selection help", (type, help) => {
+  const widget = { id: "w", title: "W", type, providerId: "p", query: "q", unit: "", layout: { x: 0, y: 0, w: 6, h: 4 }, selectionBindings: [{ variable: "service", source: "label", value: "service" }] } as Widget
+  render(<SavedQueryLibraryProvider queries={[]} variables={[{ name: "service" }]} values={{}}><SelectionEditor widget={widget} onChange={vi.fn()} /></SavedQueryLibraryProvider>)
+  expect(screen.getByText(new RegExp(`^${help.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`))).toBeInTheDocument()
+})

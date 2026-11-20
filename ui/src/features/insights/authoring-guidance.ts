@@ -21,6 +21,7 @@ export const dashboardCompositionGuidance: readonly string[] = [
   "A variable source reads a metrics or records saved query, because a traces result has no column or series label to supply values.",
   "On a stat, set min and max only together with showStatBar, which requires both. A bar that is switched off may keep bounds it already has; do not remove them to tidy the document.",
   "Avoid widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense.",
+  "selectionBindings activate only on a timeseries, bar, table, heatmap or traces widget, or a selectable plugin; on any other widget they are retained but inactive. Do not let a selecting widget read the variable it sets; drive filtered panels from an unfiltered overview chart grouped by that label.",
   "An slo-summary widget runs the query compiled from its objective config: it takes no queryRef and no options.thresholds, and its query text is editor output that is ignored at run time.",
 ]
 

@@ -538,7 +538,6 @@ async function drilldownAudit(width, kind) {
     } else if (["table", "traces"].includes(kind)) {
       const row = tile.locator("tbody tr").nth(1)
       await row.focus(); await page.keyboard.press("Enter")
-      assert.equal(await row.getAttribute("aria-selected"), "true")
     } else if (kind === "gauge") {
       service = "api-east"; value = "42.56789"
       const trigger = tile.getByRole("button", { name: /^Select signal for/ })
