@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { WidgetEditor } from "./widget-editor";
+import { editorProps } from "./widget-editor.test-utils";
 import { SourceStatusContext, type SourceStatus } from "./source-status";
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge";
 import type { Provider, Widget } from "./schema";
@@ -11,7 +12,7 @@ const providers: Provider[] = [
   { id: "production", name: "Production Prometheus", type: "prometheus", capabilities: ["metrics"] },
 ];
 const timeseries: Widget = { id: "requests", title: "Requests", type: "timeseries", query: "up", providerId: "production", unit: "req/s", layout: { x: 0, y: 0, w: 6, h: 4 } };
-const callbacks = () => ({ onApply: vi.fn(), onClose: vi.fn(), onDuplicate: vi.fn(), onDelete: vi.fn(), onMove: vi.fn() });
+const callbacks = () => editorProps({ widget: timeseries });
 
 function openStyle(widget: Widget) {
   const handlers = callbacks();

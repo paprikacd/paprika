@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DashboardManager } from "./dashboard-library";
+import type { BundleImportResult } from "./bundle-import";
+import type { PortableImportProps } from "./portable-import-panel";
 import { serializeDashboardLibrary } from "./workspace-transfer";
 import type { Dashboard, Provider } from "./schema";
 
@@ -31,119 +33,52 @@ const providers: Provider[] = [
     type: "prometheus",
     capabilities: ["metrics"],
   },
-  {
-    id: "C",
-    name: "Provider C",
-    type: "prometheus",
-    capabilities: ["metrics"],
-  },
 ];
-function setup(
-  onImport: (
-    documents: Dashboard[],
-  ) => Promise<{ added: number; failed: Dashboard[]; errors: string[] }>,
-) {
-  const active = dashboard("active", "B");
-  render(
-    <DashboardManager
-      dashboard={active}
-      dashboards={[active]}
-      providers={providers}
-      busy={false}
-      onApply={vi.fn()}
-      onDuplicate={vi.fn()}
-      onDelete={vi.fn()}
-      onImport={onImport}
-      onClose={vi.fn()}
-    />,
-  );
-}
-function review(documents: Dashboard[]) {
-  fireEvent.change(screen.getByLabelText("Library import source"), {
-    target: { value: serializeDashboardLibrary(documents, "yaml") },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Review import" }));
-}
 
-describe("dashboard library import retries", () => {
-  it("preserves the original mapping on partial retry and does not resubmit successful dashboards", async () => {
-    const onImport = vi
-      .fn<
-        (
-          documents: Dashboard[],
-        ) => Promise<{ added: number; failed: Dashboard[]; errors: string[] }>
-      >()
-      .mockImplementationOnce(async (documents) => ({
-        added: 1,
-        failed: [documents[0]],
-        errors: ["Temporary failure"],
-      }))
-      .mockResolvedValueOnce({ added: 1, failed: [], errors: [] });
-    setup(onImport);
-    review([dashboard("alpha", "A"), dashboard("beta", "B")]);
+describe("dashboard library import forwarding", () => {
+  it("forwards onImportBundle to the import panel and calls it for a reviewed import", async () => {
+    const result: BundleImportResult = {
+      added: 1,
+      totalAdded: 1,
+      failed: [],
+      errors: [],
+      queriesAdded: 0,
+      queriesReused: 0,
+      dashboardsKept: 0,
+      dashboardsReplaced: 0,
+      queriesReplaced: 0,
+      complete: true,
+    };
+    const onImportBundle = vi
+      .fn<PortableImportProps["onImportBundle"] & {}>()
+      .mockResolvedValue(result);
+    const active = dashboard("active", "B");
+    render(
+      <DashboardManager
+        dashboard={active}
+        dashboards={[active]}
+        providers={providers}
+        busy={false}
+        onApply={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onImportBundle={onImportBundle}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Library import source"), {
+      target: {
+        value: serializeDashboardLibrary([dashboard("alpha", "A")], "yaml"),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review import" }));
     fireEvent.click(screen.getByRole("combobox", { name: "Connect A" }));
     fireEvent.click(screen.getByRole("option", { name: "Provider B" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "Connect B" }));
-    fireEvent.click(screen.getByRole("option", { name: "Provider C" }));
-    fireEvent.click(screen.getByRole("button", { name: "Import 2 as new" }));
-    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
-    expect(
-      onImport.mock.calls[0][0].map((item) => [
-        item.id,
-        item.widgets[0].providerId,
-      ]),
-    ).toEqual([
-      ["alpha", "B"],
-      ["beta", "C"],
-    ]);
-    const retry = await screen.findByRole("button", {
-      name: "Import 1 as new",
-    });
-    expect(retry).toBeEnabled();
-    expect(screen.queryByLabelText("Connect B")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("combobox", { name: "Connect A" }),
-    ).toHaveTextContent("Provider B");
-    fireEvent.click(retry);
-    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(2));
-    expect(
-      onImport.mock.calls[1][0].map((item) => [
-        item.id,
-        item.widgets[0].providerId,
-      ]),
-    ).toEqual([["alpha", "B"]]);
-    await waitFor(() =>
-      expect(screen.queryByLabelText("Import review")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByLabelText("Library import source")).toHaveValue("");
-  });
-
-  it("keeps a failed import immediately retryable when the target provider was not an original source", async () => {
-    const onImport = vi
-      .fn<
-        (
-          documents: Dashboard[],
-        ) => Promise<{ added: number; failed: Dashboard[]; errors: string[] }>
-      >()
-      .mockImplementationOnce(async (documents) => ({
-        added: 0,
-        failed: documents,
-        errors: ["Temporary failure"],
-      }))
-      .mockResolvedValueOnce({ added: 1, failed: [], errors: [] });
-    setup(onImport);
-    review([dashboard("alpha", "A")]);
-    fireEvent.click(screen.getByRole("combobox", { name: "Connect A" }));
-    fireEvent.click(screen.getByRole("option", { name: "Provider C" }));
     fireEvent.click(screen.getByRole("button", { name: "Import 1 as new" }));
-    await screen.findByText("Temporary failure");
-    expect(
-      screen.getByRole("combobox", { name: "Connect A" }),
-    ).toHaveTextContent("Provider C");
-    const retry = screen.getByRole("button", { name: "Import 1 as new" });
-    expect(retry).toBeEnabled();
-    fireEvent.click(retry);
-    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(2));
-    expect(onImport.mock.calls[1][0][0].widgets[0].providerId).toBe("C");
+    await waitFor(() => expect(onImportBundle).toHaveBeenCalledOnce());
+    expect(onImportBundle.mock.calls[0][0]).toMatchObject({
+      bundle: { dashboards: [expect.objectContaining({ id: "alpha" })] },
+      providerMapping: { A: "B" },
+    });
   });
 });

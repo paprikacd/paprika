@@ -1,7 +1,7 @@
 import { changeQueryEditor, readQueryEditor } from "./query-code-editor.test-utils";
 import { useState } from "react";
 import { parse as parseYaml } from "yaml";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { WidgetEditor } from "./widget-editor";
 import { SavedQueryLibraryProvider } from "./saved-query-context";
@@ -10,42 +10,7 @@ import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge";
 import { registerSloSummaryPlugin, SLO_DEFAULT_CONFIG } from "./plugins/slo-summary";
 import { compileSloQuery } from "./slo";
 import type { Dashboard, Provider, Widget, SavedQuery } from "./schema";
-
-const widget: Widget = {
-  id: "requests",
-  title: "Requests",
-  type: "timeseries",
-  query: "up",
-  providerId: "production",
-  unit: "",
-  layout: { x: 0, y: 0, w: 6, h: 4 },
-};
-const providers: Provider[] = [
-  {
-    id: "staging",
-    name: "Staging Prometheus",
-    type: "prometheus",
-    capabilities: ["metrics"],
-  },
-  {
-    id: "production",
-    name: "Production Prometheus",
-    type: "prometheus",
-    capabilities: ["metrics"],
-  },
-  { id: "tempo", name: "Tempo", type: "tempo", capabilities: ["traces"] },
-];
-function props() {
-  return {
-    widget,
-    providers,
-    onApply: vi.fn(),
-    onClose: vi.fn(),
-    onDuplicate: vi.fn(),
-    onDelete: vi.fn(),
-    onMove: vi.fn(),
-  };
-}
+import { editorProps, providers, widget } from "./widget-editor.test-utils";
 
 function choose(label: string, option: RegExp | string) {
   const trigger = screen.getByRole("combobox", { name: label });
@@ -58,8 +23,7 @@ function choose(label: string, option: RegExp | string) {
 describe("widget inspector", () => {
   it("keeps a visible settings tab when undo changes the visualization", () => {
     registerDefaultWidgetPlugins();
-    render(<WidgetEditor {...props()} onPreview={vi.fn()}
-      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn() }} />);
+    render(<WidgetEditor {...editorProps()} onPreview={vi.fn()} />);
     choose("Visualization", /^Threshold gauge/);
     fireEvent.click(screen.getByRole("tab", { name: "Options" }));
     fireEvent.click(screen.getByRole("button", { name: "Undo chart change" }));
@@ -71,7 +35,7 @@ describe("widget inspector", () => {
     expect(screen.getByLabelText("Meter label")).toBeVisible();
   });
   it("stages layout moves with the chart and restores them through local undo", () => {
-    const callbacks = props(), onPreview = vi.fn();
+    const callbacks = editorProps(), onPreview = vi.fn();
     const below = { ...widget, id: "below", title: "Below", layout: { ...widget.layout, y: 4 } };
     render(<WidgetEditor {...callbacks} onPreview={onPreview}
       workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn(), widgets: [widget, below] }} />);
@@ -87,9 +51,9 @@ describe("widget inspector", () => {
       expect.arrayContaining([expect.objectContaining({ i: "below", y: 0 })]));
   });
   it("stages focused edits, keeps the last valid preview, and applies only on request", () => {
-    const callbacks = props(), onPreview = vi.fn(), onDirtyChange = vi.fn(), discard = vi.fn();
+    const callbacks = editorProps(), onPreview = vi.fn(), onDirtyChange = vi.fn(), discard = vi.fn();
     render(<WidgetEditor {...callbacks} onPreview={onPreview} onDirtyChange={onDirtyChange}
-      workspace={{ preview: <div>Canonical chart preview</div>, dashboardTitle: "Operations", onDiscard: discard }} />);
+      workspace={{ preview: <div>Canonical chart preview</div>, dashboardTitle: "Operations", onDiscard: discard, widgets: [widget] }} />);
     expect(screen.getByRole("region", { name: "Chart preview" })).toHaveTextContent("Canonical chart preview");
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Staged chart" } });
     expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Staged chart" }));
@@ -115,7 +79,7 @@ describe("widget inspector", () => {
   });
 
   it.each(["Clean line", "Soft area", "Compare"])("previews %s while retaining source, analytical settings and metric colours", name => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const source: Widget = { ...widget, color: "#7c58ad", options: { min: 10, max: 250, curve: "step", decimals: 3, timeAxis: "calendar", thresholds: [{ value: 180, color: "#bb5037" }], seriesColors: [{ label: "quantile", value: "p95", color: "#7c58ad" }] } };
     render(<WidgetEditor {...callbacks} widget={source} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
@@ -126,10 +90,10 @@ describe("widget inspector", () => {
     expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
     fireEvent.change(screen.getByLabelText("Line width", { exact: true }), { target: { value: "3" } });
     expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
-    expect(callbacks.onApply.mock.lastCall![0].options.lineWidth).toBe(3);
+    expect(callbacks.onApply.mock.lastCall![0].options?.lineWidth).toBe(3);
   });
   it("offers threshold guides for time series in the style editor", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
@@ -137,7 +101,7 @@ describe("widget inspector", () => {
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({options: expect.objectContaining({thresholds:[{value:0,status:"ok"}]})}));
   });
   it("previews title, style and dimensions without Apply and inspects the same unsaved JSON/YAML", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     let working = widget;
     function Host() {
       const [value, setValue] = useState(widget);
@@ -160,12 +124,12 @@ describe("widget inspector", () => {
     expect(JSON.parse((json as HTMLTextAreaElement).value)).toEqual(working);
     choose("Widget source format", "YAML");
     expect(parseYaml((screen.getByRole("textbox", { name: "Widget YAML" }) as HTMLTextAreaElement).value)).toEqual(working);
-    expect(screen.getByRole("button", { name: "Apply widget" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeEnabled();
   });
 
   it("keeps the last valid preview while invalid plugin JSON blocks saving and recovers immediately", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props(), validity = vi.fn();
+    const callbacks = editorProps(), validity = vi.fn();
     let working: Widget = { ...widget, type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", config: {} };
     function Host() {
       const [value, setValue] = useState(working);
@@ -173,6 +137,7 @@ describe("widget inspector", () => {
       return <WidgetEditor {...callbacks} widget={value} onDraftValidityChange={validity} onApply={setValue} />;
     }
     render(<Host />);
+    fireEvent.click(screen.getByRole("tab", { name: "Options" }));
     const field = screen.getByRole("textbox", { name: "Plugin configuration" });
     fireEvent.change(field, { target: { value: '{"label":' } });
     expect(validity).toHaveBeenLastCalledWith(false);
@@ -180,7 +145,7 @@ describe("widget inspector", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
     expect(screen.getByText(/Showing the last valid widget/)).toBeVisible();
     expect(JSON.parse((screen.getByRole("textbox", { name: "Widget JSON" }) as HTMLTextAreaElement).value).config).toEqual({});
-    fireEvent.click(screen.getByRole("tab", { name: "Query" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Options" }));
     fireEvent.change(field, { target: { value: '{"label":"Preview gauge"}' } });
     expect(validity).toHaveBeenLastCalledWith(true);
     expect(working.config).toEqual({ label: "Preview gauge" });
@@ -188,7 +153,7 @@ describe("widget inspector", () => {
   });
 
   it("applies an optional sparkline for a single value and resets it with appearance", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     const toggle = screen.getByRole("switch", { name: "Show sparkline" });
@@ -196,13 +161,13 @@ describe("widget inspector", () => {
     fireEvent.click(toggle);
     choose("Sparkline placement", "Beside value");
     choose("Stat icon", "Network");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ showSparkline: true, sparklinePlacement: "side", statIcon: "network" }) }));
     fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
     expect(toggle).not.toBeChecked();
   });
   it("offers a comparison with an earlier window only on stats, and saves its direction as better or worse", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const { unmount } = render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "timeseries" }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.queryByRole("combobox", { name: "Compare with" })).not.toBeInTheDocument();
@@ -211,23 +176,23 @@ describe("widget inspector", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     choose("Compare with", "1 day earlier");
     choose("Higher is", "Worse");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ compare: { window: "1d", good: "down" } }) }));
     choose("Compare with", "Off");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.not.objectContaining({ compare: expect.anything() }) }));
   });
   it("drops a stat's comparison when the visualization changes, so the change still applies", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", options: { compare: { window: "1d" } } }} />);
     choose("Visualization", /^Time series/);
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     const applied = callbacks.onApply.mock.calls.at(-1)![0];
     expect(applied.type).toBe("timeseries");
     expect(applied.options?.compare).toBeUndefined();
   });
   it("does not invent bar bounds: it focuses the minimum and explains what is missing in plain words", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.click(screen.getByRole("switch", { name: /^Show value bar/ }));
@@ -246,20 +211,20 @@ describe("widget inspector", () => {
     expect(maximum).toHaveAccessibleDescription("Enter the maximum for the bar.");
     expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes("A stat bar requires explicit minimum and maximum values"))).toBe(true);
     expect(screen.getAllByRole("alert").every(alert => !alert.textContent?.includes("options."))).toBe(true);
-    expect(screen.getByRole("button", { name: "Apply widget" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).not.toHaveBeenCalled();
     fireEvent.change(minimum, { target: { value: "0" } });
     fireEvent.change(maximum, { target: { value: "100" } });
     expect(minimum).not.toBeInvalid();
     expect(maximum).not.toHaveAttribute("aria-invalid");
     expect(screen.queryAllByRole("alert").some(alert => alert.textContent?.includes("explicit minimum"))).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ showStatBar: true, min: 0, max: 100 }) }));
   });
 
   it("focuses the maximum when only the maximum is missing", () => {
-    render(<WidgetEditor {...props()} widget={{ ...widget, type: "stat", options: { min: 5 } }} />);
+    render(<WidgetEditor {...editorProps()} widget={{ ...widget, type: "stat", options: { min: 5 } }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.click(screen.getByRole("switch", { name: /^Show value bar/ }));
     expect(screen.getByLabelText("Bar maximum")).toHaveFocus();
@@ -268,7 +233,7 @@ describe("widget inspector", () => {
   });
 
   it("keeps focus on the switch when bounds already exist, and switching the bar off yields a valid draft", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", options: { showStatBar: true, min: 0, max: 10 } }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     const toggle = screen.getByRole("switch", { name: /^Show value bar/ });
@@ -276,23 +241,23 @@ describe("widget inspector", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveFocus();
     expect(screen.queryByRole("switch", { name: /^Show value bar/ })).not.toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ showStatBar: false }) }));
   });
 
   it("configures an explicit single-value bar scale", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat" }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.click(screen.getByRole("switch", { name: /^Show value bar/ }));
     fireEvent.change(screen.getByLabelText("Bar minimum"), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText("Bar maximum"), { target: { value: "200" } });
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ showStatBar: true, min: 10, max: 200 }) }));
   });
 
   it("offers one-row stats and grows them when changing to a chart", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     let working: Widget = { ...widget, type: "stat", layout: { ...widget.layout, h: 1 } };
     function Host() {
       const [value, setValue] = useState(working);
@@ -304,13 +269,13 @@ describe("widget inspector", () => {
     expect(screen.getByRole("combobox", { name: "Height" })).toHaveTextContent("1 row");
     choose("Visualization", /^Time series/);
     expect(screen.getByRole("combobox", { name: "Height" })).toHaveTextContent("2 rows");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(working.type).toBe("timeseries");
     expect(working.layout.h).toBe(2);
   });
 
   it("links a saved query with dashboard mappings and restores the custom draft explicitly", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const saved: SavedQuery = {
       schemaVersion: 1,
       id: "shared",
@@ -335,7 +300,7 @@ describe("widget inspector", () => {
       "readonly",
     );
     choose("Value for environment from", "Dashboard variable");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(
       expect.objectContaining({
         providerId: "staging",
@@ -358,7 +323,7 @@ describe("widget inspector", () => {
     );
   });
   it("does not apply an unavailable saved reference or silently substitute its retained custom query", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(
       <WidgetEditor
         {...callbacks}
@@ -368,7 +333,7 @@ describe("widget inspector", () => {
     expect(
       screen.getByRole("combobox", { name: "Saved query" }),
     ).toHaveTextContent("Unavailable saved query");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(screen.getByRole("alert")).toHaveTextContent(/unavailable/);
     expect(callbacks.onApply).not.toHaveBeenCalled();
   });
@@ -376,7 +341,7 @@ describe("widget inspector", () => {
   it.each(["heatmap", "timeseries", "bar", "table"] as const)(
     "makes tooltip setup discoverable for %s and preserves the configured widget",
     (type) => {
-      const callbacks = props();
+      const callbacks = editorProps();
       render(<WidgetEditor {...callbacks} widget={{ ...widget, type }} />);
       const tooltipTab = screen.getByRole("tab", { name: "Tooltips" });
       fireEvent.click(screen.getByRole("tab", { name: "Style" }));
@@ -392,7 +357,7 @@ describe("widget inspector", () => {
         screen.getByRole("button", { name: "Add tooltip widget" }),
       );
       choose("Tooltip visualization", "Single value");
-      fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
       expect(callbacks.onApply).toHaveBeenCalledWith(
         expect.objectContaining({
           type,
@@ -403,7 +368,7 @@ describe("widget inspector", () => {
   );
 
   it("keeps Tooltips selected when switching to a reading-only inspector", () => {
-    render(<WidgetEditor {...props()} />);
+    render(<WidgetEditor {...editorProps()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
     choose("Visualization", /^Single value/);
     expect(
@@ -419,7 +384,7 @@ describe("widget inspector", () => {
   });
 
   it("offers trace visibility in Tooltips without embedded widgets or placement controls", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "traces", providerId: "tempo", query: "{}" }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.click(screen.getByRole("button", { name: "Configure tooltips" }));
@@ -433,7 +398,7 @@ describe("widget inspector", () => {
   it("returns to Style if the next plugin does not declare tooltip support", () => {
     const dispose = registerWidgetPlugin({ id: "no-inspector", label: "No inspector", description: "Test", dataKind: "metrics", render: () => null });
     try {
-      render(<WidgetEditor {...props()} />);
+      render(<WidgetEditor {...editorProps()} />);
       fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
       choose("Visualization", /^No inspector/);
       expect(screen.queryByRole("tab", { name: "Tooltips" })).not.toBeInTheDocument();
@@ -444,7 +409,7 @@ describe("widget inspector", () => {
   });
 
   it("requires an explicit choice before a visualization change removes an event query", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const eventSource = { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" };
     render(<WidgetEditor {...callbacks} widget={{ ...widget, annotationSource: eventSource }} />);
     choose("Visualization", /^Single value/);
@@ -456,19 +421,19 @@ describe("widget inspector", () => {
     choose("Visualization", /^Single value/);
     fireEvent.click(screen.getByRole("button", { name: "Remove event query and switch" }));
     expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Single value");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "stat" }));
     expect(callbacks.onApply.mock.calls.at(-1)![0].annotationSource).toBeUndefined();
   });
 
   it("keeps a configured tooltip when switching to a plugin with defaults, and makes its inactive state removable", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, options: { tooltipView: { type: "stat" }, showTooltip: false } }} />);
     choose("Visualization", /^Threshold gauge/);
     expect(screen.getByText(/tooltip widget is inactive/i)).toBeVisible();
     expect(screen.getByRole("button", { name: "Remove inactive tooltip widget" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ options: expect.objectContaining({ tooltipView: { type: "stat" }, showTooltip: false }) }));
     choose("Visualization", /^Time series/);
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
@@ -478,13 +443,13 @@ describe("widget inspector", () => {
     choose("Visualization", /^Threshold gauge/);
     fireEvent.click(screen.getByRole("button", { name: "Remove inactive tooltip widget" }));
     expect(screen.queryByText(/tooltip widget is inactive/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply.mock.calls.at(-1)![0].options?.tooltipView).toBeUndefined();
   });
 
   it("offers query-backed tooltips for geographic hexes without implying recorded history", () => {
     registerDefaultWidgetPlugins();
-    render(<WidgetEditor {...props()} widget={{ ...widget, type: "plugin", pluginId: "geo-heatmap", dataKind: "records", config: { mode: "map" } }} />);
+    render(<WidgetEditor {...editorProps()} widget={{ ...widget, type: "plugin", pluginId: "geo-heatmap", dataKind: "records", config: { mode: "map" } }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
     expect(screen.getByText(/hex has no history or timestamp/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add tooltip widget" }));
@@ -499,7 +464,7 @@ describe("widget inspector", () => {
   });
 
   it("validates numeric tooltip placeholders as numbers and keeps bindings typed on Apply", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const view = render(
       <WidgetEditor
         {...callbacks}
@@ -523,7 +488,7 @@ describe("widget inspector", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         options: {
@@ -552,7 +517,7 @@ describe("widget inspector", () => {
   });
 
   it("keeps the Links tab useful when no destination dashboards were supplied", () => {
-    render(<WidgetEditor {...props()} />);
+    render(<WidgetEditor {...editorProps()} />);
     fireEvent.click(screen.getByRole("tab", { name: "Links" }));
     expect(
       screen.getByRole("button", { name: "Add dashboard link" }),
@@ -563,7 +528,7 @@ describe("widget inspector", () => {
   });
 
   it("applies links authored in the Links tab with the widget draft", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const target: Dashboard = {
       schemaVersion: 1,
       id: "service-detail",
@@ -580,7 +545,7 @@ describe("widget inspector", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: /^Carry time range/ }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ drilldowns: [expect.objectContaining({ title: "Investigate service", carryTimeRange: false })] }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         id: widget.id,
@@ -596,7 +561,7 @@ describe("widget inspector", () => {
   });
 
   it("uses keyboard selections for style and dimensions and preserves the selected data source", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const { container } = render(<WidgetEditor {...callbacks} />);
     expect(container.querySelector("select")).toBeNull();
     choose("Data source", "Staging Prometheus");
@@ -614,7 +579,7 @@ describe("widget inspector", () => {
     fireEvent.keyDown(height, { key: "End" });
     fireEvent.keyDown(height, { key: "Enter" });
     expect(height).toHaveTextContent("12 rows");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "staging",
@@ -624,15 +589,16 @@ describe("widget inspector", () => {
     );
   });
 
-  it("preserves pending text edits while moving and applies the latest position", () => {
-    const callbacks = props();
+  it("keeps pending text edits when a staged move is applied with the draft", () => {
+    const callbacks = editorProps();
     const { rerender } = render(<WidgetEditor {...callbacks} />);
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "My request chart" },
     });
     fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
     fireEvent.click(screen.getByRole("button", { name: "Move widget right" }));
-    expect(callbacks.onMove).toHaveBeenCalledWith(1, 0);
+    expect(screen.getByLabelText("Title")).toHaveValue("My request chart");
+    // The host echoes a position-only change. Position is not content, so the draft stays live.
     rerender(
       <WidgetEditor
         {...callbacks}
@@ -640,29 +606,38 @@ describe("widget inspector", () => {
       />,
     );
     expect(screen.getByLabelText("Title")).toHaveValue("My request chart");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "My request chart",
         layout: { x: 1, y: 0, w: 6, h: 4 },
       }),
+      expect.anything(),
     );
   });
 
-  it("disables a Layout move that cannot change the grid and says why", () => {
-    const callbacks = props();
-    render(<WidgetEditor {...callbacks} moveBlocked={{ down: "Nothing below this widget in its columns" }} />);
+  it("a blocked Layout move is disabled with its reason and a staged move is applied with Apply changes", () => {
+    const callbacks = editorProps(), onPreview = vi.fn();
+    render(<WidgetEditor {...callbacks} onPreview={onPreview} />);
     fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
     const down = screen.getByRole("button", { name: "Move widget down" });
     expect(down).toBeDisabled();
     expect(down).toHaveAttribute("title", "Nothing below this widget in its columns");
-    expect(screen.getByRole("button", { name: "Move widget up" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Move widget up" }));
-    expect(callbacks.onMove).toHaveBeenCalledWith(0, -1);
+    expect(screen.getByRole("button", { name: "Move widget right" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Move widget right" }));
+    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ layout: expect.objectContaining({ x: 1 }) }));
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(callbacks.onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ layout: expect.objectContaining({ x: 1 }) }),
+      expect.anything(),
+    );
   });
 
   it("protects a resized widget from stale dimensions after external Undo", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const { rerender } = render(<WidgetEditor {...callbacks} />);
     fireEvent.click(screen.getByRole("tab", { name: "Layout" }));
     choose("Width", "8 columns");
@@ -681,7 +656,7 @@ describe("widget inspector", () => {
   });
 
   it("cannot overwrite newer canvas settings until reloaded", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const { rerender } = render(<WidgetEditor {...callbacks} />);
     rerender(
       <WidgetEditor
@@ -689,19 +664,19 @@ describe("widget inspector", () => {
         widget={{ ...widget, query: "rate(requests_total[5m])" }}
       />,
     );
-    expect(screen.getByRole("button", { name: "Apply widget" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Reload widget" }));
     expect(readQueryEditor(screen.getByLabelText("PromQL query"))).toBe(
       "rate(requests_total[5m])",
     );
-    expect(screen.getByRole("button", { name: "Apply widget" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply changes" })).toBeEnabled();
   });
 
   it("preserves a compatible provider when changing visualization", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
     choose("Visualization", /^Bar chart/);
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "bar",
@@ -713,12 +688,12 @@ describe("widget inspector", () => {
 
   it("removes the event reference only after confirming a change away from a stacked chart", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     const stacked: Widget = { ...widget, type: "plugin", pluginId: "stacked-timeseries", dataKind: "metrics", config: {}, annotationSource: { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" } };
     render(<WidgetEditor {...callbacks} widget={stacked} />);
     choose("Visualization", /^Bar chart/);
     fireEvent.click(screen.getByRole("button", { name: "Remove event query and switch" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalled();
     expect(callbacks.onApply.mock.lastCall?.[0]).not.toHaveProperty("annotationSource");
   });
@@ -727,7 +702,7 @@ describe("widget inspector", () => {
     registerDefaultWidgetPlugins();
     const stacked: Widget = { ...widget, type: "plugin", pluginId: "stacked-timeseries", dataKind: "metrics", config: {}, annotationSource: { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" } };
     const saved: SavedQuery = { schemaVersion: 1, id: "events", name: "Events", providerId: "records", kind: "records", query: "SELECT date, label FROM events" };
-    render(<SavedQueryLibraryProvider queries={[saved]} variables={[]} values={{}}><WidgetEditor {...props()} providers={[...providers, { id: "records", name: "Records", type: "postgresql", capabilities: ["records"] }]} widget={stacked} /></SavedQueryLibraryProvider>);
+    render(<SavedQueryLibraryProvider queries={[saved]} variables={[]} values={{}}><WidgetEditor {...editorProps()} providers={[...providers, { id: "records", name: "Records", type: "postgresql", capabilities: ["records"] }]} widget={stacked} /></SavedQueryLibraryProvider>);
     choose("Visualization", /^Time series/);
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
     const json = JSON.parse((screen.getByRole("textbox", { name: "Widget JSON" }) as HTMLTextAreaElement).value);
@@ -736,7 +711,7 @@ describe("widget inspector", () => {
   });
 
   it("selects a trace provider and query language when crossing capabilities", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
     choose("Visualization", /^Trace explorer/);
     expect(screen.getByText(/current query will be replaced/i)).toBeVisible();
@@ -744,7 +719,7 @@ describe("widget inspector", () => {
     expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Time series");
     choose("Visualization", /^Trace explorer/);
     fireEvent.click(screen.getByRole("button", { name: "Replace query and switch" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "traces",
@@ -754,7 +729,7 @@ describe("widget inspector", () => {
     );
   });
   it("explains both saved-query and event-query removal before a cross-kind switch", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const eventSource = { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" };
     const rate: SavedQuery = { schemaVersion: 1, id: "rate", name: "Rate", providerId: "production", kind: "metrics", query: "up" };
     const events: SavedQuery = { schemaVersion: 1, id: "events", name: "Events", providerId: "records", kind: "records", query: "SELECT date, label FROM events" };
@@ -770,14 +745,14 @@ describe("widget inspector", () => {
     expect(retained.annotationSource).toEqual(eventSource);
     choose("Visualization", /^Trace explorer/);
     fireEvent.click(screen.getByRole("button", { name: "Replace query and switch" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     const next = callbacks.onApply.mock.lastCall?.[0];
     expect(next).toMatchObject({ type: "traces", providerId: "tempo", query: "{}" });
-    expect(next.queryRef).toBeUndefined();
-    expect(next.annotationSource).toBeUndefined();
+    expect(next?.queryRef).toBeUndefined();
+    expect(next?.annotationSource).toBeUndefined();
   });
   it("validates threshold ordering and retains appearance choices in the document", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
     choose("Visualization", /^Status heatmap/);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
@@ -790,13 +765,13 @@ describe("widget inspector", () => {
     fireEvent.change(screen.getByLabelText("Threshold 2 value"), {
       target: { value: "-1" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(screen.getByRole("alert")).toHaveTextContent("strictly increasing");
     expect(callbacks.onApply).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Threshold 2 value"), {
       target: { value: "1" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "heatmap",
@@ -811,7 +786,7 @@ describe("widget inspector", () => {
     );
   });
   it("edits threshold status and hue from the picker, keeping legacy hex bands as authored", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const heatmap: Widget = { ...widget, type: "heatmap", options: { thresholds: [{ value: 0, color: "#123456", label: "Legacy" }, { value: 5, status: "warning" }] } };
     render(<WidgetEditor {...callbacks} widget={heatmap} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
@@ -819,7 +794,7 @@ describe("widget inspector", () => {
     expect(screen.getByRole("combobox", { name: "Threshold 2 status" })).toHaveTextContent("Warning");
     expect(screen.getByRole("img", { name: "Threshold 1 drawn colour #123456" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Threshold 2 drawn colour #986111" })).toBeInTheDocument();
-    const thresholds = () => callbacks.onApply.mock.lastCall![0].options.thresholds;
+    const thresholds = () => callbacks.onApply.mock.lastCall![0].options!.thresholds!;
     const trigger = screen.getByRole("combobox", { name: "Threshold 2 status" });
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
@@ -847,10 +822,10 @@ describe("widget inspector", () => {
       },
     });
     try {
-      const callbacks = props();
+      const callbacks = editorProps();
       render(<WidgetEditor {...callbacks} />);
       choose("Visualization", /^Test gauge/);
-      fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
       expect(screen.getByRole("alert")).toHaveTextContent(
         "A label is required",
       );
@@ -870,7 +845,7 @@ describe("widget inspector", () => {
       expect(screen.queryByRole("tab", { name: "Tooltips" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Configure tooltips" })).not.toBeInTheDocument();
       expect(screen.getByLabelText("Background")).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
       expect(callbacks.onApply).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "plugin",
@@ -886,7 +861,7 @@ describe("widget inspector", () => {
 
   it("offers the bundled gauge's range, threshold and legend controls and preserves them on apply", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     render(
       <WidgetEditor
         {...callbacks}
@@ -919,7 +894,7 @@ describe("widget inspector", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: "Show legend" }));
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         pluginId: "threshold-gauge",
@@ -936,29 +911,29 @@ describe("widget inspector", () => {
 
   it.each(["status-grid", "uptime-calendar", "uptime-timeline"])("edits and preserves thresholds for %s", pluginId => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId, dataKind: "metrics", config: {} }} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ pluginId, options: expect.objectContaining({ thresholds: [{ value: 0, status: "ok" }] }) }));
   });
 
   it("exposes calendar thresholds only when threshold colors are configured", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "incident-calendar", providerId: "records", dataKind: "records", query: "{}", config: { value: "severity", aggregation: "max", colorMode: "thresholds" } }} providers={[{ id: "records", name: "Records", type: "uptime", capabilities: ["records"] }]} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.getByRole("group", { name: "Value thresholds" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining({ colorMode: "thresholds" }), options: expect.objectContaining({ thresholds: [{ value: 0, status: "ok" }] }) }));
   });
 
   it("offers record-table colors, precision and thresholds without plot-only controls", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     const config = { cellStyles: [{ column: "usage", display: "bar", min: 0, max: 100 }] };
     render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "plugin", pluginId: "record-table", dataKind: "records", providerId: "records", query: "{}", config }}
       providers={[{ id: "records", name: "Application records", type: "uptime", capabilities: ["records"] }]} />);
@@ -968,13 +943,13 @@ describe("widget inspector", () => {
     expect(screen.queryByLabelText("Y minimum")).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "Show grid" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add threshold" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ config: expect.objectContaining(config), options: expect.objectContaining({ thresholds: [{ value: 0, status: "ok" }] }) }));
   });
 
   it("restores registered gauge defaults when resetting its appearance", () => {
     registerDefaultWidgetPlugins();
-    const callbacks = props();
+    const callbacks = editorProps();
     render(
       <WidgetEditor
         {...callbacks}
@@ -994,7 +969,7 @@ describe("widget inspector", () => {
     expect(screen.getByLabelText("Maximum")).toHaveValue(100);
     expect(screen.getByRole("switch", { name: "Show legend" })).toBeChecked();
     expect(screen.getByLabelText("Threshold 3 label")).toHaveValue("Critical");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         color: undefined,
@@ -1011,7 +986,7 @@ describe("widget inspector", () => {
   });
 
   it("exposes area opacity only when it changes the display and retains its draft when switching to line", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(screen.queryByLabelText("Fill opacity")).not.toBeInTheDocument();
@@ -1025,7 +1000,7 @@ describe("widget inspector", () => {
     expect(screen.queryByLabelText("Fill opacity")).not.toBeInTheDocument();
     choose("Display", "Area");
     expect(screen.getByLabelText("Fill opacity")).toHaveValue(0.35);
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         options: { display: "area", fillOpacity: 0.35 },
@@ -1034,7 +1009,7 @@ describe("widget inspector", () => {
   });
 
   it("explains fixed trace duration units without offering an ineffective unit editor", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(
       <WidgetEditor
         {...callbacks}
@@ -1056,14 +1031,14 @@ describe("widget inspector", () => {
     fireEvent.change(screen.getByLabelText("Decimal places"), {
       target: { value: "2" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({ unit: "ms", options: { decimals: 2 } }),
     );
   });
 
   it("warns on explicit low-contrast colors without overwriting the author's saved choices", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.change(screen.getByLabelText("Background"), {
@@ -1074,10 +1049,9 @@ describe("widget inspector", () => {
     fireEvent.change(screen.getByLabelText("Text color"), {
       target: { value: "#102030" },
     });
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Text contrast is 1.0:1",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    expect(screen.getByText(/Text contrast is 1\.0:1/)).toBeVisible();
+    expect(screen.getByText(/Text contrast is 1\.0:1/)).toHaveAttribute("role", "status");
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         options: { background: "#102030", textColor: "#102030" },
@@ -1088,7 +1062,7 @@ describe("widget inspector", () => {
   it("checks explicit heatmap text against threshold fills only while cell text is visible", () => {
     render(
       <WidgetEditor
-        {...props()}
+        {...editorProps()}
         widget={{
           ...widget,
           type: "heatmap",
@@ -1097,11 +1071,11 @@ describe("widget inspector", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Text needs more contrast on a heatmap color",
-    );
+    expect(screen.getByText(/Text needs more contrast on a heatmap color/)).toBeVisible();
+    expect(screen.getByText(/Text needs more contrast on a heatmap color/)).toHaveAttribute("role", "status");
     fireEvent.click(screen.getByRole("switch", { name: "Show labels" }));
-    expect(screen.getByRole("status")).toBeVisible();
+    expect(screen.getByText(/Text needs more contrast on a heatmap color/)).toBeVisible();
+    expect(screen.getByText(/Text needs more contrast on a heatmap color/)).toHaveAttribute("role", "status");
     fireEvent.click(screen.getByRole("switch", { name: "Show values" }));
     expect(
       screen.queryByText(/Text needs more contrast/),
@@ -1112,7 +1086,7 @@ describe("widget inspector", () => {
     // White text is fine on the light critical mark but 1.6:1 on the dark one, so the warning must reach the dark block.
     render(
       <WidgetEditor
-        {...props()}
+        {...editorProps()}
         widget={{
           ...widget,
           type: "heatmap",
@@ -1121,11 +1095,12 @@ describe("widget inspector", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Text needs more contrast on a heatmap color");
+    expect(screen.getByText(/Text needs more contrast on a heatmap color/)).toBeVisible();
+    expect(screen.getByText(/Text needs more contrast on a heatmap color/)).toHaveAttribute("role", "status");
   });
 
   it("configures tooltip history, preserves it while hidden, and deliberately resets it", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const view = render(
       <WidgetEditor {...callbacks} widget={{ ...widget, type: "heatmap" }} />,
     );
@@ -1142,7 +1117,7 @@ describe("widget inspector", () => {
     expect(
       screen.queryByRole("combobox", { name: "Tooltip visualization" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(
       expect.objectContaining({
         options: {
@@ -1172,7 +1147,7 @@ describe("widget inspector", () => {
     expect(
       screen.queryByRole("switch", { name: "Show tooltip chart grid" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(
       callbacks.onApply.mock.calls.at(-1)![0].options?.tooltipView,
     ).toBeUndefined();
@@ -1194,7 +1169,7 @@ describe("widget inspector", () => {
   });
 
   it("validates queried tooltip mappings on Apply without losing an incomplete draft", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(
       <WidgetEditor {...callbacks} widget={{ ...widget, type: "heatmap" }} />,
     );
@@ -1205,7 +1180,7 @@ describe("widget inspector", () => {
     callbacks.onApply.mockClear();
     const query = screen.getByRole("textbox", { name: "Tooltip PromQL query" });
     changeQueryEditor(query, "sum(up{service={{service}}})");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("Tooltip query:");
     expect(readQueryEditor(query)).toBe("sum(up{service={{service}}})");
@@ -1218,7 +1193,7 @@ describe("widget inspector", () => {
       screen.getByRole("combobox", { name: "Tooltip mapping 1 hovered label" }),
       { target: { value: "service_name" } },
     );
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenCalledWith(
       expect.objectContaining({
         options: {
@@ -1237,7 +1212,7 @@ describe("widget inspector", () => {
   });
 
   it("blocks incompatible tooltip providers and quoted placeholders while retaining authored values", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     render(
       <WidgetEditor
         {...callbacks}
@@ -1259,7 +1234,7 @@ describe("widget inspector", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).not.toHaveBeenCalled();
     expect(
       screen
@@ -1269,7 +1244,7 @@ describe("widget inspector", () => {
         ),
     ).toBe(true);
     choose("Tooltip provider", "Production Prometheus");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Remove the surrounding quotes",
@@ -1291,7 +1266,7 @@ describe("widget inspector", () => {
       },
     });
     try {
-      const callbacks = props();
+      const callbacks = editorProps();
       render(
         <WidgetEditor {...callbacks} widget={{ ...widget, type: "heatmap" }} />,
       );
@@ -1306,19 +1281,19 @@ describe("widget inspector", () => {
       });
       fireEvent.change(config, { target: { value: '{"caption":' } });
       fireEvent.click(screen.getByRole("tab", { name: "Query" }));
-      fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
       expect(callbacks.onApply).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
       expect(config).toHaveValue('{"caption":');
       fireEvent.change(config, { target: { value: "{}" } });
-      fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
       expect(screen.getByRole("alert")).toHaveTextContent(
         "A caption is required",
       );
       fireEvent.change(config, {
         target: { value: '{"caption":"Availability"}' },
       });
-      fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
       expect(callbacks.onApply).toHaveBeenCalledWith(
         expect.objectContaining({
           options: {
@@ -1337,7 +1312,7 @@ describe("widget inspector", () => {
   });
 
   it("offers independent label and value visibility only for heatmaps and restores saved settings", () => {
-    const callbacks = props();
+    const callbacks = editorProps();
     const { rerender } = render(<WidgetEditor {...callbacks} />);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     expect(
@@ -1357,7 +1332,7 @@ describe("widget inspector", () => {
     fireEvent.click(values);
     expect(labels).not.toBeChecked();
     expect(values).not.toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     const saved = callbacks.onApply.mock.calls.at(-1)![0] as Widget;
     expect(saved.options).toEqual({ showLabels: false, showValues: false });
     rerender(<WidgetEditor {...callbacks} widget={saved} />);
@@ -1371,7 +1346,7 @@ describe("widget inspector", () => {
     expect(
       screen.getByRole("switch", { name: "Show values" }),
     ).not.toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(callbacks.onApply).toHaveBeenLastCalledWith(
       expect.objectContaining({
         options: { showLabels: true, showValues: false },
@@ -1384,7 +1359,7 @@ describe("widget inspector", () => {
 });
 
 it("edits baseline tooltip presentation for stats and preserves it on appearance reset", () => {
-  const callbacks = props();
+  const callbacks = editorProps();
   render(<WidgetEditor {...callbacks} widget={{ ...widget, type: "stat", unit: "s", options: { decimals: 1 } }} />);
   fireEvent.click(screen.getByRole("tab", { name: "Style" }));
   fireEvent.click(screen.getByRole("button", { name: "Configure tooltips" }));
@@ -1392,7 +1367,7 @@ it("edits baseline tooltip presentation for stats and preserves it on appearance
   fireEvent.change(screen.getByLabelText("Tooltip value label"), { target: { value: "p95" } });
   fireEvent.change(screen.getByLabelText("Tooltip decimal places"), { target: { value: "3" } });
   fireEvent.click(screen.getByRole("switch", { name: "Show unit in tooltip reading" }));
-  fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
   expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up", unit: "s", options: expect.objectContaining({ decimals: 1, tooltipTitle: "Checkout latency", tooltipValueLabel: "p95", tooltipDecimals: 3, tooltipShowUnit: false }) }));
   fireEvent.click(screen.getByRole("tab", { name: "Style" }));
   fireEvent.click(screen.getByRole("button", { name: "Reset appearance" }));
@@ -1402,22 +1377,22 @@ it("edits baseline tooltip presentation for stats and preserves it on appearance
 });
 
 it("offers the same baseline presentation in the chart Tooltips tab", () => {
-  render(<WidgetEditor {...props()} />);
+  render(<WidgetEditor {...editorProps()} />);
   fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));
   expect(screen.getByLabelText("Tooltip heading")).toHaveAttribute("placeholder", "Widget title");
   expect(screen.getByRole("switch", { name: "Show unit in tooltip reading" })).toBeChecked();
 });
 
 it("offers the stale-sample threshold for time series as well as single values", () => {
-  const callbacks = props();
+  const callbacks = editorProps();
   const { unmount } = render(<WidgetEditor {...callbacks} />);
   fireEvent.click(screen.getByRole("tab", { name: "Style" }));
   expect(screen.getByText(/Time series: hatch the time after the latest sample when it is older than this before the range end/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Hatch after latest sample when older than (seconds)"), { target: { value: "600" } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
   expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "timeseries", options: expect.objectContaining({ staleAfterSeconds: 600 }) }));
   unmount();
-  render(<WidgetEditor {...props()} widget={{ ...widget, type: "stat" }} />);
+  render(<WidgetEditor {...editorProps()} widget={{ ...widget, type: "stat" }} />);
   fireEvent.click(screen.getByRole("tab", { name: "Style" }));
   expect(screen.getByLabelText("Warn when last valid sample is older than (seconds)")).toBeInTheDocument();
   expect(screen.queryByLabelText("Hatch after latest sample when older than (seconds)")).toBeNull();
@@ -1428,7 +1403,7 @@ describe("widget inspector SLO objective", () => {
     registerDefaultWidgetPlugins();
     registerSloSummaryPlugin();
     const withTempoMetrics: Provider[] = [...providers, { id: "tempo-metrics", name: "Metrics via Tempo", type: "tempo", capabilities: ["metrics"] }];
-    render(<WidgetEditor {...props()} providers={withTempoMetrics} widget={{ ...widget, type: "stat", query: "up" }} />);
+    render(<WidgetEditor {...editorProps()} providers={withTempoMetrics} widget={{ ...widget, type: "stat", query: "up" }} />);
     choose("Visualization", /^SLO objective/);
     fireEvent.click(screen.getByRole("combobox", { name: "Data source" }));
     expect(screen.getByRole("option", { name: "Staging Prometheus" })).toBeInTheDocument();
@@ -1438,10 +1413,9 @@ describe("widget inspector SLO objective", () => {
   it("switching to the SLO objective from a non-Prometheus provider picks a Prometheus provider", () => {
     registerDefaultWidgetPlugins();
     registerSloSummaryPlugin();
-    const callbacks = props();
+    const callbacks = editorProps();
     const withTempoMetrics: Provider[] = [{ id: "tempo-metrics", name: "Metrics via Tempo", type: "tempo", capabilities: ["metrics"] }, ...providers];
-    render(<WidgetEditor {...callbacks} providers={withTempoMetrics} widget={{ ...widget, type: "stat", query: "up", providerId: "tempo-metrics" }}
-      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn() }} />);
+    render(<WidgetEditor {...callbacks} providers={withTempoMetrics} widget={{ ...widget, type: "stat", query: "up", providerId: "tempo-metrics" }} />);
     choose("Visualization", /^SLO objective/);
     fireEvent.change(screen.getByLabelText("Objective percent"), { target: { value: "99.5" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
@@ -1453,10 +1427,9 @@ describe("widget inspector SLO objective", () => {
   it("switching a stat with bands to the SLO objective drops the bands and stores the compiled query", () => {
     registerDefaultWidgetPlugins();
     registerSloSummaryPlugin();
-    const callbacks = props();
+    const callbacks = editorProps();
     const stat: Widget = { ...widget, type: "stat", query: "up", options: { thresholds: [{ value: 180, color: "#bb5037" }] } };
-    render(<WidgetEditor {...callbacks} widget={stat}
-      workspace={{ preview: null, dashboardTitle: "Operations", onDiscard: vi.fn() }} />);
+    render(<WidgetEditor {...callbacks} widget={stat} />);
     choose("Visualization", /^SLO objective/);
     expect(screen.getByLabelText("Total requests selector")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Objective percent"), { target: { value: "99.5" } });
@@ -1469,3 +1442,58 @@ describe("widget inspector SLO objective", () => {
   });
 });
 
+describe("widget editor workbench shell", () => {
+  it("Discard calls the workspace's onDiscard and applies nothing", () => {
+    const discard = vi.fn();
+    const callbacks = editorProps({
+      workspace: { preview: null, dashboardTitle: "Operations", onDiscard: discard, widgets: [widget] },
+    });
+    render(<WidgetEditor {...callbacks} onPreview={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Unsaved" } });
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(discard).toHaveBeenCalledOnce();
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+  });
+
+  it("Back to dashboard closes the editor without applying the draft", () => {
+    const callbacks = editorProps();
+    render(<WidgetEditor {...callbacks} />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to dashboard" }));
+    expect(callbacks.onClose).toHaveBeenCalledOnce();
+    expect(callbacks.onApply).not.toHaveBeenCalled();
+  });
+
+  it("the Chart actions menu's Duplicate and Remove call onDuplicate and onDelete", () => {
+    const callbacks = editorProps();
+    render(<WidgetEditor {...callbacks} />);
+    fireEvent.click(screen.getByRole("button", { name: "Chart actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate chart" }));
+    expect(callbacks.onDuplicate).toHaveBeenCalledOnce();
+    expect(callbacks.onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Chart actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove chart" }));
+    expect(callbacks.onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("disables Duplicate chart while the draft is invalid", () => {
+    render(<WidgetEditor {...editorProps()} />);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Chart actions" }));
+    expect(screen.getByRole("menuitem", { name: "Duplicate chart" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("shows a plugin's configuration under the Options tab, not under Query", () => {
+    registerDefaultWidgetPlugins();
+    render(<WidgetEditor {...editorProps({ widget: { ...widget, type: "plugin", pluginId: "threshold-gauge", dataKind: "metrics", config: {} } })} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Query" }));
+    expect(screen.queryByRole("textbox", { name: "Plugin configuration" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Options" }));
+    expect(screen.getByRole("textbox", { name: "Plugin configuration" })).toBeInTheDocument();
+  });
+
+  it("the Chart data tablist holds exactly Query and Source", () => {
+    render(<WidgetEditor {...editorProps()} />);
+    const tablist = screen.getByRole("tablist", { name: "Chart data" });
+    expect(within(tablist).getAllByRole("tab").map(tab => tab.textContent)).toEqual(["Query", "Source"]);
+  });
+});
