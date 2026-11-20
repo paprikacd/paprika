@@ -95,7 +95,6 @@ import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
 import { DocumentEditor } from "./document-editor"
 import { ChecksList } from "./checks-list"
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
-import { layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
 import { TimeRangeControl, dashboardRange, type TimeRangeChoice } from "./time-range"
@@ -133,19 +132,6 @@ function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   } catch (error) {
     return { document: fallback, link: { dashboardId: fallback.id }, rejected: [] as RejectedLinkPart[], error: error instanceof Error ? error.message : "Invalid dashboard link" }
   }
-}
-function importIdentity(document: Dashboard) {
-  // Correcting a destination provider after a partial import must keep every
-  // allocated dashboard ID, so successful copies keep linking to the retry.
-  return documentFingerprint({ ...document, widgets: document.widgets.map(widget => ({
-    ...widget, providerId: "mapped-provider",
-    ...(widget.options?.tooltipView?.source?.type === "query" ? {
-      options: { ...widget.options, tooltipView: {
-        ...widget.options.tooltipView,
-        source: { ...widget.options.tooltipView.source, providerId: "mapped-provider" },
-      } },
-    } : {}),
-  })) })
 }
 
 const Explorer = lazy(() => import("./explorer").then(module => ({ default: module.Explorer })))
@@ -435,8 +421,6 @@ export default function InsightsApp({
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
   const openRequest = useRef(0)
-  const importReceipts = useRef(new Map<string, string>())
-  const importBatch = useRef<{ pending: Set<string>; targets: Map<string, string> }>({ pending: new Set(), targets: new Map() })
   const bundleImporter = useRef<ReturnType<typeof createBundleImporter> | null>(null)
   const bundleImportActive = useRef(false)
   if (!bundleImporter.current) bundleImporter.current = createBundleImporter()
@@ -1464,100 +1448,6 @@ export default function InsightsApp({
     } finally { bundleImportActive.current = false; setImportingBundle(false); setBusy(false) }
   }
 
-  async function importDashboards(documents: Dashboard[]) {
-    if (busy)
-      throw new Error("Wait for the current save before importing dashboards.")
-    if (dashboards.length + documents.length > 100)
-      throw new Error(
-        "The workspace supports up to 100 dashboards. Remove unused dashboards before importing.",
-      )
-    setBusy(true)
-    const failed: Dashboard[] = []
-    const errors: string[] = []
-    const imported: Dashboard[] = []
-    if (!documents.every(document => importBatch.current.pending.has(importIdentity(document))))
-      importBatch.current = { pending: new Set(), targets: new Map() }
-    // Allocate identities for the entire batch before copying links. Retain the
-    // mapping through partial retries, including targets already imported.
-    for (const document of documents) {
-      const receipt = importIdentity(document)
-      if (!importReceipts.current.has(receipt))
-        importReceipts.current.set(receipt, `dashboard-${crypto.randomUUID()}`)
-      importBatch.current.targets.set(document.id, importReceipts.current.get(receipt)!)
-    }
-    try {
-      for (const document of documents) {
-        const receipt = importIdentity(document)
-        let copyId = importReceipts.current.get(receipt)
-        if (!copyId) {
-          copyId = `dashboard-${crypto.randomUUID()}`
-          importReceipts.current.set(receipt, copyId)
-          while (importReceipts.current.size > 100)
-            importReceipts.current.delete(
-              importReceipts.current.keys().next().value!,
-            )
-        }
-        const copy = dashboardAsSent({
-          ...document,
-          id: copyId,
-          widgets: document.widgets.map(widget => ({
-            ...widget,
-            ...(widget.drilldowns ? { drilldowns: widget.drilldowns.map(link => ({
-              ...link, dashboardId: importBatch.current.targets.get(link.dashboardId) ?? link.dashboardId,
-            })) } : {}),
-          })),
-        })
-        try {
-          if (mode === "example")
-            writeExampleWorkspace(
-              localStorage,
-              [...dashboards, ...imported, copy],
-              dashboard.id,
-            )
-          else {
-            let etag: string | undefined
-            try {
-              etag = await client.save(copy)
-            } catch (writeError) {
-              // A dropped response can hide a successful conditional create.
-              // Confirm the same document before reporting failure or retrying.
-              try {
-                const confirmed = await client.get(copy.id)
-                if (
-                  documentFingerprint(confirmed.dashboard) !==
-                  documentFingerprint(copy)
-                )
-                  throw writeError
-                etag = confirmed.etag
-              } catch {
-                throw writeError
-              }
-            }
-            if (etag) etags.current.set(copy.id, etag)
-          }
-          importReceipts.current.delete(receipt)
-          imported.push(copy)
-          setDashboards((items) => [
-            ...items.filter((item) => item.id !== copy.id),
-            copy,
-          ])
-        } catch (error) {
-          failed.push(document)
-          errors.push(
-            `${document.title}: ${error instanceof Error ? error.message : "Import failed"}`,
-          )
-        }
-      }
-    } finally {
-      importBatch.current.pending = new Set(failed.map(importIdentity))
-      if (!failed.length) importBatch.current.targets.clear()
-      while (importReceipts.current.size > 100)
-        importReceipts.current.delete(importReceipts.current.keys().next().value!)
-      setBusy(false)
-    }
-    return { added: imported.length, failed, errors }
-  }
-
   if (mode === "loading")
     return (
       <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme}>
@@ -2167,12 +2057,6 @@ export default function InsightsApp({
                         })
                         selectWidget(copy.id)
                       }}
-                      moveBlocked={layoutMoveBlockers(dashboard.widgets, currentWidget.id)}
-                      onMove={(dx, dy) => {
-                        const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right"
-                        const edit = moveLayout(savedLayout(dashboard.widgets), currentWidget.id, direction)
-                        if ("layout" in edit) layoutUpdate(edit.layout)
-                      }}
                     />
                   <MountSignal onMount={markEditorMounted} />
                 </Suspense>
@@ -2349,7 +2233,6 @@ export default function InsightsApp({
                   }}
                   onDuplicate={duplicateDashboard}
                   onDelete={deleteDashboard}
-                  onImport={importDashboards}
                   onImportBundle={importBundle}
                   onReviewBundle={reviewBundle}
                   validateDocument={client.validate}

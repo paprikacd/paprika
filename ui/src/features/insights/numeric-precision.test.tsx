@@ -5,6 +5,7 @@ import { formatMetric, formatMetricDetails } from "./chart-data";
 import { WidgetVisualization } from "./charts";
 import { TooltipSubWidget } from "./tooltip-widgets";
 import { WidgetEditor } from "./widget-editor";
+import { editorProps } from "./widget-editor.test-utils";
 import { TooltipEditor } from "./tooltip-editor";
 import type { TooltipView, Widget } from "./schema";
 
@@ -79,7 +80,7 @@ describe("configured numeric precision", () => {
     function Host() {
       const [value, setValue] = useState(current);
       current = value;
-      return <WidgetEditor widget={value} providers={providers} onApply={setValue} onClose={vi.fn()} onDuplicate={vi.fn()} onDelete={vi.fn()} onMove={vi.fn()} />;
+      return <WidgetEditor {...editorProps({ widget: value, providers, onApply: setValue })} />;
     }
     render(<Host />);
     fireEvent.click(screen.getByRole("tab", { name: "Tooltips" }));

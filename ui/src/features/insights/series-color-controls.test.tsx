@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WidgetEditor } from "./widget-editor";
+import { editorProps } from "./widget-editor.test-utils";
 import { seriesHex } from "./series-palette";
 import { identitySlot } from "./series-colors";
 import { registerRecordWidgetPlugins } from "./plugins/records";
@@ -25,7 +26,7 @@ const checkoutSlot = identitySlot("service=checkout");
 /** The editor's Style tab, with the loaded result when one is given. Returns the apply callback the author's changes reach. */
 function openStyle(widget: Widget, result?: QueryResult) {
   const onApply = vi.fn();
-  render(<WidgetEditor widget={widget} providers={providers} result={result} onApply={onApply} onClose={vi.fn()} onDuplicate={vi.fn()} onDelete={vi.fn()} onMove={vi.fn()} />);
+  render(<WidgetEditor {...editorProps({ widget, providers, result, onApply })} />);
   fireEvent.click(screen.getByRole("tab", { name: "Style" }));
   return onApply;
 }
@@ -60,7 +61,7 @@ describe("series colour controls", () => {
   it("Custom writes the colour the single series draws, and Palette clears it", () => {
     const onApply = openStyle(base, { series: [sample("checkout")] });
     fireEvent.click(screen.getByRole("button", { name: "Custom" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(applied(onApply).color).toBe(seriesHex(checkoutSlot, "light"));
   });
 
@@ -70,7 +71,7 @@ describe("series colour controls", () => {
     expect(screen.getByLabelText("Series color")).toHaveValue("#7c58ad");
     fireEvent.click(screen.getByRole("button", { name: "Palette" }));
     expect(pressed("Palette")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(applied(onApply).color).toBeUndefined();
   });
 
@@ -85,7 +86,7 @@ describe("series colour controls", () => {
     const onApply = openStyle(base, { series: [sample("checkout")] });
     fireEvent.change(screen.getByLabelText("Series color"), { target: { value: "#123456" } });
     expect(pressed("Custom")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(applied(onApply).color).toBe("#123456");
   });
 
@@ -117,7 +118,7 @@ describe("series colour controls", () => {
     expect(pressed("By name")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "By position" }));
     expect(pressed("By position")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(applied(onApply).options?.seriesColorMode).toBe("index");
   });
 
@@ -125,7 +126,7 @@ describe("series colour controls", () => {
     const onApply = openStyle({ ...base, options: { seriesColorMode: "index" } });
     expect(pressed("By position")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "By name" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply widget" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
     expect(applied(onApply).options?.seriesColorMode).toBeUndefined();
   });
 

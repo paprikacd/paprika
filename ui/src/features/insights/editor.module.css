@@ -578,22 +578,6 @@
   line-height: 1.5;
 }
 
-.previewStatus {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--gamma-muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.previewStatus > span {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--gamma-accent);
-}
 .field .sourceInput.sourceInput {
   --gamma-field-min-height: 320px;
   max-height: 55vh;

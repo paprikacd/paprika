@@ -13,7 +13,6 @@ import {
   Trash2,
   Undo2,
   Redo2,
-  X,
 } from "lucide-react";
 import {
   widgetKind,
@@ -761,8 +760,6 @@ export function WidgetEditor({
   onClose,
   onDuplicate,
   onDelete,
-  onMove,
-  moveBlocked,
   client,
   range,
   queryFetcher,
@@ -775,14 +772,11 @@ export function WidgetEditor({
   onApply: (widget: Widget, layout?: Layout) => void;
   onPreview?: (widget: Widget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  workspace?: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets?: Widget[] };
+  workspace: { preview: ReactNode; dashboardTitle: string; onDiscard: () => void; widgets: Widget[] };
   onDraftValidityChange?: (valid: boolean) => void;
   onClose: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onMove: (dx: number, dy: number) => void;
-  /** Why a Layout-tab move is unavailable. Its button stays visible, disabled, with this reason as its title. */
-  moveBlocked?: Partial<Record<LayoutMove, string>>;
   client?: InsightsClient;
   range?: { start: number; end: number };
   queryFetcher?: QueryFetcher;
@@ -819,7 +813,7 @@ export function WidgetEditor({
   const setPluginConfig = (pluginConfig: string) => history.update(current => ({ ...current, pluginConfig }));
   const setTooltipPluginConfig = (tooltipPluginConfig: string) => history.update(current => ({ ...current, tooltipPluginConfig }));
   const [base, setBase] = useState(widget);
-  const [tab, setTab] = useState(workspace ? "style" : "query");
+  const [tab, setTab] = useState("style");
   const [queryTab, setQueryTab] = useState("query");
   const [sourceFormat, setSourceFormat] = useState("json");
   const [queryDraftValid, setQueryDraftValid] = useState(true);
@@ -833,13 +827,12 @@ export function WidgetEditor({
     contentKey(widget) !== contentKey(previewRevision.widget);
   const dimensions = { w: size?.w ?? widget.layout.w, h: size?.h ?? widget.layout.h };
   const position = stagedLayout?.find(item => item.i === widget.id) ?? widget.layout;
-  const layoutWidgets = workspace?.widgets?.map(item => {
+  const layoutWidgets = workspace.widgets.map(item => {
     const placed = stagedLayout?.find(box => box.i === item.id);
     return { ...item, layout: { ...item.layout, ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h } : {}), ...(item.id === widget.id ? dimensions : {}) } };
   });
-  const blockedMoves = layoutWidgets ? layoutMoveBlockers(layoutWidgets, widget.id) : moveBlocked;
+  const blockedMoves = layoutMoveBlockers(layoutWidgets, widget.id);
   function move(dx: number, dy: number) {
-    if (!layoutWidgets) { onMove(dx, dy); return; }
     const direction: LayoutMove = dy < 0 ? "up" : dy > 0 ? "down" : dx < 0 ? "left" : "right";
     const edit = moveLayout(savedLayout(layoutWidgets), widget.id, direction);
     if ("layout" in edit) history.update(current => ({ ...current, layout: edit.layout }));
@@ -1320,14 +1313,11 @@ export function WidgetEditor({
                     )}
                   </>
                 )}
-                {!workspace && draft.type === "plugin" && (
-                  <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} result={result} />
-                )}
                 {supportsAnnotationSource(draft.type, draft.pluginId) && <AnnotationSourceEditor widget={draft} onChange={setDraft} />}
               </div>
             ),
           },
-          ...(workspace && draft.type === "plugin" ? [{
+          ...(draft.type === "plugin" ? [{
             id: "options", title: "Options", content: <PluginConfigEditor definition={getWidgetDefinition(draft)} value={pluginConfig} onChange={setPluginConfig} queryFields={queryFields} result={result} />,
           }] : []),
           {
@@ -1529,7 +1519,7 @@ export function WidgetEditor({
                     );
                   })}
                 </div>
-                {workspace && <p className={styles.hint} role="status">Dashboard position: {gridPlacement({ ...position, ...dimensions })}. Size and placement are committed with Apply.</p>}
+                <p className={styles.hint} role="status">Dashboard position: {gridPlacement({ ...position, ...dimensions })}. Size and placement are committed with Apply.</p>
               </div>
             ),
           },
@@ -1570,7 +1560,7 @@ export function WidgetEditor({
   // Undo may restore a visualization without the currently selected settings.
   const settingsTab = settingsTabs.some(item => item.id === tab) ? tab : "style";
   const draftError = error && <pre id={errorId} className={styles.error} role="alert">{error}</pre>;
-  if (workspace) return (
+  return (
     <section ref={editorRef} className={`${styles.editor} ${styles.focusEditor}`} aria-label="Widget editor">
       <header className={styles.focusHeader}>
         <GammaButton variant="quiet" size="sm" onClick={onClose} aria-label="Back to dashboard">
@@ -1615,46 +1605,6 @@ export function WidgetEditor({
           <GammaTabs variant="underline" label="Widget settings" value={settingsTab} onChange={setTab} tabs={settingsTabs} />
           <p className={styles.focusSaveHint}>Apply returns to the dashboard. Save the dashboard to keep your changes.</p>
         </aside>
-      </div>
-    </section>
-  );
-  return (
-    <section
-      ref={editorRef}
-      className={styles.editor}
-      aria-label="Widget editor"
-    >
-      <div className={styles.heading}>
-        <div>
-          <h2>Widget settings</h2>
-        </div>
-        <GammaButton
-          variant="quiet"
-          size="sm"
-          iconOnly
-          aria-label="Close widget editor"
-          onClick={onClose}
-        >
-          <X size={18} />
-        </GammaButton>
-      </div>
-      {identity}
-      <GammaTabs label="Widget settings" value={tab} onChange={setTab} tabs={tabs} />
-
-      {draftError}
-      <div className={styles.footer}>
-        <p className={styles.previewStatus}><span aria-hidden="true" />Live preview · Save the dashboard to keep changes.</p>
-        <GammaButton variant="primary" disabled={stale || !!error} onClick={apply}>
-          Apply widget
-        </GammaButton>
-        <div className={styles.row}>
-          <GammaButton variant="secondary" onClick={onDuplicate}>
-            <Copy size={14} /> Duplicate
-          </GammaButton>
-          <GammaButton variant="danger" onClick={onDelete}>
-            <Trash2 size={14} /> Remove
-          </GammaButton>
-        </div>
       </div>
     </section>
   );

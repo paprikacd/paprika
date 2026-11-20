@@ -14,7 +14,6 @@ import { dashboardSchema, type Dashboard, type Provider } from "./schema";
 import {
   buildDashboardBundle,
   downloadDocument,
-  remapDashboardProviders,
   serializeDashboardBundle,
 } from "./workspace-transfer";
 import {
@@ -246,7 +245,6 @@ export function DashboardManager({
   onApply,
   onDuplicate,
   onDelete,
-  onImport,
   onImportBundle,
   onRefreshQueries,
   onReviewBundle,
@@ -263,10 +261,7 @@ export function DashboardManager({
   onApply: (dashboard: Dashboard) => void;
   onDuplicate: () => void;
   onDelete: () => Promise<void>;
-  onImport?: (
-    documents: Dashboard[],
-  ) => Promise<{ added: number; failed: Dashboard[]; errors: string[] }>;
-  onImportBundle?: PortableImportProps["onImportBundle"];
+  onImportBundle: NonNullable<PortableImportProps["onImportBundle"]>;
   onRefreshQueries?: PortableImportProps["onRefreshQueries"];
   onReviewBundle?: PortableImportProps["onReviewBundle"];
   validateDocument?: PortableImportProps["validateDocument"];
@@ -293,7 +288,6 @@ export function DashboardManager({
         .filter((value): value is string => !!value),
     ),
   ];
-  const legacyCompleted = useRef(new Map<string, Set<string>>());
   const exportUsesLibrary = dashboards.some((document) =>
     document.widgets.some(
       (widget) =>
@@ -514,47 +508,7 @@ export function DashboardManager({
         onBusyChange={setImporting}
         onRefreshQueries={onRefreshQueries}
         onReviewBundle={onReviewBundle}
-        onImportBundle={
-          onImportBundle ??
-          (onImport
-            ? async (request) => {
-                if (request.bundle.savedQueries?.length)
-                  throw new Error(
-                    "This host must support portable saved queries before this bundle can be imported.",
-                  );
-                const completed =
-                  legacyCompleted.current.get(request.sessionId) ??
-                  new Set<string>();
-                legacyCompleted.current.set(request.sessionId, completed);
-                const documents = request.bundle.dashboards.filter(
-                  (document) => !completed.has(document.id),
-                );
-                const result = await onImport(
-                  remapDashboardProviders(
-                    documents,
-                    request.providerMapping,
-                    providers,
-                  ),
-                );
-                const failed = new Set(
-                  result.failed.map((document) => document.id),
-                );
-                documents.forEach((document) => {
-                  if (!failed.has(document.id)) completed.add(document.id);
-                });
-                return {
-                  ...result,
-                  totalAdded: completed.size,
-                  queriesAdded: 0,
-                  queriesReused: 0,
-                  dashboardsKept: 0,
-                  dashboardsReplaced: 0,
-                  queriesReplaced: 0,
-                  complete: result.failed.length === 0,
-                };
-              }
-            : undefined)
-        }
+        onImportBundle={onImportBundle}
       />
       {message && <p role="status">{message}</p>}
       {error && (
