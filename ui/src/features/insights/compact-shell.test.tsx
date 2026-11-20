@@ -7,7 +7,9 @@ import type { Dashboard } from "./schema";
 vi.mock("./canvas", () => ({ DashboardCanvas: ({ referenceCompact }: { referenceCompact?: boolean }) => <div data-testid="canvas" data-reference-compact={referenceCompact || undefined} /> }));
 afterEach(() => { cleanup(); window.localStorage.clear(); vi.restoreAllMocks(); });
 
-function setup({ dense = true, theme = "dark", width = 1440, fine = true, description = "Synthetic local observations; no production traffic." } = {}) {
+type Appearance = "dark" | "light";
+
+function setup({ dense = true, theme = "dark" as Appearance, width = 1440, fine = true, description = "Synthetic local observations; no production traffic." } = {}) {
   window.history.replaceState(null, "", "/dashboard/insights/");
   window.localStorage.setItem("paprika-insights-compact-view", String(dense));
   window.localStorage.setItem("paprika-insights-theme", theme);
@@ -27,10 +29,10 @@ function setup({ dense = true, theme = "dark", width = 1440, fine = true, descri
   return { ...view, client, dashboard, before };
 }
 
-it("honors stored compact intent with an expandable rail and accessible context without saving documents", async () => {
-  const { container, client, dashboard, before } = setup();
+it.each<Appearance>(["dark", "light"])("honors stored compact intent in %s with an expandable rail and accessible context without saving documents", async theme => {
+  const { container, client, dashboard, before } = setup({ theme });
   await screen.findByRole("heading", { name: "Edge Watch" });
-  const root = container.querySelector('[data-insights-theme="dark"]')!;
+  const root = container.querySelector(`[data-insights-theme="${theme}"]`)!;
   expect(root).toHaveAttribute("data-density", "compact");
   expect(root).toHaveAttribute("data-compact-shell", "true");
   const navigation = screen.getByRole("complementary", { name: "Insights navigation" });
@@ -53,7 +55,11 @@ it("honors stored compact intent with an expandable rail and accessible context 
   expect(JSON.stringify(dashboard)).toBe(before);
 });
 
-it.each([{ dense: false, theme: "dark", width: 1440 }, { dense: true, theme: "light", width: 1440 }, { dense: true, theme: "dark", width: 1000 }, { dense: true, theme: "dark", width: 390 }])("retains ordinary chrome outside dark compact desktop: %j", async options => {
+it.each([
+  { dense: false, theme: "dark", width: 1440 }, { dense: false, theme: "light", width: 1440 },
+  { dense: true, theme: "dark", width: 1000 }, { dense: true, theme: "light", width: 1000 },
+  { dense: true, theme: "dark", width: 390 }, { dense: true, theme: "light", width: 390 },
+] as const)("retains ordinary chrome outside compact desktop: %j", async options => {
   const { container } = setup(options);
   await screen.findByRole("heading", { name: "Edge Watch" });
   expect(container.querySelector("[data-compact-shell]")).toBeNull();
@@ -80,8 +86,10 @@ it("keeps long mobile context in the page as a two-line clamp, not a disclosure"
   expect(client.save).not.toHaveBeenCalled();
 });
 
-it.each([true, false])("limits tighter calendar/state layout to fine-pointer compact desktop (%s)", async fine => {
-  setup({ fine });
+it.each([
+  { fine: true, theme: "dark" }, { fine: true, theme: "light" }, { fine: false, theme: "dark" }, { fine: false, theme: "light" },
+] as const)("limits tighter calendar/state layout to fine-pointer compact desktop (%j)", async ({ fine, theme }) => {
+  setup({ fine, theme });
   await screen.findByRole("heading", { name: "Edge Watch" });
   if (fine) expect(screen.getByTestId("canvas")).toHaveAttribute("data-reference-compact", "true");
   else expect(screen.getByTestId("canvas")).not.toHaveAttribute("data-reference-compact");

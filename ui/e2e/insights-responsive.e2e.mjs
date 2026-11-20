@@ -667,7 +667,7 @@ await check("layout moves from the inspector work on the compact canvas, which i
   return { direction: enabled[0], enabled, before, after }
 })
 
-// Focus, Explore, the compact dark rail, resizing while a panel is open, and a sidebar the user showed over a panel.
+// Focus, Explore, the Compact view rail, resizing while a panel is open, and a sidebar the user showed over a panel.
 async function focusedOpenerName(target) {
   return target.evaluate(() => document.activeElement?.dataset?.panelOpener ?? null)
 }
@@ -702,16 +702,16 @@ await check("Explore and back keep an open panel, the wide grid and its drag han
   return { before, after }
 })
 
-await check("the compact dark rail yields to a panel and returns when it closes, keeping the wide grid from 1246px", async () => {
+for (const theme of ["dark", "light"]) await check(`the compact rail yields to a panel and returns when it closes in ${theme}, keeping the wide grid from 1246px`, async () => {
   const dark = await browser.newContext({ viewport: { width: 1280, height: 1050 }, reducedMotion: "reduce", timezoneId: "UTC" })
-  await dark.addInitScript(() => { localStorage.setItem("paprika-insights-theme", "dark"); localStorage.setItem("paprika-insights-compact-view", "true") })
+  await dark.addInitScript(theme => { localStorage.setItem("paprika-insights-theme", theme); localStorage.setItem("paprika-insights-compact-view", "true") }, theme)
   const target = await dark.newPage()
   observe(target)
   try {
     await target.goto(`${baseURL}/dashboard/insights/?example=1`, { waitUntil: "networkidle" })
     await settle(target)
     const rail = target.locator("#insights-navigation")
-    assert.equal(await target.evaluate(() => document.querySelector("[data-compact-shell]") !== null), true, "Compact dark view must be active")
+    assert.equal(await target.evaluate(() => document.querySelector("[data-compact-shell]") !== null), true, "Compact view must apply the desktop shell")
     const rows = []
     for (const width of [1246, 1240]) {
       await resizeCanvasHost(target, width)
@@ -719,8 +719,8 @@ await check("the compact dark rail yields to a panel and returns when it closes,
       rows.push({ width, ...(await canvasState(target)) })
       await closePanel(target)
     }
-    assert.equal(rows[0].mode, "wide", "Compact dark keeps the wide grid from 1246px")
-    assert.equal(rows[1].mode, "compact", "Compact dark drops to compact at 1240px")
+    assert.equal(rows[0].mode, "wide", "Compact view keeps the wide grid from 1246px")
+    assert.equal(rows[1].mode, "compact", "Compact view drops to compact at 1240px")
     assert.equal(await rail.count() > 0, true, "The rail returns when the panel closes")
     await resizeCanvasHost(target, 1280)
     await openPanel(target, "Data sources")
@@ -728,12 +728,12 @@ await check("the compact dark rail yields to a panel and returns when it closes,
     assert.equal(await target.getByRole("button", { name: "Toggle sidebar", exact: true }).getAttribute("aria-expanded"), "false")
     await closePanel(target)
     assert.equal(await focusedOpenerName(target), "providers", "Focus returns to the rail's Data sources control")
-    // Build with AI turns editing on, which leaves compact dark. The sidebar is then planned again, before paint.
+    // Build with AI turns editing on, which leaves Compact view. The sidebar is then planned again, before paint.
     await target.getByRole("button", { name: "Dashboard actions", exact: true }).click()
     await target.getByRole("menuitem", { name: /Build with AI/ }).click()
     await stableGeometry(target)
     const ai = await canvasState(target)
-    assert.equal(ai.mode, "wide", `Build with AI from compact dark keeps the wide grid, got ${ai.canvas}px`)
+    assert.equal(ai.mode, "wide", `Build with AI from Compact view keeps the wide grid, got ${ai.canvas}px`)
     assert.ok(ai.handles > 0, "Editing from Build with AI offers drag handles")
     await closePanel(target)
     return rows.concat([{ width: 1280, ai }])

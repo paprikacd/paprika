@@ -1463,10 +1463,10 @@
 .stackedView .tile[data-intrinsic-stat="true"] .tileHeader { padding-top: 9px; min-height: 27px; }
 .stackedView .tile[data-intrinsic-stat="true"] .visualization { flex: none; padding-block: 0 8px; }
 
-/* The existing Compact view preference earns a focused desktop reading shell.
-   Light theme, mobile drawers and authoring retain their established layout. */
+/* Compact view earns the same focused desktop reading shell in either
+   appearance. Mobile drawers and authoring keep their established layout. */
 @media (min-width: 1024px) {
-  .root[data-insights-theme="dark"][data-density="compact"][data-compact-shell] {
+  .root[data-compact-shell] {
     --insights-topbar-height: 32px;
   }
   .root[data-compact-shell] .compactRail {
