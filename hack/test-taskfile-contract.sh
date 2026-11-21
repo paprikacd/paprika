@@ -66,10 +66,21 @@ assert_listed_task ui:build 'Build the UI.'
 assert_listed_task docker:build 'Build the container image.'
 assert_listed_task clean 'Remove local build and test output.'
 
-all_tasks=$(task --dir "$repo_root" --list-all)
-if grep -Eq '^[[:space:]]*\*[[:space:]]+([^:[:space:]]+:)?(deploy|push):' <<<"$all_tasks"; then
-  fail 'Taskfile must not expose deploy or push tasks'
+# CI=true makes task print colour codes, so the listing is read without colour.
+all_tasks=$(NO_COLOR=1 task --color=false --dir "$repo_root" --list-all)
+# `deploy` is the one deliberate exception: it is the local VKE deploy (hack/deploy/vke.sh) and
+# is gated by a passing local CI stamp inside that script. Nothing else may use these names.
+if grep -Eq '^[[:space:]]*\*[[:space:]]+([^:[:space:]]+:)?push:' <<<"$all_tasks"; then
+  fail 'Taskfile must not expose push tasks'
 fi
+if grep -Eq '^[[:space:]]*\*[[:space:]]+[^[:space:]]+:deploy:' <<<"$all_tasks"; then
+  fail 'only the top-level deploy task may be exposed'
+fi
+grep -Eq '^[[:space:]]*\*[[:space:]]+deploy:' <<<"$all_tasks" ||
+  fail 'task deploy must be listed (local VKE deploy)'
+[[ $(grep -c -- 'bash hack/deploy/vke.sh' "$taskfile") -eq 1 ]] ||
+  fail 'task deploy must delegate to hack/deploy/vke.sh exactly once'
+grep -Fq 'bash hack/ci/quick.sh' "$taskfile" || fail 'task ci:quick must delegate to hack/ci/quick.sh'
 
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/paprika-taskfile-contract.XXXXXX")
 trap 'rm -rf "$temp_dir"' EXIT

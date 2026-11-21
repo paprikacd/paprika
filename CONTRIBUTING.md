@@ -35,6 +35,9 @@ go test ./internal/engine ./internal/controller/pipelines -count=1
 # Run the linter before a code PR
 make lint
 
+# Run the local CI jobs that replace GitHub CI (see docs/guides/local-ci.md)
+task ci
+
 # Check the target before running a controller against a cluster
 kubectl config current-context
 ENABLE_WEBHOOKS=false make run

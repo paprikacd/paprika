@@ -71,9 +71,18 @@ try {
     const tile = id => page.locator(`[data-widget-id="${id}"]`)
     // A Tab sweep or arrow keys never change the filters; only the deliberate presses below do.
     const act = async (locator) => { if (phone) await locator.tap(); else await locator.click() }
-    await page.goto(`${base}/dashboard/insights/?dashboard=${dashboard.id}`)
-    // Tiles load when they scroll into view, so visit each one before reading it.
-    for (const id of ["ts", "bar", "quiet", "table", "heat", "traces"]) { await tile(id).scrollIntoViewIfNeeded(); await page.waitForTimeout(300) }
+    await page.goto(`${base}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" })
+    // Tiles load when they scroll into view, so visit each one before reading it. A tile can re-render while the grid
+    // settles, which detaches the element being scrolled; the scroll is retried on the re-rendered tile.
+    const reveal = async id => {
+      for (let attempt = 1; ; attempt++) {
+        try { await tile(id).scrollIntoViewIfNeeded(); return } catch (error) {
+          if (attempt >= 5 || !String(error?.message).includes("not attached to the DOM")) throw error
+          await page.waitForTimeout(200)
+        }
+      }
+    }
+    for (const id of ["ts", "bar", "quiet", "table", "heat", "traces"]) { await reveal(id); await page.waitForTimeout(300) }
     await tile("table").getByText("worker").first().waitFor({ timeout: 60000 })
     await tile("traces").getByText("GET /worker").first().waitFor({ timeout: 30000 })
     await page.evaluate(() => window.scrollTo(0, 0))

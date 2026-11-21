@@ -225,8 +225,14 @@ func TestSchemaFindingsCostIsBoundedForLargeDocuments(t *testing.T) {
 	if len(findings) == 0 {
 		t.Fatal("adversarial document must fail validation")
 	}
-	if elapsed > time.Second {
-		t.Fatalf("validating a %d byte document took %s", len(document), elapsed)
+	// The race detector slows this CPU-bound path several times over, so under it the bound only catches a
+	// pathological cost, as in the request-level budget test below.
+	budget := time.Second
+	if raceEnabled {
+		budget = 5 * time.Second
+	}
+	if elapsed > budget {
+		t.Fatalf("validating a %d byte document took %s (budget %s)", len(document), elapsed, budget)
 	}
 }
 

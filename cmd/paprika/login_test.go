@@ -115,7 +115,7 @@ func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end
 		t.Fatalf("save original config: %v", err)
 	}
 
-	browserOutput := installFakeBrowser(t)
+	browserPage := useInProcessBrowser(t)
 	var stdout, stderr strings.Builder
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -144,9 +144,10 @@ func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end
 	case <-time.After(eventTimeout):
 		t.Fatal("token exchange did not start")
 	}
-	//nolint:gosec // browserOutput is rooted in t.TempDir and controlled by this test.
-	if page, err := os.ReadFile(browserOutput); err == nil && strings.Contains(string(page), "Login successful") {
-		t.Fatal("browser reported success before token exchange completed")
+	select {
+	case page := <-browserPage:
+		t.Fatalf("browser page arrived before token exchange completed: %q", page)
+	default:
 	}
 	close(allowToken)
 
@@ -181,13 +182,56 @@ func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end
 	if !strings.Contains(stdout.String(), identity) {
 		t.Errorf("stdout = %q, want identity %q", &stdout, identity)
 	}
-	page, err := waitForFile(browserOutput, eventTimeout)
-	if err != nil {
-		t.Fatal(err)
+	select {
+	case page := <-browserPage:
+		if !strings.Contains(page, "Login successful") {
+			t.Errorf("browser page = %q, want success", page)
+		}
+	case <-time.After(eventTimeout):
+		t.Fatal("browser page did not arrive")
 	}
-	if !strings.Contains(string(page), "Login successful") {
-		t.Errorf("browser page = %q, want success", page)
+}
+
+// useInProcessBrowser makes the login command that run() registers open the authorization URL with an HTTP client
+// in this process. The client follows the provider's redirect to the loopback callback, as a browser does, and sends
+// the callback page to the returned channel. Running a browser executable written by the test is avoided: under a
+// full parallel race run on macOS, a just-written executable can fail to start within the launch timeout, and the
+// login then waits for a callback that never comes. openBrowserURL itself is covered by the browser command tests.
+func useInProcessBrowser(t *testing.T) <-chan string {
+	t.Helper()
+	page := make(chan string, 1)
+	previous := loginDependenciesForCommand
+	t.Cleanup(func() { loginDependenciesForCommand = previous })
+	loginDependenciesForCommand = func() loginDependencies {
+		dependencies := defaultLoginDependencies()
+		dependencies.openBrowser = func(ctx context.Context, rawURL string) error {
+			if err := validateBrowserURL(rawURL); err != nil {
+				return err
+			}
+			go func() {
+				req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodGet, rawURL, http.NoBody)
+				if err != nil {
+					page <- "browser request failed: " + err.Error()
+					return
+				}
+				resp, err := http.DefaultClient.Do(req) // #nosec G704 -- the URL is the test provider's loopback address.
+				if err != nil {
+					page <- "browser request failed: " + err.Error()
+					return
+				}
+				defer resp.Body.Close()
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					page <- "browser response failed: " + err.Error()
+					return
+				}
+				page <- string(body)
+			}()
+			return nil
+		}
+		return dependencies
 	}
+	return page
 }
 
 func TestLoginPersistsSuppliedServerValue(t *testing.T) {
@@ -1285,32 +1329,6 @@ func assertNoMarkers(t *testing.T, got string, markers ...string) {
 	}
 }
 
-func installFakeBrowser(t *testing.T) string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("fake browser executable is POSIX-only")
-	}
-	dir := t.TempDir()
-	name := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		name = "open"
-	}
-	path := filepath.Join(dir, name)
-	script := `#!/bin/sh
-url=""
-for arg do url="$arg"; done
-/usr/bin/curl --silent --show-error --location "$url" > "$PAPRIKA_TEST_BROWSER_OUTPUT"
-`
-	//nolint:gosec // executable browser shim is rooted in t.TempDir and contains no secrets.
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
-		t.Fatalf("write fake browser: %v", err)
-	}
-	output := filepath.Join(dir, "browser.html")
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("PAPRIKA_TEST_BROWSER_OUTPUT", output)
-	return output
-}
-
 func testJWT(t *testing.T, claims map[string]any) string {
 	t.Helper()
 	payload, err := json.Marshal(claims)
@@ -1327,19 +1345,6 @@ func writeTestJSON(t *testing.T, w http.ResponseWriter, value any) {
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		t.Errorf("encode response: %v", err)
 	}
-}
-
-func waitForFile(path string, timeout time.Duration) ([]byte, error) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		//nolint:gosec // path is rooted in t.TempDir and controlled by this test.
-		data, err := os.ReadFile(path)
-		if err == nil && len(data) > 0 {
-			return data, nil
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return nil, errors.New("timed out waiting for browser output")
 }
 
 func resetLoginGlobals(t *testing.T) {
