@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -28,6 +29,7 @@ func NewAuthorizedBackend(k8sClient client.Client, authorizer auth.Authorizer) B
 type authorizedBackend struct {
 	backend    Backend
 	authorizer auth.Authorizer
+	appOnly    []string
 }
 
 func (b *authorizedBackend) principal(ctx context.Context) (*auth.Principal, error) {
@@ -45,6 +47,9 @@ func (b *authorizedBackend) authorize(ctx context.Context, provider string) erro
 	p, err := b.principal(ctx)
 	if err != nil {
 		return err
+	}
+	if provider != "" && slices.Contains(b.appOnly, provider) {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("provider requires an app telemetry grant"))
 	}
 	namespace, name, found := strings.Cut(provider, "/")
 	if !found || namespace == "" || name == "" || strings.Contains(name, "/") {

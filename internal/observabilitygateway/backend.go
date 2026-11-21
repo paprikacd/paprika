@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -113,9 +114,9 @@ func (b *k8sBackend) executionBudget() *executionBudget {
 // NewAuthorizedBackendWithBudget is NewAuthorizedBackend with an execution
 // budget sized by the caller. The caller validates cfg; a zero cfg means
 // DefaultBudgetConfig.
-func NewAuthorizedBackendWithBudget(k8sClient client.Client, authorizer auth.Authorizer, cfg BudgetConfig) Backend {
+func NewAuthorizedBackendWithBudget(k8sClient client.Client, authorizer auth.Authorizer, cfg BudgetConfig, appOnly ...string) Backend {
 	inner := &k8sBackend{client: k8sClient, credentialAuthorizer: authorizer, budgetConfig: cfg}
-	return &authorizedBackend{backend: inner, authorizer: authorizer}
+	return &authorizedBackend{backend: inner, authorizer: authorizer, appOnly: slices.Clone(appOnly)}
 }
 
 // NewConnectorRegistry registers the built-in connectors. It is the
@@ -194,6 +195,11 @@ func (b *k8sBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) 
 //
 //nolint:gocritic // req travels by value because the Backend contract says so; QueryRequest holds only per-call state built fresh by each caller.
 func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.QueryRequest) (*connector.QueryResult, error) {
+	return b.query(ctx, provider, "", req)
+}
+
+//nolint:gocritic // Keep the same request shape as Backend.Query.
+func (b *k8sBackend) query(ctx context.Context, provider, requiredType string, req connector.QueryRequest) (*connector.QueryResult, error) {
 	if err := boundQuery(&req); err != nil {
 		return nil, err
 	}
@@ -209,6 +215,9 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 		return nil, err
 	}
 	markProviderResolved(ctx)
+	if requiredType != "" && cr.Spec.Type != requiredType {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("app telemetry provider type does not match its signal"))
+	}
 	if req.PageToken != "" && !supportsQueryPageToken(cr.Spec.Type) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("this provider does not support query page tokens"))
 	}

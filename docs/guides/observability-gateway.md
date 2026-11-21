@@ -871,3 +871,29 @@ widgets. Its API proxy mints a 30-second token for the authenticated human;
 it never queries as a shared service account. OAuth authorization and refresh
 also retain exact group membership. See the
 [Insights integration guide](../design/insights/README.md#shared-observability-mcp-providers).
+
+## Delegate reads for an application
+
+Set `PAPRIKA_APP_TELEMETRY` on the gateway with a JSON object containing
+`issuer`, a `publicKeys` map from key ID to Ed25519 public PEM, and
+`metricsProvider` or `logsProvider`. The providers use `namespace/name`
+identifiers and must be Prometheus for metrics or Loki for logs. This binding
+reserves them for the app endpoint. General Paprika query, exploration, and
+provider discovery exclude those IDs. Keep alternate registrations of shared
+backends restricted to fleet operators.
+
+The trusted application console calls
+`GET /observe/api/app-telemetry` with a signed bearer grant. It verifies the
+user's membership and app ownership before granting access. The gateway
+requires EdDSA, an accepted `kid`, the configured issuer, the exact HTTPS
+endpoint as the sole audience, and a lifetime of at most one minute. Include
+`sub`, `iat`, `exp`, and the `tenant`, `app`, and `signal` claims. The
+canonical app label starts with the tenant label and a hyphen. The endpoint
+takes its entire scope from the grant and accepts an empty request.
+
+The gateway selects a fixed query for `metrics` or `logs`, and verifies the
+tenant and app labels in the response. Metrics are one instant Prometheus
+query over the previous 24 hours of DeepHost router traffic. Logs use a
+15-minute Loki window with a maximum of 50 entries. The provider must attach
+tenant and app labels from trusted metadata at ingestion. Keep provider and
+collector configuration under operator control.

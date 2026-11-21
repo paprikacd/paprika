@@ -71,6 +71,10 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	if err != nil {
 		return err
 	}
+	appTelemetry, err := observabilitygateway.ParseAppTelemetryConfig(os.Getenv("PAPRIKA_APP_TELEMETRY"), cfg.MCPPublicURL)
+	if err != nil {
+		return fmt.Errorf("configure app telemetry: %w", err)
+	}
 	authCfg := buildAuthConfig(cfg.AuthEnabled, cfg.AuthBasicUsername, cfg.AuthBasicPassword, cfg.AuthBasicPasswordHash,
 		cfg.AuthOIDCIssuerURL, cfg.AuthOIDCClientID, cfg.AuthOIDCClientSecret, cfg.AuthOIDCRedirectURL,
 		cfg.AuthTokenSecret, cfg.AuthRBACRules, setupLog)
@@ -100,7 +104,7 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	}
 	k8sClient = namespaceScopedAPIClient(k8sClient, cfg.APINamespace)
 
-	srv, authenticator, usage, backend, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient, capacity.Budget)
+	srv, authenticator, usage, backend, err := buildObservabilityServer(ctx, cfg, authCfg, k8sClient, cacheClient, capacity.Budget, appTelemetry.RestrictedProviders()...)
 	if err != nil {
 		return err
 	}
@@ -143,6 +147,9 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	startGatewaySupportServers(gwCtx, ctx, cfg, setupLog)
 
 	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage, backend)
+	if appTelemetry != nil {
+		mux.Handle("GET "+observabilitygateway.AppTelemetryPath, appTelemetry.Handler(k8sClient, capacity.Budget))
+	}
 	return serveGatewayHTTP(gwCtx, cfg, mux, capacity.Pools)
 }
 
@@ -491,7 +498,7 @@ func limitObservabilityProtocolRequestsWith(next http.Handler, pools observabili
 // verify the same audience.
 //
 //nolint:cyclop // The gateway constructor assembles and validates its independent collaborators.
-func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache, budget observabilitygateway.BudgetConfig) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
+func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.Config, k8sClient client.Client, cacheClient *cache.Cache, budget observabilitygateway.BudgetConfig, appOnly ...string) (*mcp.Server, *auth.SelfSignedAuthenticator, *observabilitygateway.UsageTracker, observabilitygateway.Backend, error) {
 	if len(authCfg.TokenSecret) == 0 {
 		return nil, nil, nil, nil, errors.New("observability-gateway: a non-empty auth token secret is required (PAPRIKA_AUTH_TOKEN_SECRET); paprika-observability tokens are HMAC-signed with the same secret the console's self-signed authenticator uses")
 	}
@@ -507,7 +514,7 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 	// Kubernetes/cloud visibility. Namespace access follows explicit RBAC;
 	// an empty rule set denies access rather than the project compatibility
 	// authorizer's empty-project allowance.
-	backend := observabilitygateway.NewAuthorizedBackendWithBudget(k8sClient, auth.NewRBACAuthorizer(authCfg.RBACRules), budget)
+	backend := observabilitygateway.NewAuthorizedBackendWithBudget(k8sClient, auth.NewRBACAuthorizer(authCfg.RBACRules), budget, appOnly...)
 	registry := mcp.NewRegistry()
 	usage := observabilitygateway.NewUsageTracker()
 	if err := observabilitygateway.RegisterTools(registry, backend, usage); err != nil {

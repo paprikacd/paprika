@@ -32,6 +32,7 @@ func isObservabilityProtocolRequest(r *http.Request) bool {
 	case observabilityGatewayRoutePrefix + "/mcp",
 		observabilityGatewayRoutePrefix + "/api/providers",
 		observabilityGatewayRoutePrefix + "/api/query",
+		observabilitygateway.AppTelemetryPath,
 		observabilityGatewayRoutePrefix + "/api/explore":
 		return true
 	default:
