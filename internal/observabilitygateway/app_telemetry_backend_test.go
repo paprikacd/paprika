@@ -36,7 +36,19 @@ func TestAppTelemetryQueriesPrometheusAndLokiThroughTheGateway(t *testing.T) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			fmt.Fprintf(w, `{"status":"success","data":{"resultType":"streams","result":[{"stream":{"tenant":"tenant-one","app":"tenant-one-storefront"},"values":[[%q,"scoped test log"]]}]}}`, params.Get("end"))
+			result := map[string]any{
+				"status": "success",
+				"data": map[string]any{
+					"resultType": "streams",
+					"result": []map[string]any{{
+						"stream": map[string]string{"tenant": "tenant-one", "app": "tenant-one-storefront"},
+						"values": [][]string{{params.Get("end"), "scoped test log"}},
+					}},
+				},
+			}
+			if err := json.NewEncoder(w).Encode(result); err != nil {
+				t.Error(err)
+			}
 		default:
 			t.Errorf("unexpected backend operation: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)

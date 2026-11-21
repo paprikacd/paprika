@@ -54,10 +54,10 @@ func ParseAppTelemetryConfig(raw, publicURL string) (*AppTelemetryConfig, error)
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var spec appTelemetrySpec
-	if err := dec.Decode(&spec); err != nil || dec.Decode(new(any)) != io.EOF {
+	if err = dec.Decode(&spec); err != nil || dec.Decode(new(any)) != io.EOF {
 		return nil, errors.New("invalid app telemetry configuration")
 	}
-	if err := spec.validate(); err != nil {
+	if err = spec.validate(); err != nil {
 		return nil, err
 	}
 	keys, err := appTelemetryKeys(spec.PublicKeys)
@@ -107,7 +107,7 @@ func appTelemetryKeys(pems map[string]string) (map[string]ed25519.PublicKey, err
 	for id, encoded := range pems {
 		block, rest := pem.Decode([]byte(encoded))
 		if len(validation.IsDNS1123Label(id)) != 0 || block == nil || block.Type != "PUBLIC KEY" ||
-			len(strings.TrimSpace(string(rest))) != 0 {
+			strings.TrimSpace(string(rest)) != "" {
 			return nil, errors.New("invalid app telemetry verification key")
 		}
 		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
@@ -144,9 +144,9 @@ func (c *AppTelemetryConfig) verify(header string, now time.Time) (*appTelemetry
 	}
 	claims := &appTelemetryGrant{}
 	_, err := jwt.ParseWithClaims(raw, claims, func(token *jwt.Token) (any, error) {
-		id, _ := token.Header["kid"].(string)
+		id, hasID := token.Header["kid"].(string)
 		key, ok := c.keys[id]
-		if !ok {
+		if !hasID || !ok {
 			return nil, invalid
 		}
 		return key, nil

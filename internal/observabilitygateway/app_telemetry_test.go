@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -90,8 +91,10 @@ func TestAppTelemetryBuildsBoundedAppReads(t *testing.T) {
 			require.Equal(t, 50, req.Limit)
 			require.Equal(t, 15*time.Minute, req.Range.End.Sub(req.Range.Start))
 			line := fmt.Sprintf(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"tenant":"tenant-one","app":"tenant-one-storefront"},"values":[[%q,"site ready"]]}]}}`,
-				fmt.Sprint(req.Range.End.Add(-time.Second).UnixNano()))
+				strconv.FormatInt(req.Range.End.Add(-time.Second).UnixNano(), 10))
 			return &connector.QueryResult{State: connector.StateOK, Data: json.RawMessage(line)}, nil
+		case connector.SignalTraces, connector.SignalRecords:
+			fallthrough
 		default:
 			t.Fatalf("unexpected signal %q", req.Signal)
 			return nil, nil
@@ -160,7 +163,7 @@ func TestAppTelemetryChecksReturnedLabels(t *testing.T) {
 				data := `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"tenant":"tenant-one","app":"tenant-one-billing","metric":"requests_24h"},"value":[1,"400"]}]}}`
 				if signal == "logs" {
 					data = fmt.Sprintf(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"tenant":"tenant-two","app":"tenant-two-storefront"},"values":[[%q,"private line"]]}]}}`,
-						fmt.Sprint(req.Range.End.Add(-time.Second).UnixNano()))
+						strconv.FormatInt(req.Range.End.Add(-time.Second).UnixNano(), 10))
 				}
 				return &connector.QueryResult{State: connector.StateOK, Data: json.RawMessage(data)}, nil
 			})
