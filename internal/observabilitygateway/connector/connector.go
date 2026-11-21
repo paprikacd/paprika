@@ -145,6 +145,8 @@ type TimeRange struct {
 // everything a call needs travels in the request; nothing is held between
 // calls.
 type QueryRequest struct {
+	// LokiTenant is set only by the verified application telemetry route.
+	LokiTenant string
 	// Signal selects the data plane to query.
 	Signal Signal
 	// Query carries the backend's native query language — PromQL, LogQL or

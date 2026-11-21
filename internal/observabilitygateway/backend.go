@@ -228,6 +228,7 @@ func (b *k8sBackend) query(ctx context.Context, provider, requiredType string, r
 	}
 
 	result, err := conn.Query(ctx, connector.QueryRequest{
+		LokiTenant:  req.LokiTenant,
 		Signal:      req.Signal,
 		Query:       req.Query,
 		TraceID:     req.TraceID,

@@ -912,6 +912,7 @@ takes its entire scope from the grant and accepts an empty request.
 The gateway selects a fixed query for `metrics` or `logs`, and verifies the
 tenant and app labels in the response. Metrics are one instant Prometheus
 query over the previous 24 hours of DeepHost router traffic. Logs use a
-15-minute Loki window with a maximum of 50 entries. The provider must attach
+15-minute Loki window with a maximum of 50 entries. Paprika sets Loki’s
+`X-Scope-OrgID` to the tenant from the signed grant. The provider must attach
 tenant and app labels from trusted metadata at ingestion. Keep provider and
 collector configuration under operator control.

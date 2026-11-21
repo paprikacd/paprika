@@ -218,13 +218,15 @@ func (c *AppTelemetryConfig) readAppTelemetry(ctx context.Context, query appTele
 	selector := fmt.Sprintf("tenant=%q,app=%q", grant.Tenant, grant.App)
 	req := connector.QueryRequest{
 		Signal: connector.SignalLogs, Query: "{" + selector + "}", Limit: 50,
-		Range: connector.TimeRange{Start: now.Add(-15 * time.Minute), End: now},
+		LokiTenant: grant.Tenant,
+		Range:      connector.TimeRange{Start: now.Add(-15 * time.Minute), End: now},
 	}
 	provider, kind := c.logsProvider, connector.ProviderLoki
 	if grant.Signal == "metrics" {
 		provider, kind = c.metricsProvider, connector.ProviderPrometheus
 		req.Signal, req.Query, req.Limit = connector.SignalMetrics, appTrafficQuery(selector), 3
 		req.Instant = true
+		req.LokiTenant = ""
 	}
 	if provider == "" {
 		return appTelemetryResult{State: "not_configured"}

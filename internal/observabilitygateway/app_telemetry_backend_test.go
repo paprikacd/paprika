@@ -31,7 +31,7 @@ func TestAppTelemetryQueriesPrometheusAndLokiThroughTheGateway(t *testing.T) {
 			}
 			fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"tenant":"tenant-one","app":"tenant-one-storefront","metric":"requests_24h"},"value":[1,"99"]}]}}`)
 		case "/loki/api/v1/query_range":
-			if params.Get("query") != "{"+labelSelector+"}" || params.Get("limit") != "50" || params.Get("direction") != "backward" {
+			if params.Get("query") != "{"+labelSelector+"}" || params.Get("limit") != "50" || params.Get("direction") != "backward" || r.Header.Get("X-Scope-OrgID") != "tenant-one" {
 				t.Error("Loki did not receive the bounded app query")
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -56,7 +56,9 @@ func TestAppTelemetryQueriesPrometheusAndLokiThroughTheGateway(t *testing.T) {
 	}))
 	defer source.Close()
 	setEndpoint := func(provider *observabilityv1alpha1.ObservabilityProvider) {
-		provider.Spec.Config.Raw, _ = json.Marshal(map[string]string{"endpoint": source.URL})
+		provider.Spec.Config.Raw, _ = json.Marshal(map[string]any{
+			"endpoint": source.URL, "headers": map[string]string{"x-scope-orgid": "paprika-probe"},
+		})
 	}
 	prometheus := providerCR("obs", "traffic", connector.ProviderPrometheus, setEndpoint)
 	loki := providerCR("obs", "runtime", connector.ProviderLoki, setEndpoint)

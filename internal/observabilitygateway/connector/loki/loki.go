@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
@@ -80,11 +81,28 @@ func (Loki) Query(ctx context.Context, req connector.QueryRequest) (*connector.Q
 		params.Set("end", strconv.FormatInt(req.Range.End.UnixNano(), 10))
 	}
 
+	setTenantHeader(&cfg, req.LokiTenant)
 	data, err := httphelp.Get(ctx, cfg, pathQueryRange, params, req.Credentials)
 	if err != nil {
 		return queryError(err), nil
 	}
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
+}
+
+func setTenantHeader(cfg *httphelp.Config, tenant string) {
+	if tenant == "" {
+		return
+	}
+	const header = "X-Scope-OrgID"
+	for name := range cfg.Headers {
+		if strings.EqualFold(name, header) {
+			delete(cfg.Headers, name)
+		}
+	}
+	if cfg.Headers == nil {
+		cfg.Headers = make(map[string]string, 1)
+	}
+	cfg.Headers[header] = tenant
 }
 
 // unsupported builds the result — and error — for a query shape the
