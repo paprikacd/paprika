@@ -40,7 +40,7 @@ all: build
 .PHONY: hooks
 hooks: ## Install git pre-commit hooks for local validation.
 	git config core.hooksPath .githooks
-	@chmod +x .githooks/pre-commit
+	@chmod +x .githooks/pre-commit .githooks/pre-push
 	@echo "Hooks installed."
 
 # The help target prints out all targets with their descriptions organized

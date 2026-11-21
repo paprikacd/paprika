@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Pre-push hook. Git passes one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+#
+#   refs/heads/master    requires a passing local CI stamp for the pushed commit's tree
+#                        (hack/ci/status.sh). PAPRIKA_SKIP_PREPUSH does NOT skip this gate.
+#   any other ref        runs task ci:quick on HEAD (the pushed commit must be HEAD).
+#                        PAPRIKA_SKIP_PREPUSH=1 skips only this quick check, and says so.
+#
+# The hook never pushes and never contacts the remote. Install with: task hooks:install
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}"
+# lib.sh clears the repository variables git exports to hooks (GIT_DIR and the rest), so the checks below
+# and everything they start find the repository from the working directory.
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/hack/ci/lib.sh"
+
+ZERO_SHA=0000000000000000000000000000000000000000
+quick_needed=0
+master_gate_failed=0
+ref_mismatch=0
+head_sha="$(git rev-parse HEAD)"
+
+# Every ref is read, and each one is handled. stdin is redirected for the child commands so that they
+# cannot consume the ref lines that git is still writing.
+# shellcheck disable=SC2034 # remote_sha is part of git's hook protocol and unused here
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_ref:-}" ] || continue
+  if [ "${local_sha}" = "${ZERO_SHA}" ]; then
+    continue # deleting a ref needs no checks
+  fi
+  if [ "${remote_ref}" = "refs/heads/master" ]; then
+    echo "pre-push: master gate for ${local_sha:0:12}"
+    if ! bash "${REPO_ROOT}/hack/ci/status.sh" "${local_sha}" </dev/null; then
+      echo "pre-push: local CI does not pass for ${local_sha:0:12}; run: task ci" >&2
+      master_gate_failed=1
+    fi
+  else
+    quick_needed=1
+    # An annotated tag names a tag object; peel it to the commit it points at.
+    peeled_sha="$(git rev-parse --verify --quiet "${local_sha}^{commit}" || true)"
+    if [ -z "${peeled_sha}" ]; then
+      echo "pre-push: ${local_ref} does not name a commit" >&2
+      ref_mismatch=1
+    elif [ "${peeled_sha}" != "${head_sha}" ]; then
+      echo "pre-push: check out ${peeled_sha:0:12} before pushing ${remote_ref}; ci:quick checks HEAD" >&2
+      ref_mismatch=1
+    fi
+  fi
+done
+
+if [ "${master_gate_failed}" -ne 0 ]; then
+  echo "pre-push: push refused" >&2
+  exit 1
+fi
+
+if [ "${ref_mismatch}" -ne 0 ]; then
+  echo "pre-push: push refused" >&2
+  exit 1
+fi
+
+if [ "${quick_needed}" -eq 1 ]; then
+  if [ "${PAPRIKA_SKIP_PREPUSH:-}" = 1 ]; then
+    echo "pre-push: skipped task ci:quick (PAPRIKA_SKIP_PREPUSH=1); master is still gated by local CI"
+    exit 0
+  fi
+  if ! command -v task >/dev/null 2>&1; then
+    echo "pre-push: task is not on PATH (brew install go-task)" >&2
+    exit 1
+  fi
+  echo "pre-push: task ci:quick"
+  task --dir "${REPO_ROOT}" ci:quick
+fi
+
+echo "pre-push: checks passed"

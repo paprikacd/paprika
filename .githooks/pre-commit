@@ -1,41 +1,82 @@
 #!/usr/bin/env bash
-# Pre-commit hook: lint staged Go changes + check formatting.
-# Install with: git config core.hooksPath .githooks
+# Pre-commit hook: fast checks on the staged changes only.
+#   Go:     gofmt and golangci-lint on the staged packages (make golangci-lint pins the version)
+#   UI:     eslint on staged ui/ TypeScript and JavaScript files, with Node 22
+#   Shell:  shellcheck on staged *.sh files
+# Install with: task hooks:install   (or: git config core.hooksPath .githooks)
+# Skip the hooks for one commit with git commit --no-verify; the deploy gate does not depend on them.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
-STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+# The staged list is read first, with the index git gave the hook (git commit <paths> uses a temporary
+# one). lib.sh then clears git's repository variables, so no check acts on the hook's repository by accident.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+failures=0
 
-if [ -z "${STAGED_GO_FILES}" ]; then
-  exit 0
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/hack/ci/lib.sh"
+
+fail() {
+  echo "pre-commit: $*" >&2
+  failures=$((failures + 1))
+}
+
+# Go.
+STAGED_GO_FILES=$(printf '%s\n' "${STAGED}" | grep '\.go$' || true)
+if [ -n "${STAGED_GO_FILES}" ]; then
+  echo "pre-commit: Go formatting and lint on staged changes"
+  GOLANGCI_LINT="${REPO_ROOT}/bin/golangci-lint"
+  if [ ! -x "${GOLANGCI_LINT}" ]; then
+    GOLANGCI_LINT="$(command -v golangci-lint || true)"
+  fi
+  if [ -z "${GOLANGCI_LINT}" ]; then
+    fail "golangci-lint not found; install with: make golangci-lint"
+  else
+    UNFORMATTED=$(printf '%s\n' "${STAGED_GO_FILES}" | xargs gofmt -l 2>/dev/null || true)
+    if [ -n "${UNFORMATTED}" ]; then
+      echo "Unformatted Go files:" >&2
+      echo "${UNFORMATTED}" >&2
+      fail "run: gofmt -w ${UNFORMATTED}"
+    else
+      PACKAGES=$(printf '%s\n' "${STAGED_GO_FILES}" | xargs -n1 dirname | sort -u |
+        sed 's|^\([^.]\)|./\1|; s|^\.$|.|; s|$|/...|' | tr '\n' ' ')
+      # shellcheck disable=SC2086
+      "${GOLANGCI_LINT}" run --timeout=10m ${PACKAGES} || fail "golangci-lint reported findings"
+    fi
+  fi
 fi
 
-echo "Running Go linting on staged changes..."
-
-GOLANGCI_LINT="${REPO_ROOT}/bin/golangci-lint"
-if [ ! -x "${GOLANGCI_LINT}" ]; then
-  GOLANGCI_LINT="$(command -v golangci-lint || true)"
+# UI.
+STAGED_UI_FILES=$(printf '%s\n' "${STAGED}" | grep -E '^ui/.*\.(ts|tsx|js|mjs|cjs)$' | sed 's|^ui/||' || true)
+if [ -n "${STAGED_UI_FILES}" ]; then
+  echo "pre-commit: eslint on staged UI files (Node ${CI_NODE_MAJOR})"
+  if [ ! -d "${REPO_ROOT}/ui/node_modules" ]; then
+    fail "ui/node_modules is missing; run: (cd ui && npm ci)"
+  elif ! NODE22_BIN="$(ci_node22_bin)"; then
+    fail "Node ${CI_NODE_MAJOR} not found; set PAPRIKA_NODE22 to its bin directory"
+  else
+    # shellcheck disable=SC2086
+    (cd "${REPO_ROOT}/ui" && PATH="${NODE22_BIN}:${PATH}" npx --no-install eslint ${STAGED_UI_FILES}) ||
+      fail "eslint reported findings"
+  fi
 fi
 
-if [ -z "${GOLANGCI_LINT}" ]; then
-  echo "golangci-lint not found. Install with: make golangci-lint"
+# Shell.
+STAGED_SH_FILES=$(printf '%s\n' "${STAGED}" | grep '\.sh$' || true)
+if [ -n "${STAGED_SH_FILES}" ]; then
+  echo "pre-commit: shellcheck on staged shell scripts"
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    fail "shellcheck not found; install with: brew install shellcheck"
+  else
+    # shellcheck disable=SC2086
+    shellcheck ${STAGED_SH_FILES} || fail "shellcheck reported findings"
+  fi
+fi
+
+if [ "${failures}" -ne 0 ]; then
+  echo "pre-commit: ${failures} check(s) failed; the commit was not created" >&2
   exit 1
 fi
-
-# Check formatting with gofmt.
-UNFORMATTED=$(echo "${STAGED_GO_FILES}" | xargs gofmt -l 2>/dev/null || true)
-if [ -n "${UNFORMATTED}" ]; then
-  echo "Unformatted Go files:"
-  echo "${UNFORMATTED}"
-  echo "Run: gofmt -w ${UNFORMATTED}"
-  exit 1
-fi
-
-# Run golangci-lint on the packages touched by staged changes.
-PACKAGES=$(echo "${STAGED_GO_FILES}" | xargs -n1 dirname | sort -u | sed 's|^$|.|; s|$|/...|' | tr '\n' ' ')
-# shellcheck disable=SC2086
-"${GOLANGCI_LINT}" run --timeout=10m ${PACKAGES}
-
-echo "Go linting passed"
+echo "pre-commit: checks passed"

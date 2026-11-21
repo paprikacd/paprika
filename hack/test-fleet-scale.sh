@@ -36,6 +36,22 @@ fail() {
   exit 1
 }
 
+# PAPRIKA_FLEET_SCALE_PARTS selects the halves that run: "api,ui" (the default, ci.yml's gate) or "api" alone.
+# The UI half needs a native linux/amd64 Docker server; hack/ci/jobs/fleet-scale.sh runs the API half only
+# on other hosts and records the UI half as waived, with its reason, when no changed path touches it.
+parts="${PAPRIKA_FLEET_SCALE_PARTS:-api,ui}"
+case "${parts}" in
+  api,ui | api) ;;
+  *) fail "PAPRIKA_FLEET_SCALE_PARTS must be api,ui or api; got ${parts}" ;;
+esac
+# PAPRIKA_FLEET_SCALE_ALLOW_EMULATED_AMD64=1 accepts a linux/arm64 Docker server, but only because the API
+# container still runs with --platform linux/amd64 (the check below verifies it inside the container).
+allow_emulated_amd64="${PAPRIKA_FLEET_SCALE_ALLOW_EMULATED_AMD64:-0}"
+case "${allow_emulated_amd64}" in
+  0 | 1) ;;
+  *) fail "PAPRIKA_FLEET_SCALE_ALLOW_EMULATED_AMD64 must be 0 or 1; got ${allow_emulated_amd64}" ;;
+esac
+
 command -v docker >/dev/null 2>&1 || fail "Docker is required"
 docker info >/dev/null 2>&1 || fail "Docker server is unavailable"
 
@@ -63,8 +79,15 @@ docker_memory_bytes="$(docker info --format '{{.MemTotal}}')"
   printf 'PLAYWRIGHT_IMAGE_REF=%s\n' "${PLAYWRIGHT_IMAGE_REF}"
 } >>"${environment_file}"
 
-[[ "${docker_platform}" == "${REQUIRED_DOCKER_PLATFORM}" ]] ||
+emulated_amd64=0
+if [[ "${docker_platform}" == "${REQUIRED_DOCKER_PLATFORM}" ]]; then
+  :
+elif [[ "${docker_platform}" == "linux/arm64" && "${allow_emulated_amd64}" == 1 ]]; then
+  emulated_amd64=1
+else
   fail "Docker server must report ${REQUIRED_DOCKER_PLATFORM}; got ${docker_platform}"
+fi
+printf 'EMULATED_AMD64=%s\nFLEET_SCALE_PARTS=%s\n' "${emulated_amd64}" "${parts}" >>"${environment_file}"
 ((docker_memory_bytes >= REQUIRED_MEMORY_BYTES)) ||
   fail "Docker must report at least ${REQUIRED_MEMORY_BYTES} bytes (8 GiB); got ${docker_memory_bytes}"
 
@@ -104,6 +127,7 @@ docker run \
   --env ENVIRONMENT_FILE=/workspace/artifacts/fleet-scale/environment.txt \
   --env HOST_UID="${host_uid}" \
   --env HOST_GID="${host_gid}" \
+  --env FLEET_VERIFY_X86_64="${emulated_amd64}" \
   "${GO_IMAGE_REF}" \
   bash -Eeuo pipefail -c '
     read_cgroup_value() {
@@ -138,6 +162,11 @@ docker run \
     }
     trap finish_api_container EXIT
 
+    # Under emulation the container must really be x86_64. The host also checks the GOARCH the Go test reports.
+    if [[ "${FLEET_VERIFY_X86_64:-0}" == 1 && "$(uname -m)" != x86_64 ]]; then
+      printf "emulated API container is not x86_64: %s\n" "$(uname -m)" >&2
+      exit 1
+    fi
     mkdir -p "${ARTIFACT_DIR}" /workspace/bin
     {
       printf "API_CONTAINER_UNAME=%s\n" "$(uname -a)"
@@ -156,7 +185,17 @@ grep -q 'FLEET_API_P95_MS=' "${artifact_dir}/api-scale.log" ||
   fail "API scale test did not emit FLEET_API_P95_MS"
 grep -q 'FLEET_HEAP_BYTES=' "${artifact_dir}/api-scale.log" ||
   fail "API scale test did not emit FLEET_HEAP_BYTES"
+if [[ "${emulated_amd64}" == 1 ]]; then
+  grep -qx 'FLEET_GOARCH=amd64' "${artifact_dir}/api-scale.log" ||
+    fail "emulated API scale test did not report FLEET_GOARCH=amd64"
+fi
 [[ -x "${repo_root}/bin/fleet-console-fixture" ]] || fail "fixture binary was not built"
+
+if [[ "${parts}" == api ]]; then
+  printf 'FLEET_API_P95_MS<300 verified (API half only; UI half not run)\n'
+  printf 'Fleet scale artifacts: %s\n' "${artifact_dir}"
+  exit 0
+fi
 
 docker run \
   --name "${ui_container}" \

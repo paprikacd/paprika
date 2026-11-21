@@ -53,6 +53,7 @@ try {
       await editor.getByRole("button", { name: "Apply changes" }).click();
       await applyWidgetChanges(page);
       await page.getByRole("button", { name: "Save dashboard", exact: true }).click();
+      await page.getByText("All changes saved", { exact: true }).waitFor();
       assert.equal((await environment.api(`dashboards/${dashboard.id}`)).document.widgets[0].options.statIcon, "arrow-up", "Editor changes should persist through the dashboard API");
       const edited = (await environment.api(`dashboards/${dashboard.id}`)).document.widgets[0];
       assert.equal(edited.layout.h, 1);

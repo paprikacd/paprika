@@ -128,7 +128,9 @@ describe("Insights application state", () => {
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: /^Explore \d+$/ }))
     await queryWorkbench()
-    await waitFor(() => expect(api.listSavedQueries).toHaveBeenCalledTimes(3))
+    // At least one library refresh after the return. The workspace also refreshes every WORKSPACE_REFRESH_INTERVAL,
+    // so a slow run can see more calls; the draft must survive each of them.
+    await waitFor(() => expect(vi.mocked(api.listSavedQueries).mock.calls.length).toBeGreaterThanOrEqual(3))
     expect(await screen.findByLabelText("Query name")).toHaveValue("A retained draft")
     expect(api.query).not.toHaveBeenCalled()
   }, 10000) // Includes a cold lazy import and two complete workspace transitions.

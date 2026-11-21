@@ -1517,3 +1517,61 @@ tasks:
     desc: Delete the fleet rig's kind clusters (perf and e2e clusters are never touched).
     cmds:
       - ./hack/fleet-rig.sh down
+
+  # --- Local CI (replaces the GitHub ci.yml workflow; see docs/guides/local-ci.md) ---
+  #
+  #   task ci                              # every ci.yml job for HEAD (clean tree)
+  #   task ci -- --jobs ui,go-lint         # selected jobs; merges into the stamp
+  #   task ci:job JOB=chart                # one job
+  #   task ci:status                       # HEAD's stamp; exits nonzero unless every job passed
+  #   task ci:tools                        # ensure and verify the pinned tools
+
+  ci:
+    desc: Run the local CI jobs for HEAD (pass flags after --, e.g. -- --jobs ui,go-lint).
+    cmds:
+      - bash hack/ci/run.sh {{.CLI_ARGS}}
+
+  ci:job:
+    desc: Run one local CI job for HEAD (JOB=<name>).
+    preconditions:
+      - sh: test -n "$PAPRIKA_CI_JOB"
+        msg: 'set JOB, for example: task ci:job JOB=chart'
+    env:
+      PAPRIKA_CI_JOB: '{{.JOB}}'
+    cmds:
+      - bash hack/ci/run.sh --jobs "$PAPRIKA_CI_JOB"
+
+  ci:status:
+    desc: Show the local CI stamp for HEAD; exits nonzero unless every job passed.
+    cmds:
+      - bash hack/ci/status.sh
+
+  ci:fleet-anchor:
+    desc: Record a verified fleet-scale base (task ci:fleet-anchor -- <sha> <reason>) for the UI-half waiver.
+    cmds:
+      - bash hack/ci/fleet-anchor.sh add {{.CLI_ARGS}}
+
+  ci:tools:
+    desc: Install and verify the pinned local CI tools (Helm, kind, Terraform, Task, GoReleaser, Go, Node 22).
+    cmds:
+      - bash hack/ci/tools.sh ensure
+
+  ci:quick:
+    desc: Fast checks for changes against origin/master (gofmt, lint, tests, eslint, shellcheck); the pre-push hook runs it.
+    cmds:
+      - bash hack/ci/quick.sh
+
+  deploy:
+    # Local replacement for the publish and deploy-vke jobs. Requires a passing local CI stamp,
+    # branch master at origin/master, a clean tree, and PAPRIKA_DEPLOY_KUBECONFIG (or .env.deploy).
+    desc: Build, push and deploy master to the VKE paprika-e2e namespace (requires task ci to pass first).
+    cmds:
+      - bash hack/deploy/vke.sh {{.CLI_ARGS}}
+
+  hooks:install:
+    desc: Point git at the repository hooks in .githooks and verify they are executable.
+    cmds:
+      - git config core.hooksPath .githooks
+      - chmod +x .githooks/pre-commit .githooks/pre-push
+      - test -x .githooks/pre-commit -a -x .githooks/pre-push
+      - 'echo "hooks installed: core.hooksPath=.githooks (pre-commit, pre-push)"'

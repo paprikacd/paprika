@@ -51,3 +51,6 @@ output/
 # Python bytecode from demo/insights-gallery runs
 __pycache__/
 *.pyc
+
+# Local deploy settings (task deploy): holds PAPRIKA_DEPLOY_KUBECONFIG only; never commit.
+.env.deploy

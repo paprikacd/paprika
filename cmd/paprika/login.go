@@ -62,8 +62,12 @@ func defaultLoginDependencies() loginDependencies {
 	}
 }
 
+// loginDependenciesForCommand builds the dependencies of the login command that run() registers. Tests replace it
+// to drive the whole CLI path with an in-process browser.
+var loginDependenciesForCommand = defaultLoginDependencies
+
 func newLoginCmd(ctx context.Context) *cobra.Command {
-	return newLoginCmdWithDependencies(ctx, defaultLoginDependencies())
+	return newLoginCmdWithDependencies(ctx, loginDependenciesForCommand())
 }
 
 func newLoginCmdWithDependencies(ctx context.Context, dependencies loginDependencies) *cobra.Command {
