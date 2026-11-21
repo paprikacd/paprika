@@ -66,6 +66,21 @@
     "observabilityGateway": {
       "type": "object",
       "properties": {
+        "appTelemetry": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "issuer": {"type": "string"},
+            "publicKeys": {
+              "type": "object",
+              "additionalProperties": {"type": "string"}
+            },
+            "metricsProvider": {"type": "string"},
+            "logsProvider": {"type": "string"},
+            "restrictDirectQueries": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        },
         "persistSessions": {"type": "boolean"},
         "capacity": {
           "description": "Query-path capacity per gateway process. null omits a flag so the gateway built-in applies; an explicit zero is passed as set. The gateway validates the combination at startup and names the value to change.",

@@ -839,6 +839,15 @@ repoServer:
 ##
 observabilityGateway:
   enabled: false
+  ## Delegated reads for an application console. Public verification keys are
+  ## PEM strings. Reserve the shared providers for scoped reads by default.
+  appTelemetry:
+    enabled: false
+    issuer: ""
+    publicKeys: {}
+    metricsProvider: ""
+    logsProvider: ""
+    restrictDirectQueries: true
   # -- Retain Observe OAuth sessions in a separate Kubernetes Secret.
   # Enabling this on an existing in-memory installation needs a fresh grant.
   persistSessions: false

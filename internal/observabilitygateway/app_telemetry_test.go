@@ -20,7 +20,7 @@ import (
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
-func telemetryTestConfig(t *testing.T) (*AppTelemetryConfig, ed25519.PrivateKey) {
+func telemetryTestConfig(t *testing.T, restrictDirectQueries ...bool) (*AppTelemetryConfig, ed25519.PrivateKey) {
 	t.Helper()
 	public, private, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
@@ -28,6 +28,9 @@ func telemetryTestConfig(t *testing.T) (*AppTelemetryConfig, ed25519.PrivateKey)
 	require.NoError(t, err)
 	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
 	spec := fmt.Sprintf(`{"issuer":"deephost-test","publicKeys":{"key-one":%q},"metricsProvider":"obs/traffic","logsProvider":"obs/runtime"}`, string(publicPEM))
+	if len(restrictDirectQueries) != 0 {
+		spec = fmt.Sprintf(`%s,"restrictDirectQueries":%t}`, spec[:len(spec)-1], restrictDirectQueries[0])
+	}
 	cfg, err := ParseAppTelemetryConfig(spec, "https://observe.example")
 	require.NoError(t, err)
 	return cfg, private
@@ -194,4 +197,37 @@ func TestAppOnlyProvidersAreUnavailableToGeneralReaders(t *testing.T) {
 	_, err = backend.Explore(ctx, "shared/traffic", connector.ExploreRequest{Kind: connector.ExploreLabelValues})
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	require.Empty(t, inner.lastProvider)
+}
+
+func TestAppTelemetryDirectQueryPolicyIsIndependentOfGrantScope(t *testing.T) {
+	t.Parallel()
+	strict, _ := telemetryTestConfig(t)
+	require.Equal(t, []string{"obs/traffic", "obs/runtime"}, strict.RestrictedProviders())
+
+	cfg, key := telemetryTestConfig(t, false)
+	require.Empty(t, cfg.RestrictedProviders())
+	inner := &fakeBackend{
+		providers:   []ProviderInfo{{Name: "obs/traffic", Namespace: "obs"}},
+		queryResult: &connector.QueryResult{State: connector.StateOK},
+	}
+	backend := &authorizedBackend{backend: inner, authorizer: &auth.AllowAllAuthorizer{}, appOnly: cfg.RestrictedProviders()}
+	principal := auth.WithPrincipal(t.Context(), &auth.Principal{Subject: "authorized-operator"})
+	providers, err := backend.ListProviders(principal)
+	require.NoError(t, err)
+	require.Len(t, providers, 1)
+	_, err = backend.Query(principal, "obs/traffic", connector.QueryRequest{})
+	require.NoError(t, err)
+	_, err = backend.Query(t.Context(), "obs/traffic", connector.QueryRequest{})
+	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
+
+	handler := cfg.handler(func(context.Context, string, string, connector.QueryRequest) (*connector.QueryResult, error) {
+		t.Fatal("delegated request bypassed its app scope with direct queries allowed")
+		return nil, nil
+	})
+	grant := telemetryTestGrant(cfg.audience, "metrics", time.Now())
+	token := telemetryTestToken(t, grant, key, "key-one")
+	require.Equal(t, http.StatusBadRequest, serveAppTelemetry(t, handler, token, "?app=other").Code)
+	grant.App = "different-tenant-app"
+	token = telemetryTestToken(t, grant, key, "key-one")
+	require.Equal(t, http.StatusUnauthorized, serveAppTelemetry(t, handler, token, "").Code)
 }

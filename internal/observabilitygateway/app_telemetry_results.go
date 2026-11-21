@@ -52,29 +52,37 @@ func appTrafficResult(raw json.RawMessage, grant *appTelemetryGrant) appTelemetr
 	}
 	values := make(map[string]float64, 3)
 	for _, result := range payload.Data.Result {
-		if result.Metric["tenant"] != grant.Tenant || result.Metric["app"] != grant.App {
-			return appTelemetryResult{State: "unavailable"}
-		}
 		key := result.Metric["metric"]
-		switch key {
-		case "requests_24h", "server_errors_24h", "p95_seconds_24h":
-		default:
+		if !grant.matches(result.Metric) || !appTrafficMetric(key) {
 			return appTelemetryResult{State: "unavailable"}
-		}
-		var rawValue string
-		if len(result.Value) != 2 || json.Unmarshal(result.Value[1], &rawValue) != nil {
-			return appTelemetryResult{State: "unavailable"}
-		}
-		value, err := strconv.ParseFloat(rawValue, 64)
-		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-			continue
 		}
 		if _, duplicate := values[key]; duplicate {
 			return appTelemetryResult{State: "unavailable"}
 		}
-		values[key] = value
+		value, ok := appTrafficValue(result.Value)
+		if ok {
+			values[key] = value
+		}
 	}
 	return appTelemetryResult{State: "ok", Metrics: values}
+}
+
+func appTrafficMetric(name string) bool {
+	switch name {
+	case "requests_24h", "server_errors_24h", "p95_seconds_24h":
+		return true
+	default:
+		return false
+	}
+}
+
+func appTrafficValue(raw []json.RawMessage) (float64, bool) {
+	var sample string
+	if len(raw) != 2 || json.Unmarshal(raw[1], &sample) != nil {
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(sample, 64)
+	return value, err == nil && !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0
 }
 
 func appLogsResult(raw json.RawMessage, grant *appTelemetryGrant, window connector.TimeRange) appTelemetryResult {
@@ -94,7 +102,7 @@ func appLogsResult(raw json.RawMessage, grant *appTelemetryGrant, window connect
 	entries := make([]appLog, 0, 50)
 	returned := 0
 	for _, result := range payload.Data.Result {
-		if result.Stream["tenant"] != grant.Tenant || result.Stream["app"] != grant.App {
+		if !grant.matches(result.Stream) {
 			return appTelemetryResult{State: "unavailable"}
 		}
 		returned += len(result.Values)

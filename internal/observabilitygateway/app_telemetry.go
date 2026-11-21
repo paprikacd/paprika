@@ -25,56 +25,86 @@ import (
 const AppTelemetryPath = "/observe/api/app-telemetry"
 
 type AppTelemetryConfig struct {
-	issuer          string
-	audience        string
-	keys            map[string]ed25519.PublicKey
-	metricsProvider string
-	logsProvider    string
+	issuer                string
+	audience              string
+	keys                  map[string]ed25519.PublicKey
+	metricsProvider       string
+	logsProvider          string
+	restrictDirectQueries bool
 }
 
-// ParseAppTelemetryConfig reads the operator's issuer, rotation keys and
-// provider binding. An empty configuration leaves the delegated route disabled.
+type appTelemetrySpec struct {
+	Issuer                string            `json:"issuer"`
+	PublicKeys            map[string]string `json:"publicKeys"`
+	MetricsProvider       string            `json:"metricsProvider"`
+	LogsProvider          string            `json:"logsProvider"`
+	RestrictDirectQueries *bool             `json:"restrictDirectQueries"`
+}
+
+// ParseAppTelemetryConfig reads the issuer keys and provider policy.
+// An empty configuration leaves the delegated route disabled.
 func ParseAppTelemetryConfig(raw, publicURL string) (*AppTelemetryConfig, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	origin, err := url.Parse(strings.TrimRight(publicURL, "/"))
-	if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil ||
-		origin.Path != "" || origin.RawQuery != "" || origin.ForceQuery || origin.Fragment != "" {
-		return nil, errors.New("app telemetry requires an HTTPS gateway origin")
-	}
-	var spec struct {
-		Issuer          string            `json:"issuer"`
-		PublicKeys      map[string]string `json:"publicKeys"`
-		MetricsProvider string            `json:"metricsProvider"`
-		LogsProvider    string            `json:"logsProvider"`
+	audience, err := appTelemetryAudience(publicURL)
+	if err != nil {
+		return nil, err
 	}
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
+	var spec appTelemetrySpec
 	if err := dec.Decode(&spec); err != nil || dec.Decode(new(any)) != io.EOF {
 		return nil, errors.New("invalid app telemetry configuration")
 	}
-	if strings.TrimSpace(spec.Issuer) == "" || len(spec.Issuer) > 128 ||
-		len(spec.PublicKeys) == 0 || len(spec.PublicKeys) > 4 {
-		return nil, errors.New("app telemetry requires an issuer and one to four verification keys")
+	if err := spec.validate(); err != nil {
+		return nil, err
 	}
-	if spec.MetricsProvider == "" && spec.LogsProvider == "" {
-		return nil, errors.New("app telemetry requires a metrics or logs provider")
+	keys, err := appTelemetryKeys(spec.PublicKeys)
+	if err != nil {
+		return nil, err
 	}
-	if spec.MetricsProvider != "" && spec.MetricsProvider == spec.LogsProvider {
-		return nil, errors.New("app telemetry metrics and logs require separate providers")
+	return &AppTelemetryConfig{
+		issuer: spec.Issuer, audience: audience, keys: keys,
+		metricsProvider: spec.MetricsProvider, logsProvider: spec.LogsProvider,
+		restrictDirectQueries: spec.RestrictDirectQueries == nil || *spec.RestrictDirectQueries,
+	}, nil
+}
+
+func appTelemetryAudience(publicURL string) (string, error) {
+	origin, err := url.Parse(strings.TrimRight(publicURL, "/"))
+	if err != nil || origin.Scheme != "https" || origin.Hostname() == "" || origin.User != nil ||
+		origin.Path != "" || origin.RawQuery != "" || origin.ForceQuery || origin.Fragment != "" {
+		return "", errors.New("app telemetry requires an HTTPS gateway origin")
 	}
-	for _, provider := range []string{spec.MetricsProvider, spec.LogsProvider} {
-		if provider == "" {
-			continue
-		}
-		ns, name, ok := strings.Cut(provider, "/")
-		if !ok || len(validation.IsDNS1123Label(ns)) != 0 || len(validation.IsDNS1123Subdomain(name)) != 0 {
-			return nil, errors.New("app telemetry provider must be namespace/name")
-		}
+	return origin.String() + AppTelemetryPath, nil
+}
+
+func (s *appTelemetrySpec) validate() error {
+	if strings.TrimSpace(s.Issuer) == "" || len(s.Issuer) > 128 ||
+		len(s.PublicKeys) == 0 || len(s.PublicKeys) > 4 {
+		return errors.New("app telemetry requires an issuer and one to four verification keys")
 	}
-	keys := make(map[string]ed25519.PublicKey, len(spec.PublicKeys))
-	for id, encoded := range spec.PublicKeys {
+	if s.MetricsProvider == s.LogsProvider {
+		return errors.New("app telemetry requires distinct configured providers for each enabled signal")
+	}
+	if !validAppTelemetryProvider(s.MetricsProvider) || !validAppTelemetryProvider(s.LogsProvider) {
+		return errors.New("app telemetry provider must be namespace/name")
+	}
+	return nil
+}
+
+func validAppTelemetryProvider(provider string) bool {
+	if provider == "" {
+		return true
+	}
+	ns, name, ok := strings.Cut(provider, "/")
+	return ok && len(validation.IsDNS1123Label(ns)) == 0 && len(validation.IsDNS1123Subdomain(name)) == 0
+}
+
+func appTelemetryKeys(pems map[string]string) (map[string]ed25519.PublicKey, error) {
+	keys := make(map[string]ed25519.PublicKey, len(pems))
+	for id, encoded := range pems {
 		block, rest := pem.Decode([]byte(encoded))
 		if len(validation.IsDNS1123Label(id)) != 0 || block == nil || block.Type != "PUBLIC KEY" ||
 			len(strings.TrimSpace(string(rest))) != 0 {
@@ -87,16 +117,13 @@ func ParseAppTelemetryConfig(raw, publicURL string) (*AppTelemetryConfig, error)
 		}
 		keys[id] = key
 	}
-	return &AppTelemetryConfig{
-		issuer: spec.Issuer, audience: origin.String() + AppTelemetryPath,
-		keys: keys, metricsProvider: spec.MetricsProvider, logsProvider: spec.LogsProvider,
-	}, nil
+	return keys, nil
 }
 
 // RestrictedProviders are reserved for the app telemetry route. Interactive
 // query and discovery endpoints using the generic backend cannot use them.
 func (c *AppTelemetryConfig) RestrictedProviders() []string {
-	if c == nil {
+	if c == nil || !c.restrictDirectQueries {
 		return nil
 	}
 	return []string{c.metricsProvider, c.logsProvider}
@@ -133,13 +160,23 @@ func (c *AppTelemetryConfig) verify(header string, now time.Time) (*appTelemetry
 }
 
 func (g *appTelemetryGrant) valid() bool {
-	prefix := g.Tenant + "-"
-	return g.IssuedAt != nil && g.ExpiresAt != nil && g.ExpiresAt.After(g.IssuedAt.Time) &&
-		g.ExpiresAt.Sub(g.IssuedAt.Time) <= time.Minute && len(g.Audience) == 1 &&
-		strings.TrimSpace(g.Subject) != "" && len(g.Subject) <= 512 &&
-		len(validation.IsDNS1123Label(g.Tenant)) == 0 && len(validation.IsDNS1123Label(g.App)) == 0 &&
-		strings.HasPrefix(g.App, prefix) && len(g.App) > len(prefix) &&
+	if g.IssuedAt == nil || g.ExpiresAt == nil || len(g.Audience) != 1 {
+		return false
+	}
+	lifetime := g.ExpiresAt.Sub(g.IssuedAt.Time)
+	return lifetime > 0 && lifetime <= time.Minute && validAppTelemetryIdentity(g) &&
 		(g.Signal == "metrics" || g.Signal == "logs")
+}
+
+func validAppTelemetryIdentity(g *appTelemetryGrant) bool {
+	prefix := g.Tenant + "-"
+	return strings.TrimSpace(g.Subject) != "" && len(g.Subject) <= 512 &&
+		len(validation.IsDNS1123Label(g.Tenant)) == 0 && len(validation.IsDNS1123Label(g.App)) == 0 &&
+		strings.HasPrefix(g.App, prefix) && len(g.App) > len(prefix)
+}
+
+func (g *appTelemetryGrant) matches(labels map[string]string) bool {
+	return labels["tenant"] == g.Tenant && labels["app"] == g.App
 }
 
 type appTelemetryQuery func(context.Context, string, string, connector.QueryRequest) (*connector.QueryResult, error)

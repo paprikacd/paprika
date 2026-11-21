@@ -874,13 +874,31 @@ also retain exact group membership. See the
 
 ## Delegate reads for an application
 
-Set `PAPRIKA_APP_TELEMETRY` on the gateway with a JSON object containing
-`issuer`, a `publicKeys` map from key ID to Ed25519 public PEM, and
-`metricsProvider` or `logsProvider`. The providers use `namespace/name`
-identifiers and must be Prometheus for metrics or Loki for logs. This binding
-reserves them for the app endpoint. General Paprika query, exploration, and
-provider discovery exclude those IDs. Keep alternate registrations of shared
-backends restricted to fleet operators.
+Set these Helm values to enable app telemetry.
+
+```yaml
+observabilityGateway:
+  appTelemetry:
+    enabled: true
+    issuer: deephost-production
+    publicKeys:
+      key-2026-11: |
+        -----BEGIN PUBLIC KEY-----
+        PUBLIC_KEY_PEM_BODY
+        -----END PUBLIC KEY-----
+    metricsProvider: deephost/deephost-prometheus
+    restrictDirectQueries: true
+```
+
+Use `namespace/name` for the Prometheus `metricsProvider` or for the Loki
+`logsProvider`. Set `restrictDirectQueries: false` to allow general provider
+discovery and direct queries under existing Paprika role grants. App grants
+always enforce their tenant, app and signal. Keep any role grants on shared
+providers limited to operators before allowing direct queries.
+
+Outside Helm, set `PAPRIKA_APP_TELEMETRY` to a JSON object with the same fields
+except `enabled`. The route is enabled when the JSON object is present, and
+`restrictDirectQueries` defaults to `true`.
 
 The trusted application console calls
 `GET /observe/api/app-telemetry` with a signed bearer grant. It verifies the

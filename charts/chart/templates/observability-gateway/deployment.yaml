@@ -13,8 +13,12 @@
 {{- end }}
 {{- $gwHasTokenSecret := false }}
 {{- $gwHasRBACRules := and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+{{- $appTelemetry := .Values.observabilityGateway.appTelemetry | default dict }}
 {{- $gwCACertificates := .Values.observabilityGateway.additionalCACertificates }}
 {{- range .Values.observabilityGateway.extraEnv }}
+{{- if and $appTelemetry.enabled (eq .name "PAPRIKA_APP_TELEMETRY") }}
+{{- fail "use one source for app telemetry configuration" }}
+{{- end }}
 {{- if and $gwCACertificates (eq .name "SSL_CERT_DIR") }}
 {{- fail "SSL_CERT_DIR must not be set in observabilityGateway.extraEnv when additionalCACertificates is configured" }}
 {{- end }}
@@ -272,6 +276,13 @@ spec:
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
+        {{- if $appTelemetry.enabled }}
+        {{- if or (not $appTelemetry.issuer) (not $appTelemetry.publicKeys) (not (or $appTelemetry.metricsProvider $appTelemetry.logsProvider)) }}
+        {{- fail "appTelemetry requires an issuer, verification keys, and at least one provider" }}
+        {{- end }}
+        - name: PAPRIKA_APP_TELEMETRY
+          value: {{ omit $appTelemetry "enabled" | toJson | quote }}
+        {{- end }}
         {{- if .Values.observabilityGateway.renderWorker.enabled }}
         - name: PAPRIKA_OBSERVE_RENDER_URL
           value: http://127.0.0.1:9081/render
