@@ -554,6 +554,20 @@ async function keyboardShortcuts(width) {
     await notice.getByRole("button", { name: "Undo remove Request traffic (keys)", exact: true }).click()
     await page.getByRole("button", { name: "Edit Request traffic (keys)", exact: true }).waitFor()
 
+    // Mod+D on a focused tile chip copies the tile beside it, and the key is claimed only there. Undo leaves the dashboard as it was.
+    await page.getByRole("button", { name: "Edit Request traffic (keys)", exact: true }).focus()
+    await page.keyboard.press(`${mod}+d`)
+    await page.getByText(/^Duplicated Request traffic \(keys\) (beside|below) it\.$/).waitFor()
+    assert.deepEqual(await lastKey(), { key: "d", prevented: true }, "Mod+D is claimed on a focused tile chip")
+    // The notice commits before the copy's tile mounts, so wait for the copy before counting.
+    const copyEdit = page.getByRole("button", { name: "Edit Request traffic (keys) (copy)", exact: true })
+    await copyEdit.waitFor()
+    assert.equal(await copyEdit.count(), 1, "Mod+D adds one copy")
+    const duplicateNotice = page.getByText(/^Duplicated Request traffic \(keys\)/).locator("xpath=..")
+    await duplicateNotice.getByRole("button", { name: "Undo duplicate Request traffic (keys)", exact: true }).click()
+    await page.getByText("Removed the copy.", { exact: true }).waitFor()
+    assert.equal(await page.getByRole("button", { name: "Edit Request traffic (keys) (copy)", exact: true }).count(), 0, "Undo removes the copy")
+
     // Apply and save: one shortcut moves the chart draft into the dashboard and saves it, ending in view mode.
     const putsApplySave = puts()
     const applySaveChart = await widgetEditor(page, "Request traffic (keys)")

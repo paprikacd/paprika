@@ -650,7 +650,9 @@
   padding-right: calc(var(--edit-chip-inset) + var(--edit-chip) + 4px);
 }
 .tile .tileHeader:has(> .editChip) > button:not(.editChip) { margin-right: 0; }
-.tile .tileHeader > .editChip.editChip {
+/* The Edit chip and the tile actions trigger share one box. The trigger sits beside the Edit chip, or in its place on a narrow tile. */
+.tile .tileHeader > .editChip.editChip,
+.tile .tileHeader > .actionsChip.actionsChip {
   position: absolute;
   top: var(--edit-chip-inset);
   right: var(--edit-chip-inset);
@@ -664,11 +666,38 @@
   padding: 0;
   background: transparent;
 }
-.tile .tileHeader > .editChip.editChip:hover:not(:disabled) {
+.tile .tileHeader > .editChip.editChip:hover:not(:disabled),
+.tile .tileHeader > .actionsChip.actionsChip:hover:not(:disabled) {
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 /* The ring is drawn inside the chip: the tile clips overflow, so an outside ring would be cut off. */
-.tile .tileHeader > .editChip.editChip:focus-visible { outline-offset: -2px; }
+.tile .tileHeader > .editChip.editChip:focus-visible,
+.tile .tileHeader > .actionsChip.actionsChip:focus-visible { outline-offset: -2px; }
+.tile .tileHeader:has(> .editChip) > .actionsChip.actionsChip { right: calc(var(--edit-chip-inset) + var(--edit-chip) + 4px); }
+.tile[data-widget-type] .tileHeader:has(> .actionsChip) { padding-right: calc(var(--edit-chip-inset) + var(--edit-chip) + 4px); }
+.tile[data-widget-type] .tileHeader:has(> .actionsChip):has(> .editChip) {
+  padding-right: calc(var(--edit-chip-inset) + 2 * var(--edit-chip) + 8px);
+}
+/* A tile under 160px keeps one control: the actions trigger, whose first item is Edit chart. */
+@container insight-tile (max-width: 160px) {
+  .tile .tileHeader > .editChip.editChip { display: none; }
+  .tile .tileHeader:has(> .editChip) > .actionsChip.actionsChip,
+  .tile .tileHeader > .actionsChip.actionsChip { right: var(--edit-chip-inset); }
+  .tile[data-widget-type] .tileHeader:has(> .actionsChip):has(> .editChip) {
+    padding-right: calc(var(--edit-chip-inset) + var(--edit-chip) + 4px);
+  }
+}
+@media (pointer: coarse) {
+  .tile .tileHeader > .actionsChip.actionsChip::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
 /* Touch gets a 44px target from a transparent hit area; the visible chip keeps its size. */
 @media (pointer: coarse) {
   .tile .tileHeader > .editChip.editChip::before {
@@ -700,6 +729,13 @@
 }
 .canvas[data-layout-resizing]::after {
   cursor: se-resize;
+}
+.canvas[data-layout-resize=e]::after,
+.canvas[data-layout-resize=w]::after {
+  cursor: ew-resize;
+}
+.canvas[data-layout-resize=s]::after {
+  cursor: ns-resize;
 }
 .dragHandle:active {
   cursor: grabbing;
@@ -745,14 +781,24 @@
 .canvas :global(.react-grid-item.react-draggable-dragging) .tile {
   box-shadow: var(--gamma-shadow-mid);
 }
-.canvas :global(.react-resizable-handle) {
-  width: 22px;
-  height: 22px;
-  user-select: none;
-  touch-action: none;
-}
-.canvas :global(.react-resizable-handle::after) {
-  border-color: var(--gamma-border);
+/* Handle selectors carry react-resizable's specificity (.react-grid-item > .react-resizable-handle) so they win over its defaults. */
+.canvas :global(.react-grid-item > .react-resizable-handle) { width: 22px; height: 22px; user-select: none; touch-action: none; }
+.canvas :global(.react-resizable-handle::after) { border-color: var(--gamma-border); }
+/* Edge handles are 8px strips on the tile border; react-resizable centres and rotates e and w, so reset that. */
+.canvas :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-e),
+.canvas :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-w) { top: 0; bottom: 0; width: 8px; height: auto; margin: 0; transform: none; background-image: none; cursor: ew-resize; }
+.canvas :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-w) { left: 0; }
+.canvas :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-s) { left: 0; right: 0; bottom: 0; width: auto; height: 8px; margin: 0; transform: none; background-image: none; cursor: ns-resize; }
+/* A centred pill marks an edge handle on hover and focus. The selectors add one class over react-resizable's ::after rule, which would otherwise win the tie. */
+.canvas :global(.react-grid-item > .react-resizable-handle:is(.react-resizable-handle-e, .react-resizable-handle-w, .react-resizable-handle-s))::after { content: ""; position: absolute; top: 50%; left: 50%; right: auto; bottom: auto; width: 3px; height: 32px; border: 0; border-radius: 2px; background: var(--gamma-border); opacity: 0; transform: translate(-50%, -50%); }
+.canvas :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-s)::after { width: 32px; height: 3px; }
+.canvas :global(.react-grid-item:is(:hover, :focus-within)) :global(.react-resizable-handle)::after { opacity: 1; }
+/* Touch: 24px edges (strip plus an 8px transparent extension) and a 44px corner. */
+@media (pointer: coarse) {
+  .canvas :global(.react-resizable-handle-e)::before,
+  .canvas :global(.react-resizable-handle-w)::before,
+  .canvas :global(.react-resizable-handle-s)::before { content: ""; position: absolute; inset: -8px; }
+  .canvas :global(.react-grid-item > .react-resizable-handle.react-resizable-handle-se) { width: 44px; height: 44px; }
 }
 .canvasFooter {
   display: flex;

@@ -91,6 +91,7 @@ import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
+import { visibleTileControl } from "./tile-controls"
 import { useCanvasDensity } from "./canvas-density"
 import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
@@ -123,7 +124,14 @@ import {
   resolveDashboardVariables,
   resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart,
 } from "./drilldown"
+import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
+
 import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewedDashboard } from "./dashboard-view"
+
+/** The notice phrase for where a copy settled. A copy the compactor lifted out of its row says nothing about its neighbour. */
+function placementPhrase(placement: DuplicatePlacement): string {
+  return placement === "beside" ? " beside it" : placement === "below" ? " below it" : ""
+}
 
 function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   try {
@@ -536,6 +544,43 @@ export default function InsightsApp({
   const focusedWidget = editingWidget && !exploring
   // Removes a tile from the dashboard, as one undo step, and moves focus to the neighbouring tile or the title.
   const pendingTileFocus = useRef<string | undefined>(undefined)
+  // A notice with one Undo action. Undo applies only while `document` is still the latest one, so a later edit is never
+  // reverted by it. Focus moves to `focus` once the undone change renders.
+  // The chart editor's draft, read at undo time. A notice's closure is older than the edits made after it.
+  const chartDraftDirty = useRef(false)
+  const askConfirmation = confirmation.ask
+  useLayoutEffect(() => { chartDraftDirty.current = widgetDraftDirty })
+  // `leave` closes the chart editor when the undone change is the chart it was showing. Unapplied edits to that chart
+  // then need the same discard confirmation as leaving it.
+  const noticeWithUndo = useCallback((notice: { text: string; name: string; document: Dashboard; focus: string; restored: string; leave?: () => void }) => {
+    setError("")
+    setMessage(notice.text)
+    setMessageAction({
+      text: notice.text,
+      label: "Undo",
+      name: notice.name,
+      document: notice.document,
+      run: () => {
+        const undoNow = () => {
+          if (JSON.stringify(latestDocument.current) !== JSON.stringify(notice.document)) {
+            setMessageAction(undefined)
+            setMessage("Could not undo: the dashboard changed since then.")
+            return
+          }
+          notice.leave?.()
+          pendingTileFocus.current = notice.focus
+          undo()
+          setMessage(notice.restored)
+        }
+        if (!notice.leave || !chartDraftDirty.current) return undoNow()
+        void askConfirmation({
+          title: "Discard chart changes?",
+          description: "These chart settings have not been applied to the dashboard.",
+          action: "Discard changes",
+        }).then(accepted => { if (accepted) undoNow() })
+      },
+    })
+  }, [undo, askConfirmation])
   const removeTile = useCallback((widgetId: string) => {
     const index = dashboard.widgets.findIndex((widget) => widget.id === widgetId)
     if (index < 0) return
@@ -544,42 +589,86 @@ export default function InsightsApp({
     const neighbour = next.widgets[index] ?? next.widgets[index - 1]
     update(next)
     pendingTileFocus.current = neighbour?.id ?? "title"
-    const text = `Removed ${removed.title}.`
-    setError("")
-    setMessage(text)
-    setMessageAction({
-      text,
-      label: "Undo",
+    // The open chart editor returns focus to its opener when it closes. Its opener is the removed tile, so it moves to the neighbour.
+    if (widgetOpener.current === widgetId) widgetOpener.current = neighbour?.id
+    noticeWithUndo({
+      text: `Removed ${removed.title}.`,
       name: `Undo remove ${removed.title}`,
       document: next,
-      // Undo only while the removal is still the latest change, so a later edit is never reverted by this notice.
-      run: () => {
-        if (JSON.stringify(latestDocument.current) !== JSON.stringify(next)) {
-          setMessageAction(undefined)
-          setMessage("Could not undo: the dashboard changed since the removal.")
-          return
-        }
-        // Focus returns to the restored tile once its change renders.
-        pendingTileFocus.current = removed.id
-        undo()
-        setMessage(`Restored ${removed.title}.`)
-      },
+      focus: removed.id,
+      restored: `Restored ${removed.title}.`,
     })
-  }, [dashboard, update, undo])
-  useLayoutEffect(() => {
-    const target = pendingTileFocus.current
-    if (target === undefined) return
-    pendingTileFocus.current = undefined
-    if (target === "title") {
-      titleField.current?.focus()
+  }, [dashboard, update, noticeWithUndo])
+  // Copies a saved tile from its actions menu: one undo step, the copy beside the tile or below it, and focus on the copy.
+  // The copy is the saved widget, so unapplied editor changes are not included (the editor's Duplicate chart does include them).
+  const duplicateTile = useCallback((widgetId: string) => {
+    const source = dashboard.widgets.find((widget) => widget.id === widgetId)
+    if (!source) return
+    if (dashboard.widgets.length >= MAX_WIDGETS) {
+      setError("A dashboard supports up to 48 widgets.")
       return
+    }
+    const copyId = `widget-${crypto.randomUUID()}`
+    const edit = duplicateLayout(savedLayout(dashboard.widgets), widgetId, copyId)
+    if ("blocked" in edit) {
+      setError(edit.blocked)
+      return
+    }
+    const placed = new Map(edit.layout.map((item) => [item.i, item]))
+    const moved = dashboard.widgets.map((item) => {
+      const at = placed.get(item.id)
+      return at ? { ...item, layout: { ...item.layout, x: at.x, y: at.y } } : item
+    })
+    const at = placed.get(copyId)!
+    const copy = { ...source, id: copyId, title: `${source.title.slice(0, 113)} (copy)`, layout: { ...source.layout, x: at.x, y: at.y } }
+    const next = { ...dashboard, widgets: [...moved, copy] }
+    update(next)
+    pendingTileFocus.current = copy.id
+    noticeWithUndo({
+      text: `Duplicated ${source.title}${placementPhrase(edit.placement)}.`,
+      name: `Undo duplicate ${source.title}`,
+      document: next,
+      focus: source.id,
+      restored: "Removed the copy.",
+    })
+  }, [dashboard, update, noticeWithUndo])
+  // Focus moves to the pending tile once it is in the DOM. A copy can mount a commit after the change that made it, so until
+  // then a MutationObserver on the canvas retries, and the target is dropped only when the dashboard no longer has that tile.
+  const tileFocusWatch = useRef<MutationObserver | null>(null)
+  const focusPendingTile = useCallback(() => {
+    const target = pendingTileFocus.current
+    if (target === undefined) return true
+    if (target === "title") {
+      pendingTileFocus.current = undefined
+      titleField.current?.focus()
+      return true
     }
     const tile = Array.from(layoutRoot.current?.querySelectorAll<HTMLElement>("[data-widget-id]") ?? [])
       .find((element) => element.dataset.widgetId === target)
-    if (!tile) return
+    if (!tile) return false
+    pendingTileFocus.current = undefined
     if (tile.hasAttribute("tabindex")) tile.focus()
-    else tile.querySelector<HTMLElement>("[data-widget-edit]")?.focus()
-  }, [dashboard])
+    else visibleTileControl(tile, "[data-widget-edit], [data-widget-actions]")?.focus()
+    return true
+  }, [])
+  useLayoutEffect(() => {
+    const target = pendingTileFocus.current
+    const stopWatching = () => {
+      tileFocusWatch.current?.disconnect()
+      tileFocusWatch.current = null
+    }
+    if (target === undefined || focusPendingTile()) return stopWatching()
+    if (!dashboard.widgets.some((widget) => widget.id === target)) {
+      pendingTileFocus.current = undefined
+      return stopWatching()
+    }
+    const root = layoutRoot.current
+    if (!root || tileFocusWatch.current) return
+    tileFocusWatch.current = new MutationObserver(() => {
+      if (focusPendingTile()) stopWatching()
+    })
+    tileFocusWatch.current.observe(root, { childList: true, subtree: true })
+  })
   // The phone shell is a view: editing, a focused chart and Explore keep their full chrome.
   const phoneShell = phoneViewport && !editing && !focusedWidget && !exploring
   // Keyboard shortcuts for the dashboard. Chart history and apply are routed to the chart editor in a later change.
@@ -596,6 +685,7 @@ export default function InsightsApp({
     redoDashboard: redo,
     save: () => saveButton.current?.click(),
     removeTile,
+    duplicateTile,
     openShortcuts: () => setShortcutsOpen(true),
   })
   // A successful save moves focus, so it is lost when the save button goes. Each save bumps the revision, so the focus
@@ -636,8 +726,10 @@ export default function InsightsApp({
       : null,
     () => {
       if (panelOpener.current) return panelOpenerElement(panelOpener.current) ?? document.querySelector<HTMLElement>('[aria-label="Toggle sidebar"]')
-      return widgetOpener.current ? document.querySelector<HTMLElement>(`[data-widget-edit="${CSS.escape(widgetOpener.current)}"]`) ??
-        document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]') : null
+      if (!widgetOpener.current) return null
+      const opener = CSS.escape(widgetOpener.current)
+      return visibleTileControl(document, `[data-widget-edit="${opener}"], [data-widget-actions="${opener}"]`) ??
+        document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]')
     },
     panel === "examples" ? galleryMounted : panel === "widget" ? editorMounted : true,
   )
@@ -2116,10 +2208,10 @@ export default function InsightsApp({
               <div className={styles.editHint}>
                 <span className={styles.statusDot} /> Editing canvas{" "}
                 <span className={styles.wideEditHint}>
-                  Drag a handle to move. Pull a corner to resize.
+                  Drag a handle to move. Pull an edge or corner to resize.
                 </span>
                 <span className={styles.compactEditHint}>
-                  Arrange widgets in the Layout tab.
+                  {"Use a widget's ⋯ menu to move, resize or duplicate it."}
                 </span>
                 {/* Phone-width layouts and touch-only devices have no use for the list, so it stays hidden there. */}
                 {!phoneViewport && (
@@ -2150,7 +2242,7 @@ export default function InsightsApp({
                     <WidgetEditor
                       key={currentWidget.id}
                       widget={currentWidget}
-                      workspace={{ preview, previewFootprints, dashboardTitle: dashboard.title, dashboardDirty: dirty, saveBusy: busy || !widgetDraftValid, onSaveDashboard: save, onDiscard: close, widgets: dashboard.widgets }}
+                      workspace={{ preview, previewFootprints, canvasMode, dashboardTitle: dashboard.title, dashboardDirty: dirty, saveBusy: busy || !widgetDraftValid, onSaveDashboard: save, onDiscard: close, widgets: dashboard.widgets }}
                       onPreview={setWidgetPreview}
                       onDirtyChange={setWidgetDraftDirty}
                       dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
@@ -2185,12 +2277,7 @@ export default function InsightsApp({
                         setMessageAction({ text, label: "Save now", name: "Save now", run: () => saveLatest.current() })
                       }}
                       onDelete={() => {
-                        update({
-                          ...dashboard,
-                          widgets: dashboard.widgets.filter(
-                            (w) => w.id !== currentWidget.id,
-                          ),
-                        })
+                        removeTile(currentWidget.id)
                         close()
                       }}
                       onDuplicate={() => {
@@ -2198,28 +2285,46 @@ export default function InsightsApp({
                           setError("A dashboard supports up to 48 widgets.")
                           return
                         }
-                        const copy = {
-                          ...(previewWidget ?? currentWidget),
-                          id: `widget-${crypto.randomUUID()}`,
-                          title: `${(previewWidget ?? currentWidget).title.slice(0, 113)} (copy)`,
-                          layout: {
-                            ...(previewWidget ?? currentWidget).layout,
-                            x: 0,
-                            y: Math.min(
-                              1000,
-                              Math.max(
-                                ...dashboard.widgets.map(
-                                  (w) => w.layout.y + w.layout.h,
-                                ),
-                              ),
-                            ),
-                          },
+                        // The copy holds the chart as it is in the editor, unapplied changes included. Its footprint is the
+                        // draft's, and it is placed beside the saved tile or below it. The original is never resized.
+                        const draft = previewWidget ?? currentWidget
+                        const copyId = `widget-${crypto.randomUUID()}`
+                        const edit = duplicateLayout(savedLayout(dashboard.widgets), currentWidget.id, copyId, { w: draft.layout.w, h: draft.layout.h })
+                        if ("blocked" in edit) {
+                          setError(edit.blocked)
+                          return
                         }
-                        update({
-                          ...dashboard,
-                          widgets: [...dashboard.widgets, copy],
+                        const placed = new Map(edit.layout.map((item) => [item.i, item]))
+                        const moved = dashboard.widgets.map((item) => {
+                          const at = placed.get(item.id)
+                          return at ? { ...item, layout: { ...item.layout, x: at.x, y: at.y } } : item
                         })
+                        const at = placed.get(copyId)!
+                        const copy = {
+                          ...draft,
+                          id: copyId,
+                          title: `${draft.title.slice(0, 113)} (copy)`,
+                          layout: { ...draft.layout, x: at.x, y: at.y, w: at.w, h: at.h },
+                        }
+                        const next = { ...dashboard, widgets: [...moved, copy] }
+                        update(next)
                         selectWidget(copy.id)
+                        const where = placementPhrase(edit.placement)
+                        noticeWithUndo({
+                          // A clean draft has no unapplied changes to call out, so the copy is described like a tile copy.
+                          text: widgetDraftDirty
+                            ? "Duplicated with your unapplied changes; the original is unchanged."
+                            : `Duplicated ${draft.title}${where}.`,
+                          name: `Undo duplicate ${draft.title}`,
+                          document: next,
+                          focus: currentWidget.id,
+                          restored: "Removed the copy.",
+                          // The editor's opener was the copy, which Undo removes. The original takes its place as the opener.
+                          leave: () => {
+                            widgetOpener.current = currentWidget.id
+                            close()
+                          },
+                        })
                       }}
                     />
                   <MountSignal onMount={markEditorMounted} />
@@ -2243,6 +2348,9 @@ export default function InsightsApp({
                 selected={selected}
                 onSelect={selectWidget}
                 onLayout={layoutUpdate}
+                onDuplicate={duplicateTile}
+                onRemove={removeTile}
+                duplicateBlocked={dashboard.widgets.length >= MAX_WIDGETS ? "A dashboard supports up to 48 widgets." : undefined}
                 onQueryFields={setQueryFieldSnapshot}
                 onQueryResult={setQueryResultSnapshot}
               />

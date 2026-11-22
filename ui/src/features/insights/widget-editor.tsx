@@ -76,6 +76,7 @@ import {
 import { validateLinkedTooltip } from "./saved-query-editor";
 import { gridPlacement, layoutMoveBlockers, moveLayout, savedLayout, type LayoutMove } from "./layout-edit";
 import type { Layout } from "react-grid-layout";
+import type { CanvasMode } from "./responsive-layout";
 
 /** Apply changes writes the draft to the dashboard. With save, Apply and save also saves the dashboard. */
 export type ApplyOptions = { save?: boolean };
@@ -785,6 +786,8 @@ export function WidgetEditor({
     preview: ReactNode;
     /** The tile's footprint on the dashboard, from the canvas. Absent until the dashboard has been measured. */
     previewFootprints?: PreviewFootprints;
+    /** The canvas arrangement on this screen. Below wide, the saved grid's positions do not show. */
+    canvasMode?: CanvasMode;
     dashboardTitle: string;
     /** The dashboard has changes that Save dashboard would write. Drives the identity line and the save button. */
     dashboardDirty: boolean;
@@ -1563,6 +1566,9 @@ export function WidgetEditor({
                   })}
                 </div>
                 <p className={styles.hint} role="status">Dashboard position: {gridPlacement({ ...position, ...dimensions })}. Size and placement are committed with Apply.</p>
+                {workspace.canvasMode && workspace.canvasMode !== "wide" && (
+                  <p className={styles.hint}>Positions refer to the wide layout. On this screen widgets follow reading order.</p>
+                )}
               </div>
             ),
           },
@@ -1616,8 +1622,6 @@ export function WidgetEditor({
         <span className={styles.draftState} role="status">{error ? "Draft needs attention" : dirty ? "Unapplied changes" : "Editing chart"}</span>
         <div className={styles.focusActions}>
           <GammaActionMenu label="Chart actions" items={[
-            { id: "undo", label: "Undo chart change", icon: <Undo2 size={14} />, disabled: !history.canUndo, onSelect: () => travel("undo") },
-            { id: "redo", label: "Redo chart change", icon: <Redo2 size={14} />, disabled: !history.canRedo, onSelect: () => travel("redo") },
             { id: "duplicate", label: "Duplicate chart", icon: <Copy size={14} />, disabled: stale || !!error, onSelect: onDuplicate },
             { id: "apply-save", label: "Apply and save dashboard", icon: <Save size={14} />, disabled: applySaveDisabled, onSelect: () => apply({ save: true }) },
             { id: "remove", label: "Remove chart", icon: <Trash2 size={14} />, onSelect: onDelete },
@@ -1634,8 +1638,8 @@ export function WidgetEditor({
         </div>
         <nav className={styles.editorSections} aria-label="Chart editor sections">
           <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(previewRef.current)}>Preview</GammaButton>
-          <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(settingsRef.current)}>Settings</GammaButton>
           <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(queryRef.current)}>Query</GammaButton>
+          <GammaButton variant="quiet" size="sm" onClick={() => jumpTo(settingsRef.current)}>Settings</GammaButton>
         </nav>
       </header>
       <div className={styles.focusBody}>
