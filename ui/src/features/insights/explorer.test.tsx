@@ -590,3 +590,26 @@ describe("Explore query workspace", () => {
     expect(screen.getByRole("button", { name: "Delete query" })).toBeEnabled();
   });
 });
+
+describe("explorer default data source", () => {
+  it("opens on a real provider even when a synthetic one is listed first", () => {
+    const synthetic: Provider = {
+      id: "synthetic",
+      name: "Synthetic source",
+      type: "mock",
+      capabilities: ["metrics", "traces"],
+    };
+    render(
+      <Explorer
+        client={client()}
+        providers={[synthetic, ...providers]}
+        queries={[]}
+        onQueriesChange={vi.fn()}
+        onUse={vi.fn()}
+        onClose={vi.fn()}
+        active
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Production metrics");
+  });
+});

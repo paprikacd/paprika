@@ -105,12 +105,12 @@ func moveRevisionHistoryAside(root, id string) (string, error) {
 	var destination string
 	for stamp := time.Now().UnixNano(); ; stamp++ {
 		destination = filepath.Join(target, fmt.Sprintf("%s.%d", id, stamp))
-		if _, err := os.Lstat(destination); err != nil { //nolint:gosec // id is a dashboard id the store has validated; it names a directory under the data root
+		if _, err := os.Lstat(destination); err != nil { //nolint:gosec,nolintlint // id is a dashboard id the store has validated; gosec reports this line only when it analyses this package alone
 			break
 		}
 	}
 	source := filepath.Join(root, revisionsDirName, id)
-	if err := os.Rename(source, destination); err != nil { //nolint:gosec // as above
+	if err := os.Rename(source, destination); err != nil { //nolint:gosec,nolintlint // as above
 		return "", fmt.Errorf("quarantine revision history %s: %w", id, err)
 	}
 	if err := errors.Join(syncDirectory(filepath.Join(root, revisionsDirName)), syncDirectory(target)); err != nil {

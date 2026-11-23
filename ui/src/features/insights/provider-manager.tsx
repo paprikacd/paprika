@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { CheckCircle2, Compass, Plus, Trash2, X } from "lucide-react"
-import { ProviderIcon } from "./source-identity"
+import { ProviderIcon, ProviderStateMarker, providerTypeLabel } from "./source-identity"
 import { ObserveConnectionCard } from "./observe-connection"
-import { loadProviderCatalog, type InsightsClient, type ProviderCatalog, type ProviderConfig } from "./client"
+import { loadProviderCatalog, type InsightsClient, type ProviderCatalog, type ProviderConfig, type UnsupportedProvider } from "./client"
 import type { Provider } from "./schema"
 import { GammaButton } from "./gamma/button"
 import { GammaInput, GammaTextarea } from "./gamma/input"
@@ -68,6 +68,7 @@ const errorMessage = (error: unknown) =>
 export function ProviderManager({
   client,
   providers,
+  unsupportedProviders = [],
   onChange,
   loadCatalog = (signal) => loadProviderCatalog(client, signal),
   example = false,
@@ -76,6 +77,8 @@ export function ProviderManager({
 }: {
   client: InsightsClient
   providers: Provider[]
+  /** Shared providers the gateway lists but Insights cannot query. */
+  unsupportedProviders?: UnsupportedProvider[]
   onChange: (catalog: ProviderCatalog) => void
   /** Loads the listing for a refresh. The workspace supplies its own, so a refresh marks its sources pending. */
   loadCatalog?: (signal?: AbortSignal) => Promise<ProviderCatalog>
@@ -260,11 +263,10 @@ export function ProviderManager({
                 <div>
                   <strong>{provider.name}</strong>
                   <small>
-                    {provider.type === "prometheus"
-                      ? "Prometheus · metrics"
-                      : "Tempo · traces"}{" "}
+                    {providerTypeLabel(provider.type)} · {provider.capabilities.join(", ")}{" "}
                     · {provider.transport === "mcp" ? "Paprika Observe MCP" : shared ? "Shared with Observability MCP" : config?.managed ? "Managed" : "Provisioned"}
                   </small>
+                  {shared && provider.state && <ProviderStateMarker state={provider.state} />}
                 </div>
               </div>
               <code>{shared ? provider.providerRef ?? provider.name : provider.id}</code>
@@ -348,6 +350,25 @@ export function ProviderManager({
           <p className={styles.notice}>No data sources connected yet.</p>
         )}
       </div>
+      {unsupportedProviders.length > 0 && (
+        <section aria-label="Not queryable from Insights">
+          <h3 className={styles.hint}>Not queryable from Insights</h3>
+          <div className={styles.providerList}>
+            {unsupportedProviders.map((item) => (
+              <article className={styles.provider} key={item.name}>
+                <div className={styles.providerTitle}>
+                  <ProviderIcon type={item.type} />
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small>{item.typeLabel ?? providerTypeLabel(item.type)}</small>
+                  </div>
+                </div>
+                <p className={styles.providerURL}>{item.message}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       {!example && configs && !draft && (
         <GammaButton
           variant="primary"

@@ -6,6 +6,7 @@ import {
   MAX_DASHBOARD_VARIABLES,
   type DataKind,
   type Provider,
+  preferredProvider,
   type TooltipQuerySource,
   type TooltipView,
   type Widget,
@@ -119,7 +120,7 @@ export function TooltipEditor({
               provider.id === parentProviderId &&
               provider.capabilities.includes(dataKind),
           )?.id ??
-          providers.find((provider) => provider.capabilities.includes(dataKind))
+          preferredProvider(providers, (provider) => provider.capabilities.includes(dataKind))
             ?.id ??
           "",
         query: "",

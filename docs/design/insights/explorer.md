@@ -14,7 +14,7 @@ Provider completion uses the existing authenticated `InsightsClient.metadata` en
 
 Declared saved-query parameters, dashboard variables and tooltip mappings are offered as `{{name}}` completions. Diagnostics analyze a shadow document with typed literals in place of parameter tokens; the authored text and exact-once runtime interpolation remain unchanged. Syntax messages are editing guidance; provider execution remains authoritative. The editor retains the existing 8,192-character query limit.
 
-The reusable editor also accepts SQL mode with a dialect and schema through `sqlConfig`. Paprika currently exposes only Prometheus and Tempo connections; this change does not add a SQL provider or SQL execution.
+The reusable editor also accepts SQL mode with a dialect and schema through `sqlConfig`. PostgreSQL providers use this SQL mode with the editor's default PostgreSQL dialect. No caller in the Insights UI passes `sqlConfig` yet, so schema completion is unavailable; this change does not add a SQL provider or SQL execution.
 
 ### Library details
 

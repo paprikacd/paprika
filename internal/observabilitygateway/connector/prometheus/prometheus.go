@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -29,6 +31,16 @@ const (
 	maxRangePoints   = 11000
 	defaultLimit     = 100
 	maxLimit         = 1000
+
+	// The backend's own query timeout is sent as whole seconds in [1, 30],
+	// one second beyond the caller's remaining deadline (see backendTimeout).
+	minBackendTimeoutSeconds    = 1
+	maxBackendTimeoutSeconds    = 30
+	backendTimeoutMarginSeconds = 1
+
+	// errorTypeTimeout is the errorType Prometheus reports when a query
+	// exceeds its evaluation timeout.
+	errorTypeTimeout = "timeout"
 )
 
 // configKeyStep is the prometheus-only configuration key: a Go duration
@@ -92,8 +104,11 @@ func (Prometheus) Query(ctx context.Context, req connector.QueryRequest) (*conne
 	if reason != "" {
 		return unsupported(reason)
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		params.Set("timeout", backendTimeout(time.Until(deadline)))
+	}
 
-	data, err := httphelp.Get(ctx, cfg.Config, path, params, req.Credentials)
+	data, err := httphelp.GetWithRetryVeto(ctx, cfg.Config, path, params, req.Credentials, prometheusRetryVeto)
 	if err != nil {
 		return queryError(err), nil
 	}
@@ -200,6 +215,32 @@ func unsupported(reason string) (*connector.QueryResult, error) {
 		State:  connector.StateNotAvailable,
 		Reason: reason,
 	}, fmt.Errorf("%w: %s", connector.ErrUnsupported, reason)
+}
+
+// backendTimeout renders the timeout query parameter for a query whose caller
+// stops waiting at remaining. The backend's own timeout is set one second past
+// that point, rounded up to whole seconds, so the gateway's context deadline
+// always fires first: the caller then sees the gateway's own DeadlineExceeded
+// rather than a backend 503 with errorType "timeout" that would surface as a
+// generic query failure. Prometheus-compatible backends accept whole-second
+// durations, and 30 is the gateway's own upper bound on a request.
+func backendTimeout(remaining time.Duration) string {
+	seconds := int(math.Ceil(remaining.Seconds())) + backendTimeoutMarginSeconds
+	seconds = min(max(seconds, minBackendTimeoutSeconds), maxBackendTimeoutSeconds)
+	return strconv.Itoa(seconds) + "s"
+}
+
+// prometheusRetryVeto keeps a 503 whose body reports the backend's own query
+// timeout from being retried. The same query would run into the same timeout
+// again, so a retry only adds load to a backend that is already saturated.
+func prometheusRetryVeto(status int, body []byte) bool {
+	if status != http.StatusServiceUnavailable {
+		return false
+	}
+	var envelope struct {
+		ErrorType string `json:"errorType"`
+	}
+	return json.Unmarshal(body, &envelope) == nil && envelope.ErrorType == errorTypeTimeout
 }
 
 // queryError converts a backend failure into its sanitized result: the

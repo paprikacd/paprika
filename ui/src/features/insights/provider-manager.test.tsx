@@ -268,3 +268,48 @@ describe("provider configuration validation", () => {
     ).toBeUndefined()
   })
 })
+
+describe("provider management states and support", () => {
+  it("describes each provider type by its label and capabilities", () => {
+    const providers: Provider[] = [
+      { id: "shorted-a", name: "Shorted A", type: "shorted", capabilities: ["metrics", "records"], source: "observability" },
+      { id: "pg-a", name: "Postgres A", type: "postgresql", capabilities: ["metrics", "records"], source: "observability" },
+      { id: "mock-a", name: "Mock A", type: "mock", capabilities: ["metrics", "traces"], source: "observability" },
+    ]
+    render(<ProviderManager client={makeClient([])} providers={providers} onChange={vi.fn()} />)
+    const cards = screen.getAllByRole("article")
+    expect(within(cards[0]).getByText(/^Shorted · metrics, records ·/)).toBeInTheDocument()
+    expect(within(cards[1]).getByText(/^PostgreSQL · metrics, records ·/)).toBeInTheDocument()
+    expect(within(cards[2]).getByText(/^Synthetic · metrics, traces ·/)).toBeInTheDocument()
+  })
+
+  it("shows the fixed state wording for a shared provider with a known state", () => {
+    const providers: Provider[] = [
+      { id: "prom-a", name: "Prom A", type: "prometheus", capabilities: ["metrics"], source: "observability", state: "NotConfigured" },
+    ]
+    render(<ProviderManager client={makeClient([])} providers={providers} onChange={vi.fn()} />)
+    expect(screen.getByText("Last check: not configured")).toBeInTheDocument()
+  })
+
+  it("lists unsupported shared providers by name with the fixed Insights note, not a gateway reason", () => {
+    const unsupported = [{
+      name: "observability/vultr-bandwidth",
+      type: "vultr-monitoring",
+      typeLabel: "Vultr Monitoring",
+      reason: "metrics_format_not_supported",
+      message: "Vultr metrics are not yet in a shape Insights can query.",
+    }]
+    render(<ProviderManager client={makeClient([])} providers={[]} onChange={vi.fn()} unsupportedProviders={unsupported} />)
+    const section = screen.getByRole("region", { name: "Not queryable from Insights" })
+    expect(within(section).getByText("observability/vultr-bandwidth")).toBeInTheDocument()
+    expect(within(section).getByText("Vultr Monitoring")).toBeInTheDocument()
+    expect(within(section).queryByText("vultr-monitoring")).not.toBeInTheDocument()
+    expect(within(section).getByText("Vultr metrics are not yet in a shape Insights can query.")).toBeInTheDocument()
+    expect(screen.queryByText(/metrics_format_not_supported/)).not.toBeInTheDocument()
+  })
+
+  it("omits the unsupported section when every listed provider is queryable", () => {
+    render(<ProviderManager client={makeClient([])} providers={[]} onChange={vi.fn()} />)
+    expect(screen.queryByRole("region", { name: "Not queryable from Insights" })).not.toBeInTheDocument()
+  })
+})

@@ -260,6 +260,12 @@ func ValidateConfig(config json.RawMessage) error {
 //
 // There is no client-side timeout beyond ctx: the caller sets the deadline.
 func Get(ctx context.Context, cfg Config, path string, params url.Values, credentials []byte) (json.RawMessage, error) {
+	return GetWithRetryVeto(ctx, cfg, path, params, credentials, nil)
+}
+
+// GetWithRetryVeto is Get with a connector-supplied RetryVeto consulted before
+// any transient-status retry. A nil veto is plain Get.
+func GetWithRetryVeto(ctx context.Context, cfg Config, path string, params url.Values, credentials []byte, veto RetryVeto) (json.RawMessage, error) {
 	u := strings.TrimRight(cfg.Endpoint, "/") + path
 	if len(params) > 0 {
 		u += "?" + params.Encode()
@@ -282,7 +288,7 @@ func Get(ctx context.Context, cfg Config, path string, params url.Values, creden
 	if cfg.InsecureSkipTLS {
 		client = insecureClient
 	}
-	resp, err := DoReadRequest(req, client)
+	resp, err := doReadRequest(req, client, veto)
 	if err != nil {
 		// *url.Error quotes the full request URL — endpoint URLs can carry
 		// credential material — so the wrapper is stripped and only the
@@ -301,13 +307,33 @@ func RejectRedirect(_ *http.Request, _ []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
+// RetryVeto lets a connector keep a transient-status response (429, 502,
+// 503 or 504) from being retried. It receives the response status and a
+// bounded prefix of the response body, and returns true to hand the response
+// to the caller unretried. The body prefix is the only part of the body it
+// sees; the caller still reads the complete body.
+type RetryVeto func(status int, body []byte) bool
+
+// minRetryBudget is the least time left on the request context for which a
+// transient-status retry is still sent. A retry that cannot finish within it
+// only adds load to a backend that is already slow.
+const minRetryBudget = time.Second
+
+// vetoPeekBytes bounds how much of a retryable response body a RetryVeto sees.
+const vetoPeekBytes = 4 << 10
+
 // DoReadRequest executes an explicitly read-only backend request. GET APIs
 // and GCP's entries:list POST are safe to replay after transient statuses;
 // callers must never use this helper for mutations. It makes at most three
 // attempts with bounded, context-cancellable backoff, honoring Retry-After
-// only when it fits within the one-second retry budget. Transport errors
-// and credential denials are not retried.
+// only when it fits within the one-second retry budget. A retry is not sent
+// when less than one second of the context deadline remains. Transport
+// errors and credential denials are not retried.
 func DoReadRequest(req *http.Request, client *http.Client) (*http.Response, error) {
+	return doReadRequest(req, client, nil)
+}
+
+func doReadRequest(req *http.Request, client *http.Client, veto RetryVeto) (*http.Response, error) {
 	// Enforce this at the shared seam too, including clients supplied by
 	// OAuth and tests. A shallow client copy preserves connection pooling.
 	boundedClient := *client
@@ -325,8 +351,8 @@ func DoReadRequest(req *http.Request, client *http.Client) (*http.Response, erro
 		if err != nil {
 			return nil, fmt.Errorf("performing backend read: %w", err)
 		}
-		delay, retry := retryDelay(resp, attempt)
-		if !retry || !canReplayRequest(req) {
+		delay, resp, retry := decideRetry(req, resp, attempt, veto)
+		if !retry {
 			return resp, nil
 		}
 		if err := closeRetryResponse(req.Context(), resp); err != nil {
@@ -336,6 +362,46 @@ func DoReadRequest(req *http.Request, client *http.Client) (*http.Response, erro
 			return nil, err
 		}
 	}
+}
+
+// decideRetry reports whether a response from attempt should be retried, and
+// with what backoff. The veto is consulted only for a transient status; the
+// returned response is the one the caller must use, with its body intact.
+func decideRetry(req *http.Request, resp *http.Response, attempt int, veto RetryVeto) (time.Duration, *http.Response, bool) {
+	delay, retry := retryDelay(resp, attempt)
+	if retry && veto != nil {
+		var vetoed bool
+		resp, vetoed = vetoRetry(resp, veto)
+		retry = !vetoed
+	}
+	retry = retry && canReplayRequest(req) && hasRetryBudget(req.Context())
+	return delay, resp, retry
+}
+
+// hasRetryBudget reports whether the context leaves enough of its deadline for
+// one more attempt. A context without a deadline always has budget.
+func hasRetryBudget(ctx context.Context) bool {
+	deadline, ok := ctx.Deadline()
+	return !ok || time.Until(deadline) >= minRetryBudget
+}
+
+// peekedBody is a response body whose first bytes were read ahead of the
+// caller. Reads replay those bytes first; Close closes the original body.
+type peekedBody struct {
+	io.Reader
+	io.Closer
+}
+
+// vetoRetry reads a bounded prefix of a retryable response body, asks veto
+// about it, and returns the response with its body restored in full.
+func vetoRetry(resp *http.Response, veto RetryVeto) (*http.Response, bool) {
+	original := resp.Body
+	prefix, err := io.ReadAll(io.LimitReader(original, vetoPeekBytes))
+	resp.Body = peekedBody{Reader: io.MultiReader(bytes.NewReader(prefix), original), Closer: original}
+	if err != nil {
+		return resp, false
+	}
+	return resp, veto(resp.StatusCode, prefix)
 }
 
 func canReplayRequest(req *http.Request) bool {

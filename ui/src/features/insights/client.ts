@@ -61,8 +61,19 @@ export interface SharedCatalogStatus {
   /** Seconds to wait before replaying a busy listing; the gateway's Retry-After, or a default. */
   retryAfter?: number
 }
+/** A shared provider the gateway lists but Insights cannot query. Message is fixed Insights wording. */
+export interface UnsupportedProvider {
+  name: string
+  type: string
+  /** Catalog display name for a known type; absent for an unknown one. */
+  typeLabel?: string
+  reason: string
+  message: string
+}
 export interface ProviderCatalog {
   providers: Provider[]
+  /** Listed shared providers Insights cannot query. Absent when there are none. */
+  unsupportedProviders?: UnsupportedProvider[]
   sharedCatalog?: SharedCatalogStatus
 }
 /** A first-party starter as the empty-state picker lists it. Reading one saves nothing. */
@@ -513,12 +524,17 @@ export function createInsightsClient(
   // an unmount or a newer request ends it.
   async function fetchProviderCatalog(signal?: AbortSignal): Promise<ProviderCatalog> {
     for (let attempt = 0; ; attempt++) {
-      const body = await readJSON<{ providers: Provider[]; sharedCatalog?: SharedCatalogStatus }>(
+      const body = await readJSON<{ providers: Provider[]; unsupportedProviders?: UnsupportedProvider[]; sharedCatalog?: SharedCatalogStatus }>(
         await request("/providers", { signal }, undefined, false, true),
       )
       const shared = body.sharedCatalog
+      const catalog: ProviderCatalog = {
+        providers: body.providers,
+        ...(body.unsupportedProviders?.length ? { unsupportedProviders: body.unsupportedProviders } : {}),
+        ...(shared ? { sharedCatalog: shared } : {}),
+      }
       if (shared?.status !== "busy" || attempt >= BUSY_LISTING_REPLAYS)
-        return { providers: body.providers, ...(shared ? { sharedCatalog: shared } : {}) }
+        return catalog
       await waitForCapacity(jitter(Math.min((shared.retryAfter ?? 1) * 1000, REPLAY_DELAY_CAP_MS)), signal)
     }
   }

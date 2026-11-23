@@ -282,7 +282,7 @@ func queryToolResponse(provider, signalLabel string, result *connector.QueryResu
 func listObservabilityProvidersTool(b Backend) mcp.Tool {
 	return mcp.Tool{
 		Name:        "list_observability_providers",
-		Description: "List the observability providers (Prometheus, Loki, Tempo, OTLP, Google Cloud Logging/Monitoring/Trace, AWS CloudWatch Logs/Metrics, X-Ray, CloudTrail, Vultr Monitoring, mock) configured in this cluster and visible to this gateway, with each provider's current state.",
+		Description: "List the observability providers (Prometheus, Loki, Tempo, OTLP, Shorted, Uptime, PostgreSQL, Google Cloud Logging/Monitoring/Trace, AWS CloudWatch Logs/Metrics, X-Ray, CloudTrail, Vultr Monitoring, mock) configured in this cluster and visible to this gateway, with each provider's current state.",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, _ json.RawMessage) (any, error) {
@@ -736,7 +736,7 @@ func listTraceServicesTool(b Backend) mcp.Tool {
 func listProviderTypesTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "list_provider_types",
-		Description: "List the observability provider types this gateway can connect to: the catalog of backends (Prometheus, Loki, Tempo, OTLP, Google Cloud Logging/Monitoring/Trace, AWS CloudWatch Logs/Metrics, X-Ray, CloudTrail, Vultr Monitoring, mock) with vendor, category, supported signals and a one-line summary for each.",
+		Description: "List the observability provider types this gateway can connect to: the catalog of backends (Prometheus, Loki, Tempo, OTLP, Shorted, Uptime, PostgreSQL, Google Cloud Logging/Monitoring/Trace, AWS CloudWatch Logs/Metrics, X-Ray, CloudTrail, Vultr Monitoring, mock) with vendor, category, supported signals and a one-line summary for each.",
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		Invoke: func(_ context.Context, _ v1connect.PaprikaServiceClient, _ json.RawMessage) (any, error) {

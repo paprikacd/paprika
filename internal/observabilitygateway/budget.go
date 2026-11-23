@@ -41,8 +41,9 @@ const catalogBudgetProvider = "catalog"
 // RequestTimeout is the execution budget a query gets once it is admitted: the
 // timer in executionBudget.begin starts after the queue wait. A query's worst
 // case through this budget is QueueWait + RequestTimeout. The REST dashboard
-// handler applies RequestTimeout to the whole request, queue wait included
-// (dashboard_api.go, dashboardHandler), so its worst case is RequestTimeout.
+// handler applies RequestTimeout, or the caller's shorter ObserveBudgetHeader,
+// to the whole request, queue wait included (dashboard_api.go, dashboardHandler),
+// so its worst case is that deadline.
 const RequestTimeout = queryTimeout
 
 // BudgetConfig sizes the execution budget that bounds all provider I/O. When a

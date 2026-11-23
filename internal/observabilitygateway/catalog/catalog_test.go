@@ -168,11 +168,12 @@ func TestSummariesIsTheLightProjectionInLibraryOrder(t *testing.T) {
 		require.Equal(t, all[i].Category, summaries[i].Category)
 		require.Equal(t, all[i].Signals, summaries[i].Signals)
 		require.Equal(t, all[i].Summary, summaries[i].Summary)
+		require.Equal(t, all[i].Insights, summaries[i].Insights)
 	}
 
 	// The wire shape is the contract with the React list view: exactly the
-	// six light keys, with no config schema, walkthrough or description
-	// leaking into the list payload.
+	// light keys, with no config schema, walkthrough or description leaking
+	// into the list payload.
 	encoded, err := json.Marshal(summaries[0])
 	require.NoError(t, err)
 	var payload map[string]json.RawMessage
@@ -182,7 +183,7 @@ func TestSummariesIsTheLightProjectionInLibraryOrder(t *testing.T) {
 		keys = append(keys, key)
 	}
 	require.ElementsMatch(t,
-		[]string{"type", "displayName", "vendor", "category", "signals", "summary"},
+		[]string{"type", "displayName", "vendor", "category", "signals", "summary", "insights"},
 		keys)
 }
 

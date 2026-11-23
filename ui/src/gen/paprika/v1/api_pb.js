@@ -2974,6 +2974,8 @@ export const ProviderTypeSummary = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "category", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 5, name: "signals", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
     { no: 6, name: "summary", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "insights_kinds", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 8, name: "insights_note", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

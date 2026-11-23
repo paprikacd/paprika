@@ -2016,12 +2016,14 @@ var consoleMessageDescriptorContracts = map[string]map[string]fleetFieldDescript
 	},
 	"ListObservabilityProviderTypesRequest": {},
 	"ProviderTypeSummary": {
-		"type":         {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
-		"display_name": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
-		"vendor":       {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
-		"category":     {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
-		"signals":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
-		"summary":      {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"type":           {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"display_name":   {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"vendor":         {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"category":       {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"signals":        {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"summary":        {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"insights_kinds": {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"insights_note":  {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 	},
 	"ListObservabilityProviderTypesResponse": {
 		"state": {

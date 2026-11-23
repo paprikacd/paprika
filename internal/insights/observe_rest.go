@@ -10,6 +10,10 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptrace"
+	"strconv"
+	"time"
+
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 )
 
 // The Observe data path is the gateway's dashboard REST routes, called with the
@@ -20,6 +24,22 @@ const (
 	observeRESTProvidersPath = "/observe/api/providers"
 	observeRESTQueryPath     = "/observe/api/query"
 	observeRESTExplorePath   = "/observe/api/explore"
+)
+
+// ObserveBudgetHeader carries Insights' remaining time for one REST call, in
+// decimal milliseconds. The gateway names the same header in its dashboard
+// handler, and the two names are checked against each other in internal/api.
+const ObserveBudgetHeader = "X-Paprika-Observe-Budget"
+
+// observeBudgetMargin is kept back from the operation's remaining time, so the
+// gateway's own deadline fires before Insights' operation deadline does. On a
+// short operation the margin is at most a quarter of what remains, so a short
+// bounded lookup (the SLO save's 2 s) still reaches the gateway.
+// observeMinBudget is the shortest budget worth dispatching: the gateway accepts
+// nothing below one second, so a shorter call is not sent at all.
+const (
+	observeBudgetMargin = 2 * time.Second
+	observeMinBudget    = time.Second
 )
 
 // observeRESTMethods is the complete allowlist of gateway paths Insights calls.
@@ -48,6 +68,14 @@ func (g *observeGateway) restDo(ctx context.Context, token, path string, body an
 	if err != nil {
 		return nil, err
 	}
+	// Each call tells the gateway how long it has, so the gateway's deadline is
+	// this operation's remaining time, not its own default. A budget too short to
+	// be useful is not dispatched; it fails as the operation's own timeout.
+	budget, ok := observeRequestBudget(opCtx)
+	if !ok {
+		return nil, observeRESTError(ctx, opCtx, context.DeadlineExceeded)
+	}
+	request.Header.Set(ObserveBudgetHeader, strconv.FormatInt(budget.Milliseconds(), 10))
 	// The trace marks dispatch when a connection is ready and the request is
 	// about to leave. A request that never connects (DNS, dial) is not dispatched.
 	trace := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { m.dispatch() }}
@@ -57,6 +85,18 @@ func (g *observeGateway) restDo(ctx context.Context, token, path string, body an
 		return nil, observeRESTError(ctx, opCtx, err)
 	}
 	return readRESTResponse(ctx, opCtx, response, limit)
+}
+
+// observeRequestBudget returns the time a gateway call may use: the operation's
+// remaining time less the margin. It reports false when that is under the minimum.
+func observeRequestBudget(opCtx context.Context) (time.Duration, bool) {
+	deadline, ok := opCtx.Deadline()
+	if !ok {
+		return 0, false
+	}
+	remaining := time.Until(deadline)
+	budget := remaining - min(observeBudgetMargin, remaining/4)
+	return budget, budget >= observeMinBudget
 }
 
 // newRESTRequest builds one allowlisted gateway request with the delegated bearer.
@@ -187,37 +227,57 @@ type observeRESTProvidersResponse struct {
 	Providers []observeCatalogProvider `json:"providers"`
 }
 
+// sharedListing is one decoded shared catalog: the providers Insights can query,
+// and the providers it lists but cannot query, each with a reason.
+type sharedListing struct {
+	providers   []Provider
+	unsupported []UnsupportedProvider
+}
+
 // listShared fetches the caller's shared catalog over REST.
-func (g *observeGateway) listShared(ctx context.Context, token string) ([]Provider, error) {
+func (g *observeGateway) listShared(ctx context.Context, token string) (sharedListing, error) {
 	body, err := g.restDo(ctx, token, observeRESTProvidersPath, nil, 1<<20, nil)
 	if err != nil {
-		return nil, err
+		return sharedListing{}, err
 	}
 	var response observeRESTProvidersResponse
 	if json.Unmarshal(body, &response) != nil || response.Providers == nil {
-		return nil, errUpstream
+		return sharedListing{}, errUpstream
 	}
 	return sharedProvidersFromCatalog(response.Providers)
 }
 
-// sharedProvidersFromCatalog keeps the catalog entries Insights can query and
-// gives each one its opaque, namespace-qualified identity. Any malformed or
-// duplicate entry fails the whole listing, as it always has.
-func sharedProvidersFromCatalog(catalog []observeCatalogProvider) ([]Provider, error) {
-	result := make([]Provider, 0, len(catalog))
-	seen := make(map[string]bool)
-	for _, p := range catalog {
-		capabilities := observeCapabilities(p.Type)
-		if len(capabilities) == 0 {
-			continue
-		}
+// sharedProvidersFromCatalog splits the catalog into the entries Insights can
+// query, each with its opaque, namespace-qualified identity, and the entries it
+// lists without querying. Every entry is validated the same way, queryable or
+// not, so a malformed or duplicate entry fails the whole listing.
+func sharedProvidersFromCatalog(entries []observeCatalogProvider) (sharedListing, error) {
+	var listing sharedListing
+	seen := make(map[string]bool, len(entries))
+	for _, p := range entries {
 		if !validObserveCatalogProvider(p) || seen[p.Name] {
-			return nil, errUpstream
+			return sharedListing{}, errUpstream
 		}
 		seen[p.Name] = true
-		result = append(result, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: capabilities, Source: "observability", ProviderRef: p.Name, Transport: "mcp"})
+		capabilities := observeCapabilities(p.Type)
+		if len(capabilities) == 0 {
+			listing.unsupported = append(listing.unsupported, unsupportedObserveProvider(p))
+			continue
+		}
+		listing.providers = append(listing.providers, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: capabilities, Source: "observability", ProviderRef: p.Name, Transport: "mcp", State: observeProviderState(p.State)})
 	}
-	return result, nil
+	return listing, nil
+}
+
+// observeProviderState forwards the gateway's state only when it is one of the
+// closed connector states. Anything else, including an empty value, is dropped.
+func observeProviderState(state string) string {
+	switch connector.State(state) {
+	case connector.StateOK, connector.StateNotConfigured, connector.StateNotAvailable, connector.StateError, connector.StateForbidden:
+		return state
+	default:
+		return ""
+	}
 }
 
 // observeRESTQueryBody builds the gateway query request for one provider query.

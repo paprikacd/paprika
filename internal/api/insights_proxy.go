@@ -102,13 +102,21 @@ func insightsReadPost(path string) bool {
 	return path == InsightsPrefix+"/query" || path == InsightsPrefix+"/query-dashboard" || path == InsightsPrefix+"/dashboards/validate" || (strings.HasPrefix(path, InsightsPrefix+"/providers/") && strings.HasSuffix(path, "/test"))
 }
 
+// The API proxy bounds a whole Insights request, and its response-header wait is
+// shorter, so the proxy gives up before the browser does. Both sit outside the
+// Insights budgets, which the ordering test in this package checks.
+const (
+	insightsProxyContextTimeout = 28 * time.Second
+	insightsProxyHeaderTimeout  = 25 * time.Second
+)
+
 func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, error) {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		return nil, errors.New("insights proxy requires an HTTP transport")
 	}
 	transport := base.Clone()
-	transport.ResponseHeaderTimeout = 25 * time.Second
+	transport.ResponseHeaderTimeout = insightsProxyHeaderTimeout
 	transport.MaxIdleConnsPerHost = 16
 	proxy := &httputil.ReverseProxy{
 		Transport: transport,
@@ -186,7 +194,7 @@ func insightsProxyRequestHandler(proxy http.Handler, cfg auth.Config, issuer str
 			insightsProxyError(w, 404, "Insights endpoint not found")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 28*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), insightsProxyContextTimeout)
 		defer cancel()
 		ctx = context.WithValue(ctx, insightsRevisionStampKey{}, revisionStampFor(ctx))
 		if issuer != "" {

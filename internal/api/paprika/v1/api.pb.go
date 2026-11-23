@@ -14991,7 +14991,8 @@ type ObservabilityProviderItem struct {
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Namespace hosting the CR.
 	Namespace string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	// Connector type: prometheus, loki, tempo or otlp.
+	// Connector type, e.g. prometheus, loki, tempo, otlp, mock or
+	// aws-cloudwatch-logs. Matches a provider-type catalog entry.
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
 	// Reachability verdict from the CR status, in its own vocabulary
 	// (OK, NotConfigured, NotAvailable, Error, Forbidden). Empty when the
@@ -15398,7 +15399,13 @@ type ProviderTypeSummary struct {
 	// Signal planes this provider's connector can serve.
 	Signals []string `protobuf:"bytes,5,rep,name=signals,proto3" json:"signals,omitempty"`
 	// One-sentence pitch for the library list view.
-	Summary       string `protobuf:"bytes,6,opt,name=summary,proto3" json:"summary,omitempty"`
+	Summary string `protobuf:"bytes,6,opt,name=summary,proto3" json:"summary,omitempty"`
+	// Data planes the Insights console can query for this type: metrics,
+	// traces and/or records. Empty when Insights cannot query the type.
+	InsightsKinds []string `protobuf:"bytes,7,rep,name=insights_kinds,json=insightsKinds,proto3" json:"insights_kinds,omitempty"`
+	// Fixed operator-facing note on why Insights cannot query this type.
+	// Empty when Insights can query it.
+	InsightsNote  string `protobuf:"bytes,8,opt,name=insights_note,json=insightsNote,proto3" json:"insights_note,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15471,6 +15478,20 @@ func (x *ProviderTypeSummary) GetSignals() []string {
 func (x *ProviderTypeSummary) GetSummary() string {
 	if x != nil {
 		return x.Summary
+	}
+	return ""
+}
+
+func (x *ProviderTypeSummary) GetInsightsKinds() []string {
+	if x != nil {
+		return x.InsightsKinds
+	}
+	return nil
+}
+
+func (x *ProviderTypeSummary) GetInsightsNote() string {
+	if x != nil {
+		return x.InsightsNote
 	}
 	return ""
 }
@@ -22319,14 +22340,16 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x12unavailable_reason\x18\x02 \x01(\tR\x11unavailableReason\x12-\n" +
 	"\x13observed_at_unix_ms\x18\x03 \x01(\x03R\x10observedAtUnixMs\x128\n" +
 	"\x05tools\x18\x04 \x03(\v2\".paprika.v1.ObservabilityToolUsageR\x05tools\"'\n" +
-	"%ListObservabilityProviderTypesRequest\"\xb4\x01\n" +
+	"%ListObservabilityProviderTypesRequest\"\x80\x02\n" +
 	"\x13ProviderTypeSummary\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x16\n" +
 	"\x06vendor\x18\x03 \x01(\tR\x06vendor\x12\x1a\n" +
 	"\bcategory\x18\x04 \x01(\tR\bcategory\x12\x18\n" +
 	"\asignals\x18\x05 \x03(\tR\asignals\x12\x18\n" +
-	"\asummary\x18\x06 \x01(\tR\asummary\"\xbb\x01\n" +
+	"\asummary\x18\x06 \x01(\tR\asummary\x12%\n" +
+	"\x0einsights_kinds\x18\a \x03(\tR\rinsightsKinds\x12#\n" +
+	"\rinsights_note\x18\b \x01(\tR\finsightsNote\"\xbb\x01\n" +
 	"&ListObservabilityProviderTypesResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.paprika.v1.DataStateR\x05state\x12-\n" +
 	"\x12unavailable_reason\x18\x02 \x01(\tR\x11unavailableReason\x125\n" +

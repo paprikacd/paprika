@@ -39,7 +39,7 @@ func (Prometheus) Explore(ctx context.Context, req connector.ExploreRequest) (*c
 	if err != nil {
 		return nil, fmt.Errorf("prometheus: %w", err)
 	}
-	data, err := httphelp.Get(ctx, cfg.Config, plan.path, plan.params, req.Credentials)
+	data, err := httphelp.GetWithRetryVeto(ctx, cfg.Config, plan.path, plan.params, req.Credentials, prometheusRetryVeto)
 	if err != nil {
 		return exploreError(err), nil
 	}
