@@ -8798,7 +8798,8 @@ export declare class ObservabilityProviderItem extends Message<ObservabilityProv
   namespace: string;
 
   /**
-   * Connector type: prometheus, loki, tempo or otlp.
+   * Connector type, e.g. prometheus, loki, tempo, otlp, mock or
+   * aws-cloudwatch-logs. Matches a provider-type catalog entry.
    *
    * @generated from field: string type = 3;
    */
@@ -9083,6 +9084,22 @@ export declare class ProviderTypeSummary extends Message<ProviderTypeSummary> {
    * @generated from field: string summary = 6;
    */
   summary: string;
+
+  /**
+   * Data planes the Insights console can query for this type: metrics,
+   * traces and/or records. Empty when Insights cannot query the type.
+   *
+   * @generated from field: repeated string insights_kinds = 7;
+   */
+  insightsKinds: string[];
+
+  /**
+   * Fixed operator-facing note on why Insights cannot query this type.
+   * Empty when Insights can query it.
+   *
+   * @generated from field: string insights_note = 8;
+   */
+  insightsNote: string;
 
   constructor(data?: PartialMessage<ProviderTypeSummary>);
 

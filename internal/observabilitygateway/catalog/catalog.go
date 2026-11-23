@@ -38,6 +38,54 @@ type TypeInfo struct {
 	Credential   CredentialInfo     `json:"credential"`
 	Steps        []Step             `json:"steps"`
 	Probe        Probe              `json:"probe"`
+	Insights     InsightsSupport    `json:"insights"`
+}
+
+// InsightsSupport records which data planes the Insights console can query
+// for a provider type. Kinds is a subset of the metrics, traces and records
+// planes that Insights decodes today; it is empty exactly when Reason is
+// set. Reason is a closed code and Note is fixed operator-facing text, so a
+// consumer can explain the gap without any backend output.
+type InsightsSupport struct {
+	Kinds  []connector.Signal `json:"kinds"`
+	Reason string             `json:"reason,omitempty"`
+	Note   string             `json:"note,omitempty"`
+}
+
+// Insights reason codes for a provider type that Insights cannot query.
+const (
+	// InsightsReasonLogs marks a logs-only backend: Insights has no logs
+	// data plane.
+	InsightsReasonLogs = "logs_not_supported"
+	// InsightsReasonMetricsFormat marks a metrics backend that returns its
+	// own JSON shape rather than a Prometheus matrix.
+	InsightsReasonMetricsFormat = "metrics_format_not_supported"
+	// InsightsReasonTracesFormat marks a traces backend that returns its own
+	// trace shape rather than a Tempo search result.
+	InsightsReasonTracesFormat = "traces_format_not_supported"
+	// InsightsReasonPassthrough marks a backend whose responses have no
+	// fixed shape Insights can decode.
+	InsightsReasonPassthrough = "passthrough_format_not_supported"
+)
+
+// Fixed Insights notes, one per reason code.
+const (
+	insightsNoteLogs          = "Insights does not query log data yet. Use the Observe MCP query_logs tool for this provider."
+	insightsNoteMetricsFormat = "Insights reads metrics only as Prometheus-style matrix results. This provider returns its own JSON shape, so it is listed but not queryable."
+	insightsNoteTracesFormat  = "Insights reads traces only as Tempo search results. This provider returns its own trace shape, so it is listed but not queryable."
+	insightsNotePassthrough   = "This provider's responses have no fixed shape that Insights can decode, so it is listed but not queryable."
+)
+
+// insightsQueryable is the support record of a type whose listed kinds
+// Insights can query.
+func insightsQueryable(kinds ...connector.Signal) InsightsSupport {
+	return InsightsSupport{Kinds: kinds}
+}
+
+// insightsUnsupported is the support record of a type Insights cannot
+// query. Kinds is non-nil so the JSON form is an empty array, not null.
+func insightsUnsupported(reason, note string) InsightsSupport {
+	return InsightsSupport{Kinds: []connector.Signal{}, Reason: reason, Note: note}
 }
 
 // Field is one config-document key rendered as a form input. Key is the
@@ -78,8 +126,9 @@ type Probe struct {
 }
 
 // TypeSummary is the light projection of a TypeInfo for the library list
-// view: identity and one-sentence pitch only, no config schema or
-// walkthrough. The wire shape is deliberately a subset of TypeInfo's keys.
+// view: identity, one-sentence pitch and Insights support, but no config
+// schema or walkthrough. The wire shape is deliberately a subset of
+// TypeInfo's keys.
 type TypeSummary struct {
 	Type        string             `json:"type"`
 	DisplayName string             `json:"displayName"`
@@ -87,6 +136,7 @@ type TypeSummary struct {
 	Category    string             `json:"category"`
 	Signals     []connector.Signal `json:"signals"`
 	Summary     string             `json:"summary"`
+	Insights    InsightsSupport    `json:"insights"`
 }
 
 // Vendor vocabulary for the library view.
@@ -290,6 +340,7 @@ var catalog = []TypeInfo{
 	postgresqlProvider(),
 	{
 		Type:         connector.ProviderAWSCloudTrail,
+		Insights:     insightsUnsupported(InsightsReasonLogs, insightsNoteLogs),
 		DisplayName:  "AWS CloudTrail",
 		Vendor:       vendorAWS,
 		Category:     categoryAudit,
@@ -330,6 +381,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderAWSXRay,
+		Insights:     insightsUnsupported(InsightsReasonTracesFormat, insightsNoteTracesFormat),
 		DisplayName:  "AWS X-Ray",
 		Vendor:       vendorAWS,
 		Category:     categoryTraces,
@@ -370,6 +422,7 @@ spec:
 	},
 	{
 		Type:        connector.ProviderAWSCloudWatchLogs,
+		Insights:    insightsUnsupported(InsightsReasonLogs, insightsNoteLogs),
 		DisplayName: "Amazon CloudWatch Logs",
 		Vendor:      vendorAWS,
 		Category:    categoryLogs,
@@ -417,6 +470,7 @@ spec:
 	},
 	{
 		Type:        connector.ProviderAWSCloudWatchMetrics,
+		Insights:    insightsUnsupported(InsightsReasonMetricsFormat, insightsNoteMetricsFormat),
 		DisplayName: "Amazon CloudWatch Metrics",
 		Vendor:      vendorAWS,
 		Category:    categoryMetrics,
@@ -465,6 +519,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderGCPCloudLogging,
+		Insights:     insightsUnsupported(InsightsReasonLogs, insightsNoteLogs),
 		DisplayName:  "Google Cloud Logging",
 		Vendor:       vendorGoogleCloud,
 		Category:     categoryLogs,
@@ -481,6 +536,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderGCPCloudMonitoring,
+		Insights:     insightsUnsupported(InsightsReasonMetricsFormat, insightsNoteMetricsFormat),
 		DisplayName:  "Google Cloud Monitoring",
 		Vendor:       vendorGoogleCloud,
 		Category:     categoryMetrics,
@@ -497,6 +553,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderGCPCloudTrace,
+		Insights:     insightsUnsupported(InsightsReasonTracesFormat, insightsNoteTracesFormat),
 		DisplayName:  "Google Cloud Trace",
 		Vendor:       vendorGoogleCloud,
 		Category:     categoryTraces,
@@ -513,6 +570,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderLoki,
+		Insights:     insightsUnsupported(InsightsReasonLogs, insightsNoteLogs),
 		DisplayName:  "Grafana Loki",
 		Vendor:       vendorOpenSource,
 		Category:     categoryLogs,
@@ -551,6 +609,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderTempo,
+		Insights:     insightsQueryable(connector.SignalTraces),
 		DisplayName:  "Grafana Tempo",
 		Vendor:       vendorOpenSource,
 		Category:     categoryTraces,
@@ -589,6 +648,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderOTLP,
+		Insights:     insightsUnsupported(InsightsReasonPassthrough, insightsNotePassthrough),
 		DisplayName:  "OTLP",
 		Vendor:       vendorOpenSource,
 		Category:     categoryLogs,
@@ -627,6 +687,7 @@ spec:
 	},
 	{
 		Type:         connector.ProviderPrometheus,
+		Insights:     insightsQueryable(connector.SignalMetrics),
 		DisplayName:  "Prometheus",
 		Vendor:       vendorOpenSource,
 		Category:     categoryMetrics,
@@ -665,6 +726,7 @@ spec:
 	},
 	{
 		Type:        connector.ProviderVultrMonitoring,
+		Insights:    insightsUnsupported(InsightsReasonMetricsFormat, insightsNoteMetricsFormat),
 		DisplayName: "Vultr Monitoring",
 		Vendor:      vendorVultr,
 		Category:    categoryMetrics,
@@ -708,6 +770,7 @@ spec:
 	},
 	{
 		Type:        connector.ProviderMock,
+		Insights:    insightsQueryable(connector.SignalMetrics, connector.SignalTraces),
 		DisplayName: "Mock (synthetic test backend)",
 		Vendor:      vendorPaprika,
 		Category:    categoryTest,
@@ -797,6 +860,7 @@ func Summaries() []TypeSummary {
 			Category:    all[i].Category,
 			Signals:     all[i].Signals,
 			Summary:     all[i].Summary,
+			Insights:    all[i].Insights,
 		})
 	}
 	return summaries

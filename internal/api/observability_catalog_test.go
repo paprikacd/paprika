@@ -75,11 +75,16 @@ func TestListObservabilityProviderTypesMapsGatewayCatalog(t *testing.T) {
 					"type": "aws-cloudtrail", "displayName": "AWS CloudTrail",
 					"vendor": "AWS", "category": "audit", "signals": []string{"logs"},
 					"summary": "Read AWS CloudTrail audit events with the native lookup.",
+					"insights": map[string]any{
+						"kinds": []string{}, "reason": "logs_not_supported",
+						"note": "Insights does not query logs yet.",
+					},
 				},
 				{
 					"type": "prometheus", "displayName": "Prometheus",
 					"vendor": "Open source", "category": "metrics", "signals": []string{"metrics"},
-					"summary": "Query Prometheus-compatible metrics endpoints with PromQL.",
+					"summary":  "Query Prometheus-compatible metrics endpoints with PromQL.",
+					"insights": map[string]any{"kinds": []string{"metrics"}, "reason": ""},
 				},
 			},
 		})
@@ -99,7 +104,13 @@ func TestListObservabilityProviderTypesMapsGatewayCatalog(t *testing.T) {
 	assert.Equal(t, "audit", resp.Msg.Types[0].Category)
 	assert.Equal(t, []string{"logs"}, resp.Msg.Types[0].Signals)
 	assert.Equal(t, "Read AWS CloudTrail audit events with the native lookup.", resp.Msg.Types[0].Summary)
+	// Insights support reaches the console as its kinds and fixed note; the
+	// gateway's reason code is not projected.
+	assert.Empty(t, resp.Msg.Types[0].InsightsKinds)
+	assert.Equal(t, "Insights does not query logs yet.", resp.Msg.Types[0].InsightsNote)
 	assert.Equal(t, "prometheus", resp.Msg.Types[1].Type)
+	assert.Equal(t, []string{"metrics"}, resp.Msg.Types[1].InsightsKinds)
+	assert.Empty(t, resp.Msg.Types[1].InsightsNote)
 }
 
 func TestListObservabilityProviderTypesNotConfigured(t *testing.T) {

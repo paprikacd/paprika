@@ -6,6 +6,7 @@ import {
   MAX_DOCUMENT_BYTES,
   MAX_WIDGETS,
   newWidget,
+  preferredProvider,
   widgetSchema,
   pluginConfigSchema,
   widgetKind,
@@ -257,6 +258,32 @@ describe("dashboard document contract", () => {
     expect(newWidget("stat", [], [])).toMatchObject({
       providerId: "unconfigured",
     })
+  })
+
+  it("never defaults a new widget to a synthetic provider or to one whose last check failed", () => {
+    const real: Provider = { id: "prom", name: "Prometheus", type: "prometheus", capabilities: ["metrics"], state: "OK" }
+    const failed: Provider = { id: "prom-down", name: "Prometheus down", type: "prometheus", capabilities: ["metrics"], state: "Error" }
+    const synthetic: Provider = { id: "synthetic", name: "Synthetic", type: "mock", capabilities: ["metrics", "traces"], state: "OK" }
+    const syntheticTraces: Provider = { id: "synthetic-traces", name: "Synthetic traces", type: "mock", capabilities: ["traces"] }
+    const tempo: Provider = { id: "tempo", name: "Tempo", type: "tempo", capabilities: ["traces"] }
+    // The mock is listed first, as the sorted gateway listing can do; the default must still be the real provider.
+    expect(newWidget("stat", [synthetic, real], [])).toMatchObject({ providerId: "prom" })
+    expect(newWidget("traces", [syntheticTraces, tempo], [])).toMatchObject({ providerId: "tempo" })
+    // A real provider whose check failed still beats a synthetic one, and a healthy real provider beats both.
+    expect(newWidget("stat", [synthetic, failed], [])).toMatchObject({ providerId: "prom-down" })
+    expect(newWidget("stat", [synthetic, failed, real], [])).toMatchObject({ providerId: "prom" })
+    // A synthetic provider is still used when it is the only one that can serve the kind.
+    expect(newWidget("traces", [syntheticTraces], [])).toMatchObject({ providerId: "synthetic-traces" })
+  })
+
+  it("preferredProvider returns the first real healthy match for the predicate, stable among equals", () => {
+    const a: Provider = { id: "a", name: "A", type: "prometheus", capabilities: ["metrics"], state: "Forbidden" }
+    const b: Provider = { id: "b", name: "B", type: "prometheus", capabilities: ["metrics"] }
+    const c: Provider = { id: "c", name: "C", type: "prometheus", capabilities: ["metrics"] }
+    expect(preferredProvider([a, b, c], () => true)?.id).toBe("b")
+    expect(preferredProvider([a], () => true)?.id).toBe("a")
+    expect(preferredProvider([b, c], (p) => p.id === "c")?.id).toBe("c")
+    expect(preferredProvider([], () => true)).toBeUndefined()
   })
 
   it.each(["json", "yaml"] as const)(

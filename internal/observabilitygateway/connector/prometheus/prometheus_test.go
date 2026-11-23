@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -321,4 +323,109 @@ func TestValidateConfig(t *testing.T) {
 
 	err = New().ValidateConfig(json.RawMessage(`{"endpont":"https://prom.example.com"}`))
 	require.ErrorContains(t, err, `unknown key "endpont"`)
+}
+
+func TestQueryForwardsBackendTimeoutFromContextDeadline(t *testing.T) {
+	t.Parallel()
+	server, capture := newTestServer(t, http.StatusOK, `{"data":[]}`)
+	ctx, cancel := context.WithTimeout(context.Background(), 17500*time.Millisecond)
+	t.Cleanup(cancel)
+
+	_, err := New().Query(ctx, connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up", Config: endpointConfig(t, server.URL)})
+	require.NoError(t, err)
+	require.Equal(t, "19s", capture.query.Get("timeout"), "the backend outlasts the 17.5s deadline by one second")
+}
+
+func TestQueryWithoutDeadlineSendsNoBackendTimeout(t *testing.T) {
+	t.Parallel()
+	server, capture := newTestServer(t, http.StatusOK, `{"data":[]}`)
+	_, err := New().Query(context.Background(), connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up", Config: endpointConfig(t, server.URL)})
+	require.NoError(t, err)
+	require.Empty(t, capture.query["timeout"])
+}
+
+func TestBackendTimeoutOutlastsTheCallerDeadlineByOneSecond(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		remaining time.Duration
+		want      string
+	}{
+		{name: "whole seconds gain the margin", remaining: 17 * time.Second, want: "18s"},
+		{name: "fractions round up before the margin", remaining: 17100 * time.Millisecond, want: "19s"},
+		{name: "sub second is one plus the margin", remaining: 300 * time.Millisecond, want: "2s"},
+		{name: "expired floors to one", remaining: -2 * time.Second, want: "1s"},
+		{name: "caps at thirty", remaining: 45 * time.Second, want: "30s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, backendTimeout(tt.remaining))
+		})
+	}
+}
+
+// The caller's deadline must end a slow query, not a backend timeout. The fake
+// backend answers 503 errorType "timeout" once its own timeout parameter has
+// elapsed; the query must still return only after the caller's context expired.
+func TestSlowQueryEndsAtTheCallerDeadlineNotTheBackendTimeout(t *testing.T) {
+	t.Parallel()
+	var timeoutParam atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		param := r.URL.Query().Get("timeout")
+		timeoutParam.Store(param)
+		seconds, err := strconv.Atoi(strings.TrimSuffix(param, "s"))
+		if err != nil {
+			seconds = 1
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(time.Duration(seconds) * time.Second):
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"status":"error","errorType":"timeout","error":"query timed out"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	t.Cleanup(cancel)
+	res, err := New().Query(ctx, connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up", Config: endpointConfig(t, server.URL)})
+	require.NoError(t, err)
+	require.Equal(t, connector.StateError, res.State)
+	require.Equal(t, "3s", timeoutParam.Load(), "backend timeout is ceil(1.5s) plus the margin")
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded, "the caller's deadline fired before the backend answered")
+}
+
+func TestQueryRetryFollowsErrorType(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		errorType string
+		calls     int32
+	}{
+		// A backend's own query timeout would recur on every retry.
+		{name: "backend timeout is not retried", errorType: "timeout", calls: 1},
+		{name: "other unavailability is retried", errorType: "unavailable", calls: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				fmt.Fprintf(w, `{"status":"error","errorType":%q,"error":"detail never surfaces"}`, tt.errorType)
+			}))
+			t.Cleanup(server.Close)
+
+			res, err := New().Query(context.Background(), connector.QueryRequest{Signal: connector.SignalMetrics, Query: "up", Config: endpointConfig(t, server.URL)})
+			require.NoError(t, err)
+			require.Equal(t, connector.StateError, res.State)
+			require.Equal(t, tt.calls, calls.Load())
+		})
+	}
 }

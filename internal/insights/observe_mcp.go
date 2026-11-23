@@ -56,7 +56,11 @@ type observeTimeouts struct {
 	catalog   time.Duration // a query's catalog phase, which holds an admission slot
 }
 
-var defaultObserveTimeouts = observeTimeouts{operation: 20 * time.Second, providers: 20 * time.Second, catalog: 10 * time.Second}
+// ObserveOperationTimeout caps one gateway operation: session setup, discovery, one
+// MCP tool call, or one REST call. The REST budget sent to the gateway derives from it.
+const ObserveOperationTimeout = 20 * time.Second
+
+var defaultObserveTimeouts = observeTimeouts{operation: ObserveOperationTimeout, providers: 20 * time.Second, catalog: 10 * time.Second}
 
 // operation returns ctx limited to the operation timeout. A deadline already on
 // ctx (the request's, or a handler's) is kept, because WithDeadline never extends
@@ -110,7 +114,7 @@ type observeScope struct {
 
 	mu            sync.Mutex
 	catalogLoaded bool
-	catalog       []Provider
+	catalog       sharedListing
 	catalogErr    error
 }
 

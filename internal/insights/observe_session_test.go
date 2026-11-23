@@ -281,8 +281,9 @@ func TestObserveWidgetQueryWireCost(t *testing.T) {
 		s := observeTestService(t, gateway.URL)
 		counts := countObserveWire(s)
 		ctx := t.Context()
-		providers, err := s.observe.providers(ctx, "alice")
+		listing, err := s.observe.providers(ctx, "alice")
 		require.NoError(t, err)
+		providers := listing.providers
 		require.Len(t, providers, 1)
 		p := &providerClient{public: providers[0], metadataCache: make(map[string]metadataCacheEntry), remote: &observeProvider{gateway: s.observe, token: "alice", reference: providers[0].ProviderRef}}
 		_, err = p.query(ctx, query)

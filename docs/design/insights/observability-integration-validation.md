@@ -85,8 +85,9 @@ Temporary fixture processes and credentials were removed after testing.
 
 ## Scope
 
-Shared dashboard adapters currently support Prometheus metrics and Tempo trace
-searches. Other Observe connectors remain available through MCP. Saved-query
+Shared dashboard adapters currently support Prometheus metrics, Tempo trace
+searches, Shorted, Uptime and PostgreSQL metrics and records, and mock metrics
+and traces. Other Observe connectors remain available through MCP. Saved-query
 persistence remains in Insights; this change does not add saved-query MCP tools,
 SQL connections, or log widgets. The checks in this report use local fixtures.
 Live-cluster acceptance is documented separately in [omega-validation.md](omega-validation.md).

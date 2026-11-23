@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -153,10 +154,80 @@ func TestGetRetryBudgetAndCancellation(t *testing.T) {
 			require.Error(t, err)
 			require.EqualValues(t, 1, calls.Load())
 			if status == http.StatusServiceUnavailable {
-				require.ErrorIs(t, err, context.DeadlineExceeded)
+				// Under 50ms of deadline a retry is not sent, so the 503
+				// is reported as the backend's status.
+				require.ErrorContains(t, err, "backend returned status 503")
 			}
 		})
 	}
+}
+
+func TestGetDoesNotRetryWithLessThanOneSecondOfDeadline(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+
+	// The 100ms first backoff would fit inside 500ms, so only the budget
+	// rule stops the second attempt.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	t.Cleanup(cancel)
+	_, err := Get(ctx, Config{Endpoint: server.URL}, "/query", nil, nil)
+	require.ErrorContains(t, err, "backend returned status 503")
+	require.EqualValues(t, 1, calls.Load())
+}
+
+func TestRetryVetoSeesBodyPrefixAndLeavesBodyReadable(t *testing.T) {
+	t.Parallel()
+	const payload = `{"status":"error","errorType":"timeout"}`
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, payload)
+	}))
+	t.Cleanup(server.Close)
+
+	var seenStatus int
+	var seenBody []byte
+	veto := func(status int, body []byte) bool {
+		seenStatus, seenBody = status, body
+		return true
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, http.NoBody)
+	require.NoError(t, err)
+	resp, err := doReadRequest(req, server.Client(), veto)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.EqualValues(t, 1, calls.Load())
+	require.Equal(t, http.StatusServiceUnavailable, seenStatus)
+	require.Equal(t, payload, string(seenBody))
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, payload, string(body))
+}
+
+func TestRetryVetoDeclinedStillRetries(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) < 3 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := GetWithRetryVeto(context.Background(), Config{Endpoint: server.URL}, "/query", nil, nil,
+		func(int, []byte) bool { return false })
+	require.NoError(t, err)
+	require.EqualValues(t, 3, calls.Load())
 }
 
 func TestGetCapsTransientRetries(t *testing.T) {

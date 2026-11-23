@@ -5,6 +5,7 @@ import "github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 func shortedProvider() TypeInfo {
 	return TypeInfo{
 		Type: connector.ProviderShorted, DisplayName: "Shorted", Vendor: vendorOpenSource, Category: categoryApplication,
+		Insights:    insightsQueryable(connector.SignalMetrics, connector.SignalRecords),
 		Signals:     []connector.Signal{connector.SignalMetrics, connector.SignalRecords},
 		Summary:     "Read Shorted market, stock and industry application data.",
 		Description: "Allowlisted read-only Connect operations return typed records. JSON queries specify operation, typed args and an explicit numeric projection for metrics. Stock/market history preserves source timestamps; current inventory does not invent history. Endpoints and credentials are provider configuration, never query inputs.",
@@ -25,6 +26,7 @@ func shortedProvider() TypeInfo {
 func uptimeProvider() TypeInfo {
 	return TypeInfo{
 		Type: connector.ProviderUptime, DisplayName: "Uptime", Vendor: vendorOpenSource, Category: categoryApplication,
+		Insights:    insightsQueryable(connector.SignalMetrics, connector.SignalRecords),
 		Signals:     []connector.Signal{connector.SignalMetrics, connector.SignalRecords},
 		Summary:     "Read organization-scoped Uptime inventory, SLOs and stored reliability insights.",
 		Description: "Read-only JSON operations cover overview, services, checks, security summaries, triggered alerts, SLOs and existing reliability reports. The provider pins one organization. No generation or management operations are exposed. Missing values and incomplete inventory counts remain explicit; metric projections do not invent history.",
@@ -45,6 +47,7 @@ func uptimeProvider() TypeInfo {
 func postgresqlProvider() TypeInfo {
 	return TypeInfo{
 		Type: connector.ProviderPostgreSQL, DisplayName: "PostgreSQL", Vendor: vendorOpenSource, Category: categoryApplication,
+		Insights:    insightsQueryable(connector.SignalMetrics, connector.SignalRecords),
 		Signals:     []connector.Signal{connector.SignalMetrics, connector.SignalRecords},
 		Summary:     "Query approved PostgreSQL data with a constrained reader role.",
 		Description: "Runs a single SELECT in a read-only transaction with fixed statement and lock timeouts, an unprivileged reader-role check, a bounded row limit and typed scalar results. SQL privileges define accessible data. The parameters array accepts {\"range\":\"start\"} and {\"range\":\"end\"} to bind query-range boundaries as UTC timestamps; SQL comparison operators determine inclusivity. Metrics use an explicit projection or the connector's limited numeric/time inference. No connection strings or credentials are accepted in queries.",

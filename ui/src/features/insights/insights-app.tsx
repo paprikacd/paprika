@@ -106,7 +106,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { checksFromError, classifySourceFailure, InsightsHTTPError, loadProviderCatalog, type ProviderCatalog, type SharedCatalogStatus } from "./client"
+import { checksFromError, classifySourceFailure, InsightsHTTPError, loadProviderCatalog, type ProviderCatalog, type SharedCatalogStatus, type UnsupportedProvider } from "./client"
 import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -256,6 +256,7 @@ export default function InsightsApp({
     "loading" | "live" | "example" | "unavailable"
   >("loading")
   const [providers, setProviders] = useState<Provider[]>([])
+  const [unsupportedProviders, setUnsupportedProviders] = useState<UnsupportedProvider[]>([])
   // Loaded on first use. Example mode reads it; the Examples panel needs it even in live mode.
   const [workspace, setWorkspace] = useState<RepositoryWorkspace | null>(null)
   const activeExample = mode === "example" ? workspace : null
@@ -437,6 +438,7 @@ export default function InsightsApp({
   // manager all share it, so a busy shared catalog is never mistaken for a clean one.
   const acceptCatalog = useCallback((catalog: ProviderCatalog) => {
     setProviders(catalog.providers)
+    setUnsupportedProviders(catalog.unsupportedProviders ?? [])
     const shared = catalog.sharedCatalog
     setSources(shared
       ? { status: "unavailable", reason: sharedFailureReason(shared.status), message: shared.message }
@@ -771,6 +773,7 @@ export default function InsightsApp({
     setSaved(documentFingerprint(sample))
     setDashboards(stored.dashboards)
     setProviders(runtime.repositoryWorkspaceProviders)
+    setUnsupportedProviders([])
     setWorkspace(runtime)
     setSources({ status: "ready" })
     setSourceRequest(null)
@@ -2477,6 +2480,7 @@ export default function InsightsApp({
                 <ProviderManager
                   client={client}
                   providers={providers}
+                  unsupportedProviders={unsupportedProviders}
                   example={mode === "example"}
                   onClose={close}
                   onExplore={exploreProvider}

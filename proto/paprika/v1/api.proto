@@ -1618,7 +1618,8 @@ message ObservabilityProviderItem {
   string name = 1;
   // Namespace hosting the CR.
   string namespace = 2;
-  // Connector type: prometheus, loki, tempo or otlp.
+  // Connector type, e.g. prometheus, loki, tempo, otlp, mock or
+  // aws-cloudwatch-logs. Matches a provider-type catalog entry.
   string type = 3;
   // Reachability verdict from the CR status, in its own vocabulary
   // (OK, NotConfigured, NotAvailable, Error, Forbidden). Empty when the
@@ -1695,6 +1696,12 @@ message ProviderTypeSummary {
   repeated string signals = 5;
   // One-sentence pitch for the library list view.
   string summary = 6;
+  // Data planes the Insights console can query for this type: metrics,
+  // traces and/or records. Empty when Insights cannot query the type.
+  repeated string insights_kinds = 7;
+  // Fixed operator-facing note on why Insights cannot query this type.
+  // Empty when Insights can query it.
+  string insights_note = 8;
 }
 
 message ListObservabilityProviderTypesResponse {

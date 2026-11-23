@@ -25,6 +25,7 @@ import {
   type SavedQueryEntry,
   type SavedQueryParameter,
   type Widget,
+  preferredProvider,
 } from "./schema";
 import {
   resolveSavedQueryTemplate,
@@ -178,7 +179,7 @@ export function Explorer({
     fromQuery(
       newQuery(
         providers.find((provider) => provider.id === initialProviderId) ??
-          providers[0],
+          preferredProvider(providers, () => true),
       ),
     ),
   );

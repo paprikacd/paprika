@@ -25,6 +25,7 @@ import {
   pluginConfigSchema,
   supportsTooltipView,
   supportsAnnotationSource,
+  preferredProvider,
   type Dashboard,
   type Provider,
   type Widget,
@@ -1091,7 +1092,7 @@ export function WidgetEditor({
     // An SLO objective compiles PromQL, so switching to it keeps a Prometheus provider and never a provider of another type.
     const objectiveOnly = type === "plugin" && definition.id === sloSummaryPluginId;
     const usable = (item: Provider) => item.capabilities.includes(capability) && (!objectiveOnly || item.type === "prometheus");
-    const provider = providers.find((item) => item.id === draft.providerId && usable(item)) ?? providers.find(usable);
+    const provider = providers.find((item) => item.id === draft.providerId && usable(item)) ?? preferredProvider(providers, usable);
     const next: Widget = {
       ...draft,
       type,

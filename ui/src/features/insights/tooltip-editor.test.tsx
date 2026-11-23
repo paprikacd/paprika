@@ -353,6 +353,23 @@ describe("tooltip editor", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("defaults a trace tooltip to a real trace provider even when a synthetic one is listed first", () => {
+    render(
+      <Harness
+        sources={[
+          { id: "synthetic-traces", name: "Synthetic traces", type: "mock", capabilities: ["traces"] },
+          ...providers,
+        ]}
+        initial={{
+          type: "bar",
+          source: { type: "query", providerId: "metrics", query: "up" },
+        }}
+      />,
+    );
+    choose("Tooltip visualization", "Trace explorer");
+    expect(screen.getByRole("combobox", { name: "Tooltip provider" })).toHaveTextContent("Production traces");
+  });
+
   it("requires a query for traces and restores the correct draft across data kinds", () => {
     render(
       <Harness

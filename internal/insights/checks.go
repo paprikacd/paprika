@@ -674,7 +674,7 @@ func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *
 		return
 	}
 	defer release()
-	ctx, cancel := context.WithTimeout(r.Context(), dashboardQueryBudget)
+	ctx, cancel := context.WithTimeout(r.Context(), DashboardQueryBudget)
 	defer cancel()
 	outcome, err := s.dryRunData(r.WithContext(ctx), request.Document, request.Variables)
 	if err != nil {

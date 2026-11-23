@@ -773,6 +773,8 @@ export function widgetKind(widget: Pick<Widget, "type" | "dataKind">): DataKind 
       ? "traces"
       : "metrics"
 }
+/** The gateway's closed probe states for a shared provider, as its last check reported them. */
+export type ProviderState = "OK" | "NotConfigured" | "NotAvailable" | "Error" | "Forbidden"
 export interface Provider {
   /** Shared sources retain their canonical Observe identity in configuration only. */
   source?: "observability"
@@ -781,8 +783,10 @@ export interface Provider {
   id: string
   name: string
   managed?: boolean
-  type: "prometheus" | "tempo" | "postgresql" | "shorted" | "uptime"
+  type: "prometheus" | "tempo" | "postgresql" | "shorted" | "uptime" | "mock"
   capabilities: DataKind[]
+  /** Shared providers only: the last probe's state. Informational; a query is never refused on it. */
+  state?: ProviderState
 }
 export interface QueryRequest {
   providerId: string
@@ -943,6 +947,26 @@ export function newDashboard(): Dashboard {
   }
 }
 
+/**
+ * The default provider for a new widget or query. Order alone must not pick it: the gateway lists providers
+ * by a hashed ID, so a synthetic provider can come first. A real provider beats a synthetic one, a real provider
+ * whose last check was not OK ranks after a healthy real one, and a synthetic one is used only when nothing else
+ * matches. Ties keep the listed order.
+ */
+export function preferredProvider(
+  providers: Provider[],
+  accept: (provider: Provider) => boolean,
+): Provider | undefined {
+  const rank = (provider: Provider) =>
+    provider.type === "mock" ? 2 : provider.state && provider.state !== "OK" ? 1 : 0;
+  let best: Provider | undefined;
+  for (const provider of providers) {
+    if (!accept(provider)) continue;
+    if (!best || rank(provider) < rank(best)) best = provider;
+  }
+  return best;
+}
+
 export function newWidget(
   type: Widget["type"],
   providers: Provider[],
@@ -958,7 +982,7 @@ export function newWidget(
   if (type === "plugin" && !plugin)
     throw new Error("Choose a registered plugin before adding its widget")
   const kind = type === "plugin" ? plugin!.dataKind : type === "traces" ? "traces" : "metrics"
-  const provider = providers.find((p) => p.capabilities.includes(kind))
+  const provider = preferredProvider(providers, (p) => p.capabilities.includes(kind))
   return {
     id: `widget-${crypto.randomUUID()}`,
     title: {

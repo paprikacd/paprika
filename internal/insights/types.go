@@ -32,6 +32,23 @@ type Provider struct {
 	Source      string `json:"source,omitempty"`
 	ProviderRef string `json:"providerRef,omitempty"`
 	Transport   string `json:"transport,omitempty"`
+	// State is the gateway's last probe verdict for a shared provider, one of
+	// the closed connector states. It is informational: a query is never refused
+	// on it, because the verdict can be up to a probe interval old.
+	State string `json:"state,omitempty"`
+}
+
+// UnsupportedProvider is a shared provider that the gateway catalog lists but
+// Insights cannot query. Reason is a closed code and Message is fixed Insights
+// wording taken from the catalog; the gateway's own reason text is never sent.
+type UnsupportedProvider struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	// TypeLabel is the catalog's display name for a known type. It is absent
+	// for a type this Insights build does not know.
+	TypeLabel string `json:"typeLabel,omitempty"`
+	Reason    string `json:"reason"`
+	Message   string `json:"message"`
 }
 
 type ProviderConfigView struct {

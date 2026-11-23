@@ -9,12 +9,14 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/benebsworth/paprika/internal/capacityhint"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/catalog"
 )
 
 const observeProviderPrefix = "observe-"
@@ -50,6 +52,9 @@ type observeCatalogProvider struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
 	Type      string `json:"type"`
+	// State is the gateway's closed verdict for the provider's last probe. The
+	// gateway's reason text is deliberately not decoded.
+	State string `json:"state"`
 }
 
 type observeResponse struct {
@@ -169,6 +174,7 @@ func observeHTTPErrorFor(status int, retryAfter string) error {
 func (s *Server) listProviders(w http.ResponseWriter, r *http.Request) {
 	providers := s.providers.list()
 	var sharedFailure *sharedCatalogFailure
+	var unsupported []UnsupportedProvider
 	if s.observe != nil {
 		token, err := delegatedObserveToken(r)
 		if err != nil {
@@ -181,10 +187,14 @@ func (s *Server) listProviders(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			sharedFailure = sharedCatalogFailureFor(err, s.catalogRetryAfter())
 		}
-		providers = append(providers, shared...)
+		providers = append(providers, shared.providers...)
+		unsupported = shared.unsupported
 	}
 	sort.Slice(providers, func(i, j int) bool { return providers[i].ID < providers[j].ID })
 	body := map[string]any{"providers": providers}
+	if len(unsupported) > 0 {
+		body["unsupportedProviders"] = unsupported
+	}
 	if sharedFailure != nil {
 		body["sharedCatalog"] = sharedFailure
 	}
@@ -203,12 +213,12 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 	if err != nil {
 		return nil, err
 	}
-	providers, err := s.observe.providers(r.Context(), token)
+	listing, err := s.observe.providers(r.Context(), token)
 	if err != nil {
 		return nil, err
 	}
-	for i := range providers {
-		provider := &providers[i]
+	for i := range listing.providers {
+		provider := &listing.providers[i]
 		if provider.ID == id {
 			// A request-local client keeps its metadata cache scoped to this exact
 			// authorization check. Never retain delegated tokens in a registry.
@@ -223,7 +233,7 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 // providers lists the caller's shared catalog over REST. Within one request the
 // outcome, success or failure, is memoized, so a dashboard lists its catalog
 // once. A request without a scope lists without memoizing.
-func (g *observeGateway) providers(ctx context.Context, token string) ([]Provider, error) {
+func (g *observeGateway) providers(ctx context.Context, token string) (sharedListing, error) {
 	scope := observeScopeFor(ctx, token)
 	if scope == nil {
 		return g.listShared(ctx, token)
@@ -244,31 +254,54 @@ func (c *observeMCPConnection) providers(ctx context.Context) ([]Provider, error
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := decodeObserveCatalog(body, failed)
+	entries, err := decodeObserveCatalog(body, failed)
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range catalog {
+	for _, p := range entries {
 		for _, capability := range observeCapabilities(p.Type) {
-			if err := c.requireTool("query_" + capability); err != nil {
+			if err = c.requireTool("query_" + capability); err != nil {
 				return nil, err
 			}
 		}
 	}
-	return sharedProvidersFromCatalog(catalog)
+	listing, err := sharedProvidersFromCatalog(entries)
+	if err != nil {
+		return nil, err
+	}
+	return listing.providers, nil
 }
 
+// observeCapabilities returns the data planes Insights can query for a provider
+// type, as the gateway catalog records them. A type the catalog does not know
+// has none.
 func observeCapabilities(providerType string) []string {
-	switch providerType {
-	case "prometheus":
-		return []string{"metrics"}
-	case "tempo":
-		return []string{"traces"}
-	case "shorted", "uptime", "postgresql":
-		return []string{"metrics", "records"}
-	default:
+	info, ok := catalog.Get(providerType)
+	if !ok || len(info.Insights.Kinds) == 0 {
 		return nil
 	}
+	capabilities := make([]string, 0, len(info.Insights.Kinds))
+	for _, kind := range info.Insights.Kinds {
+		capabilities = append(capabilities, string(kind))
+	}
+	return capabilities
+}
+
+// Reason and message for a listed provider whose type this Insights build does
+// not know. Known types take the catalog's fixed note instead.
+const (
+	observeReasonUnknownType  = "unknown_type"
+	observeMessageUnknownType = "This provider type is not known to this Insights version, so it is listed but not queryable."
+)
+
+// unsupportedObserveProvider describes a listed provider Insights cannot query.
+// The message is fixed text from the catalog, never the gateway's own reason.
+func unsupportedObserveProvider(p observeCatalogProvider) UnsupportedProvider {
+	info, ok := catalog.Get(p.Type)
+	if !ok {
+		return UnsupportedProvider{Name: p.Name, Type: p.Type, Reason: observeReasonUnknownType, Message: observeMessageUnknownType}
+	}
+	return UnsupportedProvider{Name: p.Name, Type: p.Type, TypeLabel: info.DisplayName, Reason: info.Insights.Reason, Message: info.Insights.Note}
 }
 
 func decodeObserveCatalog(body []byte, failed bool) ([]observeCatalogProvider, error) {
@@ -397,9 +430,14 @@ func writeProviderError(w http.ResponseWriter, err error) {
 	writeError(w, status, message)
 }
 
+// observeTypePattern bounds a catalog type id. Known types are a fixed set, but
+// an unknown type from a newer gateway is still listed, so its text must stay a
+// short identifier rather than arbitrary content.
+var observeTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
 func validObserveCatalogProvider(p observeCatalogProvider) bool {
 	parts := strings.Split(p.Name, "/")
-	return len(parts) == 2 && parts[0] == p.Namespace && parts[0] != "" && parts[1] != "" && len(p.Name) <= 320 && !strings.ContainsAny(p.Name, "\r\n\x00")
+	return len(parts) == 2 && parts[0] == p.Namespace && parts[0] != "" && parts[1] != "" && len(p.Name) <= 320 && !strings.ContainsAny(p.Name, "\r\n\x00") && observeTypePattern.MatchString(p.Type)
 }
 
 func setObserveMetadataKind(input *observeRESTExplore, path string) error {

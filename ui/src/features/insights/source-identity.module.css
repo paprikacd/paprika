@@ -24,3 +24,17 @@
   color: var(--gamma-success);
   background: var(--gamma-success-soft);
 }
+.providerIcon[data-provider-type="mock"] {
+  color: var(--gamma-muted);
+  background: var(--gamma-surface-2);
+}
+.stateMarker {
+  color: var(--gamma-muted);
+  font-size: 12px;
+}
+.stateMarker[data-tone="warning"] {
+  color: var(--gamma-warning);
+}
+.stateMarker[data-tone="danger"] {
+  color: var(--gamma-danger);
+}

@@ -808,6 +808,19 @@ describe("widget inspector", () => {
       }),
     );
   });
+  it("crosses to traces on a real trace provider even when a synthetic one is listed first", () => {
+    const callbacks = editorProps({
+      providers: [
+        { id: "synthetic-traces", name: "Synthetic traces", type: "mock", capabilities: ["traces"] },
+        ...providers,
+      ],
+    });
+    render(<WidgetEditor {...callbacks} />);
+    choose("Visualization", /^Trace explorer/);
+    fireEvent.click(screen.getByRole("button", { name: "Replace query and switch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(callbacks.onApply).toHaveBeenCalledWith(expect.objectContaining({ type: "traces", providerId: "tempo" }));
+  });
   it("explains both saved-query and event-query removal before a cross-kind switch", () => {
     const callbacks = editorProps();
     const eventSource = { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" };

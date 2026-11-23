@@ -151,10 +151,35 @@ func dashboardOutcome(state connector.State) error {
 	return nil
 }
 
+// ObserveBudgetHeader carries Insights' remaining time for one REST call, in
+// decimal milliseconds. The gateway uses it as the request's deadline, bounded
+// by queryTimeout. A missing, malformed or out-of-range value is ignored, so the
+// request keeps queryTimeout, as it did before the header existed.
+const ObserveBudgetHeader = "X-Paprika-Observe-Budget"
+
+const (
+	minObserveBudget = time.Second
+	maxObserveBudget = 30 * time.Second
+)
+
+// dashboardBudget returns the deadline for one REST request: the caller's budget
+// when it is in range, never more than queryTimeout.
+func dashboardBudget(r *http.Request) time.Duration {
+	ms, err := strconv.ParseInt(r.Header.Get(ObserveBudgetHeader), 10, 64)
+	if err != nil {
+		return queryTimeout
+	}
+	budget := time.Duration(ms) * time.Millisecond
+	if budget < minObserveBudget || budget > maxObserveBudget {
+		return queryTimeout
+	}
+	return min(budget, queryTimeout)
+}
+
 func dashboardHandler(usage *UsageTracker, operation string, run func(context.Context, http.ResponseWriter, *http.Request) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+		ctx, cancel := context.WithTimeout(r.Context(), dashboardBudget(r))
 		defer cancel()
 		err := run(ctx, w, r)
 		if usage != nil {

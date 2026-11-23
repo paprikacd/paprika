@@ -73,12 +73,21 @@ type catalogTypesJSON struct {
 
 // catalogTypeSummaryJSON mirrors catalog.TypeSummary's camelCase wire shape.
 type catalogTypeSummaryJSON struct {
-	Type        string   `json:"type"`
-	DisplayName string   `json:"displayName"`
-	Vendor      string   `json:"vendor"`
-	Category    string   `json:"category"`
-	Signals     []string `json:"signals"`
-	Summary     string   `json:"summary"`
+	Type        string                 `json:"type"`
+	DisplayName string                 `json:"displayName"`
+	Vendor      string                 `json:"vendor"`
+	Category    string                 `json:"category"`
+	Signals     []string               `json:"signals"`
+	Summary     string                 `json:"summary"`
+	Insights    catalogInsightsSupport `json:"insights"`
+}
+
+// catalogInsightsSupport mirrors catalog.InsightsSupport's wire shape. The
+// gateway's closed reason code is not projected onto the console; the
+// operator-facing note carries the explanation.
+type catalogInsightsSupport struct {
+	Kinds []string `json:"kinds"`
+	Note  string   `json:"note"`
 }
 
 // catalogTypeJSON mirrors catalog.TypeInfo's camelCase wire shape: the
@@ -196,16 +205,19 @@ func notConfiguredObservabilityCatalogTypes() *paprikav1.ListObservabilityProvid
 }
 
 // providerTypeSummary projects one gateway summary entry onto the console
-// wire shape. The projection is 1:1 — every field the gateway serves has a
-// home here — so no gateway metadata is silently dropped.
+// wire shape. The projection carries every field the console renders; the
+// gateway's Insights reason code is the one field deliberately left out,
+// since the fixed note already explains the gap.
 func providerTypeSummary(summary *catalogTypeSummaryJSON) *paprikav1.ProviderTypeSummary {
 	return &paprikav1.ProviderTypeSummary{
-		Type:        summary.Type,
-		DisplayName: summary.DisplayName,
-		Vendor:      summary.Vendor,
-		Category:    summary.Category,
-		Signals:     append([]string{}, summary.Signals...),
-		Summary:     summary.Summary,
+		Type:          summary.Type,
+		DisplayName:   summary.DisplayName,
+		Vendor:        summary.Vendor,
+		Category:      summary.Category,
+		Signals:       append([]string{}, summary.Signals...),
+		Summary:       summary.Summary,
+		InsightsKinds: append([]string{}, summary.Insights.Kinds...),
+		InsightsNote:  summary.Insights.Note,
 	}
 }
 

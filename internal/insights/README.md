@@ -57,7 +57,8 @@ TraceQL search API.
 
 Set `PAPRIKA_OBSERVABILITY_GATEWAY_ADDR` on the Insights process (or
 `Config.ObservabilityURL`, JSON `observabilityUrl`) to the observability
-gateway origin to share its Prometheus and Tempo providers with Insights. The
+gateway origin to share the providers Insights can query (Prometheus, Tempo,
+Shorted, Uptime, PostgreSQL and mock) with Insights. The
 API proxy supplies a fresh caller token in `X-Paprika-Observe-Token`; Insights
 uses that token only as the gateway bearer token, independently of its own
 service authentication. Missing delegation is denied, including in development

@@ -42,7 +42,7 @@ const (
 type ProviderInfo struct {
 	Name      string `json:"name"`      // "namespace/name" — the identifier tools accept
 	Namespace string `json:"namespace"` // the CR's own namespace
-	Type      string `json:"type"`      // prometheus | loki | tempo | otlp | gcp-cloudlogging | gcp-cloudmonitoring | gcp-cloudtrace | aws-cloudwatch-logs | aws-cloudwatch-metrics | aws-xray | aws-cloudtrail | mock
+	Type      string `json:"type"`      // prometheus | loki | tempo | otlp | shorted | uptime | postgresql | gcp-cloudlogging | gcp-cloudmonitoring | gcp-cloudtrace | aws-cloudwatch-logs | aws-cloudwatch-metrics | aws-xray | aws-cloudtrail | vultr-monitoring | mock
 	State     string `json:"state,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 }

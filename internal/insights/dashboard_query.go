@@ -13,7 +13,9 @@ import (
 	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
-const dashboardQueryBudget = 22 * time.Second
+// DashboardQueryBudget bounds one dashboard query end to end. It sits inside the
+// API proxy and outside the gateway call, which is ordered by ObserveOperationTimeout.
+const DashboardQueryBudget = 22 * time.Second
 
 // DashboardQueryResponseBytes caps the encoded structured result of query-dashboard at 130 KiB. The
 // Observe gateway reads at most this many bytes of the response, so the two must stay equal. The cap
@@ -174,7 +176,7 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), dashboardQueryBudget)
+	ctx, cancel := context.WithTimeout(r.Context(), DashboardQueryBudget)
 	defer cancel()
 	r = r.WithContext(ctx)
 	document, etag, saved, selected, err := s.dashboardQuerySnapshot(&input)
