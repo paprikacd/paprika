@@ -9,7 +9,7 @@ ci_job_init mcp-console
 # ci.yml: Set up Node.js (22) -> PATH carries the Node 22 install (hack/ci/lib.sh).
 
 # ci.yml: Install dependencies
-(cd internal/api/mcp/ui && npm ci)
+ci_npm_ci internal/api/mcp/ui
 
 # ci.yml: Check types
 (cd internal/api/mcp/ui && npm run check)

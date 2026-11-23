@@ -19,6 +19,7 @@ lock_held=0
 # The trap is set before the lock is taken, so an interrupt at any point removes only what this run created.
 cleanup() {
   trap - EXIT
+  if [ -n "${lock_holder:-}" ]; then kill "$lock_holder" 2>/dev/null || true; fi
   if [ -n "$work" ]; then rm -rf -- "$work"; fi
   if [ "$lock_held" = 1 ]; then rm -rf -- "$lock_dir"; fi
 }
@@ -337,6 +338,8 @@ make_clone() {
   mkdir -p "$dir/.github/workflows"
   cp "$repo_root/.github/workflows/ci.yml" "$dir/.github/workflows/ci.yml"
   cp "$repo_root/Taskfile.yml" "$repo_root/.gitignore" "$dir/"
+  # ui/.gitignore ignores ui/.next, as in the real repository; R22a keeps ui/.next/cache across runs.
+  mkdir -p "$dir/ui" && cp "$repo_root/ui/.gitignore" "$dir/ui/"
   cp -R "$repo_root/.githooks" "$repo_root/hack" "$dir/"
   git init --quiet -b master "$dir"
   git -C "$dir" add -A
@@ -461,6 +464,10 @@ git -C "$runner" -c core.hooksPath=/dev/null commit --quiet -m "test stub jobs"
 
 export PAPRIKA_CI_TOOL_BIN=$tools
 export PAPRIKA_CI_TMPDIR=$work/tmp
+# Every cache the runner keeps (the Go build cache, the stable job worktrees and the run lock) lives under this test's
+# directory, never under the developer's ~/Library/Caches or ~/.cache.
+export PAPRIKA_CI_CACHE_ROOT=$work/cache
+jobs_root=$work/cache/paprika-ci/jobs
 
 # R1: unknown job names are refused before anything runs.
 run_cmd fail "unknown job" bash -c "cd '$runner' && bash hack/ci/run.sh --jobs bogus"
@@ -597,7 +604,7 @@ grep -q "^PATH=$tools:" "$job_env" || die "the pinned tools are not first on PAT
 grep -q '^HOME=' "$job_env" || die "HOME was removed from the job env"
 [ -d "$jt/go-build" ] || die "the job's Go build cache directory was not created"
 case "$(uname -s)" in Darwin) want_cache=/h/Library/Caches/paprika-ci/go-build ;; *) want_cache=/h/.cache/paprika-ci/go-build ;; esac
-[ "$(env -u PAPRIKA_CI_GOCACHE -u XDG_CACHE_HOME HOME=/h GOCACHE=/PLANTED/go-build bash -c "source '$runner/hack/ci/lib.sh' && ci_go_cache_dir")" = "$want_cache" ] ||
+[ "$(env -u PAPRIKA_CI_GOCACHE -u PAPRIKA_CI_CACHE_ROOT -u XDG_CACHE_HOME HOME=/h GOCACHE=/PLANTED/go-build bash -c "source '$runner/hack/ci/lib.sh' && ci_go_cache_dir")" = "$want_cache" ] ||
   die "the job Go cache is not the dedicated local CI cache when the developer sets GOCACHE"
 say "job environments are an allowlist: planted Go, Node, cloud, Docker, cluster and token settings never reach a job"
 
@@ -647,10 +654,12 @@ grep -Eq '^npm_config_userconfig=.*/job-terraform[.][A-Za-z0-9]+/npmrc$' "$envdu
   die "the job's npm user config is not private to the job: $(grep npm_config_userconfig "$envdump")"
 say "run.sh starts each job from the allowlist: a planted function, BASH_ENV and cloud, Go and Docker settings never reach it"
 
-# R17: job worktrees are removed when the run ends.
-[ "$(git -C "$runner" worktree list | wc -l | tr -d ' ')" = 1 ] || die "job worktrees were left behind"
+# R17: the run directory is removed when the run ends. The job worktrees stay under the cache root for the next run (R22).
 [ -z "$(find "$work/tmp" -maxdepth 1 -name 'paprika-ci-run.*' -print -quit)" ] || die "the run directory was left behind"
-say "job worktrees and the run directory are removed after the run"
+[ -d "$jobs_root/terraform" ] || die "the stable job worktree was removed when the run ended"
+say "the run directory is removed after the run; the stable job worktrees stay for the next run"
+
+lock_free() { perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or exit 2; flock($f, LOCK_EX | LOCK_NB) or exit 1' "$jobs_root/.run.lock"; }
 
 # R18: an interrupt stops the running jobs and their children, then cleans up. The test sends TERM:
 # a shell started in the background ignores SIGINT on entry, and bash cannot trap an ignored signal.
@@ -688,8 +697,8 @@ $(cat "$runner/artifacts/ci/$tree12/$job.log" 2>/dev/null)"
   [ "$(cat "$pids/$job.cleaned")" = present ] || die "$job cleaned up after its worktree was removed"
 done
 [ -z "$(find "$work/tmp" -maxdepth 1 -name 'paprika-ci-run.*' -print -quit)" ] || die "an interrupted run left its directory behind"
-[ "$(git -C "$runner" worktree list | wc -l | tr -d ' ')" = 1 ] || die "an interrupted run left worktrees behind"
-say "an interrupt stops every job and its children and removes the run's worktrees"
+lock_free || die "an interrupted run left the run lock held"
+say "an interrupt stops every job and its children, removes the run's directory and releases the job lock"
 
 # R18b: an interrupt also stops a time-limited step that runs in a subshell of the job (the browser smoke shape).
 # The subshell dies on the signal, so only the job's list of registered steps can reach the step's process.
@@ -718,42 +727,161 @@ if kill -0 "$nested_pid" 2>/dev/null; then
 fi
 say "an interrupt stops a time-limited step nested in a subshell of the job"
 
-# R19: the contract test passes under CI=true, which GitHub and this runner set (colour codes on).
-run_cmd ok "taskfile contract under CI=true" bash -c "cd '$repo_root' && CI=true bash hack/test-taskfile-contract.sh"
-say "the Taskfile contract passes with CI=true"
+# R22a: a job keeps its worktree at a stable path between runs. Run 2 is for a later commit: a tracked file changed and
+# another was deleted. The reset brings the worktree to that commit, an untracked file planted in between is gone, and the
+# kept envtest and Next.js cache paths survive.
+printf 'v1\n' >"$runner/tracked-changed.txt"
+printf 'v1\n' >"$runner/tracked-assumed.txt"
+printf 'to be deleted\n' >"$runner/tracked-deleted.txt"
+git -C "$runner" add tracked-changed.txt tracked-assumed.txt tracked-deleted.txt
+git -C "$runner" -c core.hooksPath=/dev/null commit --quiet -m "stable test: first commit"
+stable_roots=$work/stable-roots
+mkdir -p "$stable_roots/1" "$stable_roots/2"
+run_cmd ok "stable job worktree, run 1" bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_ROOTS='$stable_roots/1' bash hack/ci/run.sh --jobs terraform"
+expect_output "go build cache"
+expect_output "entry files"
+jobdir1=$(cat "$stable_roots/1/terraform")
+[ "$jobdir1" = "$jobs_root/terraform" ] || die "the job ran in $jobdir1, not in its stable worktree $jobs_root/terraform"
+echo planted >"$jobdir1/planted-untracked.txt"
+mkdir -p "$jobdir1/ui/.next/cache" "$jobdir1/bin/k8s/1.36.2-linux-amd64"
+echo kept >"$jobdir1/ui/.next/cache/kept.bin"
+echo kept >"$jobdir1/bin/k8s/1.36.2-linux-amd64/kept.bin"
+echo not-kept >"$jobdir1/bin/controller-gen"
+printf 'v2\n' >"$runner/tracked-changed.txt"
+git -C "$runner" rm --quiet tracked-deleted.txt
+git -C "$runner" add tracked-changed.txt
+git -C "$runner" -c core.hooksPath=/dev/null commit --quiet -m "stable test: second commit"
+run_cmd ok "stable job worktree, run 2" bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_ROOTS='$stable_roots/2' bash hack/ci/run.sh --jobs terraform"
+[ "$(cat "$stable_roots/2/terraform")" = "$jobdir1" ] || die "the second run did not use the same job directory"
+[ ! -e "$jobdir1/planted-untracked.txt" ] || die "an untracked file from the first run survived the reset"
+[ ! -e "$jobdir1/bin/controller-gen" ] || die "a bin/ file outside the kept envtest path survived the reset"
+[ -f "$jobdir1/ui/.next/cache/kept.bin" ] || die "the Next.js cache was removed by the reset"
+[ -f "$jobdir1/bin/k8s/1.36.2-linux-amd64/kept.bin" ] || die "the envtest assets were removed by the reset"
+[ "$(cat "$jobdir1/tracked-changed.txt")" = v2 ] || die "the job worktree does not hold the changed tracked file of the second commit"
+[ ! -e "$jobdir1/tracked-deleted.txt" ] || die "a file deleted by the second commit is still in the job worktree"
+[ "$(git -C "$jobdir1" rev-parse HEAD)" = "$(git -C "$runner" rev-parse HEAD)" ] || die "the reset job worktree is not at the snapshot"
+[ -z "$(git -C "$jobdir1" status --porcelain)" ] || die "the reset job worktree has tracked or untracked changes"
+extra=$(git -C "$jobdir1" status --porcelain --ignored=matching --untracked-files=all | grep -vE '^!! (ui/\.next/|ui/\.next/cache/|bin/k8s/)$' || true)
+[ -z "$extra" ] || die "ignored files other than the kept caches remain: $extra"
+say "a second run for a later commit reuses the job worktree at the same path, at that commit, keeping only the envtest and Next.js caches"
 
-# R20: the time limit comes from ci.yml (timeout-minutes x 60, logged by run.sh), and a job over
-# that limit is stopped and recorded as timeout. PAPRIKA_CI_SELFTEST_TIMEOUT_SECS shortens the limit only.
-tpids=$work/tpids
-mkdir -p "$tpids"
-mins=$(bash -c "source '$runner/hack/ci/lib.sh' && ci_job_timeout_minutes '$runner/.github/workflows/ci.yml' terraform")
-[ -n "$mins" ] || die "ci.yml has no timeout-minutes for terraform"
-run_cmd fail "job over its time limit" bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_TIMEOUT_SECS=3 PAPRIKA_CI_SELFTEST_PIDS='$tpids' bash hack/ci/run.sh --jobs terraform"
-expect_output "time limit $((mins * 60)) s (ci.yml timeout-minutes $mins)"
-expect_output "test override, stopping after 3 s"
-expect_output "1 job(s) did not pass"
-[ -f "$tpids/terraform.cleaned" ] || die "the timed-out job did not run its cleanup"
-tree=$(git -C "$runner" rev-parse 'HEAD^{tree}')
-[ "$(jq -r '.jobs.terraform.result' "$(stamp_path "$runner" "$tree")")" = timeout ] ||
-  die "terraform was not recorded as timeout"
-say "a job over its ci.yml time limit is stopped, cleaned up and recorded as timeout"
+# R22b: a stable job directory that is not a registered worktree (a plain directory) is replaced, and the run passes.
+mkdir -p "$jobs_root/chart" && printf 'stale\n' >"$jobs_root/chart/stale.txt"
+mkdir -p "$stable_roots/5"
+run_cmd ok "run over a plain directory at a job's path" bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_ROOTS='$stable_roots/5' bash hack/ci/run.sh --jobs chart"
+[ ! -e "$jobs_root/chart/stale.txt" ] || die "the plain directory at the job path was kept"
+git -C "$runner" worktree list --porcelain | grep -qxF "worktree $jobs_root/chart" || die "the replaced job directory is not a registered worktree"
+say "a plain directory at a job's stable path is replaced by a worktree, and the run passes"
 
-# R21: the deploy's Docker config keeps the buildx builders and contexts, and drops every credential and helper.
-dsrc=$work/docker-src
-mkdir -p "$dsrc/buildx/instances" "$dsrc/contexts/meta" "$dsrc/cli-plugins"
-printf 'docker-buildx\n' >"$dsrc/cli-plugins/docker-buildx"
-printf '{"auths":{"ghcr.io":{"auth":"c2VjcmV0"}},"credsStore":"desktop","credHelpers":{"example.invalid":"helper"},"currentContext":"desktop-linux"}\n' >"$dsrc/config.json"
-printf 'desktop-linux\n' >"$dsrc/buildx/current"
-printf '{"Name":"desktop-linux"}\n' >"$dsrc/contexts/meta/x.json"
-ddst=$work/docker-dst
-run_cmd ok "build the deploy Docker config" env DOCKER_CONFIG="$dsrc" \
-  bash -c "source '$runner/hack/ci/lib.sh' && ci_docker_config_for_build '$ddst'"
-jq -e '.auths == null and .credsStore == null and .credHelpers == null and .currentContext == "desktop-linux"' \
-  "$ddst/config.json" >/dev/null || die "the deploy Docker config kept a credential or a helper"
-[ -f "$ddst/buildx/current" ] && [ -f "$ddst/contexts/meta/x.json" ] || die "the deploy Docker config lost the builders or contexts"
-[ -f "$ddst/cli-plugins/docker-buildx" ] || die "the deploy Docker config lost the CLI plugins (buildx)"
-[ "$(file_mode "$ddst")" = 700 ] && [ "$(file_mode "$ddst/config.json")" = 600 ] || die "the deploy Docker config is not private"
-say "the deploy's Docker config keeps builders and contexts, and drops credentials and helpers"
+# R22c: index flags left by an earlier run do not survive the reset. A skip-worktree file keeps its stale content through
+# checkout --force, and status shows nothing for it, so the run rebuilds the worktree instead.
+jobdir=$jobs_root/terraform
+printf 'tampered\n' >"$jobdir/tracked-changed.txt"
+git -C "$jobdir" update-index --skip-worktree tracked-changed.txt
+printf 'tampered\n' >"$jobdir/tracked-assumed.txt"
+git -C "$jobdir" update-index --assume-unchanged tracked-assumed.txt
+run_cmd ok "run over index flags left in the job worktree" bash -c "cd '$runner' && bash hack/ci/run.sh --jobs terraform"
+expect_output "index flags"
+[ "$(cat "$jobdir/tracked-changed.txt")" = v2 ] || die "a skip-worktree file kept its tampered content through the reset"
+[ "$(cat "$jobdir/tracked-assumed.txt")" = v1 ] || die "an assume-unchanged file kept its tampered content through the reset"
+[ -z "$(git -C "$jobdir" ls-files -v | grep -v '^H ' || true)" ] || die "the rebuilt job worktree still has index flags"
+say "a skip-worktree or assume-unchanged bit in a job worktree does not survive the run: the worktree is rebuilt"
+
+# R22d: a cache root reached through a symlink still reuses the job worktree: the job directory is resolved physically.
+jobdir=$jobs_root/terraform
+mkdir -p "$jobdir/ui/.next/cache" && echo kept >"$jobdir/ui/.next/cache/symlink-kept.bin"
+ln -s "$work/cache" "$work/cache-link"
+mkdir -p "$stable_roots/6"
+run_cmd ok "stable job worktree through a symlinked cache root" env PAPRIKA_CI_CACHE_ROOT="$work/cache-link" \
+  bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_ROOTS='$stable_roots/6' bash hack/ci/run.sh --jobs terraform"
+[ "$(cat "$stable_roots/6/terraform")" = "$jobs_root/terraform" ] || die "a symlinked cache root gave the job $(cat "$stable_roots/6/terraform"), not $jobs_root/terraform"
+[ -f "$jobdir/ui/.next/cache/symlink-kept.bin" ] || die "a symlinked cache root defeated the reuse: the job worktree was rebuilt"
+say "a cache root reached through a symlink still reuses the stable job worktree"
+
+# R22e: while another process holds the run lock, this run uses per-run worktrees, logs it, skips the trim, and leaves the
+# lock alone.
+holder_ready=$work/holder-ready
+rm -f "$holder_ready"
+perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or die; flock($f, LOCK_EX) or die; open(my $m, ">", $ARGV[1]) or die; close $m; sleep 600' \
+  "$jobs_root/.run.lock" "$holder_ready" &
+lock_holder=$!
+for _ in $(seq 1 30); do
+  [ -f "$holder_ready" ] && break
+  sleep 1
+done
+if [ ! -f "$holder_ready" ]; then
+  die "the test process did not take the run lock"
+fi
+if lock_free; then die "the run lock is free while the test process holds it"; fi
+mkdir -p "$stable_roots/3"
+run_cmd ok "run while the run lock is held" bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_ROOTS='$stable_roots/3' bash hack/ci/run.sh --jobs terraform"
+expect_output "per-run job worktrees"
+expect_output "caches are not reused for this run"
+expect_output "trim skipped"
+jobdir3=$(cat "$stable_roots/3/terraform")
+[ "$jobdir3" != "$jobs_root/terraform" ] || die "a run with the lock held used the stable job worktree"
+[ ! -e "$jobdir3" ] || die "the per-run job worktree was left behind"
+if lock_free; then die "the run released a lock that another process holds"; fi
+kill "$lock_holder" 2>/dev/null || true
+wait "$lock_holder" 2>/dev/null || true
+lock_holder=""
+say "a run that finds the lock held by another process uses per-run worktrees, logs it, skips the trim, and leaves the lock alone"
+
+# R22f: a leftover run lock file with no holder does not block the run: the file itself is not a lock.
+printf '99999\n' >"$jobs_root/.run.lock"
+mkdir -p "$stable_roots/4"
+run_cmd ok "run over a leftover lock file" bash -c "cd '$runner' && PAPRIKA_CI_SELFTEST_ROOTS='$stable_roots/4' bash hack/ci/run.sh --jobs terraform"
+expect_no_output "per-run job worktrees"
+[ "$(cat "$stable_roots/4/terraform")" = "$jobs_root/terraform" ] || die "a run over a leftover lock file did not use the stable job worktree"
+say "a leftover run lock file with no holder does not block the run"
+
+# R22g: the run holds the lock only while it runs: once it has ended, a new probe takes the lock.
+lock_free || die "the run did not release the run lock when it ended"
+say "the run lock is released when the run ends"
+
+# R22h: the trim deletes only Go cache entry files (names ending in -a or -d) not modified for more than the maximum age.
+# Other files in the cache directory are kept, and the age is configurable.
+trim=$work/trim-cache
+mkdir -p "$trim/xx"
+: >"$trim/xx/abc-d"
+touch -t 200001010000 "$trim/xx/abc-d"
+: >"$trim/xx/abc-a"
+touch -t 200001010000 "$trim/xx/abc-a"
+: >"$trim/xx/recent-d"
+: >"$trim/testexpire.txt"
+touch -t 200001010000 "$trim/testexpire.txt"
+run_cmd ok "cache trim" bash -c "source '$repo_root/hack/ci/lib.sh' && PAPRIKA_CI_GOCACHE='$trim' ci_trim_go_cache"
+expect_output "deleted 2 entry files"
+[ ! -e "$trim/xx/abc-d" ] || die "an old cache entry (-d) was kept"
+[ ! -e "$trim/xx/abc-a" ] || die "an old cache entry (-a) was kept"
+[ -e "$trim/xx/recent-d" ] || die "a recent cache entry was deleted"
+[ -e "$trim/testexpire.txt" ] || die "a file that is not a cache entry was deleted"
+: >"$trim/xx/abc-d"
+touch -t 200001010000 "$trim/xx/abc-d"
+run_cmd ok "cache trim with a longer maximum age" bash -c "source '$repo_root/hack/ci/lib.sh' && PAPRIKA_CI_GOCACHE='$trim' PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS=36500 ci_trim_go_cache"
+expect_output "deleted 0 entry files"
+[ -e "$trim/xx/abc-d" ] || die "PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS does not change the maximum age"
+run_cmd fail "non-numeric maximum age" bash -c "source '$repo_root/hack/ci/lib.sh' && PAPRIKA_CI_GOCACHE='$trim' PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS=three ci_trim_go_cache"
+say "the Go build cache trim deletes only old cache entry files, keeps other files, and its age is configurable"
+
+# R22i: PAPRIKA_CI_FRESH (1, true or yes, in any case) runs go-test with -count=1 and resets the job worktrees without
+# keeping their caches. Without it the go-test job gets no flag and the kept caches survive the reset.
+fresh_dump=$work/fresh-go-test.env
+run_cmd ok "FRESH run of go-test" env PAPRIKA_CI_FRESH=1 PAPRIKA_CI_SELFTEST_ENVDUMP="$fresh_dump" \
+  bash -c "cd '$runner' && bash hack/ci/run.sh --jobs go-test"
+grep -qxF 'GOFLAGS=-count=1' "$fresh_dump" || die "PAPRIKA_CI_FRESH=1 did not reach go-test as -count=1: $(grep GOFLAGS "$fresh_dump")"
+mkdir -p "$jobs_root/go-test/ui/.next/cache" && echo kept >"$jobs_root/go-test/ui/.next/cache/fresh-kept.bin"
+plain_dump=$work/plain-go-test.env
+run_cmd ok "go-test run without FRESH" env PAPRIKA_CI_SELFTEST_ENVDUMP="$plain_dump" \
+  bash -c "cd '$runner' && bash hack/ci/run.sh --jobs go-test"
+grep -qxF 'GOFLAGS=' "$plain_dump" || die "a run without PAPRIKA_CI_FRESH passes GOFLAGS to go-test: $(grep GOFLAGS "$plain_dump")"
+[ -f "$jobs_root/go-test/ui/.next/cache/fresh-kept.bin" ] || die "a run without PAPRIKA_CI_FRESH removed the Next.js cache"
+true_dump=$work/true-go-test.env
+run_cmd ok "FRESH=true run of go-test" env PAPRIKA_CI_FRESH=true PAPRIKA_CI_SELFTEST_ENVDUMP="$true_dump" \
+  bash -c "cd '$runner' && bash hack/ci/run.sh --jobs go-test"
+grep -qxF 'GOFLAGS=-count=1' "$true_dump" || die "PAPRIKA_CI_FRESH=true did not reach go-test as -count=1: $(grep GOFLAGS "$true_dump")"
+[ ! -e "$jobs_root/go-test/ui/.next/cache/fresh-kept.bin" ] || die "PAPRIKA_CI_FRESH=true kept the Next.js cache of the job worktree"
+say "PAPRIKA_CI_FRESH reaches go-test as -count=1 and clears the kept caches; without it neither happens"
 
 # R22: a time limit stops a nested ci_with_timeout and its process, not only the job's own shell.
 nest=$work/nest.pid

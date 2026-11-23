@@ -42,7 +42,7 @@ docker exec "$CI_PG_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 -U postgres -d po
 # ci.yml: Set up Go / Set up Node.js (22) -> snapshot, tools.sh and hack/ci/lib.sh.
 
 # ci.yml: Install UI dependencies
-(cd ui && npm ci)
+ci_npm_ci ui
 
 # ci.yml: Install Chromium (--with-deps is Linux only; on macOS the browser alone is installed)
 if [ "$(uname -s)" = Linux ]; then

@@ -12,6 +12,13 @@ export GOTOOLCHAIN=auto # ci.yml job env
 
 # ci.yml: Run race tests
 make test-race
+# go test prints "ok  <package>  (cached)" for a package whose result was reused. Its output is in this job's log, which
+# run.sh writes to the artifact directory, so the packages are counted there.
+cached=0
+if [ -n "${PAPRIKA_CI_ARTIFACT_DIR:-}" ] && [ -f "$PAPRIKA_CI_ARTIFACT_DIR/go-test.log" ]; then
+  cached=$(grep -cE '^ok[[:space:]].*\(cached\)$' "$PAPRIKA_CI_ARTIFACT_DIR/go-test.log" || true)
+fi
+ci_log "go-test: $cached package(s) reused cached results; run task ci FRESH=1 to rerun all"
 
 # ci.yml: Test deployment helpers
 bash hack/test-dashboard-renderer.sh

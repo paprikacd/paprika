@@ -10,7 +10,7 @@ ci_job_init ui
 # ci.yml: Reclaim self-hosted runner disk -> not mirrored.
 
 # ci.yml: Install dependencies
-(cd ui && npm ci)
+ci_npm_ci ui
 
 # ci.yml: Test
 (cd ui && npm test)

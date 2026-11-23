@@ -1527,7 +1527,9 @@ tasks:
   #   task ci:tools                        # ensure and verify the pinned tools
 
   ci:
-    desc: Run the local CI jobs for HEAD (pass flags after --, e.g. -- --jobs ui,go-lint).
+    desc: Run the local CI jobs for HEAD (pass flags after --, e.g. -- --jobs ui,go-lint; FRESH=1 reruns go-test without cached results).
+    env:
+      PAPRIKA_CI_FRESH: '{{.FRESH | default "0"}}'
     cmds:
       - bash hack/ci/run.sh {{.CLI_ARGS}}
 
