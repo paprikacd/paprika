@@ -84,9 +84,9 @@ require (
 	helm.sh/helm/v3 v3.21.2
 	k8s.io/api v0.37.2
 	k8s.io/apimachinery v0.37.2
-	k8s.io/client-go v0.37.0
+	k8s.io/client-go v0.37.2
 	k8s.io/component-base v0.37.0
-	k8s.io/metrics v0.36.2
+	k8s.io/metrics v0.37.2
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	oras.land/oras-go/v2 v2.6.1
 	sigs.k8s.io/controller-runtime v0.25.2
