@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react"
-import { CalendarRange, X } from "lucide-react"
+import { CalendarRange, RotateCcw, X } from "lucide-react"
 import { customTimeRangeSchema, timeRanges, type Dashboard } from "./schema"
 import styles from "./workspace-tools.module.css"
 import shared from "./insights.module.css"
@@ -15,6 +15,45 @@ export function dashboardRange(dashboard: Dashboard, now: number) {
         end: Date.parse(dashboard.customTimeRange.to) / 1000,
       }
     : { start: now - timeRanges[dashboard.timeRange], end: now }
+}
+
+const presetLabels: Record<Dashboard["timeRange"], string> = {
+  "15m": "Last 15 minutes",
+  "30m": "Last 30 minutes",
+  "1h": "Last 1 hour",
+  "6h": "Last 6 hours",
+  "24h": "Last 24 hours",
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+}
+
+/**
+ * A fixed window as a compact label for the select, and the same window with its zone name for the title and screen readers.
+ * The year appears only when an end falls outside the current year, and a same-day range shares one date.
+ */
+export function customRangeLabels(range: { from: string; to: string }, timeZone: string, now: Date = new Date()) {
+  const from = new Date(range.from), to = new Date(range.to)
+  const yearIn = (date: Date) => new Intl.DateTimeFormat("en", { timeZone, year: "numeric" }).format(date)
+  const current = yearIn(now)
+  const parts: Intl.DateTimeFormatOptions = {
+    timeZone,
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(yearIn(from) !== current || yearIn(to) !== current ? { year: "numeric" as const } : {}),
+  }
+  return {
+    compact: new Intl.DateTimeFormat(undefined, parts).formatRange(from, to),
+    full: new Intl.DateTimeFormat(undefined, { ...parts, timeZoneName: "short" }).formatRange(from, to),
+  }
+}
+
+/** The label a saved window shows: its preset name, or its compact custom range in the dashboard's zone. */
+export function savedRangeLabel(dashboard: Dashboard, now: Date = new Date()) {
+  return dashboard.customTimeRange
+    ? customRangeLabels(dashboard.customTimeRange, resolveDashboardTimeZone(dashboard.timeZone), now).compact
+    : presetLabels[dashboard.timeRange]
 }
 
 function localInput(date: Date) {
@@ -34,6 +73,8 @@ export function TimeRangeControl({
   onChange,
   customButton = true,
   className,
+  onReset,
+  resetLabel,
 }: {
   /** The dashboard as this view shows it, so the current window is the one displayed. */
   dashboard: Dashboard
@@ -44,6 +85,10 @@ export function TimeRangeControl({
    */
   customButton?: boolean
   className?: string
+  /** Offers a Reset action that returns the view to its saved window. Omitted when the view already shows it. */
+  onReset?: () => void
+  /** The saved window's label, named in the Reset action. */
+  resetLabel?: string
 }) {
   const id = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -55,6 +100,7 @@ export function TimeRangeControl({
   const custom = dashboard.customTimeRange
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const displayTimeZone = resolveDashboardTimeZone(dashboard.timeZone)
+  const customLabels = custom ? customRangeLabels(custom, displayTimeZone) : undefined
   function close() {
     setOpen(false)
     // Without the calendar button, focus goes back to the select that opened the popover.
@@ -74,6 +120,7 @@ export function TimeRangeControl({
         <span className={shared.srOnly}>Time range</span>
         <GammaSelect
           aria-label="Time range"
+          title={customLabels?.full}
           size="sm"
           value={custom ? "custom" : dashboard.timeRange}
           onValueChange={(value) => {
@@ -81,14 +128,8 @@ export function TimeRangeControl({
             else if (onChange({ timeRange: value as Dashboard["timeRange"], customTimeRange: undefined }) !== false) setOpen(false)
           }}
           options={[
-            {value: "15m", label: "Last 15 minutes"},
-            {value: "30m", label: "Last 30 minutes"},
-            {value: "1h", label: "Last 1 hour"},
-            {value: "6h", label: "Last 6 hours"},
-            {value: "24h", label: "Last 24 hours"},
-            {value: "7d", label: "Last 7 days"},
-            {value: "30d", label: "Last 30 days"},
-            {value: "custom", label: "Custom range…"},
+            ...(Object.keys(presetLabels) as Dashboard["timeRange"][]).map((value) => ({ value, label: presetLabels[value] })),
+            { value: "custom", label: customLabels?.compact ?? "Custom range…", accessibleLabel: customLabels?.full },
           ]}
         />
       </label>
@@ -102,6 +143,17 @@ export function TimeRangeControl({
           onClick={() => (open ? close() : openRange())}
         >
           <CalendarRange size={15} />
+        </GammaButton>
+      )}
+      {onReset && (
+        <GammaButton
+          size="sm"
+          variant="quiet"
+          onClick={onReset}
+          aria-label={resetLabel ? `Reset time range to ${resetLabel}` : "Reset time range"}
+        >
+          <RotateCcw size={15} aria-hidden="true" />
+          Reset
         </GammaButton>
       )}
       {open && (
@@ -170,26 +222,6 @@ export function TimeRangeControl({
             </GammaButton>
           </form>
         </section>
-      )}
-      {custom && (
-        <span className={styles.rangeSummary} title={`${custom.from} – ${custom.to}`}>
-          {new Date(custom.from).toLocaleString([], {
-            timeZone: displayTimeZone,
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}{" "}
-          —{" "}
-          {new Date(custom.to).toLocaleString([], {
-            timeZone: displayTimeZone,
-            timeZoneName: "short",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
       )}
     </div>
   )

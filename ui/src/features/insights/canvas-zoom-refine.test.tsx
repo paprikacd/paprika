@@ -4,6 +4,7 @@ import type { Layout } from "react-grid-layout";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DashboardCanvas } from "./canvas";
 import { exampleProviders } from "./example";
+import chartStyles from "./charts.module.css";
 import type { Dashboard, Provider, QueryRequest, QueryResult, Widget } from "./schema";
 
 vi.mock("react-grid-layout", async () => {
@@ -94,4 +95,37 @@ it("still re-queries a zoom whose own policy step is finer than the dashboard's 
   zoomFromSample(258);
   await waitFor(() => expect(fetcher.mock.calls.length).toBeGreaterThan(before));
   expect(fetcher.mock.calls.slice(before).some(([request]) => request.step === 300)).toBe(true);
+});
+
+/** Renders the one-hour dashboard with a dashboard range handler and returns the chart's plot, sized for a drag. */
+async function renderBrushable(editing: boolean, onTimeRange: (window: { start: number; end: number }) => void) {
+  const fetcher = vi.fn<(request: QueryRequest, signal: AbortSignal) => Promise<QueryResult>>(async () => ({ series: [{ name: "rate", labels: {}, points }] }));
+  render(<DashboardCanvas dashboard={dashboard} providers={[exampleProviders[0]]} fetcher={fetcher} end={END} editing={editing} selected="" onSelect={vi.fn()} onLayout={vi.fn()} onTimeRange={onTimeRange} />);
+  await waitFor(() => expect(document.querySelector("[data-series-count]")).not.toBeNull());
+  const plot = document.querySelector<HTMLElement>(`.${chartStyles.plot}`)!;
+  vi.spyOn(plot, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 180));
+  return plot;
+}
+
+function dragAcross(plot: HTMLElement) {
+  const pointer = (clientX: number, buttons = 0) => ({ clientX, clientY: 60, button: 0, buttons, isPrimary: true, pointerId: 1, pointerType: "mouse" });
+  fireEvent.pointerDown(plot, pointer(100));
+  fireEvent.pointerMove(plot, pointer(300, 1));
+  fireEvent.pointerUp(plot, pointer(300));
+}
+
+it("sends a chart drag to the dashboard range when the dashboard is not being edited", async () => {
+  const onTimeRange = vi.fn();
+  const plot = await renderBrushable(false, onTimeRange);
+  dragAcross(plot);
+  expect(onTimeRange).toHaveBeenCalledOnce();
+  expect(document.querySelector("[data-chart-window-start]")).toBeNull();
+});
+
+it("keeps a chart drag local while the dashboard is being edited", async () => {
+  const onTimeRange = vi.fn();
+  const plot = await renderBrushable(true, onTimeRange);
+  dragAcross(plot);
+  expect(onTimeRange).not.toHaveBeenCalled();
+  expect(document.querySelector("[data-chart-window-start]")).not.toBeNull();
 });

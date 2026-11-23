@@ -370,7 +370,7 @@ try {
     await target.getByLabel("Range start", { exact: true }).fill("2026-10-20T10:00")
     await target.getByLabel("Range end", { exact: true }).fill("2026-10-20T12:00")
     await range.getByRole("button", { name: "Apply time range", exact: true }).click()
-    assert.equal(await target.getByRole("combobox", { name: "Time range", exact: true }).innerText(), "Custom range…")
+    assert.match(await target.getByRole("combobox", { name: "Time range", exact: true }).innerText(), /^Oct 20, .*\s–\s/)
     assert.ok(await target.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
     await landscape.close()
     activePage = page

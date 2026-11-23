@@ -11,12 +11,6 @@
   gap: 4px;
   flex-wrap: wrap;
 }
-.rangeSummary {
-  flex-basis: 100%;
-  font-size: 11px;
-  color: var(--gamma-muted);
-  text-align: right;
-}
 .rangePopover {
   position: absolute;
   top: calc(100% + 10px);
@@ -238,8 +232,5 @@
   .rangePopover {
     right: auto;
     left: 0;
-  }
-  .rangeSummary {
-    text-align: left;
   }
 }

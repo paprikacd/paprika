@@ -204,10 +204,12 @@ export function TimeSeriesChart({
   const measureLabel = labelFamily ? (text: string) => measureBandLabel(text, labelFamily) : undefined;
   const [selection, setSelection] = useState<{ source: Series[]; window: ObservationWindow; previous?: QueryResult }>();
   // The full extent a drag or the Compare dialog may select from, and the narrowest window either may commit.
-  const { rangeEnd, refine, minStepSeconds } = useDashboardWindow();
+  const { rangeEnd, refine, minStepSeconds, apply } = useDashboardWindow();
   const extent = useMemo(() => timeWindowExtent(series), [series]);
   // A zoom that can re-query may go as narrow as two provider steps, because it samples at its own finer step.
   const minimumSpan = useMemo(() => extent ? chartMinimumSpan(extent, series, !!refine, minStepSeconds) : 1, [series, extent, refine, minStepSeconds]);
+  // A dashboard range is re-queried at the dashboard's planned step, so it keeps the unrefined minimum.
+  const dashboardMinimumSpan = useMemo(() => extent ? chartMinimumSpan(extent, series, false) : 1, [series, extent]);
   // Query/variable changes must never reuse a range selected from another result.
   const zoom = selection?.source === series ? selection.window : undefined;
   // The refinement sits beside the selection, so the overlay and the Compare dialog never drop it. It applies only to the
@@ -392,8 +394,18 @@ export function TimeSeriesChart({
     },
     commit: (candidate) => {
       if (!extent) return false;
+      // Where the dashboard can take a range, a drag sets the whole dashboard's window and this chart keeps no local zoom.
+      // Its span is the dashboard's own minimum, not the refinement's, because the dashboard re-queries at its planned step.
+      if (apply) {
+        const dashboardRange = normalizeTimeWindow(candidate, extent, dashboardMinimumSpan);
+        if (!dashboardRange) return false;
+        setSelection(undefined);
+        apply(dashboardRange);
+        return true;
+      }
       const accepted = normalizeTimeWindow(candidate, extent, minimumSpan);
-      if (!accepted || (zoom && sameTimeWindow(accepted, zoom))) return false;
+      if (!accepted) return false;
+      if (zoom && sameTimeWindow(accepted, zoom)) return false;
       setSelection({ source: series, window: accepted });
       return true;
     },
@@ -637,7 +649,7 @@ export function TimeSeriesChart({
           onRender={embedded ? associateDescription : plotTooltip.onRender}
           onFocusChange={tooltipEnabled ? plotTooltip.onFocusChange : undefined}
           onSelect={tooltipEnabled ? plotTooltip.onSelect : undefined}
-          ariaDescription={`${data.length} time series.${embedded ? "" : " Use arrow keys to explore individual values. Drag horizontally to select a time window, or use Compare window."}`}
+          ariaDescription={`${data.length} time series.${embedded ? "" : ` Use arrow keys to explore individual values. ${apply ? "Drag horizontally to set the dashboard time range" : "Drag horizontally to select a time window"}, or use Compare window.`}`}
         />}
         <TimeBrushOverlay preview={brush.preview} top={eventTop} bottom={eventBottom} />
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
