@@ -140,13 +140,28 @@ describe("toolbar view controls", () => {
     setURL(`/dashboard/insights/?dashboard=ops&from=${encodeURIComponent(RANGE.from)}&to=${encodeURIComponent(RANGE.to)}`)
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Operations" })
-    expect(screen.getByRole("combobox", { name: "Time range" })).toHaveTextContent("Custom range")
+    expect(screen.getByRole("combobox", { name: "Time range" })).not.toHaveTextContent("Custom range")
+    expect(screen.getByRole("combobox", { name: "Time range" })).toHaveAttribute("title")
     expect(screen.getByRole("combobox", { name: "Auto refresh" })).toBeDisabled()
 
     fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
     fireEvent.click(screen.getByRole("button", { name: "Set as dashboard default" }))
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
     await waitFor(() => expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ customTimeRange: RANGE }), '"v1"'))
+  })
+})
+
+describe("reset to the saved window", () => {
+  it("returns an absolute window in the URL to the saved window and removes it from the address", async () => {
+    setURL(`/dashboard/insights/?dashboard=ops&from=${encodeURIComponent(RANGE.from)}&to=${encodeURIComponent(RANGE.to)}`)
+    render(<InsightsApp client={client()} />)
+    await screen.findByRole("heading", { name: "Operations" })
+    fireEvent.click(screen.getByRole("button", { name: "Reset time range to Last 1 hour" }))
+    const url = new URL(location.href)
+    expect(url.searchParams.has("from")).toBe(false)
+    expect(url.searchParams.has("to")).toBe(false)
+    expect(screen.queryByRole("button", { name: /^Reset time range/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Time range" })).toHaveTextContent("Last 1 hour")
   })
 })
 

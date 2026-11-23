@@ -80,7 +80,7 @@ try {
       await page.screenshot({ path: resolve(output, `reliability-${theme}-${width}.png`), animations: "disabled" })
       await panel.getByRole("button", { name: /Compare window for/ }).click()
       const dialog = page.getByRole("dialog", { name: "Compare a window" })
-      await dialog.getByRole("button", { name: "Zoom chart to window" }).click()
+      await dialog.getByRole("button", { name: "Zoom this chart only" }).click()
       await panel.getByRole("button", { name: "Reset chart zoom" }).click()
       await page.goto(new URL("/dashboard/insights/?dashboard=local-gallery-edge-watch", app).href, { waitUntil: "networkidle" })
       // Prime the intersection-gated panels before counting inspection queries.

@@ -6,6 +6,7 @@ import { calendarTickLabel, calendarTicks } from "./chart-presentation";
 import { axisUnitIsCaption } from "./chart-renderer-shared";
 import { observedRuns, type Point } from "./chart-data";
 import { DashboardTimeZoneProvider } from "./dashboard-time-zone";
+import { DashboardWindowProvider } from "./dashboard-window";
 import chartStyles from "./charts.module.css";
 import type { QueryResult, Widget } from "./schema";
 
@@ -237,6 +238,80 @@ describe("drag brush", () => {
     fireEvent.change(screen.getByRole("slider", { name: "Window end" }), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: "Zoom chart to window" }));
     expect(chartOf(container)).toHaveAttribute("data-chart-window-start");
+  });
+
+  it("sends a drag to the dashboard range when the dashboard can apply it, and leaves this chart unzoomed", async () => {
+    const apply = vi.fn();
+    const { container } = render(<DashboardWindowProvider value={{ apply }}><WidgetVisualization widget={timeseries} result={gapped} /></DashboardWindowProvider>);
+    const chart = chartOf(container), plot = plotOf(container);
+    const left = Number(container.querySelector('[data-ts-key^="y-grid:"]')!.getAttribute("x1"));
+    rect(plot);
+    fireEvent.pointerDown(plot, pointer(100));
+    fireEvent.pointerMove(plot, pointer(300, 1));
+    await waitFor(() => expect(container.querySelector("[data-time-brush-selection]")).not.toBeNull());
+    fireEvent.pointerUp(plot, pointer(300));
+    expect(apply).toHaveBeenCalledOnce();
+    const [window] = apply.mock.calls[0] as unknown as [{ start: number; end: number }];
+    const plotWidth = 488 - left;
+    expect(window.start).toBeCloseTo(1000 + ((100 - left) / plotWidth) * 7000, -1);
+    expect(window.end).toBeCloseTo(1000 + ((300 - left) / plotWidth) * 7000, -1);
+    expect(chart).not.toHaveAttribute("data-chart-window-start");
+    expect(screen.queryByRole("button", { name: "Reset chart zoom" })).toBeNull();
+  });
+
+  it("drops this chart's own zoom when a drag sends the range to the dashboard", async () => {
+    const apply = vi.fn();
+    const { container } = render(<DashboardWindowProvider value={{ apply }}><WidgetVisualization widget={timeseries} result={gapped} /></DashboardWindowProvider>);
+    fireEvent.click(screen.getByRole("button", { name: /Compare window for API latency/ }));
+    fireEvent.change(screen.getByRole("slider", { name: "Window end" }), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zoom this chart only" }));
+    expect(chartOf(container)).toHaveAttribute("data-chart-window-start");
+    const plot = plotOf(container);
+    rect(plot);
+    fireEvent.pointerDown(plot, pointer(100));
+    fireEvent.pointerMove(plot, pointer(400, 1));
+    fireEvent.pointerUp(plot, pointer(400));
+    expect(apply).toHaveBeenCalledOnce();
+    expect(chartOf(container)).not.toHaveAttribute("data-chart-window-start");
+    expect(screen.queryByRole("button", { name: "Reset chart zoom" })).toBeNull();
+  });
+
+  it("applies a dashboard drag only at the dashboard's own minimum span, even when this chart could refine", () => {
+    const apply = vi.fn(), refine = vi.fn(() => new Promise<never>(() => {}));
+    const { container } = render(<DashboardWindowProvider value={{ apply, refine, minStepSeconds: 0.5 }}><WidgetVisualization widget={timeseries} result={gapped} /></DashboardWindowProvider>);
+    const plot = plotOf(container);
+    const left = Number(container.querySelector('[data-ts-key^="y-grid:"]')!.getAttribute("x1"));
+    rect(plot);
+    // 1.5 s of the 7 s extent: wider than two half-second provider steps, narrower than the two-sample minimum.
+    const plotWidth = 488 - left, from = left + 0.3 * plotWidth, to = from + (1500 / 7000) * plotWidth;
+    fireEvent.pointerDown(plot, pointer(from));
+    fireEvent.pointerMove(plot, pointer(to, 1));
+    fireEvent.pointerUp(plot, pointer(to));
+    expect(apply).not.toHaveBeenCalled();
+    expect(chartOf(container)).not.toHaveAttribute("data-chart-window-start");
+  });
+
+  it("still zooms this chart to the same narrow drag when the dashboard cannot take a range", () => {
+    const refine = vi.fn(() => new Promise<never>(() => {}));
+    const { container } = render(<DashboardWindowProvider value={{ refine, minStepSeconds: 0.5 }}><WidgetVisualization widget={timeseries} result={gapped} /></DashboardWindowProvider>);
+    const plot = plotOf(container);
+    const left = Number(container.querySelector('[data-ts-key^="y-grid:"]')!.getAttribute("x1"));
+    rect(plot);
+    const plotWidth = 488 - left, from = left + 0.3 * plotWidth, to = from + (1500 / 7000) * plotWidth;
+    fireEvent.pointerDown(plot, pointer(from));
+    fireEvent.pointerMove(plot, pointer(to, 1));
+    fireEvent.pointerUp(plot, pointer(to));
+    expect(chartOf(container)).toHaveAttribute("data-chart-window-start");
+  });
+
+  it("describes the drag as setting the dashboard range when the dashboard can apply it", () => {
+    const { container } = render(<DashboardWindowProvider value={{ apply: vi.fn() }}><WidgetVisualization widget={timeseries} result={gapped} /></DashboardWindowProvider>);
+    expect(container.querySelector("desc")).toHaveTextContent("Drag horizontally to set the dashboard time range, or use Compare window.");
+  });
+
+  it("keeps the chart-only description when the dashboard cannot apply a range", () => {
+    const { container } = render(<WidgetVisualization widget={timeseries} result={gapped} />);
+    expect(container.querySelector("desc")).toHaveTextContent("Drag horizontally to select a time window, or use Compare window.");
   });
 });
 

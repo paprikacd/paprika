@@ -50,7 +50,7 @@ try {
       const changeBox = await row.locator('[data-label="Change"]').boundingBox(), compareBox = await dialog.getByRole("region", { name: "Window comparison" }).boundingBox()
       assert.ok(changeBox && compareBox && changeBox.x >= compareBox.x && changeBox.x + changeBox.width <= compareBox.x + compareBox.width + 1, "The change must be visible without horizontal scrolling")
       await page.screenshot({ path: resolve(output, `compare-${theme}-${width}.png`), animations: "disabled" })
-      await dialog.getByRole("button", { name: "Zoom chart to window" }).click()
+      await dialog.getByRole("button", { name: "Zoom this chart only" }).click()
       await chart.getByRole("button", { name: "Reset chart zoom" }).waitFor()
       const zoomLatest = Number(await chart.locator("[data-legend-timestamp]").first().getAttribute("data-legend-timestamp"))
       assert.ok(zoomLatest < latest, "Zoom must show an earlier real observation, not the original latest value")
