@@ -6,6 +6,28 @@ import { installTooltipPointerTracking, pointerOverAnchor } from "./tooltip-poin
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe("pointer-following observations", () => {
+  it("keeps a pointer the browser hit-tests to the anchor outside its box, and drops it once scrolling moves the anchor away", () => {
+    // A status-history mark is a 2px button whose hit slice, a child span, is wider than the button.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 2, 28))
+    const stop = installTooltipPointerTracking()
+    try {
+      render(<><button aria-label="Sample"><span data-hit="" /></button><p>Next row</p></>)
+      const anchor = screen.getByRole("button", { name: "Sample" })
+      const hit = anchor.querySelector("span")!
+      let under: Element | null = hit
+      // jsdom has no hit testing; stand in for the browser's answer.
+      Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => under })
+      const event = new MouseEvent("pointermove", { bubbles: true, clientX: 104, clientY: 110 })
+      Object.defineProperty(event, "pointerType", { value: "mouse" })
+      fireEvent(hit, event)
+      expect(pointerOverAnchor(anchor)).toMatchObject({ x: 104, y: 110 })
+      under = screen.getByText("Next row")
+      expect(pointerOverAnchor(anchor)).toBeUndefined()
+    } finally {
+      stop()
+      delete (document as { elementFromPoint?: unknown }).elementFromPoint
+    }
+  })
   it("does not reopen a newly exposed hover target after Escape until the pointer moves", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 100, 160, 100))
     render(<ObservationDetails label="Map observation" details="Recorded location">Point</ObservationDetails>)

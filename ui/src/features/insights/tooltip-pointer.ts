@@ -45,11 +45,16 @@ export function installTooltipPointerTracking() {
   }
 }
 
-/** Only use a pointer currently over this anchor, including after scrolling. */
+/** Only use a pointer currently over this anchor, including after scrolling.
+ * The browser's hit test is the authority: a child can extend past the anchor's box (a status-history hit slice is
+ * wider than its 2px mark), and sub-pixel transforms can hit-test up to a pixel outside the measured rectangles.
+ * The anchor's own rectangle still counts, so a pointer accepted by the box test is never dropped. */
 export function pointerOverAnchor(anchor: Element) {
   if (!latest || !(latest.target instanceof Node) || !anchor.contains(latest.target)) return undefined
   const bounds = anchor.getBoundingClientRect()
-  return latest.x >= bounds.left && latest.x <= bounds.right && latest.y >= bounds.top && latest.y <= bounds.bottom ? latest : undefined
+  if (latest.x >= bounds.left && latest.x <= bounds.right && latest.y >= bounds.top && latest.y <= bounds.bottom) return latest
+  const under = typeof document.elementFromPoint === "function" ? document.elementFromPoint(latest.x, latest.y) : null
+  return under && anchor.contains(under) ? latest : undefined
 }
 
 /** Compatibility entry point; all pointer placement uses the shared owner. */
