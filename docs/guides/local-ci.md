@@ -75,7 +75,7 @@ Jobs run three at a time (`--parallel N` or `PAPRIKA_CI_PARALLEL` changes it). T
 (`go-test`, `ui`, `fleet-ui-smoke`) never overlap each other, since together they push timing-sensitive tests past their
 limits on a laptop; the lighter jobs run beside them.
 
-Logs go to `artifacts/ci/<tree12>/<job>.log`. The run ends with a table of job, result, duration and log path.
+Logs go to `artifacts/ci/<tree12>/<job>.log`. The run ends with a table of job, result, duration and log path. A rerun of the same tree first moves each selected job's previous log and diagnostics to `artifacts/ci/<tree12>/previous/<run id>/`, so a failure is not lost when a later run passes; the newest `PAPRIKA_CI_KEEP_PREVIOUS_RUNS` (default 5) previous runs are kept for each tree.
 
 ## The stamp
 

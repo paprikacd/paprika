@@ -410,6 +410,33 @@ for job in $parallel_list $docker_list; do
   prepare_job_dir "$job"
 done
 
+# A rerun of the same tree writes to the same log paths, so each selected job's previous log and diagnostics move to
+# previous/<run id>/ first. Jobs this run does not select keep their logs where the stamp points. The newest
+# PAPRIKA_CI_KEEP_PREVIOUS_RUNS (default 5) previous runs are kept for each tree.
+archive_previous_logs() {
+  local run_id dest job path moved=0 keep dir
+  run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  dest="$artifact_dir/previous/$run_id"
+  for job in "$@"; do
+    for path in "$artifact_dir/$job.log" "$artifact_dir/$job"; do
+      [ -e "$path" ] || continue
+      mkdir -p -- "$dest"
+      mv -- "$path" "$dest/"
+      moved=1
+    done
+  done
+  [ "$moved" = 1 ] && ci_log "previous logs for the rerun jobs moved to ${dest#"$CI_REPO_ROOT"/}"
+  keep="${PAPRIKA_CI_KEEP_PREVIOUS_RUNS:-5}"
+  [[ "$keep" =~ ^[0-9]+$ ]] || ci_die "PAPRIKA_CI_KEEP_PREVIOUS_RUNS must be a whole number, not '$keep'"
+  [ -d "$artifact_dir/previous" ] || return 0
+  # Run ids sort by time, so everything before the newest $keep entries goes.
+  while IFS= read -r dir; do
+    rm -rf -- "$dir"
+  done < <(find "$artifact_dir/previous" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +"$((keep + 1))")
+}
+# shellcheck disable=SC2086 # the job lists are space-separated job names
+archive_previous_logs $parallel_list $docker_list
+
 ci_log "running jobs for tree $tree12 (commit ${commit:0:12}); logs in ${artifact_dir#"$CI_REPO_ROOT"/}"
 
 # Phase 1: portable jobs, at most $parallel at once, and at most one CPU-heavy job (CI_HEAVY_JOBS) at a time. A free
