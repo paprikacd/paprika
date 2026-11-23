@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F21",
+  "featureName": "Fleet drift review",
+  "synthetic": true,
+  "summary": "Twelve clusters: 8 aligned, 3 drifted and 1 unreachable. The selected Deployment has 4 desired replicas versus 3 observed, and a CPU request of 200m desired versus 250m observed. There are 2 changed fields; actionability depends on ownership and ignore rules.",
+  "data": {
+    "clusters": 12,
+    "aligned": 8,
+    "drifted": 3,
+    "unreachable": 1,
+    "selectedResourceKind": "Deployment",
+    "changes": [
+      {
+        "field": "replicas",
+        "desired": 4,
+        "observed": 3,
+        "unit": "replicas"
+      },
+      {
+        "field": "CPU request",
+        "desired": "200m",
+        "observed": "250m",
+        "unit": "millicores"
+      }
+    ],
+    "changedFields": 2,
+    "actionability": "Pending ownership and ignore-rule interpretation"
+  },
+  "constraints": [
+    "The first read-only slice needs a bounded, authorized collector behind the currently NotConfigured fleet details.",
+    "Stable identity includes cluster, namespace, API group, version, kind and resource. Retain desired revision, resource version and observation time.",
+    "Unreachable or stale means Unknown, never Aligned.",
+    "Normalization, field ownership and existing ignore rules decide actionability. Two changed fields do not imply two actionable fields.",
+    "Show historical recurrence only when retained observations exist. Do not invent history.",
+    "Exception review navigates to the maintained owner. Do not introduce a second ignore or reconciliation mechanism."
+  ],
+  "actions": {
+    "enabled": [
+      "Open resource diff",
+      "Review scoped exception"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Reconcile fleet",
+      "Mutate ignore rule in first slice",
+      "Automatically correct drift"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/236"
+  ]
+}

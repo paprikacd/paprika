@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F13",
+  "featureName": "Synthetic journey monitoring",
+  "synthetic": true,
+  "summary": "Of 60 scheduled runs, Melbourne has 20 passes; Frankfurt has 18 passes and 2 failures; Singapore has 19 passes and 1 missing run. Totals: 57 passed, 2 failed, 1 missing and 59 executed. The selected failure completes its first 3 steps in 730 ms, then Payment times out after 1,500 ms: 2,230 ms elapsed. Confirmation is Not run.",
+  "data": {
+    "scheduledRuns": 60,
+    "executedRuns": 59,
+    "passed": 57,
+    "failed": 2,
+    "missing": 1,
+    "locations": [
+      {
+        "name": "Melbourne",
+        "passed": 20,
+        "failed": 0,
+        "missing": 0
+      },
+      {
+        "name": "Frankfurt",
+        "passed": 18,
+        "failed": 2,
+        "missing": 0
+      },
+      {
+        "name": "Singapore",
+        "passed": 19,
+        "failed": 0,
+        "missing": 1
+      }
+    ],
+    "successfulStepDurationsMs": [
+      180,
+      240,
+      310,
+      780,
+      190
+    ],
+    "successfulDurationMs": 1700,
+    "selectedFailure": {
+      "firstThreeStepDurationsMs": [
+        180,
+        240,
+        310
+      ],
+      "firstThreeElapsedMs": 730,
+      "paymentTimeoutMs": 1500,
+      "totalElapsedMs": 2230,
+      "confirmation": "Not run"
+    }
+  },
+  "constraints": [
+    "The first slice imports or exposes external recorded runs. Native execution, scheduling, retry and credentials are separate work.",
+    "Runner, browser and journey versions, location, and assertion definitions govern compatibility.",
+    "A missing run requires a schedule manifest. Without one, coverage is unknown.",
+    "Not run is not a 0 ms pass. Step and elapsed intervals must reconcile.",
+    "Artifacts are sanitized and authorized. Trace links require verified correlation. Label the observations as test traffic."
+  ],
+  "actions": {
+    "enabled": [
+      "Inspect failed step",
+      "Open retained evidence"
+    ],
+    "disabled": [],
+    "excluded": [
+      "Provision runner",
+      "Execute journey",
+      "Schedule native browser run",
+      "Configure operational credentials"
+    ]
+  },
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_7201ecf2dcc48191b56b5e90cae4b652",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/237",
+    "https://github.com/paprikacd/paprika/issues/216",
+    "https://github.com/paprikacd/paprika/issues/221"
+  ]
+}

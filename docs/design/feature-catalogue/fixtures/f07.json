@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "featureId": "F07",
+  "featureName": "Differential profile comparison",
+  "synthetic": true,
+  "summary": "Synthetic captures: 60 seconds and 1,000 requests each; 10 ms per CPU sample. Exclusive samples control→canary: Parse 200→180, Decode 100→240, Serialize 150→120, Other 50→60. Totals 500→600 = estimated CPU 5.0→6.0 s = 5.0→6.0 ms/request, +20%. Decode 1.0→2.4 s (+140%); share 20%→40% (+20 percentage points).",
+  "data": {
+    "captureDurationSecondsEach": 60,
+    "requestsEach": 1000,
+    "cpuSampleMs": 10,
+    "exclusiveSamples": [
+      {
+        "frame": "Parse",
+        "control": 200,
+        "canary": 180
+      },
+      {
+        "frame": "Decode",
+        "control": 100,
+        "canary": 240
+      },
+      {
+        "frame": "Serialize",
+        "control": 150,
+        "canary": 120
+      },
+      {
+        "frame": "Other",
+        "control": 50,
+        "canary": 60
+      }
+    ],
+    "totalSamples": {
+      "control": 500,
+      "canary": 600
+    },
+    "estimatedCpuSeconds": {
+      "control": 5.0,
+      "canary": 6.0
+    },
+    "cpuMsPerRequest": {
+      "control": 5.0,
+      "canary": 6.0,
+      "increasePercent": 20
+    },
+    "selectedDecode": {
+      "controlCpuSeconds": 1.0,
+      "canaryCpuSeconds": 2.4,
+      "increasePercent": 140,
+      "controlSharePercent": 20,
+      "canarySharePercent": 40,
+      "shareDifferencePercentagePoints": 20
+    }
+  },
+  "constraints": [
+    "CPU time, CPU per request and share are different normalization choices; state the selected measure.",
+    "Exclusive attribution totals reconcile; do not add inclusive parent frames as disjoint costs.",
+    "Sample type, units, duration, workload denominator and symbol identity must be compatible before numerical comparison.",
+    "Incompatible CPU versus allocation profiles block comparison; unmatched or missing symbols remain visible using stable raw frames.",
+    "Imported comparison and authorized live production profiling are separate backlog items.",
+    "Raster stack geometry is schematic; the exact native ledger governs numerical meaning."
+  ],
+  "actions": null,
+  "clarification": null,
+  "sourcePage": "https://chatgpt.com/space/page_f668ffb8b1248191beb2f63545ab091b",
+  "issueUrls": [
+    "https://github.com/paprikacd/paprika/issues/223",
+    "https://github.com/paprikacd/paprika/issues/224"
+  ]
+}
