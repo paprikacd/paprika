@@ -207,10 +207,14 @@ case "$args" in
     jq -n --arg p "ghcr.io/paprikacd/paprika@sha256:${FAKE_PAPRIKA_DIGEST}" \
       --arg r "ghcr.io/paprikacd/paprika-render-worker@sha256:${FAKE_RENDER_DIGEST}" \
       --arg norender "${FAKE_NO_RENDERER:-}" --arg ready "$ready" \
-      --arg bad "${FAKE_IMAGEID_MISMATCH:+sha256:$(printf '0%.0s' $(seq 1 64))}" '
+      --arg bad "${FAKE_IMAGEID_MISMATCH:+sha256:$(printf '0%.0s' $(seq 1 64))}" \
+      --arg containerd "${FAKE_CONTAINERD_STATUS:-}" '
+      # FAKE_CONTAINERD_STATUS reports status as containerd does: .image is the bare config ID and imageID has no scheme.
       def pod(comp; img; id): {metadata: {name: comp}, status: {phase: "Running",
         conditions: [{type: "Ready", status: $ready}],
-        containerStatuses: [{name: comp, image: img, imageID: ("docker-pullable://" + id)}]}};
+        containerStatuses: [if $containerd != ""
+          then {name: comp, image: "sha256:59715411901e81f6f42c6ec7403765a48ddef36fb7a681aa96d1f65133cb8d9d", imageID: id}
+          else {name: comp, image: img, imageID: ("docker-pullable://" + id)} end]}};
       {items: [
         pod("controller-manager"; $p; (if $bad != "" then "ghcr.io/paprikacd/paprika@" + $bad else $p end)),
         pod("api-server"; $p; $p),
@@ -1036,6 +1040,15 @@ jq -e '.auths["ghcr.io"].auth == "ZGV2ZWxvcGVy"' "$preexisting_config/config.jso
   die "the developer's ghcr.io login was changed"
 grep -Fq "docker-config|$work/tmp/paprika-deploy." "$log" || die "the login did not use the private config"
 say "deploy leaves the developer's ghcr.io login in place and logs in to a private config"
+
+# D8c: a containerd node reports .image as the bare config ID; the digest check reads the repository from imageID.
+log=$work/d8c.log
+run_deploy_ok "$log" FAKE_CONTAINERD_STATUS=1
+expect_output "image digests: 5 running container(s) report the pushed digest"
+log=$work/d8d.log
+run_deploy "$log" FAKE_CONTAINERD_STATUS=1 FAKE_IMAGEID_MISMATCH=1
+expect_output "do not report the pushed digest"
+say "deploy checks image digests when the runtime reports .image as a config ID"
 
 # D9 to D15: each cluster-side refusal names its reason.
 log=$work/d9.log

@@ -231,10 +231,14 @@ digest_check=$(jq -c \
   --arg pdigest "$paprika_digest" --arg rdigest "$render_digest" '
   [ .items[] | select(.status.phase == "Running" and .metadata.deletionTimestamp == null) as $pod
     | ($pod.status.containerStatuses // [])[]
-    | select(.image | startswith($prefix))
-    | if (.image | startswith($rprefix))
-      then {ok: (.imageID | contains($rdigest)), kind: "render-worker"}
-      else {ok: (.imageID | contains($pdigest)), kind: "paprika"}
+    # containerd can report .image as the bare config ID (sha256:...), so the repository is read from
+    # imageID (repo@digest, with an optional runtime scheme). .image is the fallback when imageID has no digest.
+    | ((.imageID // "") | sub("^[a-z-]+://"; "")) as $id
+    | ((if ($id | contains("@")) then $id else (.image // "") end) | split("@")[0] | sub(":[^/:]*$"; "")) as $repo
+    | select($repo == $prefix or $repo == $rprefix)
+    | if $repo == $rprefix
+      then {ok: ($id | contains($rdigest)), kind: "render-worker"}
+      else {ok: ($id | contains($pdigest)), kind: "paprika"}
       end
   ] | {
     checked: length,
