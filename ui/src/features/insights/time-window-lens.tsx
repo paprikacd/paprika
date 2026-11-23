@@ -114,6 +114,13 @@ function WindowDialog({ title, series, unit, decimals, zoom, onZoom, onOverlay, 
         return <tr key={index}><th scope="row">{seriesName(entry, index)}</th><td data-label="Previous">{earlier ? <>{formatMetricDetails(earlier.value!, seriesUnit, decimals)}<time dateTime={new Date(earlier.timestamp).toISOString()}>{timestampFormat.format(new Date(earlier.timestamp))}</time></> : "Unavailable"}</td><td data-label="Selected">{actual ? <>{formatMetricDetails(actual.value!, seriesUnit, decimals)}<time dateTime={new Date(actual.timestamp).toISOString()}>{timestampFormat.format(new Date(actual.timestamp))}</time></> : "Unavailable"}</td><td data-label="Change">{delta === undefined ? "Unavailable" : <span title={exactMetric(delta, deltaUnit)} aria-label={`Exact change ${exactMetric(delta, deltaUnit)}`}>{formatChange(delta, undefined, seriesUnit, decimals, actual?.value ?? undefined).text}</span>}{percent !== undefined && <small title="Change divided by the absolute previous value"> ({formatRelativePercentText(percent, decimals, actual?.value)})</small>}</td></tr>
       })}</tbody></table></div>{onOverlay && <GammaButton variant="quiet" size="sm" disabled={!overlayAvailable} onClick={() => { if (prior.data) { onOverlay(selected, prior.data); onClose() } }}>Overlay previous period</GammaButton>}{onOverlay && overlayAvailable && <p>Overlay shifts prior samples to align the windows without interpolating. Inspect prior data for their recorded timestamps.</p>}{onOverlay && !overlayAvailable && <p role="status">{overlayUnavailable ?? "No uniquely matched previous series contain recorded values to overlay."}</p>}</>}
     </section>}
-    <div className={styles.footer}><span>{apply ? "Zoom affects this chart only. Use for all charts changes the dashboard view without saving." : "Zoom affects this chart only."}</span>{apply && <GammaButton variant="quiet" size="sm" onClick={() => { apply(selected); onClose() }}>Use for all charts</GammaButton>}<GammaButton variant="primary" size="sm" onClick={() => { onZoom(selected); onClose() }}>Zoom chart to window</GammaButton></div>
+    <div className={styles.footer}>{apply ? <>
+      <span>Use for all charts changes the dashboard view without saving. Zoom this chart only keeps the other charts as they are.</span>
+      <GammaButton variant="quiet" size="sm" onClick={() => { onZoom(selected); onClose() }}>Zoom this chart only</GammaButton>
+      <GammaButton variant="primary" size="sm" onClick={() => { apply(selected); onClose() }}>Use for all charts</GammaButton>
+    </> : <>
+      <span>Zoom affects this chart only.</span>
+      <GammaButton variant="primary" size="sm" onClick={() => { onZoom(selected); onClose() }}>Zoom chart to window</GammaButton>
+    </>}</div>
   </dialog>
 }

@@ -101,7 +101,7 @@ import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
-import { TimeRangeControl, dashboardRange, type TimeRangeChoice } from "./time-range"
+import { TimeRangeControl, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
@@ -126,7 +126,7 @@ import {
 } from "./drilldown"
 import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
 
-import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewedDashboard } from "./dashboard-view"
+import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
 
 /** The notice phrase for where a copy settled. A copy the compactor lifted out of its row says nothing about its neighbour. */
 function placementPhrase(placement: DuplicatePlacement): string {
@@ -1434,6 +1434,16 @@ export default function InsightsApp({
       return false
     }
   }
+  // Returns the view to the saved window: the URL drops its range and the refresh and variables stay as they are.
+  function resetViewRange() {
+    try {
+      applyView({ ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: undefined }, "range")
+      setEnd(Math.floor(Date.now() / 1000))
+      setError("")
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not reset the time range")
+    }
+  }
   function applyDashboardVariables(values: Parameters<typeof resolveDashboardVariables>[1]) {
     try {
       applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
@@ -2087,6 +2097,8 @@ export default function InsightsApp({
               key={dashboard.id}
               dashboard={viewDashboard}
               onChange={changeViewRange}
+              onReset={viewTimeDiffers(dashboard, viewDashboard) ? resetViewRange : undefined}
+              resetLabel={savedRangeLabel(dashboard)}
               customButton={!phoneShell}
               className={phoneShell ? styles.phoneTime : undefined}
             />

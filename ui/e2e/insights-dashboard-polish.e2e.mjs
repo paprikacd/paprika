@@ -43,7 +43,10 @@ try {
     await page.goto(`${base}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: 'networkidle' });
     await page.getByRole('heading', { name: dashboard.title, exact: true }).waitFor();
     assert.equal(await page.title(), 'Paprika');
-    await page.getByText('Nov 7, 11:00 AM — Nov 7, 12:00 PM GMT+11', { exact: true }).waitFor();
+    // A custom window shows inside the time range trigger as one compact line; its title carries the zone.
+    const rangeTrigger = page.getByRole('combobox', { name: 'Time range', exact: true });
+    await rangeTrigger.filter({ hasText: /^Nov 7, 11:00\sAM\s–\s12:00\sPM$/ }).waitFor();
+    assert.match(await rangeTrigger.getAttribute('title'), /^Nov 7, 11:00\sAM\s–\s12:00\sPM\sGMT\+11$/);
     const chart = page.locator('[data-widget-id="trend-b"]');
     await chart.getByRole('img', { name: 'Service latency', exact: true }).waitFor();
     await page.evaluate(() => document.fonts.ready);
@@ -65,7 +68,7 @@ try {
     const comparison = page.getByRole('dialog', { name: 'Compare a window' });
     assert.match(await comparison.getByRole('slider', { name: 'Window start' }).getAttribute('aria-valuetext'), /11:00:00/);
     assert.match(await comparison.getByRole('slider', { name: 'Window end' }).getAttribute('aria-valuetext'), /12:00:00/);
-    await comparison.getByRole('button', { name: 'Zoom chart to window' }).click();
+    await comparison.getByRole('button', { name: 'Zoom this chart only' }).click();
     await chart.getByRole('button', { name: 'Reset chart zoom' }).click();
     await chart.getByRole('button', { name: /Inspect chart data/ }).click();
     await page.getByRole('dialog').waitFor(); await page.keyboard.press('Escape');

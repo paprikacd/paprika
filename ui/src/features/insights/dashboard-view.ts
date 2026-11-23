@@ -84,8 +84,12 @@ export function shownRefreshInterval(viewed: Dashboard): Dashboard["refreshInter
 
 /** True when the view's time or refresh, as shown, would differ from the saved defaults in the document. */
 export function viewDiffersFromDefaults(dashboard: Dashboard, viewed: Dashboard): boolean {
+  return viewTimeDiffers(dashboard, viewed) || shownRefreshInterval(viewed) !== shownRefreshInterval(dashboard)
+}
+
+/** Whether the view's window differs from the saved one. The refresh interval is not part of the window. */
+export function viewTimeDiffers(dashboard: Dashboard, viewed: Dashboard): boolean {
   return viewed.timeRange !== dashboard.timeRange ||
-    shownRefreshInterval(viewed) !== shownRefreshInterval(dashboard) ||
     JSON.stringify(viewed.customTimeRange ?? null) !== JSON.stringify(dashboard.customTimeRange ?? null)
 }
 

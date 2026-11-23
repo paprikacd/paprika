@@ -438,7 +438,8 @@ try {
     assert.deepEqual(document.customTimeRange, { from: `${from}:00.000Z`, to: `${to}:00.000Z` })
     assert.equal(document.widgets.find((widget) => widget.type === "stat").providerId, managedID)
     await page.reload({ waitUntil: "networkidle" })
-    assert.equal(await page.getByRole("combobox", { name: "Time range", exact: true }).innerText(), "Custom range…")
+    // The saved custom window shows inside the trigger as a compact range, not the "Custom range…" placeholder.
+    assert.match(await page.getByRole("combobox", { name: "Time range", exact: true }).innerText(), /\d{1,2}:\d{2}.*\s–\s/)
     await page.getByRole("article", { name: "Live requests", exact: true }).getByText("42.5", { exact: false }).waitFor()
     await page.screenshot({ path: join(output, "dashboard-live-rich.png"), fullPage: true })
     return { start, end, persistedCustomRange: true }
