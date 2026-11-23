@@ -8,9 +8,10 @@
 #   --rerun-failed   skip jobs that already pass in this tree's stamp
 #
 # Every job gets its own detached worktree of the same commit, as each GitHub job gets its own
-# checkout, so jobs never share generated files, node_modules or bin/. Uncommitted files cannot
-# count toward a pass. Results merge into the stamp <git-common-dir>/paprika-ci/<tree>.json,
-# keyed by the git tree.
+# checkout, so jobs never share generated files, node_modules or bin/. The worktrees sit at stable
+# paths under the cache root (prepare_job_dir), so Go's build and test caches carry over between runs.
+# Uncommitted files cannot count toward a pass. Results merge into the stamp
+# <git-common-dir>/paprika-ci/<tree>.json, keyed by the git tree.
 set -Eeuo pipefail
 
 # shellcheck disable=SC1091
@@ -103,16 +104,30 @@ results_dir="$work/results"
 ci_yml_file="$work/ci.yml"
 mkdir -p -- "$results_dir" "$artifact_dir"
 
-job_dir() { # job -> the job's own worktree
-  printf '%s/job-%s' "$work" "$1"
+# Set before the cleanup trap: stable_jobs=1 once this run holds the run lock, which makes it the owner of the stable job
+# worktrees. repo_common_dir is the physical git common directory, to which a registered job worktree must belong.
+stable_jobs=0
+jobs_root=$(ci_cache_root)/paprika-ci/jobs
+run_lock=$jobs_root/.run.lock
+repo_common_dir=$(cd "$common_dir" && pwd -P)
+
+job_dir() { # job -> the job's own worktree: stable under the cache root, or per run
+  if [ "$stable_jobs" = 1 ]; then
+    printf '%s/%s' "$jobs_root" "$1"
+  else
+    printf '%s/job-%s' "$work" "$1"
+  fi
 }
 
 cleanup() {
   local d
-  for d in "$work"/job-*; do
-    [ -e "$d" ] || continue
-    git -C "$CI_REPO_ROOT" worktree remove --force "$d" >/dev/null 2>&1 || rm -rf -- "$d"
-  done
+  # Stable job worktrees stay for the next run. Per-run worktrees (the fallback) are removed.
+  if [ "$stable_jobs" = 0 ]; then
+    for d in "$work"/job-*; do
+      [ -e "$d" ] || continue
+      git -C "$CI_REPO_ROOT" worktree remove --force "$d" >/dev/null 2>&1 || rm -rf -- "$d"
+    done
+  fi
   rm -rf -- "$work"
   git -C "$CI_REPO_ROOT" worktree prune >/dev/null 2>&1 || true
 }
@@ -156,6 +171,104 @@ on_signal() {
   exit 130
 }
 trap on_signal INT TERM HUP
+
+# The stable job worktrees are shared by every run that uses this cache root, so one run at a time owns them. The owner
+# holds an advisory lock (flock) on $jobs_root/.run.lock: run.sh keeps that file open on fd 9, and every job inherits
+# fd 9. The kernel releases the lock when the last of those processes exits, so a crash never leaves it held and no pid
+# is kept. A run that finds the lock held uses per-run job worktrees instead, which are removed at its end, so its
+# caches are not reused.
+acquire_job_lock() {
+  local rc=0
+  mkdir -p -- "$jobs_root"
+  # The directory lock of an earlier version of this runner, which no run creates any more.
+  rm -rf -- "$jobs_root/.lock"
+  # The physical path: git reports worktree paths physically, and prepare_job_dir compares them with this one.
+  jobs_root=$(cd "$jobs_root" && pwd -P)
+  run_lock=$jobs_root/.run.lock
+  exec 9>>"$run_lock"
+  perl -MFcntl=:flock -e 'open(my $f, ">&=", 9) or exit 2; flock($f, LOCK_EX | LOCK_NB) or exit 1' || rc=$?
+  case "$rc" in
+    0) stable_jobs=1 ;;
+    1) ci_log "another local CI run holds the job worktree lock ($run_lock): this run uses per-run job worktrees, and its caches are not reused for this run" ;;
+    *) ci_die "cannot take the job worktree lock $run_lock (perl exit $rc)" ;;
+  esac
+}
+acquire_job_lock
+if [ "$stable_jobs" = 1 ]; then
+  # The Go build cache is trimmed by the lock holder only, once per run and before any job starts.
+  ci_trim_go_cache
+else
+  ci_log "go build cache trim skipped: another run holds the job lock"
+fi
+
+# ci_clean_worktree <dir> [git clean options]: removes the untracked and ignored files of a job worktree. The Next.js
+# cache and the envtest assets are kept, unless ci_fresh (task ci FRESH=1), which removes everything.
+ci_clean_worktree() {
+  local dir=$1
+  shift
+  if ci_fresh; then
+    git -C "$dir" clean -ffdx "$@"
+  else
+    git -C "$dir" clean -ffdx "$@" -e ui/.next/cache -e bin/k8s
+  fi
+}
+
+# job_is_ours <dir>: the directory is a worktree that this repository has registered, and its common git directory is
+# this repository's (compared physically, so a symlinked path does not look like another repository).
+job_is_ours() {
+  local dir=$1 registered theirs
+  [ -d "$dir" ] || return 1
+  registered=$(git -C "$CI_REPO_ROOT" worktree list --porcelain) || return 1
+  grep -qxF -- "worktree $dir" <<<"$registered" || return 1
+  theirs=$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  theirs=$(cd "$theirs" 2>/dev/null && pwd -P) || return 1
+  [ "$theirs" = "$repo_common_dir" ]
+}
+
+# job_reset <dir>: checks the worktree out at the snapshot and removes what the reset does not keep. Fails when git cannot
+# do either (for example, an assume-unchanged file blocks checkout), and the caller then rebuilds the worktree.
+job_reset() {
+  git -C "$1" checkout --force --detach --quiet "$snapshot_src" && ci_clean_worktree "$1" -q
+}
+
+# job_flags_clean <dir>: no file of the worktree carries an index flag (skip-worktree or assume-unchanged, as
+# git ls-files -v shows them). Such a file keeps its content through checkout --force while git status shows nothing for
+# it, so a worktree with a flag is rebuilt.
+job_flags_clean() {
+  local flagged
+  flagged=$(git -C "$1" ls-files -v | grep -v '^H ' || true)
+  if [ -z "$flagged" ]; then return 0; fi
+  ci_log "job worktree $1 keeps index flags (skip-worktree or assume-unchanged) on: $(cut -c3- <<<"$flagged" | tr '\n' ' ')"
+  return 1
+}
+
+# job_rebuild <dir>: replaces the directory with a new worktree of the snapshot, at the same path.
+job_rebuild() {
+  rm -rf -- "$1"
+  git -C "$CI_REPO_ROOT" worktree prune
+  git -C "$CI_REPO_ROOT" worktree add --detach --force --quiet "$1" "$snapshot_src"
+}
+
+# Stable mode keeps a job's worktree at the same path between runs, because Go reuses build and test results only at
+# the same path. Each run resets the worktree to the snapshot (ci_clean_worktree), then checks it: no index flags, and
+# nothing left that a clean would remove (what is left is checked with a dry run). A worktree that cannot be reset, or
+# that carries index flags, is rebuilt. Per-run mode creates a new one.
+prepare_job_dir() { # job
+  local job=$1 dir leftover
+  dir=$(job_dir "$job")
+  if [ "$stable_jobs" != 1 ]; then
+    git -C "$CI_REPO_ROOT" worktree add --detach --quiet "$dir" "$snapshot_src"
+    return 0
+  fi
+  if ! job_is_ours "$dir" || ! job_reset "$dir" || ! job_flags_clean "$dir"; then
+    if [ -e "$dir" ]; then ci_log "job worktree $dir cannot be reused: rebuilding it"; fi
+    job_rebuild "$dir"
+  fi
+  # What is left: tracked changes, and untracked or ignored files that a clean would still remove.
+  leftover=$(git -C "$dir" status --porcelain --untracked-files=no)
+  leftover="$leftover$(ci_clean_worktree "$dir" -n)"
+  [ -z "$leftover" ] || ci_die "job worktree $dir is not clean after the reset; remove it and run again: $leftover"
+}
 
 # The ci.yml file of the commit (pins, job names, timeouts). Jobs read their own worktree's copy.
 git -C "$CI_REPO_ROOT" show "$snapshot_src:.github/workflows/ci.yml" >"$ci_yml_file" ||
@@ -291,10 +404,10 @@ for job in $selected; do
   esac
 done
 
-# One detached worktree per job, created before any job starts (serially, so git's admin
-# directory is never written by two processes at once).
+# One detached worktree per job, prepared before any job starts (serially, so git's admin directory is
+# never written by two processes at once).
 for job in $parallel_list $docker_list; do
-  git -C "$CI_REPO_ROOT" worktree add --detach --quiet "$(job_dir "$job")" "$snapshot_src"
+  prepare_job_dir "$job"
 done
 
 ci_log "running jobs for tree $tree12 (commit ${commit:0:12}); logs in ${artifact_dir#"$CI_REPO_ROOT"/}"

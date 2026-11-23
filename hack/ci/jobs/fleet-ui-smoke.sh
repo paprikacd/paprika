@@ -20,7 +20,7 @@ ci_collect ui/playwright-report ui/test-results \
 # ci.yml: Set up Go / Set up Node.js (22) -> snapshot, tools.sh and hack/ci/lib.sh.
 
 # ci.yml: Install UI dependencies
-(cd ui && npm ci)
+ci_npm_ci ui
 
 # ci.yml: Build compiled UI
 (cd ui && npm run build)

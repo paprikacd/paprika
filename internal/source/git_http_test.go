@@ -46,11 +46,20 @@ type httpGitServer struct {
 func startHTTPGitServer(t *testing.T) *httpGitServer {
 	t.Helper()
 
+	// In CI a missing Docker is a failure, not a skip: Go caches a passing result, so a skip recorded
+	// where Docker is absent would be reused where it is present. CI is set by GitHub and by local CI.
+	ci := os.Getenv("CI") != ""
 	docker, err := exec.LookPath("docker")
 	if err != nil {
+		if ci {
+			t.Fatalf("docker CLI not available")
+		}
 		t.Skip("docker CLI not available")
 	}
 	if out, err := dockerCmd(docker, "info", "--format", "{{.ServerVersion}}").CombinedOutput(); err != nil {
+		if ci {
+			t.Fatalf("docker daemon not available: %v (%s)", err, out)
+		}
 		t.Skipf("docker daemon not available: %v (%s)", err, out)
 	}
 

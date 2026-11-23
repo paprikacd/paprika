@@ -182,6 +182,7 @@ func TestLocalCIParityRejectsDrift(t *testing.T) {
 		{"go-test", "make test-race", "set -a\nGOFLAGS=-run=NONE\nmake test-race"},
 		{"go-test", "make test-race", "set -o allexport\nGOFLAGS=-run=NONE\nmake test-race"},
 		{"chart", "helm lint charts/chart/", "lint_chart() {\nhelm lint charts/chart/\n}"},
+		{"ui", "ci_npm_ci ui", "ci_npm_ci internal/api/mcp/ui"},
 	}
 	for _, tc := range cases {
 		job, ok := workflow.jobs[tc.job].(map[string]any)
@@ -544,6 +545,10 @@ func localCIScript(script string) []localCILine {
 			rest := strings.TrimSuffix(strings.TrimPrefix(text, "(cd "), ")")
 			dir, cmd, _ := strings.Cut(rest, " && ")
 			lines = append(lines, localCILine{dir: dir, text: cmd, guarded: guarded(i), nested: nested[i]})
+		case strings.HasPrefix(text, "ci_npm_ci "):
+			// The helper runs "npm ci" in the directory it is given (hack/ci/lib.sh).
+			dir := strings.TrimPrefix(text, "ci_npm_ci ")
+			lines = append(lines, localCILine{dir: dir, text: "npm ci", guarded: guarded(i), nested: nested[i]})
 		default:
 			lines = append(lines, localCILine{dir: enclosing, text: text, guarded: guarded(i), nested: nested[i]})
 		}

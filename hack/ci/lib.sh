@@ -235,16 +235,57 @@ ci_stamp_subdir() {
   if ci_selftest; then printf 'paprika-ci-selftest\n'; else printf 'paprika-ci\n'; fi
 }
 
-# ci_go_cache_dir: the Go build cache local CI jobs use (PAPRIKA_CI_GOCACHE, or paprika-ci/go-build under the user's
-# cache directory). It is kept between runs, like the cache setup-go restores in ci.yml.
+# ci_cache_root: the cache directory of the local CI runner. PAPRIKA_CI_CACHE_ROOT wins; otherwise the user's cache
+# directory (~/Library/Caches on macOS, $XDG_CACHE_HOME or ~/.cache elsewhere). Everything the runner keeps between runs
+# (the Go build cache, the stable job worktrees and the run lock) lives under paprika-ci/ below it.
+ci_cache_root() {
+  if [ -n "${PAPRIKA_CI_CACHE_ROOT:-}" ]; then
+    printf '%s\n' "$PAPRIKA_CI_CACHE_ROOT"
+  elif [ "$(uname -s)" = Darwin ]; then
+    printf '%s/Library/Caches\n' "$HOME"
+  else
+    printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}"
+  fi
+}
+
+# ci_go_cache_dir: the Go build cache local CI jobs use (PAPRIKA_CI_GOCACHE, or paprika-ci/go-build under the cache
+# root). It is kept between runs, like the cache setup-go restores in ci.yml.
 ci_go_cache_dir() {
   if [ -n "${PAPRIKA_CI_GOCACHE:-}" ]; then
     printf '%s\n' "$PAPRIKA_CI_GOCACHE"
-  elif [ "$(uname -s)" = Darwin ]; then
-    printf '%s/Library/Caches/paprika-ci/go-build\n' "$HOME"
   else
-    printf '%s/paprika-ci/go-build\n' "${XDG_CACHE_HOME:-$HOME/.cache}"
+    printf '%s/paprika-ci/go-build\n' "$(ci_cache_root)"
   fi
+}
+
+# ci_fresh: true when task ci FRESH=1 is set (PAPRIKA_CI_FRESH is 1, true or yes, in any case). A fresh run gives the
+# go-test job no cached test results, and resets the job worktrees without keeping their caches (run.sh).
+ci_fresh() {
+  case "$(printf '%s' "${PAPRIKA_CI_FRESH:-}" | tr '[:upper:]' '[:lower:]')" in
+    1 | true | yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# ci_trim_go_cache: deletes the Go build cache entry files (names ending in -a or -d) that were not modified for more
+# than PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS days (default 3), and logs how many. Other files in the cache directory are left
+# alone. Deleting an entry only costs a rebuild. run.sh calls this only while it holds the run lock.
+ci_trim_go_cache() {
+  local dir max_age deleted
+  dir=$(ci_go_cache_dir)
+  max_age=${PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS:-3}
+  case "$max_age" in
+    '' | *[!0-9]*) ci_die "PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS must be a whole number of days, not '$max_age'" ;;
+  esac
+  [ -d "$dir" ] || return 0
+  deleted=$(find "$dir" -type f \( -name '*-a' -o -name '*-d' \) -mtime +"$max_age" -print -delete 2>/dev/null | wc -l | tr -d ' ') || true
+  ci_log "go build cache $dir: deleted ${deleted:-0} entry files not used for more than $max_age days"
+}
+
+# ci_npm_ci <dir>: installs the locked dependencies of one package directory of the snapshot. The job's npm user
+# config is the job's own (ci_export_job_env), so no developer ~/.npmrc applies.
+ci_npm_ci() {
+  (cd "$1" && npm ci --no-audit --no-fund)
 }
 
 ci_export_job_env() {
@@ -261,7 +302,13 @@ ci_export_job_env() {
   export TZ=UTC CI=true
   # Go: no flags from the environment, the ci.yml toolchain pin unless a job sets GOTOOLCHAIN itself, and
   # an empty go env file so no developer GOENV settings apply.
-  export GOFLAGS='' GOTOOLCHAIN="go$CI_GO_VERSION"
+  # A fresh run (ci_fresh) gives go-test -count=1, so no test result is reused from the cache.
+  if ci_fresh && [ "$CI_JOB" = go-test ]; then
+    export GOFLAGS=-count=1
+  else
+    export GOFLAGS=
+  fi
+  export GOTOOLCHAIN="go$CI_GO_VERSION"
   export GOENV="$tmp/goenv"
   : >"$GOENV"
   # Go build cache: one that only local CI uses, so a go clean or cache cleanup elsewhere on the machine cannot remove

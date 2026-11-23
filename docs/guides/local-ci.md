@@ -9,7 +9,8 @@ because the local job definitions mirror them and the contract tests in `interna
 
 | Command | What it does |
 | --- | --- |
-| `task ci` | Runs all 13 ci.yml jobs for `HEAD`, in a fresh detached worktree of that commit. |
+| `task ci` | Runs all 13 ci.yml jobs for `HEAD`, each in a detached worktree of that commit (see Job worktrees below). |
+| `task ci FRESH=1` | As `task ci`, and `go-test` runs without cached test results (`-count=1`). The job worktrees are also rebuilt without their kept caches (see below). |
 | `task ci -- --jobs ui,go-lint` | Runs selected jobs and merges their results into the stamp. |
 | `task ci:job JOB=chart` | Runs one job. |
 | `task ci -- --rerun-failed` | Runs only jobs that are not passing in the stamp for this tree. A waived `fleet-scale` is not passing for this purpose, so it runs again and its waiver is recomputed against the current `origin/master`. |
@@ -20,9 +21,54 @@ because the local job definitions mirror them and the contract tests in `interna
 | `task hooks:install` | Sets `core.hooksPath` to `.githooks` and checks that the hooks are executable. |
 | `task deploy` | Builds, pushes and deploys `master` to the VKE `paprika-e2e` namespace. See below. |
 
-Every run checks out the commit into its own temporary worktree, so uncommitted files cannot pass a check.
+Every job checks out the commit into its own detached worktree, so uncommitted files cannot pass a check.
 A dirty tree is refused. `task ci -- --allow-dirty` produces a report for the tracked changes, but it never
 writes a stamp.
+
+## Job worktrees and caches
+
+Each job's worktree is kept at a stable path under the cache root: `<cache root>/paprika-ci/jobs/<job>`. The cache
+root is `~/Library/Caches` on macOS and `$XDG_CACHE_HOME` (or `~/.cache`) elsewhere; `PAPRIKA_CI_CACHE_ROOT` changes it.
+The path is stable because Go reuses its build and test results only for a package built at the same path, so a
+worktree created afresh for every run would make every run cold.
+
+Before each run, a job's worktree is reset to the commit. Git removes every untracked and ignored file except two caches
+the jobs keep: `ui/.next/cache` (the Next.js cache) and `bin/k8s` (the envtest assets). Ignored files such as
+`ui/node_modules` are removed too, so `npm ci` installs them again on every run. A reset that leaves anything else
+behind fails the run, with the paths listed.
+
+The check after the reset verifies three things: no tracked file differs from the commit; no untracked or ignored file
+is left that a clean would remove, apart from the two kept caches; and no file carries an index flag. The check does not
+look inside the kept caches. A worktree that git cannot reset (for example, an assume-unchanged file blocks checkout),
+that is not a registered worktree of this repository, or that has a skip-worktree or assume-unchanged flag on any file, is
+rebuilt at the same path before the check. A flagged file keeps its content through the checkout while `git status`
+shows nothing for it, so a flag would otherwise hide a stale file.
+
+The job worktrees stay registered, so they appear in `git worktree list` between runs. The run's own directory
+(logs collected for the run, temporary files) is removed when the run ends.
+
+**The lock.** The stable worktrees are shared by every run that uses the same cache root, so one run at a time owns them.
+The lock is an advisory `flock` on `<cache root>/paprika-ci/jobs/.run.lock`. `run.sh` holds it through an open file
+descriptor (fd 9) for the whole run, and each job inherits that descriptor. The kernel releases the lock when the last of
+those processes exits, so it is released however the run ends, including a crash or SIGKILL, and no pid file can go
+stale. A background process that a job leaves running keeps the lock until it exits. A second run that finds the lock
+held does not wait: it uses per-run job worktrees, which are removed at its end, its caches are not reused, and it skips
+the Go cache trim. The log says so. A leftover `.run.lock` file with no holder does not block a run.
+
+**`FRESH=1`.** `task ci FRESH=1` sets `PAPRIKA_CI_FRESH`, and the values `1`, `true` and `yes` (in any case) all count.
+A fresh run gives `go-test` `GOFLAGS=-count=1`, so no test result is taken from the cache, and it resets every job
+worktree without keeping `ui/.next/cache` or `bin/k8s`, so those are rebuilt. The Go build cache for compiled packages is still used.
+
+**The Go build cache.** The cache is `<cache root>/paprika-ci/go-build`, or `PAPRIKA_CI_GOCACHE`. Only the run that holds the
+lock trims it, once per run and before the jobs start. The trim deletes the cache entry files (names ending in `-a` or
+`-d`) that were not modified for more than `PAPRIKA_CI_GOCACHE_MAX_AGE_DAYS` days (default 3), and logs how many. Other
+files in the directory are left alone. Deleting an entry only costs a rebuild. To clear everything, remove
+`<cache root>/paprika-ci` while no run is in progress.
+
+**Cached test results.** The `go-test` job logs how many packages reused a cached result:
+`go-test: N package(s) reused cached results; run task ci FRESH=1 to rerun all`. The count comes from the job's log.
+Locally, a test that needs Docker skips when Docker is missing, but with `CI=true` (set for every local job, as on GitHub)
+it fails instead. Go caches a skip as a pass, so a skip could otherwise be reused on a machine where Docker is present.
 
 Jobs run three at a time (`--parallel N` or `PAPRIKA_CI_PARALLEL` changes it). The Docker jobs
 (`application-records`, `fleet-scale`, `cluster-integration`) run one after another at the end. The CPU-heavy jobs
@@ -58,9 +104,9 @@ A job's environment is an allowlist, not the developer's shell. The names that r
 - cache and client settings: `GOCACHE`, `GOMODCACHE`, `GOPATH`, `DOCKER_CONFIG` (a private copy, see Deploy);
 - the self-test knobs `PAPRIKA_CI_SELFTEST_*`, only under the self-test gate.
 
-The runner then sets `TZ=UTC`, `CI=true`, `GOFLAGS` empty, `GOTOOLCHAIN` to the ci.yml Go version (a job that sets
-`GOTOOLCHAIN=auto` in ci.yml sets it itself), an empty `GOENV` file, a Go build cache of its own
-(`~/Library/Caches/paprika-ci/go-build` on macOS, `~/.cache/paprika-ci/go-build` elsewhere, or `PAPRIKA_CI_GOCACHE`;
+The runner then sets `TZ=UTC`, `CI=true`, `GOFLAGS` empty (`-count=1` for `go-test` under `FRESH=1`), `GOTOOLCHAIN` to the
+ci.yml Go version (a job that sets `GOTOOLCHAIN=auto` in ci.yml sets it itself), an empty `GOENV` file, a Go build cache of its own
+(`<cache root>/paprika-ci/go-build`, see Job worktrees above, or `PAPRIKA_CI_GOCACHE`;
 a `go clean -cache` or a cache cleanup elsewhere on the machine cannot remove entries mid-build), an empty
 `npm_config_userconfig`,
 `DOCKER_CONTEXT` to the developer's default Docker context, and an empty kubeconfig. Every other variable is removed,
@@ -79,8 +125,8 @@ is listed when it starts and is stopped with the job, and the job's cleanup wait
 ### Interrupts
 
 Ctrl-C (or a TERM to `run.sh`) stops every job and its children. Each job then runs its cleanup (`docker rm`
-for PostgreSQL, `kind delete cluster`) before it exits, and `run.sh` removes the job worktrees only after all
-jobs have exited. Two variables tune this:
+for PostgreSQL, `kind delete cluster`) before it exits, and `run.sh` removes the run's directory and releases the job
+lock only after all jobs have exited (the lock is released when the last of their processes ends). The stable job worktrees stay for the next run. Two variables tune this:
 
 - `PAPRIKA_CI_INTERRUPT_WAIT` (default 180 s): how long `run.sh` waits for jobs to finish cleanup before it kills them.
 - `PAPRIKA_CI_KILL_AFTER` (default 120 s): how long a stopped job gets before its process group is killed.

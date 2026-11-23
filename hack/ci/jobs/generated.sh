@@ -23,7 +23,7 @@ export PATH="$GOBIN:$PATH"
 # ci.yml: Set up Node.js (22) -> PATH carries the Node 22 install (hack/ci/lib.sh).
 
 # ci.yml: Install UI protobuf plugins
-(cd ui && npm ci)
+ci_npm_ci ui
 
 # ci.yml: Install Go protobuf plugins
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
