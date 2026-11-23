@@ -84,7 +84,8 @@ func TestDashboardAPIAndMCPShareProviderQueries(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/query_range":
 			rangeCalls.Add(1)
-			require.Equal(t, "15.5", r.URL.Query().Get("step"))
+			// The request asks for 15.5 s; the provider's one-minute minimum step raises it.
+			require.Equal(t, "60", r.URL.Query().Get("step"))
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1792886400,"2.50"]]}]}}`))
 		case "/api/v1/query":
 			instantCalls.Add(1)

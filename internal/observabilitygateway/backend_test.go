@@ -82,6 +82,34 @@ func TestListProvidersMapsCRs(t *testing.T) {
 	require.Empty(t, loki.Reason)
 }
 
+// TestListProvidersReportsTheDeclaredMinimumStep publishes the finest step a
+// CR declares, and nothing for a CR that declares none or whose connector takes
+// no step.
+func TestListProvidersReportsTheDeclaredMinimumStep(t *testing.T) {
+	t.Parallel()
+
+	withConfig := func(config string) func(*observabilityv1alpha1.ObservabilityProvider) {
+		return func(cr *observabilityv1alpha1.ObservabilityProvider) {
+			cr.Spec.Config = runtime.RawExtension{Raw: []byte(config)}
+		}
+	}
+	cl := fake.NewClientBuilder().WithScheme(newBackendScheme(t)).WithObjects(
+		providerCR("obs", "declared", connector.ProviderPrometheus, withConfig(`{"endpoint":"https://prom.example.com","step":"30s"}`)),
+		providerCR("obs", "undeclared", connector.ProviderPrometheus, withConfig(`{"endpoint":"https://prom.example.com"}`)),
+		providerCR("obs", "no-step-connector", connector.ProviderLoki, withConfig(`{"endpoint":"https://loki.example.com"}`)),
+	).Build()
+
+	infos, err := NewBackend(cl).ListProviders(context.Background())
+	require.NoError(t, err)
+	byName := make(map[string]ProviderInfo, len(infos))
+	for _, info := range infos {
+		byName[info.Name] = info
+	}
+	require.Equal(t, 30.0, byName["obs/declared"].MinStepSeconds)
+	require.Zero(t, byName["obs/undeclared"].MinStepSeconds)
+	require.Zero(t, byName["obs/no-step-connector"].MinStepSeconds)
+}
+
 func TestListProvidersEmpty(t *testing.T) {
 	t.Parallel()
 

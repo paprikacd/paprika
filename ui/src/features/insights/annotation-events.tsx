@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { z } from "zod"
 import type { QueryResult, Widget } from "./schema"
 import { queryIdentity, type QueryFetcher } from "./query"
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step"
 
 type AnnotationSource = NonNullable<Widget["annotationSource"]>
 export type RecordedEvent = { timestamp: string; endTimestamp?: string; label: string; severity?: "info" | "warning" | "critical" }
@@ -54,7 +55,7 @@ export function useRecordedEvents(source: AnnotationSource | undefined, fetcher:
   const sourceKey = JSON.stringify([source, providerId, start, end])
   const prepared = useMemo(() => {
     const [selected, provider, from, to] = JSON.parse(sourceKey) as [AnnotationSource | null, string, number, number]
-    return selected ? { selected, request: { providerId: provider, query: "event query", kind: "records" as const, queryRef: selected.queryRef, start: from, end: to, step: Math.max(1, Math.ceil((to - from) / 300)) } } : undefined
+    return selected ? { selected, request: { providerId: provider, query: "event query", kind: "records" as const, queryRef: selected.queryRef, start: from, end: to, step: queryStep(to - from, DEFAULT_TARGET_POINTS) } } : undefined
   }, [sourceKey])
   const identity = prepared ? queryIdentity(prepared.request, fetcher) : undefined
   // Both the resolved records request and the source's column mapping own the

@@ -94,7 +94,7 @@ function Host({
       providers={providers}
       start={0}
       end={10}
-      step={1}
+     
     >
       <WidgetDrilldownProvider open={onDrilldown}><WidgetVisualization
         widget={value}

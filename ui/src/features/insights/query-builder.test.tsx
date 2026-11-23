@@ -301,6 +301,21 @@ describe("query editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use generated query" }))
     expect(onChange).toHaveBeenCalledWith("up")
   })
+  it("previews at the provider's minimum step", async () => {
+    const fetcher = vi.fn<(request: QueryRequest, signal: AbortSignal) => Promise<QueryResult>>(() => new Promise<QueryResult>(() => {}))
+    render(
+      <QueryBuilder
+        widget={widget}
+        provider={{ id: "prod", name: "Shared metrics", type: "prometheus", capabilities: ["metrics"], minStepSeconds: 15 }}
+        onChange={vi.fn()}
+        range={{ start: 100, end: 700 }}
+        queryFetcher={fetcher}
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    // A 600 s range asks for 2 s on the shared policy; the provider minimum raises it to 15 s.
+    expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ step: 15 }), expect.any(AbortSignal))
+  })
   it("runs explicit range-bounded previews and ignores results for an edited query", async () => {
     let resolve!: (value: QueryResult) => void
     const fetcher = vi.fn<

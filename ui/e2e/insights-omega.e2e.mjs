@@ -8,6 +8,7 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
+import { plannedStep } from "./query-step.mjs";
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const configFile = process.env.INSIGHTS_OMEGA_CONFIG
@@ -42,7 +43,7 @@ const end = config.range?.to ? Date.parse(config.range.to) : Math.floor(Date.now
 const start = config.range?.from ? Date.parse(config.range.from) : end - (config.rangeMinutes ?? 60) * 60_000
 assert.ok(Number.isFinite(start) && Number.isFinite(end) && end > start && end - start <= 31 * 86_400_000, "Range must be an increasing interval of at most 31 days")
 const fixedRange = { from: new Date(start).toISOString(), to: new Date(end).toISOString() }
-const step = Math.max(1, Math.ceil((end - start) / 1000 / 300))
+const step = plannedStep((end - start) / 1000)
 const metricTitle = "Selected service"
 const traceTitle = "Recent service traces"
 const reports = [], pageErrors = [], queryResponses = []

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 
 import { assertNoLegacyDataTools, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
+import { plannedStep } from "./query-step.mjs";
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 assert.ok(process.env.INSIGHTS_OMEGA_AUTHORING_CONFIG, "Set INSIGHTS_OMEGA_AUTHORING_CONFIG to a private JSON file")
@@ -36,7 +37,7 @@ const end = config.range?.to ? Date.parse(config.range.to) : Math.floor(Date.now
 const start = config.range?.from ? Date.parse(config.range.from) : end - (config.rangeMinutes ?? 60) * 60_000
 assert.ok(Number.isFinite(start) && Number.isFinite(end) && end > start && end - start <= 31 * 86_400_000)
 const fixedRange = { from: new Date(start).toISOString(), to: new Date(end).toISOString() }
-const step = Math.max(1, Math.ceil((end - start) / 1000 / 300))
+const step = plannedStep((end - start) / 1000)
 const unit = config.unit ?? "", template = config.metricTemplate
 const title = config.title ?? `Omega MCP authoring ${runId}`
 const reports = [], pageErrors = [], responses = [], documents = [], versions = []

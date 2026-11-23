@@ -19,6 +19,9 @@ type ProviderConfig struct {
 	URL            string            `json:"url"`
 	BearerTokenEnv string            `json:"bearerTokenEnv,omitempty"`
 	HeadersEnv     map[string]string `json:"headersEnv,omitempty"`
+	// MinStepSeconds is the finest range-query step the provider can serve, in
+	// (0, 3600] seconds. It is absent to take the provider type's default.
+	MinStepSeconds float64 `json:"minStepSeconds,omitempty"`
 }
 
 type Provider struct {
@@ -36,6 +39,10 @@ type Provider struct {
 	// the closed connector states. It is informational: a query is never refused
 	// on it, because the verdict can be up to a probe interval old.
 	State string `json:"state,omitempty"`
+	// MinStepSeconds is the lowest metrics step Insights sends to this provider.
+	// Finer requested steps are raised to it. It is absent when the provider
+	// takes no step.
+	MinStepSeconds float64 `json:"minStepSeconds,omitempty"`
 }
 
 // UnsupportedProvider is a shared provider that the gateway catalog lists but

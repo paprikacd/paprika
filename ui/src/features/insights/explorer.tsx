@@ -48,6 +48,7 @@ import { GammaConfirmation, useConfirmation } from "./gamma/confirmation";
 import { providerOption, QuerySourceIcon } from "./source-identity";
 import { savedQueryOption } from "./saved-query-presentation";
 import { SavedQueryDetailsEditor } from "./saved-query-details-editor";
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 import styles from "./explorer.module.css";
 
 interface ParameterDraft {
@@ -499,7 +500,7 @@ export function Explorer({
           kind: query.kind,
           query: resolved.query,
           ...range,
-          step: Math.max(1, Math.ceil((range.end - range.start) / 300)),
+          step: queryStep(range.end - range.start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds),
         },
         request.signal,
       );

@@ -28,6 +28,7 @@ import {
 import { resolveSavedQueryReference } from "./saved-queries";
 import { sourceWaitMessage, useSourceStatus, type SourceStatus } from "./source-status";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 
 export type TooltipQuerySource = Extract<
   NonNullable<TooltipView["source"]>,
@@ -38,7 +39,6 @@ export interface TooltipQueryEnvironment {
   providers: Provider[];
   start: number;
   end: number;
-  step: number;
   /** Absent means the source list is loaded. */
   sourceStatus?: SourceStatus;
 }
@@ -51,13 +51,12 @@ export function TooltipQueryProvider({
   providers,
   start,
   end,
-  step,
 }: Omit<TooltipQueryEnvironment, "sourceStatus"> & { children: ReactNode }) {
   useEffect(() => installTooltipPointerTracking(), []);
   const sourceStatus = useSourceStatus();
   const value = useMemo(
-    () => ({ fetcher, providers, start, end, step, sourceStatus }),
-    [fetcher, providers, start, end, step, sourceStatus],
+    () => ({ fetcher, providers, start, end, sourceStatus }),
+    [fetcher, providers, start, end, sourceStatus],
   );
   return <Environment.Provider value={value}>{children}</Environment.Provider>;
 }
@@ -107,12 +106,9 @@ export function buildTooltipRequest(
       `The tooltip data source does not support ${kind}. Choose a compatible data source in the widget editor.`,
     );
   if (
-    ![environment.start, environment.end, environment.step].every(
-      Number.isFinite,
-    ) ||
+    ![environment.start, environment.end].every(Number.isFinite) ||
     environment.end <= environment.start ||
-    environment.end - environment.start > 31 * 86400 ||
-    environment.step <= 0
+    environment.end - environment.start > 31 * 86400
   )
     throw new Error(
       "The dashboard time range is unavailable for this tooltip query.",
@@ -123,7 +119,7 @@ export function buildTooltipRequest(
     kind,
     start: environment.start,
     end: environment.end,
-    step: environment.step,
+    step: queryStep(environment.end - environment.start, DEFAULT_TARGET_POINTS, provider.minStepSeconds),
   };
 }
 

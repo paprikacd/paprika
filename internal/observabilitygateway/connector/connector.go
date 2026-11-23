@@ -282,6 +282,17 @@ type ExploreResult struct {
 	Data   json.RawMessage
 }
 
+// MinStepper is implemented by connectors whose range queries take a step and
+// whose configuration can declare the finest step the backend should be asked
+// for. MinStep reports that declared minimum from a configuration document. It
+// returns false when the configuration declares none, and it never fails: a
+// configuration that does not parse is reported as having no minimum, because
+// the connector's own validation rejects it on the query path.
+type MinStepper interface {
+	Connector
+	MinStep(config json.RawMessage) (time.Duration, bool)
+}
+
 // Explorer is implemented by connectors that can enumerate their backend's
 // schema — what metrics, labels, label values, metadata or services exist —
 // so callers can work out what to query before writing the query. It is an

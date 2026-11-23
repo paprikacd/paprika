@@ -21,7 +21,7 @@ const providers: Provider[] = [
   },
   { id: "tempo", name: "Traces", type: "tempo", capabilities: ["traces"] },
 ];
-const bounds = { start: 1000, end: 2000, step: 15 };
+const bounds = { start: 1000, end: 2000 };
 const source: TooltipQuerySource = {
   type: "query",
   providerId: "prom",
@@ -50,6 +50,12 @@ afterEach(() => {
 });
 
 describe("tooltip query binding", () => {
+  it("never steps a tooltip finer than its provider's minimum", () => {
+    const floored = [{ ...providers[0], minStepSeconds: 15 }, providers[1]];
+    const request = buildTooltipRequest(source, series, "metrics", { ...bounds, providers: floored });
+    expect(request.step).toBe(15);
+  });
+
   it("inserts a label exactly once as a quoted literal, retaining quotes, slashes, newlines and template-looking text", () => {
     const value = 'checkout"blue\\west\n{{text}}';
     const request = buildTooltipRequest(
@@ -62,6 +68,8 @@ describe("tooltip query binding", () => {
       ...bounds,
       providerId: "prom",
       kind: "metrics",
+      // A 1000 s span with no provider minimum takes the 5 s rung of the shared step policy.
+      step: 5,
       query: `rate(requests_total{service=${JSON.stringify(value)}}[5m])`,
     });
     expect(

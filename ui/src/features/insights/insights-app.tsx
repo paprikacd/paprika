@@ -1022,7 +1022,8 @@ export default function InsightsApp({
       const definition = resolveSavedQueryReference(request.queryRef, savedQueries, request.variables, saved.kind)
       if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
         throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
-      return scheduledFetcher({ ...definition, start: request.start, end: request.end, step: sourceQueryStep(request.start, request.end) }, signal)
+      const minStepSeconds = providers.find(provider => provider.id === definition.providerId)?.minStepSeconds
+      return scheduledFetcher({ ...definition, start: request.start, end: request.end, step: sourceQueryStep(request.start, request.end, minStepSeconds) }, signal)
     },
   }), [client, activeExample, scheduledFetcher, savedQueries, queriesLoading, queriesError, providers, principal])
   // The variable editor reads providers, label names and saved queries; its preview runs the same loaders as the bar.

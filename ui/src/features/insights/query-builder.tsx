@@ -19,6 +19,7 @@ import { MetricInspector } from "./metric-inspector"
 import { QueryCodeEditor } from "./query-code-editor"
 import { providerQueryLanguage, queryLanguageNames, type QueryEditorParameter } from "./query-editor-language"
 import { assertProviderQueryTemplate } from "./provider-query-template"
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step"
 import styles from "./query-builder.module.css"
 
 export interface GuidedQuery {
@@ -557,7 +558,7 @@ export function QueryBuilder({
           query: widget.query,
           start,
           end,
-          step: Math.max(1, Math.ceil((end - start) / 300)),
+          step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds),
         },
         controller.signal,
       )

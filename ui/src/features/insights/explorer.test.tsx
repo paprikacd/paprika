@@ -123,6 +123,15 @@ function deferred<T>() {
 }
 
 describe("Explore query workspace", () => {
+  it("runs a metrics query at the provider's minimum step", async () => {
+    const api = client()
+    render(<Explorer client={api} providers={[{ id: "prom", name: "Metrics", type: "prometheus", capabilities: ["metrics"], minStepSeconds: 15 }]} queries={[]} onQueriesChange={vi.fn()} onUse={vi.fn()} onClose={vi.fn()} />)
+    edit("PromQL query", "up")
+    fireEvent.click(screen.getByRole("button", { name: "Run query" }))
+    await waitFor(() => expect(api.query).toHaveBeenCalled())
+    // A one-hour default range asks for 10 s on the shared policy; the minimum raises it to 15 s.
+    expect(vi.mocked(api.query).mock.calls[0][0]).toMatchObject({ kind: "metrics", step: 15 })
+  })
   it("requires explicit result columns for record chart previews without requerying the provider", async () => {
     const api = client()
     vi.mocked(api.query).mockResolvedValue({ records: { columns: [{ key: "service", type: "string" }, { key: "count", type: "number" }], rows: [["api", 10]], truncated: true } })

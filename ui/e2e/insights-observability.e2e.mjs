@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
+import { plannedStep } from "./query-step.mjs";
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-observe-e2e-"))
@@ -87,7 +88,7 @@ async function showServiceTooltip(service, width, theme) {
   assert.equal(await tooltip.locator("[data-stat-sparkline]").getAttribute("data-sample-count"), "4")
   const calls = assertObserveREST(await readObserveProtocol(fixture.baseURL), ["/observe/api/query"])
   const query = `${template.replace("{{service}}", JSON.stringify(service))} * 2`
-  const args = assertMetricCall(calls, { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 12 })
+  const args = assertMetricCall(calls, { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: plannedStep((Date.parse(fixedRange.to) - Date.parse(fixedRange.from)) / 1000) })
   await page.screenshot({ path: join(output, `tooltip-${theme.toLowerCase()}-${width}.png`), fullPage: false })
   await page.keyboard.press("Escape"); await tooltip.waitFor({ state: "hidden" })
   return { value: expected, samples: 4, hoveredService: service, restBody: args }

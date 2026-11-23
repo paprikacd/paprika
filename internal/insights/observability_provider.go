@@ -55,6 +55,9 @@ type observeCatalogProvider struct {
 	// State is the gateway's closed verdict for the provider's last probe. The
 	// gateway's reason text is deliberately not decoded.
 	State string `json:"state"`
+	// MinStepSeconds is the gateway's declared finest step, absent when none is
+	// declared. Insights uses the provider type's default in that case.
+	MinStepSeconds float64 `json:"minStepSeconds,omitempty"`
 }
 
 type observeResponse struct {
@@ -437,7 +440,8 @@ var observeTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 func validObserveCatalogProvider(p observeCatalogProvider) bool {
 	parts := strings.Split(p.Name, "/")
-	return len(parts) == 2 && parts[0] == p.Namespace && parts[0] != "" && parts[1] != "" && len(p.Name) <= 320 && !strings.ContainsAny(p.Name, "\r\n\x00") && observeTypePattern.MatchString(p.Type)
+	return len(parts) == 2 && parts[0] == p.Namespace && parts[0] != "" && parts[1] != "" && len(p.Name) <= 320 && !strings.ContainsAny(p.Name, "\r\n\x00") && observeTypePattern.MatchString(p.Type) &&
+		(p.MinStepSeconds == 0 || validMinStepSeconds(p.MinStepSeconds))
 }
 
 func setObserveMetadataKind(input *observeRESTExplore, path string) error {

@@ -31,7 +31,7 @@ import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
 import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
 import { fullDateTimeOptions, latestPoint } from "./chart-data";
-import { priorWindowQuery, statComparison, type ObservationWindow, type StatComparison } from "./time-window";
+import { priorWindowQuery, refineWindowQuery, statComparison, type ObservationWindow, type StatComparison } from "./time-window";
 import { StatComparisonContext, type StatComparisonState } from "./stat-comparison";
 import { truncationOf } from "./truncation";
 import { TraceFetcherProvider } from "./trace-waterfall";
@@ -53,6 +53,7 @@ import {
   widgetContexts,
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
 import {
@@ -153,12 +154,14 @@ interface PairedChange { outcome?: StatComparison; error?: string }
  * stays, since it matches the reading still on screen. Once the displayed result has settled, a change waits for its own
  * earlier window: that gap is the only time the chip shows its loading slot.
  */
-function StatComparisonScope({ widget, compare, fetcher, start, end, enabled, debounceMs, retention, primary, primarySettled, children }: {
+function StatComparisonScope({ widget, compare, fetcher, start, end, minStepSeconds, enabled, debounceMs, retention, primary, primarySettled, children }: {
   widget: Widget;
   compare: NonNullable<NonNullable<Widget["options"]>["compare"]>;
   fetcher: Fetcher;
   start: number;
   end: number;
+  /** The provider's finest step; the earlier window keeps the primary query's step rule. */
+  minStepSeconds?: number;
   /** Whether the tile may query at all. */
   enabled: boolean;
   debounceMs: number;
@@ -170,7 +173,7 @@ function StatComparisonScope({ widget, compare, fetcher, start, end, enabled, de
   children: ReactNode;
 }) {
   const rangeMs = useMemo(() => ({ start: start * 1000, end: end * 1000 }), [start, end]);
-  const earlier = priorWindowQuery(rangeMs, compare.window);
+  const earlier = priorWindowQuery(rangeMs, compare.window, minStepSeconds);
   const earlierReady = !("unavailable" in earlier);
   // Nothing to compare with until the displayed result has a sample, so an empty stat asks for no earlier window (Go agrees).
   const hasSample = !!primary?.series?.some(entry => latestPoint(entry));
@@ -179,7 +182,7 @@ function StatComparisonScope({ widget, compare, fetcher, start, end, enabled, de
     fetcher,
     start: earlierReady ? earlier.start : start,
     end: earlierReady ? earlier.end : end,
-    step: earlierReady ? earlier.step : Math.max(1, Math.ceil((end - start) / 300)),
+    step: earlierReady ? earlier.step : queryStep(end - start, DEFAULT_TARGET_POINTS, minStepSeconds),
     enabled: enabled && earlierNeeded && !!primary,
     debounceMs,
     retention,
@@ -330,7 +333,7 @@ const Tile = memo(function Tile({
     fetcher,
     start,
     end,
-    step: Math.max(1, Math.ceil((end - start) / 300)),
+    step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds),
     enabled: active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
     retention: memoryOf.retention,
@@ -343,17 +346,29 @@ const Tile = memo(function Tile({
   const annotationState = widget.annotationSource && library.error ? { events: [], error: library.error } : annotationData;
   const fetchTrace = useCallback((traceId: string, signal: AbortSignal) => fetcher({
     providerId: widget.providerId, query: widget.query, kind: "traces", start, end,
-    step: Math.max(1, Math.ceil((end - start) / 300)), traceId,
+    step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds), traceId,
     ...(widget.queryRef ? { queryRef: widget.queryRef } : {}),
-  }, signal), [fetcher, widget.providerId, widget.query, widget.queryRef, start, end]);
+  }, signal), [fetcher, widget.providerId, widget.query, widget.queryRef, provider?.minStepSeconds, start, end]);
   const previous = useCallback((window: ObservationWindow, signal: AbortSignal) => {
-    const range = priorWindowQuery(window, "previous");
+    const range = priorWindowQuery(window, "previous", provider?.minStepSeconds);
     if ("unavailable" in range)
       return Promise.reject(new Error("Choose a window from one second up to 31 days with an available previous period."));
     return fetcher({ providerId: widget.providerId, query: widget.query, kind: "metrics",
       start: range.start, end: range.end, step: range.step, ...(widget.queryRef ? { queryRef: widget.queryRef } : {}) }, signal);
-  }, [fetcher, widget.providerId, widget.query, widget.queryRef]);
-  const windowActions = useMemo(() => ({ apply: editing ? undefined : onTimeRange, previous, rangeEnd: end * 1000 }), [editing, onTimeRange, previous, end]);
+  }, [fetcher, widget.providerId, widget.query, widget.queryRef, provider?.minStepSeconds]);
+  // A chart-local zoom re-queries at its own policy step. Only the chart that zoomed holds the result.
+  // A zoom whose own step is no finer than the dashboard's planned step gains nothing from a re-query, so it sends none and resolves
+  // with no series, which leaves the dashboard samples on screen.
+  const plannedStep = queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds);
+  const refine = useCallback((window: ObservationWindow, signal: AbortSignal) => {
+    const range = refineWindowQuery(window, provider?.minStepSeconds);
+    if (range.step >= plannedStep) return Promise.resolve({ series: [] });
+    return fetcher({ providerId: widget.providerId, query: widget.query, kind: "metrics",
+      start: range.start, end: range.end, step: range.step, ...(widget.queryRef ? { queryRef: widget.queryRef } : {}) }, signal);
+  }, [fetcher, widget.providerId, widget.query, widget.queryRef, provider?.minStepSeconds, plannedStep]);
+  // A provider that ignores its step would return the same samples for a finer window, so only one that publishes its minimum step can refine a zoom.
+  const refinable = provider?.minStepSeconds !== undefined;
+  const windowActions = useMemo(() => ({ apply: editing ? undefined : onTimeRange, previous, refine: refinable ? refine : undefined, minStepSeconds: provider?.minStepSeconds, rangeEnd: end * 1000 }), [editing, onTimeRange, previous, refine, refinable, provider?.minStepSeconds, end]);
   const compare = widget.type === "stat" ? widget.options?.compare : undefined;
   const connectionKey = queryConnectionKey(widget, { start, end });
   useEffect(() => {
@@ -747,6 +762,7 @@ const Tile = memo(function Tile({
               fetcher={fetcher}
               start={start}
               end={end}
+              minStepSeconds={provider?.minStepSeconds}
               enabled={active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider) && !error}
               debounceMs={editing && selected ? 350 : 0}
               retention={memoryOf.priorRetention}
@@ -1050,7 +1066,6 @@ export function DashboardCanvas({
       providers={providers}
       start={range.start}
       end={range.end}
-      step={Math.max(1, Math.ceil((range.end - range.start) / 300))}
     >
       {/* Above the measured canvas, so tile geometry stays relative to the anchor and the strip reserves its own height. */}
       {/* Not in focus mode: the workbench owns the top of the page, and the tiles it hides keep their last known state in the store. */}

@@ -1,7 +1,7 @@
 "use client";
 
 // The time-series renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
-import { memo, useCallback, useId, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useState } from "react";
 import { areaY } from "@tanstack/charts/area";
 import { crosshair } from "@tanstack/charts/crosshair";
 import { d3Curve } from "@tanstack/charts/d3/shape";
@@ -61,7 +61,7 @@ import { usePlotTooltip } from "./plot-tooltip";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
 import { widgetSeriesColors } from "./series-colors";
 import { displaySeriesNames, fallbackIdentityTitle } from "./series-display";
-import { alignPriorPeriod, formatWindowDuration, minimumTimeWindow, normalizeTimeWindow, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
+import { alignPriorPeriod, chartMinimumSpan, formatWindowDuration, normalizeTimeWindow, pairRefinedSeries, sameTimeWindow, seriesInWindow, timeWindowExtent, type ObservationWindow } from "./time-window";
 import { useTimeWindowBrush, type BrushPoint, type TimeBrushPreview } from "./chart-window-controls";
 import { TimeWindowLens } from "./time-window-lens";
 import { useTooltipWidgetData } from "./tooltip-widget-data";
@@ -161,6 +161,9 @@ function TimeBrushOverlay({ preview, top, bottom }: { preview: TimeBrushPreview 
  */
 const BREACH_BAND_LIMIT = 200;
 
+/** A zoom waits this long before it re-queries, so a drag that is still moving sends one request, not many. */
+const REFINE_DEBOUNCE_MS = 300;
+
 /**
  * The breach shading: one low-opacity band per breaching stretch, behind the plot. It is memoised on its own props, so a
  * cursor moving over another chart never reaches it.
@@ -201,11 +204,36 @@ export function TimeSeriesChart({
   const measureLabel = labelFamily ? (text: string) => measureBandLabel(text, labelFamily) : undefined;
   const [selection, setSelection] = useState<{ source: Series[]; window: ObservationWindow; previous?: QueryResult }>();
   // The full extent a drag or the Compare dialog may select from, and the narrowest window either may commit.
+  const { rangeEnd, refine, minStepSeconds } = useDashboardWindow();
   const extent = useMemo(() => timeWindowExtent(series), [series]);
-  const minimumSpan = useMemo(() => extent ? minimumTimeWindow(series, extent) : 1, [series, extent]);
+  // A zoom that can re-query may go as narrow as two provider steps, because it samples at its own finer step.
+  const minimumSpan = useMemo(() => extent ? chartMinimumSpan(extent, series, !!refine, minStepSeconds) : 1, [series, extent, refine, minStepSeconds]);
   // Query/variable changes must never reuse a range selected from another result.
   const zoom = selection?.source === series ? selection.window : undefined;
-  const visibleSeries = useMemo(() => zoom ? seriesInWindow(series, zoom) : series, [series, zoom]);
+  // The refinement sits beside the selection, so the overlay and the Compare dialog never drop it. It applies only to the
+  // zoom it was requested for, from this same result.
+  const [refinement, setRefinement] = useState<{ source: Series[]; window: ObservationWindow; state: "pending" | "ready" | "failed"; series?: Series[] }>();
+  const refinedFor = refinement && zoom && refinement.source === series && sameTimeWindow(refinement.window, zoom) ? refinement : undefined;
+  const refined = refinedFor?.state === "ready" ? refinedFor.series : undefined;
+  const refineFailed = refinedFor?.state === "failed";
+  // The refined result is paired to the dashboard series by identity, so the series count, order and colours never change with the zoom.
+  const visibleSeries = useMemo(() => zoom ? seriesInWindow(pairRefinedSeries(series, refined), zoom) : series, [series, zoom, refined]);
+  // A zoom re-queries once its drag settles. Changing the zoom, the result or the refine action aborts the request.
+  // Keyed on the bounds, not the selection object: an overlay or an equal re-zoom keeps the ready refinement and sends no second request.
+  const zoomStart = zoom?.start, zoomEnd = zoom?.end;
+  useEffect(() => {
+    if (zoomStart === undefined || zoomEnd === undefined || !refine) return;
+    const window = { start: zoomStart, end: zoomEnd };
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setRefinement({ source: series, window, state: "pending" });
+      refine(window, controller.signal).then(
+        (result) => { if (!controller.signal.aborted) setRefinement({ source: series, window, state: "ready", series: result.series ?? [] }); },
+        () => { if (!controller.signal.aborted) setRefinement({ source: series, window, state: "failed" }); },
+      );
+    }, REFINE_DEBOUNCE_MS);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [zoomStart, zoomEnd, series, refine]);
   const previousResult = selection?.previous;
   const prior = useMemo(() => zoom && previousResult ? alignPriorPeriod(series.slice(0, MAX_SERIES), previousResult.series ?? [], zoom) : [], [series, zoom, previousResult]);
   const emptyCurrent = !!zoom && !visibleSeries.slice(0, MAX_SERIES).some(entry => latestPoint(entry));
@@ -217,7 +245,6 @@ export function TimeSeriesChart({
   const timestampFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const { embedded, showAxis, descriptionId } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: embedded, anchor: ref });
-  const { rangeEnd } = useDashboardWindow();
   const truncated = useTooltipWidgetData()?.result.truncated;
   const associateDescription = useCallback(
     ({ svg }: { svg: SVGSVGElement }) => {
@@ -569,7 +596,9 @@ export function TimeSeriesChart({
   );
 
   return (
-    <div className={styles.chart} data-series-count={data.length} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
+    <div className={`${styles.chart}${refinedFor?.state === "pending" ? ` ${styles.refreshHost}` : ""}`} aria-busy={refinedFor?.state === "pending" || undefined} data-series-count={data.length} data-plotted-samples={data.reduce((count, entry) => count + entry.points.length, 0)} data-chart-window-start={zoom?.start} data-chart-window-end={zoom?.end} data-prior-overlay={previousData.length || undefined}>
+      {/* The crop stays on screen while the finer samples load, so the cue says a finer line is on its way. */}
+      {refinedFor?.state === "pending" && <span className={styles.refreshNotice}>Loading finer samples…</span>}
       <div
         className={`${styles.plot} ${chartEntrance.tanstackPlot}`}
         ref={ref}
@@ -634,6 +663,7 @@ export function TimeSeriesChart({
       </div>
       {(options.showLegend !== false || !embedded) && <div className={styles.chartFooter} data-chart-footer data-timeseries-footer role="group" aria-label="Chart legend and controls" tabIndex={previousData.length > 0 ? 0 : undefined}>
       {emptyCurrent && previousData.length > 0 && <span role="status" className={styles.notice}>No current observations in this window; the dashed lines show the preceding period.</span>}
+      {refineFailed && <span role="status" className={styles.notice}>Showing dashboard-resolution samples.</span>}
       {gapsHidden && <span className={styles.notice}>Gaps not shown: the provider result was truncated</span>}
       {intervalCount > 0 && <details className={styles.gapDetails} data-gap-intervals onKeyDown={(event) => {
         // Escape closes an open list and returns focus to its summary, so the keyboard user keeps their place.

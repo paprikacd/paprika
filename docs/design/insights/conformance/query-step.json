@@ -1,0 +1,319 @@
+{
+  "description": "Shared query step cases for the Insights and gateway step policy. Each case gives a range in seconds, a target point count, a minimum step in seconds (0 when none), and the expected step in seconds. Rules: the minimum is at least 1 s; the nearest ladder rung to range/target on a log scale is chosen (ties take the larger rung); if range/step exceeds 1.5 times the target, the next larger rung is used; the result is then raised to the minimum, which may be off the ladder; a range of zero or less yields the minimum.",
+  "ladderSeconds": [
+    1,
+    2,
+    5,
+    10,
+    15,
+    30,
+    60,
+    120,
+    300,
+    600,
+    900,
+    1800,
+    3600,
+    7200,
+    10800,
+    21600,
+    43200,
+    86400
+  ],
+  "cases": [
+    {
+      "name": "preset 15m no minimum",
+      "rangeSeconds": 900,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 2
+    },
+    {
+      "name": "preset 30m no minimum",
+      "rangeSeconds": 1800,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 5
+    },
+    {
+      "name": "preset 1h no minimum",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 10
+    },
+    {
+      "name": "preset 6h no minimum",
+      "rangeSeconds": 21600,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 60
+    },
+    {
+      "name": "preset 24h no minimum",
+      "rangeSeconds": 86400,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 300
+    },
+    {
+      "name": "preset 7d no minimum",
+      "rangeSeconds": 604800,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 1800
+    },
+    {
+      "name": "preset 30d no minimum",
+      "rangeSeconds": 2592000,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 7200
+    },
+    {
+      "name": "preset 15m 15s minimum",
+      "rangeSeconds": 900,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 15
+    },
+    {
+      "name": "preset 30m 15s minimum",
+      "rangeSeconds": 1800,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 15
+    },
+    {
+      "name": "preset 1h 15s minimum",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 15
+    },
+    {
+      "name": "preset 6h 15s minimum",
+      "rangeSeconds": 21600,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 60
+    },
+    {
+      "name": "preset 24h 15s minimum",
+      "rangeSeconds": 86400,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 300
+    },
+    {
+      "name": "preset 7d 15s minimum",
+      "rangeSeconds": 604800,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 1800
+    },
+    {
+      "name": "preset 30d 15s minimum",
+      "rangeSeconds": 2592000,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 7200
+    },
+    {
+      "name": "preset 1h 30s minimum (deephost-style)",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 30,
+      "step": 30
+    },
+    {
+      "name": "preset 15m 30s minimum",
+      "rangeSeconds": 900,
+      "targetPoints": 300,
+      "minStepSeconds": 30,
+      "step": 30
+    },
+    {
+      "name": "preset 1h 60s minimum",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 60,
+      "step": 60
+    },
+    {
+      "name": "preset 24h 60s minimum",
+      "rangeSeconds": 86400,
+      "targetPoints": 300,
+      "minStepSeconds": 60,
+      "step": 300
+    },
+    {
+      "name": "non-rung minimum 20s, 1h",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 20,
+      "step": 20
+    },
+    {
+      "name": "non-rung minimum 20s, 2h",
+      "rangeSeconds": 7200,
+      "targetPoints": 300,
+      "minStepSeconds": 20,
+      "step": 30
+    },
+    {
+      "name": "non-rung minimum 25s, 7d",
+      "rangeSeconds": 604800,
+      "targetPoints": 300,
+      "minStepSeconds": 25,
+      "step": 1800
+    },
+    {
+      "name": "minimum 1s, 1 minute",
+      "rangeSeconds": 60,
+      "targetPoints": 300,
+      "minStepSeconds": 1,
+      "step": 1
+    },
+    {
+      "name": "minimum 10s, 5 seconds",
+      "rangeSeconds": 5,
+      "targetPoints": 300,
+      "minStepSeconds": 10,
+      "step": 10
+    },
+    {
+      "name": "fractional minimum below 1 s, 90 second range",
+      "rangeSeconds": 90,
+      "targetPoints": 300,
+      "minStepSeconds": 0.5,
+      "step": 1
+    },
+    {
+      "name": "zero span falls back to minimum",
+      "rangeSeconds": 0,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 15
+    },
+    {
+      "name": "zero span no minimum",
+      "rangeSeconds": 0,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 1
+    },
+    {
+      "name": "overflow: raw 185 rounds down to 120, moves up to 300",
+      "rangeSeconds": 55500,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 300
+    },
+    {
+      "name": "overflow: raw 3.1 rounds down to 2, moves up to 5",
+      "rangeSeconds": 930,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 5
+    },
+    {
+      "name": "nearest rung kept when within 1.5x",
+      "rangeSeconds": 1470,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 5
+    },
+    {
+      "name": "7d with 2h zoom window",
+      "rangeSeconds": 7200,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 30
+    },
+    {
+      "name": "2h zoom window at 30s floor",
+      "rangeSeconds": 7200,
+      "targetPoints": 300,
+      "minStepSeconds": 30,
+      "step": 30
+    },
+    {
+      "name": "1h zoom window at 15s floor",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 15
+    },
+    {
+      "name": "1h range at target 300, no minimum",
+      "rangeSeconds": 3600,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 10
+    },
+    {
+      "name": "31 day span capped by ladder top rung",
+      "rangeSeconds": 2678400,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 10800
+    },
+    {
+      "name": "span above ladder top rung",
+      "rangeSeconds": 31536000,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 86400
+    },
+    {
+      "name": "minimum above ladder top rung",
+      "rangeSeconds": 100000,
+      "targetPoints": 300,
+      "minStepSeconds": 100000,
+      "step": 100000
+    },
+    {
+      "name": "tiny target points",
+      "rangeSeconds": 3600,
+      "targetPoints": 10,
+      "minStepSeconds": 0,
+      "step": 300
+    },
+    {
+      "name": "large target points",
+      "rangeSeconds": 3600,
+      "targetPoints": 3600,
+      "minStepSeconds": 0,
+      "step": 1
+    },
+    {
+      "name": "1h range, 150 target points, 15s minimum",
+      "rangeSeconds": 3600,
+      "targetPoints": 150,
+      "minStepSeconds": 15,
+      "step": 30
+    },
+    {
+      "name": "3h span, 15s minimum",
+      "rangeSeconds": 10800,
+      "targetPoints": 300,
+      "minStepSeconds": 15,
+      "step": 30
+    },
+    {
+      "name": "raw equal to a rung: 90000 s at 300 points",
+      "rangeSeconds": 90000,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 300
+    },
+    {
+      "name": "27000 s range at 300 points rounds to 120",
+      "rangeSeconds": 27000,
+      "targetPoints": 300,
+      "minStepSeconds": 0,
+      "step": 120
+    }
+  ]
+}

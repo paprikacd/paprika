@@ -281,8 +281,13 @@ describe("sourceQueryStep", () => {
   });
 
   it("keeps a one-hour source at a fine step and never below one second", () => {
-    expect(sourceQueryStep(0, 3600)).toBe(12);
+    expect(sourceQueryStep(0, 3600)).toBe(10);
     expect(sourceQueryStep(0, 10)).toBe(1);
+  });
+
+  it("never steps a source finer than its provider's minimum", () => {
+    expect(sourceQueryStep(0, 3600, 15)).toBe(15);
+    expect(sourceQueryStep(0, 3600, 30)).toBe(30);
   });
 });
 
