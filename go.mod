@@ -37,7 +37,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.0
-	github.com/open-feature/go-sdk v1.17.2
+	github.com/open-feature/go-sdk v1.20.0
 	github.com/open-policy-agent/opa v1.17.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/prometheus/client_golang v1.25.0
