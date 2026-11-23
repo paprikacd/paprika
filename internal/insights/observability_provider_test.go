@@ -71,7 +71,8 @@ func TestObserveProvidersCallerIsolationAndSavedQueryPersistence(t *testing.T) {
 			}
 			assert.False(t, query["provider"] != "team-a/metrics", "wrong query contract: %+v", query)
 			assert.False(t, r.URL.Path != "/query_metrics", "wrong query contract: %+v", query)
-			assert.False(t, query["stepSeconds"] != 1.25, "wrong query contract: %+v", query)
+			// The requested 1.25 s step is raised to the 15 s Prometheus minimum before it is forwarded.
+			assert.False(t, query["stepSeconds"] != float64(15), "wrong query contract: %+v", query)
 			assert.False(t, query["query"] != "up{service=\"api\"}", "wrong query contract: %+v", query)
 			assert.False(t, query["start"] != "2023-11-14T22:13:20.25Z", "wrong query contract: %+v", query)
 			assert.False(t, query["end"] != "2023-11-14T22:23:20.75Z", "wrong query contract: %+v", query)

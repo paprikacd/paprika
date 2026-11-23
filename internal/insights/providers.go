@@ -55,6 +55,25 @@ type providerClient struct {
 	metadataCache map[string]metadataCacheEntry
 }
 
+// defaultPrometheusMinStepSeconds is the finest metrics step Insights asks a
+// Prometheus provider for when its configuration names none. It is a common
+// scrape interval; a finer step only returns the same sample several times.
+const defaultPrometheusMinStepSeconds = 15
+
+// providerMinStepSeconds is the lowest metrics step Insights sends to a provider:
+// the configured minimum when there is one, otherwise the type's default. Only
+// Prometheus takes a step from the query today, so other types have none.
+func providerMinStepSeconds(providerType string, configured float64) float64 {
+	switch {
+	case configured > 0:
+		return configured
+	case providerType == "prometheus":
+		return defaultPrometheusMinStepSeconds
+	default:
+		return 0
+	}
+}
+
 func newProvider(config *ProviderConfig) (*providerClient, error) {
 	if err := validateProviderConfigBounds(config); err != nil {
 		return nil, err
@@ -82,7 +101,8 @@ func newProvider(config *ProviderConfig) (*providerClient, error) {
 	transport.MaxIdleConnsPerHost = 8
 	transport.ResponseHeaderTimeout = 15 * time.Second
 	return &providerClient{
-		public:  Provider{ID: config.ID, Name: config.Name, Type: config.Type, Capabilities: []string{capability}},
+		public: Provider{ID: config.ID, Name: config.Name, Type: config.Type, Capabilities: []string{capability},
+			MinStepSeconds: providerMinStepSeconds(config.Type, config.MinStepSeconds)},
 		baseURL: u, headers: headers,
 		metadataCache: make(map[string]metadataCacheEntry),
 		client: &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -121,10 +141,26 @@ func (p *providerClient) queryMeasured(ctx context.Context, q *Query, measuremen
 	if q.TraceID != "" && p.public.Type != "tempo" {
 		return QueryResult{}, errors.New("trace detail is not available for this provider type")
 	}
+	q = p.raiseToMinimumStep(q, measurement)
 	if p.remote != nil {
 		return p.queryRemote(ctx, q, measurement)
 	}
 	return p.queryLocal(ctx, q, measurement)
+}
+
+// raiseToMinimumStep returns the query to dispatch. A metrics step finer than
+// the provider's minimum is raised to it, so the provider never receives a finer
+// step than it can serve. A raised step is recorded on the measurement, which
+// the receipt reports as the effective step. The caller's query is not changed.
+func (p *providerClient) raiseToMinimumStep(q *Query, measurement *queryMeasurement) *Query {
+	minStep := p.public.MinStepSeconds
+	if q.Kind != "metrics" || minStep <= 0 || q.Step >= minStep {
+		return q
+	}
+	raised := *q
+	raised.Step = minStep
+	measurement.raiseStep(minStep)
+	return &raised
 }
 
 func (p *providerClient) queryRemote(ctx context.Context, q *Query, measurement *queryMeasurement) (QueryResult, error) {
@@ -545,8 +581,20 @@ func validateProviderConfigBounds(config *ProviderConfig) error {
 	if len(config.URL) > 2048 || len(config.BearerTokenEnv) > 128 || len(config.HeadersEnv) > 16 {
 		return errors.New("provider configuration exceeds field limits")
 	}
+	if config.MinStepSeconds != 0 && !validMinStepSeconds(config.MinStepSeconds) {
+		return errors.New("provider minStepSeconds must be greater than 0 and at most 3600")
+	}
 	return nil
 }
+
+// validMinStepSeconds reports whether a configured minimum step is in (0, 3600].
+func validMinStepSeconds(seconds float64) bool {
+	return finite(seconds) && seconds > 0 && seconds <= maxMinStepSeconds
+}
+
+// maxMinStepSeconds bounds a provider's minimum step to one hour, the coarsest
+// step the gateway accepts for a Prometheus configuration.
+const maxMinStepSeconds = 3600
 
 func validProviderBaseURL(u *url.URL) bool {
 	return u.Hostname() != "" && (u.Scheme == "http" || u.Scheme == "https") && u.User == nil && u.RawQuery == "" && u.Fragment == ""

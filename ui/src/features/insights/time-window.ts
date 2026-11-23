@@ -1,11 +1,13 @@
 import { exactMetric, formatMetricDetails, latestPoint, type Series } from "./chart-data"
 import { validTimestamp } from "./widget-context"
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step"
 
 export type ObservationWindow = { start: number; end: number }
 /** A chart-local window: the same shape as a dashboard window, but it never changes a query. */
 export type ChartTimeWindow = ObservationWindow
 export interface TimedObservation { timestamp: number; value: number | null }
-const seriesKey = (entry: Series) => JSON.stringify([entry.name ?? "", Object.entries(entry.labels ?? {}).sort(([a], [b]) => a.localeCompare(b))])
+/** Name and labels: the key that pairs a refined series with the dashboard series it refines. */
+export const seriesKey = (entry: Series) => JSON.stringify([entry.name ?? "", Object.entries(entry.labels ?? {}).sort(([a], [b]) => a.localeCompare(b))])
 
 /** Times are selected only from actual returned samples, including missing samples. */
 export function observationTimes(series: Series[]): number[] {
@@ -41,15 +43,15 @@ export function comparisonOffset(window: ObservationWindow, compare: ComparisonW
 
 /**
  * The earlier window as a query: seconds for the provider, the same bounds the time-series lens asks for, and the
- * primary query's step rule. The end is exclusive by one millisecond. A range from one second to 31 days with room
+ * primary query's step rule for the provider's minimum step. The end is exclusive by one millisecond. A range from one second to 31 days with room
  * before it has a previous window; anything else is unavailable.
  */
-export function priorWindowQuery(window: ObservationWindow, compare: ComparisonWindow): { start: number; end: number; step: number } | { unavailable: "no_previous_range" } {
+export function priorWindowQuery(window: ObservationWindow, compare: ComparisonWindow, minStepSeconds = 0): { start: number; end: number; step: number } | { unavailable: "no_previous_range" } {
   const span = window.end - window.start;
   const offset = comparisonOffset(window, compare);
   if (![window.start, window.end, offset].every(Number.isFinite) || span < 1000 || span > MAX_WINDOW_MS || offset <= 0 || window.start - offset <= 0)
     return { unavailable: "no_previous_range" };
-  return { start: (window.start - offset) / 1000, end: (window.end - offset - 1) / 1000, step: Math.max(1, Math.ceil(span / 300_000)) };
+  return { start: (window.start - offset) / 1000, end: (window.end - offset - 1) / 1000, step: queryStep(span / 1000, DEFAULT_TARGET_POINTS, minStepSeconds) };
 }
 
 export type ComparisonReason = "no_previous_range" | "no_current_sample" | "no_prior_sample" | "ambiguous_series";
@@ -187,6 +189,44 @@ export function timeWindowExtent(series: readonly { points: readonly TimedObserv
     end = Math.max(end, point.timestamp)
   }
   return Number.isFinite(start) && end > start ? { start, end } : null
+}
+
+/**
+ * The narrowest zoom when a chart can refine it: two of the provider's steps, never below a ten-thousandth of the extent
+ * and one millisecond. A refined zoom samples at its own step, so it need not stay as wide as the observed cadence.
+ */
+export function refinedMinimumSpan(extent: ChartTimeWindow, minStepSeconds = 0): number {
+  const span = extent.end - extent.start
+  return Math.min(span, Math.max(1, span / 10000, 2 * minStepSeconds * 1000))
+}
+
+/**
+ * A zoom's re-query in seconds: the policy step for its own span at the provider's minimum, over exactly the zoomed
+ * bounds. The chart crops the result to the window, so no padding is requested.
+ */
+export function refineWindowQuery(window: ObservationWindow, minStepSeconds = 0): { start: number; end: number; step: number } {
+  const step = queryStep((window.end - window.start) / 1000, DEFAULT_TARGET_POINTS, minStepSeconds)
+  return { start: window.start / 1000, end: window.end / 1000, step }
+}
+
+/**
+ * A refined result paired with the dashboard series it refines, by name and labels. The dashboard order and count are
+ * kept, so each position keeps its colour: a series the refine did not return keeps its dashboard samples, and a
+ * series that only the refine returned is dropped.
+ */
+export function pairRefinedSeries(original: Series[], refined: Series[] | undefined): Series[] {
+  if (!refined) return original
+  const byKey = new Map<string, Series>()
+  for (const entry of refined) if (!byKey.has(seriesKey(entry))) byKey.set(seriesKey(entry), entry)
+  return original.map(entry => byKey.get(seriesKey(entry)) ?? entry)
+}
+
+/**
+ * The narrowest zoom a chart commits. A zoom that re-queries may go as narrow as two provider steps, but only when the
+ * provider honours its step (it publishes minStepSeconds); otherwise the samples cannot get finer than the cadence.
+ */
+export function chartMinimumSpan(extent: ChartTimeWindow, series: readonly { points: readonly TimedObservation[] }[], refinable: boolean, minStepSeconds?: number): number {
+  return refinable && minStepSeconds !== undefined ? refinedMinimumSpan(extent, minStepSeconds) : minimumTimeWindow(series, extent)
 }
 
 /** Two of the densest series' source intervals, bounded below by a ten-thousandth of the extent and one millisecond. */

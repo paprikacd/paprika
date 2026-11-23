@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 
 import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
+import { plannedStep } from "./query-step.mjs";
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-observe-authoring-"))
@@ -122,9 +123,9 @@ async function unchanged(collection, entry) {
   assert.deepEqual(await api(`${collection}/${entry.document.id}`), { document: entry.document, etag: entry.etag })
 }
 async function assertQueryCall(query, fromIndex = 0) {
-  await until(() => queryResponses.slice(fromIndex).some(({ status, request }) => status === 200 && request.providerId === metricProvider.id && request.query === query && request.start === Date.parse(fixedRange.from) / 1000 && request.end === Date.parse(fixedRange.to) / 1000 && request.step === 12), "The live widget did not execute the exact patched query and dashboard time range")
+  await until(() => queryResponses.slice(fromIndex).some(({ status, request }) => status === 200 && request.providerId === metricProvider.id && request.query === query && request.start === Date.parse(fixedRange.from) / 1000 && request.end === Date.parse(fixedRange.to) / 1000 && request.step === plannedStep((Date.parse(fixedRange.to) - Date.parse(fixedRange.from)) / 1000)), "The live widget did not execute the exact patched query and dashboard time range")
   const protocol = await readObserveProtocol(fixture.baseURL)
-  assertMetricCall(assertObserveREST(protocol, ["/observe/api/query"]), { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: 12 })
+  assertMetricCall(assertObserveREST(protocol, ["/observe/api/query"]), { provider: fixture.providerRef, query, from: fixedRange.from, to: fixedRange.to, step: plannedStep((Date.parse(fixedRange.to) - Date.parse(fixedRange.from)) / 1000) })
 }
 async function check(name, action) {
   try { const evidence = await action(); reports.push({ name, passed: true, evidence }); console.log(`PASS ${name}`) }

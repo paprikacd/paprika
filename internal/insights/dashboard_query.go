@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
+	"github.com/benebsworth/paprika/internal/querystep"
 )
 
 // DashboardQueryBudget bounds one dashboard query end to end. It sits inside the
@@ -76,8 +77,11 @@ type DashboardQueryDocument struct {
 }
 
 type DashboardQueryRange struct {
-	Start       string  `json:"start"`
-	End         string  `json:"end"`
+	Start string `json:"start"`
+	End   string `json:"end"`
+	// StepSeconds is the step the shared policy chooses for the whole range, given the coarsest
+	// provider minimum among the dashboard's metrics queries. A signal carries its own stepSeconds only
+	// when it differs from this one.
 	StepSeconds float64 `json:"stepSeconds"`
 }
 
@@ -217,7 +221,14 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 // neither has its own path.
 func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, options DashboardSummaryOptions) {
 	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
-	queries := planDashboardQueries(result, selected, saved, definitions, start, end, func(providerID, template string, slo bool) *DashboardQueryError {
+	minStep := func(providerID string) float64 {
+		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
+		if err != nil {
+			return 0 // Execution reports the cached provider failure as a signal.
+		}
+		return provider.public.MinStepSeconds
+	}
+	queries := planDashboardQueries(result, selected, saved, definitions, start, end, minStep, func(providerID, template string, slo bool) *DashboardQueryError {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
 		if err != nil {
 			return nil // Execution reports the cached provider failure as a signal.
@@ -242,20 +253,33 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 // slo-summary widgets, whose query is compiled from config and needs a Prometheus provider.
 type dashboardQueryValidator func(providerID, template string, slo bool) *DashboardQueryError
 
-// dashboardWidgetStep is the query step for a widget. An slo-summary widget uses one step
-// that spans the range, so its range query returns only the window's start and end points.
-func dashboardWidgetStep(widget *dashboardReadWidget, rangeStep, start, end float64) float64 {
+// dashboardMinStep reports a provider's minimum metrics step by provider ID, zero when the provider
+// is unknown or takes no step. The planner uses it so every query gets the step its provider can serve.
+type dashboardMinStep func(providerID string) float64
+
+// policyStepSeconds is the shared step policy for a span in seconds, with minStepSeconds as the floor.
+// It is the step the UI and the gateway choose for the same range.
+func policyStepSeconds(spanSeconds, minStepSeconds float64) float64 {
+	step := querystep.For(time.Duration(spanSeconds*float64(time.Second)), querystep.DefaultTargetPoints, time.Duration(minStepSeconds*float64(time.Second)))
+	return step.Seconds()
+}
+
+// dashboardWidgetStep is the query step for a widget. An slo-summary widget keeps its own step, which
+// spans the range, so its range query returns only the window's start and end points. Every other
+// widget takes the policy step for its provider's minimum.
+func dashboardWidgetStep(widget *dashboardReadWidget, start, end, providerMinStep float64) float64 {
 	if isSLOSummaryWidget(widget) {
 		return sloStepSeconds(start, end)
 	}
-	return rangeStep
+	return policyStepSeconds(end-start, providerMinStep)
 }
 
-func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, validators ...dashboardQueryValidator) []Query {
+func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators ...dashboardQueryValidator) []Query {
 	seenSaved := make(map[string]bool)
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
 	seenComparisons := make(map[Query]int)
+	coarsestMinStep := 0.0
 	for i := range selected {
 		widget := &selected[i]
 		output := dashboardQueryWidgetOutput(widget)
@@ -269,7 +293,10 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 			output.SavedQueryID = widget.QueryRef.ID
 		}
 		query, resolutionError := resolveDashboardWidget(widget, saved, result.Variables, definitions)
-		query.Start, query.End, query.Step = start, end, dashboardWidgetStep(widget, result.Range.StepSeconds, start, end)
+		query.Start, query.End = start, end
+		providerMinStep := minStep(query.ProviderID)
+		query.Step = dashboardWidgetStep(widget, start, end, providerMinStep)
+		coarsestMinStep = max(coarsestMinStep, providerMinStep)
 		if resolutionError == nil {
 			resolutionError = validatePlannedDashboardQuery(widget, &query, saved, validators)
 		}
@@ -288,10 +315,11 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 		if resolutionError == nil {
 			planDashboardComparison(result, len(result.Widgets), widget, &output, &query, seenComparisons)
 		}
-		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, validators)
+		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, minStep, validators)
 		result.Widgets = append(result.Widgets, output)
 	}
 	result.QueryCount.Planned = len(queries)
+	result.Range.StepSeconds = policyStepSeconds(end-start, coarsestMinStep)
 	return queries
 }
 
@@ -321,7 +349,7 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 	return output
 }
 
-func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, validators []dashboardQueryValidator) {
+func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
 	source := widget.AnnotationSource
 	if source == nil {
 		return
@@ -336,7 +364,8 @@ func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQuery
 	}
 	eventWidget := &dashboardReadWidget{Type: "plugin", DataKind: "records", QueryRef: &source.QueryRef}
 	eventQuery, eventError := resolveDashboardWidget(eventWidget, saved, result.Variables, definitions)
-	eventQuery.Start, eventQuery.End, eventQuery.Step = start, end, result.Range.StepSeconds
+	eventQuery.Start, eventQuery.End = start, end
+	eventQuery.Step = dashboardWidgetStep(eventWidget, start, end, minStep(eventQuery.ProviderID))
 	if eventError == nil {
 		eventError = validatePlannedDashboardQuery(eventWidget, &eventQuery, saved, validators)
 	}
@@ -564,7 +593,8 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 	}
 	start, end = start.UTC().Truncate(time.Millisecond), end.UTC().Truncate(time.Millisecond)
 	startSeconds, endSeconds := float64(start.UnixMilli())/1000, float64(end.UnixMilli())/1000
-	step := math.Max(1, math.Ceil((endSeconds-startSeconds)/300))
+	// The range step is replaced once the planner knows its providers; this value only has to pass validation.
+	step := policyStepSeconds(endSeconds-startSeconds, 0)
 	if err != nil || validateQueryRange(&Query{Kind: "metrics", Start: startSeconds, End: endSeconds, Step: step}) != nil {
 		return DashboardQueryRange{}, 0, 0, errors.New("time range must use RFC3339 timestamps after the Unix epoch, increasing by at most 31 days")
 	}
@@ -610,12 +640,24 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 	s.executeDashboardComparisons(r, options, result, cache, limits)
 }
 
+// applyDashboardSignalStep discloses a metrics signal's step only where it differs from the range's, so a
+// dashboard whose providers share one minimum keeps the compact result it had. A query that was never
+// dispatched and failed carries none: its planned step came from a provider that could not be resolved.
+func applyDashboardSignalStep(result *DashboardQueryResult, query *Query, executed bool, signal *DashboardSignal) {
+	if query.Kind != "metrics" || query.Step == result.Range.StepSeconds || (!executed && signal.Error != nil) {
+		return
+	}
+	step := query.Step
+	signal.StepSeconds = &step
+}
+
 // applyDashboardQueryOutcome merges one query's outcome into result at its plan position. The caller holds
 // the merge lock.
 func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders, signal *DashboardSignal, executed bool, columns []dataframe.Column, raw *QueryResult) {
 	signal.ID = fmt.Sprintf("q%d", index+1)
 	captureDashboardComparisons(result, signal.ID, raw)
 	signal.Kind = query.Kind
+	applyDashboardSignalStep(result, query, executed, signal)
 	// Do not disclose a provider selected by a saved query unless this
 	// caller was authorized to resolve it. A denied provider still has a
 	// signal kind and a sanitized execution error.

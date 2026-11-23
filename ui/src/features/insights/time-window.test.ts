@@ -63,12 +63,16 @@ const DAY = 86_400_000
 describe("stat comparison windows", () => {
   const window = { start: 10 * DAY, end: 10 * DAY + 3_600_000 }
   it("asks for the equal window before the range, or the same window one or seven days earlier, with the lens's bounds", () => {
-    expect(priorWindowQuery(window, "previous")).toEqual({ start: (window.start - 3_600_000) / 1000, end: (window.start - 1) / 1000, step: 12 })
-    expect(priorWindowQuery(window, "1d")).toEqual({ start: (window.start - DAY) / 1000, end: (window.end - DAY - 1) / 1000, step: 12 })
+    expect(priorWindowQuery(window, "previous")).toEqual({ start: (window.start - 3_600_000) / 1000, end: (window.start - 1) / 1000, step: 10 })
+    expect(priorWindowQuery(window, "1d")).toEqual({ start: (window.start - DAY) / 1000, end: (window.end - DAY - 1) / 1000, step: 10 })
     expect(priorWindowQuery(window, "7d")).toMatchObject({ start: (window.start - 7 * DAY) / 1000 })
   })
   it("steps the earlier window with the same rule as the primary query", () => {
-    expect(priorWindowQuery({ start: 20 * DAY, end: 20 * DAY + 3600_000 * 24 }, "previous")).toMatchObject({ step: Math.ceil(86400 / 300) })
+    expect(priorWindowQuery({ start: 20 * DAY, end: 20 * DAY + 3600_000 * 24 }, "previous")).toMatchObject({ step: 300 })
+  })
+  it("raises the earlier window to the provider's minimum step, as the primary query does", () => {
+    expect(priorWindowQuery(window, "previous", 15)).toMatchObject({ step: 15 })
+    expect(priorWindowQuery(window, "previous", 30)).toMatchObject({ step: 30 })
   })
   it("reports unavailable with no earlier room, a span under one second, or a span over 31 days", () => {
     expect(priorWindowQuery({ start: 1 * DAY, end: 1 * DAY + 3_600_000 }, "1d")).toEqual({ unavailable: "no_previous_range" })

@@ -12,6 +12,7 @@ import {
   type QueryResult,
 } from "./schema";
 import { interpolateQuery, type VariableValues } from "./drilldown";
+import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 
 /** Values per variable after dedupe; a source may declare a lower limit. */
 export const VARIABLE_VALUE_LIMIT = 100;
@@ -27,12 +28,9 @@ export interface VariableRange {
   end: number;
 }
 
-/** Metrics queries refuse more than 5000 points per series, so a source's step grows with its range. */
-export const SOURCE_QUERY_MAX_POINTS = 300;
-
-/** Step in seconds for a metrics saved-query source over [start, end]: at most SOURCE_QUERY_MAX_POINTS points, never below 1 s. */
-export function sourceQueryStep(start: number, end: number): number {
-  return Math.max(1, Math.ceil((end - start) / SOURCE_QUERY_MAX_POINTS));
+/** Step in seconds for a metrics saved-query source over [start, end]: the shared step policy at the provider's minimum step. */
+export function sourceQueryStep(start: number, end: number, minStepSeconds = 0): number {
+  return queryStep(end - start, DEFAULT_TARGET_POINTS, minStepSeconds);
 }
 
 export interface LabelValuesRequest {

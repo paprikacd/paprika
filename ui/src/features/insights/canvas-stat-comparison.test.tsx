@@ -123,7 +123,7 @@ it("fetches the earlier window once the displayed result has loaded, with the le
   mount([rate("compare", { compare: { window: "previous", good: "up" } })]);
   await waitFor(() => expect(screen.getByText("+12%")).toBeInTheDocument());
   const earlierCalls = fetcher.mock.calls.map(([request]) => request).filter(request => request.start !== START);
-  expect(earlierCalls).toEqual([expect.objectContaining({ kind: "metrics", start: START - HOUR, end: START - 0.001, step: 12 })]);
+  expect(earlierCalls).toEqual([expect.objectContaining({ kind: "metrics", start: START - HOUR, end: START - 0.001, step: 10 })]);
   const chip = document.querySelector("[data-stat-delta]");
   expect(chip?.textContent).toContain("vs 1 h earlier: +12%, better");
   // The earlier sample is an hour before the range, so its title names the date as well as the time.
@@ -203,5 +203,13 @@ it("waits for the displayed result before it asks for the earlier window", async
   expect(fetcher.mock.calls[0][0].start).toBe(START);
   release({ series: [{ name: "rate", labels: {}, points: [{ timestamp: END * 1000 - 60_000, value: 112 }] }] });
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
-  expect(fetcher.mock.calls[1][0]).toMatchObject({ start: START - HOUR, step: 12 });
+  expect(fetcher.mock.calls[1][0]).toMatchObject({ start: START - HOUR, step: 10 });
+});
+
+it("plans the tile and its earlier window at the provider's minimum step", async () => {
+  const minimum = [{ ...exampleProviders[0], minStepSeconds: 15 }];
+  render(<DashboardCanvas dashboard={dashboard([rate("floor", { compare: { window: "previous", good: "up" } })])} providers={minimum} fetcher={fetcher} end={END} editing={false} selected="" onSelect={vi.fn()} onLayout={vi.fn()} />);
+  await waitFor(() => expect(screen.getByText("+12%")).toBeInTheDocument());
+  expect(fetcher.mock.calls.length).toBeGreaterThanOrEqual(2);
+  for (const [request] of fetcher.mock.calls) expect(request.step).toBe(15);
 });

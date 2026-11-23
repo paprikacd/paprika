@@ -367,7 +367,7 @@ numeric fields. Use structured content for the authoritative included examples.
 | Widgets | All by default, or 1–48 unique existing widget IDs |
 | Time | Both RFC3339 bounds or neither; maximum 31 days |
 | Default range | Saved custom range, otherwise saved rolling range |
-| Step | Same as UI: `max(1, ceil(rangeSeconds / 300))` |
+| Step | Same as UI, the shared policy in `ui/src/features/insights/query-step.ts` and `internal/querystep`: the ladder rung nearest `rangeSeconds / 300` on a log scale, moved up while the range would hold more than 450 points, then raised to the provider's `minStepSeconds` (a Prometheus provider defaults to 15 s). A widget's step follows its own provider; `range.stepSeconds` is the coarsest, and a signal carries its own `stepSeconds` only when it differs. A `slo-summary` widget uses its own step, which spans the range (`sloStepSeconds`) |
 | History | 0 by default, or 2–32 points per included series |
 | Series | 3 by default, 1–8 supported |
 | Trace examples | 3 by default, 1–10 supported |

@@ -74,15 +74,15 @@ func TestSLOSummaryConfigIsValidatedOnSave(t *testing.T) {
 
 func TestSLOSummaryStepSpansTheRange(t *testing.T) {
 	widget := &dashboardReadWidget{Type: "plugin", PluginID: sloSummaryPluginID}
-	if got := dashboardWidgetStep(widget, 12, 0, 3600); got != 3600 {
+	if got := dashboardWidgetStep(widget, 0, 3600, 15); got != 3600 {
 		t.Fatalf("slo step over 1h = %v, want 3600", got)
 	}
-	if got := dashboardWidgetStep(widget, 1, 0, 10); got != 60 {
+	if got := dashboardWidgetStep(widget, 0, 10, 15); got != 60 {
 		t.Fatalf("slo step over 10s = %v, want the 60s floor", got)
 	}
 	plain := &dashboardReadWidget{Type: "timeseries"}
-	if got := dashboardWidgetStep(plain, 12, 0, 3600); got != 12 {
-		t.Fatalf("ordinary step = %v, want the range step 12", got)
+	if got := dashboardWidgetStep(plain, 0, 3600, 15); got != 15 {
+		t.Fatalf("ordinary step = %v, want the policy step 15 for a 15 s minimum", got)
 	}
 }
 

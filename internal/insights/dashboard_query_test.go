@@ -90,7 +90,7 @@ func TestDashboardQuerySavedBindingsDeduplicateAndDoNotWrite(t *testing.T) { //n
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		expression = r.URL.Query().Get("query")
-		if r.URL.Path != "/api/v1/query_range" || r.URL.Query().Get("step") != "12" {
+		if r.URL.Path != "/api/v1/query_range" || r.URL.Query().Get("step") != "15" { // 1h at 12 s, raised to the 15 s Prometheus minimum
 			t.Errorf("provider request: %s", r.URL)
 		}
 		_, _ = fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"service":"api"},"values":[[1792972800,"1.2345"],[1792972812,"2.3456"],[1792972824,"NaN"]]}]}}`)
@@ -604,7 +604,7 @@ func TestDashboardQueryRangeUsesSavedCustomWindowAndSharedStep(t *testing.T) {
 	now := time.Date(2026, 10, 26, 5, 0, 0, 123, time.UTC)
 	document := dashboardReadDocument{TimeRange: "6h"}
 	window, start, end, err := dashboardQueryTimeRange(&dashboardQueryRequest{}, &document, now)
-	if err != nil || end-start != 6*3600 || window.StepSeconds != 72 || window.End != "2026-10-26T05:00:00Z" {
+	if err != nil || end-start != 6*3600 || window.StepSeconds != 60 || window.End != "2026-10-26T05:00:00Z" {
 		t.Fatalf("relative window: %+v %v", window, err)
 	}
 	document.CustomTimeRange = &dashboardReadTimeRange{From: "2026-10-26T05:00:00.123+10:00", To: "2026-10-26T05:01:00.123+10:00"}
@@ -613,7 +613,8 @@ func TestDashboardQueryRangeUsesSavedCustomWindowAndSharedStep(t *testing.T) {
 		t.Fatalf("custom window: %+v %v", window, err)
 	}
 	window, _, _, err = dashboardQueryTimeRange(&dashboardQueryRequest{Start: "2026-10-26T00:00:00Z", End: "2026-10-26T01:00:00Z"}, &document, now)
-	if err != nil || window.Start != "2026-10-26T00:00:00Z" || window.StepSeconds != 12 {
+	// With no metrics query the range keeps the policy step for a zero minimum: 1h is 10 s.
+	if err != nil || window.Start != "2026-10-26T00:00:00Z" || window.StepSeconds != 10 {
 		t.Fatalf("explicit window did not override saved window: %+v %v", window, err)
 	}
 }

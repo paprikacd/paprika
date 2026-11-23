@@ -70,7 +70,8 @@ func TestQueryRange(t *testing.T) {
 	require.Equal(t, "up", capture.query.Get("query"))
 	require.Equal(t, strconv.FormatInt(start.Unix(), 10), capture.query.Get("start"))
 	require.Equal(t, strconv.FormatInt(end.Unix(), 10), capture.query.Get("end"))
-	require.Equal(t, "20", capture.query.Get("step"))
+	// 5000 s over 300 points is about 16.7 s, which the policy snaps to 15 s.
+	require.Equal(t, "15", capture.query.Get("step"))
 	require.Equal(t, "100", capture.query.Get("limit"))
 }
 
@@ -80,7 +81,8 @@ func TestQueryRangeRejectsExplosiveStepBeforeNetwork(t *testing.T) {
 	res, err := New().Query(context.Background(), connector.QueryRequest{
 		Signal: connector.SignalMetrics, Query: "up",
 		Range:  connector.TimeRange{Start: start, End: start.Add(time.Hour)},
-		Config: stepConfig(t, "http://localhost:1", "1ns"),
+		Step:   time.Nanosecond,
+		Config: endpointConfig(t, "http://localhost:1"),
 	})
 	require.ErrorIs(t, err, connector.ErrUnsupported)
 	require.Equal(t, connector.StateNotAvailable, res.State)
@@ -136,8 +138,8 @@ func TestRangeStepClamping(t *testing.T) {
 	}{
 		{name: "below minimum", span: 5 * time.Second, want: "10"},
 		{name: "at minimum", span: 2500 * time.Second, want: "10"},
-		{name: "proportional", span: 10000 * time.Second, want: "40"},
-		{name: "fractional", span: 3875 * time.Second, want: "15.5"},
+		{name: "proportional", span: 10000 * time.Second, want: "30"},
+		{name: "snaps to a ladder rung", span: 3875 * time.Second, want: "15"},
 		{name: "at maximum", span: 250 * time.Hour, want: "3600"},
 		{name: "above maximum", span: 500 * time.Hour, want: "3600"},
 	}
@@ -252,7 +254,7 @@ func TestQueryRangeStepOverride(t *testing.T) {
 	t.Parallel()
 	server, capture := newTestServer(t, http.StatusOK, `{"data":[]}`)
 
-	// A span whose derived step would be 20s; the override must replace it.
+	// A span whose default step is 15s; the configured 30s minimum raises it.
 	start := time.Unix(1_700_000_000, 0)
 	res, err := New().Query(context.Background(), connector.QueryRequest{
 		Signal: connector.SignalMetrics,
@@ -279,6 +281,78 @@ func TestQueryRangeStepOverrideNotSentOnInstantQuery(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/api/v1/query", capture.path)
 	require.Empty(t, capture.query.Get("step"))
+}
+
+// TestRequestedStepIsRaisedToTheConfiguredMinimum pins the configured step as
+// a floor: a request finer than it is raised to it, a coarser request is kept,
+// and a request without a step gets the policy's step with the floor applied.
+func TestRequestedStepIsRaisedToTheConfiguredMinimum(t *testing.T) {
+	t.Parallel()
+
+	start := time.Unix(1_700_000_000, 0)
+	tests := []struct {
+		name    string
+		config  string
+		span    time.Duration
+		request time.Duration
+		want    string
+	}{
+		{name: "finer request raised to the minimum", config: "30s", span: 5000 * time.Second, request: 3 * time.Second, want: "30"},
+		{name: "coarser request kept", config: "30s", span: 5000 * time.Second, request: 120 * time.Second, want: "120"},
+		{name: "no request uses the policy with the minimum as floor", config: "30s", span: time.Hour, want: "30"},
+		{name: "fractional minimum honoured exactly", config: "15.5s", span: 3875 * time.Second, want: "15.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server, capture := newTestServer(t, http.StatusOK, `{"data":[]}`)
+			_, err := New().Query(context.Background(), connector.QueryRequest{
+				Signal: connector.SignalMetrics,
+				Query:  "up",
+				Range:  connector.TimeRange{Start: start, End: start.Add(tt.span)},
+				Step:   tt.request,
+				Config: stepConfig(t, server.URL, tt.config),
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.want, capture.query.Get("step"))
+		})
+	}
+}
+
+// TestRequestedStepIsNotClampedWithoutAMinimum keeps a request finer than the
+// gateway's default floor as asked when the configuration declares no minimum.
+func TestRequestedStepIsNotClampedWithoutAMinimum(t *testing.T) {
+	t.Parallel()
+	server, capture := newTestServer(t, http.StatusOK, `{"data":[]}`)
+	start := time.Unix(1_700_000_000, 0)
+	_, err := New().Query(context.Background(), connector.QueryRequest{
+		Signal: connector.SignalMetrics,
+		Query:  "up",
+		Range:  connector.TimeRange{Start: start, End: start.Add(time.Hour)},
+		Step:   3 * time.Second,
+		Config: endpointConfig(t, server.URL),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "3", capture.query.Get("step"))
+}
+
+func TestMinStepReportsOnlyADeclaredMinimum(t *testing.T) {
+	t.Parallel()
+	stepper, ok := New().(connector.MinStepper)
+	require.True(t, ok)
+
+	step, ok := stepper.MinStep(json.RawMessage(`{"endpoint":"https://prom.example.com","step":"30s"}`))
+	require.True(t, ok)
+	require.Equal(t, 30*time.Second, step)
+
+	_, ok = stepper.MinStep(json.RawMessage(`{"endpoint":"https://prom.example.com"}`))
+	require.False(t, ok)
+
+	_, ok = stepper.MinStep(json.RawMessage(`{"endpoint":"https://prom.example.com","step":"soon"}`))
+	require.False(t, ok)
+
+	_, ok = stepper.MinStep(nil)
+	require.False(t, ok)
 }
 
 func stepConfig(t *testing.T, endpoint, step string) json.RawMessage {

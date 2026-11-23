@@ -264,7 +264,8 @@ func sharedProvidersFromCatalog(entries []observeCatalogProvider) (sharedListing
 			listing.unsupported = append(listing.unsupported, unsupportedObserveProvider(p))
 			continue
 		}
-		listing.providers = append(listing.providers, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: capabilities, Source: "observability", ProviderRef: p.Name, Transport: "mcp", State: observeProviderState(p.State)})
+		listing.providers = append(listing.providers, Provider{ID: observeProviderID(p.Name), Name: p.Name, Type: p.Type, Capabilities: capabilities, Source: "observability", ProviderRef: p.Name, Transport: "mcp", State: observeProviderState(p.State),
+			MinStepSeconds: providerMinStepSeconds(p.Type, p.MinStepSeconds)})
 	}
 	return listing, nil
 }

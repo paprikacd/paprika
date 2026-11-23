@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { assertNoLegacyDataTools, assertObserveREST } from "./observe-protocol.mjs"
 import { selectGammaOption } from "./gamma-controls.mjs"
+import { plannedStep } from "./query-step.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-dashboard-query-"))
@@ -17,6 +18,8 @@ const output = join(repository, "artifacts/insights/dashboard-query")
 const binary = join(temporary, "fixture"), ready = join(temporary, "ready.json")
 const services = ["api-gateway", "release-controller"]
 const range = { from: "2026-10-20T12:00:00.000Z", to: "2026-10-20T13:00:00.000Z" }
+// The fixture returns one sample per planned step across the one-hour range, inclusive of both ends.
+const expectedSamples = 3600 / plannedStep(3600) + 1
 const reports = [], responses = [], pageErrors = [], browserWrites = []
 let fixture, child, browser, page, context, rpcID = 0, fixtureLog = "", dashboard, saved, versions
 
@@ -153,8 +156,8 @@ try {
         const points = raw.series[0].points, summary = signal(result, id).series[0]
         assert.equal(summary.last.value, points.at(-1).value)
         assert.equal(summary.last.timestamp, points.at(-1).timestamp)
-        assert.equal(summary.samples, 301)
-        assert.equal(summary.valid, 301)
+        assert.equal(summary.samples, expectedSamples)
+        assert.equal(summary.valid, expectedSamples)
         assert.equal(summary.missing, 0)
         assert.equal(summary.min, Math.min(...points.map(p => p.value)))
         assert.equal(summary.max, Math.max(...points.map(p => p.value)))

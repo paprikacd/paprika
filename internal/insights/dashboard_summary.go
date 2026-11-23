@@ -38,7 +38,10 @@ type DashboardSignal struct {
 	// LatencyMs is the signal's time in whole milliseconds, from asking for Insights
 	// admission to the gateway's answer. It includes the admission wait and gateway
 	// queueing. It is absent when the query was not admitted.
-	LatencyMs         *int64                   `json:"latencyMs,omitempty"`
+	LatencyMs *int64 `json:"latencyMs,omitempty"`
+	// StepSeconds is the step a metrics query ran at, after its provider minimum, when that differs from the
+	// range's step. Absent otherwise, including for records and traces.
+	StepSeconds       *float64                 `json:"stepSeconds,omitempty"`
 	Error             *DashboardQueryError     `json:"error,omitempty"`
 	Series            []DashboardSeriesSummary `json:"series,omitempty"`
 	Traces            *DashboardTraceSummary   `json:"traces,omitempty"`

@@ -1143,6 +1143,8 @@ insights:
   # Provider URLs and credential environment-variable names are administrator
   # configuration. Actual credentials belong in Secrets via extraEnv/extraEnvFrom.
   providers: []
+  # Each entry may set minStepSeconds (above 0, at most 3600): the finest range-query step
+  # the provider serves. Insights raises finer steps to it. Prometheus defaults to 15.
   # - id: prometheus
   #   name: Production metrics
   #   type: prometheus

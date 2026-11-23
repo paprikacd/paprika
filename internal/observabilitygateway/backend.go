@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
@@ -45,6 +46,10 @@ type ProviderInfo struct {
 	Type      string `json:"type"`      // prometheus | loki | tempo | otlp | shorted | uptime | postgresql | gcp-cloudlogging | gcp-cloudmonitoring | gcp-cloudtrace | aws-cloudwatch-logs | aws-cloudwatch-metrics | aws-xray | aws-cloudtrail | vultr-monitoring | mock
 	State     string `json:"state,omitempty"`
 	Reason    string `json:"reason,omitempty"`
+	// MinStepSeconds is the finest range-query step the CR's configuration
+	// declares, in seconds. It is absent when the configuration declares none,
+	// and for connectors that take no step.
+	MinStepSeconds float64 `json:"minStepSeconds,omitempty"`
 }
 
 // Backend resolves ObservabilityProvider CRs into connector queries. It is
@@ -173,15 +178,34 @@ func (b *k8sBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) 
 	out := make([]ProviderInfo, 0, len(list.Items))
 	for i := range list.Items {
 		cr := &list.Items[i]
-		out = append(out, ProviderInfo{
+		info := ProviderInfo{
 			Name:      cr.Namespace + "/" + cr.Name,
 			Namespace: cr.Namespace,
 			Type:      cr.Spec.Type,
 			State:     cr.Status.State,
 			Reason:    cr.Status.Reason,
-		})
+		}
+		if minStep, ok := b.minStepFor(cr); ok {
+			info.MinStepSeconds = minStep.Seconds()
+		}
+		out = append(out, info)
 	}
 	return out, nil
+}
+
+// minStepFor reports the minimum range-query step a CR's configuration
+// declares. A type that no connector serves, or a connector that takes no
+// step, declares none.
+func (b *k8sBackend) minStepFor(cr *observabilityv1alpha1.ObservabilityProvider) (time.Duration, bool) {
+	conn, err := b.connectorFor(cr.Spec.Type)
+	if err != nil {
+		return 0, false
+	}
+	stepper, ok := conn.(connector.MinStepper)
+	if !ok {
+		return 0, false
+	}
+	return stepper.MinStep(cr.Spec.Config.Raw)
 }
 
 // Query implements Backend. provider is "namespace/name"; anything that does

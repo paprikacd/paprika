@@ -88,7 +88,7 @@ describe("bounded tooltip rendering", () => {
         providers={[]}
         start={1}
         end={10}
-        step={1}
+       
       >
         <WidgetVisualization
           widget={{
@@ -520,7 +520,7 @@ describe("shared embedded tooltip renderers", () => {
         providers={providers}
         start={1000}
         end={2000}
-        step={15}
+       
       >
         <TooltipSubWidget
           view={view}
@@ -819,7 +819,7 @@ describe("shared embedded tooltip renderers", () => {
         providers={providers}
         start={1000}
         end={2000}
-        step={15}
+       
       >
         <WidgetVisualization
           widget={{ ...widget, options: { tooltipView: child } }}
@@ -849,7 +849,7 @@ describe("shared embedded tooltip renderers", () => {
         providers={providers}
         start={1000}
         end={2000}
-        step={15}
+       
       >
         <TooltipSubWidget
           view={child}

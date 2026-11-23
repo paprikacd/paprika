@@ -89,13 +89,19 @@ func reviewProbeWidgets(kinds []string, statuses bool, titlePad int) []map[strin
 	return widgets
 }
 
+// reviewProbeMinStepSeconds pins the probes to the 12 s step they were measured at. A 1 h window at 300
+// points plans 12 s raw; with no minimum the policy would plan 10 s, and the Prometheus default minimum
+// of 15 s would plan 15 s. Each probe sets its own step so its size stays comparable across policy changes.
+// It stays at 12 s because the overage at 15 s comes from the synthetic data's float digits, not from larger responses.
+const reviewProbeMinStepSeconds = 12
+
 // postReviewProbe posts the dashboard body against the review probe provider, which returns seriesCount
 // series per query, and returns the response.
 func postReviewProbe(t *testing.T, endGap, seriesCount int, widgets []map[string]any, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	provider := reviewProbeProvider(t, endGap, seriesCount)
 	t.Cleanup(provider.Close)
-	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL, MinStepSeconds: reviewProbeMinStepSeconds})
 	putReadDashboard(t, s, widgets...)
 	return request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(body), nil)
 }
@@ -129,8 +135,12 @@ func requireReviewProbeWithinCap(t *testing.T, endGap int, widgets []map[string]
 }
 
 // Review probe (a): status bands on time series, stat, heatmap, status-grid, threshold-gauge and
-// status-history widgets, with raw kube-state series. After all four steps it encodes to 131,910 bytes,
-// 1,210 bytes under the cap.
+// status-history widgets, with raw kube-state series. At its 12 s step it encodes to 131,910 bytes after
+// the omission ladder, 1,210 bytes under the cap. At the 15 s Insights default for a Prometheus provider
+// (reviewProbeMinStepSeconds = 0) the same shape encodes to 133,817 bytes, 697 bytes over the 133,120-byte
+// cap, and returns 413. The size comes from full-precision summary floats, so it moves with the sample
+// count. Whether the cap rises is an open decision (docs/design/insights/dashboard-query.md); this probe
+// stays pinned to 12 s until it is made.
 func TestDashboardQueryReviewProbeStatusBandedReturnsWithinTheCap(t *testing.T) {
 	kinds := []string{"timeseries", "stat", "heatmap", "status-grid", "threshold-gauge", "status-history"}
 	// The probe has no ranked record table and no slo-summary widget, so the rankingRows and sloBurn steps drop nothing and are not reported.

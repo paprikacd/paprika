@@ -572,8 +572,12 @@ spec:
   - `insecureSkipTLS` — bool, for self-signed in-cluster backends only (never
     off-cluster; per-config client so verified/unverified TLS sessions never
     share connection pools).
-  - `step` — prometheus-only range-query step override (Go duration, >0, ≤1h;
-    otherwise derived as max(10s, span/250)).
+  - `step` — prometheus-only minimum range-query step (Go duration, >0, ≤1h).
+    It is a floor, not an override: a requested step finer than it is raised
+    to it, and a request with no step uses the shared step policy for the span
+    (about 300 points, never finer than 10s, at most 1h) with this as the
+    floor. The provider summary publishes it as `minStepSeconds`; it is absent
+    when unset.
 
 ### Connector specifics
 

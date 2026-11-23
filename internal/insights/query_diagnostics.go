@@ -90,11 +90,21 @@ const queryReceiptHeader = "X-Insights-Diagnostics"
 type queryMeasurement struct {
 	normalizationStarted time.Time
 	dispatched           atomic.Bool
+	// raisedStep is the step Insights dispatched when the provider minimum
+	// raised the requested one; zero when the requested step was sent.
+	raisedStep float64
 }
 
 func (m *queryMeasurement) dispatch() {
 	if m != nil {
 		m.dispatched.Store(true)
+	}
+}
+
+// raiseStep records that the dispatched metrics step is step, not the requested one.
+func (m *queryMeasurement) raiseStep(step float64) {
+	if m != nil {
+		m.raisedStep = step
 	}
 }
 
@@ -188,7 +198,13 @@ func (r *queryReceipt) finishExecution(p *providerClient, measurement *queryMeas
 	}
 	if measurement.dispatched.Load() {
 		r.dispatched = true
-		r.diag.Effective = effectiveQueryBounds(p, r.query, r.diag.Effective.Scope)
+		dispatched := r.query
+		if measurement.raisedStep > 0 {
+			raised := *r.query
+			raised.Step = measurement.raisedStep
+			dispatched = &raised
+		}
+		r.diag.Effective = effectiveQueryBounds(p, dispatched, r.diag.Effective.Scope)
 	}
 	if measurement.normalizationStarted.IsZero() {
 		r.markAt("upstream", finished)

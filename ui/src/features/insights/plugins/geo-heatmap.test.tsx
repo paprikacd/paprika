@@ -79,7 +79,7 @@ describe("geo heatmap", () => {
   it("queries configured tooltip data from shared labels and exact aggregated value only while open", async () => {
     const fetcher = vi.fn().mockResolvedValue({ series:[{ name:"rate",labels:{},points:[{timestamp:1500000,value:4}]}] })
     const linked: Widget = { ...widget, options:{...widget.options, tooltipView:{ type:"stat", source:{ type:"query", providerId:"prom", query:"rate{service={{service}}} > {{amount}}", bindings:[{variable:"service",label:"service"},{variable:"amount",field:"value"}] } }} }
-    render(<TooltipQueryProvider fetcher={fetcher} providers={[{id:"prom",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]} start={1000} end={2000} step={15}><GeoHeatmap widget={linked} result={result}/></TooltipQueryProvider>)
+    render(<TooltipQueryProvider fetcher={fetcher} providers={[{id:"prom",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]} start={1000} end={2000}><GeoHeatmap widget={linked} result={result}/></TooltipQueryProvider>)
     expect(fetcher).not.toHaveBeenCalled()
     fireEvent.focus(screen.getByRole("button",{name:/2 observations · Sum of requests/}))
     await waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
@@ -89,7 +89,7 @@ describe("geo heatmap", () => {
     for (const binding of [{variable:"key",label:"label"}, {variable:"key",field:"timestamp" as const}]) {
       const fetcher = vi.fn()
       const linked: Widget = { ...widget, options:{ tooltipView:{type:"stat",source:{type:"query",providerId:"prom",query:"up > {{key}}",bindings:[binding]}}} }
-      const view = render(<TooltipQueryProvider fetcher={fetcher} providers={[{id:"prom",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]} start={1000} end={2000} step={15}><GeoHeatmap widget={linked} result={result}/></TooltipQueryProvider>)
+      const view = render(<TooltipQueryProvider fetcher={fetcher} providers={[{id:"prom",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]} start={1000} end={2000}><GeoHeatmap widget={linked} result={result}/></TooltipQueryProvider>)
       fireEvent.focus(screen.getByRole("button",{name:/2 observations · Sum of requests/}))
       await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/no label|no valid timestamp/))
       expect(fetcher).not.toHaveBeenCalled()
@@ -100,7 +100,7 @@ describe("geo heatmap", () => {
     const fetcher = vi.fn().mockResolvedValue({ series:[{name:"value",labels:{},points:[{timestamp:1500000,value:4}]}] })
     const linked: Widget = { ...widget, config:{mode:"grid",value:"requests",aggregation:"mean"}, options:{tooltipView:{type:"stat",source:{type:"saved",ref:{id:"service-rate",bindings:[{parameter:"service",source:"label",label:"service"}]}}}} }
     const saved = {schemaVersion:1 as const,id:"service-rate",name:"Service rate",providerId:"prom",kind:"metrics" as const,query:"rate{service={{service}}}",parameters:[{name:"service",type:"string" as const}]}
-    render(<SavedQueryLibraryProvider queries={[saved]} values={{}} variables={[]}><TooltipQueryProvider fetcher={fetcher} providers={[{id:"prom",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]} start={1000} end={2000} step={15}><GeoHeatmap widget={linked} result={result}/></TooltipQueryProvider></SavedQueryLibraryProvider>)
+    render(<SavedQueryLibraryProvider queries={[saved]} values={{}} variables={[]}><TooltipQueryProvider fetcher={fetcher} providers={[{id:"prom",name:"Metrics",type:"prometheus",capabilities:["metrics"]}]} start={1000} end={2000}><GeoHeatmap widget={linked} result={result}/></TooltipQueryProvider></SavedQueryLibraryProvider>)
     fireEvent.focus(screen.getByRole("button",{name:/London · Mean of requests/}))
     await waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
     expect(fetcher.mock.calls[0][0]).toMatchObject({query:'rate{service="web"}',kind:"metrics"})
@@ -110,7 +110,7 @@ describe("geo heatmap", () => {
     const fetcher = vi.fn()
     const records = { ...result.records!, rows: Array.from({length:12}, (_, index) => [`Place ${index}`, index, index, index, "api"]) }
     const linked: Widget = { ...widget, config:{mode:"grid",value:"requests",aggregation:"mean"}, options:{tooltipView:{type:"plugin",pluginId:"record-table",dataKind:"records",config:{columns:["label"],showSearch:false},source:{type:"widget"}}} }
-    render(<TooltipWidgetDataProvider kind="records" result={{records}}><TooltipQueryProvider fetcher={fetcher} providers={[]} start={1000} end={2000} step={15}><GeoHeatmap widget={linked} result={{records}}/></TooltipQueryProvider></TooltipWidgetDataProvider>)
+    render(<TooltipWidgetDataProvider kind="records" result={{records}}><TooltipQueryProvider fetcher={fetcher} providers={[]} start={1000} end={2000}><GeoHeatmap widget={linked} result={{records}}/></TooltipQueryProvider></TooltipWidgetDataProvider>)
     fireEvent.focus(screen.getByRole("button",{name:/Place 0 · Mean of requests/}))
     const tooltip = screen.getByRole("tooltip")
     expect(within(tooltip).getByText("Place 1")).toBeInTheDocument()

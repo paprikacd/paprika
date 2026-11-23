@@ -16,16 +16,17 @@ import (
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
+	"github.com/benebsworth/paprika/internal/querystep"
 )
 
-// Prometheus HTTP API paths and range-query step shaping. The step is one
-// two hundred fiftieth of the requested span, clamped so both tiny and huge
-// ranges stay readable and cheap; a config-document override replaces the
-// derived value (see configKeyStep).
+// Prometheus HTTP API paths and range-query step shaping. A requested step is
+// a hint; the step sent is never finer than the configured minimum (see
+// configKeyStep). With no requested step, the step is the shared policy's
+// choice for the range (querystep.For), never finer than minRangeStep and
+// capped at maxRangeStep.
 const (
 	pathInstantQuery = "/api/v1/query"
 	pathRangeQuery   = "/api/v1/query_range"
-	rangeStepDivisor = 250
 	minRangeStep     = 10 * time.Second
 	maxRangeStep     = time.Hour
 	maxRangePoints   = 11000
@@ -43,15 +44,16 @@ const (
 	errorTypeTimeout = "timeout"
 )
 
-// configKeyStep is the prometheus-only configuration key: a Go duration
-// overriding the derived range-query step. It is validated here, not in
-// httphelp, so the same key stays an unknown-key error on every other
-// connector.
+// configKeyStep is the prometheus-only configuration key: a Go duration naming
+// the finest range-query step the backend is asked for. A requested step finer
+// than it is raised to it, and a request without a step uses it as the floor of
+// the default. It is validated here, not in httphelp, so the same key stays an
+// unknown-key error on every other connector.
 const configKeyStep = "step"
 
 // prometheusConfig pairs the shared connector configuration with the
-// prometheus-only step override; a zero step means "derive from the
-// requested range".
+// prometheus-only minimum step; a zero step means the configuration declares
+// none.
 type prometheusConfig struct {
 	httphelp.Config
 	step time.Duration
@@ -63,6 +65,17 @@ type Prometheus struct{}
 
 // New returns a Prometheus connector.
 func New() connector.Connector { return Prometheus{} }
+
+// MinStep reports the configured minimum range-query step, false when the
+// configuration declares none. An unparsable configuration reports none; the
+// query path rejects it.
+func (Prometheus) MinStep(config json.RawMessage) (time.Duration, bool) {
+	step, err := decodeStep(config)
+	if err != nil || step == 0 {
+		return 0, false
+	}
+	return step, true
+}
 
 // Descriptor advertises name, signals and network needs.
 func (Prometheus) Descriptor() connector.Descriptor {
@@ -115,7 +128,7 @@ func (Prometheus) Query(ctx context.Context, req connector.QueryRequest) (*conne
 	return &connector.QueryResult{State: connector.StateOK, Data: data}, nil
 }
 
-func queryRequestShape(req *connector.QueryRequest, override time.Duration) (path string, params url.Values, reason string) {
+func queryRequestShape(req *connector.QueryRequest, floor time.Duration) (path string, params url.Values, reason string) {
 	params = url.Values{
 		"query": []string{req.Query},
 		"limit": []string{strconv.Itoa(httphelp.ClampLimit(req.Limit, defaultLimit, maxLimit))},
@@ -126,22 +139,24 @@ func queryRequestShape(req *connector.QueryRequest, override time.Duration) (pat
 		}
 		return pathInstantQuery, params, ""
 	}
-	if reason = queryRangeParams(req, override, params); reason != "" {
+	if reason = queryRangeParams(req, floor, params); reason != "" {
 		return "", nil, reason
 	}
 	return pathRangeQuery, params, ""
 }
 
-func queryRangeParams(req *connector.QueryRequest, override time.Duration, params url.Values) string {
-	step := rangeStep(req.Range)
-	if override > 0 {
-		step = override
-	}
-	if req.Step > 0 {
-		step = req.Step
-	}
+// queryRangeParams sets the range-query parameters. floor is the configured
+// minimum step, zero when none is configured.
+func queryRangeParams(req *connector.QueryRequest, floor time.Duration, params url.Values) string {
 	if req.Step < 0 || req.Step > 31*24*time.Hour {
 		return "query step is outside its supported range"
+	}
+	step := req.Step
+	if step == 0 {
+		step = rangeStep(req.Range, floor)
+	}
+	if step < floor {
+		step = floor
 	}
 	if req.Range.End.Before(req.Range.Start) || req.Range.End.Sub(req.Range.Start)/step >= maxRangePoints {
 		return "query range and step exceed the maximum of 11000 points per series"
@@ -155,8 +170,8 @@ func queryRangeParams(req *connector.QueryRequest, override time.Duration, param
 }
 
 // parseConfig decodes the prometheus connector configuration: the shared
-// strict document with the "step" key additionally allowed, and the step
-// itself decoded and validated here.
+// strict document with the "step" key additionally allowed, and the minimum
+// step itself decoded and validated here.
 func parseConfig(config json.RawMessage) (prometheusConfig, error) {
 	cfg, err := httphelp.ParseConfigWithKeys(config, []string{configKeyStep})
 	if err != nil {
@@ -169,10 +184,10 @@ func parseConfig(config json.RawMessage) (prometheusConfig, error) {
 	return prometheusConfig{Config: cfg, step: step}, nil
 }
 
-// decodeStep reads the prometheus-only "step" key: a Go duration in
-// (0, 1h] overriding the derived range-query step. An absent key is a zero
-// duration, meaning "derive". The value itself is never echoed — errors
-// name the key only, per the shared sanitizing discipline.
+// decodeStep reads the prometheus-only "step" key: a Go duration in (0, 1h]
+// naming the finest range-query step. An absent key is a zero duration, meaning
+// no minimum. The value itself is never echoed — errors name the key only, per
+// the shared sanitizing discipline.
 func decodeStep(config json.RawMessage) (time.Duration, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(config, &raw); err != nil {
@@ -193,17 +208,13 @@ func decodeStep(config json.RawMessage) (time.Duration, error) {
 	return step, nil
 }
 
-// rangeStep derives the Prometheus step from the requested range: one two
-// hundred fiftieth of the span, clamped to [10s, 1h].
-func rangeStep(r connector.TimeRange) time.Duration {
-	step := r.End.Sub(r.Start) / rangeStepDivisor
-	if step < minRangeStep {
-		step = minRangeStep
-	}
-	if step > maxRangeStep {
-		step = maxRangeStep
-	}
-	return step
+// rangeStep is the default Prometheus step for a request that names none: the
+// shared policy's step for the requested span, with the configured minimum as
+// its floor and the gateway's own minimum when none is configured, capped at
+// maxRangeStep.
+func rangeStep(r connector.TimeRange, floor time.Duration) time.Duration {
+	step := querystep.For(r.End.Sub(r.Start), querystep.DefaultTargetPoints, max(floor, minRangeStep))
+	return min(step, maxRangeStep)
 }
 
 // unsupported builds the result — and error — for a query shape the

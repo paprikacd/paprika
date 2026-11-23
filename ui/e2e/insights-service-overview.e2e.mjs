@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 import { assertCoverage, finitePoints } from "./service-overview-coverage.mjs"
+import { plannedStep } from "./query-step.mjs";
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 assert.ok(process.env.INSIGHTS_SERVICE_OVERVIEW_CONFIG, "Set INSIGHTS_SERVICE_OVERVIEW_CONFIG to private configuration")
@@ -31,6 +32,8 @@ assert.ok(services.length >= 2)
 const output = config.outputDir ? resolve(config.outputDir) : join(repository, "artifacts/insights/service-overview", config.dashboardId)
 const reports = [], pageErrors = [], responses = [], writes = [], requests = [], completedRequests = []
 const pendingQueries = new Map()
+// Each provider publishes the finest step it serves (minStepSeconds, absent when it ignores step).
+const providerMinimums = new Map()
 const queries = new Map()
 let browser, context, page, dashboard, variable, initialDashboard, usageBefore, usageAfter, rpcId = 0, contextId = 0, loadTime = 0
 const dashboardURL = `${baseURL}/dashboard/insights/?dashboard=${encodeURIComponent(config.dashboardId)}`
@@ -85,7 +88,7 @@ function resolveWidget(widget, service) {
 }
 function rangeMatches(request) {
   if (![request.start, request.end, request.step].every(Number.isFinite) || request.end <= request.start) return false
-  if (dashboard.customTimeRange) return request.start === Date.parse(dashboard.customTimeRange.from) / 1000 && request.end === Date.parse(dashboard.customTimeRange.to) / 1000 && request.step === Math.max(1, Math.ceil((request.end - request.start) / 300))
+  if (dashboard.customTimeRange) return request.start === Date.parse(dashboard.customTimeRange.from) / 1000 && request.end === Date.parse(dashboard.customTimeRange.to) / 1000 && request.step === plannedStep(request.end - request.start, providerMinimums.get(request.providerId) ?? 0)
   const duration = { "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 86400, "7d": 604800, "30d": 2592000 }[dashboard.timeRange]
   return (!duration || request.end - request.start === duration) && Math.abs(request.end * 1000 - loadTime) < 120_000
 }
@@ -199,6 +202,7 @@ async function check(name, action) {
 try {
   await mkdir(output, { recursive: true }); usageBefore = await usage()
   await check("The dashboard and every saved query share the declared service variable and MCP providers", async () => {
+    for (const provider of (await api("providers")).document.providers) providerMinimums.set(provider.id, provider.minStepSeconds ?? 0)
     initialDashboard = await api(`dashboards/${config.dashboardId}`); dashboard = initialDashboard.document
     if (config.expectedDocument) assert.deepEqual(dashboard, config.expectedDocument)
     const remote = await tool("get_dashboard", { id: dashboard.id })

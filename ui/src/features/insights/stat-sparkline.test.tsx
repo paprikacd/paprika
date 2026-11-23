@@ -316,7 +316,7 @@ describe("optional single-value history", () => {
           providers={providers}
           start={0}
           end={10}
-          step={1}
+         
         >
           <TooltipSubWidget
             view={{ ...view, showSparkline: enabled }}

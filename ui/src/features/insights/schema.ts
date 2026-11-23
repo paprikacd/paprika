@@ -787,6 +787,9 @@ export interface Provider {
   capabilities: DataKind[]
   /** Shared providers only: the last probe's state. Informational; a query is never refused on it. */
   state?: ProviderState
+  /** The finest metrics step the server dispatches for this provider, absent when the provider ignores step. Callers
+   * plan steps at or above it, so the step is never raised silently. */
+  minStepSeconds?: number
 }
 export interface QueryRequest {
   providerId: string
