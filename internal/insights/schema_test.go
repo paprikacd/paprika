@@ -263,3 +263,19 @@ func TestAuthoringSchemaDescribesTooltipPlacement(t *testing.T) {
 	require.Contains(t, string(response.Schema), `"tooltipMaxHeight"`)
 	require.LessOrEqual(t, w.Body.Len(), maxSchemaResponseBytes)
 }
+
+// Every get_insights_schema kind must fit the 64 KiB response cap, which the MCP gateway also applies when it reads the
+// body. Over the cap the service answers 500 and agents lose the contract, so this names the kind and the overflow.
+// The dashboard kind is the largest; its headroom is logged so a growing note is noticed before it breaks.
+func TestAuthoringSchemaResponsesFitTheCap(t *testing.T) {
+	for _, kind := range []string{"dashboard", "widget", "saved_query", "plugin"} {
+		schema, err := insightsschema.Document(kind)
+		require.NoError(t, err)
+		body, err := authoringSchemaBody(kind, schema)
+		require.NoError(t, err)
+		t.Logf("%s: %d bytes, %d below the %d-byte cap", kind, len(body), maxSchemaResponseBytes-len(body), maxSchemaResponseBytes)
+		if len(body) > maxSchemaResponseBytes {
+			t.Errorf("get_insights_schema kind=%s is %d bytes, %d over the %d-byte cap: the service would answer 500. Shorten its notes or examples, or move detail to the plugin kind.", kind, len(body), len(body)-maxSchemaResponseBytes, maxSchemaResponseBytes)
+		}
+	}
+}

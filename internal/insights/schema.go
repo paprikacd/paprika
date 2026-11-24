@@ -3,6 +3,7 @@ package insights
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
@@ -59,6 +60,22 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "authoring schema is unavailable")
 		return
 	}
+	encoded, err := authoringSchemaBody(kind, schema)
+	if err != nil || len(encoded) > maxSchemaResponseBytes {
+		writeError(w, http.StatusInternalServerError, "authoring schema exceeds its response limit")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	// #nosec G705 -- json.Marshal escapes HTML and the content type is application/json; kind is one of four fixed names.
+	if _, err := w.Write(encoded); err != nil {
+		return // A disconnected client cannot receive a replacement response.
+	}
+}
+
+// authoringSchemaBody is the encoded response for one schema kind, whatever its size. The handler refuses a body over
+// maxSchemaResponseBytes, which is also the get_insights_schema read cap in the MCP gateway; a test measures each kind.
+func authoringSchemaBody(kind string, schema json.RawMessage) ([]byte, error) {
 	response := authoringSchemaResponse{
 		SchemaVersion: 1, Kind: kind, Schema: schema,
 		Examples: authoringSchemaExamples(kind),
@@ -109,15 +126,10 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 		response.Notes = append(response.Notes, schemaPluginPointerNote)
 	}
 	encoded, err := json.Marshal(response)
-	if err != nil || len(encoded) > maxSchemaResponseBytes {
-		writeError(w, http.StatusInternalServerError, "authoring schema exceeds its response limit")
-		return
+	if err != nil {
+		return nil, fmt.Errorf("encode %s authoring schema: %w", kind, err)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(encoded); err != nil {
-		return // A disconnected client cannot receive a replacement response.
-	}
+	return encoded, nil
 }
 
 func authoringSchemaExamples(kind string) []json.RawMessage {
