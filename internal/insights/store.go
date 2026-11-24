@@ -357,14 +357,14 @@ func readStoreDocument(dir, name string, limit int64) ([]byte, error) {
 }
 
 func validateDashboardWidgetShape(raw json.RawMessage) error {
-	widget, err := requireObjectShape(raw, []string{"id", "title", "type", "providerId", "query", "unit", "layout"}, []string{"description", "color", "options", "pluginId", "dataKind", "config", "drilldowns", "queryRef", "selectionBindings", "annotationSource"})
+	widget, err := requireObjectShape(raw, widgetRequiredFields, widgetOptionalFields)
 	if err != nil {
 		return err
 	}
 	if err := validateWidgetExtensions(widget); err != nil {
 		return err
 	}
-	if _, err := requireObjectShape(widget["layout"], []string{"x", "y", "w", "h"}, nil); err != nil {
+	if _, err := requireObjectShape(widget["layout"], layoutFields, nil); err != nil {
 		return in("layout", err)
 	}
 	if color, exists := widget["color"]; exists {
