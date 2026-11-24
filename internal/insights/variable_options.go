@@ -278,6 +278,13 @@ func (s *Server) planVariableSources(env *variableSourceEnv, only map[string]boo
 			continue
 		}
 		prepared, failure := s.prepareVariableSource(env, definition.Source, used)
+		if failure != nil && env.request.Context().Err() != nil {
+			// The budget ended while the provider was being resolved, or before: the widgets of a slow read can
+			// spend it all. The source was never queried, so it is not_run, as a fetch that cannot start is.
+			outcomes[i] = variableSourceOutcome{state: "not_run", sourced: true}
+			count.Planned++
+			continue
+		}
 		if failure != nil {
 			outcomes[i] = variableSourceOutcome{state: "failed", failure: failure, sourced: true}
 			continue
