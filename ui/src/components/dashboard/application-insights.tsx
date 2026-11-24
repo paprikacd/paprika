@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useApplicationDashboards } from "@/lib/insights-coverage"
 import { insightsDashboardHref } from "@/lib/insights-link"
+import { ApplicationInsightsWidget } from "./application-insights-widget"
 
 /** The header link to the most specific Insights dashboard covering the application. Renders nothing when none does. */
 export function ApplicationMetricsLink({ namespace, name }: { namespace: string; name: string }) {
@@ -37,6 +38,16 @@ export function ApplicationDashboards({ namespace, name, unhealthy }: { namespac
             {top.title}
           </Link>
         </p>
+      ) : null}
+      {top.summaryWidgetId ? (
+        <div className="mt-3">
+          <ApplicationInsightsWidget
+            dashboardId={top.id}
+            widgetId={top.summaryWidgetId}
+            variables={top.variables}
+            href={insightsDashboardHref(top.id, top.variables)}
+          />
+        </div>
       ) : null}
       <ul className="mt-2 space-y-1 text-sm">
         {dashboards.map((dashboard) => (
