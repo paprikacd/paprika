@@ -8,6 +8,19 @@ import { isDeepStrictEqual } from "node:util"
 import { applyDashboardPatch, mergePatch, validateDashboardPatch } from "../../ui/src/features/insights/dashboard-patch.ts"
 
 const ITEM_FIELDS = { dashboards: ["id", "message", "patch", "widget_edits", "expect"], savedQueries: ["id", "patch", "expect"] }
+// patch_saved_query refuses these members and patches over 32 KiB (internal/observabilitygateway/insights_patch.go).
+const SAVED_QUERY_IMMUTABLE = ["id", "schemaVersion", "providerId", "kind"]
+const SAVED_QUERY_PATCH_BYTES = 32 * 1024
+
+// Two entries for one document would both plan against the same ETag, so the second write would conflict
+// after the first had landed. The set is refused before anything is read.
+function assertUnique(entries, kind) {
+  const seen = new Set()
+  for (const entry of entries) {
+    assert.ok(!seen.has(entry.id), `${kind} ${entry.id} is listed more than once`)
+    seen.add(entry.id)
+  }
+}
 
 /** Throws unless the value is a version-1 patch set. Dashboard patches are checked with the shared validator. */
 export function validatePatchSet(set) {
@@ -25,7 +38,11 @@ export function validatePatchSet(set) {
     for (const key of Object.keys(entry)) assert.ok(ITEM_FIELDS.savedQueries.includes(key), `${entry.id}: unknown field ${key}`)
     assert.ok(typeof entry.id === "string" && entry.id, "every saved query needs an id")
     assert.ok(entry.patch && typeof entry.patch === "object" && !Array.isArray(entry.patch) && Object.keys(entry.patch).length > 0, `${entry.id}: saved query patch must be a nonempty object`)
+    for (const field of SAVED_QUERY_IMMUTABLE) assert.ok(!Object.hasOwn(entry.patch, field), `${entry.id}: patch cannot change ${field}`)
+    assert.ok(Buffer.byteLength(JSON.stringify(entry.patch)) <= SAVED_QUERY_PATCH_BYTES, `${entry.id}: saved query patch exceeds 32 KiB`)
   }
+  assertUnique(set.dashboards ?? [], "dashboard")
+  assertUnique(set.savedQueries ?? [], "saved query")
   return set
 }
 
@@ -61,7 +78,9 @@ async function planDashboard(call, entry, preflight) {
   }
   // The merged dashboard is linted before any write; the server's save is the authority, but a plan must not write a document Insights would reject.
   const findings = await call("validate_dashboard", { document: result.document })
-  if ((findings?.errorCount ?? 0) > 0) throw new Error(`${entry.id} fails validation: ${JSON.stringify(findings.issues ?? [])}`)
+  // A check that answers without a count has not passed: the plan stops rather than read it as clean.
+  if (!Number.isInteger(findings?.errorCount)) throw new Error(`${entry.id}: validate_dashboard returned no errorCount`)
+  if (findings.errorCount > 0) throw new Error(`${entry.id} fails validation: ${JSON.stringify(findings.issues ?? [])}`)
   return { ...base, expected: result.document, placements: result.placements, changes: result.changes, findings, state: "planned" }
 }
 
@@ -135,6 +154,8 @@ export async function apply(call, planned, { now = () => new Date().toISOString(
     const read = item.collection === "dashboards" ? "get_dashboard" : "get_saved_query"
     try {
       const written = await call(write, item.args)
+      // Recorded before verification, so a receipt for a write that landed but did not verify still names it.
+      item.afterEtag = written?.etag ?? null
       assert.deepEqual(written.document, item.expected, `${item.id} write changed unexpected fields`)
       const persisted = await call(read, { id: item.id })
       assert.deepEqual(persisted.document, item.expected, `${item.id} did not persist`)

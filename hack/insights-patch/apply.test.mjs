@@ -132,6 +132,74 @@ test("a receipt written by the CLI holds no token", async () => {
   }
 })
 
+test("a set that lists one document twice, or patches an immutable saved-query field, is refused", () => {
+  const twice = dashboardSet({ dashboards: [...dashboardSet().dashboards, { id: "svc", patch: { title: "Again" } }] })
+  assert.throws(() => validatePatchSet(twice), /dashboard svc is listed more than once/)
+  assert.throws(() => validatePatchSet(dashboardSet({ savedQueries: [{ id: "q", patch: { kind: "logs" } }] })), /q: patch cannot change kind/)
+  assert.throws(() => validatePatchSet(dashboardSet({ savedQueries: [{ id: "q", patch: { name: "x" } }, { id: "q", patch: { name: "y" } }] })), /saved query q is listed more than once/)
+})
+
+test("a check that answers without an error count blocks the plan", async () => {
+  const fake = fakeObserve({ dashboards: { svc: document() }, lint: () => ({ issues: [] }) })
+  await assert.rejects(plan(fake.call, dashboardSet()), /returned no errorCount/)
+  assert.ok(fake.calls.every(name => !name.startsWith("patch_")))
+})
+
+test("a write against an ETag that moved after the plan stops with a receipt and no retry", async () => {
+  const fake = fakeObserve({ dashboards: { svc: document(), other: { ...document(), id: "other" } } })
+  const set = dashboardSet({ dashboards: [...dashboardSet().dashboards, { id: "other", patch: { title: "Other" } }] })
+  const planned = await plan(fake.call, set)
+  // Another writer saves svc between the plan and the apply.
+  fake.store.dashboards.svc.etag = etag(99)
+  fake.calls.length = 0
+  const receipt = await apply(fake.call, planned)
+  assert.match(receipt.error, /^svc: .*stale ETag/)
+  assert.deepEqual(receipt.items.map(item => [item.id, item.state, item.afterEtag]), [["svc", "failed", null], ["other", "planned", null]])
+  assert.deepEqual(fake.calls, ["patch_dashboard"])
+  assert.equal(fake.store.dashboards.other.document.title, "Service")
+})
+
+test("a write that lands but does not verify keeps its new ETag in the receipt", async () => {
+  const fake = fakeObserve({ dashboards: { svc: document() } })
+  const planned = await plan(fake.call, dashboardSet())
+  const call = async (name, args) => {
+    const result = await fake.call(name, args)
+    return name === "patch_dashboard" ? { ...result, document: { ...result.document, title: "Rewritten by the server" } } : result
+  }
+  const receipt = await apply(call, planned)
+  assert.match(receipt.error, /write changed unexpected fields/)
+  assert.equal(receipt.items[0].state, "failed")
+  assert.equal(receipt.items[0].afterEtag, fake.store.dashboards.svc.etag)
+})
+
+test("a CLI dry run reads and plans but never writes, and its receipt holds no token", async () => {
+  const fake = fakeObserve({ dashboards: { svc: document() } })
+  const dir = await mkdtemp(join(tmpdir(), "insights-patch-"))
+  const receiptPath = join(dir, "receipt.json")
+  const setPath = join(dir, "set.json")
+  const { writeFile } = await import("node:fs/promises")
+  await writeFile(setPath, JSON.stringify(dashboardSet()))
+  const printed = []
+  try {
+    const code = await runCli({
+      argv: [setPath, "--receipt", receiptPath],
+      env: { PAPRIKA_OBSERVE_URL: "https://observe.example.test/mcp", PAPRIKA_OBSERVE_TOKEN: TOKEN },
+      makeCall: () => fake.call,
+      print: line => printed.push(line),
+      printError: line => printed.push(line),
+    })
+    assert.equal(code, 0)
+    assert.ok(fake.calls.every(name => !name.startsWith("patch_")))
+    assert.equal(fake.store.dashboards.svc.document.widgets[0].title, "Rate")
+    const text = await readFile(receiptPath, "utf8")
+    assert.ok(!text.includes(TOKEN))
+    assert.ok(!printed.join("\n").includes(TOKEN))
+    assert.deepEqual(JSON.parse(text).items.map(item => item.state), ["planned"])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test("the set format rejects unknown fields and invalid edits", () => {
   assert.throws(() => validatePatchSet({ version: 2, dashboards: [] }), /version/)
   assert.throws(() => validatePatchSet(dashboardSet({ dashboards: [{ id: "svc", op: "update", patch: { title: "x" } }] })), /unknown field op/)
