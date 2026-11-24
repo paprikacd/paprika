@@ -676,6 +676,43 @@ export const timeZoneSchema = z
  */
 const storedTimeZoneSchema = z.string().max(64).optional().catch(undefined)
 
+const coverageNamePattern = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/
+export const coverageNamespaceSchema = z
+  .string()
+  .min(1)
+  .max(63)
+  .regex(coverageNamePattern, "Use lowercase letters, digits, dots or hyphens, starting and ending with a letter or digit")
+  .describe("A Kubernetes namespace name: lowercase letters, digits and hyphens, at most 63 characters.")
+export const coverageNameSchema = z
+  .string()
+  .min(1)
+  .max(253)
+  .regex(coverageNamePattern, "Use lowercase letters, digits, dots or hyphens, starting and ending with a letter or digit")
+  .describe("An application name: lowercase letters, digits, dots and hyphens, at most 253 characters.")
+export const coverageMatchSchema = z
+  .strictObject({
+    namespace: coverageNamespaceSchema.optional(),
+    name: coverageNameSchema.optional(),
+  })
+  .describe("One application. An omitted namespace or name matches any value, so an empty object matches every application.")
+export const coverageSchema = z
+  .strictObject({
+    applications: z
+      .array(coverageMatchSchema)
+      .min(1)
+      .max(16)
+      .describe("The applications this dashboard covers. The dashboard is listed for an application that matches any entry."),
+    variables: z
+      .record(variableNameSchema, z.enum(["namespace", "name"]))
+      .optional()
+      .describe("Maps a declared dashboard variable to the application namespace or name it takes."),
+    summaryWidget: identifier
+      .optional()
+      .describe("The id of the widget shown as the summary on an application page."),
+  })
+  .describe("The applications this dashboard is for. Application pages list the dashboards whose coverage matches.")
+export type DashboardCoverage = z.infer<typeof coverageSchema>
+
 export const dashboardSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -705,6 +742,7 @@ export const dashboardSchema = z
     customTimeRange: customTimeRangeSchema.optional(),
     /** The zone of the calendar axis, observation inspector and window labels. Omitted, they use the viewer's zone. */
     timeZone: timeZoneSchema.optional(),
+    covers: coverageSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional().superRefine(checkVariableSourceGraph),
     timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),
@@ -731,6 +769,15 @@ export const dashboardSchema = z
         })
       ids.add(widget.id)
     })
+    if (value.covers) {
+      const declared = new Set(value.variables?.map((variable) => variable.name))
+      for (const key of Object.keys(value.covers.variables ?? {}))
+        if (!declared.has(key))
+          context.addIssue({ code: "custom", path: ["covers", "variables", key], message: "Map only declared dashboard variables" })
+      const summary = value.covers.summaryWidget
+      if (summary !== undefined && !value.widgets.some((widget) => widget.id === summary))
+        context.addIssue({ code: "custom", path: ["covers", "summaryWidget"], message: "Name a widget on this dashboard" })
+    }
   })
 
 /**

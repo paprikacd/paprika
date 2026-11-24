@@ -5,6 +5,7 @@
   "description": "CPU, memory and throttling for the containers of one namespace. Assumes the kubelet cAdvisor metrics container_cpu_usage_seconds_total, container_memory_working_set_bytes, container_cpu_cfs_throttled_periods_total and container_cpu_cfs_periods_total, which carry namespace, pod and container labels, and kube-state-metrics for kube_pod_container_resource_requests, which carries the requested CPU per pod. Choose the namespace variable after importing.",
   "timeRange": "6h",
   "refreshInterval": 60,
+  "covers": { "applications": [{}], "variables": { "namespace": "namespace" }, "summaryWidget": "cpu-by-pod" },
   "variables": [
     { "name": "namespace", "label": "Namespace", "defaultValue": "default" }
   ],

@@ -39,10 +39,7 @@ const (
 )
 
 var dashboardRequiredFields = []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}
-var dashboardOptionalFields = []string{"description", "folder", "customTimeRange", "timeZone", "variables"}
-
-// dashboardExtensionFields is the order validateDashboardExtensions checks them in.
-var dashboardExtensionFields = []string{"variables", "folder", "customTimeRange", "timeZone"}
+var dashboardOptionalFields = []string{"description", "folder", "customTimeRange", "timeZone", "variables", "covers"}
 
 // checkFixes gives agents the allowed values for the most common rule
 // violations. Rules without an entry have a message that already says enough.
@@ -350,14 +347,8 @@ func boundedArray(raw json.RawMessage, keep int) (elements []json.RawMessage, to
 // extensionFinding runs the document-level extension checks, in their fixed
 // order, and returns the first failure, or nil.
 func extensionFinding(root map[string]json.RawMessage) *insightsv1.CheckFinding {
-	for _, field := range dashboardExtensionFields {
-		raw, ok := root[field]
-		if !ok {
-			continue
-		}
-		if err := validateDashboardExtensions(map[string]json.RawMessage{field: raw}); err != nil {
-			return findingAt("", err, "")
-		}
+	if err := validateDashboardExtensions(root); err != nil {
+		return findingAt("", err, "")
 	}
 	return nil
 }
@@ -434,7 +425,7 @@ func ruleFor(pointer string) string {
 		return ruleDocumentTimeRange
 	case "refreshInterval":
 		return ruleDocumentRefresh
-	case "variables", "folder", "customTimeRange", "timeZone":
+	case "variables", "folder", "customTimeRange", "timeZone", "covers":
 		return "schema.document." + segments[0]
 	case "widgets":
 		if len(segments) == 1 {

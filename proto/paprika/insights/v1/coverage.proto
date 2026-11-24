@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package paprika.insights.v1;
+
+option go_package = "github.com/benebsworth/paprika/internal/api/paprika/insights/v1;insightsv1";
+
+// Wire form: every JSON encoding of these messages is protojson with the
+// standard names. Fields appear as lowerCamelCase (summaryWidgetId).
+
+// ApplicationDashboard is one dashboard that covers an application, as the
+// application-dashboards lookup returns it.
+message ApplicationDashboard {
+  string id = 1;
+  string title = 2;
+  // folder is empty when the dashboard has none.
+  string folder = 3;
+  // variables maps each dashboard variable to the application value it takes,
+  // either the namespace or the name.
+  map<string, string> variables = 4;
+  // summary_widget_id is empty when the dashboard names no summary widget.
+  string summary_widget_id = 5;
+  // specificity is the score of the best covers entry that matched: 3 for a
+  // namespace and name, 2 for a name, 1 for a namespace, 0 for an entry that
+  // matches every application.
+  uint32 specificity = 6;
+}
+
+// ApplicationDashboardList is the HTTP response for the application-dashboards
+// lookup. Dashboards are most specific first.
+message ApplicationDashboardList {
+  repeated ApplicationDashboard dashboards = 1;
+  // truncated is set when more dashboards matched than the list returns.
+  bool truncated = 2;
+}
