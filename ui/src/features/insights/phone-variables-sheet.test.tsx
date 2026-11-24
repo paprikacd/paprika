@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PhoneVariables } from "./dashboard-variables";
+import type { VariableValues } from "./drilldown";
 import type { Dashboard } from "./schema";
 
 afterEach(() => {
@@ -22,8 +23,8 @@ const dashboard: Dashboard = {
   ],
 };
 
-function Harness({ onApply = vi.fn() }: { onApply?: (values: Record<string, string>) => void }) {
-  const [values, setValues] = useState<Record<string, string>>({ cluster: "omega", location: "Melbourne" });
+function Harness({ onApply = vi.fn() }: { onApply?: (values: VariableValues) => void }) {
+  const [values, setValues] = useState<VariableValues>({ cluster: "omega", location: "Melbourne" });
   return (
     <PhoneVariables
       dashboard={dashboard}

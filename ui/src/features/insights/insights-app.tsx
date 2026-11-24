@@ -133,7 +133,7 @@ import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
 import {
   describeIgnoredLink,
   resolveDashboardVariables,
-  resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart,
+  resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart, type VariableValues,
 } from "./drilldown"
 import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
 
@@ -565,7 +565,7 @@ function InsightsWorkspace({
   const variableKey = JSON.stringify(resolveDashboardVariables(dashboard, Object.fromEntries(
     Object.entries(currentRoute?.variables ?? {}).filter(([name]) => dashboard.variables?.some(item => item.name === name)),
   )))
-  const variableValues = useMemo(() => JSON.parse(variableKey) as Record<string, string>, [variableKey])
+  const variableValues = useMemo(() => JSON.parse(variableKey) as VariableValues, [variableKey])
   useEffect(() => {
     if (!currentRoute?.variables) return
     const entries = Object.entries(currentRoute.variables)

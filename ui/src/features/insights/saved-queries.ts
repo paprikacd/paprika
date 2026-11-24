@@ -1,6 +1,7 @@
 import { interpolateQueryLiterals } from "./drilldown";
 import { seriesName, type Point, type Series } from "./chart-data";
 import { validTimestamp } from "./widget-context";
+import { variableListSchema, type VariableValue } from "./variable-values";
 import {
   savedQuerySchema,
   savedQueryReferenceSchema,
@@ -19,11 +20,34 @@ function queryDocument(query: SavedQuery): SavedQuery {
   return savedQuerySchema.parse(document);
 }
 
-/** Dashboard variables are text; numeric parameters accept only complete finite numeric literals. */
+/** The template kind of each parameter: a list, a number, or text. */
+function parameterKinds(parameters: readonly SavedQueryParameter[]): Record<string, "string" | "number" | "strings"> {
+  return Object.fromEntries(
+    parameters.map((parameter) => [
+      parameter.name,
+      parameter.multi ? "strings" : parameter.type,
+    ]),
+  );
+}
+
+/**
+ * Dashboard variables are text; numeric parameters accept only complete finite numeric literals. A parameter of
+ * several values takes a list, and a single string is one item of it.
+ */
 export function savedQueryParameterValue(
   parameter: SavedQueryParameter,
-  value: string | number,
-): string | number {
+  value: string | number | string[],
+): string | number | string[] {
+  if (parameter.multi) {
+    const items = typeof value === "string" ? [value] : value;
+    if (!variableListSchema.safeParse(items).success)
+      throw new Error(
+        `Parameter “${parameter.name}” needs up to 100 unique values of at most 1,024 characters in total.`,
+      );
+    return items;
+  }
+  if (Array.isArray(value))
+    throw new Error(`Parameter “${parameter.name}” takes one value, not a list.`);
   if (parameter.type === "string") {
     if (typeof value !== "string" || value.length > 1024)
       throw new Error(
@@ -46,21 +70,23 @@ export function savedQueryParameterValue(
 
 export function validateSavedQueryTemplate(query: SavedQuery): void {
   const checked = queryDocument(query);
+  const parameters = checked.parameters ?? [];
   interpolateQueryLiterals(
     checked.query,
     Object.fromEntries(
-      (checked.parameters ?? []).map((parameter) => [
+      parameters.map((parameter) => [
         parameter.name,
-        parameter.type === "number" ? 1 : "",
+        parameter.multi ? ["validation"] : parameter.type === "number" ? 1 : "",
       ]),
     ),
+    parameterKinds(parameters),
   );
 }
 
 /** Resolve typed parameters in one pass; substituted {{text}} remains literal data. */
 export function resolveSavedQueryTemplate(
   query: SavedQuery,
-  supplied: Record<string, string | number>,
+  supplied: Record<string, string | number | string[]>,
 ): string {
   const checked = queryDocument(query);
   const parameters = checked.parameters ?? [];
@@ -69,7 +95,7 @@ export function resolveSavedQueryTemplate(
       throw new Error(
         `Saved query “${checked.name}” has no parameter “${key}”.`,
       );
-  const values: Record<string, string | number> = Object.create(null);
+  const values: Record<string, string | number | string[]> = Object.create(null);
   for (const parameter of parameters) {
     const value = Object.hasOwn(supplied, parameter.name)
       ? supplied[parameter.name]
@@ -80,7 +106,7 @@ export function resolveSavedQueryTemplate(
       );
     values[parameter.name] = savedQueryParameterValue(parameter, value);
   }
-  return interpolateQueryLiterals(checked.query, values);
+  return interpolateQueryLiterals(checked.query, values, parameterKinds(parameters));
 }
 
 export interface SavedQueryObservation {
@@ -91,7 +117,7 @@ export interface SavedQueryObservation {
 export function resolveSavedQueryReference(
   reference: SavedQueryReference,
   queries: readonly SavedQuery[],
-  variableValues: Record<string, string>,
+  variableValues: Record<string, VariableValue>,
   expectedKind: DataKind,
   observation?: SavedQueryObservation,
 ): { providerId: string; query: string; kind: DataKind } {
@@ -105,7 +131,7 @@ export function resolveSavedQueryReference(
     throw new Error(
       `Saved query “${saved.name}” does not provide ${expectedKind}. Choose a compatible query.`,
     );
-  const values: Record<string, string | number> = Object.create(null);
+  const values: Record<string, string | number | string[]> = Object.create(null);
   for (const binding of ref.bindings ?? []) {
     if (binding.source === "constant")
       values[binding.parameter] = binding.value;

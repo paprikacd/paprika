@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 func TestDashboardSavedQueryTypedBindingsAndExplicitDefaults(t *testing.T) {
@@ -13,16 +15,16 @@ func TestDashboardSavedQueryTypedBindingsAndExplicitDefaults(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		bindings   []dashboardReadBinding
-		variables  map[string]string
+		variables  map[string]variablevalue.Value
 		expression string
 		wantError  bool
 	}{
-		{name: "saved defaults do not implicitly bind a same-named dashboard variable", variables: map[string]string{"service": "dashboard-service"}, expression: `metric{service="saved-service"} > 5`},
-		{name: "explicit variable and numeric conversion", bindings: []dashboardReadBinding{{Parameter: "service", Source: "variable", Variable: "service"}, {Parameter: "threshold", Source: "variable", Variable: "limit"}}, variables: map[string]string{"service": "api", "limit": "1e3"}, expression: `metric{service="api"} > 1000`},
+		{name: "saved defaults do not implicitly bind a same-named dashboard variable", variables: variableValues(map[string]string{"service": "dashboard-service"}), expression: `metric{service="saved-service"} > 5`},
+		{name: "explicit variable and numeric conversion", bindings: []dashboardReadBinding{{Parameter: "service", Source: "variable", Variable: "service"}, {Parameter: "threshold", Source: "variable", Variable: "limit"}}, variables: variableValues(map[string]string{"service": "api", "limit": "1e3"}), expression: `metric{service="api"} > 1000`},
 		{name: "constant", bindings: []dashboardReadBinding{{Parameter: "service", Source: "constant", Value: json.RawMessage(`"constant"`)}}, expression: `metric{service="constant"} > 5`},
 		{name: "missing explicit variable must not use default", bindings: []dashboardReadBinding{{Parameter: "service", Source: "variable", Variable: "unknown"}}, wantError: true},
-		{name: "numeric whitespace rejected", bindings: []dashboardReadBinding{{Parameter: "threshold", Source: "variable", Variable: "limit"}}, variables: map[string]string{"limit": " 1 "}, wantError: true},
-		{name: "numeric expression rejected", bindings: []dashboardReadBinding{{Parameter: "threshold", Source: "variable", Variable: "limit"}}, variables: map[string]string{"limit": "1 + 2"}, wantError: true},
+		{name: "numeric whitespace rejected", bindings: []dashboardReadBinding{{Parameter: "threshold", Source: "variable", Variable: "limit"}}, variables: variableValues(map[string]string{"limit": " 1 "}), wantError: true},
+		{name: "numeric expression rejected", bindings: []dashboardReadBinding{{Parameter: "threshold", Source: "variable", Variable: "limit"}}, variables: variableValues(map[string]string{"limit": "1 + 2"}), wantError: true},
 		{name: "string cannot accept numeric constant", bindings: []dashboardReadBinding{{Parameter: "service", Source: "constant", Value: json.RawMessage(`123`)}}, wantError: true},
 		{name: "unknown parameter", bindings: []dashboardReadBinding{{Parameter: "other", Source: "constant", Value: json.RawMessage(`"x"`)}}, wantError: true},
 		{name: "hover-only binding rejected", bindings: []dashboardReadBinding{{Parameter: "service", Source: "label"}}, wantError: true},
@@ -35,7 +37,7 @@ func TestDashboardSavedQueryTypedBindingsAndExplicitDefaults(t *testing.T) {
 		})
 	}
 	saved.Parameters[0].DefaultValue = nil
-	if _, err := resolveDashboardSavedQuery(&saved, dashboardReadReference{}, map[string]string{"service": "implicit"}); err == nil {
+	if _, err := resolveDashboardSavedQuery(&saved, dashboardReadReference{}, variableValues(map[string]string{"service": "implicit"})); err == nil {
 		t.Fatal("required parameter was implicitly bound or silently defaulted")
 	}
 }
@@ -68,13 +70,13 @@ func TestDashboardQueryVariablesReportDefinitionsAndBudgetOptions(t *testing.T) 
 	label := "Service"
 	service := "checkout"
 	definitions := []dashboardReadVariable{
-		{Name: "service", Label: label, DefaultValue: &service, Options: []string{"checkout", "api"}},
+		{Name: "service", Label: label, DefaultValue: valuePtr(service), Options: []string{"checkout", "api"}},
 		{Name: "free"},
 		{Name: "large", Options: []string{strings.Repeat("a", 2000), strings.Repeat("b", 2000), strings.Repeat("c", 2000)}},
 		{Name: "after", Options: []string{strings.Repeat("y", 200)}},
 	}
 	variables := dashboardQueryVariables(definitions)
-	if len(variables) != 4 || variables[0].Name != "service" || variables[0].Label != label || *variables[0].DefaultValue != "checkout" || len(variables[0].Options) != 2 || variables[0].OptionsOmitted != 0 {
+	if len(variables) != 4 || variables[0].Name != "service" || variables[0].Label != label || valueText(*variables[0].DefaultValue) != "checkout" || len(variables[0].Options) != 2 || variables[0].OptionsOmitted != 0 {
 		t.Fatalf("declared definition not reported in order: %+v", variables)
 	}
 	if variables[1].DefaultValue != nil || variables[1].Options != nil || variables[1].OptionsOmitted != 0 {
@@ -97,10 +99,10 @@ func TestDashboardVariableWarningsNameOverridesOutsideDeclaredOptions(t *testing
 		{Name: "service", Options: []string{"omega", "delta"}},
 		{Name: "free"},
 	}
-	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "prod", "free": "anything"}); len(warnings) != 1 || warnings[0] != "service=prod is not one of the declared options" {
+	if warnings := dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": "prod", "free": "anything"})); len(warnings) != 1 || warnings[0] != "service=prod is not one of the declared options" {
 		t.Fatalf("override outside options must warn once and never a variable without options: %v", warnings)
 	}
-	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "delta"}); len(warnings) != 0 {
+	if warnings := dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": "delta"})); len(warnings) != 0 {
 		t.Fatalf("declared option warned: %v", warnings)
 	}
 	if warnings := dashboardVariableWarnings(definitions, nil); len(warnings) != 0 {
@@ -135,13 +137,13 @@ func TestDashboardQueryVariablesOmitDetailPastBudgetAndKeepLaterDetail(t *testin
 	small := "Region"
 	fallback := "eu"
 	variables := dashboardQueryVariables([]dashboardReadVariable{
-		{Name: "service", Label: large, DefaultValue: &large},
-		{Name: "region", Label: small, DefaultValue: &fallback},
+		{Name: "service", Label: large, DefaultValue: valuePtr(large)},
+		{Name: "region", Label: small, DefaultValue: valuePtr(fallback)},
 	})
 	if !variables[0].DetailOmitted || variables[0].Label != "" || variables[0].DefaultValue != nil {
 		t.Fatalf("oversized label and default must be omitted with detailOmitted: %+v", variables[0])
 	}
-	if variables[1].DetailOmitted || variables[1].Label != small || variables[1].DefaultValue == nil || *variables[1].DefaultValue != fallback {
+	if variables[1].DetailOmitted || variables[1].Label != small || variables[1].DefaultValue == nil || valueText(*variables[1].DefaultValue) != fallback {
 		t.Fatalf("later variable must keep its detail: %+v", variables[1])
 	}
 }
@@ -150,7 +152,7 @@ func TestDashboardQueryVariablesOmitDetailPastBudgetAndKeepLaterDetail(t *testin
 func TestDashboardVariableWarningsBoundTheOverrideValue(t *testing.T) {
 	definitions := []dashboardReadVariable{{Name: "service", Options: []string{"omega"}}}
 	long := strings.Repeat("x", 300)
-	warnings := dashboardVariableWarnings(definitions, map[string]string{"service": long})
+	warnings := dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": long}))
 	if len(warnings) != 1 {
 		t.Fatalf("warnings = %v", warnings)
 	}
@@ -161,7 +163,7 @@ func TestDashboardVariableWarningsBoundTheOverrideValue(t *testing.T) {
 		t.Fatalf("a shortened value must be marked: %q", warnings[0])
 	}
 	multibyte := strings.Repeat("é", 40)
-	warnings = dashboardVariableWarnings(definitions, map[string]string{"service": multibyte})
+	warnings = dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": multibyte}))
 	if len(warnings) != 1 || !utf8.ValidString(warnings[0]) {
 		t.Fatalf("a shortened multibyte value must stay valid UTF-8: %q", warnings)
 	}
@@ -176,7 +178,7 @@ func TestDashboardQueryVariablesMarkSourcedFallbacks(t *testing.T) {
 		t.Fatalf("sourced variable must report its static options as fallback options, not choices: %+v", variables)
 	}
 	// The fallback list is not the choice list, and the source is not resolved, so an override is not warned about.
-	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "delta"}); len(warnings) != 0 {
+	if warnings := dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": "delta"})); len(warnings) != 0 {
 		t.Fatalf("override of a sourced variable warned against its fallback options: %v", warnings)
 	}
 }
@@ -186,11 +188,11 @@ func TestDashboardVariableWarningsFlagEmptySourcedOverrides(t *testing.T) {
 	definitions := []dashboardReadVariable{
 		{Name: "service", Options: []string{"api"}, Source: &dashboardReadVariableSource{Type: "savedQuery"}},
 	}
-	warnings := dashboardVariableWarnings(definitions, map[string]string{"service": ""})
+	warnings := dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": ""}))
 	if len(warnings) != 1 || !strings.HasPrefix(warnings[0], "service= is empty") {
 		t.Fatalf("empty override of a sourced variable must warn: %v", warnings)
 	}
-	if warnings := dashboardVariableWarnings(definitions, map[string]string{"service": "not-in-fallback"}); len(warnings) != 0 {
+	if warnings := dashboardVariableWarnings(definitions, variableValues(map[string]string{"service": "not-in-fallback"})); len(warnings) != 0 {
 		t.Fatalf("sourced override must not warn against fallback options: %v", warnings)
 	}
 }

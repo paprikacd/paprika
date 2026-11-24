@@ -10,6 +10,7 @@ import (
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // dashboardVariableSourceBudget bounds the variable source fetches of one read. They run after the widgets,
@@ -26,10 +27,10 @@ const maxVariableOptionsBytes = 32 << 10
 // without variables the defaults apply, without names every sourced variable resolves, and without a range
 // the dashboard's own range applies.
 type variableOptionsRequest struct {
-	Variables map[string]string `json:"variables"`
-	Names     []string          `json:"names"`
-	Start     string            `json:"start"`
-	End       string            `json:"end"`
+	Variables map[string]variablevalue.Value `json:"variables"`
+	Names     []string                       `json:"names"`
+	Start     string                         `json:"start"`
+	End       string                         `json:"end"`
 }
 
 // dashboardVariableOptions resolves the query-backed choices of a dashboard's sourced variables for the given
@@ -111,7 +112,7 @@ func sourcedVariableFilter(definitions []dashboardReadVariable, names []string) 
 
 // variableOptionsMessage is one sourced variable's response entry. The current value is reported only for a
 // resolved variable; it is kept in the list, and marked, when it is absent from a complete list.
-func variableOptionsMessage(name string, outcome *variableSourceOutcome, current string, hasCurrent bool) *insightsv1.VariableOptions {
+func variableOptionsMessage(name string, outcome *variableSourceOutcome, current variablevalue.Value, hasCurrent bool) *insightsv1.VariableOptions {
 	message := &insightsv1.VariableOptions{
 		Name:          name,
 		State:         variableOptionsStateOf(outcome.state),
@@ -124,7 +125,12 @@ func variableOptionsMessage(name string, outcome *variableSourceOutcome, current
 		message.ErrorCode = outcome.failure.Code
 	}
 	if hasCurrent && (outcome.state == "ready" || outcome.state == "empty") {
-		message.CurrentValue = currentValueOf(outcome.values, outcome.truncated, current)
+		state, missing := currentValueReport(outcome.values, outcome.truncated, current)
+		message.CurrentValue = currentValueOf(state)
+		message.MissingValues = missing
+		if current.List {
+			message.CurrentValues = current.Items
+		}
 	}
 	return message
 }
@@ -145,14 +151,15 @@ func variableOptionsStateOf(state string) insightsv1.VariableOptionsState {
 	return insightsv1.VariableOptionsState_VARIABLE_OPTIONS_STATE_UNSPECIFIED
 }
 
-// currentValueOf says whether a current value is among a resolved list. A value that is absent from a
-// truncated list is unknown, because the list may hold it past the cut.
-func currentValueOf(values []string, truncated bool, current string) insightsv1.CurrentValue {
-	if slices.Contains(values, current) {
+// currentValueOf maps the state word of currentValueReport to the proto enum.
+func currentValueOf(state string) insightsv1.CurrentValue {
+	switch state {
+	case "in_values":
 		return insightsv1.CurrentValue_CURRENT_VALUE_IN_VALUES
-	}
-	if truncated {
+	case "not_in_values":
+		return insightsv1.CurrentValue_CURRENT_VALUE_NOT_IN_VALUES
+	case "unknown":
 		return insightsv1.CurrentValue_CURRENT_VALUE_UNKNOWN
 	}
-	return insightsv1.CurrentValue_CURRENT_VALUE_NOT_IN_VALUES
+	return insightsv1.CurrentValue_CURRENT_VALUE_NONE
 }

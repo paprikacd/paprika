@@ -157,6 +157,129 @@
           }
         }
       ]
+    },
+    {
+      "name": "multi list default with All",
+      "valid": true,
+      "variables": [
+        {
+          "name": "cluster",
+          "multi": true,
+          "allowAll": true,
+          "options": [
+            "omega",
+            "delta"
+          ],
+          "defaultValue": []
+        }
+      ]
+    },
+    {
+      "name": "multi list default",
+      "valid": true,
+      "variables": [
+        {
+          "name": "cluster",
+          "multi": true,
+          "options": [
+            "omega",
+            "delta"
+          ],
+          "defaultValue": [
+            "omega",
+            "delta"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Include All without several values",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "allowAll": true,
+          "options": [
+            "omega",
+            "delta"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "several values without options or a source",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "multi": true
+        }
+      ]
+    },
+    {
+      "name": "string default for several values",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "multi": true,
+          "options": [
+            "omega",
+            "delta"
+          ],
+          "defaultValue": "omega"
+        }
+      ]
+    },
+    {
+      "name": "empty default without Include All",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "multi": true,
+          "options": [
+            "omega",
+            "delta"
+          ],
+          "defaultValue": []
+        }
+      ]
+    },
+    {
+      "name": "list default for a single value",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "options": [
+            "omega",
+            "delta"
+          ],
+          "defaultValue": [
+            "omega",
+            "delta"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "repeated list default",
+      "valid": false,
+      "variables": [
+        {
+          "name": "cluster",
+          "multi": true,
+          "options": [
+            "omega",
+            "delta"
+          ],
+          "defaultValue": [
+            "omega",
+            "omega"
+          ]
+        }
+      ]
     }
   ]
 }

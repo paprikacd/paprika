@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 	"github.com/benebsworth/paprika/internal/querystep"
 )
 
@@ -33,30 +34,30 @@ func dashboardResultCapText() string {
 
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
-	ID            string            `json:"id"`
-	Variables     map[string]string `json:"variables,omitempty"`
-	WidgetIDs     []string          `json:"widget_ids,omitempty"`
-	Start         string            `json:"start,omitempty"`
-	End           string            `json:"end,omitempty"`
-	HistoryPoints *int              `json:"history_points,omitempty"`
-	MaxSeries     *int              `json:"max_series,omitempty"`
-	MaxTraces     *int              `json:"max_traces,omitempty"`
+	ID            string                         `json:"id"`
+	Variables     map[string]variablevalue.Value `json:"variables,omitempty"`
+	WidgetIDs     []string                       `json:"widget_ids,omitempty"`
+	Start         string                         `json:"start,omitempty"`
+	End           string                         `json:"end,omitempty"`
+	HistoryPoints *int                           `json:"history_points,omitempty"`
+	MaxSeries     *int                           `json:"max_series,omitempty"`
+	MaxTraces     *int                           `json:"max_traces,omitempty"`
 }
 
 // DashboardQueryResult executes persisted main and event annotation queries.
 // Tooltip queries need a hovered observation and remain outside this scope.
 type DashboardQueryResult struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Dashboard     DashboardQueryDocument   `json:"dashboard"`
-	ObservedAt    string                   `json:"observedAt"`
-	Range         DashboardQueryRange      `json:"range"`
-	Variables     map[string]string        `json:"variables"`
-	Widgets       []DashboardQueryWidget   `json:"widgets"`
-	SavedQueries  []DashboardQueryDocument `json:"savedQueries"`
-	Signals       []DashboardSignal        `json:"signals"`
-	QueryCount    DashboardQueryCount      `json:"queryCount"`
-	State         string                   `json:"state"`
-	Attention     DashboardAttention       `json:"attention"`
+	SchemaVersion int                            `json:"schemaVersion"`
+	Dashboard     DashboardQueryDocument         `json:"dashboard"`
+	ObservedAt    string                         `json:"observedAt"`
+	Range         DashboardQueryRange            `json:"range"`
+	Variables     map[string]variablevalue.Value `json:"variables"`
+	Widgets       []DashboardQueryWidget         `json:"widgets"`
+	SavedQueries  []DashboardQueryDocument       `json:"savedQueries"`
+	Signals       []DashboardSignal              `json:"signals"`
+	QueryCount    DashboardQueryCount            `json:"queryCount"`
+	State         string                         `json:"state"`
+	Attention     DashboardAttention             `json:"attention"`
 	// Annotations is the dashboard-level event source, when a selected time-based widget inherits it. See DashboardQueryAnnotations.
 	Annotations *DashboardQueryAnnotations `json:"annotations,omitempty"`
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
@@ -589,9 +590,15 @@ func validateDashboardQueryVariables(variables json.RawMessage) error {
 	if json.Unmarshal(variables, &values) != nil || len(values) > 20 {
 		return errors.New("variables must contain at most 20 string values")
 	}
+	// A value is a string, or a list of strings for a variable with several values. The declaration decides which
+	// shape fits when the variables are resolved.
 	for _, value := range values {
-		if len(value) == 0 || value[0] != '"' {
-			return errors.New("dashboard variable values must be strings")
+		var decoded variablevalue.Value
+		if json.Unmarshal(value, &decoded) != nil {
+			return errors.New("dashboard variable values must be strings or lists of strings")
+		}
+		if err := decoded.Validate(); err != nil {
+			return fmt.Errorf("dashboard variable values: %w", err)
 		}
 	}
 	return nil

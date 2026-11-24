@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 var variableIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
@@ -258,14 +260,15 @@ func validateDrilldownBindings(raw json.RawMessage) error {
 }
 
 func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error {
-	fields, err := requireObjectShape(item, []string{"name"}, []string{"label", "defaultValue", "options", "source"})
+	fields, err := requireObjectShape(item, []string{"name"}, []string{"label", "multi", "allowAll", "defaultValue", "options", "source"})
 	if err != nil {
 		return err
 	}
 	var variable struct {
-		Name         string `json:"name"`
-		Label        string `json:"label"`
-		DefaultValue string `json:"defaultValue"`
+		Name     string `json:"name"`
+		Label    string `json:"label"`
+		Multi    bool   `json:"multi"`
+		AllowAll bool   `json:"allowAll"`
 	}
 	const message = "dashboard variables require unique identifier names up to 64 characters, labels up to 80, and string values up to 1024"
 	// A decode failure names no member: the element is the thing that is wrong.
@@ -278,12 +281,55 @@ func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error
 	if stringUnits(variable.Label) > 80 {
 		return fieldErr("label", message)
 	}
-	if stringUnits(variable.DefaultValue) > 1024 {
-		return fieldErr("defaultValue", message)
+	if err := validateDashboardVariableSeveral(fields, variable.Multi, variable.AllowAll); err != nil {
+		return err
 	}
 	seen[variable.Name] = true
 	if options, ok := fields["options"]; ok {
 		return in("options", validateDashboardVariableOptions(options))
+	}
+	return nil
+}
+
+// validateDashboardVariableSeveral applies the rules for several values and All: Include All needs a multi-value
+// variable, a multi-value variable needs options or a source, and its default is a list (empty means All).
+func validateDashboardVariableSeveral(fields map[string]json.RawMessage, multi, allowAll bool) error {
+	if allowAll && !multi {
+		return fieldErr("allowAll", "Include All needs several values turned on")
+	}
+	_, hasOptions := fields["options"]
+	_, hasSource := fields["source"]
+	if multi && !hasOptions && !hasSource {
+		return fieldErr("multi", "A variable with several values needs options or a source")
+	}
+	raw, ok := fields["defaultValue"]
+	if !ok {
+		return nil
+	}
+	if err := validateDashboardVariableDefault(raw, multi, allowAll); err != nil {
+		return fieldErr("defaultValue", err.Error())
+	}
+	return nil
+}
+
+// validateDashboardVariableDefault applies the document rules to a default. A variable with several values takes
+// a list, and an empty list is All, which needs allowAll. A single-value variable takes a string.
+func validateDashboardVariableDefault(raw json.RawMessage, multi, allowAll bool) error {
+	var value variablevalue.Value
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return errors.New("a default must be a string, or a list of strings for a variable with several values")
+	}
+	if value.List != multi {
+		if multi {
+			return errors.New("use a list default for a variable with several values")
+		}
+		return errors.New("a single-value variable takes a text default")
+	}
+	if multi && len(value.Items) == 0 && !allowAll {
+		return errors.New("an empty default means All; turn on Include All")
+	}
+	if err := value.Validate(); err != nil {
+		return fmt.Errorf("default: %w", err)
 	}
 	return nil
 }

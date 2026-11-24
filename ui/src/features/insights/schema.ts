@@ -56,10 +56,31 @@ export const variableValueSchema = z.string().max(MAX_VARIABLE_VALUE_LENGTH).ref
   (value) => value.length <= MAX_VARIABLE_VALUE_LENGTH,
   "Use a variable value of at most 1024 UTF-16 code units",
 )
+/** The most items a multi-value variable's list holds. */
+export const MAX_VARIABLE_LIST_ITEMS = 100
+/** Items plus one separator per gap, in UTF-16 units: the budget one string value has. */
+export const MAX_VARIABLE_LIST_UNITS = MAX_VARIABLE_VALUE_LENGTH
+const VARIABLE_LIST_ERROR = "Use a list of at most 100 unique values, up to 1024 characters in total"
+export const variableListSchema = z
+  .array(variableValueSchema)
+  .max(MAX_VARIABLE_LIST_ITEMS, VARIABLE_LIST_ERROR)
+  .superRefine((items, context) => {
+    if (new Set(items).size !== items.length)
+      context.addIssue({ code: "custom", message: "A list must not repeat a value" })
+    const units = items.reduce((total, item) => total + item.length, 0) + Math.max(0, items.length - 1)
+    if (units > MAX_VARIABLE_LIST_UNITS) context.addIssue({ code: "custom", message: VARIABLE_LIST_ERROR })
+  })
+/** A variable value: one string, or a list for a variable with several values. */
+export const variableInputSchema = z.union([variableValueSchema, variableListSchema])
+
 export const dashboardVariableSchema = z.strictObject({
   name: variableNameSchema,
   label: z.string().max(80).optional(),
-  defaultValue: variableValueSchema.optional(),
+  /** Several values can be picked; the value is then a list. */
+  multi: z.boolean().optional(),
+  /** Adds All to a multi-value variable. All is an empty list. */
+  allowAll: z.boolean().optional(),
+  defaultValue: variableInputSchema.optional(),
   options: z.array(variableValueSchema).min(1).max(MAX_VARIABLE_OPTIONS).optional(),
   // Declared later in this file: a lazy reference avoids a use before definition.
   source: z.lazy(() => variableSourceSchema).optional(),
@@ -69,15 +90,38 @@ export const dashboardVariableSchema = z.strictObject({
     if (seen.has(option)) context.addIssue({ code: "custom", path: ["options", index], message: "Variable options must be unique" })
     seen.add(option)
   })
+  if (variable.allowAll && !variable.multi)
+    context.addIssue({ code: "custom", path: ["allowAll"], message: "Include All needs several values turned on" })
+  if (variable.multi && !variable.options && !variable.source)
+    context.addIssue({ code: "custom", path: ["multi"], message: "A variable with several values needs options or a source" })
+  const fallback = variable.defaultValue
+  if (fallback === undefined) return
+  if (variable.multi && typeof fallback === "string")
+    context.addIssue({ code: "custom", path: ["defaultValue"], message: "Use a list default for a variable with several values" })
+  else if (variable.multi && fallback.length === 0 && !variable.allowAll)
+    context.addIssue({ code: "custom", path: ["defaultValue"], message: "An empty default means All; turn on Include All" })
+  else if (!variable.multi && typeof fallback !== "string")
+    context.addIssue({ code: "custom", path: ["defaultValue"], message: "A single-value variable takes a text default" })
 })
 
 export const savedQueryParameterSchema = z.strictObject({
   name: variableNameSchema,
   label: z.string().max(80).optional(),
   type: z.enum(["string", "number"]),
-  defaultValue: z.union([variableValueSchema, z.number().finite()]).optional(),
+  /** A string parameter that takes a list of values. Its default is a list, and an empty list is All. */
+  multi: z.boolean().optional(),
+  defaultValue: z.union([variableInputSchema, z.number().finite()]).optional(),
 }).superRefine((parameter, context) => {
-  if (parameter.defaultValue !== undefined && typeof parameter.defaultValue !== parameter.type)
+  if (parameter.multi && parameter.type !== "string")
+    context.addIssue({ code: "custom", path: ["multi"], message: "Only a string parameter can take several values" })
+  const fallback = parameter.defaultValue
+  if (fallback === undefined) return
+  if (parameter.multi) {
+    if (!Array.isArray(fallback))
+      context.addIssue({ code: "custom", path: ["defaultValue"], message: "Use a list default for a parameter with several values" })
+    return
+  }
+  if (typeof fallback !== parameter.type)
     context.addIssue({ code: "custom", path: ["defaultValue"], message: `Use a ${parameter.type} default value` })
 })
 export const MAX_SAVED_QUERY_TAGS = 12

@@ -36,6 +36,11 @@ message VariableOptions {
   CurrentValue current_value = 5;
   string needs_variable = 6;
   string error_code = 7;
+  // current_values is a multi-value variable's current list, in its order. Empty for a single value and for All.
+  repeated string current_values = 8;
+  // missing_values names each current value the resolved list lacks. It is set only when current_value is
+  // NOT_IN_VALUES, so a truncated list never reports a value as missing.
+  repeated string missing_values = 9;
 }
 
 // VariableOptionsResponse lists the sourced variables that were requested.

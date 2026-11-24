@@ -14,6 +14,8 @@ import {
   type Dashboard,
   type DashboardVariable,
 } from "./schema";
+import { singleValueText } from "./variable-values";
+import { GammaMultiSelect } from "./gamma/multi-select";
 import styles from "./drilldown.module.css";
 import optionStyles from "./variable-options.module.css";
 import {
@@ -245,7 +247,7 @@ function VariablesEditor({
                 const next = { ...variable };
                 delete next.source;
                 if (from === "text") delete next.options;
-                else if (from === "typed") next.options = variable.options ?? [variable.defaultValue ?? ""];
+                else if (from === "typed") next.options = variable.options ?? [singleValueText(variable.defaultValue) ?? ""];
                 else next.source = sourceFor(from);
                 patch(index, next);
               }}
@@ -289,27 +291,61 @@ function VariablesEditor({
             </GammaButton>
           </fieldset>}
           {valuesFromOf(variable) !== "text" && !variable.options && variable.source && <div className={optionStyles.options}>
-            <GammaButton size="sm" onClick={() => patch(index, { ...variable, options: [variable.defaultValue ?? ""] })}>
+            <GammaButton size="sm" onClick={() => patch(index, { ...variable, options: [singleValueText(variable.defaultValue) ?? ""] })}>
               <Plus size={13} aria-hidden="true" /> Add fallback choices
             </GammaButton>
           </div>}
+          <GammaSwitch
+            label="Allow several values"
+            description="Viewers pick one or more values, and queries receive them as a list."
+            checked={Boolean(variable.multi)}
+            onChange={(checked) => {
+              const next = { ...variable };
+              if (checked) next.multi = true;
+              else {
+                delete next.multi;
+                delete next.allowAll;
+                if (Array.isArray(next.defaultValue)) delete next.defaultValue;
+              }
+              patch(index, next);
+            }}
+          />
+          {variable.multi && <GammaSwitch
+            label="Include All"
+            description="Adds an All choice. After =~ it matches every value; in a SQL array it binds NULL."
+            checked={Boolean(variable.allowAll)}
+            onChange={(checked) => {
+              const next = { ...variable };
+              if (checked) next.allowAll = true;
+              else delete next.allowAll;
+              if (!checked && Array.isArray(next.defaultValue) && next.defaultValue.length === 0) delete next.defaultValue;
+              patch(index, next);
+            }}
+          />}
           <GammaSwitch
             label="Use a default value"
             description="Used when a dashboard link or viewer does not supply a value."
             checked={variable.defaultValue !== undefined}
             onChange={(checked) => {
               const next = { ...variable };
-              if (checked) next.defaultValue = "";
+              if (checked) next.defaultValue = variable.multi ? (variable.allowAll ? [] : [variable.options?.[0] ?? ""]) : "";
               else delete next.defaultValue;
               patch(index, next);
             }}
           />
-          {variable.defaultValue !== undefined && (
+          {variable.multi && Array.isArray(variable.defaultValue) && variable.options && <GammaMultiSelect
+            aria-label={`Variable ${index + 1} default values`}
+            values={variable.defaultValue}
+            allowAll={Boolean(variable.allowAll)}
+            options={variable.options.map((choice) => ({ value: choice, label: choice || "Empty value" }))}
+            onValuesChange={(next) => patch(index, { ...variable, defaultValue: next })}
+          />}
+          {variable.defaultValue !== undefined && !Array.isArray(variable.defaultValue) && (
             <label className={styles.field}>
               <span>Default value</span>
               <GammaInput
                 aria-label={`Variable ${index + 1} default value`}
-                value={variable.defaultValue}
+                value={singleValueText(variable.defaultValue) ?? ""}
                 maxLength={MAX_VARIABLE_VALUE_LENGTH}
                 placeholder="An empty string is a valid default"
                 onChange={(event) =>

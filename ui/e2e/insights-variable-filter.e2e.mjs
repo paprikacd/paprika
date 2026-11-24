@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
-import { selectGammaOption } from "./gamma-controls.mjs"
+import { selectGammaOption, toggleGammaOptions } from "./gamma-controls.mjs"
 import { proxyWebSocketUpgrades } from "./gateway-websocket.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -29,6 +29,24 @@ const dashboard = {
   widgets: [{ id: "selected-service", title: "Selected service request rate", type: "stat", providerId: "metrics", query: "dormant_query_must_not_run", queryRef: { id: savedQuery.id, bindings: [{ parameter: "service", source: "variable", variable: "service" }] }, unit: "req/s", options: { decimals: 2, showSparkline: true }, layout: { x: 0, y: 0, w: 6, h: 3 } }],
 }
 const elsewhere = { ...dashboard, id: "another-board", title: "Another dashboard", widgets: [], variables: [] }
+// Several values and All: a raw widget query and a saved query with a parameter of several values read one variable.
+// "eu.central-3" checks that each value is regex-escaped before it is joined.
+const clusters = ["omega-east-1", "delta-west-2", "eu.central-3"]
+const clusterTemplate = "sum(rate(http_requests_total{cluster=~{{cluster}}}[5m]))"
+const zoneTemplate = "sum by (cluster) (rate(http_requests_total{cluster=~{{zones}}}[5m]))"
+const zoneQuery = { schemaVersion: 1, id: "zone-rate", name: "Zone request rate", providerId: "metrics", kind: "metrics", query: zoneTemplate, parameters: [{ name: "zones", type: "string", multi: true }] }
+const clusterBoard = {
+  schemaVersion: 1, id: "cluster-filter", title: "Cluster filter integration", timeRange: "1h", customTimeRange: fixedRange, refreshInterval: 0,
+  variables: [{ name: "cluster", label: "Cluster", multi: true, allowAll: true, defaultValue: [clusters[0]], options: clusters }],
+  widgets: [
+    { id: "cluster-rate", title: "Cluster request rate", type: "stat", providerId: "metrics", query: clusterTemplate, unit: "req/s", options: { decimals: 2 }, layout: { x: 0, y: 0, w: 6, h: 3 } },
+    { id: "zone-rate", title: "Zone request rate", type: "stat", providerId: "metrics", query: "dormant_query_must_not_run", queryRef: { id: zoneQuery.id, bindings: [{ parameter: "zones", source: "variable", variable: "cluster" }] }, unit: "req/s", options: { decimals: 2 }, layout: { x: 6, y: 0, w: 6, h: 3 } },
+  ],
+}
+// The provider answers by the regex it received, so each choice shows its own reading.
+const clusterReadings = { [clusters[0]]: 11.5, [`${clusters[0]}|${clusters[1]}`]: 22.75, ".+": 33.25, [`${clusters[0]}|${clusters[1]}|eu\\.central-3`]: 44.5, [`${clusters[1]}|${clusters[0]}`]: 55.25, [clusters[2].replace(".", "\\.")]: 66.5 }
+const regexFor = (picked) => picked.length === 0 ? ".+" : picked.map(item => item.replace(/[\\.+*?()|[\]{}^$]/g, "\\$&")).join("|")
+const clusterQueries = (picked) => [clusterTemplate.replace("{{cluster}}", JSON.stringify(regexFor(picked))), zoneTemplate.replace("{{zones}}", JSON.stringify(regexFor(picked)))]
 let browser, context, page, service, serviceURL, gatewayURL, failure, serviceOutput = ""
 function json(response, status, body) { response.writeHead(status, { "content-type": "application/json" }); response.end(JSON.stringify(body)) }
 function exactQuery(value) { return queryTemplate.replace("{{service}}", JSON.stringify(value)) }
@@ -45,6 +63,14 @@ const upstream = createServer((request, response) => {
   requests.push(entry)
   response.on("close", () => { entry.completed = response.writableEnded; entry.aborted = !response.writableEnded })
   if (url.pathname !== "/api/v1/query_range") return json(response, 404, { error: "Unexpected fixture endpoint" })
+  // A several-value variable arrives as one regex matcher: an escaped alternation, or .+ for All.
+  const matcher = entry.query?.match(/cluster=~("(?:\\.|[^"\\])*")/)
+  if (matcher) {
+    const pattern = JSON.parse(matcher[1]), reading = clusterReadings[pattern], end = Number(url.searchParams.get("end"))
+    if (reading === undefined) return json(response, 400, { error: `Unexpected cluster regex ${pattern}` })
+    const values = [reading + 1, reading - 1, reading + 0.5, reading]
+    return json(response, 200, { status: "success", data: { resultType: "matrix", result: [{ metric: { cluster: pattern }, values: values.map((value, index) => [end - (3 - index) * 60, String(value)]) }] } })
+  }
   const literal = entry.query?.match(/service=("(?:\\.|[^"\\])*")/)
   if (!literal) return json(response, 400, { error: "Expected an exact service matcher" })
   const value = JSON.parse(literal[1]), end = Number(url.searchParams.get("end"))
@@ -150,6 +176,58 @@ async function contrast(locator) {
 async function screenshot(name) { await page.screenshot({ path: join(output, name), fullPage: false }) }
 async function expectNoOverflow() { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "Dashboard must not horizontally overflow") }
 async function open(width) {
+  await fresh(width)
+  await page.goto(`${gatewayURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" })
+  await page.getByRole("heading", { name: dashboard.title, exact: true }).waitFor()
+  await expectService(services[0])
+}
+const clusterSelect = () => variableBar().getByRole("combobox", { name: "Cluster", exact: true })
+const clusterValue = (id) => page.locator(`[data-widget-id="${id}"] [data-metric-value]`)
+// The query texts the console posted to /api/insights/query. The server's shared result cache may answer a repeat
+// without a provider request, so the console's own requests are the evidence of what a choice sent.
+const browserQueries = []
+function postedQueries(body) {
+  const found = []
+  const walk = value => {
+    if (Array.isArray(value)) value.forEach(walk)
+    else if (value && typeof value === "object") for (const [key, item] of Object.entries(value)) { if (key === "query" && typeof item === "string") found.push(item); else walk(item) }
+  }
+  try { walk(JSON.parse(body)) } catch { /* not JSON */ }
+  return found
+}
+// Both widgets show the reading for the regex the provider answered, and the console sent both exact query texts.
+async function expectClusters(picked) {
+  const reading = clusterReadings[regexFor(picked)]
+  for (const id of ["cluster-rate", "zone-rate"])
+    await until(async () => await clusterValue(id).getAttribute("data-metric-value").catch(() => null) === String(reading), `${id} never rendered ${reading} for ${JSON.stringify(picked)}`)
+  for (const query of clusterQueries(picked))
+    assert.ok(browserQueries.includes(query) || requests.some(entry => entry.query === query), `Neither the console nor the provider saw ${query}`)
+  return { picked, reading, queries: clusterQueries(picked) }
+}
+const clusterVars = () => JSON.parse(new URL(page.url()).searchParams.get("vars") ?? "{}")
+async function openClusters(width) {
+  await fresh(width)
+  await page.goto(`${gatewayURL}/dashboard/insights/?dashboard=${clusterBoard.id}`, { waitUntil: "networkidle" })
+  await page.getByRole("heading", { name: clusterBoard.title, exact: true }).waitFor()
+  await expectClusters([clusters[0]])
+}
+// The trigger, its field and the page stay inside their boxes: a summary never clips or widens the bar or the sheet.
+async function clusterGeometry() {
+  return clusterSelect().evaluate(trigger => {
+    const label = trigger.querySelector("[title]") ?? trigger.querySelector("span span span")
+    const box = trigger.getBoundingClientRect(), field = trigger.closest("label, div")?.getBoundingClientRect(), form = trigger.closest("form").getBoundingClientRect()
+    return {
+      text: trigger.innerText.trim(), title: label?.getAttribute("title") ?? null,
+      labelFits: label ? label.scrollWidth <= label.clientWidth + 1 : true,
+      insideForm: box.left >= form.left - 1 && box.right <= form.right + 1,
+      insideField: !field || (box.left >= field.left - 1 && box.right <= field.right + 1),
+      insideViewport: box.left >= 0 && box.right <= innerWidth + 1,
+      pageFits: document.documentElement.scrollWidth <= innerWidth,
+      height: box.height,
+    }
+  })
+}
+async function fresh(width) {
   await context?.close()
   context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 1000 }, reducedMotion: "reduce", colorScheme: "light", timezoneId: "UTC", ...(width < 600 ? { isMobile: true, hasTouch: true } : {}) })
   page = await context.newPage(); page.setDefaultTimeout(12000)
@@ -158,9 +236,7 @@ async function open(width) {
   page.on("response", response => { if (response.status() >= 400) browserFailures.push({ url: response.url(), status: response.status() }) })
   page.on("response", response => { if (/\/api\/insights\/query(?:\?|$)/.test(response.url())) void response.text().then(body => queryResponses.push({ status: response.status(), request: response.request().postData(), body })).catch(() => {}) })
   page.on("dialog", dialog => { pageErrors.push(`Unexpected native dialog: ${dialog.message()}`); void dialog.dismiss() })
-  await page.goto(`${gatewayURL}/dashboard/insights/?dashboard=${dashboard.id}`, { waitUntil: "networkidle" })
-  await page.getByRole("heading", { name: dashboard.title, exact: true }).waitFor()
-  await expectService(services[0])
+  page.on("request", request => { if (/\/api\/insights\/query(?:\?|$)/.test(request.url())) browserQueries.push(...postedQueries(request.postData() ?? "")) })
 }
 
 try {
@@ -174,7 +250,9 @@ try {
   service.stdout.on("data", data => { serviceOutput += data }); service.stderr.on("data", data => { serviceOutput += data })
   await until(async () => { try { return (await fetch(`${serviceURL}/readyz`)).ok } catch { return false } }, `Service startup failed: ${serviceOutput}`)
   await api(`saved-queries/${savedQuery.id}`, "PUT", savedQuery)
-  for (const document of [dashboard, elsewhere]) await api(`dashboards/${document.id}`, "PUT", document)
+  await api(`saved-queries/${zoneQuery.id}`, "PUT", zoneQuery)
+  for (const document of [dashboard, elsewhere, clusterBoard]) await api(`dashboards/${document.id}`, "PUT", document)
+  assert.deepEqual((await api(`dashboards/${clusterBoard.id}`)).document.variables, clusterBoard.variables, "A list default is stored as a list")
   const persisted = await api(`dashboards/${dashboard.id}`)
   assert.deepEqual(persisted.document.variables, dashboard.variables)
   gatewayURL = `http://127.0.0.1:${await listen(gateway)}`
@@ -286,6 +364,123 @@ try {
         appearances.push({ colorScheme, samples })
       }
       return { followsSystem: true, appearances }
+    })
+  }
+  await check("query_dashboard sends a list as an escaped alternation and All as .+", async () => {
+    const start = requests.length
+    const picked = await api("query-dashboard", "POST", { id: clusterBoard.id, variables: { cluster: [clusters[0], clusters[1]] } })
+    assert.deepEqual(picked.document.variables, { cluster: [clusters[0], clusters[1]] })
+    for (const query of clusterQueries([clusters[0], clusters[1]])) assert.ok(requests.slice(start).some(entry => entry.query === query), `query_dashboard did not send ${query}`)
+    const all = await api("query-dashboard", "POST", { id: clusterBoard.id, variables: { cluster: [] } })
+    assert.deepEqual(all.document.variables, { cluster: [] })
+    for (const query of clusterQueries([])) assert.ok(requests.slice(start).some(entry => entry.query === query), `query_dashboard did not send ${query}`)
+    // A string for a multi variable is one value; a list for a single variable is refused.
+    const one = await api("query-dashboard", "POST", { id: clusterBoard.id, variables: { cluster: clusters[2] } })
+    assert.deepEqual(one.document.variables, { cluster: [clusters[2]] })
+    const refused = await fetch(`${serviceURL}/api/query-dashboard`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: dashboard.id, variables: { service: ["a"] } }) })
+    assert.equal(refused.status, 400)
+    return { variables: picked.document.variables, all: all.document.variables }
+  })
+  // The several-value picker is checked at every supported width: the toolbar at 1512, 1024 and 768, the sheet at 390.
+  for (const width of [1512, 1024, 768, 390]) {
+    await openClusters(width)
+    for (const theme of ["Light", "Dark"]) {
+      await check(`Several clusters commit once, as one escaped alternation, in ${theme} at ${width}px`, async () => {
+        // Each theme starts from the saved default, one cluster.
+        await page.goto(`${gatewayURL}/dashboard/insights/?dashboard=${clusterBoard.id}`, { waitUntil: "networkidle" })
+        await page.getByRole("heading", { name: clusterBoard.title, exact: true }).waitFor()
+        await chooseTheme(theme)
+        await until(async () => await page.locator(`[data-insights-theme="${theme.toLowerCase()}"]`).count() > 0, "Theme did not resolve")
+        await openVariables()
+        assert.equal((await clusterGeometry()).text, clusters[0])
+        const trigger = clusterSelect()
+        await trigger.click()
+        const list = page.locator(`[id=${JSON.stringify(await trigger.getAttribute("aria-controls"))}]`)
+        assert.equal(await list.getAttribute("aria-multiselectable"), "true")
+        assert.equal(await list.getByRole("option", { name: "All", exact: true }).getAttribute("aria-selected"), "false")
+        const before = browserQueries.length, providerBefore = requests.length, url = page.url()
+        // Toggle delta on, eu on, then eu off: only the final pick may be queried.
+        await list.getByRole("option", { name: clusters[1], exact: true }).click()
+        await list.getByRole("option", { name: clusters[2], exact: true }).click()
+        await list.getByRole("option", { name: clusters[2], exact: true }).click()
+        // The panel stays open and nothing is queried until it closes.
+        await page.waitForTimeout(400)
+        assert.equal(await list.isVisible(), true, "The panel stays open after a toggle")
+        assert.equal(browserQueries.length, before, "A toggle inside the open panel must not query")
+        assert.equal(requests.length, providerBefore, "A toggle inside the open panel must not reach the provider")
+        assert.equal(page.url(), url, "A toggle inside the open panel must not change the URL")
+        assert.equal(await list.getByRole("option", { name: clusters[1], exact: true }).getAttribute("aria-selected"), "true")
+        assert.equal(await list.getByRole("option", { name: clusters[2], exact: true }).getAttribute("aria-selected"), "false")
+        await screenshot(`cluster-options-${theme.toLowerCase()}-${width}.png`)
+        await trigger.press("Escape")
+        await list.waitFor({ state: "hidden" })
+        if (phone()) assert.equal(await page.locator("dialog[open]").count(), 1, "Escape closes the panel, not the variables sheet")
+        const two = await expectClusters([clusters[0], clusters[1]])
+        assert.deepEqual(clusterVars(), { cluster: [clusters[0], clusters[1]] })
+        const issued = browserQueries.slice(before).filter(query => /cluster=~/.test(query))
+        assert.deepEqual([...new Set(issued)].sort(), clusterQueries([clusters[0], clusters[1]]).sort(), `One commit queries only the final pick: ${JSON.stringify(issued)}`)
+        const geometry = await clusterGeometry()
+        assert.equal(geometry.text, `${clusters[0]}, ${clusters[1]}`.length <= 24 ? `${clusters[0]}, ${clusters[1]}` : "2 selected")
+        assert.ok(geometry.labelFits && geometry.insideForm && geometry.insideField && geometry.insideViewport && geometry.pageFits, `Two clusters must fit: ${JSON.stringify(geometry)}`)
+        assert.equal((await api(`dashboards/${clusterBoard.id}`)).document.variables[0].defaultValue.length, 1, "Viewing a filter must not persist a different default")
+        await screenshot(`cluster-two-${theme.toLowerCase()}-${width}.png`)
+        return { two, geometry }
+      })
+    }
+    await check(`Three clusters read as a count that never overflows at ${width}px`, async () => {
+      await openVariables()
+      await toggleGammaOptions(page, clusterSelect(), [clusters[2]])
+      const three = await expectClusters(clusters)
+      assert.deepEqual(clusterVars(), { cluster: clusters })
+      const geometry = await clusterGeometry()
+      assert.equal(geometry.text, "3 selected")
+      assert.equal(geometry.title, clusters.join(", "), "The full list stays available as a title")
+      assert.ok(geometry.labelFits && geometry.insideForm && geometry.insideField && geometry.insideViewport && geometry.pageFits, `The count must fit: ${JSON.stringify(geometry)}`)
+      await screenshot(`cluster-three-${width}.png`)
+      await closeVariables()
+      if (phone()) {
+        const chip = page.getByRole("button", { name: /^Dashboard variables:/ })
+        assert.match(await chip.innerText(), /3 selected/)
+        const chipFits = await chip.evaluate(element => element.getBoundingClientRect().right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth)
+        assert.ok(chipFits, "The phone chip summary must fit the viewport")
+        await screenshot(`cluster-three-chip-${width}.png`)
+      }
+      await expectNoOverflow()
+      return { three, geometry }
+    })
+    await check(`All sends .+, survives reload, and Back returns to the previous list at ${width}px`, async () => {
+      await openVariables()
+      await toggleGammaOptions(page, clusterSelect(), ["All"])
+      const all = await expectClusters([])
+      assert.deepEqual(clusterVars(), { cluster: [] })
+      assert.equal((await clusterGeometry()).text, "All")
+      await page.reload({ waitUntil: "networkidle" })
+      await expectClusters([])
+      await openVariables()
+      assert.equal((await clusterGeometry()).text, "All", "All persists across a reload")
+      await closeVariables()
+      await page.goBack({ waitUntil: "networkidle" })
+      await expectClusters(clusters)
+      assert.deepEqual(clusterVars(), { cluster: clusters })
+      await page.goForward({ waitUntil: "networkidle" })
+      await expectClusters([])
+      assert.deepEqual(clusterVars(), { cluster: [] })
+      await screenshot(`cluster-all-${width}.png`)
+      return { all }
+    })
+    await check(`A link with a list opens on that list, and a string is one value at ${width}px`, async () => {
+      const target = new URL(`${gatewayURL}/dashboard/insights/`)
+      target.searchParams.set("dashboard", clusterBoard.id); target.searchParams.set("vars", JSON.stringify({ cluster: [clusters[1], clusters[0]] }))
+      await page.goto(target.href, { waitUntil: "networkidle" })
+      // A linked list keeps its own order, so its query text is the link's.
+      const linked = await expectClusters([clusters[1], clusters[0]])
+      target.searchParams.set("vars", JSON.stringify({ cluster: clusters[0] }))
+      await page.goto(target.href, { waitUntil: "networkidle" })
+      await expectClusters([clusters[0]])
+      await openVariables()
+      assert.equal((await clusterGeometry()).text, clusters[0])
+      await closeVariables()
+      return { linked }
     })
   }
   assert.equal(requests.some(entry => entry.query?.includes("dormant_query_must_not_run")), false)

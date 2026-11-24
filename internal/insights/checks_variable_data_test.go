@@ -6,19 +6,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // TestDataVariableRulesFireOnlyForActionableSourceOutcomes checks each variable source rule against the outcomes it
 // reads. A transient failure, a fetch that did not run and a truncated list stay silent.
 func TestDataVariableRulesFireOnlyForActionableSourceOutcomes(t *testing.T) {
 	variables := []dataVariable{
-		{index: 0, name: "zone", value: "a", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "failed", failure: &DashboardQueryError{Code: "invalid_query"}}},
-		{index: 1, name: "pod", value: "x", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "failed", failure: &DashboardQueryError{Code: "timeout"}}},
+		{index: 0, name: "zone", value: variablevalue.Single("a"), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "failed", failure: &DashboardQueryError{Code: "invalid_query"}}},
+		{index: 1, name: "pod", value: variablevalue.Single("x"), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "failed", failure: &DashboardQueryError{Code: "timeout"}}},
 		{index: 2, name: "service", outcome: variableSourceOutcome{sourced: true, state: "empty"}},
-		{index: 3, name: "region", value: "eu", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"us"}}},
-		{index: 4, name: "tier", value: "gold", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"a"}, truncated: true}},
-		{index: 5, name: "team", value: "x", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "not_run"}},
-		{index: 6, name: "env", value: "prod", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"prod", "dev"}}},
+		{index: 3, name: "region", value: variablevalue.Single("eu"), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"us"}}},
+		{index: 4, name: "tier", value: variablevalue.Single("gold"), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"a"}, truncated: true}},
+		{index: 5, name: "team", value: variablevalue.Single("x"), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "not_run"}},
+		{index: 6, name: "env", value: variablevalue.Single("prod"), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"prod", "dev"}}},
 	}
 	findings := dataFindings(nil, variables)
 	require.Len(t, findings, 3)
@@ -42,7 +43,7 @@ func TestDataVariableRulesFireOnlyForActionableSourceOutcomes(t *testing.T) {
 // TestDataVariableValueRuleSkipsAnEmptyOverride checks that an empty value is left to the query's own warning,
 // so the dry run does not name it twice.
 func TestDataVariableValueRuleSkipsAnEmptyOverride(t *testing.T) {
-	variables := []dataVariable{{index: 0, name: "zone", value: "", hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"a"}}}}
+	variables := []dataVariable{{index: 0, name: "zone", value: variablevalue.Single(""), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"a"}}}}
 	require.Empty(t, dataFindings(nil, variables))
 }
 
