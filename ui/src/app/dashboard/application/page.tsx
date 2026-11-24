@@ -45,6 +45,7 @@ import { FOCUSED_REFRESH_INTERVAL_MS, useFocusedRefresh } from "@/lib/fleet-refr
 import { STATUS_TONES, type StatusTone } from "@/lib/status-tone"
 import { applicationClient as client, isApplicationNotFound, useApplicationData } from "@/lib/use-application-data"
 import { ApplicationHealth } from "@/components/dashboard/application-health"
+import { ApplicationDashboards, ApplicationMetricsLink } from "@/components/dashboard/application-insights"
 import { ApplicationSLOs } from "@/components/dashboard/application-slos"
 import { OperationalLinkIcon } from "@/components/dashboard/operational-link-icon"
 import { OperationalMetadata, safeOperationalLink } from "@/components/dashboard/application-operations"
@@ -512,6 +513,7 @@ function ApplicationDetail() {
                 Rollback
               </ActionButton>
             ) : null}
+            <ApplicationMetricsLink namespace={namespace} name={name} />
             <Link
               href={`/dashboard/diff/?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`}
               className="inline-flex h-[30px] items-center border border-rule bg-card px-3 font-cond text-label font-semibold no-underline hover:bg-inset"
@@ -658,14 +660,17 @@ function ApplicationDetail() {
         ) : null}
 
         {tab === "health" ? (
-          <ApplicationHealth
-            application={application}
-            release={currentRelease}
-            resources={treeNodes}
-            observedAt={refreshedAt}
-            releaseLoading={queries.releases.isPending}
-            onSelectResource={setSelected}
-          />
+          <>
+            <ApplicationDashboards namespace={namespace} name={name} unhealthy={healthTone !== "healthy"} />
+            <ApplicationHealth
+              application={application}
+              release={currentRelease}
+              resources={treeNodes}
+              observedAt={refreshedAt}
+              releaseLoading={queries.releases.isPending}
+              onSelectResource={setSelected}
+            />
+          </>
         ) : null}
 
         {tab === "releases" ? (
