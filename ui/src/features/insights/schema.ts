@@ -470,6 +470,12 @@ export const statCompareSchema = z.strictObject({
   good: z.enum(["up", "down"]).optional(),
 });
 
+/** A time series' baseline: an earlier window (or the last samples) that bands the current values. `band` defaults to the observed range. */
+export const baselineSchema = z.strictObject({
+  window: z.enum(["previous", "1d", "7d", "rolling"]),
+  band: z.enum(["range", "p10p90"]).optional(),
+});
+
 export const widgetOptionsSchema = z
   .strictObject({
     display: z.enum(["line", "area"]).optional(),
@@ -497,6 +503,7 @@ export const widgetOptionsSchema = z
     decimals: z.number().int().min(0).max(8).optional(),
     staleAfterSeconds: z.number().int().min(1).max(2678400).optional(),
     compare: statCompareSchema.optional(),
+    baseline: baselineSchema.optional(),
     min: z.number().optional(),
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
@@ -587,6 +594,8 @@ export const widgetSchema = z
   .superRefine((widget, context) => {
     if (widget.options?.compare && widget.type !== "stat")
       context.addIssue({ code: "custom", path: ["options", "compare"], message: "Comparisons are only available on stat widgets" })
+    if (widget.options?.baseline && widget.type !== "timeseries")
+      context.addIssue({ code: "custom", path: ["options", "baseline"], message: "Baselines are only available on time-series widgets" })
     if (widget.type !== "stat" && widget.layout.h < 2)
       context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
     if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))

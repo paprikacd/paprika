@@ -1005,6 +1005,31 @@
                 ],
                 "additionalProperties": false
               },
+              "baseline": {
+                "type": "object",
+                "properties": {
+                  "window": {
+                    "type": "string",
+                    "enum": [
+                      "previous",
+                      "1d",
+                      "7d",
+                      "rolling"
+                    ]
+                  },
+                  "band": {
+                    "type": "string",
+                    "enum": [
+                      "range",
+                      "p10p90"
+                    ]
+                  }
+                },
+                "required": [
+                  "window"
+                ],
+                "additionalProperties": false
+              },
               "min": {
                 "type": "number"
               },
@@ -1514,6 +1539,27 @@
               "properties": {
                 "type": {
                   "const": "stat"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "options"
+              ],
+              "properties": {
+                "options": {
+                  "required": [
+                    "baseline"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "type": {
+                  "const": "timeseries"
                 }
               }
             }
