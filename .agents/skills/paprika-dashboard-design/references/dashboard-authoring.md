@@ -11,7 +11,7 @@
 
 ## Compose a useful editing workspace
 
-Use the supplied editor references to identify the work regions: a large live preview, organized visual options on the right, and a data/query workspace beneath the preview. Preserve those relationships when adapting the UI to Paprika. In explicit literal reproduction, follow [pixel reproduction](pixel-reproduction.md) first rather than substituting this adaptation layout.
+Use the supplied editor references to identify the work regions: a large live preview, organized visual options on the right, and a data/query workspace beneath the preview. Preserve those relationships when adapting the UI to Paprika. In explicit literal reproduction, follow [pixel reproduction](../../../../labs/widget-lab/docs/references/pixel-reproduction.md) first rather than substituting this adaptation layout.
 
 Make the preview the largest useful area. Keep its title, units, axes, legend and selected states representative of the dashboard component. Render the registered widget through the same host with the same normalized result; an attractive placeholder preview does not verify the configuration being edited.
 

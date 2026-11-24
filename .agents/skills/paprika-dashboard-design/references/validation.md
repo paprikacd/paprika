@@ -132,7 +132,7 @@ Use a bounded batch of real captures with deterministic data. Cover supported th
 
 Inspect at actual size and enlarged detail: clipping, tick collision, contrast, plot-area alignment, overlay placement, focus, and chart-to-chrome balance. Pair screenshots with keyboard/pointer checks, not just screenshot differences.
 
-For the bundled dashboard references, follow [reference fidelity](reference-fidelity.md): inspect the actual images and compare both settled and selected states. Use exact canvas dimensions and registered comparison for literal reproduction; use explicit composition budgets for adaptation. Do not invent measurements from a thumbnail or claim pixel equality without a valid method. Verify that concept-art scales and accounting have not replaced the analytical metric contract.
+For the bundled dashboard references, follow [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md): inspect the actual images and compare both settled and selected states. Use exact canvas dimensions and registered comparison for literal reproduction; use explicit composition budgets for adaptation. Do not invent measurements from a thumbnail or claim pixel equality without a valid method. Verify that concept-art scales and accounting have not replaced the analytical metric contract.
 
 Review the six craft dimensions in [visual craft](visual-craft.md) through observed findings, not a numerical beauty score. Fix material findings as a batch and confirm once. Additional work should address a concrete failure, mandatory gate, or explicitly requested design iteration.
 

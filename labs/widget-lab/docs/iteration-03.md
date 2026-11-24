@@ -62,13 +62,13 @@ The final automated run passed **57/57 tests across five files**: 18 baseline, 1
 
 The strict premium design audit found **zero owned-app findings** and retained one pre-existing unused vendor `GammaTextarea` scanner false positive. This is **not an overall strict-audit pass**.
 
-The upstream base is `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8`. Provenance records **42 unchanged files, six modified owners and one new helper**, with upstream/local SHA-256 values. The direct additions are `d3-scale` 4.0.2 and `@types/d3-scale` 4.0.9. License and Gamma attribution remain preserved. After the final TypeScript branch correction, the [renderer patch](paprika-reference-renderer.patch) was regenerated with SHA-256:
+The upstream base is `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8`. Provenance records **42 unchanged files, six modified owners and one new helper**, with upstream/local SHA-256 values. The direct additions are `d3-scale` 4.0.2 and `@types/d3-scale` 4.0.9. License and Gamma attribution remain preserved. After the final TypeScript branch correction, the renderer patch (`paprika-reference-renderer.patch`, not kept in this repository) was regenerated with SHA-256:
 
 ```text
 43a54f7886df236e42aa57e07543cf0f2825aacbadcd5f8288e01a9adfe394eb
 ```
 
-Provenance `--check`, reverse patch applicability and documentation whitespace checks passed. The [regeneration helper](regenerate-paprika-provenance.py) makes subsequent owner changes reviewable without rewriting upstream history.
+Provenance `--check`, reverse patch applicability and documentation whitespace checks passed. The regeneration helper (`regenerate-paprika-provenance.py`, not kept in this repository) makes subsequent owner changes reviewable without rewriting upstream history.
 
 ## Skill feedback and remaining boundaries
 

@@ -1,6 +1,6 @@
 # Reviewed import decisions — 24 October 2026
 
-Scope: explicit per-dashboard and per-saved-query Keep / Replace / Create a copy, authoritative saved comparisons, typed field differences, dependency-aware provider mapping, replacement impact and partial-retry recovery. This extends the [portable bundle contract](portable-bundles.md); the original portability evidence remains intact.
+Scope: explicit per-dashboard and per-saved-query Keep / Replace / Create a copy, authoritative saved comparisons, typed field differences, dependency-aware provider mapping, replacement impact and partial-retry recovery. This extends the [portable bundle contract](../portable-bundles.md); the original portability evidence remains intact.
 
 ## Decisions and critique
 

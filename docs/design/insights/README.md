@@ -2,7 +2,7 @@
 
 Insights is an observability dashboard workspace inside Paprika. Its UI lives behind a small `InsightsApp` entry point and `InsightsClient` interface in `ui/src/features/insights`. Provider requests and dashboard persistence run in the separate `paprika-insights` Go component. The route is `/dashboard/insights/`.
 
-The visual direction is documented in [the generated wireframes and exact prompts](./prompts.md). The warm canvas, fine borders, compact controls, and restrained paprika, sage, and blue palette let the data carry most of the visual weight. Wireframes contain illustrative data and labels; they are not evidence of implemented functionality.
+The visual direction is documented in [the generated wireframes and exact prompts](./receipts/prompts.md). The warm canvas, fine borders, compact controls, and restrained paprika, sage, and blue palette let the data carry most of the visual weight. Wireframes contain illustrative data and labels; they are not evidence of implemented functionality.
 
 ## One document across every authoring mode
 
@@ -206,9 +206,9 @@ Responsive layouts follow the **measured canvas width**, including space occupie
 
 ## Verification and current scope
 
-The [widget review](widget-review.md), [builder/query/provider review](builder-review.md), [tooltip query review](tooltip-query-review.md), [tooltip host review](tooltip-host-review.md), [behavior owners](UX-CONTRACT.md), and root [design context](../../../DESIGN.md) record the Gamma reviews. The installed `paprika-widgets` skill coordinates audit, critique, Impeccable, Frontend Design Premium, frontend-design and the applicable design-taste guidance. The builder review adds measured control geometry and native viewport captures so component imports and passing clicks cannot substitute for visual verification.
+The [widget review](receipts/widget-review.md), [builder/query/provider review](receipts/builder-review.md), [tooltip query review](receipts/tooltip-query-review.md), [tooltip host review](receipts/tooltip-host-review.md), [behavior owners](UX-CONTRACT.md), and root [design context](../../../DESIGN.md) record the Gamma reviews. The installed `paprika-widgets` skill coordinates audit, critique, Impeccable, Frontend Design Premium, frontend-design and the applicable design-taste guidance. The builder review adds measured control geometry and native viewport captures so component imports and passing clicks cannot substitute for visual verification.
 
-See the [completed validation report](./validation.md) for the production build, unit/race tests, Helm checks, and browser scenarios.
+See the [completed validation report](./receipts/validation-history.md) for the production build, unit/race tests, Helm checks, and browser scenarios.
 
 Targeted tests cover source round trips, schema constraints, YAML aliases, OpenUI parsing, provider compatibility, review/apply behavior, undo/redo, HTTP authentication headers, conditional writes, query scheduling, and chart data handling. Browser-level checks should cover dragging/resizing, keyboard inspector controls, source editing, AI review, persistence after reload, responsive layout, and query failures.
 
@@ -240,4 +240,4 @@ The runner also includes drilldown, all-widget, builder and queried-tooltip suit
 
 Open **Explore** in the Insights navigation to run a query against a chosen provider, then save it in that provider’s library. Saved queries declare string or numeric parameters, defaults and separate test values. **Use in dashboard** adds a linked widget and maps parameters to dashboard variables. Existing widget editors also offer **Saved query**. Definitions are live: saving an edit updates linked widgets; deleting an in-use query is blocked. See [the explorer contract](explorer.md) for authoring, query bindings, persistence and portability.
 
-JSON/YAML exports include deduplicated saved-query dependencies for both widgets and tooltip sub-widgets. **Manage → Import** and the **Code** panel share provider mapping and conflict review. Identical definitions can be reused; conflicts import as copies without overwriting the destination library. See [portable dashboard bundles](portable-bundles.md) and [the portability review](portable-bundles-review.md).
+JSON/YAML exports include deduplicated saved-query dependencies for both widgets and tooltip sub-widgets. **Manage → Import** and the **Code** panel share provider mapping and conflict review. Identical definitions can be reused; conflicts import as copies without overwriting the destination library. See [portable dashboard bundles](portable-bundles.md) and [the portability review](receipts/portable-bundles-review.md).

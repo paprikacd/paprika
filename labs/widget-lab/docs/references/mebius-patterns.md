@@ -39,7 +39,7 @@ The reference's character comes from a coordinated treatment of geometry, inspec
 
 ## Motion and interaction mechanisms
 
-These are **source-verified examples**, not proposed Paprika timing defaults. Follow [motion and effects](motion-and-effects.md) for Paprika's motion contract.
+These are **source-verified examples**, not proposed Paprika timing defaults. Follow [motion and effects](../../../../.agents/skills/paprika-dashboard-design/references/motion-and-effects.md) for Paprika's motion contract.
 
 | Public implementation | Useful mechanism | Paprika decision |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ Start from one analytical job and one coherent treatment, such as **current vers
 
 ## Validation
 
-Use the existing [validation gates](validation.md), plus these reference-specific checks:
+Use the existing [validation gates](../../../../.agents/skills/paprika-dashboard-design/references/validation.md), plus these reference-specific checks:
 
 - **Truth:** fading fill does not hide missing segments; comparison timestamps and units align; selection summaries use the correct full-resolution data; rounded segments preserve endpoints and zero semantics.
 - **Interaction:** pointer, touch and keyboard reach equivalent exact values; selection is visibly different from hover; clear/dismiss works; result replacement or scope changes clear observations, pins and their cursors. Re-resolve geometry only within the same result version; do not silently move a pin into new data.

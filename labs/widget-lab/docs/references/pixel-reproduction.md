@@ -51,7 +51,7 @@ Image analysis and comparison tools may measure existing captures according to t
 
 ## Edge Watch geometry
 
-Use [the bundled Edge reference](../assets/reference-edge-watch.png). Coordinates are measured on its 1592 × 988 canvas; boundary estimates are generally within 1–2px and should be checked against the image.
+Use [the bundled Edge reference](../reference/edge-watch.png). Coordinates are measured on its 1592 × 988 canvas; boundary estimates are generally within 1–2px and should be checked against the image.
 
 | Region | x | y | Width | Height |
 | --- | ---: | ---: | ---: | ---: |
@@ -78,7 +78,7 @@ Render ten destination rows on about 26px pitch, with columns beginning near x10
 
 ## Reliability Room geometry
 
-Use [the bundled Reliability reference](../assets/reference-reliability-room.png). Its title spans above the rail; it does not share Edge's full-height rail or 87px metrics.
+Use [the bundled Reliability reference](../reference/reliability-room.png). Its title spans above the rail; it does not share Edge's full-height rail or 87px metrics.
 
 | Region | x | y | Width | Height |
 | --- | ---: | ---: | ---: | ---: |
@@ -124,4 +124,4 @@ Treat these as sampled pixels/region medians, not a complete token system. Prese
 
 Deliver actual rendered captures, the exact reference/capture dimensions and state, the major corrected differences, and any visible residuals. Distinguish visual fixture fidelity, source consistency, runtime interaction and analytical integration. Include the authored fixture and tracing/provenance notes in the code deliverable. Name remaining deviations directly; do not describe a substantially different layout as a pixel reproduction because its tests pass.
 
-When the user asks to carry the result into the skill or reusable charts, apply [the transferable visual system](visual-system.md), [family coverage](chart-families.md), and [geographic charts](geographic-charts.md) for maps. Extract hierarchy, anatomy, layers and interaction contracts; retain traced profiles, illustrative contradictions, decorative locations and fixed coordinates in this fixture. Demonstrate promoted families on independent normalized data before describing the visual study as a general chart capability.
+When the user asks to carry the result into the skill or reusable charts, apply [the transferable visual system](../../../../.agents/skills/paprika-dashboard-design/references/visual-system.md), [family coverage](../../../../.agents/skills/paprika-dashboard-design/references/chart-families.md), and [geographic charts](../../../../.agents/skills/paprika-dashboard-design/references/geographic-charts.md) for maps. Extract hierarchy, anatomy, layers and interaction contracts; retain traced profiles, illustrative contradictions, decorative locations and fixed coordinates in this fixture. Demonstrate promoted families on independent normalized data before describing the visual study as a general chart capability.

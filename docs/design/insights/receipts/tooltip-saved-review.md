@@ -26,7 +26,7 @@ Paprika's widget skill, local frontend-design, Premium and the established Impec
 
 ## Final verification
 
-The final build is **`qDGcsaVsRR0N-1LTr-vqA`**. The Explorer suite passed **16/16 real-service scenarios**, with zero page errors; `sparkline-final-sixteen-report.json` preserves that full result. A separate **4/4** capture confirmation refreshed unobstructed/scrolled screenshots without production changes (`sparkline-final-captures-report.json`). The coordinator also completed 640 UI tests in 67 files, lint, typecheck, production build, 24 tooltip service scenarios and the focused Go race checks; aggregate scope is recorded in [validation](validation.md).
+The final build is **`qDGcsaVsRR0N-1LTr-vqA`**. The Explorer suite passed **16/16 real-service scenarios**, with zero page errors; `sparkline-final-sixteen-report.json` preserves that full result. A separate **4/4** capture confirmation refreshed unobstructed/scrolled screenshots without production changes (`sparkline-final-captures-report.json`). The coordinator also completed 640 UI tests in 67 files, lint, typecheck, production build, 24 tooltip service scenarios and the focused Go race checks; aggregate scope is recorded in [validation](validation-history.md).
 
 At 320px, the compact stat's content area measures 260 × 120px; scroll height remains 120px. `1,234.5678ms` has one numeric text rectangle at 28.6px type, with the trend below it and no overlap. At 390px the Show sparkline label target is 44px high. The service tests retain negative and zero samples, a null gap and a missing latest observation, verify no extra requests for main/reused-result sparklines, and preserve enabled/disabled settings through persistence.
 
@@ -43,4 +43,4 @@ Baseline reproduction: `output/playwright/tooltip-saved-baseline-editor.png` and
 
 The review covers first-time setup, Create/return, saved ID search, Apply/save/reload, binding retention, library loading/error/refresh, and stat history without another request. Native acceptance includes a 120px tooltip with `1,234.5678ms` at 320px, one readable numeric line, separate unit/trend and viewport containment; renderer tests additionally cover constant and singleton histories. Chromium mobile emulation is not physical-device validation or a performance benchmark.
 
-See [tooltip authoring](tooltip-widgets.md) for the actual workflow and [validation](validation.md) for coordinated repository test/build results.
+See [tooltip authoring](../tooltip-widgets.md) for the actual workflow and [validation](validation-history.md) for coordinated repository test/build results.

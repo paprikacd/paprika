@@ -5,7 +5,7 @@ Date: 2026-10-26.
 **Status: deployed to Omega and validated through live MCP and UI flows.**
 Existing native clients need a fresh authoring consent grant; their previous
 read-only credentials are unchanged. The earlier
-[Omega validation](omega-validation.md) covers the underlying provider/query
+[Omega validation](../omega-validation.md) covers the underlying provider/query
 integration.
 
 ## Implemented contract
@@ -128,8 +128,8 @@ their OAuth authorization flow; the compatibility manifest itself does not
 supply an OAuth scope extension. Updating the plugin alone is not evidence of a
 new grant. Keep the existing Insights RBAC requirement and never substitute a
 copied fleet token, service credential, or provider key. See the
-[connection guide](../../guides/mcp-plugin.md#observability-gateway) and
-[plugin README](../../../plugins/paprika-observe/README.md).
+[connection guide](../../../guides/mcp-plugin.md#observability-gateway) and
+[plugin README](../../../../plugins/paprika-observe/README.md).
 
 ## Local validation receipts
 
