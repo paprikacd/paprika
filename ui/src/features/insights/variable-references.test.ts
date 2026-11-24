@@ -100,3 +100,65 @@ describe("renaming references", () => {
     expect(checked.error?.issues ?? []).toEqual([]);
   });
 });
+
+describe("references to similar names", () => {
+  const url = 'probe_success{instance="https://a.example/ab?a=1"} == {{ab}}';
+  const dashboard = dashboardWith([
+    widget("both", { query: `{{a}} + {{ab}} + {{a_b}}` }),
+    widget("url", { query: url }),
+    widget("bound", {
+      queryRef: { id: "q", bindings: [{ parameter: "a", source: "variable", variable: "ab" }, { parameter: "ab", source: "constant", value: "a" }] },
+      selectionBindings: [{ variable: "ab", source: "label", value: "a" } as never],
+    }),
+  ], [{ name: "a" }, { name: "ab" }, { name: "a_b" }]);
+
+  it("counts only the widgets that read the exact name", () => {
+    const ids = (name: string) => variableReferences(dashboard, name).map((use) => use.kind === "widget" ? use.widgetId : use.variableName);
+    expect(ids("a")).toEqual(["both"]);
+    expect(ids("ab")).toEqual(["both", "url", "bound"]);
+    expect(ids("a_b")).toEqual(["both"]);
+  });
+
+  it("renames a without touching ab, a_b, a URL that contains a, a constant value or a parameter name", () => {
+    const next = rewriteVariableReferences(dashboard, { a: "service" });
+    expect(next.widgets[0].query).toBe("{{service}} + {{ab}} + {{a_b}}");
+    expect(next.widgets[1].query).toBe(url);
+    expect(next.widgets[2].queryRef?.bindings).toEqual([{ parameter: "a", source: "variable", variable: "ab" }, { parameter: "ab", source: "constant", value: "a" }]);
+    expect(next.widgets[2].selectionBindings).toEqual([{ variable: "ab", source: "label", value: "a" }]);
+  });
+
+  it("renames ab everywhere it is read and nowhere else", () => {
+    const next = rewriteVariableReferences(dashboard, { ab: "region" });
+    expect(next.widgets[0].query).toBe("{{a}} + {{region}} + {{a_b}}");
+    expect(next.widgets[1].query).toBe('probe_success{instance="https://a.example/ab?a=1"} == {{region}}');
+    expect(next.widgets[2].queryRef?.bindings?.[0]).toEqual({ parameter: "a", source: "variable", variable: "region" });
+    expect(next.widgets[2].queryRef?.bindings?.[1]).toEqual({ parameter: "ab", source: "constant", value: "a" });
+    expect(next.widgets[2].selectionBindings).toEqual([{ variable: "region", source: "label", value: "a" }]);
+  });
+
+  it("touches exactly the places it counts, for every name", () => {
+    for (const name of ["a", "ab", "a_b"]) {
+      const next = rewriteVariableReferences(dashboard, { [name]: "renamed" });
+      const changed = dashboard.widgets.filter((entry, index) => JSON.stringify(entry) !== JSON.stringify(next.widgets[index])).map((entry) => entry.id);
+      expect(changed).toEqual(variableReferences(dashboard, name).map((use) => use.kind === "widget" ? use.widgetId : ""));
+    }
+  });
+
+  it("leaves placeholder-shaped text that is not a variable name alone", () => {
+    const text = "{{ a }} {{1a}} {a} " + "$" + "a";
+    const odd = dashboardWith([widget("odd", { query: text })], [{ name: "a" }]);
+    expect(variableReferences(odd, "a")).toEqual([]);
+    expect(rewriteVariableReferences(odd, { a: "b" }).widgets[0].query).toBe(text);
+  });
+
+  it("renames a parent in a saved query source, so its dependents wait on the new name", () => {
+    const sourced = dashboardWith([], [
+      { name: "cluster", defaultValue: "c1" },
+      { name: "service", defaultValue: "s", source: { type: "savedQuery", queryRef: { id: "services", bindings: [{ parameter: "cluster", source: "variable", variable: "cluster" }] }, field: "service" } },
+    ]);
+    expect(variableReferences(sourced, "cluster")).toEqual([{ kind: "variable", variableName: "service" }]);
+    const next = rewriteVariableReferences({ ...sourced, variables: [{ name: "k8s", defaultValue: "c1" }, sourced.variables![1]] }, { cluster: "k8s" });
+    expect(next.variables?.[1].source).toMatchObject({ queryRef: { bindings: [{ parameter: "cluster", source: "variable", variable: "k8s" }] } });
+    expect(dashboardSchema.safeParse(next).success).toBe(true);
+  });
+});

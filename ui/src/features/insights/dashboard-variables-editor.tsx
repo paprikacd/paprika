@@ -23,7 +23,7 @@ import {
   type VariableSourceCatalog,
   type VariableValuesFrom,
 } from "./variable-source-editor";
-import { rewriteVariableReferences, variableReferences } from "./variable-references";
+import { rewriteVariableReferences, variableReferences, type VariableUse } from "./variable-references";
 
 // Loaded on demand from the dashboard manager: the declarations editor stays out of the first view.
 export interface DashboardVariablesEditorProps {
@@ -51,6 +51,15 @@ const VALUES_FROM: { value: VariableValuesFrom; label: string }[] = [
 interface VariableCard {
   key: string;
   original?: string;
+}
+/** "2 widgets and 1 variable": how many places read a variable, by kind. */
+function usageCount(uses: readonly VariableUse[]) {
+  const widgets = uses.filter((use) => use.kind === "widget").length;
+  const variables = uses.length - widgets;
+  return [
+    widgets ? `${widgets} ${widgets === 1 ? "widget" : "widgets"}` : "",
+    variables ? `${variables} ${variables === 1 ? "variable" : "variables"}` : "",
+  ].filter(Boolean).join(" and ");
 }
 let variableCardSeed = 0;
 const newCard = (original?: string): VariableCard => ({ key: `variable-card-${++variableCardSeed}`, original });
@@ -96,10 +105,13 @@ function VariablesEditor({
       cards.filter((_, current) => current !== index),
     );
   }
-  /** Widgets that read the variable as it was last applied. A variable not yet applied has no readers. */
+  /**
+   * The widgets and other variables' sources that read the variable as it was last applied: the same places a rename
+   * rewrites. A variable not yet applied has no readers.
+   */
   function readers(card: VariableCard | undefined) {
     if (card?.original === undefined) return [];
-    return variableReferences(dashboard, card.original).flatMap((use) => (use.kind === "widget" ? [use.widgetTitle] : []));
+    return variableReferences(dashboard, card.original);
   }
   function apply() {
     if (stale) return;
@@ -151,8 +163,9 @@ function VariablesEditor({
       )}
       {draft.map((variable, index) => {
         const card = cards[index];
-        const readerTitles = readers(card);
-        const renamed = card?.original !== undefined && card.original !== variable.name && readerTitles.length > 0;
+        const uses = readers(card);
+        const readerTitles = uses.map((use) => (use.kind === "widget" ? use.widgetTitle : `variable ${use.variableName}`));
+        const renamed = card?.original !== undefined && card.original !== variable.name && uses.length > 0;
         return (
         <fieldset className={styles.card} key={card?.key ?? index}>
           <legend>Variable {index + 1}</legend>
@@ -182,9 +195,9 @@ function VariablesEditor({
             </GammaButton>
           </div>
           <p className={styles.help} role="status">
-            {readerTitles.length === 0
+            {uses.length === 0
               ? "Not used yet"
-              : `Used by ${readerTitles.length} ${readerTitles.length === 1 ? "widget" : "widgets"}: ${readerTitles.slice(0, 3).join(", ")}${readerTitles.length > 3 ? ` and ${readerTitles.length - 3} more` : ""}`}
+              : `Used by ${usageCount(uses)}: ${readerTitles.slice(0, 3).join(", ")}${readerTitles.length > 3 ? ` and ${readerTitles.length - 3} more` : ""}`}
           </p>
           {renamed && (
             <GammaSwitch
@@ -196,7 +209,7 @@ function VariablesEditor({
           )}
           {pendingRemoval === card?.key && (
             <div className={styles.notice} role="alert">
-              <p>{`Removing ${variable.name || "this variable"} leaves {{${card?.original ?? variable.name}}} in ${readerTitles.length === 1 ? "one widget" : `${readerTitles.length} widgets`}. Remove it anyway?`}</p>
+              <p>{`${readerTitles.join(", ")} ${uses.length === 1 ? "reads" : "read"} ${card?.original ?? variable.name}. Removing it leaves ${uses.length === 1 ? "that reference" : "those references"} without a value. Remove it anyway?`}</p>
               <div className={styles.actions}>
                 <GammaButton size="sm" variant="secondary" onClick={() => remove(index)}>Remove variable</GammaButton>
                 <GammaButton size="sm" variant="quiet" onClick={() => setPendingRemoval(undefined)}>Keep</GammaButton>
