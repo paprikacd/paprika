@@ -24,6 +24,7 @@ type dashboardPatchConformance struct {
 			Document   json.RawMessage `json:"document"`
 			Placements json.RawMessage `json:"placements"`
 			Error      string          `json:"error"`
+			Message    string          `json:"message"`
 		} `json:"expect"`
 	} `json:"cases"`
 }
@@ -33,7 +34,7 @@ func TestInsightsPatchConformanceFixture(t *testing.T) {
 	require.NoError(t, err)
 	var fixture dashboardPatchConformance
 	require.NoError(t, json.Unmarshal(raw, &fixture))
-	require.GreaterOrEqual(t, len(fixture.Cases), 26)
+	require.GreaterOrEqual(t, len(fixture.Cases), 77)
 
 	for _, testCase := range fixture.Cases {
 		t.Run(testCase.Name, func(t *testing.T) {
@@ -59,6 +60,9 @@ func TestInsightsPatchConformanceFixture(t *testing.T) {
 			if testCase.Expect.Error != "" {
 				require.Error(t, err)
 				require.Equal(t, testCase.Expect.Error, connect.CodeOf(err).String())
+				var connectErr *connect.Error
+				require.ErrorAs(t, err, &connectErr)
+				require.Equal(t, testCase.Expect.Message, connectErr.Message())
 				return
 			}
 			require.NoError(t, err)

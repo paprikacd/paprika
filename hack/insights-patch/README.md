@@ -14,14 +14,18 @@ node hack/insights-patch/cli.mjs set.json                       # plan only, wri
 node hack/insights-patch/cli.mjs set.json --apply --receipt r.json
 ```
 
-The plan reads every target first. It stops before any write when a target is
-missing, an `expect` value differs, an edit cannot be applied, or the merged
-dashboard has a lint error. Apply writes in set order, reads each result back and
+The set is checked before anything is read: each document may appear once, and a
+saved-query patch cannot touch `id`, `schemaVersion`, `providerId` or `kind` or exceed
+32 KiB, as `patch_saved_query` would refuse it mid-run. The plan then reads every
+target. It stops before any write when a target is missing, an `expect` value
+differs, an edit cannot be applied, or the merged dashboard has a lint error or a
+check result without an `errorCount`. Apply writes in set order, reads each result back and
 compares it with the plan. The first failure stops the run. Nothing is retried, so a
 conflict means: read the document again and review the new state.
 
 The receipt records each item's state (`planned`, `unchanged`, `updated`, `failed`),
 the before and expected documents, the ETags, the widget changes and the placements.
+A write that landed but did not verify is `failed` with its new ETag recorded.
 It never contains the token.
 
 ## Patch set

@@ -19,7 +19,7 @@ import { gzipSync } from "node:zlib";
 export const BUDGET = {
   // Measured after the map land outline moved out of the first view.
   jsRaw: 2_557_000, // measured 2,323,640 bytes
-  jsGzip: 733_000, // the lazy AIBuilder chunk is listed for the page; plugin renderer splits freed room for it
+  jsGzip: 733_000, // measured 718,184 bytes on the integration branch (Node zlib, level 9)
   // Insights-specific stylesheets only; the global root sheets are excluded.
   // Plugin renderer stylesheets (operational records, rich metrics) load with their widget type, not with the page.
   cssRaw: 289_000, // measured 262,927 bytes

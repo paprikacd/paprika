@@ -42,6 +42,29 @@ describe("AI builder agent handoff", () => {
     expect(screen.getByRole("link", { name: "Open in Claude" })).toBeInTheDocument()
   })
 
+  it("names this origin's /observe/mcp, without the page's basePath, query or fragment", async () => {
+    window.history.pushState({}, "", "/paprika/dashboard/insights?code=sign-in-secret#id_token=fragment-secret")
+    try {
+      open({ observe: true })
+      const endpoint = `${window.location.origin}/observe/mcp`
+      fireEvent.click(screen.getByRole("button", { name: "Copy setup command" }))
+      await screen.findByText("Setup command copied.")
+      expect(vi.mocked(copyToClipboard).mock.calls[0][0]).toBe(`claude mcp add --transport http paprika-observe ${endpoint}`)
+      fireEvent.click(screen.getByRole("button", { name: "Copy agent instructions" }))
+      await screen.findByText("Instructions copied. Paste the agent’s JSON reply below.")
+      const text = vi.mocked(copyToClipboard).mock.calls[1][0]
+      expect(text).toContain(`Use the Paprika Observe MCP server at ${endpoint}.`)
+      const href = screen.getByRole("link", { name: "Open in Claude" }).getAttribute("href") ?? ""
+      for (const copied of [text, decodeURIComponent(href)]) {
+        expect(copied).not.toContain("sign-in-secret")
+        expect(copied).not.toContain("fragment-secret")
+        expect(copied).not.toContain("/paprika/")
+      }
+    } finally {
+      window.history.pushState({}, "", "/")
+    }
+  })
+
   it("hands the unsaved draft to the agent", () => {
     open({ unsaved: true })
     fireEvent.click(screen.getByRole("button", { name: "Copy agent instructions" }))

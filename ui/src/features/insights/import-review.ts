@@ -1,11 +1,5 @@
 import { documentFingerprint } from "./fingerprint";
-import {
-  diffJSON,
-  MAX_DIFF_CHANGES,
-  type FieldChange,
-  type JSONDiff,
-  type JSONValue,
-} from "./dashboard-patch";
+import { diffJSON, type FieldChange, type JSONDiff, type JSONValue } from "./dashboard-diff";
 import {
   MAX_DOCUMENT_BYTES,
   widgetKind,
@@ -45,8 +39,7 @@ export interface ImportReview {
   canReplace: boolean;
   replaceBlockedReason?: string;
 }
-export const MAX_IMPORT_DIFF_CHANGES = MAX_DIFF_CHANGES;
-export const diffImportDocuments = diffJSON;
+export { diffJSON as diffImportDocuments, MAX_DIFF_CHANGES as MAX_IMPORT_DIFF_CHANGES } from "./dashboard-diff";
 
 function canonicalDashboard(input: Dashboard): Dashboard {
   // A save writes the layout as the canvas draws it, so a stored dashboard holds those positions. Canonicalize
@@ -90,7 +83,7 @@ function review(
         ? "identical"
         : "conflict",
     ...(baseline ? { baseline } : {}),
-    diff: diffImportDocuments(
+    diff: diffJSON(
       (existing?.document ?? {}) as ImportJSONValue,
       incoming as ImportJSONValue,
     ),
