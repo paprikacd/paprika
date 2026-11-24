@@ -41,8 +41,15 @@ describe("Kubernetes plugin renderers", () => {
       registerKubernetesPlugins();
       const html = render(id, preset);
       expect(html).not.toMatch(/NaN|Infinity|undefined/);
+      // Hover text comes from the shared observation tooltip, never a native title attribute.
+      expect(html).not.toMatch(/\stitle="/);
     });
   }
+
+  it("marks every interactive mark for the shared observation owner", () => {
+    registerKubernetesPlugins();
+    for (const id of ids) expect(render(id, "ready")).toContain("data-observation=");
+  });
 
   it("honours decimals in every numeric label", () => {
     registerKubernetesPlugins();
