@@ -2,7 +2,12 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { Dashboard, DashboardVariable, SavedQueryEntry } from "./schema"
-import type { ExplorerSeed } from "./explorer"
+
+/**
+ * An Explorer opened from a chart: a trace search over a time range (milliseconds), such as a latency region's traces.
+ * It lives here, not in explorer.tsx, so chart renderers that read this context never type-check the Explorer and its client.
+ */
+export interface ExplorerSeed { providerId: string; kind: "traces"; query: string; start: number; end: number }
 
 export interface SavedQueryLibrary {
   queries: SavedQueryEntry[]

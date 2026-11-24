@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { InsightsClient } from "./client";
+import type { ExplorerSeed } from "./saved-query-context";
 import {
   savedQuerySchema,
   type Dashboard,
@@ -155,8 +156,6 @@ function resultWidget(query: SavedQuery, type: string, config?: Widget["config"]
   };
 }
 
-/** An Explorer opened from a chart: a trace search over a time range (milliseconds), such as a latency region's traces. */
-export interface ExplorerSeed { providerId: string; kind: "traces"; query: string; start: number; end: number }
 
 export function Explorer({
   client,
