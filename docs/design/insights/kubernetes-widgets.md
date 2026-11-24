@@ -17,6 +17,15 @@ Units: CPU is in cores, memory in bytes, network in bytes per second. Throttle s
 
 - A missing sample is unavailable, never zero. Zero CFS periods is observed but neutral, so it is not painted as throttling.
 - A pod with an empty `node` label is pending. A pod on a node that is not in the returned capacity is listed as outside.
+- Placement and bars show the present. A series whose last sample is more than one step before the newest sample in the
+  result (a deleted or rescheduled pod) is left out. A pod that was pending and then scheduled is placed on its node.
+- A pod with no request series for a resource declared none and counts as zero. A request series whose newest sample is
+  missing is unavailable, and so is its node's sum.
+- Node pressure is the query's pod requests over the node's allocatable. Pods in other namespaces are not counted, so it is
+  this namespace's share of the node, not the node's total commitment. A node that is not ready has a dashed outline and
+  says so in its label.
+- Every mark is one tab stop per widget. Arrow keys move between marks (up and down move between rows or strips), and Enter
+  or Space pins the tooltip.
 - Placement is a treemap. A node's box is its allocatable capacity, its pods are tiles sized by request, and the unrequested rest is
   an open tile. Pending and outside pods sit in their own groups. Zone groups appear only when nodes carry a `zone` label. A node
   at or above `pressure` is outlined in the warning token, and above 1 in the critical token.
@@ -27,11 +36,20 @@ Units: CPU is in cores, memory in bytes, network in bytes per second. Throttle s
 
 ## Series budget
 
-A query returns at most 100 series (`maxSeries` in the metrics provider). The default queries fit that cap with the tiles
-that starters place: placement is two series per pod plus three per node, throttle is two per pod, and the trend is six.
-Bars truncate past about 16 groups. The footer says when a result is truncated; the widget does not rank hidden series.
-The placement treemap draws one tile per pod with a positive request, plus one unrequested tile per node. Its tile count is
-bounded by the same series cap as the bars, so it does not need a fallback to bars.
+A query returns at most 100 series (`maxSeries` in the metrics provider). Placement is two series per pod plus three per
+node, so it fits while `2 × pods + 3 × nodes ≤ 100` (about 40 pods on 6 nodes). Throttle is two per pod (50 pods), bars six
+per group (16 groups) and the trend six. Larger namespaces truncate, and the footer says so; the widget does not rank
+hidden series.
+
+Prometheus returns a range result sorted by label set, and the provider keeps the first 100. The placement query sums pod
+requests `by (pod, node)` without `namespace`, so each node's pods sort just before its capacity series and pending pods
+sort last. A cut then drops whole nodes from the end. At most one node keeps some pods but loses its capacity, and those
+pods are listed as outside returned nodes. With `namespace` on the pod series, every pod would sort before every node and a
+cut would drop all node capacity first.
+
+The throttle matrix draws at most 36 columns. A longer result groups consecutive samples: a cell's share is the sum of
+throttled periods over the sum of periods, and its counts are the mean per sample, because the samples are overlapping
+five-minute windows.
 
 ## Label and exporter assumptions
 

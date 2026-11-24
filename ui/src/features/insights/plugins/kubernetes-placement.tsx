@@ -9,7 +9,8 @@ import { statusToken } from "../status";
 import { truncationNote } from "../truncation";
 import type { WidgetRendererProps } from "../widget-registry";
 import { placementConfigSchema, placementModel, type PlacementNode, type PlacementPod } from "./kubernetes-data";
-import { RESOURCE_UNIT, sampleTime, text, useObservations, type Observation, type Observed } from "./kubernetes-observations";
+import type { TriggerEvent } from "../observation-owner";
+import { RESOURCE_UNIT, sampleTime, text, useObservations, useRoving, type Observation, type Observed } from "./kubernetes-observations";
 
 /**
  * Node → pod placement treemap. A node's box is its allocatable capacity; its pods are tiles sized by their requests,
@@ -31,6 +32,13 @@ interface Tile {
 }
 
 const leafKey = (tile: Tile) => `${tile.node ?? "pending"}|${tile.pod?.key ?? tile.name}`;
+
+/** Drilldown labels for a pod. The namespace is left out when the result does not carry it. */
+const podLabels = (pod: PlacementPod, node: string | undefined): Record<string, string> => ({
+  ...(node ? { node } : {}),
+  ...(pod.namespace ? { namespace: pod.namespace } : {}),
+  pod: pod.pod,
+});
 
 export function KubernetesPlacement({ widget, result, embedded, onActivate, onContextChange }: WidgetRendererProps) {
   const config = placementConfigSchema.parse(widget.config ?? {});
@@ -84,17 +92,19 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
     const tile = leaf.data, pod = tile.pod!, request = tile.value ?? 0;
     const node = model.nodes.find(candidate => candidate.node === tile.node);
     const allocatable = node ? allocatableOf(node) : null;
-    const labels = { ...(tile.node ? { node: tile.node } : {}), namespace: pod.namespace, pod: pod.pod };
+    const labels = podLabels(pod, tile.node);
+    const readiness = node?.ready === false ? " The node is not ready." : "";
     return {
       key: leafKey(tile), subject: pod.pod, unit, description: `${resource === "cpu" ? "CPU" : "Memory"} request on ${tile.node ?? "no node"}`,
       series: { name: pod.pod, labels, points: [{ timestamp: at, value: request }] }, point: { timestamp: at, value: request },
       detail: allocatable
-        ? <span>{text((request / allocatable) * 100, "%", decimals)} of {text(allocatable, unit, decimals)} allocatable on this node</span>
-        : <span>{tile.node ? "Node capacity unavailable" : "Not scheduled to a node"}</span>,
+        ? <span>{text((request / allocatable) * 100, "%", decimals)} of {text(allocatable, unit, decimals)} allocatable on this node.{readiness}</span>
+        : <span>{tile.node ? "Node capacity unavailable." : "Not scheduled to a node."}{readiness}</span>,
       context: { series: pod.pod, labels },
     };
   });
   const { root: rootRef, observe, popover } = useObservations(observations, widget, interactive && widget.options?.showTooltip !== false);
+  const roving = useRoving(rootRef, observations.length);
   const svgRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   useEffect(() => {
@@ -121,6 +131,7 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
   const pressureOf = (name: string | undefined) => model.nodes.find(node => node.node === name)?.pressure ?? null;
   const toneOf = (pressure: number | null) => pressure === null ? "var(--gamma-chart-grid)" : pressure > 1 ? statusToken("critical") : pressure >= model.pressureThreshold ? statusToken("warning") : "var(--gamma-chart-grid)";
   const showPods = config.showPods !== false;
+  const notReadyNodes = model.nodes.filter(node => node.ready === false).length;
   const podIndex = new Map(leaves.filter(leaf => leaf.data.pod).map((leaf, index) => [leafKey(leaf.data), index]));
   const maxChars = (size: number) => Math.max(0, Math.floor((size - 10) / 7));
   const clip = (value: string, size: number) => {
@@ -145,11 +156,15 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
     </>;
     if (!interactive) return <g key={leafKey(data)} role="img" aria-label={label}>{shape}</g>;
     const trigger = observed?.trigger;
-    return <g key={leafKey(data)} role="button" tabIndex={0} aria-label={label} data-observation={observed?.index}
+    const context = { series: data.pod!.pod, labels: podLabels(data.pod!, data.node) };
+    const activate = (event: TriggerEvent) => { (onActivate ?? onContextChange)?.(context); trigger?.onClick(event); };
+    const keys = roving(index, activate);
+    return <g key={leafKey(data)} role="button" aria-label={label} data-observation={observed?.index}
+      tabIndex={keys.tabIndex} data-roving={keys["data-roving"]} onKeyDown={keys.onKeyDown}
       onPointerEnter={trigger?.onPointerEnter} onPointerLeave={trigger?.onPointerLeave}
-      onFocus={event => { onContextChange?.({ series: data.pod!.pod, labels: { ...(data.node ? { node: data.node } : {}), namespace: data.pod!.namespace, pod: data.pod!.pod } }); trigger?.onFocus(event); }}
+      onFocus={event => { keys.onFocus(); onContextChange?.(context); trigger?.onFocus(event); }}
       onBlur={trigger?.onBlur}
-      onClick={event => { const context = { series: data.pod!.pod, labels: { ...(data.node ? { node: data.node } : {}), namespace: data.pod!.namespace, pod: data.pod!.pod } }; (onActivate ?? onContextChange)?.(context); trigger?.onClick(event); }}>
+      onClick={activate}>
       {shape}
     </g>;
   };
@@ -162,11 +177,12 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
           {groupFrames.map(group => (group.x1 - group.x0 >= 60 ? <text key={`group-${group.data.name}`} x={group.x0 + 4} y={group.y0 + 12} fontSize="11" fontWeight={600} fill="var(--gamma-ink)" pointerEvents="none">{clip(group.data.zone ?? group.data.name, group.x1 - group.x0)}</text> : null))}
           {nodeFrames.map(node => {
             const pressure = pressureOf(node.data.node);
+            const notReady = model.nodes.find(candidate => candidate.node === node.data.node)?.ready === false;
             const w = node.x1 - node.x0;
             return <g key={`node-${node.data.node}`}>
-              <rect x={node.x0} y={node.y0} width={node.x1 - node.x0} height={node.y1 - node.y0} style={frameStyle} stroke={toneOf(pressure)} strokeWidth={pressure !== null && pressure >= model.pressureThreshold ? 1.5 : 1} rx={2} pointerEvents="none" />
+              <rect x={node.x0} y={node.y0} width={node.x1 - node.x0} height={node.y1 - node.y0} style={frameStyle} stroke={toneOf(pressure)} strokeWidth={pressure !== null && pressure >= model.pressureThreshold ? 1.5 : 1} strokeDasharray={notReady ? "4 2" : undefined} rx={2} pointerEvents="none" />
               {w >= 60 && <text x={node.x0 + 4} y={node.y0 + 12} fontSize="11" fill="var(--gamma-ink)" pointerEvents="none">
-                {clip(`${node.data.node}${pressure === null ? "" : ` · ${formatMetricDetails(pressure * 100, "%", decimals)}`}`, w)}
+                {clip(`${node.data.node}${pressure === null ? "" : ` · ${formatMetricDetails(pressure * 100, "%", decimals)}`}${notReady ? " · not ready" : ""}`, w)}
               </text>}
             </g>;
           })}
@@ -176,6 +192,7 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[var(--gamma-muted)]">
         {model.hiddenNodes > 0 && <span>Showing {model.nodes.length} of {model.totalNodes} nodes</span>}
         <span>{model.pending.length} pending {model.pending.length === 1 ? "pod" : "pods"}</span>
+        {notReadyNodes > 0 && <span>{notReadyNodes} {notReadyNodes === 1 ? "node" : "nodes"} not ready</span>}
         {model.outside.length > 0 && <span>{model.outside.length} outside returned nodes</span>}
         {truncationNote(result) && <span>{truncationNote(result)}</span>}
       </div>

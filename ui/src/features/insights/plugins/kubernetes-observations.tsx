@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, type ReactNode, type RefObject } from "react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { DrilldownContext } from "../drilldown";
 import { MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { formatMetricDetails, type Point, type Series } from "../chart-data";
@@ -63,6 +63,44 @@ export function useObservations(observations: Observation[], widget: Widget, ena
     </ObservationTooltip>
   ) : null;
   return { id, root, observe, popover };
+}
+
+export interface RovingProps {
+  tabIndex: number;
+  "data-roving": number;
+  onKeyDown: (event: KeyboardEvent<Element>) => void;
+  onFocus: () => void;
+}
+
+/**
+ * One tab stop per widget for its marks. Arrow keys move between marks: left and right by one, up and down by a row of
+ * `columns` marks, Home and End to the ends. Marks that are not native buttons pass `activate`, which Enter and Space
+ * call, so the keyboard can pin a tooltip on an SVG mark as a click does.
+ */
+export function useRoving(root: RefObject<HTMLElement | null>, count: number, columns = 1) {
+  const [active, setActive] = useState(0);
+  const current = Math.max(0, Math.min(active, count - 1));
+  return (index: number, activate?: (event: KeyboardEvent<Element>) => void): RovingProps => ({
+    tabIndex: index === current ? 0 : -1,
+    "data-roving": index,
+    onFocus: () => setActive(index),
+    onKeyDown: (event) => {
+      if (activate && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        activate(event);
+        return;
+      }
+      const step = Math.max(1, columns);
+      const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1
+        : event.key === "ArrowDown" ? index + step : event.key === "ArrowUp" ? index - step
+        : event.key === "Home" ? 0 : event.key === "End" ? count - 1 : null;
+      if (next === null) return;
+      event.preventDefault();
+      const target = Math.max(0, Math.min(count - 1, next));
+      setActive(target);
+      root.current?.querySelector<HTMLElement | SVGElement>(`[data-roving="${target}"]`)?.focus();
+    },
+  });
 }
 
 export const text = (value: number | null, unit: string, decimals?: number) => (value === null ? "No data" : formatMetricDetails(value, unit, decimals));
