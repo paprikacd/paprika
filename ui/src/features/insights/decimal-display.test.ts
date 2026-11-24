@@ -59,11 +59,11 @@ describe("no raw metric strings outside the formatters", () => {
     const { readdirSync, readFileSync, statSync } = await import("node:fs");
     const { join, relative } = await import("node:path");
     const root = join(process.cwd(), "src/features/insights");
-    const pattern = /String\(\s*[\w.[\]?!]*\b(value|durationMs|latest\w*|point\.value|datum\.value|activeValue|cell\.value|row\[\w+\])\s*\)/;
+    // Also flags `.toString()` on the same metric names. Template literals are not matched: label maps use `${value}` for text.
+    const pattern = /(String\(\s*[\w.[\]?!]*\b(value|durationMs|latest\w*|point\.value|datum\.value|activeValue|cell\.value|row\[\w+\])\s*\)|\b(value|durationMs|point\.value|datum\.value|activeValue)\.toString\(\))/;
     // Each exception names a file and a fragment of the line. Raw machine values in data-* attributes, query and
     // variable parameters (not display text), the non-numeric fallbacks, and the helpers that format numbers.
     const allowed: [file: string, fragment: string][] = [
-      ["chart-data-inspector.tsx", "? String(point.value)"],
       ["chart-renderers.tsx", "? String(trace.durationMs)"],
       ["plot-tooltip.tsx", "point.value === null ? \"missing\" : String(point.value)"],
       ["drilldown.ts", "String(context.value)"],
@@ -72,6 +72,8 @@ describe("no raw metric strings outside the formatters", () => {
       ["saved-query-controls.tsx", "String(binding.value)"],
       ["plugins/operational-records-data.ts", "[[item.key, String(value)]]"],
       ["plugins/records.tsx", "return value === null || value === undefined ? \"—\" : String(value)"],
+      // An editable number field round-trips the stored value as text; it is input, not display.
+      ["threshold-list-editor.tsx", "value.toString()"],
       ["plugins/records.tsx", "Invalid history"],
       ["plugins/record-charts.tsx", "const contextText="],
       ["plugins/record-table-cells.tsx", "const displayed = "],

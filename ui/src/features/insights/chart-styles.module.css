@@ -646,6 +646,41 @@
   height: auto;
   max-height: 50dvh;
 }
+/* Observation table: fixed right-aligned tabular value column; the region scrolls only when a cell cannot fit. */
+.dataDialog table { width: 100%; border-collapse: collapse; }
+.dataDialog th,
+.dataDialog td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--gamma-border, #dfe4db);
+}
+.dataDialog th {
+  color: var(--gamma-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dataDialog td:last-child,
+.dataDialog th:last-child {
+  min-width: 8em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Exact values are long ("296,303,060,975,000 bytes"): they may break before the unit at a space, never mid-number. */
+.dataDialog td.exactValue {
+  white-space: normal;
+  overflow-wrap: normal;
+}
+/* Scroll shadows: they show the table continues past either edge, and fade out when it does not. */
+.dataDialog > [role="region"] {
+  background:
+    linear-gradient(to right, var(--gamma-bg, #ffffff) 40%, transparent) left / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--gamma-bg, #ffffff) 40%, transparent) right / 24px 100% no-repeat local,
+    linear-gradient(to right, rgb(0 0 0 / 14%), transparent) left / 8px 100% no-repeat scroll,
+    linear-gradient(to left, rgb(0 0 0 / 14%), transparent) right / 8px 100% no-repeat scroll,
+    var(--gamma-bg, #ffffff);
+}
 .inspectorLabels {
   display: grid;
   gap: 6px;
@@ -674,6 +709,10 @@
   }
   .dataDialog[open] {
     gap: 12px;
+  }
+  .dataDialog th,
+  .dataDialog td {
+    padding-inline: 6px;
   }
   .inspectorFooter > span {
     width: 100%;

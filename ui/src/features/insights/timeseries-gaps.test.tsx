@@ -127,8 +127,8 @@ describe("time-series gaps", () => {
     act(() => chart.blur());
     fireEvent.click(screen.getByRole("button", { name: "Inspect chart data for Requests" }));
     const dialog = screen.getByRole("dialog", { name: "Requests data" });
-    expect(within(dialog).getByText(new Date(7000).toISOString())).toBeInTheDocument();
-    expect(within(dialog).queryByText(new Date(5000).toISOString())).toBeNull();
+    expect(dialog.querySelector(`time[datetime="${new Date(7000).toISOString()}"]`)).toBeInTheDocument();
+    expect(dialog.querySelector(`time[datetime="${new Date(5000).toISOString()}"]`)).toBeNull();
   });
 
   it("keeps the broken line but draws no bands inside embedded widgets", () => {
