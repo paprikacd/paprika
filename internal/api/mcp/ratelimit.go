@@ -25,6 +25,14 @@ const (
 	mcpLimiterSweepAt        = 256
 )
 
+// LimitScopeHeader names the limit that refused a 429, as the observability gateway
+// sends it. The per-principal limiter's refusals name ScopePrincipal: the caller's
+// own request rate, which every provider it reads shares.
+const (
+	LimitScopeHeader = "X-Paprika-Limit-Scope"
+	ScopePrincipal   = "principal"
+)
+
 var errRateQueueCapacity = errors.New("MCP request rate queue is full or the wait would exceed its budget")
 
 // rateQueueFullError is errRateQueueCapacity with the delay the reservation

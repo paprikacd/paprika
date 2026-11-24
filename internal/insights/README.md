@@ -367,13 +367,11 @@ request whose read cannot reserve waits up to 2 seconds for bytes to free, with 
 requests queued. Past that it gets `429` with `Retry-After: 1` and "too many active dashboard
 uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals_total`,
 labelled `route="save"` or `route="dry_run"`. The counter appears on Insights' own `/metrics`
-endpoint, or over OTLP when telemetry is configured. The chart as it stands does not
-scrape Insights. When `insights.enabled` is set and either `insights.networkPolicy.enabled`
-or `networkPolicy.enabled` is set (both default to `false`), the Insights NetworkPolicy
-admits port 8090 from the API server and the observability gateway, and from the
-controller-manager in monolith mode (see "Network policy"). The chart has no
-value for an extra ingress rule, so a scrape needs a chart change as well as an operator's
-scrape job. The same is true of `paprika_insights_queries_total`.
+endpoint, or over OTLP when telemetry is configured. With `prometheus.enable`, the chart
+starts Insights with `--metrics-listen=:8080`, a second listener that serves only `/metrics`,
+and renders a ServiceMonitor for that `metrics` port. The Insights NetworkPolicy then admits
+the release namespace on 8080 only; `/api` on 8090 stays limited to its peers (see
+"Network policy"). The same is true of `paprika_insights_queries_total`.
 
 A principal can fill the budget with stalled uploads. The budget's worth of stalled bytes
 (8 MiB) refuses every save and dry run for up to the server's 10-second `ReadTimeout`, the
@@ -658,6 +656,9 @@ below.
   `deploymentMode` is `monolith`. In monolith mode the manager serves the console, which
   reaches Insights through this peer. In split mode the API server serves the console, so the
   manager peer is left out.
+- Ingress on TCP 8080 from the release namespace, only when `prometheus.enable` is set. That
+  port is the metrics-only listener (`--metrics-listen`), which answers `/metrics` and nothing
+  else, as the other components admit their metrics ports.
 - Egress on UDP and TCP 53 to kube-system (DNS).
 - Egress on TCP 8090 to the observability-gateway, when `observabilityGateway.enabled`.
 - The `insights.networkPolicy.egress` extras. The defaults are TCP 80, 443, 9090 and 3200,
@@ -679,9 +680,9 @@ What it does not cover:
   does not block them. Calico admits host-to-pod traffic by default, so the probes pass.
   Under another CNI, or with host endpoint policies, check the Insights pod's READY state
   after rollout.
-- Metrics. `/metrics` is served on 8090, but the chart does not scrape it: it has no
-  ServiceMonitor for Insights. A scraper needs a new ingress rule, which the chart does not
-  expose yet.
+- Metrics from outside the release namespace. The 8080 rule admits only the release
+  namespace, as for the other components, so a Prometheus in another namespace needs its own
+  rule. `/metrics` is also still served on 8090 to the admitted peers.
 - Floods from admitted peers. The admitted peers (the api-server, the gateway and, in monolith
   mode, the controller-manager) can still send the load described in "Known limit" above.
 - Providers and telemetry on other ports. A managed provider added through

@@ -166,10 +166,15 @@ const observeEnvelopeMaxBytes = 4 << 10
 // gateway failure. Other statuses map as the MCP transport maps them.
 func observeRESTStatusError(response *http.Response) error {
 	status := response.StatusCode
+	if status == http.StatusBadGateway && gatewayEnvelopeError(response) == "server_error" {
+		// The gateway answered and says the provider request failed: a provider fault,
+		// not an unreachable gateway. A bare 502 (a proxy, a draining pod) stays the gateway's.
+		return errUpstream
+	}
 	if status != http.StatusRequestTimeout && status != http.StatusServiceUnavailable {
 		return observeHTTPErrorFor(status, response.Header.Get("Retry-After"), response.Header.Get(observeLimitScopeHeader))
 	}
-	if !gatewayUnavailableEnvelope(response) {
+	if gatewayEnvelopeError(response) != "temporarily_unavailable" {
 		return observeHTTPError(http.StatusBadGateway)
 	}
 	if status == http.StatusRequestTimeout {
@@ -178,24 +183,28 @@ func observeRESTStatusError(response *http.Response) error {
 	return observeNotConfiguredError()
 }
 
-// gatewayUnavailableEnvelope reports whether the response is the gateway's own
-// temporarily_unavailable JSON envelope. It reads at most observeEnvelopeMaxBytes.
-func gatewayUnavailableEnvelope(response *http.Response) bool {
+// gatewayEnvelopeError returns the error code of the gateway's own JSON envelope,
+// or empty for any other body. It reads at most observeEnvelopeMaxBytes, and only
+// the code, never the description, is used.
+func gatewayEnvelopeError(response *http.Response) string {
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		return false
+		return ""
 	}
 	if response.ContentLength > observeEnvelopeMaxBytes {
-		return false
+		return ""
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, observeEnvelopeMaxBytes+1))
 	if err != nil || len(body) > observeEnvelopeMaxBytes {
-		return false
+		return ""
 	}
 	var envelope struct {
 		Error string `json:"error"`
 	}
-	return json.Unmarshal(body, &envelope) == nil && envelope.Error == "temporarily_unavailable"
+	if json.Unmarshal(body, &envelope) != nil {
+		return ""
+	}
+	return envelope.Error
 }
 
 // observeRESTQuery is the gateway's DashboardQueryRequest. Field names and

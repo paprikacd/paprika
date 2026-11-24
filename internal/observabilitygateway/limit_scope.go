@@ -3,12 +3,15 @@ package observabilitygateway
 import (
 	"errors"
 	"net/http"
+
+	"github.com/benebsworth/paprika/internal/api/mcp"
 )
 
 // LimitScopeHeader names the admission limit that refused a gateway 429. Every
 // 429 the gateway sends carries it, so a caller can tell a refusal that applies
-// to one provider from one that applies to the whole gateway.
-const LimitScopeHeader = "X-Paprika-Limit-Scope"
+// to one provider from one that applies to the whole gateway. Only "provider"
+// is narrower than the caller's whole board.
+const LimitScopeHeader = mcp.LimitScopeHeader
 
 // LimitScope is the closed set of limits a gateway 429 can name.
 type LimitScope string
@@ -25,6 +28,12 @@ const (
 	// ScopeQueue is the admission queue that bounds every request the budget
 	// holds, active or waiting.
 	ScopeQueue LimitScope = "queue"
+	// ScopePrincipal is the per-caller request rate shared by /mcp and the REST
+	// routes (mcp.Server.LimitPrincipal). Every provider the caller reads is affected.
+	ScopePrincipal LimitScope = mcp.ScopePrincipal
+	// ScopeUnknown is a resource_exhausted refusal that names no limit. A caller
+	// treats it as gateway-wide.
+	ScopeUnknown LimitScope = "unknown"
 )
 
 // scopedError tags a refusal with the limit that produced it. It unwraps to the
@@ -56,12 +65,13 @@ func LimitScopeOf(err error) (LimitScope, bool) {
 }
 
 // limitScopeHeaderValue is the header value for err. A refusal that names no
-// scope is reported as budget: it is a gateway-wide refusal, not a provider's.
+// scope is reported as unknown, not as one of the budget's limits it did not come
+// from; a caller holds every provider for it, as for any scope but provider.
 func limitScopeHeaderValue(err error) string {
 	if scope, ok := LimitScopeOf(err); ok {
 		return string(scope)
 	}
-	return string(ScopeBudget)
+	return string(ScopeUnknown)
 }
 
 // SetLimitScopeHeader writes the scope header for a gateway 429.

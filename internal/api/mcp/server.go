@@ -566,6 +566,7 @@ func (s *Server) LimitPrincipal(next http.Handler) http.Handler {
 		if err := s.rateLimit.Wait(r.Context(), principal.Subject); err != nil {
 			if errors.Is(err, errRateQueueCapacity) {
 				w.Header().Set("Retry-After", strconv.Itoa(rateRetryAfterSeconds(err)))
+				w.Header().Set(LimitScopeHeader, ScopePrincipal)
 				http.Error(w, "rate limit queue is full; retry shortly", http.StatusTooManyRequests)
 				return
 			}
@@ -658,6 +659,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := s.rateLimit.Wait(ctx, principal.Subject); err != nil {
 		if errors.Is(err, errRateQueueCapacity) {
 			w.Header().Set("Retry-After", strconv.Itoa(rateRetryAfterSeconds(err)))
+			w.Header().Set(LimitScopeHeader, ScopePrincipal)
 			http.Error(w, "rate limit queue is full; retry shortly", http.StatusTooManyRequests)
 			return
 		}

@@ -101,9 +101,11 @@ Codes use the dashboard reader's public error vocabulary: `canceled`,
 `timeout`, `rate_limited`, `forbidden`, `invalid_query`, `provider_not_found`,
 `provider_error` and `gateway_unavailable`. The receipt spells its cancellation outcome `cancelled`.
 A rate-limited failure from the observability gateway also carries `limitScope`
-(`edge`, `budget`, `provider` or `queue`), taken from the gateway's
-`X-Paprika-Limit-Scope` header. A provider-scoped refusal holds only that
-provider's widgets on a board; the other limits hold every widget.
+(`edge`, `budget`, `provider`, `queue` or `principal`), taken from the gateway's
+`X-Paprika-Limit-Scope` header; any other value is dropped. A provider-scoped
+refusal holds only that provider's widgets on a board. Every other refusal,
+including one with no `limitScope` (Insights' own pool, an older gateway), holds
+every widget.
 The receipt, `/api/query`, `query_dashboard` and the dry-run checks share one
 classifier (`classifyQueryFailure`), so they report the same code for the same
 failure. A direct provider's 400 or 422 is `invalid_query`, as is a 200 whose
@@ -111,8 +113,10 @@ failure. A direct provider's 400 or 422 is `invalid_query`, as is a 200 whose
 is `forbidden`, a 408 or 504 and a transport timeout are `timeout`, a 429 is
 `rate_limited`, and a 503 whose `errorType` is `timeout` is `timeout`. Other direct
 failures are `provider_error`. A shared gateway's 503 (a provider that is not configured or cannot
-serve the request) is `provider_not_found`. A gateway 408 is `timeout`. A gateway
-502 (the gateway is unreachable, or it failed) is `gateway_unavailable`, not a provider fault. The classifier reads an
+serve the request) is `provider_not_found`. A gateway 408 (a cancelled request) is `canceled`. A gateway
+502 inside its own `server_error` envelope (the provider request failed) is
+`provider_error`. Any other 502 or 5xx, and a gateway that cannot be reached, is
+`gateway_unavailable`, not a provider fault. The classifier reads an
 HTTP status and a bounded `errorType` enum only, never the provider's text. The
 HTTP status and fixed message are unchanged, and a failed query always carries
 `code`, with or without a receipt.

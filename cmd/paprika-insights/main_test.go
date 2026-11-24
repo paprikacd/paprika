@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,4 +66,35 @@ func TestOpenServiceCommitsQuarantineAfterBinding(t *testing.T) {
 	copies, err := os.ReadDir(filepath.Join(dir, "quarantine", "dashboard"))
 	require.NoError(t, err)
 	require.Len(t, copies, 1)
+}
+
+// The metrics listener serves /metrics and no API route, so a scraper admitted to its port cannot reach /api.
+func TestMetricsServerServesOnlyMetrics(t *testing.T) {
+	service, listener, err := openService("127.0.0.1:0", t.TempDir(), insights.Config{Token: "0123456789abcdef0123456789abcdef"})
+	require.NoError(t, err)
+	require.NoError(t, listener.Close())
+	metricsListener, err := listenMetrics("127.0.0.1:0")
+	require.NoError(t, err)
+	server := newMetricsServer(service)
+	go func() { _ = server.Serve(metricsListener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	base := "http://" + metricsListener.Addr().String()
+	for path, want := range map[string]int{"/metrics": http.StatusOK, "/api/providers": http.StatusNotFound, "/api/query": http.StatusNotFound, "/healthz": http.StatusNotFound} {
+		request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, base+path, nil)
+		require.NoError(t, err)
+		request.Header.Set("Authorization", "Bearer 0123456789abcdef0123456789abcdef")
+		response, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+		_ = response.Body.Close()
+		require.Equal(t, want, response.StatusCode, path)
+	}
+}
+
+// An empty metrics address binds nothing; an invalid one stops startup.
+func TestListenMetrics(t *testing.T) {
+	listener, err := listenMetrics("")
+	require.NoError(t, err)
+	require.Nil(t, listener)
+	_, err = listenMetrics("127.0.0.1:99999")
+	require.ErrorContains(t, err, "listen Insights metrics")
 }

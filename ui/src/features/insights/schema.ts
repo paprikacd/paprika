@@ -858,7 +858,7 @@ export const queryDiagnosticsSchema = z.object({
   truncated: z.boolean(),
   truncationReason: z.enum(["row_limit", "partial", "provider_warning"]).optional().catch(undefined),
   // The gateway limit that refused a capacity outcome. Unknown names are dropped, not failed.
-  limitScope: z.enum(["edge", "budget", "provider", "queue"]).optional().catch(undefined),
+  limitScope: z.enum(["edge", "budget", "provider", "queue", "principal"]).optional().catch(undefined),
 }).superRefine((receipt, context) => {
   if (!receipt.effective.dispatched && (receipt.effective.rangeApplied ||
     receipt.effective.start !== undefined || receipt.effective.end !== undefined || receipt.effective.step !== undefined)) {

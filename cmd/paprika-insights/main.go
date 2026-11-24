@@ -38,6 +38,7 @@ func run() error {
 	dataDir := flag.String("data-dir", "./data/insights", "Persistent dashboard directory; one service replica only")
 	providersFile := flag.String("providers", "", "Path to provider configuration JSON")
 	dev := flag.Bool("dev", false, "Disable service authentication on a loopback listener for local development")
+	metricsListen := flag.String("metrics-listen", "", "Optional second HTTP address that serves only /metrics, such as :8080, so a scraper can be admitted to it without reaching /api")
 	capacity := registerCapacityFlags(flag.CommandLine)
 	flag.Parse()
 	if *dev {
@@ -62,9 +63,14 @@ func run() error {
 	defer shutdownTelemetry(telemetry)
 	// Telemetry starts before the store opens so that the quarantine counter, which NewServer increments when startup
 	// commits the quarantine, reaches the configured providers.
-	service, listener, err := openService(*listen, *dataDir, cfg)
+	// The metrics listener binds first, so a taken address also stops startup before the store is read.
+	metricsListener, err := listenMetrics(*metricsListen)
 	if err != nil {
 		return err
+	}
+	service, listener, err := openService(*listen, *dataDir, cfg)
+	if err != nil {
+		return errors.Join(err, closeListener(metricsListener))
 	}
 	server := &http.Server{Addr: *listen, Handler: service.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -74,7 +80,53 @@ func run() error {
 		"catalogConcurrency", effective.CatalogConcurrency, "catalogQueue", effective.CatalogQueue, "catalogQueueWait", effective.CatalogWait.String(),
 		"dashboardQueryParallelism", effective.DashboardQueryParallelism)
 	slog.Info("Paprika Insights listening", "address", listener.Addr().String(), "providers", len(cfg.Providers), "development", *dev)
+	startMetrics(ctx, stop, service, metricsListener)
 	return serve(ctx, server, listener)
+}
+
+// startMetrics serves the metrics-only listener in the background, when one is bound.
+// A failed metrics listener stops the service, so the pod restarts rather than running unobserved.
+func startMetrics(ctx context.Context, stop context.CancelFunc, service *insights.Server, listener net.Listener) {
+	if listener == nil {
+		return
+	}
+	server := newMetricsServer(service)
+	slog.Info("Paprika Insights metrics listening", "address", listener.Addr().String())
+	go func() {
+		if err := serve(ctx, server, listener); err != nil {
+			slog.Error("Insights metrics listener stopped", "error", err)
+			stop()
+		}
+	}()
+}
+
+// listenMetrics binds the optional metrics-only listener. An empty address binds nothing.
+func listenMetrics(addr string) (net.Listener, error) {
+	if addr == "" {
+		return nil, nil
+	}
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen Insights metrics: %w", err)
+	}
+	return listener, nil
+}
+
+func closeListener(listener net.Listener) error {
+	if listener == nil {
+		return nil
+	}
+	if err := listener.Close(); err != nil {
+		return fmt.Errorf("close Insights metrics listener: %w", err)
+	}
+	return nil
+}
+
+// newMetricsServer serves only /metrics. It answers no /api route, so a NetworkPolicy
+// can admit a scraper to its port without admitting it to the service API.
+func newMetricsServer(service *insights.Server) *http.Server {
+	return &http.Server{Handler: service.MetricsHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 }
 
 // openService binds the listener before the store is read. A taken or invalid address therefore stops startup while
