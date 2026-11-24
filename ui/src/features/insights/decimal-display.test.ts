@@ -80,7 +80,7 @@ describe("no raw metric strings outside the formatters", () => {
       ["example-catalog-query.ts", "const key = String(row[stock])"],
       ["plugins/operational-records-data.ts", "const labelValue"],
       ["plugins/operational-records-data.ts", "[[item.key, String(row[index])]]"],
-      ["plugins/operational-records.tsx", "data-threshold="],
+      ["plugins/operational-records-view.tsx", "data-threshold="],
       ["plugins/record-charts.tsx", "const categories="],
       ["plugins/record-charts.tsx", "categories.indexOf(String(value))"],
       ["plugins/record-charts.tsx", "onContextChange?.("],

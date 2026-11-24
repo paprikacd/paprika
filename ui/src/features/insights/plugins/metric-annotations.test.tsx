@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PluginConfigEditor } from "../plugin-config-editor";
 import { getWidgetDefinition } from "../widget-registry";
-import { StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
+import { registerRichMetricPlugins } from "./rich-metrics";
+import { StackedTimeseries } from "./rich-metrics-view";
 import { stackedConfigSchema } from "./rich-metrics-data";
 import type { QueryResult, Widget } from "../schema";
 import { AnnotationEventsProvider } from "../annotation-events";

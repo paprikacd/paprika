@@ -178,24 +178,6 @@
   color: var(--gamma-danger);
   font-size: 11px;
 }
-.reviewList {
-  padding: 0;
-  list-style: none;
-  margin: 12px 0;
-  max-height: 180px;
-  overflow: auto;
-}
-.reviewList li {
-  padding: 8px;
-  border-bottom: 1px solid var(--gamma-border);
-  font-size: 11px;
-}
-.reviewList small {
-  display: block;
-  font-size: 10px;
-  color: var(--gamma-muted);
-  margin-top: 3px;
-}
 .librarySearch {
   margin-top: 18px;
 }
@@ -216,14 +198,6 @@
   background: var(--gamma-accent-soft);
   color: var(--gamma-accent-text);
   border-color: var(--gamma-border);
-}
-.pluginBadge {
-  display: inline-block;
-  margin-left: 6px;
-  border: 1px solid var(--gamma-border);
-  border-radius: var(--gamma-radius-small);
-  font-size: 10px;
-  padding: 1px 3px;
 }
 @media (max-width: 700px) {
   .manager {

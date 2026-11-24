@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
+import { registerRichMetricPlugins } from "./rich-metrics";
+import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries } from "./rich-metrics-view";
 import { getWidgetDefinition } from "../widget-registry";
 import { DashboardWindowProvider } from "../dashboard-window";
 import { ChartCursorProvider } from "../chart-cursor";

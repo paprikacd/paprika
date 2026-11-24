@@ -4,7 +4,7 @@ import { CHART_REVEAL_MS } from "../chart-entrance";
 import chartEntrance from "../chart-entrance.module.css";
 import { EmbeddedWidgetProvider } from "../widget-presentation";
 import type { QueryResult, Widget } from "../schema";
-import { DistributionHeatmap, StackedTimeseries } from "./rich-metrics";
+import { DistributionHeatmap, StackedTimeseries } from "./rich-metrics-view";
 
 // The distribution and stacked plots are their own SVG, not TanStack's, so their draw-in is marked on one mark group per plot.
 const heatmap: Widget = { id: "latency", title: "Latency distribution", type: "plugin", pluginId: "distribution-heatmap", providerId: "metrics", dataKind: "metrics", query: "buckets", unit: "ms", layout: { x: 0, y: 0, w: 6, h: 4 }, config: { maxColumns: 120, densityUnit: "events/s" } };

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { DashboardWindowProvider } from "../dashboard-window";
 import type { QueryResult, Widget } from "../schema";
-import { DirectionalTraffic, StackedTimeseries } from "./rich-metrics";
+import { DirectionalTraffic, StackedTimeseries } from "./rich-metrics-view";
 
 const points = (values: (number | null)[], start: number) => values.map((value, i) => ({ timestamp: start + i * 1000, value }));
 const current: QueryResult = { series: [

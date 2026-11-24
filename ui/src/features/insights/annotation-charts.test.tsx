@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AnnotationEventsProvider } from "./annotation-events";
 import { WidgetVisualization } from "./charts";
-import { DirectionalTraffic } from "./plugins/rich-metrics";
+import { DirectionalTraffic } from "./plugins/rich-metrics-view";
 import { widgetSchema, type QueryResult, type Widget } from "./schema";
 
 afterEach(cleanup);

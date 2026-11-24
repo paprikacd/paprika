@@ -1,7 +1,7 @@
 // Fails at width 300 before resolve() looked up bucket.sourceCells: a narrow plot resamples windows the keyed lookup had dropped.
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DistributionHeatmap } from "./rich-metrics";
+import { DistributionHeatmap } from "./rich-metrics-view";
 import type { QueryResult, Widget } from "../schema";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });

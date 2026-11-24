@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { WidgetVisualization } from "./charts";
-import { StackedTimeseries } from "./plugins/rich-metrics";
+import { StackedTimeseries } from "./plugins/rich-metrics-view";
 import { SmallMultiples } from "./plugins/small-multiples";
 import { RecordLine } from "./plugins/record-charts";
 import { DashboardTimeZoneProvider } from "./dashboard-time-zone";

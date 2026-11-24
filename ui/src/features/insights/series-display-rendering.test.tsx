@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThresholdGauge } from "./plugins/threshold-gauge";
-import { StackedTimeseries } from "./plugins/rich-metrics";
+import { StackedTimeseries } from "./plugins/rich-metrics-view";
 import { WidgetVisualization } from "./charts";
 import type { QueryResult, Widget } from "./schema";
 

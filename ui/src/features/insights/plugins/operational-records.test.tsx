@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ConnectionMap, IncidentCalendar, PipelineTopology, registerOperationalRecordPlugins } from "./operational-records"
+import { registerOperationalRecordPlugins } from "./operational-records"
+import { ConnectionMap, IncidentCalendar, PipelineTopology } from "./operational-records-view"
 import { getWidgetDefinition } from "../widget-registry"
 import { PluginConfigEditor } from "../plugin-config-editor"
 import type { QueryResult, Widget } from "../schema"

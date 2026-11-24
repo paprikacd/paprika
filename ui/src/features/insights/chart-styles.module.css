@@ -224,11 +224,6 @@
   font-size: 11px;
   color: var(--gamma-muted);
 }
-.tooltipKeyHint {
-  color: var(--gamma-muted, #626e65);
-  font-size: 11px;
-  line-height: 1.4;
-}
 .tooltipReading {
   padding: 8px var(--tooltip-gutter, 14px) 12px;
   display: flex;
@@ -477,27 +472,11 @@
   letter-spacing: 0;
   font-weight: 400;
 }
-.gaugeTrack {
-  height: 9px;
-  width: 100%;
-  background: var(--gamma-surface-2, #f1f2ed);
-  overflow: hidden;
-  border-radius: 5px;
-}
-.gaugeFill {
-  height: 100%;
-  border-radius: inherit;
-}
 .gaugeBounds {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
   color: var(--widget-text, var(--gamma-muted, #626e65));
-}
-.gaugeLabel {
-  font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
-  overflow-wrap: anywhere;
 }
 @media (prefers-reduced-motion: reduce) {
   .cell {
@@ -517,14 +496,6 @@
   margin: -8px;
   text-align: left;
   white-space: normal;
-}
-.gaugeHint {
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
-}
-.gaugeTrack {
-  flex-shrink: 0;
 }
 .gaugeBounds {
   gap: 8px;
@@ -548,12 +519,6 @@
   .cell[aria-pressed="true"] {
     outline-color: Highlight;
     box-shadow: none;
-  }
-  .gaugeTrack {
-    border: 1px solid CanvasText;
-  }
-  .gaugeFill {
-    background: Highlight !important;
   }
   .heatmapTooltip {
     border-color: CanvasText;

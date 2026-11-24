@@ -3,6 +3,7 @@
 import {
   Component,
   memo,
+  Suspense,
   useMemo,
   type CSSProperties,
   type ReactNode,
@@ -113,14 +114,17 @@ function RegisteredRenderer({
     [definition, widget.config],
   );
   const Renderer = definition.render;
+  // Plugin renderers may load on first use; the tile's busy frame holds the same size while they load.
   return (
-    <Renderer
-      widget={config === widget.config ? widget : { ...widget, config }}
-      result={result}
-      embedded={embedded}
-      onContextChange={embedded ? undefined : onContextChange}
-      onActivate={embedded ? undefined : onActivate}
-    />
+    <Suspense fallback={<WidgetStateFrame busy>{null}</WidgetStateFrame>}>
+      <Renderer
+        widget={config === widget.config ? widget : { ...widget, config }}
+        result={result}
+        embedded={embedded}
+        onContextChange={embedded ? undefined : onContextChange}
+        onActivate={embedded ? undefined : onActivate}
+      />
+    </Suspense>
   );
 }
 
