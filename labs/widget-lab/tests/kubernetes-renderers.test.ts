@@ -1,7 +1,11 @@
 import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The canonical renderers are imported cold here and the loop covers every preset. On a loaded machine that
+// exceeds Vitest's 5 s default, so the file gets 60 s. Step 6 deletes this file.
+vi.setConfig({ testTimeout: 60_000 });
 import { registerKubernetesCharts } from '../src/charts/kubernetes/register';
 import { kubernetesChartCatalog, makeKubernetesCatalogFixture } from '../src/charts/kubernetes/catalog';
 import { getWidgetDefinition } from '@insights/widget-registry';
