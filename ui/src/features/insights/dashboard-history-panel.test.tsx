@@ -42,9 +42,31 @@ describe("revision history panel in the dashboard", () => {
     expect(await screen.findByText("Dashboard restored from an earlier revision.")).toBeInTheDocument()
   })
 
+  it("keeps restore disabled while the canvas holds unsaved edits", async () => {
+    const restoreRevision = vi.fn()
+    const client = liveClient({
+      listRevisions: vi.fn(async () => revisions),
+      getRevision: vi.fn(async () => ({ dashboard: { ...liveDashboard, title: "Earlier" }, etag: '"first"' })),
+      restoreRevision,
+    })
+    render(<InsightsApp client={client} />)
+    await screen.findByRole("heading", { name: "Dashboard A" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Dashboard title" }), { target: { value: "Dashboard A edited" } })
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /^History$/ }))
+    const list = await screen.findByRole("list", { name: "Revisions, newest first" })
+    fireEvent.click(within(list).getByRole("button", { name: /Revision 1/ }))
+    const restore = await screen.findByRole("button", { name: "Restore revision 1" })
+    expect(restore).toBeDisabled()
+    expect(restore).toHaveAccessibleDescription("Save or discard your edits on the canvas before restoring.")
+    expect(restoreRevision).not.toHaveBeenCalled()
+  })
+
+  // The sample workspace can take seconds to build in a loaded run, so the test outlives its 5 s wait.
   it("hides the History entry for sample data", async () => {
     render(<InsightsApp client={liveClient()} initialExample />)
     expect(await screen.findByRole("button", { name: "Edit dashboard" }, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^History$/ })).not.toBeInTheDocument()
-  })
+  }, 15_000)
 })

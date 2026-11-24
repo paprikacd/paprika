@@ -154,6 +154,90 @@ describe("DashboardHistory", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Revision history is not available on this server.")
   })
 
+  it("keeps the confirmed restore from running once the canvas gains edits", async () => {
+    const fetched = client()
+    const { rerender } = renderPanel({ client: fetched })
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Restore revision 1" }))
+    rerender(
+      <DashboardHistory dashboard={liveDashboard} client={fetched} canRestore={false} refreshKey="saved-1" onRestored={vi.fn()} onClose={vi.fn()} />,
+    )
+    const confirm = within(screen.getByRole("group", { name: "Confirm restore" })).getByRole("button", { name: "Restore revision 1" })
+    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAccessibleDescription("Save or discard your edits on the canvas before restoring.")
+    fireEvent.click(confirm)
+    expect(fetched.restoreRevision).not.toHaveBeenCalled()
+  })
+
+  it("explains a refused restore for an account that can only read", async () => {
+    const restoreRevision = vi.fn().mockRejectedValue(new InsightsHTTPError("Your account does not have access to Insights.", 403, null))
+    const onRestored = vi.fn()
+    renderPanel({ client: client({ restoreRevision }), onRestored })
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Restore revision 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your account can view this dashboard but not change it, so nothing was restored.")
+    expect(onRestored).not.toHaveBeenCalled()
+  })
+
+  it("reloads the history when the revision was pruned before the restore", async () => {
+    const listRevisions = vi.fn(async () => revisionList())
+    const restoreRevision = vi.fn().mockRejectedValue(new InsightsHTTPError("revision not found", 404, null))
+    renderPanel({ client: client({ listRevisions, restoreRevision }) })
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Restore revision 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Revision 1 is no longer kept, so nothing was restored.")
+    expect(listRevisions).toHaveBeenCalledTimes(2)
+  })
+
+  it("says an unsaved dashboard has no history yet", async () => {
+    renderPanel({ client: client({ listRevisions: vi.fn().mockRejectedValue(new InsightsHTTPError("dashboard not found", 404, null)) }) })
+    expect(await screen.findByRole("alert")).toHaveTextContent("This dashboard has not been saved yet. Its history starts with the first save.")
+  })
+
+  it("names the saved queries a restore did not bring back, in the list and after the restore", async () => {
+    const restoredEntry = {
+      number: 3, etag: '"restored"', source: "REVISION_SOURCE_RESTORE", restoredFrom: 1, createdAtUnixMs: "1700000001000", widgetCount: 0,
+      title: "Dashboard A", savedQueries: [{ id: "latency", etag: '"q1"' }], driftedSavedQueries: [{ id: "latency", etag: '"q1"' }, { id: "gone", etag: '"q2"' }], sizeBytes: 120,
+    }
+    const listRevisions = vi.fn()
+      .mockResolvedValueOnce(revisionList())
+      .mockResolvedValue(revisionList([restoredEntry, ...revisionList().revisions.map(revision => revision.toJson())]))
+    const view = render(
+      <DashboardHistory dashboard={liveDashboard} client={client({ listRevisions })} canRestore refreshKey="saved-1" onRestored={vi.fn()} onClose={vi.fn()}
+        savedQueries={[{ id: "latency", name: "Request latency" }]} />,
+    )
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Restore revision 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    const drift = "Saved queries are not restored. 2 saved queries changed since revision 1: Request latency, gone."
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(`Restored revision 1 as revision 3. ${drift}`))
+    expect(within(screen.getByRole("list", { name: "Revisions, newest first" })).getByRole("button", { name: /Revision 3/ })).toHaveTextContent(drift)
+    view.unmount()
+  })
+
+  it("returns focus to the restore button when the confirm step is cancelled or dismissed with Escape", async () => {
+    renderPanel()
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    const trigger = await screen.findByRole("button", { name: "Restore revision 1" })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(screen.getByRole("button", { name: "Restore revision 1" })).toHaveFocus()
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" })
+    expect(screen.queryByRole("group", { name: "Confirm restore" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Restore revision 1" })).toHaveFocus()
+  })
+
+  it("moves focus to the panel heading after a restore removes the preview", async () => {
+    renderPanel()
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Restore revision 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    await waitFor(() => expect(screen.getByRole("heading", { name: "History" })).toHaveFocus())
+  })
+
   it("computes widget changes by ID and title", () => {
     const widget = (id: string, title: string) => ({ ...liveDashboard.widgets[0], id, title })
     const current = { ...liveDashboard, widgets: [widget("a", "A"), widget("b", "B")] }

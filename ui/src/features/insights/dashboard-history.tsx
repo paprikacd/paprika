@@ -1,10 +1,10 @@
-import { History } from "lucide-react"
+import { History, X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { RevisionSource, type DashboardRevision, type DashboardRevisionList } from "@/gen/paprika/insights/v1/revisions_pb"
 import { InsightsHTTPError, type InsightsClient } from "./client"
 import { GammaButton } from "./gamma/button"
 import shared from "./insights.module.css"
-import type { Dashboard } from "./schema"
+import type { Dashboard, SavedQueryEntry } from "./schema"
 
 export type HistoryClient = Pick<InsightsClient, "listRevisions" | "getRevision" | "restoreRevision">
 
@@ -19,6 +19,8 @@ export interface DashboardHistoryProps {
   /** The canvas now shows the restored document, with its ETag. */
   onRestored: (dashboard: Dashboard, etag: string | undefined) => void
   onClose: () => void
+  /** The workspace's saved queries, so drifted queries are named rather than shown by ID. */
+  savedQueries?: readonly Pick<SavedQueryEntry, "id" | "name">[]
 }
 
 interface Preview {
@@ -67,6 +69,31 @@ const whenLabel = (revision: DashboardRevision) => {
   return Number.isNaN(at.getTime()) ? "Unknown time" : at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 }
 
+// What a failed restore means to the user. A read-only account reads the history but is refused the write; the proxy
+// sends no permission signal, so the refusal is the first place the panel learns it.
+function restoreFailure(error: unknown, number: number) {
+  if (error instanceof InsightsHTTPError && error.status === 403)
+    return "Your account can view this dashboard but not change it, so nothing was restored. Ask an administrator for Insights write access."
+  if (error instanceof InsightsHTTPError && error.status === 404)
+    return `Revision ${number} is no longer kept, so nothing was restored. The history is reloaded.`
+  return error instanceof Error ? error.message : "Could not restore this revision."
+}
+
+// A dashboard that was never saved has no history yet; the server answers 404 for it.
+function listFailure(error: unknown) {
+  if (error instanceof InsightsHTTPError && error.status === 404) return "This dashboard has not been saved yet. Its history starts with the first save."
+  return error instanceof Error ? error.message : "Could not load the history."
+}
+
+/** The saved queries a restore left as they are now, named where the workspace knows them. */
+function driftSentence(revision: DashboardRevision, names: ReadonlyMap<string, string>) {
+  const drifted = revision.driftedSavedQueries
+  if (revision.source !== RevisionSource.RESTORE || drifted.length === 0) return ""
+  const listed = drifted.map(pin => names.get(pin.id) ?? pin.id).join(", ")
+  const noun = drifted.length === 1 ? "saved query" : "saved queries"
+  return `Saved queries are not restored. ${drifted.length} ${noun} changed since revision ${revision.restoredFrom}: ${listed}.`
+}
+
 function changeSentence(changes: RevisionChanges) {
   const parts = [
     changes.added.length && `add ${changes.added.length} ${changes.added.length === 1 ? "widget" : "widgets"}`,
@@ -81,7 +108,7 @@ function changeSentence(changes: RevisionChanges) {
  * canvas, and restores it as a new revision. A restore is a conditional write: it sends the list's current ETag, and a
  * stale one is refused, so the list is read again and the user is told.
  */
-export function DashboardHistory({ dashboard, client, canRestore, refreshKey, onRestored, onClose }: DashboardHistoryProps) {
+export function DashboardHistory({ dashboard, client, canRestore, refreshKey, onRestored, onClose, savedQueries }: DashboardHistoryProps) {
   const [list, setList] = useState<DashboardRevisionList>()
   const [loadError, setLoadError] = useState<string>()
   const [loaded, setLoaded] = useState(false)
@@ -90,7 +117,14 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   const [restoring, setRestoring] = useState(false)
   const [notice, setNotice] = useState("")
   const [restoreError, setRestoreError] = useState("")
+  // The revision the last restore created. Its drifted saved queries are read from the reloaded list.
+  const [restoredHead, setRestoredHead] = useState<number>()
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  // Where focus goes once the confirm step closes: back to its trigger on cancel, or to the panel heading when a restore
+  // ends, because the preview that held focus is gone.
+  const focusAfterConfirm = useRef<"trigger" | "heading">(undefined)
   const listRequest = useRef<AbortController>(undefined)
   const previewRequest = useRef<AbortController>(undefined)
   const dashboardId = dashboard.id
@@ -108,7 +142,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
       setLoadError(undefined)
     } catch (error) {
       if (controller.signal.aborted) return
-      setLoadError(error instanceof Error ? error.message : "Could not load the history.")
+      setLoadError(listFailure(error))
     } finally {
       if (!controller.signal.aborted) setLoaded(true)
     }
@@ -128,7 +162,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
       setLoadError(undefined)
     }, (error: unknown) => {
       if (controller.signal.aborted) return
-      setLoadError(error instanceof Error ? error.message : "Could not load the history.")
+      setLoadError(listFailure(error))
     }).finally(() => {
       if (!controller.signal.aborted) setLoaded(true)
     })
@@ -136,8 +170,20 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   }, [listRevisions, dashboardId, refreshKey])
 
   useEffect(() => {
-    if (confirming) cancelRef.current?.focus()
+    if (confirming) {
+      cancelRef.current?.focus()
+      return
+    }
+    const target = focusAfterConfirm.current
+    focusAfterConfirm.current = undefined
+    if (target === "trigger") triggerRef.current?.focus()
+    else if (target === "heading") headingRef.current?.focus()
   }, [confirming])
+
+  function cancelConfirm() {
+    focusAfterConfirm.current = "trigger"
+    setConfirming(false)
+  }
 
   useEffect(() => () => previewRequest.current?.abort(), [])
 
@@ -146,6 +192,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
     setConfirming(false)
     setRestoreError("")
     setNotice("")
+    setRestoredHead(undefined)
     if (!client.getRevision) return
     previewRequest.current?.abort()
     const controller = new AbortController()
@@ -163,29 +210,37 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   }
 
   const reloadAfterConflict = async () => {
+    focusAfterConfirm.current = "heading"
     setConfirming(false)
     setPreview(undefined)
     await loadList()
   }
 
   async function restore(number: number) {
-    if (!client.restoreRevision || !list) return
+    // The confirm step can stay open while the canvas gains edits; a restore then would replace them.
+    if (!client.restoreRevision || !list || !canRestore) return
     setRestoring(true)
     setRestoreError("")
     setNotice("")
+    setRestoredHead(undefined)
     try {
       const result = await client.restoreRevision(dashboardId, number, list.currentEtag)
+      focusAfterConfirm.current = "heading"
       setConfirming(false)
       setPreview(undefined)
       onRestored(result.dashboard, result.etag)
       setNotice(result.revision ? `Restored revision ${number} as revision ${result.revision}.` : `Restored revision ${number}.`)
+      setRestoredHead(result.revision || undefined)
       await loadList()
     } catch (error) {
       if (error instanceof InsightsHTTPError && (error.status === 409 || error.status === 412)) {
         await reloadAfterConflict()
         setRestoreError("This dashboard changed on the server, so nothing was restored. The history is reloaded. Check it and restore again.")
+      } else if (error instanceof InsightsHTTPError && error.status === 404) {
+        await reloadAfterConflict()
+        setRestoreError(restoreFailure(error, number))
       } else {
-        setRestoreError(error instanceof Error ? error.message : "Could not restore this revision.")
+        setRestoreError(restoreFailure(error, number))
       }
     } finally {
       setRestoring(false)
@@ -193,30 +248,27 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   }
 
   const revisions = list?.revisions ?? []
+  const queryNames = new Map((savedQueries ?? []).map(query => [query.id, query.name]))
+  const restoredRevision = restoredHead ? revisions.find(revision => revision.number === restoredHead) : undefined
+  const restoredDrift = restoredRevision ? driftSentence(restoredRevision, queryNames) : ""
   const selectedRevision = preview ? revisions.find(revision => revision.number === preview.number) : undefined
   const isCurrent = !!selectedRevision && selectedRevision.etag === list?.currentEtag
   const changes = preview?.status === "ready" && preview.dashboard ? revisionChanges(dashboard, preview.dashboard) : undefined
   const changeCount = changes ? changes.added.length + changes.removed.length + changes.changed.length + (changes.titleTo !== undefined ? 1 : 0) : 0
 
   return (
-    <section className="flex min-h-0 flex-col gap-3" aria-labelledby="dashboard-history-title" data-testid="dashboard-history">
+    <section className={`${shared.inspector} flex min-h-0 flex-col gap-3`} aria-labelledby="dashboard-history-title" data-testid="dashboard-history">
       <div className={shared.panelHeading}>
-        <h2 id="dashboard-history-title"><History size={18} aria-hidden="true" /> History</h2>
-        <GammaButton
-          variant="ghost"
-          size="sm"
-          className={shared.iconButton}
-          aria-label="Close history"
-          onClick={onClose}
-        >
-          Close
+        <h2 id="dashboard-history-title" ref={headingRef} tabIndex={-1} className="outline-none"><History size={18} aria-hidden="true" /> History</h2>
+        <GammaButton iconOnly variant="quiet" size="sm" className={shared.iconButton} aria-label="Close history" onClick={onClose}>
+          <X size={18} aria-hidden="true" />
         </GammaButton>
       </div>
       <p className="text-xs leading-relaxed text-[var(--gamma-muted)]">
         Each saved change keeps a revision. Pick one to preview it against the canvas, then restore it as a new revision.
       </p>
 
-      {notice && <p role="status" className="rounded-md bg-[var(--gamma-success-soft)] px-3 py-2 text-xs text-[var(--gamma-ink)]">{notice}</p>}
+      {notice && <p role="status" className="rounded-md bg-[var(--gamma-success-soft)] px-3 py-2 text-xs text-[var(--gamma-ink)]">{notice}{restoredDrift && ` ${restoredDrift}`}</p>}
       {restoreError && <p role="alert" className="rounded-md bg-[var(--gamma-danger-soft)] px-3 py-2 text-xs text-[var(--gamma-status-critical-text)]">{restoreError}</p>}
 
       {unavailable && <p role="alert" className="text-sm text-[var(--gamma-status-critical-text)]">Revision history is not available on this server.</p>}
@@ -256,6 +308,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
                     <span className="text-xs text-[var(--gamma-muted)]">{whenLabel(revision)} · {authorLabel(revision)}</span>
                     <span className="text-xs text-[var(--gamma-muted)]">{sourceLabel(revision)}</span>
                     {revision.message && <span className="text-xs text-[var(--gamma-ink)]">{revision.message}</span>}
+                    {driftSentence(revision, queryNames) && <span className="text-xs text-[var(--gamma-muted)]">{driftSentence(revision, queryNames)}</span>}
                   </button>
                 </li>
               )
@@ -291,6 +344,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
               {!isCurrent && preview.status === "ready" && !confirming && (
                 <>
                   <GammaButton
+                    ref={triggerRef}
                     variant="primary"
                     size="sm"
                     disabled={!canRestore || restoring}
@@ -308,18 +362,23 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
               )}
 
               {confirming && (
-                <div role="group" aria-label="Confirm restore" className="flex flex-col gap-2 rounded-md border border-[var(--gamma-border)] p-3">
+                <div role="group" aria-label="Confirm restore" onKeyDown={event => { if (event.key === "Escape" && !restoring) { event.stopPropagation(); cancelConfirm() } }} className="flex flex-col gap-2 rounded-md border border-[var(--gamma-border)] p-3">
                   <p className="text-sm text-[var(--gamma-ink)]">
                     Restore revision {preview.number}? It becomes a new revision at the top of the list. Your current revision stays in the history.
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    <GammaButton variant="primary" size="sm" disabled={restoring} onClick={() => void restore(preview.number)}>
+                    <GammaButton variant="primary" size="sm" disabled={restoring || !canRestore} aria-describedby={!canRestore ? "dashboard-history-confirm-hint" : undefined} onClick={() => void restore(preview.number)}>
                       {restoring ? "Restoring…" : `Restore revision ${preview.number}`}
                     </GammaButton>
-                    <GammaButton ref={cancelRef} variant="secondary" size="sm" disabled={restoring} onClick={() => setConfirming(false)}>
+                    <GammaButton ref={cancelRef} variant="secondary" size="sm" disabled={restoring} onClick={cancelConfirm}>
                       Cancel
                     </GammaButton>
                   </div>
+                  {!canRestore && (
+                    <p id="dashboard-history-confirm-hint" className="text-xs text-[var(--gamma-muted)]">
+                      Save or discard your edits on the canvas before restoring.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

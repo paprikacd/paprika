@@ -2532,12 +2532,14 @@ export default function InsightsApp({
                 <LazyPanelBoundary label="Revision history" unsaved={dirty || widgetDraftDirty} onClose={close}>
                   <Suspense fallback={<p className={styles.loading} role="status">Loading history…</p>}>
                     <DashboardHistory
+                      key={dashboard.id}
                       dashboard={dashboard}
                       client={client}
                       canRestore={!dirty && !widgetDraftDirty && !busy && !importingBundle}
                       refreshKey={saved}
                       onRestored={applyRestoredDocument}
                       onClose={close}
+                      savedQueries={savedQueries}
                     />
                   </Suspense>
                 </LazyPanelBoundary>
