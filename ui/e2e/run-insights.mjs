@@ -7,14 +7,15 @@
 //   node e2e/run-insights.mjs --relevance <base>   print relevant=true|false for the smoke set (CI path filter)
 // Servers: INSIGHTS_E2E_URL, when set, is used for every suite. Otherwise "dev" suites get a next dev server
 // and "export" suites get a static server over ui/out (run `npm run build` first).
-import { spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { createReadStream, existsSync, readFileSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { createServer } from "node:net"
 import { createServer as createHttpServer } from "node:http"
-import { extname, join, normalize } from "node:path"
+import { extname, join, normalize, sep } from "node:path"
 import { fileURLToPath } from "node:url"
+import { relevance } from "./insights-relevance.mjs"
 
 const uiDirectory = fileURLToPath(new URL("../", import.meta.url))
 const manifest = JSON.parse(readFileSync(new URL("./insights-suites.json", import.meta.url), "utf8"))
@@ -60,45 +61,17 @@ function select(options) {
   return manifest.suites.filter((suite) => suite.tags.some((tag) => tags.includes(tag)))
 }
 
-// Glob to RegExp for repository-relative paths: "**/" = any directories, "**" = anything, "*" = one segment.
-function globToRegExp(glob) {
-  let source = ""
-  for (let index = 0; index < glob.length; index++) {
-    const character = glob[index]
-    if (character === "*" && glob[index + 1] === "*") {
-      if (glob[index + 2] === "/") { source += "(?:.*/)?"; index += 2 } else { source += ".*"; index += 1 }
-    } else if (character === "*") source += "[^/]*"
-    else source += character.replace(/[.+^${}()|[\]\\?]/g, "\\$&")
+// Prints relevant=... on stdout (GITHUB_OUTPUT format) and the reason on stderr. See insights-relevance.mjs.
+// An unexpected error also prints relevant=true: the path filter may only ever skip on a clean decision.
+function printRelevance(base) {
+  let decision
+  try {
+    decision = relevance(base, manifest.smokeSkipPaths)
+  } catch (error) {
+    decision = { relevant: true, reason: `running: relevance check failed: ${error instanceof Error ? error.message : error}` }
   }
-  return new RegExp(`^${source}$`)
-}
-
-function git(args) {
-  const result = spawnSync("git", args, { cwd: uiDirectory, encoding: "utf8" })
-  return result.status === 0 ? result.stdout : undefined
-}
-
-// Decides whether the smoke set has to run for a change since `base`. Errors and unknown bases decide "run".
-// Prints relevant=... on stdout (GITHUB_OUTPUT format) and the reason on stderr.
-function relevance(base) {
-  const decide = (relevant, reason) => {
-    console.log(`relevant=${relevant}`)
-    console.error(reason)
-    return relevant
-  }
-  if (!/^[0-9a-f]{40}$/.test(base)) return decide(true, `running: base "${base}" is not a commit id`)
-  if (git(["cat-file", "-e", `${base}^{commit}`]) === undefined) {
-    spawnSync("git", ["fetch", "--no-tags", "--depth=1", "origin", base], { cwd: uiDirectory, stdio: "ignore" })
-    if (git(["cat-file", "-e", `${base}^{commit}`]) === undefined) return decide(true, `running: base ${base} is not available`)
-  }
-  const diff = git(["diff", "--name-only", base, "HEAD"])
-  if (diff === undefined) return decide(true, `running: cannot diff against ${base}`)
-  const changed = diff.split("\n").filter(Boolean)
-  if (changed.length === 0) return decide(true, `running: no changes recorded since ${base}`)
-  const skip = manifest.smokeSkipPaths.map(globToRegExp)
-  const relevantFile = changed.find((file) => !skip.some((pattern) => pattern.test(file)))
-  if (relevantFile) return decide(true, `running: ${relevantFile} changed since ${base}`)
-  return decide(false, `skipped: no relevant changes since ${base}`)
+  console.log(`relevant=${decision.relevant}`)
+  console.error(decision.reason)
 }
 
 async function freePort() {
@@ -151,18 +124,30 @@ async function startDevServer() {
 const contentTypes = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".woff2": "font/woff2", ".txt": "text/plain", ".map": "application/json" }
 
 // Serves the static export the way the deployed bundle is served: index.html for directory URLs, then file.html.
-async function startExportServer() {
+function exportDirectory() {
   const directory = join(uiDirectory, "out")
   if (!existsSync(join(directory, "index.html"))) throw new Error(`No static export at ${directory}. Run "npm run build" in ui/ first.`)
+  return directory
+}
+
+async function startExportServer() {
+  const directory = exportDirectory()
   const port = await freePort()
   const server = createHttpServer(async (request, response) => {
-    const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname)
+    let pathname
+    try {
+      pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname)
+    } catch {
+      response.writeHead(400, { "content-type": "text/plain" })
+      response.end("bad request")
+      return
+    }
     const candidates = pathname.endsWith("/")
       ? [join(directory, pathname, "index.html")]
       : [join(directory, pathname), join(directory, `${pathname}.html`), join(directory, pathname, "index.html")]
     for (const candidate of candidates) {
       const file = normalize(candidate)
-      if (!file.startsWith(directory)) continue
+      if (!file.startsWith(directory + sep)) continue
       try {
         if (!(await stat(file)).isFile()) continue
       } catch { continue }
@@ -201,7 +186,7 @@ function format(seconds) { return `${seconds.toFixed(1)} s` }
 async function main() {
   const options = parseArguments(process.argv.slice(2))
   if (options.relevance !== undefined) {
-    relevance(options.relevance)
+    printRelevance(options.relevance)
     return 0
   }
 
@@ -214,6 +199,10 @@ async function main() {
     return 0
   }
   if (!suites.length) throw new Error("No suites selected")
+  // Fail before the first suite, not after an hour of them, when an export suite has no ui/out to run against.
+  if (!process.env.INSIGHTS_E2E_URL && suites.some((suite) => suite.server === "export")) {
+    exportDirectory()
+  }
 
   const serverFor = async (kind) => {
     if (process.env.INSIGHTS_E2E_URL) return process.env.INSIGHTS_E2E_URL
