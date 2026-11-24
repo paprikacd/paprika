@@ -8,6 +8,7 @@ import { useInsightsTheme } from "./insights-theme"
 import type { Threshold } from "./schema"
 import type { StatusMark } from "./status"
 import { StatusMarkFields } from "./status-mark-fields"
+import "./lazy-style-boundary.css?editor"
 import editorStyles from "./editor.module.css"
 
 /** New bands start with the healthy band, then escalate: ok, warning, then critical for every later band. */

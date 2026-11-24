@@ -10,6 +10,8 @@
 //   node scripts/check-insights-budget.mjs --out <dir> --next <dir>
 //
 // Budgets are the measured size plus about 10% headroom. Raise one only in the change that adds the weight.
+// Lazy panels keep their stylesheets out of the first-view CSS chunks with lazy-style-boundary.css; --report lists
+// every first-view chunk, so an editor's CSS module showing up there means a boundary import is missing.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -135,6 +137,6 @@ for (const [label, actual, budget] of checks) {
 }
 
 if (failed && !report) {
-  console.error("\nInsights first-view budget exceeded. Check for a static import that pulls the examples catalog or CodeMirror into the Insights entry, or a new eager dependency.");
+  console.error("\nInsights first-view budget exceeded. Check for a static import that pulls the examples catalog or CodeMirror into the Insights entry, a new eager dependency, or a lazy CSS module imported without its lazy-style-boundary import (src/features/insights/lazy-style-boundary.css).");
   process.exit(1);
 }

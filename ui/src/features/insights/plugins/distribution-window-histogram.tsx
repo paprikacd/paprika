@@ -1,6 +1,7 @@
 import { formatMetric } from "../chart-data";
 import plotHatchStyles from "../plot-hatch.module.css";
 import type { DistributionCellState, WindowQuantile } from "./rich-metrics-data";
+import "../lazy-style-boundary.css?distribution-heatmap";
 import heatmapStyles from "./distribution-heatmap.module.css";
 
 export interface WindowHistogramBucket {

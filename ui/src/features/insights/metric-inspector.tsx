@@ -3,6 +3,7 @@ import { ChartNoAxesCombined, ChevronDown, Plus, ScanSearch, Tags, X } from "luc
 import type { InsightsClient, MetricSeriesMetadata, ProviderMetadata } from "./client"
 import { GammaButton } from "./gamma/button"
 import { lockBodyScroll } from "./gamma/scroll-lock"
+import "./lazy-style-boundary.css?metric-inspector"
 import styles from "./metric-inspector.module.css"
 
 interface InspectionProps {

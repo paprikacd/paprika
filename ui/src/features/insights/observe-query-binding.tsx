@@ -1,5 +1,6 @@
 import { Network } from "lucide-react"
 import type { DataKind, Provider } from "./schema"
+import "./lazy-style-boundary.css?observe-connection"
 import styles from "./observe-connection.module.css"
 
 export function ObserveQueryBinding({ provider, kind }: { provider?: Provider; kind: DataKind }) {

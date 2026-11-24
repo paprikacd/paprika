@@ -2,6 +2,7 @@ import { Activity, BookMarked, ChartNoAxesCombined, CodeXml, Crosshair, Database
 import type { CSSProperties } from "react";
 import type { Provider, ProviderState } from "./schema";
 import type { GammaSelectOption } from "./gamma/select";
+import "./lazy-style-boundary.css?source-identity";
 import styles from "./source-identity.module.css";
 
 const providerTypeLabels: Record<string, string> = {

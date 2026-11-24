@@ -1,5 +1,6 @@
 "use client";
 
+import "./lazy-style-boundary.css?editor";
 import styles from "./editor.module.css";
 import { compileSloQuery, SloConfigError, validateSloConfig, type SloConfig } from "./slo";
 

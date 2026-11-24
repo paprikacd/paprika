@@ -17,6 +17,7 @@ import {
 import { singleValueText } from "./variable-values";
 import { GammaMultiSelect } from "./gamma/multi-select";
 import styles from "./drilldown.module.css";
+import "./lazy-style-boundary.css?variable-options";
 import optionStyles from "./variable-options.module.css";
 import {
   VariableSourceFields,

@@ -50,6 +50,7 @@ import { GammaButton } from "./gamma/button";
 import { GammaActionMenu } from "./gamma/action-menu";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
+import "./lazy-style-boundary.css?editor";
 import styles from "./editor.module.css";
 import {
   contrastRatio,

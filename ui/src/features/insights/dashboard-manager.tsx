@@ -12,6 +12,7 @@ import {
   type PortableImportProps,
 } from "./portable-import-panel";
 import { useSavedQueryLibrary } from "./saved-query-context";
+import "./lazy-style-boundary.css?dashboard-manager";
 import styles from "./dashboard-manager.module.css";
 import shared from "./insights.module.css";
 import { GammaButton } from "./gamma/button";

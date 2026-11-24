@@ -50,6 +50,7 @@ import { providerOption, QuerySourceIcon } from "./source-identity";
 import { savedQueryOption } from "./saved-query-presentation";
 import { SavedQueryDetailsEditor } from "./saved-query-details-editor";
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
+import "./lazy-style-boundary.css?explorer";
 import styles from "./explorer.module.css";
 
 interface ParameterDraft {

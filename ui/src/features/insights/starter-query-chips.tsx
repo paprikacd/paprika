@@ -2,6 +2,7 @@
 
 import { GammaButton } from "./gamma/button"
 import type { StarterQuery } from "./widget-registry"
+import "./lazy-style-boundary.css?editor"
 import editorStyles from "./editor.module.css"
 
 /** One-click starter queries for an empty or default query. Each chip fills the query, and maybe the unit and title. */

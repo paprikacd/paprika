@@ -14,6 +14,7 @@ import {
   buildConnectionMap, buildIncidentCalendar, buildPipelineTopology,
   connectionMapConfig, incidentCalendarConfig, pipelineTopologyConfig, statusTone,
 } from "./operational-records-data"
+import "../lazy-style-boundary.css?operational-records"
 import styles from "./operational-records.module.css"
 import { ObservationDetails } from "../observation-tooltip"
 import { TooltipDetail, TooltipFact } from "../tooltip-content"

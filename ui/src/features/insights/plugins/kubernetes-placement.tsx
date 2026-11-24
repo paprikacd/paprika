@@ -10,6 +10,7 @@ import { truncationNote } from "../truncation";
 import type { WidgetRendererProps } from "../widget-registry";
 import { placementConfigSchema, placementModel, type PlacementNode, type PlacementPod } from "./kubernetes-data";
 import type { TriggerEvent } from "../observation-owner";
+import "../lazy-style-boundary.css?kubernetes";
 import styles from "./kubernetes.module.css";
 import { RESOURCE_UNIT, sampleTime, text, useObservations, useRoving, type Observation, type Observed } from "./kubernetes-observations";
 

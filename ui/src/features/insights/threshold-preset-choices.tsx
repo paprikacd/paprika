@@ -4,6 +4,7 @@ import { useId } from "react"
 import { GammaButton } from "./gamma/button"
 import type { Threshold } from "./schema"
 import { suggestedPresetIds, thresholdPresets } from "./threshold-presets"
+import "./lazy-style-boundary.css?editor"
 import editorStyles from "./editor.module.css"
 
 /** Two band lists match when every band has the same value, status, colour and label, in the same order. */

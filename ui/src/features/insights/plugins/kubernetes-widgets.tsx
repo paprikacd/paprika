@@ -11,6 +11,7 @@ import { truncationNote } from "../truncation";
 import type { WidgetRendererProps } from "../widget-registry";
 import { MAX_THROTTLE_COLUMNS, resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema, type ThrottleColumn } from "./kubernetes-data";
 import { sampleTime, text, useInlineSize, useObservations, useRoving, type Observation, type Observed, type RovingProps } from "./kubernetes-observations";
+import "../lazy-style-boundary.css?kubernetes";
 import styles from "./kubernetes.module.css";
 import { NO_DATA } from "../benign-states";
 
