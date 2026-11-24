@@ -54,7 +54,8 @@ import styles from "./explorer.module.css";
 interface ParameterDraft {
   name: string;
   label: string;
-  type: "string" | "number";
+  /** "list" is a text parameter that takes several values. */
+  type: "string" | "number" | "list";
   hasDefault: boolean;
   defaultText: string;
 }
@@ -68,28 +69,35 @@ function fromQuery(query: SavedQuery): Draft {
     parameters: (query.parameters ?? []).map((parameter) => ({
       name: parameter.name,
       label: parameter.label ?? "",
-      type: parameter.type,
+      type: parameter.multi ? "list" : parameter.type,
       hasDefault: parameter.defaultValue !== undefined,
       defaultText:
         parameter.defaultValue === undefined
           ? ""
-          : String(parameter.defaultValue),
+          : Array.isArray(parameter.defaultValue)
+            ? parameter.defaultValue.join(", ")
+            : String(parameter.defaultValue),
     })),
   };
 }
 function readDraft(draft: Draft): SavedQuery {
   const parameters = draft.parameters.map((parameter) => {
+    const list = parameter.type === "list";
     const base: SavedQueryParameter = {
       name: parameter.name,
       ...(parameter.label ? { label: parameter.label } : {}),
-      type: parameter.type,
+      type: parameter.type === "number" ? "number" : "string",
+      ...(list ? { multi: true } : {}),
     };
-    return parameter.hasDefault
-      ? {
-          ...base,
-          defaultValue: savedQueryParameterValue(base, parameter.defaultText),
-        }
-      : base;
+    if (!parameter.hasDefault) return base;
+    // A list default is comma-separated; an empty one is All.
+    const fallback = list
+      ? parameter.defaultText.split(",").map((item) => item.trim()).filter((item) => item !== "")
+      : parameter.defaultText;
+    return {
+      ...base,
+      defaultValue: savedQueryParameterValue(base, fallback),
+    };
   });
   const query = savedQuerySchema.parse({ ...draft.query, parameters });
   validateSavedQueryTemplate(query);
@@ -949,6 +957,7 @@ export function Explorer({
                                   disabled={busy}
                                   options={[
                                     { value: "string", label: "Text" },
+                                    { value: "list", label: "Text list" },
                                     { value: "number", label: "Number" },
                                   ]}
                                   onValueChange={(type) =>

@@ -163,7 +163,8 @@ describe("dashboard variable declarations", () => {
       />,
     );
     expect(screen.getByLabelText("Variable 1 name")).toHaveValue("service");
-    expect(screen.getAllByRole("switch")).toHaveLength(2);
+    // The editor's switches for the declared variables, including Allow several values.
+    expect(screen.getAllByRole("switch")).toHaveLength(4);
   });
 });
 
