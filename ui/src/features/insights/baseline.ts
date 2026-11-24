@@ -152,6 +152,17 @@ export function seriesBaselines(current: Series[], prior: Series[] | undefined, 
   })
 }
 
+/** Band areas are drawn per contiguous stretch: a gap of more than two steps (or a sample without a band) ends one. */
+export function bandSegments(points: BaselinePoint[], stepMs: number): BaselinePoint[][] {
+  const segments: BaselinePoint[][] = [];
+  for (const point of points) {
+    const last = segments.at(-1);
+    if (last && point.timestamp - last[last.length - 1].timestamp <= 2 * stepMs) last.push(point);
+    else segments.push([point]);
+  }
+  return segments;
+}
+
 /** The latest three runs in time order, then how many earlier runs are not listed. The clock formats a timestamp. */
 export function baselineRunsText(runs: BaselineRun[], clock: (timestamp: number) => string): string {
   if (!runs.length) return ""

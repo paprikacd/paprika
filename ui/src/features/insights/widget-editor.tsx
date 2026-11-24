@@ -577,6 +577,25 @@ function StyleEditor({
             checked={options.showZeroLine === true}
             onChange={(showZeroLine) => update({ showZeroLine })}
           />
+          <label className={styles.field}>
+            Baseline band
+            <GammaSelect aria-label="Baseline band" value={options.baseline?.window ?? "off"}
+              onValueChange={(value) => update({ baseline: value === "off" ? undefined : { window: value as NonNullable<WidgetOptions["baseline"]>["window"], ...(options.baseline?.band ? { band: options.baseline.band } : {}) } })}
+              options={[
+                { value: "off", label: "Off" }, { value: "previous", label: "Previous period" },
+                { value: "1d", label: "1 day earlier" }, { value: "7d", label: "7 days earlier" },
+                { value: "rolling", label: "Last 12 samples" },
+              ]} />
+          </label>
+          {options.baseline && <>
+            <label className={styles.field}>
+              Band
+              <GammaSelect aria-label="Band" value={options.baseline.band ?? "range"}
+                onValueChange={(value) => update({ baseline: { window: options.baseline!.window, band: value as NonNullable<WidgetOptions["baseline"]>["band"] } })}
+                options={[{ value: "range", label: "Range" }, { value: "p10p90", label: "10th to 90th percentile" }]} />
+            </label>
+            <p className={styles.hint}>Shades the usual range of each series and marks runs of two or more samples outside it. These describe past samples, not alerts.</p>
+          </>}
           <ReferenceLinesEditor options={options} onChange={update} />
         </>
       )}
@@ -1128,6 +1147,11 @@ export function WidgetEditor({
     if (type !== "stat" && next.options?.compare) {
       next.options = { ...next.options };
       delete next.options.compare;
+    }
+    // A baseline is a time-series option, and the same rule applies to it.
+    if (type !== "timeseries" && next.options?.baseline) {
+      next.options = { ...next.options };
+      delete next.options.baseline;
     }
     setPendingVisualization(undefined);
     history.update(current => ({ ...current, draft: next,
