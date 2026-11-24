@@ -667,6 +667,11 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* Exact values are long ("296,303,060,975,000 bytes"): they may break before the unit at a space, never mid-number. */
+.dataDialog td.exactValue {
+  white-space: normal;
+  overflow-wrap: normal;
+}
 /* Scroll shadows: they show the table continues past either edge, and fade out when it does not. */
 .dataDialog > [role="region"] {
   background:

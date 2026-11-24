@@ -198,7 +198,11 @@ function ChartDataDialog({
                     </time>
                   </td>
                   <td
-                    className={styles.numeric}
+                    className={
+                      exact
+                        ? `${styles.numeric} ${configStyles.exactValue}`
+                        : styles.numeric
+                    }
                     data-observation-value={
                       typeof point.value === "number" &&
                       Number.isFinite(point.value)
