@@ -3,6 +3,7 @@ import { createExampleCatalogQuery } from "../example-catalog-query"
 import { parseDashboardBundle, serializeDashboardBundle, requiredBundleProviders, remapBundleProviders } from "../workspace-transfer"
 import { resolveSavedQueryReference } from "../saved-queries"
 import { widgetKind } from "../schema"
+import { singleValueText } from "../variable-values"
 import { repositoryExamples, repositoryExampleFixtures, repositoryExampleProviders } from "."
 import source from "../../../../../docs/design/insights/repository-examples/shorted-sources.json"
 
@@ -69,7 +70,7 @@ describe("source-derived repository example library", () => {
       const providers = mode === "sample" ? repositoryExampleProviders : entry.providers
       for (const id of requiredBundleProviders(bundle).keys()) expect(providers.some(provider => provider.id === id)).toBe(true)
       for (const dashboard of bundle.dashboards) {
-        const vars = Object.fromEntries((dashboard.variables ?? []).map(v => [v.name, v.defaultValue ?? ""]))
+        const vars = Object.fromEntries((dashboard.variables ?? []).map(v => [v.name, singleValueText(v.defaultValue) ?? ""]))
         for (const widget of dashboard.widgets) {
           expect(widget.queryRef, widget.id).toBeDefined()
           const query = resolveSavedQueryReference(widget.queryRef!, bundle.savedQueries!, vars, widgetKind(widget))
@@ -87,7 +88,7 @@ describe("source-derived repository example library", () => {
 
   it.each(repositoryExamples.map(entry => [entry.id, entry] as const))("executes every %s sample saved query without contacting live providers", async (_id, entry) => {
     for (const dashboard of entry.sample.dashboards) {
-      const vars = Object.fromEntries((dashboard.variables ?? []).map(v => [v.name, v.defaultValue ?? ""]))
+      const vars = Object.fromEntries((dashboard.variables ?? []).map(v => [v.name, singleValueText(v.defaultValue) ?? ""]))
       for (const widget of dashboard.widgets) {
         const resolved = resolveSavedQueryReference(widget.queryRef!, entry.sample.savedQueries!, vars, widgetKind(widget))
         const result = await engine.query({ ...resolved, ...range }, new AbortController().signal)
@@ -120,7 +121,7 @@ describe("source-derived repository example library", () => {
         const original = entry.coverage.find(item => item.sourceId === saved.metadata?.sourcePanel)!
         expect(original.sourceQuery).toBeDefined()
         const widget = bundle.dashboards[0].widgets.find(item => item.queryRef?.id === saved.id)!
-        const variables = Object.fromEntries(bundle.dashboards[0].variables!.map(variable => [variable.name, variable.defaultValue ?? ""]))
+        const variables = Object.fromEntries(bundle.dashboards[0].variables!.map(variable => [variable.name, singleValueText(variable.defaultValue) ?? ""]))
         const initial = JSON.parse(resolveSavedQueryReference(widget.queryRef!, bundle.savedQueries!, variables, "metrics").query)
         const sourceSQL = original.sourceQuery!.trim().replace(/;$/, "").replace(/\$(?:stocks|top10shorts)\b/g, "$1")
         if (!initial.projection.time) {
@@ -163,7 +164,7 @@ describe("source-derived repository example library", () => {
     const entry = repositoryExamples.find(entry => entry.id === "shorted-widget-catalog")!
     const dashboard = entry.sample.dashboards[0]
     const widget = dashboard.widgets.find(widget => widget.id === "portfolio-summary")!
-    const variables = Object.fromEntries(dashboard.variables!.map(variable => [variable.name, variable.defaultValue ?? ""]))
+    const variables = Object.fromEntries(dashboard.variables!.map(variable => [variable.name, singleValueText(variable.defaultValue) ?? ""]))
     variables.cba_shares = "2"
     const resolved = resolveSavedQueryReference(widget.queryRef!, entry.sample.savedQueries!, variables, "records")
     const result = await engine.query({ ...resolved, ...range }, new AbortController().signal)

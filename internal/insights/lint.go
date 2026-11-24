@@ -10,6 +10,7 @@ import (
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // lintRule is one design rule a dashboard document can break. Schema checks
@@ -120,10 +121,12 @@ type wireDocument struct {
 
 // wireVariable mirrors the variable members the variable rules read.
 type wireVariable struct {
-	Name         string         `json:"name"`
-	DefaultValue *string        `json:"defaultValue"`
-	Options      []string       `json:"options"`
-	Source       *wireVarSource `json:"source"`
+	Name         string               `json:"name"`
+	Multi        bool                 `json:"multi"`
+	AllowAll     bool                 `json:"allowAll"`
+	DefaultValue *variablevalue.Value `json:"defaultValue"`
+	Options      []string             `json:"options"`
+	Source       *wireVarSource       `json:"source"`
 }
 
 // wireVarSource mirrors a variable source. Type selects which members apply.

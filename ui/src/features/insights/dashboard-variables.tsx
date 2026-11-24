@@ -187,7 +187,7 @@ function VariablesEditor({
                 const next = { ...variable };
                 delete next.source;
                 if (from === "text") delete next.options;
-                else if (from === "typed") next.options = variable.options ?? [variable.defaultValue ?? ""];
+                else if (from === "typed") next.options = variable.options ?? [singleValueText(variable.defaultValue) ?? ""];
                 else next.source = sourceFor(from);
                 patch(index, next);
               }}
@@ -231,7 +231,7 @@ function VariablesEditor({
             </GammaButton>
           </fieldset>}
           {valuesFromOf(variable) !== "text" && !variable.options && variable.source && <div className={optionStyles.options}>
-            <GammaButton size="sm" onClick={() => patch(index, { ...variable, options: [variable.defaultValue ?? ""] })}>
+            <GammaButton size="sm" onClick={() => patch(index, { ...variable, options: [singleValueText(variable.defaultValue) ?? ""] })}>
               <Plus size={13} aria-hidden="true" /> Add fallback choices
             </GammaButton>
           </div>}

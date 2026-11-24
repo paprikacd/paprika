@@ -1,30 +1,12 @@
-import { z } from "zod"
-import { MAX_VARIABLE_VALUE_LENGTH, variableValueSchema } from "./schema"
+import { variableListSchema, variableValueSchema } from "./schema"
+
+export { MAX_VARIABLE_LIST_ITEMS, MAX_VARIABLE_LIST_UNITS, variableInputSchema, variableListSchema } from "./schema"
 
 /**
  * A dashboard variable's value: one string, or a list for a variable with several values. An empty list is All.
  * The Go twin is internal/insights/variablevalue; both apply the same bounds and list rules.
  */
 export type VariableValue = string | string[]
-
-/** The most items a list holds. */
-export const MAX_VARIABLE_LIST_ITEMS = 100
-/** Items plus one separator per gap, in UTF-16 units: the budget one string value has. */
-export const MAX_VARIABLE_LIST_UNITS = MAX_VARIABLE_VALUE_LENGTH
-
-const LIST_ERROR = "Use a list of at most 100 unique values, up to 1024 characters in total"
-
-export const variableListSchema = z
-  .array(variableValueSchema)
-  .max(MAX_VARIABLE_LIST_ITEMS, LIST_ERROR)
-  .superRefine((items, context) => {
-    if (new Set(items).size !== items.length)
-      context.addIssue({ code: "custom", message: "A list must not repeat a value" })
-    const units = items.reduce((total, item) => total + item.length, 0) + Math.max(0, items.length - 1)
-    if (units > MAX_VARIABLE_LIST_UNITS) context.addIssue({ code: "custom", message: LIST_ERROR })
-  })
-
-export const variableInputSchema = z.union([variableValueSchema, variableListSchema])
 
 /** The declaration fields that decide which values a variable accepts. */
 export interface VariableDeclaration {

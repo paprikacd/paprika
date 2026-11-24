@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // guidanceVariables is the guidance line the variable and plugin rules map to.
@@ -69,7 +71,7 @@ var placeholder = regexp.MustCompile(`\{\{([A-Za-z_][A-Za-z0-9_]{0,63})\}\}`)
 type lintVariable struct {
 	index        int
 	name         string
-	defaultValue *string
+	defaultValue *variablevalue.Value
 	options      []string
 	sourceType   string
 	providerID   string
