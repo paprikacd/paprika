@@ -157,7 +157,6 @@ export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate,
     <div className="flex h-full min-h-0 flex-col gap-2 text-xs" data-kubernetes="throttle">
       <div className="grid gap-px" style={{ gridTemplateColumns: `minmax(0,7rem) ${columns} 4.5rem` }}>
         <span className="text-[var(--gamma-muted)]">{model.groupLabel}</span>
-        {model.columns.map(column => <span key={column.timestamp} className="sr-only">{new Date(column.timestamp).toISOString()}</span>)}
         <span className="text-right text-[var(--gamma-muted)]">Total</span>
         {rows.map(row => (
           <div key={row.name} className="contents">
