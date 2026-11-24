@@ -75,9 +75,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { GammaButton } from "./gamma/button";
 import { useSavedQueryLibrary } from "./saved-query-context";
-import { GammaSelect } from "./gamma/select";
 import { GammaActionMenu, type GammaActionMenuItem } from "./gamma/action-menu";
-import contextStyles from "./widget-context.module.css";
+import { LinkContextCaption, SeriesLinkPicker } from "./widget-link-context";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
 import { AttentionStoreProvider, SampleAsOfProvider, settledRequestEnd, useAttentionPublisher, useSampleAsOf } from "./attention-store";
@@ -668,6 +667,24 @@ const Tile = memo(function Tile({
             </details>
           ) : <p style={{ color: textColor }}>{widget.description}</p>)}
         </div>
+        {showSeriesPicker && (
+          <SeriesLinkPicker
+            title={widget.title}
+            value={context.series === undefined ? "" : contextKey(context)}
+            searchable={contexts.length > 10}
+            options={contexts.map((entry, index) => ({
+              value: contextKey(entry),
+              label: entry.series ?? `Series ${index + 1}`,
+              description: Object.entries(entry.labels ?? {})
+                .map(([key, value]) => `${key}=${value}`)
+                .join(" · "),
+            }))}
+            onValueChange={(key) => {
+              const next = contexts.find((entry) => contextKey(entry) === key);
+              if (next) selectContextOnly(next);
+            }}
+          />
+        )}
         {!!links.length && onDrilldown && (
           <GammaActionMenu
             label={`Open related dashboard from ${widget.title}`}
@@ -715,42 +732,12 @@ const Tile = memo(function Tile({
           />
         )}
       </div>
-      {showSeriesPicker ? (
-        <div className={contextStyles.picker}>
-          <span>Series</span>
-          <GammaSelect
-            aria-label={`Series for ${widget.title}`}
-            size="sm"
-            value={context.series === undefined ? "" : contextKey(context)}
-            placeholder="Choose a series for links"
-            searchable={contexts.length > 10}
-            options={contexts.map((entry, index) => ({
-              value: contextKey(entry),
-              label: entry.series ?? `Series ${index + 1}`,
-              description: Object.entries(entry.labels ?? {})
-                .map(([key, value]) => `${key}=${value}`)
-                .join(" · "),
-            }))}
-            onValueChange={(key) => {
-              const next = contexts.find((entry) => contextKey(entry) === key);
-              if (next) selectContextOnly(next);
-            }}
-          />
-        </div>
-      ) : (
-        !!onDrilldown &&
-        needsContext &&
-        (contexts.length > 1 || widget.type === "plugin") && (
-          <div className={contextStyles.selection} role="status">
-            {context.series
-              ? `Selected: ${context.series}`
-              : "Select a signal to open related dashboards"}
-          </div>
-        )
-      )}
-      {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.sampleSelection} role="status">
-        Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time>
-      </div>}
+      <LinkContextCaption
+        visible={!!onDrilldown && needsContext && (contexts.length > 1 || widget.type === "plugin")}
+        series={context.series}
+        prompt="Select a signal to open related dashboards"
+        sample={widget.type === "timeseries" && context.timestamp !== undefined ? <>Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time></> : undefined}
+      />
       {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
       <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
