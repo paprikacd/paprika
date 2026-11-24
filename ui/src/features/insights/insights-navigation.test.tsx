@@ -192,7 +192,7 @@ describe("dashboard navigation", () => {
     render(<InsightsApp client={client()} />)
     await screen.findByRole("heading", { name: "Source" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("button", { name: "Add variable" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }))
     fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     fireEvent.change(screen.getByLabelText("variable_1"), { target: { value: "active value" } })
     fireEvent.click(screen.getByRole("button", { name: "Update view" }))

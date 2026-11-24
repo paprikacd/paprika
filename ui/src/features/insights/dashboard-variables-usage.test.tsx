@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DashboardVariablesEditor } from "./dashboard-variables";
+import { DashboardVariablesEditor } from "./dashboard-variables-editor";
 import type { Dashboard, Widget } from "./schema";
 
 const requests: Widget = {

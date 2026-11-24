@@ -26,7 +26,10 @@ import shared from "./insights.module.css";
 import { GammaButton } from "./gamma/button";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { SearchCombobox } from "./gamma/search-combobox";
-import { DashboardVariablesEditor } from "./dashboard-variables";
+import { lazy, Suspense } from "react";
+
+// Loaded on demand: the declarations editor is only needed while a dashboard is managed.
+const DashboardVariablesEditor = lazy(() => import("./dashboard-variables-editor").then((module) => ({ default: module.DashboardVariablesEditor })));
 import type { VariableSourceCatalog } from "./variable-source-editor";
 
 interface FolderNode {
@@ -514,12 +517,14 @@ export function DashboardManager({
           </GammaButton>
         </div>
       </section>
-      <DashboardVariablesEditor
-        key={dashboard.id}
-        dashboard={dashboard}
-        onApply={onApply}
-        catalog={variableCatalog}
-      />
+      <Suspense fallback={null}>
+        <DashboardVariablesEditor
+          key={dashboard.id}
+          dashboard={dashboard}
+          onApply={onApply}
+          catalog={variableCatalog}
+        />
+      </Suspense>
       <section>
         <h3>Export your library</h3>
         <p>
