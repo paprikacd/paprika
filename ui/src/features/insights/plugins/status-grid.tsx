@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, seriesName, thresholdForValue } from "../chart-renderers";
@@ -87,7 +88,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       <div ref={grid} className={styles.grid} data-status-grid>
         {cells.map(cell => {
           const status = cell.value === undefined ? "Unknown" : bandReading(cell.threshold);
-          const label = `${cell.name}: ${cell.value === undefined ? "No data" : formatMetricDetails(cell.value, widget.unit, widget.options?.decimals)} · ${status}`;
+          const label = `${cell.name}: ${cell.value === undefined ? NO_DATA : formatMetricDetails(cell.value, widget.unit, widget.options?.decimals)} · ${status}`;
           const className = `${styles.cell} ${cell.value === undefined ? styles.unknown : ""}`;
           const color = thresholdPaint(cell.threshold) ?? widget.color ?? "var(--gamma-chart-2)";
           const style = cell.value === undefined ? undefined : { "--status-color": color, ...statusStrokeStyle(cell.threshold, cellSize) } as CSSProperties;
@@ -120,7 +121,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
       <MetricDetails widget={widget} series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} subject={current.name} seriesLabel={widget.title} description="Latest sample">
         {current.value === undefined
-          ? <span>No data</span>
+          ? <span>{NO_DATA}</span>
           : current.threshold?.status
             ? <StatusChip status={current.threshold.status} color={current.threshold.color} label={current.threshold.label} />
             : <span>{current.threshold?.label ?? "Observed"}</span>}

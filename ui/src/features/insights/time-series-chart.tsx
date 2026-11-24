@@ -1,6 +1,9 @@
 "use client";
 
 // The time-series renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
+
+import { NO_DATA } from "./benign-states";
+import { seriesShown } from "./benign-states";
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useState } from "react";
 import { areaY } from "@tanstack/charts/area";
 import { crosshair } from "@tanstack/charts/crosshair";
@@ -577,7 +580,7 @@ export function TimeSeriesChart({
                   sticky: true,
                   className: styles.tooltip,
                   format: (point) =>
-                    `${point.datum.series}\n${detailTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : "No data"}`,
+                    `${point.datum.series}\n${detailTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : NO_DATA}`,
                 },
       }),
     [
@@ -774,7 +777,7 @@ export function TimeSeriesChart({
       {previousData.length > 0 && zoom && <div className={styles.priorLegend} role="group" aria-label="Previous period overlay" tabIndex={0}>
         <span>Previous period · dashed · aligned to selected window</span>
         {previousData.map(entry => { const last = latestPoint(entry.original); const first = entry.original.points[0]; return <span key={entry.index} data-prior-series={entry.index} data-prior-original-first={first?.timestamp} data-prior-aligned-first={entry.points[0]?.timestamp} title={last ? `Previous sample: ${formatMetricDetails(last.value, widget.unit, options.decimals)} at ${new Date(last.timestamp).toISOString()}` : "No prior sample"}>
-          <i aria-hidden="true" style={{ borderColor: entry.color }} />{previousIdentityTitle ?? seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
+          <i aria-hidden="true" style={{ borderColor: entry.color }} />{previousIdentityTitle ?? seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : NO_DATA}
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}
@@ -790,7 +793,7 @@ export function TimeSeriesChart({
       {plotTooltip.panel}
       {series.length > MAX_SERIES && (
         <span className={styles.notice} role="status">
-          First {MAX_SERIES} of {series.length} series
+          {seriesShown(MAX_SERIES, series.length)}
         </span>
       )}
     </div>

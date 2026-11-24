@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "../benign-states";
 import { sharedScale, unitSuffix } from "../units";
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { z } from "zod";
@@ -304,9 +305,9 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     threshold && thresholdIndex > 0 ? `≥ ${boundLabel(threshold.value)}${nextThreshold ? ` and < ${boundLabel(nextThreshold.value)}` : ""}` : undefined;
   const scaleNotice = outsideScale ? `${outsideScale === "above" ? "Above scale maximum" : "Below scale minimum"}: ${boundLabel(outsideScale === "above" ? max : min)}` : undefined;
   const rangeCue = outsideScale && <span className={meterStyles.rangeCue} data-gauge-outside-scale={outsideScale} role="img" aria-label={scaleNotice} title={scaleNotice}>{outsideScale === "above" ? <ChevronsUp aria-hidden="true" size={13} /> : <ChevronsDown aria-hidden="true" size={13} />}</span>;
-  const exact = value === undefined ? "No data" : exactMetric(value, widget.unit);
+  const exact = value === undefined ? NO_DATA : exactMetric(value, widget.unit);
   // The button name reads at the widget's decimal places; the exact row below keeps the full value.
-  const shownReading = value === undefined ? "No data" : formatMetricDetails(value, widget.unit, widget.options?.decimals);
+  const shownReading = value === undefined ? NO_DATA : formatMetricDetails(value, widget.unit, widget.options?.decimals);
   const label = bank && config.label ? `${config.label} · ${name}` : config.label ?? name;
   const visualLabel = bank && config.label ? `${config.label} · ${displayLabel ?? name}` : config.label ?? displayLabel ?? name;
   const labelContent = visualLabel === label ? label : <><span aria-hidden="true">{visualLabel}</span><span className={meterStyles.srOnly}>{label}</span></>;
@@ -328,7 +329,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
       style={{ color: widgetTextColor(options) ?? (bank ? undefined : thresholdText(threshold) ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": thresholdPaint(threshold) } : {}) } as CSSProperties}>
       {display !== "radial" && rangeCue}
-      <span data-gauge-number>{value === undefined ? "No data" : gaugeScale(widget, scaleReading).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, scaleReading).unit}</small>}
+      <span data-gauge-number>{value === undefined ? NO_DATA : gaugeScale(widget, scaleReading).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, scaleReading).unit}</small>}
     </span>
   </ObservationDetails>;
   const track = <GaugeTrack widget={widget} config={config} value={value} scaleReading={scaleReading} title={title} />;

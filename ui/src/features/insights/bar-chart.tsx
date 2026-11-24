@@ -1,6 +1,8 @@
 "use client";
 
 // The bar renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
+
+import { NO_DATA, seriesShown } from "./benign-states";
 import { useCallback, useId, useMemo } from "react";
 import { barY } from "@tanstack/charts/bar";
 import { focusNearestX } from "@tanstack/charts/focus";
@@ -349,7 +351,7 @@ export function BarChart({ widget, series, onContextChange, onActivate }: {
               <>
                 <span className={`${hatchStyles.hatch} ${hatchStyles.swatch} ${styles.noDataKey}`} aria-hidden="true" />
                 <span className={styles.legendName}>{name}</span>
-                <span className={`${styles.legendValue} ${styles.noDataValue}`}>No data</span>
+                <span className={`${styles.legendValue} ${styles.noDataValue}`}>{NO_DATA}</span>
               </>
             ) : (
               <>
@@ -396,7 +398,7 @@ export function BarChart({ widget, series, onContextChange, onActivate }: {
       {plotTooltip.panel}
       {series.length > MAX_SERIES && (
         <span className={styles.notice} role="status">
-          First {MAX_SERIES} of {series.length} series
+          {seriesShown(MAX_SERIES, series.length)}
         </span>
       )}
     </div>

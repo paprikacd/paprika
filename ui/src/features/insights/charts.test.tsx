@@ -509,7 +509,7 @@ describe("widget visualizations", () => {
         />,
       );
       expect(screen.getByRole("status")).toHaveTextContent(
-        "First 12 of 13 series",
+        "Showing 12 of 13 series",
       );
     },
   );
@@ -820,7 +820,7 @@ describe("widget visualizations", () => {
     );
     expect(screen.getAllByRole("button")).toHaveLength(100);
     expect(screen.getByText("All values")).toBeInTheDocument();
-    expect(screen.getByText(/First 100 of 150/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing 100 of 150/)).toBeInTheDocument();
   });
 
   it.each([

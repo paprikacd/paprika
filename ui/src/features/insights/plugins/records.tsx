@@ -1,5 +1,6 @@
 "use client"
 
+import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { ChartTable } from "../chart-table"
 import { GammaButton } from "../gamma/button"
@@ -350,7 +351,7 @@ export function RecordTable({
   const cellNumber = (value: number) => activeColumn && activeStyle && (history || activeStyle.unit !== undefined)
     ? activeUnit ? valueCellText(value, activeUnit, widget.options?.decimals) : recordNumberText(value, activeUnit, activeColumn.key, widget.options?.decimals)
     : numberCellText(frame, activeCell ? indexes[activeCell.column] : 0, value, widget.options?.decimals)
-  const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? "No data" : typeof activeValue === "number" ? cellNumber(activeValue) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
+  const formattedValue = history && history.state !== "valid" ? history.state === "invalid" ? "Invalid history" : "No history" : activeValue == null ? NO_DATA : typeof activeValue === "number" ? cellNumber(activeValue) : typeof activeValue === "boolean" ? activeValue ? "Yes" : "No" : activeColumn?.type === "timestamp" ? new Date(String(activeValue)).toLocaleString() : String(activeValue)
   return (
     <div className={`${styles.wrapper}${config.density === "compact" ? ` ${styles.compactTable}` : ""}`} data-record-table="" data-table-density={config.density} data-cell-inspection={inspectCells || undefined}>
       {inspectCells && <p id={cellHelpId} className={styles.cellHistoryMeaning}>Use arrow keys to move between cells; Enter opens the details of a cell.</p>}
@@ -695,7 +696,7 @@ export function RecordTreemap({
     const formatted = (typeof row[value] === "number" ? columnFormatters(frame, widget.options?.decimals)[value]?.text(row[value] as number) : undefined) ?? formatRecordValue(row[value] as number, frame.columns[value].unit === "percent" ? "%" : frame.columns[value].unit || widget.unit, widget.options?.decimals)
     const colorValue = color >= 0 && typeof row[color] === "number" && Number.isFinite(row[color]) ? row[color] as number : null
     const colorLabel = color >= 0 ? frame.columns[color].label ?? frame.columns[color].key : undefined
-    const colorDetail = color >= 0 ? `${colorLabel}: ${colorValue === null ? "No data" : cell(frame, row, color, widget.options?.decimals)}` : undefined
+    const colorDetail = color >= 0 ? `${colorLabel}: ${colorValue === null ? NO_DATA : cell(frame, row, color, widget.options?.decimals)}` : undefined
     return { row, name, formatted, colorValue, colorLabel, colorDetail }
   }
   const openLeaf = owner.active ? leaves[Number(owner.active.key)] : undefined
@@ -783,13 +784,13 @@ export function RecordTreemap({
         <TooltipDetail title={openTile.name}>
           <TooltipFact label={frame.columns[value].label ?? frame.columns[value].key}><span data-treemap-observation={openTile.row[value] as number}>{openTile.formatted}</span></TooltipFact>
           {group >= 0 && <TooltipFact label={frame.columns[group].label ?? frame.columns[group].key}>{keyText(openTile.row[group])}</TooltipFact>}
-          {color >= 0 && openTile.colorLabel && <TooltipFact label={openTile.colorLabel}><span data-treemap-color-observation={openTile.colorValue === null ? "missing" : openTile.colorValue}>{openTile.colorValue === null ? "No data" : cell(frame, openTile.row, color, widget.options?.decimals)}</span></TooltipFact>}
+          {color >= 0 && openTile.colorLabel && <TooltipFact label={openTile.colorLabel}><span data-treemap-color-observation={openTile.colorValue === null ? "missing" : openTile.colorValue}>{openTile.colorValue === null ? NO_DATA : cell(frame, openTile.row, color, widget.options?.decimals)}</span></TooltipFact>}
         </TooltipDetail>
       </ObservationTooltip>}
       {color >= 0 && <div className={styles.treeColorLegend} role="group" aria-label="Treemap color scale">
         <span>{frame.columns[color].label ?? frame.columns[color].key}</span>
         {colorValues.length > 0 ? <><span>{formatRecordValue(colorMin, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), widget.options?.decimals)}</span><span className={styles.treeColorGradient} aria-hidden="true" /><span>{formatRecordValue(colorMax, frame.columns[color].unit === "percent" ? "%" : (frame.columns[color].unit ?? ""), widget.options?.decimals)}</span></> : <span>No numeric color values</span>}
-        {colorMissing && <span className={styles.treeMissingKey}><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`} aria-hidden="true" />No data</span>}
+        {colorMissing && <span className={styles.treeMissingKey}><i className={`${hatchStyles.hatch} ${hatchStyles.swatch}`} aria-hidden="true" />{NO_DATA}</span>}
       </div>}
       <Note frame={frame} result={result}>
         {positive.length < frame.rows.length && (

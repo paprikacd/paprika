@@ -19,8 +19,9 @@ import { gzipSync } from "node:zlib";
 export const BUDGET = {
   // Measured after the map land outline moved out of the first view.
   jsRaw: 2_557_000, // measured 2,323,640 bytes
-  // Raised by about 1 KB gzip: plugin registrations now carry their library icons, which load with the first view.
-  jsGzip: 734_000, // measured 733,820 bytes (Node zlib, level 9)
+  // Raised by about 1.4 KB gzip: plugin registrations now carry their library icons, which load with the first view,
+  // and the shared benign-state copy module adds a little more.
+  jsGzip: 735_000, // measured 734,261 bytes (Node zlib, level 9)
   // Insights-specific stylesheets only; the global root sheets are excluded.
   cssRaw: 293_000, // measured 265,715 bytes
   cssGzip: 45_000, // measured 40,191 bytes
