@@ -182,6 +182,9 @@
   color: var(--gamma-danger);
   font-size: 11px;
 }
+.thresholdPresets { display: grid; gap: 6px; }
+.thresholdPresetsHeading { margin: 0; font-size: 12px; font-weight: 600; }
+.thresholdPresetRow { display: flex; flex-wrap: wrap; gap: 6px; }
 .field > input,
 .field > select,
 .field > textarea,

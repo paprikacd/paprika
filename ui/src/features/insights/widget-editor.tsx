@@ -57,6 +57,7 @@ import {
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
 import { thresholdHex, type StatusTheme } from "./status";
 import { ThresholdListEditor } from "./threshold-list-editor";
+import { ThresholdPresetChoices } from "./threshold-preset-choices";
 import { useInsightsTheme } from "./insights-theme";
 import { seriesHex, type SeriesTheme } from "./series-palette";
 import { widgetColorSeriesIndex, widgetSeriesColors, type SeriesColorRule } from "./series-colors";
@@ -728,6 +729,11 @@ function StyleEditor({
             {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
               " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
           </p>
+          <ThresholdPresetChoices
+            unit={widget.unit}
+            thresholds={options.thresholds ?? []}
+            onChoose={(thresholds) => update({ thresholds })}
+          />
           <ThresholdListEditor
             thresholds={options.thresholds ?? []}
             onChange={(thresholds) => update({ thresholds })}
