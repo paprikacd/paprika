@@ -116,7 +116,7 @@ func TestInsightsSchemaRejectsUnknownAndDuplicateArguments(t *testing.T) {
 		require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err), input)
 	}
 	require.Zero(t, calls.Load())
-	for _, kind := range []string{"dashboard", "widget", "saved_query"} {
+	for _, kind := range []string{"dashboard", "widget", "saved_query", "plugin"} {
 		actual, err := decodeInsightsSchemaKind(json.RawMessage(`{"kind":"` + kind + `"}`))
 		require.NoError(t, err)
 		require.Equal(t, kind, actual)
