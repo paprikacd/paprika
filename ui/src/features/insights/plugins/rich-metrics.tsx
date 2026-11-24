@@ -13,7 +13,7 @@ import { GammaButton } from "../gamma/button";
 import { ObservationDrilldowns } from "../observation-drilldowns";
 import { TooltipSection } from "../tooltip-content";
 import { StatSparkline } from "../stat-sparkline";
-import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps, type WidgetSizing } from "../widget-registry";
 import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation";
 import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
 import { compactSeriesLabels } from "../series-display";
@@ -735,6 +735,13 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
 export function StackedTimeseries(props: WidgetRendererProps) { return <WidgetTooltipProvider><MetricPlot {...props} directional={false} /></WidgetTooltipProvider>; }
 export function DirectionalTraffic(props: WidgetRendererProps) { return <WidgetTooltipProvider><MetricPlot {...props} directional /></WidgetTooltipProvider>; }
 
+/** Stacked and directional plots: a plot room, with a fifth narrow track when the statistics table sits below the chart. */
+const legendPlotSizing: WidgetSizing = {
+  mode: "fill",
+  denseRoom: () => "plot",
+  narrowMinRows: config => config?.legendDisplay === "table" ? 5 : undefined,
+};
+
 export function registerRichMetricPlugins() {
   if (!getWidgetDefinition("plugin", "distribution-heatmap")) registerWidgetPlugin({
     id: "distribution-heatmap", label: "Distribution heatmap", description: "Cumulative histogram buckets as density over time", dataKind: "metrics", render: DistributionHeatmap,
@@ -761,6 +768,7 @@ export function registerRichMetricPlugins() {
       { key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 },
       { key: "maxPoints", label: "Maximum time columns", kind: "number", min: 12, max: 240, step: 1 },
     ], parseConfig: value => stackedConfigSchema.parse(value ?? {}),
+    sizing: legendPlotSizing,
   });
   if (!getWidgetDefinition("plugin", "directional-traffic")) registerWidgetPlugin({
     id: "directional-traffic", label: "Directional traffic", description: "Inbound above zero and outbound below, with original values", dataKind: "metrics", render: DirectionalTraffic,
@@ -775,5 +783,6 @@ export function registerRichMetricPlugins() {
       { key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 },
       { key: "maxPoints", label: "Maximum time columns", kind: "number", min: 12, max: 240, step: 1 },
     ], parseConfig: value => directionalConfigSchema.parse(value ?? {}),
+    sizing: legendPlotSizing,
   });
 }

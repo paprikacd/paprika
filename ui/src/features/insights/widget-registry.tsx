@@ -54,12 +54,23 @@ export interface WidgetDefinition {
   /** Host sizing contract. Compact and narrow canvas projections respect minHeight; saved layouts remain authored. */
   sizing?: WidgetSizing;
 }
+/**
+ * The dense viewing room a renderer's content needs. Rooms are defined once in responsive-layout.ts; a renderer names
+ * the room that fits its content and never hard-codes row counts.
+ */
+export type DenseRoom = "plot" | "reading" | "tall" | "tall-table" | "calendar";
 export interface WidgetSizing {
   mode: "intrinsic" | "fill";
   minWidth?: number;
   minHeight?: number;
   /** A minimum height that depends on the authored config, such as the rows a services card lists. Wins over minHeight. */
   minHeightFor?: (config: Widget["config"]) => number;
+  /** The dense room for this configuration. Undefined keeps the default room. */
+  denseRoom?: (config: Widget["config"]) => DenseRoom | undefined;
+  /** The minimum rows on a narrow canvas, for configurations that show more than an ordinary card. Undefined keeps 4. */
+  narrowMinRows?: (config: Widget["config"]) => number | undefined;
+  /** The fine-grid rows to use in the reference compact view. Undefined keeps the room's rule. */
+  referenceFineRows?: (config: Widget["config"]) => number | undefined;
 }
 export interface WidgetInputIssue {
   /** The configuration key the issue concerns, when one applies. */
@@ -126,6 +137,10 @@ function validateSizing(sizing: WidgetSizing | undefined) {
   }
   if (sizing.minHeightFor !== undefined && typeof sizing.minHeightFor !== "function")
     throw new Error("Widget plugin sizing minHeightFor must be a function");
+  for (const key of ["denseRoom", "narrowMinRows", "referenceFineRows"] as const) {
+    if (sizing[key] !== undefined && typeof sizing[key] !== "function")
+      throw new Error(`Widget plugin sizing ${key} must be a function`);
+  }
 }
 
 function validateConfigFields(fields: readonly WidgetConfigField[] | undefined) {

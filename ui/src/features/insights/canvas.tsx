@@ -57,6 +57,7 @@ import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
 import { GRID_COLUMNS, gridOf, rowsToPixels } from "./grid-geometry";
+import { layoutHintsOf } from "./layout-hints";
 import {
   dragSettle,
   gridPlacement,
@@ -903,9 +904,11 @@ export function DashboardCanvas({
   // definitions is a deliberate dependency: the heights read the registry, so a registry change must recompute them.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const minimumHeights = useMemo(() => minimumHeightsOf(dashboard.widgets), [dashboard.widgets, definitions]);
+  // Plugin hints (rooms, narrow and reference rows) are read from the registry, so they follow the same dependency.
+  const layoutHints = useMemo(() => layoutHintsOf(dashboard.widgets), [dashboard.widgets, definitions]);
   const layout = useMemo(
-    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights) : canvasLayout(dashboard.widgets, mode, width, minimumHeights),
-    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights],
+    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights, layoutHints) : canvasLayout(dashboard.widgets, mode, width, minimumHeights, layoutHints),
+    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights, layoutHints],
   );
   // React-grid-layout settles a drag through this compactor, both for the live preview and on drop. The saved
   // positions are read after commit, so a drag always settles against the layout that was on screen when it began.
@@ -1001,14 +1004,15 @@ export function DashboardCanvas({
   const range = dashboardRange(dashboard, end);
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, rowsToPixels(canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
-  ], mode, width, minimumHeights)[0].h)) : undefined;
+  ], mode, width, minimumHeights, layoutHintsOf([focus.widget]))[0].h)) : undefined;
   const previewFootprints: PreviewFootprints | undefined = focus && unfocusedGrid ? (() => {
     // The staged widget replaces its saved copy, so the footprint follows the Layout tab. A new widget is appended.
     const widgets = dashboard.widgets.some(item => item.id === focus.widget.id)
       ? dashboard.widgets.map(item => item.id === focus.widget.id ? focus.widget : item)
       : [...dashboard.widgets, focus.widget];
+    const hints = layoutHintsOf(widgets);
     const footprint = (dense: boolean) => tileFootprint(widgets, focus.widget.id, {
-      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets),
+      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets), hints,
     });
     return { dashboard: footprint(false), compact: footprint(true) };
   })() : undefined;

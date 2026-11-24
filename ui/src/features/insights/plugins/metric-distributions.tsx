@@ -293,5 +293,5 @@ export function registerMetricDistributionPlugins() {
     {key:"labelField",label:"Series label field",kind:"text",help:"Optional metric label used to name each row; missing labels retain the series name."},
     {key:"showTimeAxis",label:"Show time axis",kind:"boolean",help:"Show the observed time domain in the dashboard timezone."},
     {key:"segmented",label:"Separate samples",kind:"boolean",help:"Draw fine boundaries at each recorded sample."},
-  ]})
+  ],sizing:{mode:"fill",denseRoom:()=>"tall",referenceFineRows:config=>typeof config?.maxSeries==="number"&&config.maxSeries<=6?8:undefined}})
 }

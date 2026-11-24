@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { galleryDocuments } from "../../../../demo/insights-gallery/dashboards.mjs";
 import { minimumHeightsOf } from "./canvas";
+import { layoutHintsOf } from "./layout-hints";
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge";
 import { canvasLayout, denseCanvasLayout, type CanvasMode } from "./responsive-layout";
 import { dashboardSchema, type Widget } from "./schema";
@@ -18,10 +19,11 @@ const modes: CanvasMode[] = ["wide", "compact", "stacked"];
 
 function project(widgets: readonly Widget[]) {
   const minimumHeights = minimumHeightsOf(widgets);
+  const hints = layoutHintsOf(widgets);
   const out: Record<string, unknown> = {};
-  for (const mode of modes) for (const width of widths) out[`${mode}@${width}`] = canvasLayout(widgets, mode, width, minimumHeights);
-  out["dense@1512"] = denseCanvasLayout(widgets, "wide", 1512, false, minimumHeights);
-  out["dense@1512:reference"] = denseCanvasLayout(widgets, "wide", 1512, true, minimumHeights);
+  for (const mode of modes) for (const width of widths) out[`${mode}@${width}`] = canvasLayout(widgets, mode, width, minimumHeights, hints);
+  out["dense@1512"] = denseCanvasLayout(widgets, "wide", 1512, false, minimumHeights, hints);
+  out["dense@1512:reference"] = denseCanvasLayout(widgets, "wide", 1512, true, minimumHeights, hints);
   return out;
 }
 
@@ -51,9 +53,9 @@ describe("responsive layout parity", () => {
     registerDefaultWidgetPlugins();
     const result = galleryDocuments(providers);
     const boards = Object.fromEntries(
-      result.dashboards.filter(Boolean).map((board: { id: string }) => {
+      (result.dashboards as unknown[]).filter((board): board is object => Boolean(board)).map((board) => {
         const parsed = dashboardSchema.parse(board);
-        return [parsed.id, project(parsed.widgets)];
+        return [parsed.id, project(parsed.widgets)] as const;
       }),
     );
     const actual = { boards, synthetic: project(synthetic) };

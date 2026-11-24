@@ -1018,7 +1018,15 @@ export function registerRecordWidgetPlugins() {
         parseConfig: (config) => entry.schema.parse(config ?? {}),
         ...("styleControls" in entry ? { styleControls: entry.styleControls } : {}),
         ...(entry.id === "record-table" ? {
-          sizing: { mode: "fill", minHeight: 240 },
+          sizing: {
+            mode: "fill",
+            minHeight: 240,
+            // Tables longer than seven rows keep the tall table room; shorter ones read in the ordinary room.
+            denseRoom: config => typeof config?.pageSize === "number" && config.pageSize > 7 ? "tall-table" : "reading",
+            // A sparkline cell needs a taller row than text, and narrow tables reserve room for a scroll hint.
+            narrowMinRows: config => Array.isArray(config?.cellStyles) && config.cellStyles.some(style =>
+              typeof style === "object" && style !== null && "display" in style && style.display === "sparkline") ? 5 : undefined,
+          },
           // The config alone cannot show the widget's own thresholds, so a numeric status is assumed to have some here.
           // The render checks the real set and reports the same reason when it is missing.
           validateInput: (result, config) => {

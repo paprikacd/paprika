@@ -1,6 +1,7 @@
 import type { Layout } from "react-grid-layout"
 import type { Widget } from "./schema"
 import { columnWidth, gridOf, pixelsToRows, rowsToPixels } from "./grid-geometry"
+import type { DenseRoom } from "./widget-registry"
 
 export type CanvasMode = "wide" | "compact" | "stacked"
 
@@ -77,8 +78,18 @@ export function intrinsicStat(widget: Widget): boolean {
     !widget.drilldowns?.length && !widget.selectionBindings?.length
 }
 
+/**
+ * What a plugin tells the projections about its rows. Built-in widgets are decided by type; plugins declare these
+ * through their sizing contract, and the host resolves them with layoutHintsOf. This module never reads a plugin id.
+ */
+export interface LayoutHints {
+  room?: DenseRoom
+  narrowMinRows?: number
+  referenceFineRows?: number
+}
+
 /** Responsive views are projections of the saved layout, never document edits. */
-export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, minimumHeights?: ReadonlyMap<string, number>): Layout {
+export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, minimumHeights?: ReadonlyMap<string, number>, hints?: ReadonlyMap<string, LayoutHints>): Layout {
   const ordered = [...widgets].sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)
   // Fit a contiguous metric group into balanced rows when every card has
   // at least ~270px. Do not leave one metric stranded after a three-up row.
@@ -131,19 +142,9 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
       const w = metricWidths.get(widget.id) ?? halfWidths.get(widget.id) ?? 12
       const heatmapText = widget.type === "heatmap" &&
         (widget.options?.showLabels !== false || widget.options?.showValues !== false)
-      // On narrow canvases a statistics table sits below the plot. Reserve a
-      // fifth track so ordinary four-series legends and the chart both remain
-      // legible; this is a view projection and never changes the saved layout.
-      const statisticsLegend = widget.type === "plugin" &&
-        ["stacked-timeseries", "directional-traffic"].includes(widget.pluginId ?? "") &&
-        widget.config?.legendDisplay === "table"
-      // Sparkline rows are taller than text rows and narrow tables also need
-      // space for a horizontal-scroll hint. Keep their contents reachable
-      // without changing the authored desktop layout.
-      const sparklineTable = widget.type === "plugin" && widget.pluginId === "record-table" &&
-        Array.isArray(widget.config?.cellStyles) && widget.config.cellStyles.some(style =>
-          typeof style === "object" && style !== null && "display" in style && style.display === "sparkline")
-      const minimumHeight = widget.type === "stat" ? mode === "stacked" ? 2 : 1 : heatmapText ? mode === "compact" ? 5 : 6 : statisticsLegend || sparklineTable ? 5 : 4
+      // A plugin's narrow minimum (a statistics table under a plot, a sparkline table) reserves a fifth track. This is a
+      // view projection and never changes the saved layout.
+      const minimumHeight = widget.type === "stat" ? mode === "stacked" ? 2 : 1 : heatmapText ? mode === "compact" ? 5 : 6 : hints?.get(widget.id)?.narrowMinRows ?? 4
       const h = Math.max(minimumHeight, widget.layout.h, Math.ceil(((minimumHeights?.get(widget.id) ?? 0) + 16) / 74))
       if (x + w > 12 || (metricWidths.has(widget.id) && x > 0 && x % w !== 0)) {
         y += rowHeight
@@ -161,28 +162,48 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
 /** A viewing-only projection for dense operational boards. Horizontal
  * placement and reading order stay intact; earlier overlapping columns always
  * finish before later rows. Saved layouts and the editor are never mutated. */
-export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false, minimumHeights?: ReadonlyMap<string, number>): Layout {
-  const standard = canvasLayout(widgets, mode, width, minimumHeights)
+/** The rule each dense room applies. `minimum` is the fewest tracks a coarse projection keeps; `fine` and `floor` shape
+ * the finer grid. Plots keep a floor of eight tracks there; calendars keep their six-week months. */
+interface RoomRule {
+  minimum: number
+  fine: number
+  floor(rows: number): number
+  coarse?(rows: number): number
+}
+const ROOMS: Record<DenseRoom | "none", RoomRule> = {
+  none: { minimum: 2, fine: 1.55, floor: () => 0 },
+  plot: { minimum: 4, fine: 1.55, floor: () => 8 },
+  reading: { minimum: 4, fine: 1.55, floor: () => 0 },
+  tall: { minimum: 5, fine: 2.3, floor: () => 0 },
+  "tall-table": { minimum: 5, fine: 2.2, floor: () => 0 },
+  // Five-row calendar panels need one extra compact track for a six-week month. This is a view projection, not an edit.
+  calendar: {
+    minimum: 5,
+    fine: 2.3,
+    floor: rows => rows >= 6 ? 15 : rows >= 4 ? 14 : 0,
+    coarse: rows => rows >= 5 ? Math.max(6, Math.round(rows * 2 / 3)) : Math.min(rows, Math.max(5, Math.round(rows * 2 / 3))),
+  },
+}
+
+/** The room a widget projects into. Built-in types are decided here; plugins name theirs through the host hints. */
+function roomOf(widget: Widget, hints: ReadonlyMap<string, LayoutHints> | undefined): DenseRoom | "none" {
+  if (widget.type === "timeseries" || widget.type === "bar") return "plot"
+  if (widget.type === "table") return "reading"
+  return hints?.get(widget.id)?.room ?? "none"
+}
+
+/** A viewing-only projection for dense operational boards. Horizontal
+ * placement and reading order stay intact; earlier overlapping columns always
+ * finish before later rows. Saved layouts and the editor are never mutated. */
+export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false, minimumHeights?: ReadonlyMap<string, number>, hints?: ReadonlyMap<string, LayoutHints>): Layout {
+  const standard = canvasLayout(widgets, mode, width, minimumHeights, hints)
   if (mode !== "wide") return standard
   const byId = new Map(widgets.map(widget => [widget.id, widget]))
   const heightFor = (item: Layout[number]) => {
     const widget = byId.get(item.i)!
-    // Plots and record tables need room for axes, legends and rows. Never
-    // shrink them below four tracks when their saved size allows it.
-    const needsReadingRoom = widget.type === "timeseries" || widget.type === "bar" || widget.type === "table" ||
-      (widget.type === "plugin" && ["stacked-timeseries", "directional-traffic", "record-table"].includes(widget.pluginId ?? ""))
-    // Dense calendar grids and status lanes have their own intrinsic height;
-    // compressing them to a few tracks hides observations behind the footer.
-    const calendar = widget.type === "plugin" && ["incident-calendar", "uptime-calendar"].includes(widget.pluginId ?? "")
-    const needsTallContent = calendar || (widget.type === "plugin" && widget.pluginId === "status-history")
-    const pageSize = widget.type === "plugin" && widget.pluginId === "record-table" &&
-      typeof widget.config?.pageSize === "number" ? widget.config.pageSize : 5
-    const minimum = needsTallContent || (widget.type === "plugin" && widget.pluginId === "record-table" && pageSize > 7) ? 5 : needsReadingRoom ? 4 : 2
     if (widget.type === "stat") return item.h
-    // Five-row calendar panels need one extra compact track for a six-week
-    // month. This is a temporary view projection, not a document edit.
-    if (calendar && item.h >= 5) return Math.max(6, Math.round(item.h * 2 / 3))
-    return Math.min(item.h, Math.max(minimum, Math.round(item.h * 2 / 3)))
+    const rule = ROOMS[roomOf(widget, hints)]
+    return rule.coarse ? rule.coarse(item.h) : Math.min(item.h, Math.max(rule.minimum, Math.round(item.h * 2 / 3)))
   }
   // Panels deliberately aligned in the saved grid remain aligned in compact
   // mode, even when one type needs more room for its legend or table rows.
@@ -204,24 +225,17 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
   // A finer grid keeps single-row statistics at their original readable
   // height while allowing plots to use intermediate heights. Tall calendars
   // and ten-row tables retain their previous physical reading room.
-  const needsPlotRoom = (widget: Widget) => widget.type === "timeseries" || widget.type === "bar" ||
-    (widget.type === "plugin" && ["stacked-timeseries", "directional-traffic"].includes(widget.pluginId ?? ""))
   const fineHeight = (item: Layout[number]) => {
     const widget = byId.get(item.i)!
-    // Fine-pointer dark reference view has 24px calendar targets and lanes.
-    // Reserve a complete six-week month, but never compress multi-month views
-    // or long state inventories using this bounded one-month/six-lane rule.
-    if (referenceCompact && widget.type === "plugin") {
-      if (widget.pluginId === "incident-calendar" && widget.config?.months === 1) return 11
-      if (widget.pluginId === "status-history" && typeof widget.config?.maxSeries === "number" && widget.config.maxSeries <= 6) return 8
+    // The reference compact view reserves a fixed track count for a few bounded configurations, such as one month of
+    // calendar or a short status list. The room's rule still applies everywhere else.
+    if (referenceCompact) {
+      const fixed = hints?.get(widget.id)?.referenceFineRows
+      if (fixed !== undefined) return fixed
     }
-    const tall = widget.type === "plugin" && (["incident-calendar", "uptime-calendar", "status-history"].includes(widget.pluginId ?? "") ||
-      (widget.pluginId === "record-table" && typeof widget.config?.pageSize === "number" && widget.config.pageSize > 7))
-    const calendar = widget.type === "plugin" && ["incident-calendar", "uptime-calendar"].includes(widget.pluginId ?? "")
-    // Preserve the physical space for multi-week calendars and status lanes
-    // on the finer compact grid; ordinary plots and tables can be denser.
-    const protectedTall = tall && !(widget.pluginId === "record-table")
-    return widget.type === "stat" ? item.h * 2 : Math.max(calendar && item.h >= 4 ? item.h >= 6 ? 15 : 14 : needsPlotRoom(widget) ? 8 : 0, Math.ceil(item.h * (protectedTall ? 2.3 : tall ? 2.2 : 1.55)))
+    if (widget.type === "stat") return item.h * 2
+    const rule = ROOMS[roomOf(widget, hints)]
+    return Math.max(rule.floor(item.h), Math.ceil(item.h * rule.fine))
   }
   const fineGroups = new Map<string, number>()
   for (const item of placed) {
@@ -258,6 +272,8 @@ export interface TileFootprintOptions {
   dense?: boolean
   referenceCompact?: boolean
   minimumHeights?: ReadonlyMap<string, number>
+  /** The plugin hints for the widgets, from layoutHintsOf. Without them plugin widgets take the default room. */
+  hints?: ReadonlyMap<string, LayoutHints>
 }
 
 /**
@@ -269,8 +285,8 @@ export function tileFootprint(widgets: readonly Widget[], id: string, options: T
   if (!(options.width > 0)) return undefined
   const dense = !!options.dense && options.mode === "wide"
   const layout = dense
-    ? denseCanvasLayout(widgets, options.mode, options.width, options.referenceCompact, options.minimumHeights)
-    : canvasLayout(widgets, options.mode, options.width, options.minimumHeights)
+    ? denseCanvasLayout(widgets, options.mode, options.width, options.referenceCompact, options.minimumHeights, options.hints)
+    : canvasLayout(widgets, options.mode, options.width, options.minimumHeights, options.hints)
   const item = layout.find(entry => entry.i === id)
   if (!item) return undefined
   const { gapX } = gridOf(dense)
