@@ -84,9 +84,11 @@ func TestDashboardQueryRollingBaselineRunsNoEarlierQuery(t *testing.T) {
 	}
 }
 
-func TestDashboardBaselineSeriesIsTheFirstOmissionStep(t *testing.T) {
-	if dashboardOmissionSteps[0].name != "baselineSeries" {
-		t.Fatalf("first omission step: %s", dashboardOmissionSteps[0].name)
+// baselineSeries is the first step that drops signal detail: only the variable source values, which describe no
+// signal data, go before it.
+func TestDashboardBaselineSeriesIsTheFirstSignalOmissionStep(t *testing.T) {
+	if names := DashboardOmissionStepNames(); len(names) < 2 || names[0] != "variableOptions" || names[1] != "baselineSeries" {
+		t.Fatalf("omission steps: %v", names)
 	}
 	result := &DashboardQueryResult{Widgets: []DashboardQueryWidget{{Baseline: &DashboardBaseline{State: "ok", Evaluated: 10, Outside: 5, Series: []DashboardBaselineSeries{{Series: 0, Evaluated: 10, Outside: 5}, {Series: 1}}}}}}
 	if !dropDashboardBaselineSeries(result) {
