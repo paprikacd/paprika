@@ -233,7 +233,7 @@ func TestResultCacheStoresWithoutDiagnostics(t *testing.T) {
 	c, _, _ := newTestResultCache(t, 16<<20)
 	r := seriesResult(3)
 	r.Diagnostics = &QueryDiagnostics{}
-	c.put("k", "local", r, "exec")
+	c.put("k", "local", r, "exec", c.currentEpoch())
 	hit := first(c.claim("k"))
 	require.NotNil(t, hit)
 	require.Nil(t, hit.result.Diagnostics, "a receipt describes one request and is never replayed")
@@ -291,7 +291,7 @@ func TestResultCacheRefreshBypassNeverServesCachedData(t *testing.T) {
 	c, _, _ := newTestResultCache(t, 16<<20)
 	c.complete("k", "local", leadOrFail(t, c, "k"), seriesResult(1), "old", nil, true)
 	// The caller on a refresh does not call claim. It runs its own execution and stores the outcome.
-	c.put("k", "local", seriesResult(2), "new")
+	c.put("k", "local", seriesResult(2), "new", c.currentEpoch())
 	hit := first(c.claim("k"))
 	require.NotNil(t, hit)
 	require.Equal(t, 2.0, *hit.result.Series[0].Points[0].Value, "after a refresh the next caller sees the refreshed result")

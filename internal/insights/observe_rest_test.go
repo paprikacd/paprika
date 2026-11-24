@@ -57,8 +57,10 @@ func observeRESTTestGateway(t *testing.T, handler http.Handler) *httptest.Server
 		fixture.ContentLength = int64(len(body))
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, fixture)
-		if retryAfter := recorder.Header().Get("Retry-After"); retryAfter != "" {
-			w.Header().Set("Retry-After", retryAfter)
+		for _, name := range []string{"Retry-After", observeLimitScopeHeader} {
+			if value := recorder.Header().Get(name); value != "" {
+				w.Header().Set(name, value)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(recorder.Code)

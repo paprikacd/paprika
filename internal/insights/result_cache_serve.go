@@ -2,6 +2,7 @@ package insights
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -80,23 +81,63 @@ func (s *Server) throughResultCache(ctx context.Context, p *providerClient, q *Q
 		if join == nil {
 			return s.leadQuery(ctx, q, key, lead, adm, execute)
 		}
-		result, retry, err := s.joinQuery(ctx, q, join, adm, attempt == 0)
+		if attempt >= maxResultJoins {
+			// Every leader this request waited on was canceled. It stops waiting on other callers and runs the query itself.
+			return s.soloQuery(ctx, q, key, adm, execute)
+		}
+		result, retry, err := s.joinQuery(ctx, q, join, adm, attempt)
 		if !retry {
 			return result, err
 		}
 	}
 }
 
+// maxResultJoins bounds the in-flight executions one request waits on before it runs the query itself.
+const maxResultJoins = 2
+
+// errResultLeaderPanicked is what joiners receive when their leader's execution panicked.
+var errResultLeaderPanicked = errors.New("result cache: the shared execution failed")
+
 // bypassQuery executes a query that must not use the cache, and stores its result when the
 // result may be shared: a refresh refreshes the entry the next caller reads.
 func (s *Server) bypassQuery(ctx context.Context, q *Query, scope, key, reason string, adm *admission, execute func(context.Context) (QueryResult, error)) (QueryResult, error) {
 	s.results.lookup("bypass", q.Kind, reason)
 	receiptFrom(ctx).setCache(&QueryDiagnosticCache{Status: "bypass", Reason: reason})
+	epoch := s.results.currentEpoch()
 	result, err := adm.run(ctx, execute)
 	if err == nil && scope != "" && key != "" && keepable(&result, q, s.results.now()) {
-		s.results.put(key, q.ProviderID, &result, executionIDOf(&result))
+		s.results.put(key, q.ProviderID, &result, executionIDOf(&result), epoch)
 	}
 	return result, err
+}
+
+// soloQuery executes a query outside any flight, for a request that has stopped waiting on canceled
+// leaders. It is a miss, and its result is stored when it may be served later.
+func (s *Server) soloQuery(ctx context.Context, q *Query, key string, adm *admission, execute func(context.Context) (QueryResult, error)) (QueryResult, error) {
+	epoch := s.results.currentEpoch()
+	result, err := adm.run(ctx, execute)
+	keep, missReason := s.missOutcome(&result, q, err)
+	if keep {
+		s.results.put(key, q.ProviderID, &result, executionIDOf(&result), epoch)
+	}
+	s.results.lookup("miss", q.Kind, missReason)
+	receiptFrom(ctx).setCache(&QueryDiagnosticCache{Status: "miss", Reason: missReason})
+	return result, err
+}
+
+// missOutcome reports whether an execution's result may be stored and, for a success that may not,
+// why: its window still reaches the present, or it is incomplete.
+func (s *Server) missOutcome(result *QueryResult, q *Query, err error) (keep bool, reason string) {
+	if err != nil {
+		return false, ""
+	}
+	if keepable(result, q, s.results.now()) {
+		return true, ""
+	}
+	if q.End > float64(s.results.now().UnixMilli())/1000 {
+		return false, "live_edge"
+	}
+	return false, "uncacheable"
 }
 
 // servedQuery answers from a stored result: a hit, which makes no provider request.
@@ -106,16 +147,17 @@ func (s *Server) servedQuery(ctx context.Context, q *Query, entry *resultEntry, 
 	return cachedResult(ctx, entry, status, s.results.now())
 }
 
-// joinQuery waits for the leader of an in-flight execution. It reports retry when the leader was
-// canceled, timed out or refused for capacity and this caller may claim again.
-func (s *Server) joinQuery(ctx context.Context, q *Query, join *resultFlight, adm *admission, mayRetry bool) (QueryResult, bool, error) {
+// joinQuery waits for the leader of an in-flight execution. It reports retry when this caller may
+// claim again: after the first leader was canceled, timed out or refused for capacity, and after any
+// canceled leader, because another caller's cancellation says nothing about this request.
+func (s *Server) joinQuery(ctx context.Context, q *Query, join *resultFlight, adm *admission, attempt int) (QueryResult, bool, error) {
 	adm.share()
 	entry, err := join.wait(ctx)
 	if err == nil {
 		s.results.lookup("joined", q.Kind, "")
 		return cachedResult(ctx, entry, "joined", s.results.now()), false, nil
 	}
-	if mayRetry && ctx.Err() == nil && retryableLeaderFailure(err) {
+	if ctx.Err() == nil && (classifyQueryFailure(err).Code == "canceled" || (attempt == 0 && retryableLeaderFailure(err))) {
 		return QueryResult{}, true, nil
 	}
 	receipt := receiptFrom(ctx)
@@ -124,18 +166,20 @@ func (s *Server) joinQuery(ctx context.Context, q *Query, join *resultFlight, ad
 }
 
 // leadQuery executes a query as the leader of its flight. The result wakes the joiners, and it is
-// stored when it may be served later.
+// stored when it may be served later. A panicking execution still completes the flight, with an
+// error, before the panic continues: a flight left in place would hold every later caller of the
+// key until its deadline.
 func (s *Server) leadQuery(ctx context.Context, q *Query, key string, lead *resultFlight, adm *admission, execute func(context.Context) (QueryResult, error)) (QueryResult, error) {
-	result, err := adm.run(ctx, execute)
-	keep := err == nil && keepable(&result, q, s.results.now())
-	missReason := ""
-	if err == nil && !keep {
-		missReason = "uncacheable"
-		if q.End > float64(s.results.now().UnixMilli())/1000 {
-			missReason = "live_edge"
+	completed := false
+	defer func() {
+		if !completed {
+			s.results.complete(key, q.ProviderID, lead, nil, "", errResultLeaderPanicked, false)
 		}
-	}
+	}()
+	result, err := adm.run(ctx, execute)
+	keep, missReason := s.missOutcome(&result, q, err)
 	s.results.complete(key, q.ProviderID, lead, &result, executionIDOf(&result), err, keep)
+	completed = true
 	s.results.lookup("miss", q.Kind, missReason)
 	receiptFrom(ctx).setCache(&QueryDiagnosticCache{Status: "miss", Reason: missReason})
 	return result, err

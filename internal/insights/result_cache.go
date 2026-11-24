@@ -67,6 +67,9 @@ type resultFlight struct {
 	entry       *resultEntry
 	err         error
 	executionID string
+	// epoch is the cache's invalidation epoch when the flight began. A result whose flight began
+	// before a provider was forgotten came from the old configuration and is not stored.
+	epoch uint64
 }
 
 // resultCache is the bounded, shared store. A nil *resultCache is disabled: its
@@ -80,6 +83,9 @@ type resultCache struct {
 	entries  map[string]*list.Element
 	lru      *list.List
 	flights  map[string]*resultFlight
+	// epoch moves on every forgetProvider, so an execution that began before an invalidation
+	// cannot store its result after it.
+	epoch uint64
 }
 
 // newResultCache returns a cache bounded by maxBytes, or nil when maxBytes is not
@@ -205,7 +211,7 @@ func (c *resultCache) claim(key string) (hit *resultEntry, join, lead *resultFli
 	if flight, ok := c.flights[key]; ok {
 		return nil, flight, nil
 	}
-	flight := &resultFlight{done: make(chan struct{})}
+	flight := &resultFlight{done: make(chan struct{}), epoch: c.epoch}
 	c.flights[key] = flight
 	return nil, nil, flight
 }
@@ -229,18 +235,30 @@ func (c *resultCache) complete(key, providerID string, lead *resultFlight, r *Qu
 	default:
 		// The joiners' age starts when the leader finished, so a join reports the leader's clock.
 		lead.entry = &resultEntry{key: key, providerID: providerID, executionID: executionID, result: storedResult(r), stored: c.now()}
-		if keep {
+		if keep && lead.epoch == c.epoch {
 			c.insertLocked(lead.entry)
 		}
 	}
 	close(lead.done)
 }
 
-// put stores a result directly, replacing any entry under the same key. It is used
-// when a caller refreshed past the cache and wants the new result served next.
-func (c *resultCache) put(key, providerID string, r *QueryResult, executionID string) {
+// currentEpoch is the invalidation epoch an execution outside a flight reads before it starts,
+// and hands to put when it finishes.
+func (c *resultCache) currentEpoch() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.epoch
+}
+
+// put stores a result directly, replacing any entry under the same key. It is used
+// when a caller refreshed past the cache and wants the new result served next. A result
+// whose execution began before an invalidation (an older epoch) is not stored.
+func (c *resultCache) put(key, providerID string, r *QueryResult, executionID string, epoch uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if epoch != c.epoch {
+		return
+	}
 	c.insertLocked(&resultEntry{key: key, providerID: providerID, executionID: executionID, result: storedResult(r)})
 }
 
@@ -263,6 +281,7 @@ func (f *resultFlight) wait(ctx context.Context) (*resultEntry, error) {
 func (c *resultCache) forgetProvider(providerID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.epoch++
 	for elem := c.lru.Front(); elem != nil; {
 		next := elem.Next()
 		if entryOf(elem).providerID == providerID {

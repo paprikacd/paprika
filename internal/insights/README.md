@@ -944,7 +944,11 @@ window in the same grain share one provider request. It is bounded to
 `--result-cache-mib` (default 16, 0 disables it, at most 128), 1024 entries and 1 MiB
 per entry, with least-recently-used eviction. An entry lives 15 seconds. Identical
 queries that arrive together join one execution: the first caller runs it and the
-others wait for its result.
+others wait for its result. A waiting caller whose leader was canceled claims again,
+and after two canceled leaders it runs the query itself, so another caller's
+cancellation never fails it. A leader that panics still wakes its waiters with an
+error. A result whose execution began before its provider's configuration changed is
+not stored.
 
 The cache key holds the caller's authorization scope and the resolved query. A local
 provider's scope is `local`, because the proxy's global read check is its only check.
