@@ -3,6 +3,7 @@
 import { useSyncExternalStore, type ComponentType } from "react";
 import { BuiltinWidgetRenderer } from "./chart-renderers";
 import type { DrilldownContext } from "./drilldown";
+import { barStylePresets, heatmapStylePresets, statStylePresets, timeseriesStylePresets } from "./style-presets";
 import {
   widgetOptionsSchema,
   type DataKind,
@@ -194,6 +195,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     description: "See how a signal changes over time",
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
+    stylePresets: timeseriesStylePresets,
   },
   {
     id: "stat",
@@ -202,6 +204,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     description: "One number, clear context",
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
+    stylePresets: statStylePresets,
   },
   {
     id: "bar",
@@ -210,6 +213,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     description: "Compare services at a glance",
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
+    stylePresets: barStylePresets,
   },
   {
     id: "heatmap",
@@ -218,6 +222,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     description: "Service health at a glance",
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
+    stylePresets: heatmapStylePresets,
   },
   {
     id: "table",

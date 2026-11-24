@@ -4,7 +4,7 @@ import { isApplePlatform, type ChartCommands } from "./use-insights-shortcuts";
 import { ariaKeyshortcutsFor, hintFor } from "./shortcuts";
 import { PREVIEW_SIZES, usePreviewSize, type PreviewSize } from "./preview-size";
 import type { PreviewFootprints } from "./canvas";
-import { ChartAppearancePresets } from "./chart-appearance-presets";
+import { StylePresetChoices } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
 import { providerOption, QuerySourceIcon } from "./source-identity";
 import {
@@ -266,6 +266,7 @@ function StyleEditor({
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
+  const presets = getWidgetDefinition(widget)?.stylePresets ?? [];
   // Turning on the value bar does not invent bounds. Focus the minimum field
   // once it renders; the existing draft alert explains what is missing.
   const barHintId = useId();
@@ -373,7 +374,7 @@ function StyleEditor({
   const seriesModeRow = palette === "series" && widget.type !== "stat";
   return (
     <div className={styles.stack}>
-      {widget.type === "timeseries" && <ChartAppearancePresets options={options} onChange={update} />}
+      {presets.length > 0 && <StylePresetChoices presets={presets} options={options} onChange={update} />}
       {supportsTooltipSettings(widget) && (
         <div className={styles.tooltipShortcut}>
           <GammaButton
