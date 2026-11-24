@@ -129,7 +129,8 @@ export function EmbedView({ client, embed }: { client: InsightsClient; embed: Em
       className={`${styles.root} ${gammaTheme.scope} flex-col overflow-hidden`}
       data-insights-theme={embed.theme ?? resolvedTheme}
       data-insights-embed=""
-      style={{ height: "100dvh", minHeight: 0 }}
+      // The tile's surface, not the dashboard page's, so the link line under the tile reads as part of the host's card.
+      style={{ height: "100dvh", minHeight: 0, background: "var(--gamma-bg)" }}
     >
       <main className="flex min-h-0 flex-1 flex-col [&_[data-testid=dashboard-canvas]]:h-full">
         {notice ? (
