@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
@@ -19,8 +20,10 @@ type dataRule struct {
 	Severity insightsv1.Severity
 	Summary  string
 	// Fix tells an author what to change. It is fixed text, never query output.
-	Fix   string
-	check func(widgets []dataWidget) []dataHit
+	Fix string
+	// A rule reads either the widgets or the variables; the other check is nil.
+	check         func(widgets []dataWidget) []dataHit
+	variableCheck func(variables []dataVariable) []dataHit
 }
 
 // dataHit is one place a data rule fires. When severity is set it replaces the
@@ -51,6 +54,16 @@ type dataWidget struct {
 	// signal is the widget's executed query. It is nil when the query did not run.
 	signal    *DashboardSignal
 	freshness *DashboardSample
+}
+
+// dataVariable is one declared variable of a dry run with its value for the run and the resolution of its
+// source. The source rules read outcome; outcome is the zero value for a variable without a source.
+type dataVariable struct {
+	index    int // position in the document's variables array
+	name     string
+	value    string
+	hasValue bool
+	outcome  variableSourceOutcome
 }
 
 // dataOptions are the author's declared options the data rules compare with.
@@ -136,6 +149,26 @@ var dataRules = []dataRule{
 		Summary:  "A stat that shows a sparkline whose primary series holds at least two valid samples, all equal, so the sparkline draws a flat line.",
 		Fix:      "Remove showSparkline from the stat if the value is expected to be constant, or query a series that moves over the range.",
 		check:    checkDataConstantSparkline,
+	}, {
+		ID:            "data.variable-source-error",
+		Severity:      warningSeverity,
+		Summary:       "A variable whose source query failed with a code a retry does not clear. The console then offers no values for the variable, so a viewer cannot choose one from its source. Capacity, timeout and cancellation are not findings.",
+		Fix:           "Correct the variable's source: its provider, label, selector, saved query or field. Then run the dry run again.",
+		variableCheck: checkDataVariableSourceError,
+	},
+	{
+		ID:            "data.variable-source-empty",
+		Severity:      infoSeverity,
+		Summary:       "A variable whose source ran and returned no values for the current parent values and range. An empty list can be expected for a sparse metric.",
+		Fix:           "Check the label, selector or saved query field against the provider, and widen the time range if the metric is sparse.",
+		variableCheck: checkDataVariableSourceEmpty,
+	},
+	{
+		ID:            "data.variable-value-not-in-source",
+		Severity:      infoSeverity,
+		Summary:       "A variable's current value that is absent from a complete list its source returned, so the dashboard shows a value its source does not offer. A truncated list is not checked.",
+		Fix:           "Set the variable's default to one of its source values, or pass a value from the source's list.",
+		variableCheck: checkDataVariableValueNotInSource,
 	},
 }
 
@@ -349,6 +382,59 @@ func checkDataConstantSparkline(widgets []dataWidget) []dataHit {
 
 // primarySummary returns the summary of a successful metrics query's primary
 // series, or nil when there is no such series.
+// checkDataVariableSourceError fires for each variable whose source failed with a code a retry does not clear.
+// The message is fixed text, so a provider message never reaches a finding.
+func checkDataVariableSourceError(variables []dataVariable) []dataHit {
+	var hits []dataHit
+	for i := range variables {
+		variable := &variables[i]
+		failure := variable.outcome.failure
+		if variable.outcome.state != "failed" || failure == nil || isTransient(failure) {
+			continue
+		}
+		hits = append(hits, newVariableDataHit(variableSourcePointer(variable.index), "Variable "+strconv.Quote(variable.name)+" source failed: "+queryFailureText(failure.Code)))
+	}
+	return hits
+}
+
+// checkDataVariableSourceEmpty fires for each variable whose source ran and returned no values.
+func checkDataVariableSourceEmpty(variables []dataVariable) []dataHit {
+	var hits []dataHit
+	for i := range variables {
+		variable := &variables[i]
+		if variable.outcome.state == "empty" {
+			hits = append(hits, newVariableDataHit(variableSourcePointer(variable.index), "Variable "+strconv.Quote(variable.name)+" source returned no values"))
+		}
+	}
+	return hits
+}
+
+// checkDataVariableValueNotInSource fires for each variable whose current value is absent from a complete list its
+// source returned. A truncated list is not checked, because the value may sit past the cut.
+func checkDataVariableValueNotInSource(variables []dataVariable) []dataHit {
+	var hits []dataHit
+	for i := range variables {
+		variable := &variables[i]
+		outcome := &variable.outcome
+		if outcome.state != "ready" || outcome.truncated || !variable.hasValue || variable.value == "" || slices.Contains(outcome.values, variable.value) {
+			continue
+		}
+		message := "Variable " + strconv.Quote(variable.name) + " value " + strconv.Quote(truncateRunes(variable.value, 64)) + " is not one of the values its source returned"
+		hits = append(hits, newVariableDataHit(fmt.Sprintf("/variables/%d", variable.index), message))
+	}
+	return hits
+}
+
+// variableSourcePointer locates a variable's source in the document.
+func variableSourcePointer(index int) string {
+	return fmt.Sprintf("/variables/%d/source", index)
+}
+
+// newVariableDataHit builds a hit for a variable, which has no widget.
+func newVariableDataHit(pointer, message string) dataHit {
+	return dataHit{lintHit: lintHit{pointer: pointer, message: message}}
+}
+
 func primarySummary(signal *DashboardSignal) *DashboardSeriesSummary {
 	if signal == nil || signal.Error != nil || signal.Kind != "metrics" || signal.PrimarySeries == nil {
 		return nil
@@ -401,10 +487,17 @@ func isTransient(failure *DashboardQueryError) bool {
 // dataFindings runs every data rule over the executed widgets. Rules run in
 // registry order and hits in document order, so one dry run always reports the
 // same list.
-func dataFindings(widgets []dataWidget) []*insightsv1.CheckFinding {
+func dataFindings(widgets []dataWidget, variables []dataVariable) []*insightsv1.CheckFinding {
 	var findings []*insightsv1.CheckFinding
 	for _, rule := range dataRules {
-		for _, hit := range rule.check(widgets) {
+		var hits []dataHit
+		if rule.check != nil {
+			hits = rule.check(widgets)
+		}
+		if rule.variableCheck != nil {
+			hits = rule.variableCheck(variables)
+		}
+		for _, hit := range hits {
 			findings = append(findings, dataFinding(rule, &hit))
 		}
 	}

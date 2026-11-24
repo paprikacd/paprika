@@ -503,6 +503,13 @@ because a save executes nothing. Each rule's default severity is in brackets.
   `options.seriesColors` rules.
 - `data.constant-sparkline` [info]: a stat with a sparkline whose primary series
   holds at least two valid samples, all equal.
+- `data.variable-source-error` [warning]: a variable's source failed with a code
+  a retry does not clear. Its pointer is `/variables/{i}/source`.
+- `data.variable-source-empty` [info]: a variable's source ran and returned no
+  values. Its pointer is `/variables/{i}/source`.
+- `data.variable-value-not-in-source` [info]: a variable's current value is absent
+  from a complete list its source returned. A truncated list is not checked. Its
+  pointer is `/variables/{i}`.
 
 A widget whose event query failed reports `PARTIAL`, and keeps its finding.
 

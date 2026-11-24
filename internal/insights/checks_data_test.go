@@ -456,7 +456,7 @@ func TestDataRegistryIsDocumentedAndSharesOneCatalogue(t *testing.T) {
 		require.NotEmpty(t, rule.Summary, rule.ID)
 		require.NotEmpty(t, rule.Fix, rule.ID)
 	}
-	require.Len(t, dataRules, 7)
+	require.Len(t, dataRules, 10)
 
 	catalogue := checkRuleCatalog()
 	require.Len(t, catalogue, len(lintRules)+len(dataRules))
