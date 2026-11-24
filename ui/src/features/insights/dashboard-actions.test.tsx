@@ -15,6 +15,17 @@ describe("dashboardActionItems", () => {
     expect(h.shortcuts).toHaveBeenCalledOnce();
   });
 
+  it("adds Revision history to both shells only when the dashboard has history", () => {
+    const h = handlers();
+    const desktop = dashboardActionItems({ phoneShell: false, refreshInterval: 0, customRange: false, history: true }, h);
+    expect(desktop[0].label).toBe("Revision history");
+    desktop[0].onSelect();
+    expect(h.togglePanel).toHaveBeenCalledWith("history");
+    const phone = dashboardActionItems({ phoneShell: true, refreshInterval: 0, customRange: false, history: true }, h);
+    expect(phone.find(item => item.label === "Revision history")?.group).toBe("Dashboard");
+    expect(dashboardActionItems({ phoneShell: true, refreshInterval: 0, customRange: false }, h).some(item => item.label === "Revision history")).toBe(false);
+  });
+
   it("lists every phone action in groups, Edit first", () => {
     const items = dashboardActionItems({ phoneShell: true, refreshInterval: 0, customRange: false }, handlers());
     expect(items.map(item => [item.label, item.group])).toEqual([

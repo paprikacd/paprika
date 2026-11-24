@@ -115,6 +115,8 @@ export interface InsightsClient {
   getStarter?(id: string, signal?: AbortSignal): Promise<DashboardBundle>
   /** The retained revisions of a dashboard, newest first. Absent for hosts that predate revision history. */
   listRevisions?(id: string, signal?: AbortSignal): Promise<DashboardRevisionList>
+  /** The stored document of one retained revision. Reading it writes nothing. Absent for hosts that predate revision history. */
+  getRevision?(id: string, revision: number, signal?: AbortSignal): Promise<{ dashboard: Dashboard; etag?: string }>
   /**
    * Restores a stored revision as the dashboard's new revision. etag is the dashboard's current ETag; a stale one is
    * rejected with the reload message. revision is the number the restore created, or 0 when the server named none,
@@ -615,6 +617,14 @@ export function createInsightsClient(
       await readJSON<JsonValue>(await request(`/dashboards/${encodeURIComponent(id)}/revisions`, { signal })),
       { ignoreUnknownFields: true },
     ),
+    // The bytes of one revision, parsed as a stored dashboard. Its ETag is the content ETag of those bytes.
+    getRevision: async (id, revision, signal) => {
+      const response = await request(`/dashboards/${encodeURIComponent(id)}/revisions/${revision}`, { signal })
+      return {
+        dashboard: storedDashboardSchema.parse(await readJSON<Record<string, unknown>>(response)),
+        etag: documentETag(response),
+      }
+    },
     // A restore is a conditional write: If-Match carries the dashboard's current ETag, so a stale view is refused with
     // the same reload message as a stale save. The message is percent-encoded, as the server expects.
     restoreRevision: async (id, revision, etag, message) => {
