@@ -81,6 +81,16 @@ The AI panel provides an explicit handoff:
 3. Bring back OpenUI, JSON, or YAML; review validation and the added/changed/removed widget summary.
 4. Apply it to the draft, inspect the canvas, and save when ready.
 
+The panel also has a collapsed **Use your agent with Paprika Observe** section. It copies
+instructions for an agent that reads the dashboard through the Observe MCP endpoint. The agent
+replies with one JSON object, `{"id", "widget_edits"}`, and does not save anything. Paste the reply
+into the panel as JSON. Insights checks it against the current draft with the same merge the
+repair applier uses, lists each changed field per widget, runs the save checks, and applies the
+edits to the draft only when no check reports an error. A check that fails or times out does not
+block Apply. A pasted whole dashboard still replaces the draft. The source editor shows the same
+per-field change list before a replace. The prefilled Claude link is built in one place,
+`buildAgentHandoff` in `agent-handoff.ts`, and can be dropped there without touching the rest.
+
 No model is connected by default, and copying a prompt does not send it anywhere. Applying a reviewed definition requires the active dashboard to remain unchanged since review. Provider identifiers and capabilities are checked again at application time. Prompts explicitly instruct assistants not to invent metric names or embedded sample values.
 
 ## Technology decisions

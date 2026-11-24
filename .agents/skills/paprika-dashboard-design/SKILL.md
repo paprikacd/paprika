@@ -196,9 +196,15 @@ Before writing new queries for a dashboard whose data has drifted, use the teste
 toolkit. These are local repository tools for the named deployments, not MCP tools; run
 them from a checkout with access to the target.
 
-- `hack/dashboard-presentation/patches.json`: reviewed widget edits for three operational
-  dashboards, applied with `patch_dashboard` after the matching UI release is deployed.
-  Use each document's exact ETag and read its README first.
+- `hack/insights-patch/`: the repair applier. `node hack/insights-patch/cli.mjs <set.json>`
+  plans a patch set and prints each widget's changed fields; `--apply --receipt <file>` writes
+  it with exact ETags, reads each result back and records a receipt. It runs with
+  `PAPRIKA_OBSERVE_URL` and `PAPRIKA_OBSERVE_TOKEN`. The merge is the UI's own
+  (`ui/src/features/insights/dashboard-patch.ts`), and each merged dashboard is linted before
+  any write. MCP clients cannot run this CLI; they use `patch_dashboard` with `widget_edits`.
+- `hack/dashboard-presentation/patches.json`: a patch set of reviewed widget edits for three
+  operational dashboards. Plan and apply it with the applier after the matching UI release is
+  deployed. Use each document's exact ETag and read its README first.
 - `hack/service-overview/`: exact-ETag patches for the six HTTP saved queries of
   `service-overview`. `queries.json` holds the patches; `migrate.mjs` exports
   `migrate(call, {expectedProviderId})`, which previews first and writes only with
@@ -212,7 +218,7 @@ them from a checkout with access to the target.
   networking disabled, or in a local binary named by `PROMTOOL`. Follow
   `hack/service-overview/promql.test.mjs` for the pattern.
 
-After a change, run `node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs`,
+After a change, run `node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs hack/insights-patch/*.test.mjs hack/dashboard-presentation/*.test.mjs`,
 which is the command CI runs.
 Source requirements and the reasoning behind them are in
 [dashboard data coverage](../../../docs/guides/dashboard-data-coverage.md).

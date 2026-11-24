@@ -68,7 +68,15 @@ The dashboard `patch` cannot replace `widgets`. Use `widget_edits` instead:
 - `remove` takes an existing widget `id`.
 
 A batch permits at most 48 operations, with one operation per widget ID.
-Untouched widgets and their order remain intact. Layout, options, tooltips,
+Untouched widgets and their order remain intact.
+
+These rules have one shared implementation in the UI and one in Go, and both run
+`docs/design/insights/conformance/dashboard-patch.json`. The UI side is
+`ui/src/features/insights/dashboard-patch.ts`, which the Build with AI review, the source
+editor's change list and the repair applier (`hack/insights-patch`) all import. The Go side is
+`internal/observabilitygateway/insights_patch.go`, tested by
+`insights_patch_conformance_test.go`. Change the fixture and both sides together. A change to
+either implementation without a matching fixture case is a conformance gap. Layout, options, tooltips,
 links, saved-query references and explicit bindings use the canonical widget
 schema. Dashboard variables use the canonical dashboard schema; their array
 replaces in full, so retain other variables when editing it.
