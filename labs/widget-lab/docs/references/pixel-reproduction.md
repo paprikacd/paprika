@@ -1,5 +1,7 @@
 # Reproduce a supplied dashboard literally
 
+> Lab reference, loaded on demand by the [Paprika dashboard design skill](../../../../.agents/skills/paprika-dashboard-design/SKILL.md). It moved here from the skill in November 2026 with the two reference images, which live in [`../reference/`](../reference/).
+
 ## Contents
 
 - Establish the reproduction contract
@@ -41,7 +43,7 @@ Use measured reference dimensions first. After the primary artboard matches, add
 
 ## Compare equal-size captures
 
-1. Render at the source canvas dimensions and capture at the same pixel dimensions and state. For both bundled primary references, use **1592 × 988**. Record any difference between browser viewport and fixed artboard capture; do not silently resize either image to hide it.
+1. Render at the source canvas dimensions and capture at the same pixel dimensions and state. For both lab reference images, use **1592 × 988**. Record any difference between browser viewport and fixed artboard capture; do not silently resize either image to hide it.
 2. Wait for fonts and assets to render and motion to settle. Keep the fixture, selected point, month and filters deterministic. Capture the actual application through the permitted browser workflow.
 3. Compare the full image side by side and with a registered overlay or image difference. Alignment should follow the measured canvas, not a best-fit rescaling that disguises incorrect panel geometry. Inspect important regions independently: shell, metrics, main plot, inspector, tables, timeline/map and calendar.
 4. Use numerical difference as a diagnostic, with the exact method, alignment and regions recorded. Whole-image averages can be dominated by dark background; antialiasing and font rasterization can inflate text differences. Inspect edge displacement, panel bounds, baseline drift and local colour residuals alongside human visual comparison.
@@ -51,7 +53,7 @@ Image analysis and comparison tools may measure existing captures according to t
 
 ## Edge Watch geometry
 
-Use [the bundled Edge reference](../reference/edge-watch.png). Coordinates are measured on its 1592 × 988 canvas; boundary estimates are generally within 1–2px and should be checked against the image.
+Use [the Edge Watch reference](../reference/edge-watch.png). Coordinates are measured on its 1592 × 988 canvas; boundary estimates are generally within 1–2px and should be checked against the image.
 
 | Region | x | y | Width | Height |
 | --- | ---: | ---: | ---: | ---: |
@@ -78,7 +80,7 @@ Render ten destination rows on about 26px pitch, with columns beginning near x10
 
 ## Reliability Room geometry
 
-Use [the bundled Reliability reference](../reference/reliability-room.png). Its title spans above the rail; it does not share Edge's full-height rail or 87px metrics.
+Use [the Reliability Room reference](../reference/reliability-room.png). Its title spans above the rail; it does not share Edge's full-height rail or 87px metrics.
 
 | Region | x | y | Width | Height |
 | --- | ---: | ---: | ---: | ---: |

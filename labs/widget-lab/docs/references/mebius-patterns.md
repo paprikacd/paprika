@@ -1,5 +1,7 @@
 # Mebius chart study: mechanisms to adapt for Paprika
 
+> Lab reference, loaded on demand by the [Paprika dashboard design skill](../../../../.agents/skills/paprika-dashboard-design/SKILL.md). It moved here from the skill in November 2026 with the two reference images, which live in [`../reference/`](../reference/).
+
 ## Contents
 
 - What was verified

@@ -9,6 +9,7 @@
 - Family coverage and geographic acceptance
 - Repository validation
 - Visual review and finish
+- Review protocol
 
 ## Evidence layers and severities
 
@@ -106,7 +107,7 @@ For maps, apply [the geographic acceptance cases](geographic-charts.md#validate-
 
 First read current `ui/package.json`, `docs/design/insights/premium-ui.json`, and relevant repository instructions. Select transformation/component/E2E checks that cover the change; also run required project gates. Use the actual package manager and scripts declared there.
 
-Useful existing test areas at the inspected snapshot:
+Useful existing test areas:
 
 - `chart-data`, `numeric-precision`, `chart-cursor`, and `charts` tests.
 - `plugins/rich-metrics-data.test.ts` for aligned stacks, gaps, original values and histograms.
@@ -132,8 +133,36 @@ Use a bounded batch of real captures with deterministic data. Cover supported th
 
 Inspect at actual size and enlarged detail: clipping, tick collision, contrast, plot-area alignment, overlay placement, focus, and chart-to-chrome balance. Pair screenshots with keyboard/pointer checks, not just screenshot differences.
 
-For the bundled dashboard references, follow [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md): inspect the actual images and compare both settled and selected states. Use exact canvas dimensions and registered comparison for literal reproduction; use explicit composition budgets for adaptation. Do not invent measurements from a thumbnail or claim pixel equality without a valid method. Verify that concept-art scales and accounting have not replaced the analytical metric contract.
+For the widget lab's two dashboard reference images, follow [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md): inspect the actual images and compare both settled and selected states. Use exact canvas dimensions and registered comparison for literal reproduction; use explicit composition budgets for adaptation. Do not invent measurements from a thumbnail or claim pixel equality without a valid method. Verify that concept-art scales and accounting have not replaced the analytical metric contract.
 
 Review the six craft dimensions in [visual craft](visual-craft.md) through observed findings, not a numerical beauty score. Fix material findings as a batch and confirm once. Additional work should address a concrete failure, mandatory gate, or explicitly requested design iteration.
 
 Complete the report with pass/fail/unverified/not-applicable evidence and precise remaining limits. If reviewing a proposal without runtime access, deliver a useful design/source review and call the rendered gates unverified. Never promote a declarative checker success into “production ready.”
+
+## Review protocol
+
+This is the one review protocol for Insights. Use it for a substantial widget, builder or dashboard review; a
+narrow fix runs the affected checklist rows and gates only. It replaces the October 2026 five-lens protocol, now
+kept as evidence in `docs/design/insights/receipts/review-loop.md`.
+
+1. **Baseline.** Freeze the source (commit plus working-tree state). Inventory the surfaces: every registered
+   widget type and bundled plugin, not only the default example; for a builder review also query, provider,
+   library, Code and AI panels. Capture the real states before tests or lint shape the story.
+2. **Critique the whole journey.** Opening canvas, data selection, authoring and return, as one experience.
+   Use the [widget checklist](widget-checklist.md) rows and the six gates. Optional lenses add independent
+   findings: frontend-design (identity, emphasis, typography, next actions), Impeccable in Operate mode
+   (cognitive load, navigation, keyboard, recovery) and design-taste-frontend (composition, grid closure, phone
+   hierarchy). Name each lens by its skill name, record which ran, and do not apply marketing-page mandates
+   to this workspace. A missing lens is reported as not run, never as passed.
+3. **Fix a bounded batch.** At most three coherent issues, fixed in their shared owner, not per screenshot.
+   Preserve queries, exact selected values, saved placement, history and save boundaries. Add regressions at
+   the affected width, count or state boundary.
+4. **Confirm once.** Capture the changed states on the same candidate at 1512, 1024, 768 and 390 px, light and
+   dark, plus narrow tiles. Compare before and after, including what used to be better. A remaining major
+   defect returns to step 3; optional polish stops once the gates pass.
+5. **Decide and record.** Give composition and functional verdicts separately, with each gate's state. Write
+   dated evidence (inventory, matrix, commands and results, screenshot paths) under
+   `docs/design/insights/receipts/`, never into a contract or a skill. A verdict covers that candidate only.
+
+Fixed-position menus and tooltips need a viewport screenshot, not a scrolled full-page capture. A screenshot
+used to approve a state must have been opened and inspected.
