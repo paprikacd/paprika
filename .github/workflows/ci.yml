@@ -135,6 +135,13 @@ jobs:
         run: npm test -- --maxWorkers=2
         working-directory: labs/widget-lab
 
+      - name: Build widget lab gallery
+        run: npm run build
+        working-directory: labs/widget-lab
+
+      - name: Check gallery size budget
+        run: node hack/verify-landing-charts.mjs --gallery labs/widget-lab/dist
+
       - name: Browser-render worker and visual probe tests
         run: node --test render-worker.test.mjs dashboard-probe.test.mjs e2e/fixtures/visual-matrix-diff.test.mjs
         working-directory: ui

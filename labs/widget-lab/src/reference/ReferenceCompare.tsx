@@ -30,7 +30,7 @@ export function ReferenceCompare({ study, onClose }: ReferenceCompareProps) {
     };
   }, []);
 
-  const source = study === 'edge' ? 'edge-watch.png' : 'reliability-room.png';
+  const source = study === 'edge' ? 'edge-watch.webp' : 'reliability-room.webp';
   return <>
     <div className="ref-compare-source" aria-hidden="true" style={{ opacity: visible ? opacity / 100 : 0 }}>
       <img src={`${import.meta.env.BASE_URL}reference/${source}`} width={1592} height={988} alt="" draggable={false}/>
