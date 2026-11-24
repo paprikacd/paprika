@@ -20,7 +20,7 @@ const variableValueLimit = 100
 // variableValueMaxUnits is the longest value, in UTF-16 units, that a dashboard can hold.
 const variableValueMaxUnits = 1024
 
-// variableRangeBucketSeconds rounds a read's range outward to whole minutes, so that reads a few seconds
+// variableRangeBucketSeconds rounds both ends of a read's range down to whole minutes, so that reads a few seconds
 // apart share one resolved source. It matches the console's cache key.
 const variableRangeBucketSeconds = 60
 
@@ -35,7 +35,7 @@ type variableSourceOutcome struct {
 	sourced       bool
 }
 
-// variableBucket returns the range in Unix seconds, rounded outward to the bucket. The end is always
+// variableBucket returns the range in Unix seconds, each end rounded down to the bucket. The end is always
 // after the start, so a sub-minute range still resolves to one bucket.
 func variableBucket(start, end float64) (bucketStart, bucketEnd int64) {
 	bucketStart = int64(math.Floor(start/variableRangeBucketSeconds)) * variableRangeBucketSeconds
