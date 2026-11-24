@@ -17,8 +17,10 @@ type dashboardOmissionStep struct {
 // result exceeds DashboardQueryResponseBytes. The ladder stops as soon as the result fits. Attention
 // counts, band thresholds and signals are never dropped. Breach summaries and latest levels go only
 // with a widget's breach object, in step 3. The series behind a band go with its whole bandSeries
-// object, in step 4. A result whose never-dropped facts alone exceed the cap is refused.
+// object, in step 4. A result whose never-dropped facts alone exceed the cap is refused. The variable
+// source values go first: they are the only dropped detail that does not describe signal data.
 var dashboardOmissionSteps = []dashboardOmissionStep{
+	{name: "variableOptions", drop: dropDashboardVariableOptions},
 	{name: "breachIntervals", drop: dropDashboardBreachIntervals},
 	{name: "rankingRows", drop: dropDashboardRankingRows},
 	{name: "breaches", drop: dropDashboardWidgetBreaches},
@@ -35,6 +37,22 @@ func DashboardOmissionStepNames() []string {
 		names = append(names, step.name)
 	}
 	return names
+}
+
+// dropDashboardVariableOptions removes every sourced variable's listed values. Their count moves into
+// valuesOmitted, and state, currentValue, truncated and error stay, so the choice is still described.
+func dropDashboardVariableOptions(result *DashboardQueryResult) bool {
+	dropped := false
+	for i := range result.VariableDefinitions {
+		options := result.VariableDefinitions[i].SourceOptions
+		if options == nil || len(options.Values) == 0 {
+			continue
+		}
+		options.ValuesOmitted += len(options.Values)
+		options.Values = nil
+		dropped = true
+	}
+	return dropped
 }
 
 // dropDashboardBreachIntervals removes the listed breach intervals and their series names from every

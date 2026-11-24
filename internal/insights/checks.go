@@ -712,7 +712,7 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 	if err != nil {
 		return dryRunOutcome{}, &dryRunInputError{message: err.Error()}
 	}
-	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets)
+	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets, doc.Variables)
 	if err != nil {
 		return dryRunOutcome{}, err
 	}

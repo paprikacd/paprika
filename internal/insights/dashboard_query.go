@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -59,6 +60,8 @@ type DashboardQueryResult struct {
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
 	comparisons       []dashboardComparisonPlan
 	comparisonQueries []Query
+	// variableSources is each declared variable's resolved source, index-aligned with the document's variables.
+	variableSources []variableSourceOutcome
 	// VariableDefinitions declares each dashboard variable with its label, default and static options, so an agent
 	// can choose values without a get_dashboard read. Absent when the dashboard declares no variables.
 	VariableDefinitions []DashboardQueryVariable `json:"variableDefinitions,omitempty"`
@@ -167,6 +170,9 @@ type DashboardQueryCount struct {
 	Deduplicated int `json:"deduplicated"`
 	// Comparison counts the earlier-window queries of stats that declare a comparison. Absent when none do.
 	Comparison *DashboardComparisonCount `json:"comparison,omitempty"`
+	// VariableOptions counts the variable source fetches: distinct fetches planned, and those executed. Absent when no
+	// variable declares a source.
+	VariableOptions *DashboardComparisonCount `json:"variableOptions,omitempty"`
 }
 
 type dashboardSavedSnapshot struct {
@@ -211,6 +217,8 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 	result.VariableDefinitions = dashboardQueryVariables(document.Variables)
 	result.Warnings = dashboardVariableWarnings(document.Variables, input.Variables)
 	s.runDashboardPlan(r, &result, selected, saved, document.Variables, start, end, options)
+	applyVariableSourceOptions(&result)
+	result.Warnings = append(result.Warnings, dashboardSourceValueWarnings(document.Variables, input.Variables, result.variableSources)...)
 	writeDashboardQueryResult(w, &result)
 }
 
@@ -245,6 +253,9 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		dropDashboardComparisons(result)
 	}
 	s.executeDashboardQueries(r, queries, options, result, &cache)
+	outcomes, count := s.resolveVariableSources(r, dashboardVariableSourceBudget, definitions, result.Variables, saved, start, end, &cache, nil)
+	result.variableSources, result.QueryCount.VariableOptions = outcomes, count
+	appendVariableSavedQueries(result, definitions, saved)
 	budgetDashboardBreaches(result)
 	result.Attention = applyDashboardAttention(result)
 }
@@ -515,7 +526,7 @@ func (s *Server) dashboardQuerySnapshot(input *dashboardQueryRequest) (snapshot 
 	if err != nil {
 		return document, "", nil, nil, err
 	}
-	saved, err := s.dashboardSavedQuerySnapshot(selected)
+	saved, err := s.dashboardSavedQuerySnapshot(selected, document.Variables)
 	return document, etag, saved, selected, err
 }
 
@@ -538,36 +549,66 @@ func selectDashboardQueryWidgets(widgets []dashboardReadWidget, widgetIDs []stri
 	return selected, nil
 }
 
-func (s *Server) dashboardSavedQuerySnapshot(selected []dashboardReadWidget) (map[string]dashboardSavedSnapshot, error) {
+// dashboardSavedQuerySnapshot loads the saved queries the selected widgets, their annotations and the
+// variable sources of the document refer to. A missing saved query is left out, so its use reports it.
+func (s *Server) dashboardSavedQuerySnapshot(selected []dashboardReadWidget, variables []dashboardReadVariable) (map[string]dashboardSavedSnapshot, error) {
 	saved := make(map[string]dashboardSavedSnapshot)
+	for _, ref := range dashboardSavedQueryRefs(selected, variables) {
+		if ref == nil {
+			continue
+		}
+		if _, exists := saved[ref.ID]; exists {
+			continue
+		}
+		raw, version, err := s.savedQueries.get(ref.ID)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		query, err := validateSavedQuery(ref.ID, raw)
+		if err != nil {
+			return nil, err
+		}
+		saved[query.ID] = dashboardSavedSnapshot{Query: query, ETag: version}
+	}
+	return saved, nil
+}
+
+// dashboardSavedQueryRefs lists the references of the selected widgets, their annotations and the variable sources.
+// A nil reference is a widget without one.
+func dashboardSavedQueryRefs(selected []dashboardReadWidget, variables []dashboardReadVariable) []*dashboardReadReference {
+	var refs []*dashboardReadReference
 	for i := range selected {
 		widget := &selected[i]
-		refs := []*dashboardReadReference{widget.QueryRef}
+		refs = append(refs, widget.QueryRef)
 		if widget.AnnotationSource != nil {
 			refs = append(refs, &widget.AnnotationSource.QueryRef)
 		}
-		for _, ref := range refs {
-			if ref == nil {
-				continue
-			}
-			if _, exists := saved[ref.ID]; exists {
-				continue
-			}
-			raw, version, err := s.savedQueries.get(ref.ID)
-			if errors.Is(err, ErrNotFound) {
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			query, err := validateSavedQuery(ref.ID, raw)
-			if err != nil {
-				return nil, err
-			}
-			saved[query.ID] = dashboardSavedSnapshot{Query: query, ETag: version}
+	}
+	for i := range variables {
+		if source := variables[i].Source; source != nil {
+			refs = append(refs, source.QueryRef)
 		}
 	}
-	return saved, nil
+	return refs
+}
+
+// appendVariableSavedQueries lists the saved query of each variable source once, after the widgets' queries,
+// so a caller can pin the versions a result read.
+func appendVariableSavedQueries(result *DashboardQueryResult, definitions []dashboardReadVariable, saved map[string]dashboardSavedSnapshot) {
+	for i := range definitions {
+		source := definitions[i].Source
+		if source == nil || source.QueryRef == nil {
+			continue
+		}
+		snapshot, ok := saved[source.QueryRef.ID]
+		if !ok || slices.ContainsFunc(result.SavedQueries, func(listed DashboardQueryDocument) bool { return listed.ID == source.QueryRef.ID }) {
+			continue
+		}
+		result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: source.QueryRef.ID, ETag: snapshot.ETag})
+	}
 }
 
 func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardReadDocument, now time.Time) (window DashboardQueryRange, fromSeconds, toSeconds float64, rangeErr error) {

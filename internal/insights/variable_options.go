@@ -473,6 +473,78 @@ func (s *Server) savedQueryVariableRun(provider *providerClient, query *Query, f
 	}
 }
 
+// dashboardVariableSourceBytes caps the encoded value text query_dashboard reports for all sourced variables of
+// one result. Values past it are counted in valuesOmitted.
+const dashboardVariableSourceBytes = 16 << 10
+
+// applyVariableSourceOptions fills each sourced variable's sourceOptions. Values share the byte budget in
+// declaration order. currentValue is computed on the full list, before the budget.
+func applyVariableSourceOptions(result *DashboardQueryResult) {
+	budget := dashboardVariableSourceBytes
+	for i := range result.VariableDefinitions {
+		if i >= len(result.variableSources) || !result.variableSources[i].sourced {
+			continue
+		}
+		outcome := &result.variableSources[i]
+		definition := &result.VariableDefinitions[i]
+		options := &DashboardVariableSourceOptions{State: outcome.state, Truncated: outcome.truncated, NeedsVariable: outcome.needsVariable, Error: outcome.failure}
+		if outcome.state == "ready" || outcome.state == "empty" {
+			if current, ok := result.Variables[definition.Name]; ok {
+				options.CurrentValue = currentValueText(outcome.values, outcome.truncated, current)
+			}
+			budget = appendValuesWithinBudget(options, outcome.values, budget)
+		}
+		definition.SourceOptions = options
+	}
+}
+
+// appendValuesWithinBudget appends values to options while they fit in budget, and returns the budget left. The
+// values that do not fit are counted in valuesOmitted.
+func appendValuesWithinBudget(options *DashboardVariableSourceOptions, values []string, budget int) int {
+	for j, value := range values {
+		cost := encodedStringBytes(value) + 1 // The comma that separates it from the previous value.
+		if cost > budget {
+			options.ValuesOmitted = len(values) - j
+			return budget
+		}
+		budget -= cost
+		options.Values = append(options.Values, value)
+	}
+	return budget
+}
+
+// currentValueText says whether a current value is among a resolved list. A value absent from a truncated list
+// is unknown, because the list may hold it past the cut.
+func currentValueText(values []string, truncated bool, current string) string {
+	if slices.Contains(values, current) {
+		return "in_values"
+	}
+	if truncated {
+		return "unknown"
+	}
+	return "not_in_values"
+}
+
+// dashboardSourceValueWarnings names an override of a sourced variable that its source did not return. Only a
+// complete list is checked: a truncated list may hold the value past the cut. An empty override is named by
+// dashboardVariableWarnings, so it is not named again here.
+func dashboardSourceValueWarnings(definitions []dashboardReadVariable, overrides map[string]string, outcomes []variableSourceOutcome) []string {
+	var warnings []string
+	for i := range definitions {
+		definition := &definitions[i]
+		value, overridden := overrides[definition.Name]
+		if !overridden || value == "" || definition.Source == nil || i >= len(outcomes) {
+			continue
+		}
+		outcome := &outcomes[i]
+		if outcome.state != "ready" || outcome.truncated || slices.Contains(outcome.values, value) {
+			continue
+		}
+		warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the values its source returned", definition.Name, warningValue(value)))
+	}
+	return warnings
+}
+
 // variableSourceKey identifies one fetch. Sources that share a key share one fetch.
 func variableSourceKey(parts ...any) string {
 	encoded, err := json.Marshal(parts)
