@@ -345,9 +345,14 @@ func comparisonLatestPoint(points []Point, from, to float64) *Point {
 }
 
 // dropDashboardComparisons removes every earlier-window plan and its output, for a dry run that must not query them.
+// Time-series baselines are earlier-window plans too, so they go with the comparisons.
 func dropDashboardComparisons(result *DashboardQueryResult) {
 	for index := range result.comparisons {
 		result.Widgets[result.comparisons[index].widget].Comparison = nil
 	}
 	result.comparisons, result.comparisonQueries, result.QueryCount.Comparison = nil, nil, nil
+	for index := range result.baselines {
+		result.Widgets[result.baselines[index].widget].Baseline = nil
+	}
+	result.baselines, result.baselineQueries, result.QueryCount.Baseline = nil, nil, nil
 }

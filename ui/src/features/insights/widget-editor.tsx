@@ -606,6 +606,25 @@ function StyleEditor({
             checked={options.showZeroLine === true}
             onChange={(showZeroLine) => update({ showZeroLine })}
           />
+          <label className={styles.field}>
+            Baseline band
+            <GammaSelect aria-label="Baseline band" value={options.baseline?.window ?? "off"}
+              onValueChange={(value) => update({ baseline: value === "off" ? undefined : { window: value as NonNullable<WidgetOptions["baseline"]>["window"], ...(options.baseline?.band ? { band: options.baseline.band } : {}) } })}
+              options={[
+                { value: "off", label: "Off" }, { value: "previous", label: "Previous period" },
+                { value: "1d", label: "1 day earlier" }, { value: "7d", label: "7 days earlier" },
+                { value: "rolling", label: "Rolling: 12 samples before the last 6" },
+              ]} />
+          </label>
+          {options.baseline && <>
+            <label className={styles.field}>
+              Band
+              <GammaSelect aria-label="Band" value={options.baseline.band ?? "range"}
+                onValueChange={(value) => update({ baseline: { window: options.baseline!.window, band: value as NonNullable<WidgetOptions["baseline"]>["band"] } })}
+                options={[{ value: "range", label: "Range" }, { value: "p10p90", label: "10th to 90th percentile" }]} />
+            </label>
+            <p className={styles.hint}>Shades the usual range of each series and marks runs of two or more samples outside it. These describe past samples, not alerts.</p>
+          </>}
           <ReferenceLinesEditor options={options} onChange={update} />
         </>}
         {chart && (
@@ -1210,6 +1229,11 @@ export function WidgetEditor({
       next.options = { ...next.options };
       delete next.options.compare;
     }
+    // A baseline is a time-series option, and the same rule applies to it.
+    if (type !== "timeseries" && next.options?.baseline) {
+      next.options = { ...next.options };
+      delete next.options.baseline;
+    }
     setPendingVisualization(undefined);
     history.update(current => ({ ...current, draft: next,
       ...(type === "plugin" ? { pluginConfig: JSON.stringify(next.config ?? {}, null, 2) } : {}),
@@ -1400,7 +1424,7 @@ export function WidgetEditor({
                     </p>
                     {library.onOpenExplorer && <>
                       <p className={styles.hint}>Save your query in Explore, then choose Dashboard to return here. Your widget draft stays intact.</p>
-                      <GammaButton variant="secondary" onClick={library.onOpenExplorer}>Edit in Explore</GammaButton>
+                      <GammaButton variant="secondary" onClick={() => library.onOpenExplorer?.()}>Edit in Explore</GammaButton>
                     </>}
                     <GammaButton
                       variant="secondary"

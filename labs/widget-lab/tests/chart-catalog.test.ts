@@ -42,8 +42,9 @@ describe('working chart capability coverage', () => {
         expect(markup).not.toContain('Widget plugin unavailable');
         expect(markup).not.toContain('NaN');
       }
-      // The first lazy renderer load can take several seconds on a busy machine.
-    }, 30000);
+      // The first lazy renderer load is the slow part: 1.1 s for the slowest entry in a full lab run at load average 75
+      // (2026-11-24). 15 s is ten times that and still fails a renderer that never resolves.
+    }, 15_000);
   }
 
   it('preserves positive outbound input while the directional adapter mirrors its position', () => {

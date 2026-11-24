@@ -40,6 +40,7 @@ func run() error {
 	dev := flag.Bool("dev", false, "Disable service authentication on a loopback listener for local development")
 	metricsListen := flag.String("metrics-listen", "", "Optional second HTTP address that serves only /metrics, such as :8080, so a scraper can be admitted to it without reaching /api")
 	capacity := registerCapacityFlags(flag.CommandLine)
+	resultCacheMiB := registerResultCacheFlag(flag.CommandLine)
 	flag.Parse()
 	if *dev {
 		host, _, err := net.SplitHostPort(*listen)
@@ -49,7 +50,7 @@ func run() error {
 		}
 	}
 	admission := capacity.capacity()
-	cfg := insights.Config{Token: os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), InsecureDev: *dev, ObservabilityURL: os.Getenv("PAPRIKA_OBSERVABILITY_GATEWAY_ADDR"), Capacity: &admission}
+	cfg := insights.Config{Token: os.Getenv("PAPRIKA_INSIGHTS_TOKEN"), InsecureDev: *dev, ObservabilityURL: os.Getenv("PAPRIKA_OBSERVABILITY_GATEWAY_ADDR"), Capacity: &admission, ResultCacheMiB: resultCacheBudget(*resultCacheMiB)}
 	if *providersFile != "" {
 		if configErr := loadProvidersConfig(*providersFile, &cfg); configErr != nil {
 			return configErr

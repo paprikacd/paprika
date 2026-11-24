@@ -56,6 +56,9 @@ function assertAndRemoveStatHeightConstraint(widget: Record<string, unknown>) {
   }, {
     if: { required: ["options"], properties: { options: { required: ["compare"] } } },
     then: { properties: { type: { const: "stat" } } },
+  }, {
+    if: { required: ["options"], properties: { options: { required: ["baseline"] } } },
+    then: { properties: { type: { const: "timeseries" } } },
   }])
   delete widget.allOf
   const options = (widget.properties as Record<string, Record<string, unknown>>).options

@@ -3,8 +3,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-// Cold imports of the canonical renderers take several seconds on a loaded machine. The file gets 60 s, as the Kubernetes file does.
-vi.setConfig({ testTimeout: 60_000 });
+// The slowest test here took 1.5 s in a full lab run at load average 75 (2026-11-24), against vitest's 5 s default.
+// 15 s leaves ten times that for a slower runner and still fails a real hang quickly.
+vi.setConfig({ testTimeout: 15_000 });
 import { waferChartCatalog, makeWaferCatalogFixture } from '../src/charts/wafer/catalog';
 import { registerWaferCharts } from '../src/charts/wafer/register';
 import { waferFocusId, waferKeyboardTarget, waferRows } from '../src/charts/wafer/model';

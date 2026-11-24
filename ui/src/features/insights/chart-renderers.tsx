@@ -35,6 +35,7 @@ export {
 import { useTooltipWidgetData } from "./tooltip-widget-data";
 import { TooltipSubWidget } from "./tooltip-widgets";
 import { StatSparkline, isSteadySeries } from "./stat-sparkline";
+import { useAnnotationEvents } from "./annotation-events";
 import sparklineStyles from "./stat-sparkline.module.css";
 import { useEmbeddedWidget } from "./widget-presentation";
 import { ObservationTooltip, ObservationDetails } from "./observation-tooltip";
@@ -124,6 +125,8 @@ function Stat({
   // The change is the tile's, and an embedded stat (a tooltip's view) never shows one.
   const comparison = useStatComparison();
   const delta = embedded ? undefined : comparison;
+  // Event ticks belong to the tile's own sparkline. A tooltip's or an embedded view's sparkline draws none.
+  const annotationEvents = useAnnotationEvents();
   const statRef = useRef<HTMLDivElement>(null);
   // The tile evaluates its widget once and passes the verdict down. An embedded renderer shows another widget, so it evaluates its own.
   // Outside a tile, the renderer evaluates once itself; a tile's verdict is never recomputed here.
@@ -243,6 +246,7 @@ function Stat({
         ) : (
           <StatSparkline widget={embedded ? undefined : widget}
             series={first.entry}
+            events={embedded ? undefined : annotationEvents.events}
             name={first.name}
             unit={widget.unit}
             color={color ?? widgetSeriesColors(series, widget)[first.index]?.color ?? PALETTE[0]}

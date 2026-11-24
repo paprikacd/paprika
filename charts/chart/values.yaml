@@ -1126,6 +1126,9 @@ agent:
 ## deployment modes through the authenticated /api/insights/ proxy.
 insights:
   enabled: false
+  # Byte budget of the shared result cache in MiB (0 to 128). Null omits the flag, so the Insights built-in (16) applies.
+  # Zero disables the cache.
+  resultCacheMiB: null
   # Uses the main Paprika image, which includes /insights. Override when needed.
   image:
     repository: ""

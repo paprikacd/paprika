@@ -48,3 +48,17 @@ function nearestRung(raw: number): number {
   }
   return best;
 }
+
+// MAX_ALIGN_GRAIN_SECONDS caps the grain a relative window ends on. Matches querystep.MaxAlignGrain.
+export const MAX_ALIGN_GRAIN_SECONDS = 15;
+
+/** The grain a relative window of spanSeconds ends on: its default-density step, capped. */
+export function alignGrain(spanSeconds: number): number {
+  return Math.min(queryStep(spanSeconds), MAX_ALIGN_GRAIN_SECONDS);
+}
+
+/** A relative window's end: nowSeconds floored to the grain of its span. Viewers that share a range share the end. */
+export function alignedWindowEnd(nowSeconds: number, spanSeconds: number): number {
+  const grain = alignGrain(spanSeconds);
+  return Math.floor(nowSeconds / grain) * grain;
+}

@@ -7,6 +7,7 @@ import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
 import { resolveDashboardTimeZone } from "./dashboard-time-zone"
+import { alignedWindowEnd } from "./query-step"
 
 export function dashboardRange(dashboard: Dashboard, now: number) {
   return dashboard.customTimeRange
@@ -15,6 +16,14 @@ export function dashboardRange(dashboard: Dashboard, now: number) {
         end: Date.parse(dashboard.customTimeRange.to) / 1000,
       }
     : { start: now - timeRanges[dashboard.timeRange], end: now }
+}
+
+/**
+ * The end a view reads a dashboard's window to. A relative window ends on the shared grain of its span,
+ * so viewers and the query tool that read one dashboard ask for the same window. A fixed window keeps `now`.
+ */
+export function alignedDashboardEnd(dashboard: Dashboard, now: number) {
+  return dashboard.customTimeRange ? now : alignedWindowEnd(now, timeRanges[dashboard.timeRange]);
 }
 
 const presetLabels: Record<Dashboard["timeRange"], string> = {

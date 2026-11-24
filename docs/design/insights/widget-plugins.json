@@ -34,16 +34,26 @@
     "directional-traffic": {
       "annotations": true
     },
-    "distribution-heatmap": {},
+    "distribution-heatmap": {
+      "annotations": true
+    },
     "geo-heatmap": {
       "selection": true,
       "tooltipView": true
     },
     "incident-calendar": {},
-    "kubernetes-placement": {},
-    "kubernetes-resource-bars": {},
-    "kubernetes-resource-trend": {},
-    "kubernetes-throttle-matrix": {},
+    "kubernetes-placement": {
+      "selection": true
+    },
+    "kubernetes-resource-bars": {
+      "selection": true
+    },
+    "kubernetes-resource-trend": {
+      "selection": true
+    },
+    "kubernetes-throttle-matrix": {
+      "selection": true
+    },
     "pie": {
       "selection": true
     },
@@ -67,12 +77,15 @@
       "selection": true
     },
     "slo-summary": {},
-    "small-multiples": {},
+    "small-multiples": {
+      "annotations": true
+    },
     "stacked-timeseries": {
       "annotations": true
     },
     "status-grid": {},
     "status-history": {
+      "annotations": true,
       "selection": true
     },
     "threshold-gauge": {},

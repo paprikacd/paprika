@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { DashboardTimeZoneProvider } from '@insights/dashboard-time-zone';
+import './insights-utilities.css';
 import './styles.css';
 
 // Route stylesheets are appended to <head> as their chunks load, so the entry

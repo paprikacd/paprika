@@ -385,7 +385,7 @@
           }
         ]
       },
-      "valid": false
+      "valid": true
     },
     {
       "name": "stat",
@@ -1427,7 +1427,7 @@
           }
         ]
       },
-      "valid": false
+      "valid": true
     },
     {
       "name": "distribution-heatmap",
@@ -2078,7 +2078,7 @@
         ]
       },
       "valid": true,
-      "selectionActive": false
+      "selectionActive": true
     },
     {
       "name": "kubernetes-resource-bars",
@@ -2255,7 +2255,7 @@
         ]
       },
       "valid": true,
-      "selectionActive": false
+      "selectionActive": true
     },
     {
       "name": "kubernetes-resource-trend",
@@ -2424,7 +2424,7 @@
         ]
       },
       "valid": true,
-      "selectionActive": false
+      "selectionActive": true
     },
     {
       "name": "kubernetes-throttle-matrix",
@@ -2593,7 +2593,7 @@
         ]
       },
       "valid": true,
-      "selectionActive": false
+      "selectionActive": true
     },
     {
       "name": "pie",
@@ -4249,7 +4249,7 @@
           }
         ]
       },
-      "valid": false
+      "valid": true
     },
     {
       "name": "small-multiples",
@@ -4796,7 +4796,7 @@
           }
         ]
       },
-      "valid": false
+      "valid": true
     },
     {
       "name": "status-history",

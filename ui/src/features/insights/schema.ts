@@ -487,6 +487,12 @@ export const statCompareSchema = z.strictObject({
   good: z.enum(["up", "down"]).optional(),
 });
 
+/** A time series' baseline: an earlier window (or the last samples) that bands the current values. `band` defaults to the observed range. */
+export const baselineSchema = z.strictObject({
+  window: z.enum(["previous", "1d", "7d", "rolling"]),
+  band: z.enum(["range", "p10p90"]).optional(),
+});
+
 export const widgetOptionsSchema = z
   .strictObject({
     display: z.enum(["line", "area"]).optional(),
@@ -514,6 +520,9 @@ export const widgetOptionsSchema = z
     decimals: z.number().int().min(0).max(8).optional(),
     staleAfterSeconds: z.number().int().min(1).max(2678400).optional(),
     compare: statCompareSchema.optional(),
+    baseline: baselineSchema.optional(),
+    /** false hides the dashboard's recorded events on this widget. A widget's own source always shows. */
+    showEvents: z.boolean().optional(),
     min: z.number().optional(),
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
@@ -563,10 +572,26 @@ export const customTimeRangeSchema = z
     return Date.parse(range.from) > 0 && duration > 0 && duration <= 31 * 24 * 60 * 60 * 1000
   }, "Choose an increasing time range of at most 31 days, after the Unix epoch")
 
-/** Event markers are supported on time-based line and traffic charts. */
+/**
+ * The built-in widget types that accept an event query: time series and stat sparklines. Plugins that draw over time
+ * declare `annotations` in plugins/plugin-capabilities.ts. Gauges, tables, records views and calendars are not
+ * time-based here. The Go validator reads the same capability list (docs/design/insights/widget-plugins.json).
+ */
+export const ANNOTATION_WIDGET_TYPES = ["timeseries", "stat"] as const
+
 export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
-  return type === "timeseries" || (type === "plugin" && pluginSupports(pluginId, "annotations"))
+  if ((ANNOTATION_WIDGET_TYPES as readonly string[]).includes(type)) return true
+  return type === "plugin" && pluginSupports(pluginId, "annotations")
 }
+
+/** Recorded events from a saved query: where the time, end, label and severity columns are. Widgets and the dashboard share it. */
+export const annotationSourceSchema = z.strictObject({
+  queryRef: dashboardQueryReferenceSchema,
+  timestampColumn: z.string().trim().min(1).max(128),
+  endColumn: z.string().trim().min(1).max(128).optional(),
+  labelColumn: z.string().trim().min(1).max(128),
+  severityColumn: z.string().trim().min(1).max(128).optional(),
+});
 
 export const widgetSchema = z
   .strictObject({
@@ -577,13 +602,7 @@ export const widgetSchema = z
     query: z.string().trim().min(1).max(8192),
     unit: z.string().max(24),
     queryRef: dashboardQueryReferenceSchema.optional(),
-    annotationSource: z.strictObject({
-      queryRef: dashboardQueryReferenceSchema,
-      timestampColumn: z.string().trim().min(1).max(128),
-      endColumn: z.string().trim().min(1).max(128).optional(),
-      labelColumn: z.string().trim().min(1).max(128),
-      severityColumn: z.string().trim().min(1).max(128).optional(),
-    }).optional(),
+    annotationSource: annotationSourceSchema.optional(),
     description: z.string().max(500).optional(),
     color: hexColor.optional(),
     options: widgetOptionsSchema.optional(),
@@ -604,10 +623,12 @@ export const widgetSchema = z
   .superRefine((widget, context) => {
     if (widget.options?.compare && widget.type !== "stat")
       context.addIssue({ code: "custom", path: ["options", "compare"], message: "Comparisons are only available on stat widgets" })
+    if (widget.options?.baseline && widget.type !== "timeseries")
+      context.addIssue({ code: "custom", path: ["options", "baseline"], message: "Baselines are only available on time-series widgets" })
     if (widget.type !== "stat" && widget.layout.h < 2)
       context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
     if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))
-      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-series or directional-traffic widget" })
+      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-based widget" })
     const boundVariables = new Set<string>()
     widget.selectionBindings?.forEach((binding, index) => {
       if (boundVariables.has(binding.variable))
@@ -760,6 +781,8 @@ export const dashboardSchema = z
     /** The zone of the calendar axis, observation inspector and window labels. Omitted, they use the viewer's zone. */
     timeZone: timeZoneSchema.optional(),
     covers: coverageSchema.optional(),
+    /** Recorded events for every time-based widget that does not declare its own source (see showEvents). */
+    annotationSource: annotationSourceSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional().superRefine(checkVariableSourceGraph),
     timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),
@@ -911,7 +934,7 @@ export const queryDiagnosticsSchema = z.object({
     scope: z.enum(["provider", "gateway"]),
   }),
   phases: z.array(z.object({
-    name: z.enum(["admission", "catalog", "upstream", "normalization", "provider"]),
+    name: z.enum(["admission", "catalog", "cache", "upstream", "normalization", "provider"]),
     owner: z.enum(["insights", "provider"]),
     clock: z.enum(["server-monotonic", "unavailable"]),
     durationMs: queryTimingSchema.nullable(),
@@ -930,10 +953,26 @@ export const queryDiagnosticsSchema = z.object({
   truncationReason: z.enum(["row_limit", "partial", "provider_warning"]).optional().catch(undefined),
   // The gateway limit that refused a capacity outcome. Unknown names are dropped, not failed.
   limitScope: z.enum(["edge", "budget", "provider", "queue", "principal"]).optional().catch(undefined),
+  /** How the server's result cache answered. Absent when the cache is disabled. A malformed cache object is dropped. */
+  cache: z.object({
+    status: z.enum(["hit", "joined", "miss", "bypass"]),
+    sourceExecutionId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/).optional(),
+    ageMs: queryTimingSchema.optional(),
+    reason: z.enum(["refresh", "unscoped", "live_edge", "uncacheable"]).optional().catch(undefined),
+  }).optional().catch(undefined),
 }).superRefine((receipt, context) => {
   if (!receipt.effective.dispatched && (receipt.effective.rangeApplied ||
     receipt.effective.start !== undefined || receipt.effective.end !== undefined || receipt.effective.step !== undefined)) {
     context.addIssue({ code: "custom", path: ["effective"], message: "An undispatched query has no applied bounds" })
+  }
+  if (receipt.cache && (receipt.cache.status === "hit" || receipt.cache.status === "joined")) {
+    // A delivery from the cache made no provider request, so it has no dispatch and no upstream phase.
+    if (receipt.effective.dispatched) {
+      context.addIssue({ code: "custom", path: ["effective"], message: "A cached delivery made no provider request" })
+    }
+    if (receipt.phases.some(phase => phase.name === "upstream" || phase.name === "provider")) {
+      context.addIssue({ code: "custom", path: ["phases"], message: "A cached delivery has no upstream phase" })
+    }
   }
   const seen = new Set<string>()
   let exclusiveMs = 0

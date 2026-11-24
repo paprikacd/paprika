@@ -86,7 +86,7 @@ describe("plugin capability conformance", () => {
   it("rejects events outside the annotation capability and keeps tooltip views valid everywhere", () => {
     const current = cases()
     const annotated = current.filter((entry) => entry.feature === "annotations" && entry.valid).map((entry) => entry.name)
-    expect(annotated).toEqual(["timeseries", "directional-traffic", "stacked-timeseries"])
+    expect(annotated).toEqual(["timeseries", "stat", "directional-traffic", "distribution-heatmap", "small-multiples", "stacked-timeseries", "status-history"])
     // A tooltip view on a widget that cannot show it is kept and flagged in the editor, not rejected.
     expect(current.filter((entry) => entry.feature === "tooltipView").every((entry) => entry.valid)).toBe(true)
     expect(supportsTooltipView("plugin", "geo-heatmap")).toBe(true)

@@ -149,6 +149,9 @@ function queryUses(
   // Persisted documents are validated when loaded; a host may also include an
   // unsaved draft. Unrelated draft fields must not block a safe query edit.
   for (const dashboard of dashboards) {
+    // The dashboard-level event source is not a widget, so it names no widget.
+    if (dashboard.annotationSource?.queryRef.id === id)
+      uses.push({ dashboard, widgetId: "", location: "annotations", reference: dashboard.annotationSource.queryRef, kind: "records" });
     for (const widget of dashboard.widgets) {
       if (widget.queryRef?.id === id)
         uses.push({

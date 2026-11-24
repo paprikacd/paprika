@@ -17,10 +17,12 @@ type dashboardOmissionStep struct {
 // result exceeds DashboardQueryResponseBytes. The ladder stops as soon as the result fits. Attention
 // counts, band thresholds and signals are never dropped. Breach summaries and latest levels go only
 // with a widget's breach object, in step 3. The series behind a band go with its whole bandSeries
-// object, in step 4. A result whose never-dropped facts alone exceed the cap is refused. The variable
-// source values go first: they are the only dropped detail that does not describe signal data.
+// object, in step 6. A result whose never-dropped facts alone exceed the cap is refused. The variable
+// source values go first: they are the only dropped detail that does not describe signal data. A time
+// series' listed baseline series go next: they are the largest optional signal detail, and their totals stay.
 var dashboardOmissionSteps = []dashboardOmissionStep{
 	{name: "variableOptions", drop: dropDashboardVariableOptions},
+	{name: "baselineSeries", drop: dropDashboardBaselineSeries},
 	{name: "breachIntervals", drop: dropDashboardBreachIntervals},
 	{name: "rankingRows", drop: dropDashboardRankingRows},
 	{name: "breaches", drop: dropDashboardWidgetBreaches},

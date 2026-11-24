@@ -46,7 +46,7 @@ export function registerKubernetesPlugins() {
       styleControls: ["decimals", "legend", "tooltips"] as const,
       configFields: [
         { key: "resource", label: "Resource", kind: "select", options: [{ value: "cpu", label: "CPU" }, { value: "memory", label: "Memory" }] },
-        { key: "pressure", label: "Request pressure threshold", kind: "number", min: 0.5, max: 1, step: 0.05, help: "Requests over allocatable at or above this share are warning-coloured. Above 100% is critical." },
+        { key: "pressure", label: "Request pressure threshold", kind: "number", min: 0.5, max: 1, step: 0.05, help: "The query's pod requests over the node's allocatable. At or above this share the node is warning-coloured; above 100% it is critical. Pods the query leaves out, such as other namespaces, are not counted." },
         { key: "showPods", label: "List pods on each node", kind: "boolean" },
         { key: "maxNodes", label: "Maximum nodes", kind: "number", min: 1, max: 64, step: 1 },
       ] satisfies WidgetConfigField[],
@@ -66,7 +66,7 @@ export function registerKubernetesPlugins() {
         { key: "showLimits", label: "Limit sum markers", kind: "boolean" },
         { key: "showValues", label: "Usage and request values", kind: "boolean" },
       ] satisfies WidgetConfigField[],
-      sizing: { mode: "intrinsic" as const, minWidth: 280, minHeightFor: (config: Widget["config"]) => 80 + 28 * ((config as { maxGroups?: number } | undefined)?.maxGroups ?? 8) },
+      sizing: { mode: "intrinsic" as const, minWidth: 280, minHeightFor: (config: Widget["config"]) => 40 + 37 * ((config as { maxGroups?: number } | undefined)?.maxGroups ?? 8) },
     },
     {
       id: KUBERNETES_PLUGIN_IDS.throttle, label: "CPU throttling matrix", description: "Throttled CFS periods as a share of all periods, per pod over time.",

@@ -46,6 +46,16 @@ func cappedGoldenFixture() *DashboardQueryResult {
 	result.State = "ok"
 	// The sloBurn step drops only slo-summary burn windows, so one widget carries an objective.
 	result.Widgets[0].SLO = sloDetailObjective()
+	// The baselineSeries step drops a time series' listed baseline series, so one widget carries a band with three series.
+	offset, fraction := 3600.0, 0.25
+	listed := make([]DashboardBaselineSeries, 0, 3)
+	for index := range 3 {
+		share := fraction
+		listed = append(listed, DashboardBaselineSeries{Series: index, Name: fmt.Sprintf("pod-%d", index), Evaluated: 60, Outside: 15, Fraction: &share,
+			Runs: []DashboardBaselineRun{{Start: 1792972800000, End: 1792973220000, Samples: 8}, {Start: 1792974000000, End: 1792974420000, Samples: 8}}})
+	}
+	result.Widgets[1].Baseline = &DashboardBaseline{State: "ok", Window: "previous", Band: "range", OffsetSeconds: &offset, Evaluated: 180, Outside: 45, Fraction: &fraction, Series: listed}
+	result.QueryCount.Baseline = &DashboardComparisonCount{Planned: 1, Executed: 1}
 	return result
 }
 
@@ -61,7 +71,7 @@ func TestDashboardCappedGoldens(t *testing.T) {
 	require.Equal(t, 52, wantAttention.Checked, "every widget in the golden fixture carries samples, so all 52 are checked")
 	require.Equal(t, 48, wantAttention.Critical)
 	require.Equal(t, 4, wantAttention.Stale)
-	for n := 1; n <= len(dashboardOmissionSteps); n++ {
+	for n := 1; n <= applicableSteps(cappedGoldenFixture); n++ {
 		result := cappedGoldenFixture()
 		filler := fillerForStepsOf(t, cappedGoldenFixture, n)
 		result.Dashboard.Title = filler
@@ -69,7 +79,7 @@ func TestDashboardCappedGoldens(t *testing.T) {
 		writeDashboardQueryResult(w, result)
 		require.Equal(t, http.StatusOK, w.Code, "the capped fixture must fit after %d steps", n)
 		require.Equal(t, DashboardQueryResponseBytes, w.Body.Len())
-		require.Equal(t, dashboardOmissionStepNamesThrough(n), result.Omitted)
+		require.Equal(t, applyFirstSteps(cappedGoldenFixture(), n), result.Omitted)
 		require.Equal(t, wantAttention, result.Attention, "attention is unchanged after %d steps", n)
 
 		stored := bytes.Replace(w.Body.Bytes(), []byte(`"`+filler+`"`), []byte(`"`+dashboardCappedGoldenFiller+`"`), 1)

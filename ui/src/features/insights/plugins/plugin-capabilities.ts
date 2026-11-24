@@ -17,6 +17,8 @@ export interface PluginDocumentCapabilities {
 
 export const PLUGIN_DOCUMENT_CAPABILITIES = Object.freeze({
   "stacked-timeseries": { annotations: true },
+  "distribution-heatmap": { annotations: true },
+  "small-multiples": { annotations: true },
   "directional-traffic": { annotations: true },
   "geo-heatmap": { tooltipView: true, selection: true },
   "connection-map": { selection: true },
@@ -27,17 +29,16 @@ export const PLUGIN_DOCUMENT_CAPABILITIES = Object.freeze({
   "record-treemap": { selection: true },
   "records-bar": { selection: true },
   "records-line": { selection: true },
-  "status-history": { selection: true },
+  "status-history": { annotations: true, selection: true },
+  // The Kubernetes marks activate through the shared observation owner, so their selection bindings apply.
+  "kubernetes-placement": { selection: true },
+  "kubernetes-resource-bars": { selection: true },
+  "kubernetes-resource-trend": { selection: true },
+  "kubernetes-throttle-matrix": { selection: true },
   // Every bundled plugin is listed, so a new one has to decide. These support none of the three.
-  "distribution-heatmap": {},
   "incident-calendar": {},
-  "kubernetes-placement": {},
-  "kubernetes-resource-bars": {},
-  "kubernetes-resource-trend": {},
-  "kubernetes-throttle-matrix": {},
   "pipeline-topology": {},
   "slo-summary": {},
-  "small-multiples": {},
   "status-grid": {},
   "threshold-gauge": {},
   "uptime-calendar": {},

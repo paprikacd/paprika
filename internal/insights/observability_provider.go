@@ -36,6 +36,9 @@ type observeProvider struct {
 	gateway   *observeGateway
 	token     string
 	reference string
+	// scope is the gateway's authorization digest for the caller that listed this provider.
+	// It is empty when the gateway reported none, and then results must not be shared.
+	scope string
 }
 
 type observeError struct {
@@ -246,7 +249,7 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 			// A request-local client keeps its metadata cache scoped to this exact
 			// authorization check. Never retain delegated tokens in a registry.
 			return &providerClient{public: *provider, metadataCache: make(map[string]metadataCacheEntry), remote: &observeProvider{
-				gateway: s.observe, token: token, reference: provider.ProviderRef,
+				gateway: s.observe, token: token, reference: provider.ProviderRef, scope: listing.scope,
 			}}, nil
 		}
 	}

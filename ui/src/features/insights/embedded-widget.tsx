@@ -21,6 +21,8 @@ export interface EmbeddedWidgetProps {
   variables: VariableValues;
   /** The Insights link to the whole dashboard. */
   href: string;
+  /** The host page's appearance. Without it the tile follows the Insights appearance preference. */
+  theme?: "light" | "dark";
 }
 
 type Loaded = {
@@ -33,7 +35,7 @@ type Loaded = {
  * One read-only widget from a saved dashboard, for the console. It takes no drilldowns, selections or edits, so the
  * tile is a reading. Its CSS and charts load only where this module is imported.
  */
-export default function EmbeddedWidget({ client, dashboardId, widgetId, variables, href }: EmbeddedWidgetProps) {
+export default function EmbeddedWidget({ client, dashboardId, widgetId, variables, href, theme }: EmbeddedWidgetProps) {
   const key = `${dashboardId}\u0000${widgetId}`;
   const [result, setResult] = useState<{ key: string; loaded?: Loaded; error?: string }>();
   // A result for another link is ignored, so a changed link never shows the previous dashboard.
@@ -107,7 +109,12 @@ export default function EmbeddedWidget({ client, dashboardId, widgetId, variable
   };
   return (
     <SavedQueryLibraryProvider queries={loaded.queries} variables={loaded.dashboard.variables ?? []} values={values}>
-      <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme}>
+      {/* The Insights root fills the viewport as a flex row; a tile inside a console page takes only its own height. */}
+      <div
+        className={`${styles.root} ${gammaTheme.scope}`}
+        data-insights-theme={theme ?? resolvedTheme}
+        style={{ display: "block", minHeight: 0 }}
+      >
         <DashboardCanvas
           dashboard={tile}
           providers={loaded.providers}

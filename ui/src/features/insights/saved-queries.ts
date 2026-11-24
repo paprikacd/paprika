@@ -161,6 +161,7 @@ export function dashboardUsesSavedQuery(
   dashboard: Dashboard,
   id: string,
 ): boolean {
+  if (dashboard.annotationSource?.queryRef.id === id) return true;
   return dashboard.widgets.some(
     (widget) =>
       widget.queryRef?.id === id ||

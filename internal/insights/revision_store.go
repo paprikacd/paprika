@@ -110,6 +110,7 @@ func (s *Store) PutRevision(id string, document Dashboard, ifMatch, ifNoneMatch 
 		return "", 0, err
 	}
 	s.documents[id] = bytes.Clone(document)
+	s.generation++
 	tag := etag(document)
 	if err := s.recordRevisionLocked(id, document, tag, &meta); err != nil {
 		s.recordRevisionWriteFailure(id, err)
