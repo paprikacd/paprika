@@ -73,7 +73,9 @@ Untouched widgets and their order remain intact.
 These rules have one shared implementation in the UI and one in Go, and both run
 `docs/design/insights/conformance/dashboard-patch.json`. The UI side is
 `ui/src/features/insights/dashboard-patch.ts`, which the Build with AI review, the source
-editor's change list and the repair applier (`hack/insights-patch`) all import. The Go side is
+editor's change list and the repair applier (`hack/insights-patch`) all import. Its positional
+diff is in `dashboard-diff.ts`, which the import review also uses in the first view; the merge
+itself loads only on demand. The fixture compares documents, placements, error codes and messages. The Go side is
 `internal/observabilitygateway/insights_patch.go`, tested by
 `insights_patch_conformance_test.go`. Change the fixture and both sides together. A change to
 either implementation without a matching fixture case is a conformance gap. Layout, options, tooltips,
