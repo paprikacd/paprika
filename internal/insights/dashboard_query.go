@@ -590,9 +590,15 @@ func validateDashboardQueryVariables(variables json.RawMessage) error {
 	if json.Unmarshal(variables, &values) != nil || len(values) > 20 {
 		return errors.New("variables must contain at most 20 string values")
 	}
+	// A value is a string, or a list of strings for a variable with several values. The declaration decides which
+	// shape fits when the variables are resolved.
 	for _, value := range values {
-		if len(value) == 0 || value[0] != '"' {
-			return errors.New("dashboard variable values must be strings")
+		var decoded variablevalue.Value
+		if json.Unmarshal(value, &decoded) != nil {
+			return errors.New("dashboard variable values must be strings or lists of strings")
+		}
+		if err := decoded.Validate(); err != nil {
+			return fmt.Errorf("dashboard variable values: %w", err)
 		}
 	}
 	return nil
