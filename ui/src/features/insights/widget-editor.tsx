@@ -786,8 +786,8 @@ function StyleEditor({
         const block = blocks[id];
         if (!block.visible) return null;
         const headingId = `${styleId}-${id}`;
-        return <section key={id} aria-labelledby={headingId} className={styles.styleSection}>
-          <h3 id={headingId}>{block.title}</h3>
+        return <section key={id} aria-labelledby={headingId} className="grid gap-2.5 border-t border-[var(--gamma-border)] pt-3">
+          <h3 id={headingId} className="m-0 text-[13px] font-semibold">{block.title}</h3>
           {block.content}
         </section>;
       })}

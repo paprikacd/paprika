@@ -26,9 +26,9 @@ export function ThresholdPresetChoices({ unit, thresholds, onChoose }: {
     ...thresholdPresets.filter((preset) => suggested.includes(preset.id)),
     ...thresholdPresets.filter((preset) => !suggested.includes(preset.id)),
   ]
-  return <div role="group" aria-labelledby={headingId} className={editorStyles.thresholdPresets}>
-    <p id={headingId} className={editorStyles.thresholdPresetsHeading}>Start from a preset</p>
-    <div className={editorStyles.thresholdPresetRow}>
+  return <div role="group" aria-labelledby={headingId} className="grid gap-1.5">
+    <p id={headingId} className="m-0 text-xs font-semibold">Start from a preset</p>
+    <div className="flex flex-wrap gap-1.5">
       {ordered.map((preset) => {
         const bands = preset.build(unit)
         const fits = suggested.includes(preset.id)

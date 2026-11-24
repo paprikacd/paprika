@@ -54,7 +54,7 @@ function ThresholdValueInput({ value, label, onValue }: { value: number; label: 
       }}
       onBlur={() => setText(value.toString())}
     />
-    {invalid && <small id={hintId} className={editorStyles.thresholdHint}>Enter a number to update this band.</small>}
+    {invalid && <small id={hintId} className="text-[11px] text-[var(--gamma-danger)]">Enter a number to update this band.</small>}
   </>
 }
 

@@ -178,16 +178,6 @@
   font-size: 11px;
   font-weight: 550;
 }
-.thresholdHint {
-  color: var(--gamma-danger);
-  font-size: 11px;
-}
-.styleSection { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gamma-border); }
-.styleSection h3 { margin: 0; font-size: 13px; font-weight: 600; }
-.starterChips { display: grid; gap: 6px; }
-.thresholdPresets { display: grid; gap: 6px; }
-.thresholdPresetsHeading { margin: 0; font-size: 12px; font-weight: 600; }
-.thresholdPresetRow { display: flex; flex-wrap: wrap; gap: 6px; }
 .field > input,
 .field > select,
 .field > textarea,
