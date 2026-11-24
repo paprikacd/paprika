@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AnnotationEventsProvider, eventsAt, eventsInRange, type RecordedEvent } from "./annotation-events";
 import { WidgetVisualization } from "./charts";
 import { InspectorEvents } from "./inspector-events";
-import { DistributionHeatmap } from "./plugins/rich-metrics";
+import { DistributionHeatmap } from "./plugins/rich-metrics-view";
 import { SmallMultiples } from "./plugins/small-multiples";
 import { StatusHistory } from "./plugins/metric-distributions";
 import type { QueryResult, Widget } from "./schema";

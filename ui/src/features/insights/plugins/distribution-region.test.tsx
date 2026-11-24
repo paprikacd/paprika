@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardWindowProvider } from "../dashboard-window";
 import { SavedQueryLibraryProvider } from "../saved-query-context";
 import type { QueryResult, Widget } from "../schema";
-import { DistributionHeatmap } from "./rich-metrics";
+import { DistributionHeatmap } from "./rich-metrics-view";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
