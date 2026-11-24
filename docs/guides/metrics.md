@@ -123,7 +123,9 @@ paprika_releases_stuck > 0
 
 A ready-made Insights dashboard charts these gauges with the same `max()`
 semantics as the alert rules: the `paprika-control-plane` starter in
-`internal/insights/starters/`.
+`internal/insights/starters/`. Its container bars tile reads cAdvisor and
+kube-state-metrics for the control-plane containers; the signal names and
+assumptions are in `docs/design/insights/kubernetes-widgets.md`.
 
 `workqueue_*` and `controller_runtime_reconcile_*` are supplied by
 controller-runtime; the Paprika-specific gauges above add the per-application
