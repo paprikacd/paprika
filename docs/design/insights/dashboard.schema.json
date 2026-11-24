@@ -1309,68 +1309,148 @@
             "maxItems": 8,
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
-                },
-                "title": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120
-                },
-                "dashboardId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
-                },
-                "carryTimeRange": {
-                  "type": "boolean"
-                },
-                "bindings": {
-                  "maxItems": 20,
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "variable": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 64,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                      },
-                      "source": {
-                        "type": "string",
-                        "enum": [
-                          "label",
-                          "value",
-                          "series",
-                          "constant"
-                        ]
-                      },
-                      "value": {
-                        "type": "string",
-                        "maxLength": 1024
-                      }
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
                     },
-                    "required": [
-                      "variable",
-                      "source"
-                    ],
-                    "additionalProperties": false
-                  }
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "dashboardId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                    },
+                    "carryTimeRange": {
+                      "type": "boolean"
+                    },
+                    "bindings": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "variable": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "label",
+                              "value",
+                              "series",
+                              "constant"
+                            ]
+                          },
+                          "value": {
+                            "type": "string",
+                            "maxLength": 1024
+                          }
+                        },
+                        "required": [
+                          "variable",
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "dashboardId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "application": {
+                      "type": "object",
+                      "properties": {
+                        "namespace": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "label",
+                                "constant"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "name": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "label",
+                                "constant"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "namespace",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "application"
+                  ],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "id",
-                "title",
-                "dashboardId"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "selectionBindings": {

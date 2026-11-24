@@ -96,10 +96,20 @@
       "title": "Reconcile lag by application",
       "type": "table",
       "providerId": "metrics-provider-id",
-      "query": "topk(5, max by (application) (paprika_application_reconcile_lag))",
+      "query": "topk(5, max by (namespace, application) (paprika_application_reconcile_lag))",
       "unit": "",
       "description": "The five applications furthest behind their latest spec, across namespaces. Zero means the application has reconciled.",
       "options": { "decimals": 0 },
+      "drilldowns": [
+        {
+          "id": "open-application",
+          "title": "Open application",
+          "application": {
+            "namespace": { "source": "label", "value": "namespace" },
+            "name": { "source": "label", "value": "application" }
+          }
+        }
+      ],
       "layout": { "x": 8, "y": 2, "w": 4, "h": 5 }
     },
     {

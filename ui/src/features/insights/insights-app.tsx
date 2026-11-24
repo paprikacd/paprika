@@ -56,7 +56,8 @@ import {
   type Dashboard,
   type Widget,
   type Provider,
-  type Drilldown,
+  isApplicationLink,
+  type WidgetLink,
   type QueryRequest,
   type SavedQuery,
   type SavedQueryEntry,
@@ -123,7 +124,7 @@ import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
 import {
   describeIgnoredLink,
   resolveDashboardVariables,
-  resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart,
+  resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart,
 } from "./drilldown"
 import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
 
@@ -186,6 +187,8 @@ export interface InsightsAppProps {
   sessionRevision?: number
   /** The signed-in principal, stable across token renewals. Variable values are cached per principal. */
   principal?: string
+  /** Opens the Paprika application page. Without it, an application link reports that it opens from the console. */
+  onOpenApplication?: (ref: { namespace: string; name: string }) => void
 }
 
 // Desktop compact chrome is a view preference, independent of measured canvas
@@ -248,6 +251,7 @@ export default function InsightsApp({
   client,
   initialExample = false,
   onBack,
+  onOpenApplication,
 }: InsightsAppProps) {
   const { theme, resolvedTheme, setTheme } = useInsightsTheme()
   const history = useDashboardHistory(exampleDashboard)
@@ -1341,7 +1345,17 @@ export default function InsightsApp({
       return false
     }
   }
-  async function drilldown(link: Drilldown, context: DrilldownContext) {
+  async function drilldown(link: WidgetLink, context: DrilldownContext) {
+    if (isApplicationLink(link)) {
+      try {
+        const ref = resolveApplicationLink(link, context)
+        if (!onOpenApplication) setError("Application pages open from the Paprika console.")
+        else onOpenApplication(ref)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Could not open the application")
+      }
+      return
+    }
     const target = dashboard.id === link.dashboardId ? dashboard : dashboards.find(item => item.id === link.dashboardId)
     if (!target) {
       setError("This drilldown’s dashboard is unavailable. Update its link in the widget’s Links tab.")

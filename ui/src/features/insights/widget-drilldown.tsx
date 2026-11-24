@@ -1,10 +1,10 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { Drilldown } from "./schema";
+import type { WidgetLink } from "./schema";
 import type { DrilldownContext } from "./drilldown";
 
-type OpenDrilldown = (link: Drilldown, context: DrilldownContext) => void;
+type OpenDrilldown = (link: WidgetLink, context: DrilldownContext) => void;
 const WidgetDrilldown = createContext<OpenDrilldown | undefined>(undefined);
 
 /** The host owns dashboard navigation; chart renderers only pass selected data. */

@@ -36,15 +36,16 @@ import { StatComparisonContext, type StatComparisonState } from "./stat-comparis
 import { truncationOf } from "./truncation";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
-import type {
-  Dashboard,
-  Drilldown,
-  Provider,
-  QueryRequest,
-  QueryResult,
-  Widget,
+import {
+  isApplicationLink,
+  type Dashboard,
+  type Provider,
+  type QueryRequest,
+  type QueryResult,
+  type Widget,
+  type WidgetLink,
 } from "./schema";
-import type { DrilldownContext, VariableValues } from "./drilldown";
+import { linkBindings, type DrilldownContext, type VariableValues } from "./drilldown";
 import { AppliedFilterProvider, appliedFilterFor, type SelectionScope } from "./selection-state";
 import {
   contextKey,
@@ -272,7 +273,7 @@ const Tile = memo(function Tile({
   focused?: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
-  onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
+  onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
@@ -453,7 +454,7 @@ const Tile = memo(function Tile({
   const timeZone = useDashboardTimeZone();
   const sampleTimeFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const needsContext = links.some((link) =>
-    link.bindings?.some((binding) => binding.source !== "constant"),
+    linkBindings(link).some((binding) => binding.source !== "constant"),
   );
   const showSeriesPicker =
     !!onDrilldown &&
@@ -675,13 +676,15 @@ const Tile = memo(function Tile({
             iconOnly={false}
             trigger={<>Explore <ArrowUpRight size={14} aria-hidden="true" /></>}
             items={links.map((link) => {
-              const reason = drilldownContextReason(link, context);
+              const reason = drilldownContextReason({ bindings: linkBindings(link) }, context);
               return {
                 id: link.id,
                 label: link.title,
                 description:
                   reason ??
-                  `${link.carryTimeRange === false ? "Destination time range" : "Current time range"}${context.series ? ` · From ${context.series}` : ""}`,
+                  (isApplicationLink(link)
+                    ? "Opens the application page"
+                    : `${link.carryTimeRange === false ? "Destination time range" : "Current time range"}${context.series ? ` · From ${context.series}` : ""}`),
                 disabled: !!reason,
                 onSelect: () => onDrilldown(link, context),
               };
@@ -848,7 +851,7 @@ export function DashboardCanvas({
   selected?: string;
   onSelect: (id: string) => void;
   onLayout: (layout: Layout) => void;
-  onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
+  onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
@@ -936,7 +939,7 @@ export function DashboardCanvas({
   useLayoutEffect(() => {
     interaction.current = { widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange, onDuplicate, onRemove, draggable };
   });
-  const openRelated = useCallback((link: Drilldown, context: DrilldownContext) => interaction.current.onDrilldown?.(link, context), []);
+  const openRelated = useCallback((link: WidgetLink, context: DrilldownContext) => interaction.current.onDrilldown?.(link, context), []);
   const selectObservation = useCallback((widget: Widget, context: DrilldownContext) => interaction.current.onSelection?.(widget, context), []);
   const selectTime = useCallback((window: ObservationWindow) => interaction.current.onTimeRange?.(window), []);
   const duplicateWidget = useCallback((id: string) => interaction.current.onDuplicate?.(id), []);

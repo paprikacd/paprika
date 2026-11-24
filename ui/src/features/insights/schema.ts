@@ -336,6 +336,22 @@ export const drilldownSchema = z
       names.add(binding.variable)
     })
   })
+/** One namespace or name of an application link: a label of the signal, or a fixed value. */
+export const applicationValueSchema = z.strictObject({
+  source: z.enum(["label", "constant"]),
+  value: z.string().min(1).max(253),
+})
+/** A link that opens the Paprika application page for the namespace and name the signal supplies. */
+export const applicationLinkSchema = z.strictObject({
+  id: identifier,
+  title: z.string().trim().min(1).max(120),
+  application: z.strictObject({
+    namespace: applicationValueSchema,
+    name: applicationValueSchema,
+  }),
+})
+/** A widget link: a dashboard drilldown or an application link. */
+export const widgetLinkSchema = z.union([drilldownSchema, applicationLinkSchema])
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color")
 /** A threshold names a semantic status, a hex hue override, or both. Mirrored by the Go validator and dashboard.schema.json. */
@@ -573,7 +589,7 @@ export const widgetSchema = z
     pluginId: identifier.optional(),
     dataKind: z.enum(["metrics", "traces", "records"]).optional(),
     config: pluginConfigSchema.optional(),
-    drilldowns: z.array(drilldownSchema).max(8).optional(),
+    drilldowns: z.array(widgetLinkSchema).max(8).optional(),
     selectionBindings: z.array(drilldownBindingSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
     layout: z
       .strictObject({
@@ -809,6 +825,13 @@ export function supportsTooltipView(type: Widget["type"], pluginId?: string): bo
 }
 export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>
+export type ApplicationLink = z.infer<typeof applicationLinkSchema>
+export type ApplicationValue = z.infer<typeof applicationValueSchema>
+export type WidgetLink = z.infer<typeof widgetLinkSchema>
+/** Whether a widget link opens an application page rather than a dashboard. */
+export function isApplicationLink(link: WidgetLink): link is ApplicationLink {
+  return "application" in link
+}
 export type Drilldown = z.infer<typeof drilldownSchema>
 export type DrilldownBinding = z.infer<typeof drilldownBindingSchema>
 export type DataKind = "metrics" | "traces" | "records"

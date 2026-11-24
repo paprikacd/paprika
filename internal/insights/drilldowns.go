@@ -304,7 +304,25 @@ func validateDashboardVariableOptions(options json.RawMessage) error {
 	return nil
 }
 
+// hasApplicationMember reports whether a link object names an application, which selects the application link shape.
+func hasApplicationMember(item json.RawMessage) bool {
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(item, &probe) != nil {
+		return false
+	}
+	_, ok := probe["application"]
+	return ok
+}
+
 func validateDrilldown(item json.RawMessage, seen map[string]bool) error {
+	if hasApplicationMember(item) {
+		return validateApplicationLink(item, seen)
+	}
+	return validateDashboardLink(item, seen)
+}
+
+// validateDashboardLink checks a link that opens another dashboard.
+func validateDashboardLink(item json.RawMessage, seen map[string]bool) error {
 	fields, err := requireObjectShape(item, []string{"id", "title", "dashboardId"}, []string{"carryTimeRange", "bindings"})
 	if err != nil {
 		return err
@@ -360,6 +378,66 @@ func validateDrilldownBinding(item json.RawMessage, seen map[string]bool) error 
 	seen[binding.Variable] = true
 	_, hasValue := fields["value"]
 	return validateDrilldownBindingSource(binding.Source, binding.Value, hasValue)
+}
+
+// validateApplicationLink checks a link that opens an application page. Its
+// namespace and name each come from a label of the signal or a constant.
+func validateApplicationLink(item json.RawMessage, seen map[string]bool) error {
+	fields, err := requireObjectShape(item, []string{"id", "title", "application"}, nil)
+	if err != nil {
+		return err
+	}
+	var link struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	const message = "application links require unique IDs, titles up to 120 characters, and a namespace and name each from a label or a constant"
+	if err := decodeMember(item, &link, message); err != nil {
+		return err
+	}
+	if !validID.MatchString(link.ID) || seen[link.ID] {
+		return fieldErr("id", message)
+	}
+	if trimJS(link.Title) == "" || stringUnits(trimJS(link.Title)) > 120 {
+		return fieldErr("title", message)
+	}
+	seen[link.ID] = true
+	return in("application", validateApplicationRef(fields["application"], message))
+}
+
+// validateApplicationRef checks the namespace and name of an application link.
+func validateApplicationRef(raw json.RawMessage, message string) error {
+	fields, err := requireObjectShape(raw, []string{"namespace", "name"}, nil)
+	if err != nil {
+		return err
+	}
+	for _, part := range []string{"namespace", "name"} {
+		if err := validateApplicationValue(fields[part], message); err != nil {
+			return in(part, err)
+		}
+	}
+	return nil
+}
+
+// validateApplicationValue checks one application part: a label or constant source with a value of 1 to 253 units.
+func validateApplicationValue(raw json.RawMessage, message string) error {
+	if _, err := requireObjectShape(raw, []string{"source", "value"}, nil); err != nil {
+		return err
+	}
+	var value struct {
+		Source string `json:"source"`
+		Value  string `json:"value"`
+	}
+	if err := decodeMember(raw, &value, message); err != nil {
+		return err
+	}
+	if value.Source != "label" && value.Source != "constant" {
+		return fieldErr("source", message)
+	}
+	if value.Value == "" || stringUnits(value.Value) > 253 {
+		return fieldErr("value", message)
+	}
+	return nil
 }
 
 // validateDrilldownBindingSource reports a source that does not fit its value.

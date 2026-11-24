@@ -4,6 +4,7 @@ import dynamic from "next/dynamic"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { createInsightsClient } from "@/features/insights/client"
+import { applicationURL } from "@/lib/application-url"
 import { redirectInsightsToLogin } from "./auth"
 import { clearRejectedSession, ensureValidSession, getServerSessionSnapshot, getSessionSnapshot, recoverUnauthorized, subscribeSession } from "@/lib/browser-session"
 
@@ -38,6 +39,7 @@ export default function InsightsPage() {
       key={JSON.stringify([session.identityKey, session.identityEpoch])}
       client={client}
       initialExample={example}
+      onOpenApplication={(ref) => router.push(applicationURL(ref))}
       // A renewed token is a new revision: a banner waiting on sign-in reloads its sources.
       sessionRevision={session.revision}
       // Stable across token renewals; variable values are cached per principal.

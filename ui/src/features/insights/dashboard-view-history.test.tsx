@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
-import type { Dashboard, Drilldown } from "./schema"
+import type { Dashboard, WidgetLink } from "./schema"
 import type { DrilldownBinding } from "./schema"
 import type { DrilldownContext } from "./drilldown"
 import { writeExampleWorkspace } from "./example-storage"
@@ -15,7 +15,7 @@ import { writeExampleWorkspace } from "./example-storage"
 vi.mock("./canvas", () => ({
   DashboardCanvas: ({ dashboard, onDrilldown, onSelection, onTimeRange }: {
     dashboard: Dashboard
-    onDrilldown?: (link: Drilldown, context: DrilldownContext) => void
+    onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void
     onSelection?: (widget: Dashboard["widgets"][number], context: DrilldownContext) => void
     onTimeRange?: (window: { start: number; end: number }) => void
   }) => {

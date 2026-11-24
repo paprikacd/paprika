@@ -9,10 +9,14 @@ import { GammaSwitch } from "./gamma/switch";
 import {
   MAX_DASHBOARD_VARIABLES,
   MAX_VARIABLE_VALUE_LENGTH,
+  isApplicationLink,
+  type ApplicationLink,
+  type ApplicationValue,
   type Dashboard,
   type Drilldown,
   type DrilldownBinding,
   type Widget,
+  type WidgetLink,
 } from "./schema";
 import styles from "./drilldown.module.css";
 import type { QueryFields } from "./query-connections";
@@ -36,6 +40,122 @@ const sources = [
   },
 ] as const;
 
+const applicationSources = [
+  { value: "label", label: "Label", description: "A label from the selected series" },
+  { value: "constant", label: "Constant", description: "A name you define here" },
+] as const;
+
+/** One namespace or name of an application link: its source and the label key or constant it takes. */
+function ApplicationPartFields({
+  name,
+  part,
+  index,
+  listId,
+  hasFieldSnapshot,
+  onChange,
+}: {
+  name: "namespace" | "name";
+  part: ApplicationValue;
+  index: number;
+  listId: string;
+  hasFieldSnapshot: boolean;
+  onChange: (next: ApplicationValue) => void;
+}) {
+  const heading = name === "namespace" ? "Namespace" : "Name";
+  return (
+    <div className={styles.bindingTop}>
+      <div className={styles.field}>
+        <span>{heading} source</span>
+        <GammaSelect
+          aria-label={`Link ${index + 1} ${name} source`}
+          value={part.source}
+          options={applicationSources}
+          onValueChange={(value) => {
+            const source = value as ApplicationValue["source"];
+            onChange({ source, value: part.value || (source === "label" ? name : "") });
+          }}
+        />
+      </div>
+      <label className={styles.field}>
+        <span>{part.source === "label" ? `${heading} label key` : `${heading} constant`}</span>
+        <GammaInput
+          aria-label={`Link ${index + 1} ${name} ${part.source === "label" ? "label key" : "constant"}`}
+          list={part.source === "label" && hasFieldSnapshot ? listId : undefined}
+          value={part.value}
+          maxLength={part.source === "label" ? 128 : 253}
+          onChange={(event) => onChange({ ...part, value: event.target.value })}
+        />
+      </label>
+    </div>
+  );
+}
+
+/** A link that opens the Paprika application page. Its namespace and name come from the signal or are constants. */
+function ApplicationLinkFields({
+  index,
+  link,
+  labelNames,
+  listId,
+  hasFieldSnapshot,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  link: ApplicationLink;
+  labelNames: string[];
+  listId: string;
+  hasFieldSnapshot: boolean;
+  onChange: (next: ApplicationLink) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <fieldset className={styles.card}>
+      <legend>Link {index + 1}</legend>
+      <div className={styles.cardHeading}>
+        <span className={styles.eyebrow}>Application link</span>
+        <GammaButton
+          iconOnly
+          variant="ghost"
+          size="sm"
+          aria-label={`Remove link ${index + 1}`}
+          onClick={onRemove}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </GammaButton>
+      </div>
+      <label className={styles.field}>
+        <span>Link title</span>
+        <GammaInput
+          aria-label={`Link ${index + 1} title`}
+          value={link.title}
+          maxLength={120}
+          onChange={(event) => onChange({ ...link, title: event.target.value })}
+        />
+      </label>
+      <ApplicationPartFields
+        name="namespace"
+        part={link.application.namespace}
+        index={index}
+        listId={listId}
+        hasFieldSnapshot={hasFieldSnapshot}
+        onChange={(namespace) => onChange({ ...link, application: { ...link.application, namespace } })}
+      />
+      <ApplicationPartFields
+        name="name"
+        part={link.application.name}
+        index={index}
+        listId={listId}
+        hasFieldSnapshot={hasFieldSnapshot}
+        onChange={(name) => onChange({ ...link, application: { ...link.application, name } })}
+      />
+      {hasFieldSnapshot && labelNames.length === 0 && (
+        <p className={styles.help}>The current result has no labels to choose from.</p>
+      )}
+      <p className={styles.help}>Open the Paprika application named by this signal.</p>
+    </fieldset>
+  );
+}
+
 export interface DrilldownEditorProps {
   widget: Widget;
   dashboards: Dashboard[];
@@ -55,8 +175,11 @@ export function DrilldownEditor({
   const recordColumns = queryFields?.recordColumns;
   const labelNames = recordColumns ? recordColumns.map(column => column.name) : queryFields?.labels.map(label => label.name) ?? [];
   const hasFieldSnapshot = !!recordColumns || !!queryFields?.seriesCount;
-  const needsLabelSuggestions = links.some(link => link.bindings?.some(binding => binding.source === "label"));
-  function update(next: Drilldown[]) {
+  const [newKind, setNewKind] = useState<"dashboard" | "application">("dashboard");
+  const needsLabelSuggestions = links.some(link => isApplicationLink(link)
+    ? Object.values(link.application).some(part => part.source === "label")
+    : link.bindings?.some(binding => binding.source === "label"));
+  function update(next: WidgetLink[]) {
     const copy = { ...widget };
     if (next.length) copy.drilldowns = next;
     else delete copy.drilldowns;
@@ -65,7 +188,7 @@ export function DrilldownEditor({
   function patch(index: number, value: Partial<Drilldown>) {
     update(
       links.map((link, current) =>
-        current === index ? { ...link, ...value } : link,
+        current === index && !isApplicationLink(link) ? { ...link, ...value } : link,
       ),
     );
   }
@@ -94,6 +217,19 @@ export function DrilldownEditor({
         </div>
       )}
       {links.map((link, index) => {
+        if (isApplicationLink(link))
+          return (
+            <ApplicationLinkFields
+              key={link.id}
+              index={index}
+              link={link}
+              labelNames={labelNames}
+              listId={fieldListId}
+              hasFieldSnapshot={hasFieldSnapshot}
+              onChange={(next) => update(links.map((item, current) => (current === index ? next : item)))}
+              onRemove={() => update(links.filter((_, current) => current !== index))}
+            />
+          );
         const target = dashboards.find(
           (dashboard) => dashboard.id === link.dashboardId,
         );
@@ -383,12 +519,36 @@ export function DrilldownEditor({
           </fieldset>
         );
       })}
+      <label className={styles.field}>
+        <span>Opens</span>
+        <GammaSelect
+          aria-label="New link opens"
+          value={newKind}
+          options={[
+            { value: "dashboard", label: "Dashboard", description: "Another Insights dashboard" },
+            { value: "application", label: "Application page", description: "The Paprika application named by this signal" },
+          ]}
+          onValueChange={(value) => setNewKind(value as "dashboard" | "application")}
+        />
+      </label>
       <GammaButton
         size="sm"
-        disabled={!dashboards.length || links.length >= 8}
+        disabled={links.length >= 8 || (newKind === "dashboard" && !dashboards.length)}
         onClick={() => {
           const target = dashboards[0];
-          if (target)
+          if (newKind === "application")
+            update([
+              ...links,
+              {
+                id: `link-${crypto.randomUUID()}`,
+                title: "Open application",
+                application: {
+                  namespace: { source: "label", value: "namespace" },
+                  name: { source: "label", value: "name" },
+                },
+              },
+            ]);
+          else if (target)
             update([
               ...links,
               {
@@ -400,9 +560,9 @@ export function DrilldownEditor({
             ]);
         }}
       >
-        <Plus size={14} aria-hidden="true" /> Add dashboard link
+        <Plus size={14} aria-hidden="true" /> {newKind === "application" ? "Add application link" : "Add dashboard link"}
       </GammaButton>
-      {!dashboards.length && (
+      {newKind === "dashboard" && !dashboards.length && (
         <p className={styles.help}>Create a dashboard before adding a link.</p>
       )}
       {links.length >= 8 && (

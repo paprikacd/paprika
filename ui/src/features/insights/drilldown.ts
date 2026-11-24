@@ -6,9 +6,13 @@ import {
   variableNameSchema,
   variableValueSchema,
   MAX_DASHBOARD_VARIABLES,
+  isApplicationLink,
+  type ApplicationLink,
+  type ApplicationValue,
   type Dashboard,
   type Drilldown,
   type DrilldownBinding,
+  type WidgetLink,
 } from "./schema"
 
 export type VariableValues = Record<string, string>
@@ -224,6 +228,35 @@ export function resolveDrilldown(
     }
   }
   return navigation
+}
+
+/**
+ * The label bindings an application link reads, shaped as drilldown bindings so the context checks apply unchanged.
+ * A constant namespace or name reads nothing from the signal, so it has no binding.
+ */
+export function linkBindings(link: WidgetLink): DrilldownBinding[] {
+  if (!isApplicationLink(link)) return link.bindings ?? [];
+  return (["namespace", "name"] as const).flatMap((variable) => {
+    const part = link.application[variable];
+    return part.source === "label" ? [{ variable, source: "label" as const, value: part.value }] : [];
+  });
+}
+
+/** The namespace and name an application link opens, from the signal's labels or its constants. Label errors match resolveDrilldown. */
+export function resolveApplicationLink(
+  link: ApplicationLink,
+  context: DrilldownContext,
+): { namespace: string; name: string } {
+  const part = (variable: "namespace" | "name", ref: ApplicationValue): string => {
+    if (ref.source === "constant") return ref.value;
+    if (!context.labels || !Object.hasOwn(context.labels, ref.value) || !context.labels[ref.value])
+      throw new Error(`This signal has no label “${ref.value}” for variable “${variable}”`);
+    return context.labels[ref.value];
+  };
+  return {
+    namespace: part("namespace", link.application.namespace),
+    name: part("name", link.application.name),
+  };
 }
 
 /** Apply a deliberate selection atomically, retaining other current filters. */

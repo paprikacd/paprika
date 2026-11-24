@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import type { Dashboard, Drilldown, QueryResult, Widget } from "./schema";
+import type { ApplicationLink, Dashboard, Drilldown, QueryResult, Widget, WidgetLink } from "./schema";
 import { DashboardCanvas } from "./canvas";
 import { WidgetVisualization } from "./charts";
 import { registerWidgetPlugin } from "./widget-registry";
@@ -63,7 +63,7 @@ function Canvas({
   dashboardId?: string;
   active?: boolean;
   referenceCompact?: boolean;
-  onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
+  onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
 }) {
   const dashboard: Dashboard = {
@@ -119,6 +119,21 @@ describe("signal-specific dashboard drilldowns", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Service dashboard/ }));
     expect(previous).not.toHaveBeenCalled();
     expect(current).toHaveBeenCalledWith(link, expect.objectContaining({ series: "api", value: 5 }));
+  });
+  it("hands an application link to the host with its menu description", () => {
+    query.data = { series: [series("api", 5)] };
+    const host = vi.fn();
+    const appLink: ApplicationLink = {
+      id: "open-application",
+      title: "Open application",
+      application: { namespace: { source: "label", value: "service" }, name: { source: "constant", value: "checkout" } },
+    };
+    render(<Canvas current={{ ...widget, drilldowns: [appLink] }} onDrilldown={host} />);
+    openMenu();
+    const item = screen.getByRole("menuitem", { name: /Open application/ });
+    expect(item).toHaveTextContent("Opens the application page");
+    fireEvent.click(item);
+    expect(host).toHaveBeenCalledWith(appLink, expect.objectContaining({ series: "api" }));
   });
   it.each([false, true])("uses a deliberately selected historical sample for links and drops it on refresh (multiple series: %s)", (multiple) => {
     vi.stubGlobal("IntersectionObserver", undefined);

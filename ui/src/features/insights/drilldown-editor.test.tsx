@@ -74,6 +74,26 @@ function addBinding() {
   );
 }
 
+describe("application link editor", () => {
+  it("adds an application link whose namespace and name default to labels, and keeps the widget valid", () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    choose("New link opens", /^Application page/);
+    fireEvent.click(screen.getByRole("button", { name: "Add application link" }));
+    const saved = onChange.mock.calls.at(-1)![0] as Widget;
+    expect(saved.drilldowns).toEqual([
+      expect.objectContaining({
+        title: "Open application",
+        application: {
+          namespace: { source: "label", value: "namespace" },
+          name: { source: "label", value: "name" },
+        },
+      }),
+    ]);
+    expect(widgetSchema.safeParse(saved).success).toBe(true);
+  });
+});
+
 describe("dashboard drilldown editor", () => {
   it("suggests loaded metric label keys and explains incomplete series coverage", () => {
     const fields: QueryFields = { seriesCount: 3, labels: [{ name: "node", samples: ["node-01"], present: 3 }, { name: "zone", samples: [], present: 2 }], partial: false };

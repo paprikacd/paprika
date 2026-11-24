@@ -4,6 +4,8 @@ import type { Widget } from "./schema";
 import type { DrilldownContext } from "./drilldown";
 import { useWidgetDrilldown } from "./widget-drilldown";
 import { drilldownContextReason } from "./widget-context";
+import { linkBindings } from "./drilldown";
+import { isApplicationLink } from "./schema";
 import { GammaButton } from "./gamma/button";
 import styles from "./chart-styles.module.css";
 
@@ -13,10 +15,11 @@ export function ObservationDrilldowns({ widget, context }: { widget: Widget; con
   if (!open || !widget.drilldowns?.length) return null;
   return <div className={styles.tooltipActions}>
     {widget.drilldowns.map(link => {
-      const reason = drilldownContextReason(link, context);
+      const reason = drilldownContextReason({ bindings: linkBindings(link) }, context);
+      const note = isApplicationLink(link) ? "Opens the application page." : link.carryTimeRange === false ? "Uses the destination time range." : "Keeps the current time range.";
       return <div key={link.id}>
         <GammaButton size="sm" variant="secondary" disabled={!!reason} onClick={() => open(link, context)}>{link.title}</GammaButton>
-        <p className={styles.tooltipActionReason}>{reason ?? (link.carryTimeRange === false ? "Uses the destination time range." : "Keeps the current time range.")}</p>
+        <p className={styles.tooltipActionReason}>{reason ?? note}</p>
       </div>;
     })}
   </div>;
