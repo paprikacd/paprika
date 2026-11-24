@@ -11,6 +11,7 @@ import { truncationNote } from "../truncation";
 import type { WidgetRendererProps } from "../widget-registry";
 import { resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema } from "./kubernetes-data";
 import { sampleTime, text, useObservations, type Observation, type Observed } from "./kubernetes-observations";
+import { NO_DATA } from "../benign-states";
 
 /**
  * Renderers for the Kubernetes bars, throttle and trend widgets. They draw with inline styles that read the design
@@ -78,7 +79,7 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
       <span className="text-[var(--gamma-muted)]">{name}</span>
       <div className="relative h-3 w-full rounded-sm" style={{ background: "var(--gamma-chart-empty)" }}>
         {usage === null
-          ? <div className="absolute inset-0 rounded-sm" style={HATCH} role="img" aria-label={`${group} ${name} usage: No data`} />
+          ? <div className="absolute inset-0 rounded-sm" style={HATCH} role="img" aria-label={`${group} ${name} usage: ${NO_DATA}`} />
           : <Mark interactive={interactive} label={`${group} ${name} usage ${text(usage, unit, decimals)}`} context={{ series: group, labels: { [model.groupLabel]: group } }}
               observed={observe(`${group}|${name}`)} onActivate={onActivate} onContextChange={onContextChange}
               className="absolute inset-y-0 left-0 block rounded-sm" style={{ width: `${(usage / max) * 100}%`, background: colour }}>{null}</Mark>}
@@ -119,7 +120,7 @@ export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate,
   const rows = model.rows.slice(current * model.rowsPerPage, (current + 1) * model.rowsPerPage);
   const observations: Observation[] = rows.flatMap(row => row.cells.map((c): Observation => {
     const labels = { [model.groupLabel]: row.name };
-    const reading = c.throttled === null ? "No data" : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals);
+    const reading = c.throttled === null ? NO_DATA : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals);
     return {
       key: `${row.name}|${c.timestamp}`, subject: row.name, unit: "%", description: `Observed at ${new Date(c.timestamp).toISOString()}`,
       series: { name: row.name, labels, points: [{ timestamp: c.timestamp, value: c.percent }] }, point: { timestamp: c.timestamp, value: c.percent },
@@ -145,7 +146,7 @@ export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate,
           <div key={row.name} className="contents">
             <span className="truncate pr-2 text-[var(--gamma-ink)]">{row.name}</span>
             {row.cells.map(c => {
-              const label = `${row.name} at ${new Date(c.timestamp).toISOString()}: ${c.throttled === null ? "No data" : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals)}`;
+              const label = `${row.name} at ${new Date(c.timestamp).toISOString()}: ${c.throttled === null ? NO_DATA : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals)}`;
               return <Mark key={c.timestamp} interactive={interactive} label={label} context={{ series: row.name, labels: { [model.groupLabel]: row.name } }}
                 observed={observe(`${row.name}|${c.timestamp}`)} onActivate={onActivate} onContextChange={onContextChange}
                 className="block h-4 min-w-0" style={colour(c.percent, c.neutral, c.throttled)}>{null}</Mark>;

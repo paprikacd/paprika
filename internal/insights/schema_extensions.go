@@ -168,7 +168,7 @@ func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
 	if err := json.Unmarshal(widget["pluginId"], &pluginID); err != nil {
 		return false
 	}
-	return pluginID == "stacked-timeseries" || pluginID == "directional-traffic"
+	return builtInPluginCapabilities[pluginID]["annotations"]
 }
 
 func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.RawMessage) error {

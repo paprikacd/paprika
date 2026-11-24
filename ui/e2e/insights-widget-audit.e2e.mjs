@@ -653,7 +653,7 @@ async function isolationAudit() {
   }
   const { page, context } = await openFixture("bounded", 390, false, {}, document => ({ ...document, widgets: document.widgets.map(widget => ({ ...widget, options: { ...widget.options, showLegend: false } })) }))
   for (const kind of ["timeseries", "bar"]) await check(`${kind}: series limit remains explicit when the legend is hidden`, async () => {
-    await page.locator(`[data-widget-id="${kind}"]`).getByText("First 12 of 120 series", { exact: true }).waitFor()
+    await page.locator(`[data-widget-id="${kind}"]`).getByText("Showing 12 of 120 series", { exact: true }).waitFor()
   }, { widget: kind, category: "bounds" })
   await context.close()
 }

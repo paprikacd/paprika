@@ -26,5 +26,57 @@
     "threshold-gauge",
     "uptime-calendar",
     "uptime-timeline"
-  ]
+  ],
+  "capabilities": {
+    "connection-map": {
+      "selection": true
+    },
+    "directional-traffic": {
+      "annotations": true
+    },
+    "distribution-heatmap": {},
+    "geo-heatmap": {
+      "selection": true,
+      "tooltipView": true
+    },
+    "incident-calendar": {},
+    "kubernetes-placement": {},
+    "kubernetes-resource-bars": {},
+    "kubernetes-resource-trend": {},
+    "kubernetes-throttle-matrix": {},
+    "pie": {
+      "selection": true
+    },
+    "pipeline-topology": {},
+    "record-list": {
+      "selection": true
+    },
+    "record-matrix": {
+      "selection": true
+    },
+    "record-table": {
+      "selection": true
+    },
+    "record-treemap": {
+      "selection": true
+    },
+    "records-bar": {
+      "selection": true
+    },
+    "records-line": {
+      "selection": true
+    },
+    "slo-summary": {},
+    "small-multiples": {},
+    "stacked-timeseries": {
+      "annotations": true
+    },
+    "status-grid": {},
+    "status-history": {
+      "selection": true
+    },
+    "threshold-gauge": {},
+    "uptime-calendar": {},
+    "uptime-timeline": {}
+  }
 }

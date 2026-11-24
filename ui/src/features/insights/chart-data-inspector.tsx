@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "./benign-states";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { exactMetric, latestPoint, seriesName } from "./chart-data";
 import configStyles from "./chart-styles.module.css";
@@ -180,7 +181,7 @@ function ChartDataDialog({
                     {typeof point.value === "number" &&
                     Number.isFinite(point.value)
                       ? exactMetric(point.value, widget.unit)
-                      : "No data"}
+                      : NO_DATA}
                   </td>
                 </tr>
               ))}

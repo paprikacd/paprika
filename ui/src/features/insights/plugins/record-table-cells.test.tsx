@@ -254,14 +254,14 @@ describe("table visual cells", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument()
   })
 
-  it("authors status mappings and per-value gauge colors in the guided editor", () => {
+  it("authors status mappings and per-value gauge colors in the guided editor", async () => {
     registerRecordWidgetPlugins()
     function Editor() {
       const [value, setValue] = useState('{"columns":["host","usage"]}')
       return <PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={value} onChange={setValue} />
     }
     render(<Editor />)
-    fireEvent.click(screen.getByRole("button", { name: "Add column style" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add column style" }))
     fireEvent.change(screen.getByRole("textbox", { name: "Column 1 name" }), { target: { value: "host" } })
     fireEvent.click(screen.getByRole("combobox", { name: "Column 1 display" }))
     fireEvent.click(screen.getByRole("option", { name: "Status badge" }))
@@ -278,14 +278,14 @@ describe("table visual cells", () => {
     expect(json().cellStyles).toEqual([{ column: "host", display: "bar-segments", min: 0, max: 100, barColorMode: "value" }])
   })
 
-  it("authors column presentation without replacing unrelated configuration", () => {
+  it("authors column presentation without replacing unrelated configuration", async () => {
     registerRecordWidgetPlugins()
     function Editor() {
       const [value, setValue] = useState('{"columns":["host","usage"],"pageSize":5}')
       return <PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={value} onChange={setValue} />
     }
     render(<Editor />)
-    fireEvent.click(screen.getByRole("button", { name: "Add column style" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add column style" }))
     fireEvent.change(screen.getByRole("textbox", { name: "Column 1 name" }), { target: { value: "usage" } })
     fireEvent.change(screen.getByRole("spinbutton", { name: "Column 1 minimum" }), { target: { value: "-100" } })
     const json = () => JSON.parse((screen.getByRole("textbox", { name: "Plugin configuration", hidden: true }) as HTMLTextAreaElement).value)
@@ -399,14 +399,14 @@ describe("column thresholds", () => {
     expect(resolveColumnThresholds(undefined, undefined)).toBeUndefined()
   })
 
-  it("authors a column's own bands in the column editor and writes exact JSON", () => {
+  it("authors a column's own bands in the column editor and writes exact JSON", async () => {
     registerRecordWidgetPlugins()
     function Editor() {
       const [value, setValue] = useState('{"columns":["host","usage"]}')
       return <PluginConfigEditor definition={getWidgetDefinition("plugin", "record-table")} value={value} onChange={setValue} />
     }
     render(<Editor />)
-    fireEvent.click(screen.getByRole("button", { name: "Add column style" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add column style" }))
     fireEvent.change(screen.getByRole("textbox", { name: "Column 1 name" }), { target: { value: "usage" } })
     const json = () => JSON.parse((screen.getByRole("textbox", { name: "Plugin configuration", hidden: true }) as HTMLTextAreaElement).value)
     expect(json().cellStyles[0].thresholds).toBeUndefined()

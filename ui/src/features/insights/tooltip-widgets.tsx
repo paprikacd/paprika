@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "./benign-states";
 import {
   Component,
   createContext,
@@ -427,7 +428,7 @@ function EmbeddedRenderer({ context }: TooltipRendererProps) {
             .map(([key, value]) => `${key}: ${value}`)
             .join(", ");
           const latest = last
-            ? `${last.value === null ? "No data" : formatMetricDetails(last.value, context.unit, view.decimals)} at ${new Date(last.timestamp).toISOString()}`
+            ? `${last.value === null ? NO_DATA : formatMetricDetails(last.value, context.unit, view.decimals)} at ${new Date(last.timestamp).toISOString()}`
             : "No observations";
           const valid =
             view.type === "bar" && latestValid

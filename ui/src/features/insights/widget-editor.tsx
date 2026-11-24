@@ -33,7 +33,7 @@ import {
   type QueryResult,
   type WidgetOptions,
 } from "./schema";
-import { getWidgetDefinition, optionSectionsFor, supportsThresholds, useWidgetDefinitions, type StarterQuery, type StyleSectionId } from "./widget-registry";
+import { capabilitiesOf, getWidgetDefinition, optionSectionsFor, supportsThresholds, useWidgetDefinitions, type StarterQuery, type StyleSectionId } from "./widget-registry";
 import { StarterQueryChips } from "./starter-query-chips";
 import { suggestVisualizations, visualizationValue } from "./visualization-suggestions";
 import { PluginConfigEditor } from "./plugin-config-editor";
@@ -116,9 +116,8 @@ function supportsTooltipSettings(widget: Pick<Widget, "type" | "pluginId">): boo
 }
 
 /** Widgets whose observation inspector reads tooltipPlacement, tooltipOffset, tooltipMaxWidth and tooltipMaxHeight. */
-const RICH_INSPECTOR_PLUGINS = ["distribution-heatmap", "stacked-timeseries", "directional-traffic"];
 function rendersInspectorPlacement(widget: Widget): boolean {
-  return widget.type === "timeseries" || widget.type === "bar" || (widget.type === "plugin" && RICH_INSPECTOR_PLUGINS.includes(widget.pluginId ?? ""));
+  return widget.type === "timeseries" || widget.type === "bar" || capabilitiesOf(widget).inspectorPlacement === true;
 }
 
 /** Labelled horizontal rules on a time series. Each value joins the y range, so no rule is clipped. */
@@ -208,10 +207,6 @@ function TooltipPresentationEditor({ options, onChange }: {
   </fieldset>;
 }
 
-/** Plugins that colour their series by identity, and therefore take the series colour mode. */
-const SERIES_COLOR_PLUGINS = new Set(["small-multiples", "stacked-timeseries", "directional-traffic", "records-line", "records-bar"]);
-/** Plugins whose own fallback is the second palette slot (--gamma-chart-2). */
-const CHART2_PLUGINS = new Set(["threshold-gauge", "status-grid"]);
 
 /**
  * What the widget draws without its own colour: "series" when its series take identity colours, "chart2" when it draws
@@ -220,9 +215,7 @@ const CHART2_PLUGINS = new Set(["threshold-gauge", "status-grid"]);
  */
 function paletteDrawing(widget: Widget): "series" | "chart2" | "none" {
   if (widget.type === "stat" || widget.type === "timeseries" || widget.type === "bar") return "series";
-  if (widget.type !== "plugin") return "none";
-  if (SERIES_COLOR_PLUGINS.has(widget.pluginId ?? "")) return "series";
-  return CHART2_PLUGINS.has(widget.pluginId ?? "") ? "chart2" : "none";
+  return capabilitiesOf(widget).colorFallback ?? "none";
 }
 
 /** Rich metrics reads its colour rules from its plugin configuration, and the other series widgets from their options. */
@@ -344,8 +337,7 @@ function StyleEditor({
     );
   };
   const chart = widget.type === "timeseries" || widget.type === "bar";
-  const gauge =
-    widget.type === "plugin" && widget.pluginId === "threshold-gauge";
+  const bounded = capabilitiesOf(widget).bounds === true;
   const pluginControls = getWidgetDefinition(widget)?.styleControls ?? [];
   const hasStyleControl = (control: (typeof pluginControls)[number]) =>
     widget.type !== "plugin" || pluginControls.includes(control);
@@ -387,7 +379,7 @@ function StyleEditor({
         <legend>Value thresholds</legend>
         <p className={styles.hint}>
           {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its status or colour still applies."}
-          {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
+          {(widget.type === "heatmap" || capabilitiesOf(widget).defaultStatusThresholds === true) &&
             " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
         </p>
         <ThresholdPresetChoices
@@ -582,7 +574,7 @@ function StyleEditor({
     },
     axes: {
       title: "Axes",
-      visible: chart || gauge,
+      visible: chart || bounded,
       content: <>
         {widget.type === "timeseries" && <>
           <div className={styles.row}>
@@ -666,7 +658,7 @@ function StyleEditor({
             )}
           </>
         )}
-        {gauge && (
+        {bounded && (
           <div className={styles.row}>
             {numeric("Minimum", "min")}
             {numeric("Maximum", "max")}
@@ -1500,8 +1492,8 @@ export function WidgetEditor({
                       <div className={styles.tooltipIntro}>
                         <h3>Details on demand</h3>
                         <p className={styles.hint}>
-                          {draft.type === "plugin" && draft.pluginId === "geo-heatmap"
-                            ? "Inspect a hex to see its recorded values and shared labels."
+                          {capabilitiesOf(draft).tooltipIntro !== undefined
+                            ? capabilitiesOf(draft).tooltipIntro
                             : draft.type === "timeseries"
                               ? "Inspect a chart point to see its value and time."
                               : draft.type === "bar"

@@ -1,4 +1,5 @@
 import { createElement, lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
+import { BarChart3, Grid2X2, Layers, LineChart } from "lucide-react";
 import type { Widget } from "../schema";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetConfigField, type WidgetRendererProps } from "../widget-registry";
 import { KUBERNETES_PLUGIN_IDS } from "./kubernetes-queries";
@@ -37,6 +38,7 @@ export function registerKubernetesPlugins() {
   const plugins = [
     {
       id: KUBERNETES_PLUGIN_IDS.placement, label: "Workload placement", description: "Node capacity and the pod requests placed on each node.",
+      icon: Layers,
       dataKind: "metrics" as const, render: KubernetesPlacement,
       defaultConfig: {} as Widget["config"],
       parseConfig: (config: Widget["config"]) => placementConfigSchema.parse(config ?? {}),
@@ -52,6 +54,7 @@ export function registerKubernetesPlugins() {
     },
     {
       id: KUBERNETES_PLUGIN_IDS.bars, label: "Resource comparison by group", description: "Usage, requests and limit sums for each pod or container group.",
+      icon: BarChart3,
       dataKind: "metrics" as const, render: KubernetesResourceBars,
       defaultConfig: { groupLabel: "pod" } as Widget["config"],
       parseConfig: (config: Widget["config"]) => resourceBarsConfigSchema.parse(config ?? {}),
@@ -67,6 +70,7 @@ export function registerKubernetesPlugins() {
     },
     {
       id: KUBERNETES_PLUGIN_IDS.throttle, label: "CPU throttling matrix", description: "Throttled CFS periods as a share of all periods, per pod over time.",
+      icon: Grid2X2,
       dataKind: "metrics" as const, render: KubernetesThrottleMatrix,
       defaultConfig: {} as Widget["config"],
       parseConfig: (config: Widget["config"]) => throttleConfigSchema.parse(config ?? {}),
@@ -81,6 +85,7 @@ export function registerKubernetesPlugins() {
     },
     {
       id: KUBERNETES_PLUGIN_IDS.trend, label: "Namespace resource trend", description: "CPU, memory and network over time, with requests as a dashed reference.",
+      icon: LineChart,
       dataKind: "metrics" as const, render: KubernetesResourceTrend,
       defaultConfig: {} as Widget["config"],
       parseConfig: (config: Widget["config"]) => resourceTrendConfigSchema.parse(config ?? {}),

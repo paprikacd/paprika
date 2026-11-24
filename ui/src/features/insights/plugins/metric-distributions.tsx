@@ -1,5 +1,6 @@
 "use client"
 
+import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { arc, pie } from "d3-shape"
 import { z } from "zod"
@@ -13,6 +14,7 @@ import { truncationNote } from "../truncation"
 import { useEmbeddedWidget } from "../widget-presentation"
 import { compactSeriesLabels } from "../series-display"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
+import { ChartNoAxesCombined } from "lucide-react"
 import styles from "./records.module.css"
 import historyStyles from "./status-history.module.css"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
@@ -263,7 +265,7 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
     const chars = Array.from(name), split = chars.length > 10 ? chars.length - 3 : chars.length
     return <div key={index} className={styles.historyRow} data-history-series={name}><strong title={name} aria-label={name} className={historyStyles.seriesLabel}><span aria-hidden="true">{chars.slice(0,split).join("")}</span>{split < chars.length && <span aria-hidden="true">{chars.slice(split).join("")}</span>}</strong><div className={`${styles.historyCells} ${historyStyles.cells}`} data-history-track="" data-segmented={config.segmented || undefined}>{bridges.map((bridge,i) => bridge.kind === "gap" ? null : <span key={`band-${i}`} data-history-band={bridge.kind} className={`${historyStyles.band} ${bridge.kind === "mixed" ? historyStyles.mixed : ""}`} aria-hidden={bridge.kind === "stable" ? true : undefined} role={bridge.kind === "mixed" ? "img" : undefined} aria-label={bridge.kind === "mixed" ? `Changes, missing samples or duplicate timestamps from ${dateFormat.format(bridge.from)} to ${dateFormat.format(bridge.to)}` : undefined} style={{left:`${bridge.left}%`,width:`${bridge.width}%`,...(bridge.kind === "stable" && typeof bridge.value === "number" ? {background:thresholdPaint(thresholdForValue(bridge.value,thresholds)) ?? widget.color ?? "var(--gamma-accent, #53876a)"} : {})}} />)}{cells.map(({point,left,width},i) => {
       const finite = typeof point.value === "number" && Number.isFinite(point.value), threshold = finite ? thresholdForValue(point.value!,thresholds) : undefined
-      const title = `${name} · ${dateFormat.format(point.timestamp)} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : "No data"}${threshold && bandReading(threshold, "") ? ` · ${bandReading(threshold, "")}` : ""}`
+      const title = `${name} · ${dateFormat.format(point.timestamp)} · ${finite ? formatMetric(point.value!,widget.unit,false,widget.options?.decimals) : NO_DATA}${threshold && bandReading(threshold, "") ? ` · ${bandReading(threshold, "")}` : ""}`
       const color = finite ? thresholdPaint(threshold) ?? widget.color ?? "var(--gamma-accent, #53876a)" : undefined
       // Keep the portion of an endpoint mark that lies inside the time axis
       // as its actual hit area. A centered mark at 0% or 100% otherwise has
@@ -293,5 +295,5 @@ export function registerMetricDistributionPlugins() {
     {key:"labelField",label:"Series label field",kind:"text",help:"Optional metric label used to name each row; missing labels retain the series name."},
     {key:"showTimeAxis",label:"Show time axis",kind:"boolean",help:"Show the observed time domain in the dashboard timezone."},
     {key:"segmented",label:"Separate samples",kind:"boolean",help:"Draw fine boundaries at each recorded sample."},
-  ]})
+  ],sizing:{mode:"fill",denseRoom:()=>"tall",referenceFineRows:config=>typeof config?.maxSeries==="number"&&config.maxSeries<=6?8:undefined},icon:ChartNoAxesCombined})
 }

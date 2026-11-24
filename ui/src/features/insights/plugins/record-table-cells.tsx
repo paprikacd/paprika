@@ -1,3 +1,4 @@
+import { NO_DATA } from "../benign-states";
 import type { CSSProperties, ReactNode } from "react"
 import { z } from "zod"
 import { formatMetricDetails } from "../chart-data"
@@ -200,7 +201,7 @@ function RecordHistoryCell({ value, column, color, decimals, unit: authoredUnit,
   const latest = history.points[history.points.length - 1]
   return <span className={styles.cellHistory} data-cell-display="sparkline" data-history-state="valid" title={nativeTitle ? colorMeaning : undefined}>
     <span className={styles.cellHistoryPlot}><StatSparkline series={{ name, labels: {}, points: history.points }} name={name} unit={unit} decimals={decimals} color={color ?? "var(--gamma-chart-1)"} latestLabel="Latest valid sample in history" /></span>
-    <span className={styles.cellHistoryReading}>{latest.value === null ? "No data" : valueCellText(latest.value, unit, decimals)}</span>
+    <span className={styles.cellHistoryReading}>{latest.value === null ? NO_DATA : valueCellText(latest.value, unit, decimals)}</span>
     {colorMeaning && <span className={styles.cellHistoryMeaning} data-history-color-meaning>{colorMeaning}</span>}
   </span>
 }
@@ -233,9 +234,9 @@ export function StyledRecordCell({ value, formatted, format, column, style, thre
       <StatusChip status={mapping.status} color={mapping.color} label={displayed} />
     </span>
     return <span className={styles.statusBadge} data-cell-display="status-badge" data-status-state={missing ? "missing" : mapping ? "mapped" : "unmapped"}
-      title={nativeTitle ? `${column.label ?? column.key}: ${missing ? "No data" : displayed}` : undefined}>
+      title={nativeTitle ? `${column.label ?? column.key}: ${missing ? NO_DATA : displayed}` : undefined}>
       <span className={styles.statusDot} aria-hidden="true" style={mapping ? { backgroundColor: mapping.color } : undefined} />
-      <span>{missing ? "No data" : formatted}</span>
+      <span>{missing ? NO_DATA : formatted}</span>
     </span>
   }
   if (style.display === "sparkline") {
@@ -258,7 +259,7 @@ export function StyledRecordCell({ value, formatted, format, column, style, thre
   const geometry = finite && isBar ? tableBarGeometry(value, style.min!, style.max!) : undefined
   // The label reads what the cell shows, so a screen reader hears the same unit and places as a sighted user.
   const shown = finite && style.unit !== undefined ? (unit ? valueCellText(value, unit, decimals) : recordNumberText(value, unit, column.key, decimals)) : formatted
-  const exact = !finite ? "No data" : typeof shown === "string" ? shown : formatMetricDetails(value, unit, decimals)
+  const exact = !finite ? NO_DATA : typeof shown === "string" ? shown : formatMetricDetails(value, unit, decimals)
   // Bounds keep their own value; a column's bounds share its one scale, as its values do.
   const [lowerText, upperText] = !isBar ? [] : format && style.unit === undefined
     ? [format.bound(style.min!), format.bound(style.max!)]

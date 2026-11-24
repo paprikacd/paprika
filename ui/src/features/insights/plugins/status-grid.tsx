@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
 import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, seriesName, thresholdForValue } from "../chart-renderers";
@@ -14,6 +15,7 @@ import { validTimestamp } from "../widget-context";
 import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+import { Grid2X2 } from "lucide-react";
 import styles from "./status-grid.module.css";
 
 export const statusGridConfigSchema = z.strictObject({ maxSeries: z.number().int().min(1).max(2048).optional() });
@@ -86,7 +88,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       <div ref={grid} className={styles.grid} data-status-grid>
         {cells.map(cell => {
           const status = cell.value === undefined ? "Unknown" : bandReading(cell.threshold);
-          const label = `${cell.name}: ${cell.value === undefined ? "No data" : formatMetricDetails(cell.value, widget.unit, widget.options?.decimals)} · ${status}`;
+          const label = `${cell.name}: ${cell.value === undefined ? NO_DATA : formatMetricDetails(cell.value, widget.unit, widget.options?.decimals)} · ${status}`;
           const className = `${styles.cell} ${cell.value === undefined ? styles.unknown : ""}`;
           const color = thresholdPaint(cell.threshold) ?? widget.color ?? "var(--gamma-chart-2)";
           const style = cell.value === undefined ? undefined : { "--status-color": color, ...statusStrokeStyle(cell.threshold, cellSize) } as CSSProperties;
@@ -119,7 +121,7 @@ export function StatusGrid({ widget, result, onContextChange, embedded }: Widget
       onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
       <MetricDetails widget={widget} series={current.entry} index={current.index} point={current.point} unit={widget.unit} decimals={widget.options?.decimals} subject={current.name} seriesLabel={widget.title} description="Latest sample">
         {current.value === undefined
-          ? <span>No data</span>
+          ? <span>{NO_DATA}</span>
           : current.threshold?.status
             ? <StatusChip status={current.threshold.status} color={current.threshold.color} label={current.threshold.label} />
             : <span>{current.threshold?.label ?? "Observed"}</span>}
@@ -132,6 +134,8 @@ export function registerStatusGridPlugin() {
   if (!getWidgetDefinition("plugin", "status-grid")) registerWidgetPlugin({
     id:"status-grid", label:"Monitor status grid", description:"Compare the latest status of many monitors in a compact grid", dataKind:"metrics", render:StatusGrid,
     styleControls:["unit", "decimals", "legend", "tooltips"], defaultOptions:{ thresholds:DEFAULT_HEATMAP_THRESHOLDS }, defaultConfig:{ maxSeries:512 },
+    icon: Grid2X2,
+    capabilities: { thresholds: true, defaultStatusThresholds: true, colorFallback: "chart2" },
     configFields:[{key:"maxSeries",label:"Maximum monitors",kind:"number",min:1,max:2048,step:1,help:"Show up to this many returned series. Omitted monitors are counted below the grid."}],
     parseConfig:config => statusGridConfigSchema.parse(config ?? {}),
   });

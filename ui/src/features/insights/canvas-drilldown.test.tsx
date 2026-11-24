@@ -405,6 +405,19 @@ describe("signal-specific dashboard drilldowns", () => {
       screen.getByRole("menuitem", { name: /Service dashboard/ }),
     ).toHaveAttribute("aria-disabled", "true");
   });
+  it("keeps the series control in the tile header and shows one caption", () => {
+    query.data = { series: [series("api", 7), series("worker", 12)] };
+    const current = { ...widget, type: "stat" as const };
+    const { container } = render(<Canvas current={current} onDrilldown={vi.fn()} />);
+    const combobox = screen.getByRole("combobox", { name: "Series for Requests" });
+    expect(combobox.closest('[class*="tileHeader"]')).not.toBeNull();
+    expect(screen.getByText("Select a signal to open related dashboards")).toBeInTheDocument();
+    fireEvent.click(combobox);
+    fireEvent.click(screen.getByRole("option", { name: /worker/ }));
+    expect(screen.getAllByText("Selected: worker")).toHaveLength(1);
+    expect(screen.queryByText("Select a signal to open related dashboards")).toBeNull();
+    expect(container.querySelectorAll('[class*="selection"]')).toHaveLength(1);
+  });
   it("publishes heatmap cell context even when labels, values, and tooltips are hidden", () => {
     const changed = vi.fn();
     render(

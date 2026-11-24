@@ -1,16 +1,4 @@
-.picker {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 17px 8px;
-  min-width: 0;
-  color: var(--widget-text, var(--gamma-muted));
-  font-size: 11px;
-}
-.picker > button {
-  flex: 1;
-  min-width: 0;
-}
+.headerPicker.headerPicker[data-gamma-select] { flex: 0 1 auto; width: auto; max-width: 45%; min-width: 0; }
 .selection {
   padding: 0 17px 7px;
   color: var(--widget-text, var(--gamma-muted));
@@ -20,13 +8,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sampleSelection {
-  padding: 0 17px 7px;
-  color: var(--widget-text, var(--gamma-muted));
-  font-size: 11px;
-  line-height: 1.5;
-}
-.sampleSelection time { color: var(--widget-text, var(--gamma-ink)); font-variant-numeric: tabular-nums; }
+.selection time { color: var(--widget-text, var(--gamma-ink)); font-variant-numeric: tabular-nums; }
 .interactiveRow {
   cursor: pointer;
 }

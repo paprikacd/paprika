@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore, type ComponentType } from "react";
+import type { LucideIcon } from "lucide-react";
 import { BuiltinWidgetRenderer } from "./chart-renderers";
 import type { DrilldownContext } from "./drilldown";
 import { barStylePresets, heatmapStylePresets, statStylePresets, timeseriesStylePresets } from "./style-presets";
@@ -56,6 +57,12 @@ export interface WidgetDefinition {
   validateInput?: (result: QueryResult, config: Widget["config"]) => readonly WidgetInputIssue[];
   /** Host sizing contract. Compact and narrow canvas projections respect minHeight; saved layouts remain authored. */
   sizing?: WidgetSizing;
+  /** The icon the widget library shows for this plugin. */
+  icon?: LucideIcon;
+  /** What the renderer supports, read by the editors so they never repeat its id. */
+  capabilities?: WidgetCapabilities;
+  /** Sub-editors for this plugin's configuration. Each loads on first use, so its code and styles stay out of the first view. */
+  configEditors?: readonly WidgetConfigEditorLoader[];
   // Authoring metadata (S11): one contiguous block. Omitted fields keep the built-in behaviour.
   /** Style sections the editor shows, in this order. Omitted means every section in STYLE_SECTION_IDS. */
   optionSections?: readonly StyleSectionId[];
@@ -85,12 +92,46 @@ export interface StarterQuery {
   /** The starter a new widget of this family begins with. */
   default?: boolean;
 }
+/** What a renderer supports. Each field is read by the editors and the canvas; none is a plugin id check. */
+export interface WidgetCapabilities {
+  /** The observation inspector reads tooltip placement, offset and size. */
+  inspectorPlacement?: boolean;
+  /** The palette slot the widget draws without its own colour. Undefined when no slot applies. */
+  colorFallback?: "series" | "chart2";
+  /** Value thresholds apply. A function decides for one configuration. */
+  thresholds?: boolean | ((config: Widget["config"]) => boolean);
+  /** Status thresholds are the default when a widget sets none. */
+  defaultStatusThresholds?: boolean;
+  /** Explicit minimum and maximum bounds apply. */
+  bounds?: boolean;
+  /** The tooltip view controls the renderer honours. */
+  tooltipViewControls?: readonly ("decimals" | "color" | "legend")[];
+  /** Whether the tile folds its description into a panel for this configuration. */
+  compactDescription?: (config: Widget["config"]) => boolean;
+  /** A line shown above the tooltip settings. */
+  tooltipIntro?: string;
+}
+/** Loads one sub-editor. The component receives the plugin configuration and reports each change as the next one. */
+export type WidgetConfigEditorLoader = () => Promise<{
+  default: ComponentType<{ config: Record<string, unknown>; onChange(next: Record<string, unknown>): void }>;
+}>;
+/**
+ * The dense viewing room a renderer's content needs. Rooms are defined once in responsive-layout.ts; a renderer names
+ * the room that fits its content and never hard-codes row counts.
+ */
+export type DenseRoom = "plot" | "reading" | "tall" | "tall-table" | "calendar";
 export interface WidgetSizing {
   mode: "intrinsic" | "fill";
   minWidth?: number;
   minHeight?: number;
   /** A minimum height that depends on the authored config, such as the rows a services card lists. Wins over minHeight. */
   minHeightFor?: (config: Widget["config"]) => number;
+  /** The dense room for this configuration. Undefined keeps the default room. */
+  denseRoom?: (config: Widget["config"]) => DenseRoom | undefined;
+  /** The minimum rows on a narrow canvas, for configurations that show more than an ordinary card. Undefined keeps 4. */
+  narrowMinRows?: (config: Widget["config"]) => number | undefined;
+  /** The fine-grid rows to use in the reference compact view. Undefined keeps the room's rule. */
+  referenceFineRows?: (config: Widget["config"]) => number | undefined;
 }
 export interface WidgetInputIssue {
   /** The configuration key the issue concerns, when one applies. */
@@ -123,6 +164,8 @@ export interface WidgetConfigField {
   recordColumn?: "any" | "number";
   /** The column role a text or number input expects. Supersedes `recordColumn`, which keeps working as its alias. */
   binding?: WidgetFieldBinding;
+  /** The value the field takes when the configuration does not set it, for fields whose default depends on other settings. */
+  defaultFor?: (config: Widget["config"]) => unknown;
 }
 export type WidgetPlugin = Omit<WidgetDefinition, "type">;
 
@@ -157,6 +200,10 @@ function validateSizing(sizing: WidgetSizing | undefined) {
   }
   if (sizing.minHeightFor !== undefined && typeof sizing.minHeightFor !== "function")
     throw new Error("Widget plugin sizing minHeightFor must be a function");
+  for (const key of ["denseRoom", "narrowMinRows", "referenceFineRows"] as const) {
+    if (sizing[key] !== undefined && typeof sizing[key] !== "function")
+      throw new Error(`Widget plugin sizing ${key} must be a function`);
+  }
 }
 
 /** Checks the authoring metadata of a plugin. Preset options use the dashboard schema, which refuses unknown keys. */
@@ -278,6 +325,8 @@ export function registerWidgetPlugin(plugin: WidgetPlugin): () => void {
   if (plugin.validateInput !== undefined && typeof plugin.validateInput !== "function")
     throw new Error("Widget plugin validateInput must be a function");
   validateSizing(plugin.sizing);
+  if (plugin.configEditors !== undefined && !plugin.configEditors.every((load) => typeof load === "function"))
+    throw new Error("Widget plugin configEditors must be loader functions");
   validateConfigFields(plugin.configFields);
   validateStyleMetadata(plugin);
   if (!["metrics", "traces", "records"].includes(plugin.dataKind))
@@ -315,15 +364,16 @@ export function getWidgetDefinition(
     : widgetDefinitions.find((entry) => entry.type === type);
 }
 
-/**
- * Whether the widget draws value thresholds. Reads the renderer's answer through one helper, so S9's capability
- * metadata can replace this body without touching callers.
- */
+/** The capabilities a widget's renderer declares. Undefined fields mean the renderer does not support the feature. */
+export function capabilitiesOf(widget: Pick<Widget, "type" | "pluginId">): WidgetCapabilities {
+  return getWidgetDefinition(widget.type, widget.pluginId)?.capabilities ?? {};
+}
+
+/** Whether value thresholds apply to a widget. Built-in types decide by type; plugins declare it in their capabilities. */
 export function supportsThresholds(widget: Pick<Widget, "type" | "pluginId" | "config">): boolean {
-  return ["heatmap", "stat", "bar", "timeseries"].includes(widget.type) ||
-    widget.pluginId === "threshold-gauge" ||
-    ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") ||
-    (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds");
+  if (widget.type !== "plugin") return widget.type === "heatmap" || widget.type === "stat" || widget.type === "bar" || widget.type === "timeseries";
+  const declared = capabilitiesOf(widget).thresholds;
+  return typeof declared === "function" ? declared(widget.config) : declared === true;
 }
 
 /** The Style sections a widget shows, in order. A renderer that declares none keeps every section. */
