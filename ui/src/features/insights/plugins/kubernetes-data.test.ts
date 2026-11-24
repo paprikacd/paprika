@@ -9,7 +9,7 @@ import {
   RESOURCE_TREND_QUERY,
   THROTTLE_BY_POD_QUERY,
 } from "./kubernetes-queries";
-import { placementModel, resourceGroups, resourceStrips, throttleCells } from "./kubernetes-data";
+import { MAX_THROTTLE_COLUMNS, placementModel, resourceGroups, resourceStrips, throttleCells } from "./kubernetes-data";
 
 type Series = NonNullable<QueryResult["series"]>[number];
 const at = (timestamp: number, value: number | null) => ({ timestamp, value });
@@ -93,6 +93,74 @@ describe("placement adapter", () => {
   it("rejects an unknown config key through the strict schema", () => {
     expect(() => placementModel(result(), { nope: true } as never)).toThrow();
   });
+
+  it("leaves out a pod whose series ended earlier in the range", () => {
+    const step = 60000, times = [T, T + step, T + 2 * step, T + 3 * step];
+    const data = result(
+      row({ node: "n1", signal: "cpu-allocatable" }, times.map(t => at(t, 4))),
+      row({ pod: "live", node: "n1", signal: "cpu-request" }, times.map(t => at(t, 1))),
+      // Deleted after the second sample: it is history, not a pod on the node now.
+      row({ pod: "deleted", node: "n1", signal: "cpu-request" }, times.slice(0, 2).map(t => at(t, 2))),
+    );
+    const { model } = placementModel(data, {});
+    expect(model.nodes[0].pods.map(p => p.pod)).toEqual(["live"]);
+    expect(model.nodes[0].pressure).toBeCloseTo(0.25);
+  });
+
+  it("places a pod that was pending and then scheduled on its node, without a duplicate issue", () => {
+    const step = 60000;
+    const data = result(
+      row({ node: "n1", signal: "cpu-allocatable" }, [at(T, 4), at(T + step, 4), at(T + 2 * step, 4)]),
+      row({ pod: "p", signal: "cpu-request" }, [at(T, 1)]),
+      row({ pod: "p", node: "n1", signal: "cpu-request" }, [at(T + step, 1), at(T + 2 * step, 1)]),
+    );
+    const { model, issues } = placementModel(data, {});
+    expect(issues).toEqual([]);
+    expect(model.pending).toEqual([]);
+    expect(model.nodes[0].pods.map(p => p.key)).toEqual(["p"]);
+  });
+
+  it("counts a resource a pod declares no request for as zero, not unavailable", () => {
+    const data = result(
+      row({ node: "n1", signal: "cpu-allocatable" }, [at(T, 4)]),
+      row({ node: "n1", signal: "memory-allocatable" }, [at(T, 8)]),
+      row({ pod: "a", node: "n1", signal: "cpu-request" }, [at(T, 1)]),
+      row({ pod: "a", node: "n1", signal: "memory-request" }, [at(T, 2)]),
+      // A sidecar-free pod with only a CPU request: memory requested stays known.
+      row({ pod: "b", node: "n1", signal: "cpu-request" }, [at(T, 1)]),
+    );
+    const memory = placementModel(data, { resource: "memory" }).model.nodes[0];
+    expect(memory.memoryRequested).toBe(2);
+    expect(memory.pressure).toBeCloseTo(0.25);
+    // A request series whose newest sample is missing is unavailable, so the node's sum is too.
+    const gap = result(...(data.series ?? []), row({ pod: "c", node: "n1", signal: "cpu-request" }, [at(T, null)]));
+    expect(placementModel(gap, {}).model.nodes[0].cpuRequested).toBeNull();
+  });
+
+  it("keeps node capacity next to its pods when a sorted result is cut at 100 series", () => {
+    // Prometheus sorts a range result by label set, and the provider keeps the first 100 series.
+    const compare = (a: Record<string, string>, b: Record<string, string>) => {
+      const left = Object.keys(a).sort(), right = Object.keys(b).sort();
+      for (let i = 0; i < Math.min(left.length, right.length); i++) {
+        if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
+        if (a[left[i]] !== b[right[i]]) return a[left[i]] < b[right[i]] ? -1 : 1;
+      }
+      return left.length - right.length;
+    };
+    const series: Series[] = [];
+    for (let n = 0; n < 10; n++) {
+      for (const signal of ["cpu-allocatable", "memory-allocatable", "node-ready"]) series.push(row({ node: `n${n}`, signal }, [at(T, signal === "node-ready" ? 1 : 8)]));
+      // The label shape of PLACEMENT_QUERY: sum by (pod, node), so no namespace label.
+      for (let p = 0; p < 6; p++) for (const signal of ["cpu-request", "memory-request"]) series.push(row({ pod: `p${n}-${p}`, node: `n${n}`, signal }, [at(T, 1)]));
+    }
+    expect(PLACEMENT_QUERY).toContain("sum by (pod, node) (kube_pod_container_resource_requests");
+    const kept = [...series].sort((a, b) => compare(a.labels, b.labels)).slice(0, 100);
+    const { model } = placementModel({ series: kept, truncated: true }, {});
+    // Whole nodes are kept; at most one node, the last, loses its capacity and its pods are outside.
+    expect(model.nodes.length).toBeGreaterThanOrEqual(6);
+    expect(new Set(model.outside.map(p => p.node)).size).toBeLessThanOrEqual(1);
+    for (const node of model.nodes) expect(node.pods).toHaveLength(6);
+  });
 });
 
 describe("resource bars adapter", () => {
@@ -115,6 +183,15 @@ describe("resource bars adapter", () => {
   it("keeps a missing memory usage as null, not zero", () => {
     const data = result(row({ pod: "a", signal: "memory-usage" }, [at(T, null)]), row({ pod: "a", signal: "memory-request" }, [at(T, 1)]));
     expect(resourceGroups(data, {}).model.groups[0].memoryUsage).toBeNull();
+  });
+
+  it("leaves out a group whose series ended earlier in the range", () => {
+    const times = [T, T + 60000, T + 120000];
+    const data = result(
+      row({ pod: "live", signal: "cpu-request" }, times.map(t => at(t, 1))),
+      row({ pod: "gone", signal: "cpu-request" }, [at(T, 1)]),
+    );
+    expect(resourceGroups(data, {}).model.groups.map(g => g.name)).toEqual(["live"]);
   });
 
   it("groups by the configured label", () => {
@@ -150,6 +227,35 @@ describe("throttle adapter", () => {
     expect(model.columnPercent[0]).toBeCloseTo(10);
     // One sample has no spacing to infer, so the cell has zero width and the renderer draws a minimum.
     expect(model.columns[0].start).toBeLessThanOrEqual(model.columns[0].end);
+  });
+
+  it("leaves a sample with an unknown period count out of the row total", () => {
+    const data = result(
+      row({ pod: "p", signal: "throttled" }, [at(T, 30), at(T + 60000, 250)]),
+      row({ pod: "p", signal: "periods" }, [at(T, 300), at(T + 60000, null)]),
+    );
+    const { model } = throttleCells(data, {});
+    expect(model.rows[0].percent).toBeCloseTo(10);
+    expect(model.columnPercent[1]).toBeNull();
+  });
+
+  it("groups a long range into at most MAX_THROTTLE_COLUMNS columns, as a ratio of sums", () => {
+    const times = Array.from({ length: 288 }, (_, i) => T + i * 60000);
+    const data = result(
+      row({ pod: "p", signal: "throttled" }, times.map((t, i) => at(t, i % 2 ? 90 : 0))),
+      row({ pod: "p", signal: "periods" }, times.map((t, i) => at(t, i % 2 ? 300 : 100))),
+    );
+    const { model } = throttleCells(data, {});
+    expect(model.columns.length).toBeLessThanOrEqual(MAX_THROTTLE_COLUMNS);
+    expect(model.columns.reduce((total, c) => total + c.samples, 0)).toBe(288);
+    const first = model.rows[0].cells[0];
+    expect(first.samples).toBeGreaterThan(1);
+    // Ninety of four hundred per pair of samples, not the mean of 0% and 30%.
+    expect(first.percent).toBeCloseTo(22.5);
+    expect(first.throttled).toBeCloseTo(45);
+    expect(first.periods).toBeCloseTo(200);
+    expect(model.columns[1].start).toBe(model.columns[0].end);
+    expect(model.rows[0].percent).toBeCloseTo(22.5);
   });
 
   it("flags throttled counts above the periods", () => {

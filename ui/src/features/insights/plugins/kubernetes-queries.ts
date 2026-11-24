@@ -25,12 +25,20 @@ const tag = (expression: string, signal: string) => `label_replace(${expression}
 const allocatable = (resource: "cpu" | "memory", unit: "core" | "byte") =>
   `max by (node) (kube_node_status_allocatable{resource="${resource}",unit="${unit}"}) and on (node) count by (node) (kube_pod_info{namespace={{namespace}},node!=""})`;
 
-/** Placement: node capacity and pod requests. A request with an empty `node` is a pending pod. */
+/**
+ * Placement: node capacity and pod requests. A request with an empty `node` is a pending pod.
+ *
+ * Pod requests are summed by (pod, node) without `namespace`, which the query already fixes. Prometheus returns a range
+ * result sorted by label set, and the provider keeps the first 100 series. With labels {node, pod, signal} each node's
+ * pods sort just before its {node, signal} capacity series, and pending pods ({pod, signal}) sort last. A truncated
+ * result then loses whole nodes from the end, not every node's capacity, which is what `namespace` (sorting before
+ * `node`) would do.
+ */
 export const PLACEMENT_QUERY = [
   tag(allocatable("cpu", "core"), "cpu-allocatable"),
   tag(allocatable("memory", "byte"), "memory-allocatable"),
-  tag(`sum by (namespace, pod, node) (${requests("cpu", "core")})`, "cpu-request"),
-  tag(`sum by (namespace, pod, node) (${requests("memory", "byte")})`, "memory-request"),
+  tag(`sum by (pod, node) (${requests("cpu", "core")})`, "cpu-request"),
+  tag(`sum by (pod, node) (${requests("memory", "byte")})`, "memory-request"),
   tag(`max by (node) (kube_node_status_condition{condition="Ready",status="true"}) and on (node) count by (node) (kube_pod_info{namespace={{namespace}},node!=""})`, "node-ready"),
 ].join(" or ");
 

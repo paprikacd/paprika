@@ -11,7 +11,8 @@
     "gallery": "Gallery Docker stack reachable at PAPRIKA_GALLERY_BASE_URL (demo/insights-gallery). Run the suite directly, not through run-insights.mjs.",
     "postgres": "Docker PostgreSQL container (application records).",
     "uptime": "Uptime platform reachable through UPTIME_* variables.",
-    "credentials": "Reads a provider or connection configuration file from the environment."
+    "credentials": "Reads a provider or connection configuration file from the environment.",
+    "lab": "Widget lab dependencies (npm ci --prefix labs/widget-lab). The suite starts the lab's Vite dev server itself."
   },
   "smokeSkipPaths": [
     "**/*.md",
@@ -1528,6 +1529,17 @@
       ],
       "server": "dev",
       "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-kubernetes-responsive.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "lab"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
     }
   ]
 }
