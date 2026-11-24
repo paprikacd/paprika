@@ -32,7 +32,7 @@ import {
   type QueryResult,
   type WidgetOptions,
 } from "./schema";
-import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { getWidgetDefinition, supportsThresholds, useWidgetDefinitions } from "./widget-registry";
 import { PluginConfigEditor } from "./plugin-config-editor";
 import { SeriesColorEditor } from "./plugins/series-color-editor";
 import type { InsightsClient } from "./client";
@@ -719,7 +719,7 @@ function StyleEditor({
           />
         </>
       )}
-      {(["heatmap", "stat", "bar", "timeseries"].includes(widget.type) || gauge || ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") || (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds")) && (
+      {supportsThresholds(widget) && (
         <fieldset className={styles.thresholds}>
           <legend>Value thresholds</legend>
           <p className={styles.hint}>

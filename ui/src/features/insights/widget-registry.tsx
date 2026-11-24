@@ -6,6 +6,7 @@ import type { DrilldownContext } from "./drilldown";
 import {
   widgetOptionsSchema,
   type DataKind,
+  type Provider,
   type QueryResult,
   type Widget,
   type WidgetOptions,
@@ -53,6 +54,34 @@ export interface WidgetDefinition {
   validateInput?: (result: QueryResult, config: Widget["config"]) => readonly WidgetInputIssue[];
   /** Host sizing contract. Compact and narrow canvas projections respect minHeight; saved layouts remain authored. */
   sizing?: WidgetSizing;
+  // Authoring metadata (S11): one contiguous block. Omitted fields keep the built-in behaviour.
+  /** Style sections the editor shows, in this order. Omitted means every section in STYLE_SECTION_IDS. */
+  optionSections?: readonly StyleSectionId[];
+  /** One-click appearance presets for the Style tab. Each set of options must pass widgetOptionsSchema. */
+  stylePresets?: readonly StylePreset[];
+  /** Queries offered as chips when the editor's query is still empty or a default. Each must return data for its family. */
+  starterQueries?: readonly StarterQuery[];
+  /** Scores how well a loaded result suits this widget, from 0 to 1. Only scores of 0.5 or more are suggested. */
+  suggest?: (result: QueryResult) => number;
+}
+/** The Style tab sections, in their default order. A renderer narrows or reorders them with `optionSections`. */
+export const STYLE_SECTION_IDS = ["highlight", "value", "color", "lines", "axes", "card", "cells", "legend"] as const;
+export type StyleSectionId = (typeof STYLE_SECTION_IDS)[number];
+export interface StylePreset {
+  id: string;
+  name: string;
+  options: Partial<WidgetOptions>;
+  /** The mark the preset button draws, so every choice reads at a glance. */
+  preview: "line" | "area" | "bars" | "value" | "sparkline" | "cells";
+}
+export interface StarterQuery {
+  id: string;
+  label: string;
+  providerTypes: readonly Provider["type"][];
+  query: string;
+  unit?: string;
+  /** The starter a new widget of this family begins with. */
+  default?: boolean;
 }
 export interface WidgetSizing {
   mode: "intrinsic" | "fill";
@@ -126,6 +155,24 @@ function validateSizing(sizing: WidgetSizing | undefined) {
   }
   if (sizing.minHeightFor !== undefined && typeof sizing.minHeightFor !== "function")
     throw new Error("Widget plugin sizing minHeightFor must be a function");
+}
+
+/** Checks the authoring metadata of a plugin. Preset options use the dashboard schema, which refuses unknown keys. */
+function validateStyleMetadata(plugin: WidgetPlugin) {
+  for (const section of plugin.optionSections ?? []) {
+    if (!(STYLE_SECTION_IDS as readonly string[]).includes(section))
+      throw new Error(`Widget plugin option section “${section}” is not a style section`);
+  }
+  for (const preset of plugin.stylePresets ?? []) {
+    if (!widgetOptionsSchema.safeParse(preset.options).success)
+      throw new Error(`Widget plugin style preset “${preset.id}” has options the dashboard does not accept`);
+  }
+  for (const starter of plugin.starterQueries ?? []) {
+    if (starter.query.length < 1 || starter.query.length > 8192)
+      throw new Error(`Widget plugin starter query “${starter.id}” must be 1 to 8192 characters`);
+  }
+  if (plugin.suggest !== undefined && typeof plugin.suggest !== "function")
+    throw new Error("Widget plugin suggest must be a function");
 }
 
 function validateConfigFields(fields: readonly WidgetConfigField[] | undefined) {
@@ -220,6 +267,7 @@ export function registerWidgetPlugin(plugin: WidgetPlugin): () => void {
     throw new Error("Widget plugin validateInput must be a function");
   validateSizing(plugin.sizing);
   validateConfigFields(plugin.configFields);
+  validateStyleMetadata(plugin);
   if (!["metrics", "traces", "records"].includes(plugin.dataKind))
     throw new Error("Widget plugin data kind must be metrics, traces or records");
   if (
@@ -253,6 +301,22 @@ export function getWidgetDefinition(
   return type === "plugin"
     ? plugins.get(id ?? "")
     : widgetDefinitions.find((entry) => entry.type === type);
+}
+
+/**
+ * Whether the widget draws value thresholds. Reads the renderer's answer through one helper, so S9's capability
+ * metadata can replace this body without touching callers.
+ */
+export function supportsThresholds(widget: Pick<Widget, "type" | "pluginId" | "config">): boolean {
+  return ["heatmap", "stat", "bar", "timeseries"].includes(widget.type) ||
+    widget.pluginId === "threshold-gauge" ||
+    ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") ||
+    (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds");
+}
+
+/** The Style sections a widget shows, in order. A renderer that declares none keeps every section. */
+export function optionSectionsFor(widget: Widget): readonly StyleSectionId[] {
+  return getWidgetDefinition(widget)?.optionSections ?? STYLE_SECTION_IDS;
 }
 
 export function getWidgetPlugins(): readonly WidgetDefinition[] {
