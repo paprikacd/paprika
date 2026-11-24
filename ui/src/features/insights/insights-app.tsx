@@ -96,6 +96,8 @@ import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import { sameSyncInputs, useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
+import { EmbedView } from "./embed-view"
+import type { EmbedRequest } from "./embed-request"
 import { refreshStaggerSpread } from "./refresh-stagger"
 
 /** After a manual refresh, queries ask the server for a fresh execution for this long, so the refreshed window is not served from the cache. */
@@ -196,6 +198,8 @@ export interface InsightsAppProps {
   principal?: string
   /** Opens the Paprika application page. Without it, an application link reports that it opens from the console. */
   onOpenApplication?: (ref: { namespace: string; name: string }) => void
+  /** Embed mode: one widget of the linked dashboard, read-only, with none of the workspace around it. */
+  embed?: EmbedRequest | null
 }
 
 // Desktop compact chrome is a view preference, independent of measured canvas
@@ -252,14 +256,19 @@ function panelOpenerElement(name: string): HTMLElement | null {
   return null
 }
 
-export default function InsightsApp({
+export default function InsightsApp({ embed, ...props }: InsightsAppProps) {
+  // Embed mode is decided before the workspace mounts, so a frame runs none of the workspace's loads or effects.
+  return embed ? <EmbedView client={props.client} embed={embed} /> : <InsightsWorkspace {...props} />
+}
+
+function InsightsWorkspace({
   sessionRevision,
   principal,
   client,
   initialExample = false,
   onBack,
   onOpenApplication,
-}: InsightsAppProps) {
+}: Omit<InsightsAppProps, "embed">) {
   const { theme, resolvedTheme, setTheme } = useInsightsTheme()
   const history = useDashboardHistory(exampleDashboard)
   const { dashboard, update, endGroup, reset, undo, redo, canUndo, canRedo } = history
