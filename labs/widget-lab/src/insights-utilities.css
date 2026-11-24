@@ -1,0 +1,10 @@
+/* Tailwind utilities for the production Insights modules the lab renders (ui/src/features/insights). Production builds
+   them through ui's Tailwind; the lab needs the same utilities or those components lose their layout.
+   No preflight: the lab keeps its own base styles. source(none) stops Tailwind scanning the lab's own files, so a lab
+   class name that matches a utility (grid, hidden, truncate) is not restyled. The utilities sit in a cascade layer, so
+   the lab's unlayered rules still win where both apply. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "../../../ui/src/features/insights";
+@source not "../../../ui/src/features/insights/**/*.test.*";
