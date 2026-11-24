@@ -12,6 +12,7 @@ import {
 } from "./schema"
 import {
   listLiteral,
+  normalizeVariableValue,
   placeholderContext,
   variableInputSchema,
   type VariableValue,
@@ -85,7 +86,7 @@ export function resolveDashboardVariables(
       const value = Object.hasOwn(values, variable.name)
         ? values[variable.name]
         : variable.defaultValue
-      return value === undefined ? [] : [[variable.name, variableInputSchema.parse(value)]]
+      return value === undefined ? [] : [[variable.name, normalizeVariableValue(variable, value)]]
     }),
   )
 }
@@ -362,7 +363,7 @@ export function parseDashboardLink(search: string): ParsedDashboardLink {
       throw new Error("A dashboard can use at most 20 variable values")
     variables = {}
     for (const [key, value] of entries) {
-      const name = variableNameSchema.safeParse(key), text = variableValueSchema.safeParse(value)
+      const name = variableNameSchema.safeParse(key), text = variableInputSchema.safeParse(value)
       if (name.success && text.success) variables[key] = text.data
       else rejected.push({ kind: "variable", name: key })
     }
@@ -401,19 +402,31 @@ export function resolveLinkView(
   link: DashboardNavigation,
   rejected: RejectedLinkPart[] = [],
 ): { state: DashboardNavigation; ignored: IgnoredLink[] } {
-  const declared = new Set((document.variables ?? []).map((variable) => variable.name))
+  const definitions = new Map((document.variables ?? []).map((variable) => [variable.name, variable]))
   const { variables, ...rest } = link
+  const kept: VariableValues = {}
+  const shaped: IgnoredLink[] = []
+  for (const [name, value] of Object.entries(variables ?? {})) {
+    const definition = definitions.get(name)
+    if (!definition) continue
+    // A string for a multi-value variable is one item; a list for a single-value variable does not fit it.
+    try {
+      kept[name] = normalizeVariableValue(definition, value)
+    } catch {
+      shaped.push({ kind: "variable", name, reason: "invalid" })
+    }
+  }
   const ignored: IgnoredLink[] = [
     ...Object.keys(variables ?? {})
-      .filter((name) => !declared.has(name))
+      .filter((name) => !definitions.has(name))
       .map((name) => ({ kind: "variable" as const, name, reason: "undeclared" as const })),
+    ...shaped,
     ...rejected.map((part): IgnoredLink =>
       part.kind === "variable"
         ? { kind: "variable", name: part.name, reason: "invalid" }
         : { kind: "setting", name: part.name, value: part.value }),
   ]
   if (variables === undefined) return { state: rest, ignored }
-  const kept = Object.fromEntries(Object.entries(variables).filter(([name]) => declared.has(name)))
   return { state: { ...rest, variables: kept }, ignored }
 }
 

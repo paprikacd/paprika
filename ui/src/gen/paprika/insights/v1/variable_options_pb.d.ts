@@ -116,6 +116,21 @@ export declare class VariableOptions extends Message<VariableOptions> {
    */
   errorCode: string;
 
+  /**
+   * current_values is a multi-value variable's current list, in its order. Empty for a single value and for All.
+   *
+   * @generated from field: repeated string current_values = 8;
+   */
+  currentValues: string[];
+
+  /**
+   * missing_values names each current value the resolved list lacks. It is set only when current_value is
+   * NOT_IN_VALUES, so a truncated list never reports a value as missing.
+   *
+   * @generated from field: repeated string missing_values = 9;
+   */
+  missingValues: string[];
+
   constructor(data?: PartialMessage<VariableOptions>);
 
   static readonly runtime: typeof proto3;

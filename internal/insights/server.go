@@ -25,6 +25,7 @@ import (
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/capacityhint"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 	"github.com/benebsworth/paprika/internal/metrics"
 )
 
@@ -772,9 +773,9 @@ const maxCheckRequestBytes = maxDocumentBytes + checkwire.DryRunEnvelopeBytes
 // once each, read-only, with the dashboard's default time range, and reports what
 // they returned. Variables apply only with execute.
 type checkRequest struct {
-	Document  json.RawMessage   `json:"document"`
-	Execute   bool              `json:"execute"`
-	Variables map[string]string `json:"variables"`
+	Document  json.RawMessage                `json:"document"`
+	Execute   bool                           `json:"execute"`
+	Variables map[string]variablevalue.Value `json:"variables"`
 }
 
 // checkDashboard is the dry run: it reports what a save would reject and never

@@ -146,6 +146,11 @@ type VariableOptions struct {
 	CurrentValue  CurrentValue           `protobuf:"varint,5,opt,name=current_value,json=currentValue,proto3,enum=paprika.insights.v1.CurrentValue" json:"current_value,omitempty"`
 	NeedsVariable string                 `protobuf:"bytes,6,opt,name=needs_variable,json=needsVariable,proto3" json:"needs_variable,omitempty"`
 	ErrorCode     string                 `protobuf:"bytes,7,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	// current_values is a multi-value variable's current list, in its order. Empty for a single value and for All.
+	CurrentValues []string `protobuf:"bytes,8,rep,name=current_values,json=currentValues,proto3" json:"current_values,omitempty"`
+	// missing_values names each current value the resolved list lacks. It is set only when current_value is
+	// NOT_IN_VALUES, so a truncated list never reports a value as missing.
+	MissingValues []string `protobuf:"bytes,9,rep,name=missing_values,json=missingValues,proto3" json:"missing_values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -229,6 +234,20 @@ func (x *VariableOptions) GetErrorCode() string {
 	return ""
 }
 
+func (x *VariableOptions) GetCurrentValues() []string {
+	if x != nil {
+		return x.CurrentValues
+	}
+	return nil
+}
+
+func (x *VariableOptions) GetMissingValues() []string {
+	if x != nil {
+		return x.MissingValues
+	}
+	return nil
+}
+
 // VariableOptionsResponse lists the sourced variables that were requested.
 type VariableOptionsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -303,7 +322,7 @@ var File_paprika_insights_v1_variable_options_proto protoreflect.FileDescriptor
 
 const file_paprika_insights_v1_variable_options_proto_rawDesc = "" +
 	"\n" +
-	"*paprika/insights/v1/variable_options.proto\x12\x13paprika.insights.v1\"\xaa\x02\n" +
+	"*paprika/insights/v1/variable_options.proto\x12\x13paprika.insights.v1\"\xf8\x02\n" +
 	"\x0fVariableOptions\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12?\n" +
 	"\x05state\x18\x02 \x01(\x0e2).paprika.insights.v1.VariableOptionsStateR\x05state\x12\x16\n" +
@@ -312,7 +331,9 @@ const file_paprika_insights_v1_variable_options_proto_rawDesc = "" +
 	"\rcurrent_value\x18\x05 \x01(\x0e2!.paprika.insights.v1.CurrentValueR\fcurrentValue\x12%\n" +
 	"\x0eneeds_variable\x18\x06 \x01(\tR\rneedsVariable\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\a \x01(\tR\terrorCode\"\xc2\x01\n" +
+	"error_code\x18\a \x01(\tR\terrorCode\x12%\n" +
+	"\x0ecurrent_values\x18\b \x03(\tR\rcurrentValues\x12%\n" +
+	"\x0emissing_values\x18\t \x03(\tR\rmissingValues\"\xc2\x01\n" +
 	"\x17VariableOptionsResponse\x12%\n" +
 	"\x0edashboard_etag\x18\x01 \x01(\tR\rdashboardEtag\x12\x1f\n" +
 	"\vrange_start\x18\x02 \x01(\tR\n" +

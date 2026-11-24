@@ -30,7 +30,7 @@ func cappedGoldenFixture() *DashboardQueryResult {
 	result.ObservedAt = "2026-10-26T01:00:00Z"
 	result.Range = DashboardQueryRange{Start: "2026-10-26T00:00:00Z", End: "2026-10-26T01:00:00Z", StepSeconds: 60}
 	result.Dashboard.ETag = "v1"
-	result.Variables = map[string]string{}
+	result.Variables = variableValues(map[string]string{})
 	// A sourced variable with a long value list, so the variableOptions step has detail to drop first. The step
 	// saves bytes only when the values outweigh the omitted list it adds, so the values are long enough to do so.
 	values := make([]string, 0, 8)

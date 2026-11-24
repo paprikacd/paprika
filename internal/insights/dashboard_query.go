@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 	"github.com/benebsworth/paprika/internal/querystep"
 )
 
@@ -33,30 +34,30 @@ func dashboardResultCapText() string {
 
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
-	ID            string            `json:"id"`
-	Variables     map[string]string `json:"variables,omitempty"`
-	WidgetIDs     []string          `json:"widget_ids,omitempty"`
-	Start         string            `json:"start,omitempty"`
-	End           string            `json:"end,omitempty"`
-	HistoryPoints *int              `json:"history_points,omitempty"`
-	MaxSeries     *int              `json:"max_series,omitempty"`
-	MaxTraces     *int              `json:"max_traces,omitempty"`
+	ID            string                         `json:"id"`
+	Variables     map[string]variablevalue.Value `json:"variables,omitempty"`
+	WidgetIDs     []string                       `json:"widget_ids,omitempty"`
+	Start         string                         `json:"start,omitempty"`
+	End           string                         `json:"end,omitempty"`
+	HistoryPoints *int                           `json:"history_points,omitempty"`
+	MaxSeries     *int                           `json:"max_series,omitempty"`
+	MaxTraces     *int                           `json:"max_traces,omitempty"`
 }
 
 // DashboardQueryResult executes persisted main and event annotation queries.
 // Tooltip queries need a hovered observation and remain outside this scope.
 type DashboardQueryResult struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Dashboard     DashboardQueryDocument   `json:"dashboard"`
-	ObservedAt    string                   `json:"observedAt"`
-	Range         DashboardQueryRange      `json:"range"`
-	Variables     map[string]string        `json:"variables"`
-	Widgets       []DashboardQueryWidget   `json:"widgets"`
-	SavedQueries  []DashboardQueryDocument `json:"savedQueries"`
-	Signals       []DashboardSignal        `json:"signals"`
-	QueryCount    DashboardQueryCount      `json:"queryCount"`
-	State         string                   `json:"state"`
-	Attention     DashboardAttention       `json:"attention"`
+	SchemaVersion int                            `json:"schemaVersion"`
+	Dashboard     DashboardQueryDocument         `json:"dashboard"`
+	ObservedAt    string                         `json:"observedAt"`
+	Range         DashboardQueryRange            `json:"range"`
+	Variables     map[string]variablevalue.Value `json:"variables"`
+	Widgets       []DashboardQueryWidget         `json:"widgets"`
+	SavedQueries  []DashboardQueryDocument       `json:"savedQueries"`
+	Signals       []DashboardSignal              `json:"signals"`
+	QueryCount    DashboardQueryCount            `json:"queryCount"`
+	State         string                         `json:"state"`
+	Attention     DashboardAttention             `json:"attention"`
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
 	comparisons       []dashboardComparisonPlan
 	comparisonQueries []Query

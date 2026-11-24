@@ -47,7 +47,7 @@ func TestDashboardQueryResolvesVariableSources(t *testing.T) {
 	require.Equal(t, "ready", zone.State)
 	require.Equal(t, []string{"a", "b"}, zone.Values)
 	require.Equal(t, "not_in_values", zone.CurrentValue, "zz is kept, marked as absent from the source's values")
-	require.Equal(t, "zz", result.Variables["zone"], "the override still applies")
+	require.Equal(t, "zz", valueText(result.Variables["zone"]), "the override still applies")
 
 	pod := result.VariableDefinitions[1].SourceOptions
 	require.NotNil(t, pod)

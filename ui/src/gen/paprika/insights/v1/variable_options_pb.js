@@ -53,6 +53,8 @@ export const VariableOptions = /*@__PURE__*/ proto3.makeMessageType(
     { no: 5, name: "current_value", kind: "enum", T: proto3.getEnumType(CurrentValue) },
     { no: 6, name: "needs_variable", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 7, name: "error_code", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "current_values", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 9, name: "missing_values", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
   ],
 );
 

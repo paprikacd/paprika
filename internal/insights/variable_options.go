@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // variableValueLimit is the value count a source keeps when it declares no limit.
@@ -214,7 +215,7 @@ type preparedVariableSource struct {
 type variableSourceEnv struct {
 	request     *http.Request
 	definitions []dashboardReadVariable
-	values      map[string]string
+	values      map[string]variablevalue.Value
 	typed       map[string]any
 	types       map[string]string
 	saved       map[string]dashboardSavedSnapshot
@@ -228,7 +229,7 @@ type variableSourceEnv struct {
 // failure. Distinct fetches run once, within the read's limits, and all of them share budget. only, when set,
 // names the variables to resolve; others get no outcome. The second result counts the fetches, and is nil
 // when no variable has a source.
-func (s *Server) resolveVariableSources(r *http.Request, budget time.Duration, definitions []dashboardReadVariable, values map[string]string, saved map[string]dashboardSavedSnapshot, start, end float64, cache *dashboardQueryProviders, only map[string]bool) ([]variableSourceOutcome, *DashboardComparisonCount) {
+func (s *Server) resolveVariableSources(r *http.Request, budget time.Duration, definitions []dashboardReadVariable, values map[string]variablevalue.Value, saved map[string]dashboardSavedSnapshot, start, end float64, cache *dashboardQueryProviders, only map[string]bool) ([]variableSourceOutcome, *DashboardComparisonCount) {
 	outcomes := make([]variableSourceOutcome, len(definitions))
 	ctx, cancel := context.WithTimeout(r.Context(), budget)
 	defer cancel()
@@ -247,14 +248,14 @@ func (s *Server) resolveVariableSources(r *http.Request, budget time.Duration, d
 	return outcomes, &count
 }
 
-func newVariableSourceEnv(request *http.Request, definitions []dashboardReadVariable, values map[string]string, saved map[string]dashboardSavedSnapshot, cache *dashboardQueryProviders, bucketStart, bucketEnd int64) variableSourceEnv {
+func newVariableSourceEnv(request *http.Request, definitions []dashboardReadVariable, values map[string]variablevalue.Value, saved map[string]dashboardSavedSnapshot, cache *dashboardQueryProviders, bucketStart, bucketEnd int64) variableSourceEnv {
 	types := make(map[string]string, len(definitions))
 	for _, definition := range definitions {
-		types[definition.Name] = "string"
+		types[definition.Name] = dashboardVariableType(&definition)
 	}
 	typed := make(map[string]any, len(values))
 	for name, value := range values {
-		typed[name] = value
+		typed[name] = dashboardValueText(value)
 	}
 	return variableSourceEnv{request: request, definitions: definitions, values: values, typed: typed, types: types, saved: saved, cache: cache, bucketStart: bucketStart, bucketEnd: bucketEnd}
 }
@@ -295,8 +296,8 @@ func (s *Server) planVariableSources(env *variableSourceEnv, only map[string]boo
 }
 
 // variableSourceInputs returns the values a source reads, or the first parent it needs and does not have.
-func variableSourceInputs(source *dashboardReadVariableSource, values map[string]string) (used map[string]string, missing string) {
-	used = make(map[string]string)
+func variableSourceInputs(source *dashboardReadVariableSource, values map[string]variablevalue.Value) (used map[string]variablevalue.Value, missing string) {
+	used = make(map[string]variablevalue.Value)
 	for _, name := range variableSourceDependencies(source) {
 		value, ok := values[name]
 		if !ok {
@@ -366,7 +367,7 @@ func outcomeFromVariableJob(definition *dashboardReadVariable, job *variableSour
 
 // prepareVariableSource builds the fetch of one source for the current values. It resolves the provider and
 // the template but does no provider I/O. A failure here is the variable's outcome and is never retried.
-func (s *Server) prepareVariableSource(env *variableSourceEnv, source *dashboardReadVariableSource, used map[string]string) (preparedVariableSource, *DashboardQueryError) {
+func (s *Server) prepareVariableSource(env *variableSourceEnv, source *dashboardReadVariableSource, used map[string]variablevalue.Value) (preparedVariableSource, *DashboardQueryError) {
 	switch source.Type {
 	case "labelValues":
 		return s.prepareLabelValues(env, source, used)
@@ -376,7 +377,7 @@ func (s *Server) prepareVariableSource(env *variableSourceEnv, source *dashboard
 	return preparedVariableSource{}, &DashboardQueryError{Code: "invalid_source", Message: "The variable source type is not supported."}
 }
 
-func (s *Server) prepareLabelValues(env *variableSourceEnv, source *dashboardReadVariableSource, used map[string]string) (preparedVariableSource, *DashboardQueryError) {
+func (s *Server) prepareLabelValues(env *variableSourceEnv, source *dashboardReadVariableSource, used map[string]variablevalue.Value) (preparedVariableSource, *DashboardQueryError) {
 	provider, err := s.dashboardQueryProvider(env.request, source.ProviderID, env.cache)
 	if err != nil {
 		return preparedVariableSource{}, classifyQueryFailure(err)
@@ -421,7 +422,7 @@ func variableSelector(selector *string, env *variableSourceEnv, providerType str
 	return expanded, nil
 }
 
-func (s *Server) prepareSavedQuery(env *variableSourceEnv, source *dashboardReadVariableSource, used map[string]string) (preparedVariableSource, *DashboardQueryError) {
+func (s *Server) prepareSavedQuery(env *variableSourceEnv, source *dashboardReadVariableSource, used map[string]variablevalue.Value) (preparedVariableSource, *DashboardQueryError) {
 	if source.QueryRef == nil {
 		return preparedVariableSource{}, &DashboardQueryError{Code: "missing_saved_query", Message: "The referenced saved query is unavailable."}
 	}
@@ -490,7 +491,7 @@ func applyVariableSourceOptions(result *DashboardQueryResult) {
 		options := &DashboardVariableSourceOptions{State: outcome.state, Truncated: outcome.truncated, NeedsVariable: outcome.needsVariable, Error: outcome.failure}
 		if outcome.state == "ready" || outcome.state == "empty" {
 			if current, ok := result.Variables[definition.Name]; ok {
-				options.CurrentValue = currentValueText(outcome.values, outcome.truncated, current)
+				options.CurrentValue, options.MissingValues = currentValueReport(outcome.values, outcome.truncated, current)
 			}
 			budget = appendValuesWithinBudget(options, outcome.values, budget)
 		}
@@ -513,6 +514,32 @@ func appendValuesWithinBudget(options *DashboardVariableSourceOptions, values []
 	return budget
 }
 
+// currentValueReport compares a variable's current value with a resolved list. A single value gives the state
+// word, as currentValueText does. A list is in the values when every item is. Otherwise each item the list
+// lacks is named, unless the list is truncated: then the state is unknown and nothing is named as missing.
+// All (an empty list) is not a choice, so it reports nothing, and the view never picks a value for it.
+func currentValueReport(values []string, truncated bool, current variablevalue.Value) (state string, missing []string) {
+	if !current.List {
+		text, _ := current.Text()
+		return currentValueText(values, truncated, text), nil
+	}
+	if len(current.Items) == 0 {
+		return "", nil
+	}
+	for _, item := range current.Items {
+		if !slices.Contains(values, item) {
+			missing = append(missing, item)
+		}
+	}
+	switch {
+	case len(missing) == 0:
+		return "in_values", nil
+	case truncated:
+		return "unknown", nil
+	}
+	return "not_in_values", missing
+}
+
 // currentValueText says whether a current value is among a resolved list. A value absent from a truncated list
 // is unknown, because the list may hold it past the cut.
 func currentValueText(values []string, truncated bool, current string) string {
@@ -528,19 +555,24 @@ func currentValueText(values []string, truncated bool, current string) string {
 // dashboardSourceValueWarnings names an override of a sourced variable that its source did not return. Only a
 // complete list is checked: a truncated list may hold the value past the cut. An empty override is named by
 // dashboardVariableWarnings, so it is not named again here.
-func dashboardSourceValueWarnings(definitions []dashboardReadVariable, overrides map[string]string, outcomes []variableSourceOutcome) []string {
+func dashboardSourceValueWarnings(definitions []dashboardReadVariable, overrides map[string]variablevalue.Value, outcomes []variableSourceOutcome) []string {
 	var warnings []string
 	for i := range definitions {
 		definition := &definitions[i]
 		value, overridden := overrides[definition.Name]
-		if !overridden || value == "" || definition.Source == nil || i >= len(outcomes) {
+		if !overridden || definition.Source == nil || i >= len(outcomes) {
 			continue
 		}
 		outcome := &outcomes[i]
-		if outcome.state != "ready" || outcome.truncated || slices.Contains(outcome.values, value) {
+		if outcome.state != "ready" || outcome.truncated {
 			continue
 		}
-		warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the values its source returned", definition.Name, warningValue(value)))
+		for _, item := range value.Items {
+			if item == "" || slices.Contains(outcome.values, item) {
+				continue
+			}
+			warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the values its source returned", definition.Name, warningValue(item)))
+		}
 	}
 	return warnings
 }

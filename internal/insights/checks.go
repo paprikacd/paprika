@@ -15,6 +15,7 @@ import (
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // maxFindingMessageRunes bounds the message the service writes for a finding.
@@ -695,7 +696,7 @@ func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *
 // dryRunData plans the document's widgets and runs their queries with the shared
 // dashboard path, then reports what each returned. It reads the document and
 // the query providers only; it never writes.
-func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[string]string) (dryRunOutcome, error) {
+func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[string]variablevalue.Value) (dryRunOutcome, error) {
 	var doc dashboardReadDocument
 	if err := json.Unmarshal(document, &doc); err != nil {
 		return dryRunOutcome{}, fmt.Errorf("decode dry-run document: %w", err)

@@ -158,7 +158,7 @@ func TestResolveVariableSources(t *testing.T) {
 		{Name: "plain"},
 	}
 	saved := map[string]dashboardSavedSnapshot{"hosts": {Query: SavedQuery{ID: "hosts", ProviderID: "prometheus", Kind: "metrics", Query: "up"}}}
-	values := map[string]string{"zone": "a"}
+	values := variableValues(map[string]string{"zone": "a"})
 	cache := &dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
 	start, end := 1700000030.0, 1700000500.0
 
