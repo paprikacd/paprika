@@ -1155,7 +1155,7 @@ export default function InsightsApp({
     [update],
   )
 
-  function applyDocument(next: Dashboard, mode: "document" | "edits" = "document") {
+  function applyDocument(next: Dashboard, message = "Dashboard draft replaced. Review the canvas, then save the dashboard.") {
     syncVariableDefinitions(next)
     // Importing a document edits the active dashboard; a document cannot silently
     // switch persistence identity and overwrite another saved dashboard.
@@ -1176,7 +1176,7 @@ export default function InsightsApp({
     })
     setEditing(true)
     close()
-    setMessage(mode === "edits" ? "Edits applied to the draft. Review the canvas, then save the dashboard." : "Dashboard draft replaced. Review the canvas, then save the dashboard.")
+    setMessage(message)
   }
   function syncVariableDefinitions(next: Dashboard) {
     if (!currentRoute?.variables) return
@@ -2480,9 +2480,7 @@ export default function InsightsApp({
                     onClose={close}
                     checkDocument={client.validate}
                     onFocusWidget={selectWidget}
-                    // The gateway routes /observe on the host root, like /api/insights, so the UI basePath
-                    // does not apply. The origin carries no path, query or fragment, so no sign-in state.
-                    observeEndpoint={client.observeConnection ? new URL("/observe/mcp", window.location.origin).href : undefined}
+                    observe={!!client.observeConnection}
                     unsaved={dirty}
                   />
                 </Suspense>

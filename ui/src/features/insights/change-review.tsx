@@ -1,4 +1,7 @@
-import type { FieldChange, JSONValue, DocumentChanges, WidgetChange } from "./dashboard-patch";
+import { useMemo } from "react";
+import { documentChanges, type FieldChange, type JSONObject, type JSONValue, type DocumentChanges, type WidgetChange } from "./dashboard-patch";
+import { dashboardAsSent } from "./layout-compaction";
+import type { Dashboard } from "./schema";
 import { GammaButton } from "./gamma/button";
 import { GammaDisclosure } from "./gamma/disclosure";
 
@@ -99,4 +102,27 @@ export function ChangeReview({
       ))}
     </section>
   );
+}
+
+/** What replacing before with after changes, compared as a save would draw both. Null when either cannot be read. */
+export function draftChanges(before: Dashboard, after: Dashboard): DocumentChanges | null {
+  try {
+    return documentChanges(dashboardAsSent(before) as unknown as JSONObject, dashboardAsSent(after) as unknown as JSONObject);
+  } catch {
+    return null;
+  }
+}
+
+/** The field-level review of a pending draft. It computes the diff itself, so callers can load it on demand. */
+export function DraftChangeReview({
+  before,
+  after,
+  onFocusWidget,
+}: {
+  before: Dashboard;
+  after: Dashboard;
+  onFocusWidget?: (widgetId: string) => void;
+}) {
+  const changes = useMemo(() => draftChanges(before, after), [before, after]);
+  return changes ? <ChangeReview changes={changes} onFocusWidget={onFocusWidget} /> : null;
 }

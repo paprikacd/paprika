@@ -1,5 +1,5 @@
 // Plans and applies reviewed dashboard and saved-query patches through an authenticated Observe MCP client.
-// The merge is the one the UI uses (ui/src/features/insights/dashboard-patch.ts), so a plan shows exactly what
+// The merge and the diff are the ones the UI uses (ui/src/features/insights/dashboard-patch.ts), so a plan shows exactly what
 // the canvas would hold. Plans read every target and validate every merged dashboard before the first write.
 // A conflict or failure stops the run; nothing is retried.
 import assert from "node:assert/strict"

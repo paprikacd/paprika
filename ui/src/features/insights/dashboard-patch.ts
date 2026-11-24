@@ -2,11 +2,26 @@
 // docs/design/insights/conformance/dashboard-patch.json is the fixture both implementations run. Keep the
 // order of checks, the messages and the placement rules in step with that file.
 //
-// This module has no imports and uses only erasable TypeScript syntax, so the Node repair applier can load
-// it directly (hack/insights-patch). It never throws on input and never mutates its arguments.
+// This module imports only dashboard-diff.ts, by its .ts path, and uses only erasable TypeScript syntax, so the
+// Node repair applier can load it directly (hack/insights-patch). It never throws on input and never mutates its
+// arguments. Only on-demand UI imports it, so the merge stays out of the Insights first view.
 
-export type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue }
-export type JSONObject = { [key: string]: JSONValue }
+import { diffJSON, type JSONDiff, type JSONObject, type JSONValue } from "./dashboard-diff.ts"
+
+export { diffJSON, MAX_DIFF_CHANGES } from "./dashboard-diff.ts"
+export type { FieldChange, JSONDiff, JSONObject, JSONValue } from "./dashboard-diff.ts"
+
+export interface WidgetChange {
+  id: string
+  title?: string
+  kind: "added" | "removed" | "changed" | "moved"
+  diff: JSONDiff
+}
+export interface DocumentChanges {
+  dashboard: JSONDiff
+  widgets: WidgetChange[]
+}
+
 export type WidgetEdit =
   | { op: "update"; id: string; patch: JSONObject }
   | { op: "add"; widget: JSONObject }
@@ -34,27 +49,6 @@ export interface PatchError {
   editIndex?: number
   widgetId?: string
 }
-export interface FieldChange {
-  path: string
-  kind: "add" | "remove" | "change" | "reorder"
-  before?: JSONValue
-  after?: JSONValue
-}
-export interface JSONDiff {
-  changes: FieldChange[]
-  totalChanges: number
-  truncated: boolean
-}
-export interface WidgetChange {
-  id: string
-  title?: string
-  kind: "added" | "removed" | "changed" | "moved"
-  diff: JSONDiff
-}
-export interface DocumentChanges {
-  dashboard: JSONDiff
-  widgets: WidgetChange[]
-}
 export interface DashboardPatchResult {
   document: JSONObject | null
   placements: Placement[]
@@ -63,7 +57,6 @@ export interface DashboardPatchResult {
 }
 
 export const WIDGET_EDIT_LIMIT = 48
-export const MAX_DIFF_CHANGES = 200
 export const DOCUMENT_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/
 
 const PATCH_BYTES = 256 * 1024
@@ -301,70 +294,6 @@ function editWidgets(
   return { document: { ...document, widgets: remaining as JSONObject[] }, placements }
 }
 
-/** Positional diff of two JSON values. Objects are compared by key and collections named widgets, drilldowns, parameters, variables or bindings by identity. */
-export function diffJSON(before: JSONValue | undefined, after: JSONValue | undefined): JSONDiff {
-  const changes: FieldChange[] = []
-  let totalChanges = 0
-  const record = (change: FieldChange) => {
-    totalChanges++
-    if (changes.length < MAX_DIFF_CHANGES) changes.push(change)
-  }
-  const walk = (previous: JSONValue | undefined, next: JSONValue | undefined, path: string, name: string) => {
-    if (previous === next) return
-    if (previous === undefined) {
-      record({ path: path || "$", kind: "add", after: next })
-      return
-    }
-    if (next === undefined) {
-      record({ path: path || "$", kind: "remove", before: previous })
-      return
-    }
-    if (Array.isArray(previous) && Array.isArray(next)) {
-      const key = collectionKey(name, previous, next)
-      if (key) {
-        const entries = (items: JSONValue[]) => new Map(items.map((item) => [(item as Record<string, JSONValue>)[key] as string, item]))
-        const oldItems = entries(previous)
-        const newItems = entries(next)
-        const oldOrder = [...oldItems.keys()].filter((id) => newItems.has(id))
-        const newOrder = [...newItems.keys()].filter((id) => oldItems.has(id))
-        if (oldOrder.some((id, index) => id !== newOrder[index]))
-          record({ path, kind: "reorder", before: [...oldItems.keys()], after: [...newItems.keys()] })
-        for (const id of new Set([...oldItems.keys(), ...newItems.keys()]))
-          walk(oldItems.get(id), newItems.get(id), `${path}[${key}=${id}]`, "")
-      } else {
-        for (let index = 0; index < Math.max(previous.length, next.length); index++) walk(previous[index], next[index], `${path}[${index}]`, "")
-      }
-      return
-    }
-    if (isObject(previous) && isObject(next)) {
-      for (const key of [...new Set([...Object.keys(previous), ...Object.keys(next)])].sort())
-        walk(Object.hasOwn(previous, key) ? previous[key] : undefined, Object.hasOwn(next, key) ? next[key] : undefined, propertyPath(path, key), key)
-      return
-    }
-    record({ path: path || "$", kind: "change", before: previous, after: next })
-  }
-  walk(before, after, "", "")
-  return { changes, totalChanges, truncated: totalChanges > changes.length }
-}
-
-function propertyPath(path: string, key: string): string {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? (path ? `${path}.${key}` : key) : `${path}[${JSON.stringify(key)}]`
-}
-
-function collectionKey(name: string, before: JSONValue[], after: JSONValue[]): string | undefined {
-  const candidates = name === "widgets" || name === "drilldowns" ? ["id"] : name === "parameters" || name === "variables" ? ["name"] : name === "bindings" ? ["parameter", "variable"] : []
-  return candidates.find((key) => {
-    if (!before.length && !after.length) return false
-    return [before, after].every((items) => {
-      const seen = new Set<string>()
-      return items.every((item) => {
-        if (!isObject(item) || typeof item[key] !== "string" || seen.has(item[key] as string)) return false
-        seen.add(item[key] as string)
-        return true
-      })
-    })
-  })
-}
 
 /** What a patch changes, for review: dashboard settings, then each widget by id. Unchanged widgets are omitted. */
 export function documentChanges(before: JSONObject, after: JSONObject): DocumentChanges {

@@ -12,10 +12,9 @@ import { GammaButton } from "./gamma/button"
 import { GammaTextarea } from "./gamma/input"
 import { useSavedQueryLibrary } from "./saved-query-context"
 import { documentChangeSummary, documentChangeText } from "./document-change"
-import { ChangeReview } from "./change-review"
-import { applyDashboardPatch, documentChanges, readDashboardPatchSource, type DocumentChanges, type JSONObject, type Placement } from "./dashboard-patch"
-import { dashboardAsSent } from "./layout-compaction"
-import { ChecksList, CHECK_TIMEOUT_MS, checkFailureText, errorCountText, hasErrors, withTimeout, type DocumentValidator } from "./checks-list"
+import { ChangeReview, draftChanges } from "./change-review"
+import { applyDashboardPatch, readDashboardPatchSource, type DocumentChanges, type Placement } from "./dashboard-patch"
+import { ChecksList, errorCountText, hasErrors, type DocumentValidator } from "./checks-list"
 import { buildAgentHandoff } from "./agent-handoff"
 import { GammaDisclosure } from "./gamma/disclosure"
 
@@ -25,17 +24,48 @@ export type ApplyMode = "document" | "edits"
 
 const widgetCountText = (count: number) => `${count} widget${count === 1 ? "" : "s"}`
 
+// The same check bound and wording as the source editor's (document-editor.tsx). They are repeated here, in the
+// lazy panel, because sharing them through an eager module grew the first view (scripts/check-insights-budget.mjs).
+const CHECK_TIMEOUT_MS = 10_000
+const checkFailureText = (reason: string) =>
+  `Could not check this dashboard: ${reason.replace(/\.+$/, "")}. Applying to the canvas does not depend on the check.`
+
+/** Settles with the check, or rejects after the limit, whether or not the check honours its signal. */
+function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout()
+      reject(new Error(`The check did not finish within ${ms / 1000} seconds.`))
+    }, ms)
+    work.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 interface AIBuilderProps {
   dashboard: Dashboard
   providers: Provider[]
-  /** "document" replaces the draft with a whole dashboard; "edits" applies widget_edits to the current draft. */
-  onApply: (dashboard: Dashboard, mode: ApplyMode) => void
+  /**
+   * Replaces the draft with the reviewed dashboard: a whole pasted dashboard, or the current draft with widget_edits
+   * applied. message is the host's confirmation, set for edits; without it the host says the draft was replaced.
+   */
+  onApply: (dashboard: Dashboard, message?: string) => void
   onClose: () => void
   /** Dry-run checks for a reviewed definition. Error findings block Apply; a failed check does not. */
   checkDocument?: DocumentValidator
   /** Focuses or scrolls to a widget on the canvas, for a finding's or change's "Show widget" action. */
   onFocusWidget?: (widgetId: string) => void
-  /** The Observe MCP endpoint. Without it, the handoff omits the setup command. */
+  /** The host serves Paprika Observe. The handoff then names its endpoint and offers the setup command. */
+  observe?: boolean
+  /** The Observe MCP endpoint, for tests and hosts on another origin. Defaults to this origin's /observe/mcp. */
   observeEndpoint?: string
   /** The draft has changes that are not saved. The handoff then hands the agent the draft itself. */
   unsaved?: boolean
@@ -60,16 +90,7 @@ function readSource(source: string, format: "json" | "yaml"): unknown {
   return document.toJS({ maxAliasCount: 0 })
 }
 
-/** The dashboard as a save would write it, for comparing two drafts. Null when either side cannot be read. */
-function changesBetween(before: Dashboard, after: Dashboard): DocumentChanges | null {
-  try {
-    return documentChanges(dashboardAsSent(before) as unknown as JSONObject, dashboardAsSent(after) as unknown as JSONObject)
-  } catch {
-    return null
-  }
-}
-
-export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocument, onFocusWidget, observeEndpoint, unsaved = false }: AIBuilderProps) {
+export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocument, onFocusWidget, observe = false, observeEndpoint, unsaved = false }: AIBuilderProps) {
   const id = useId()
   const library = useSavedQueryLibrary()
   const [request, setRequest] = useState("")
@@ -91,9 +112,12 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
       throw new Error(library.loading ? "Saved queries are still loading. Review again when the library is ready." : `Saved queries could not be loaded: ${library.error}. Reload the query library before reviewing this definition.`)
   }
 
+  // The gateway routes /observe on the host root, like /api/insights, so the UI basePath does not apply. Only the
+  // origin is used, so the page's path, query and fragment, which can carry sign-in state, never reach the text.
+  const endpoint = observeEndpoint ?? (observe ? new URL("/observe/mcp", window.location.origin).href : undefined)
   const handoff = useMemo(
-    () => buildAgentHandoff({ id: dashboard.id, title: dashboard.title, request, endpoint: observeEndpoint, draft: unsaved ? dashboard : undefined }),
-    [dashboard, request, observeEndpoint, unsaved],
+    () => buildAgentHandoff({ id: dashboard.id, title: dashboard.title, request, endpoint, draft: unsaved ? dashboard : undefined }),
+    [dashboard, request, endpoint, unsaved],
   )
 
   async function copyAgentText(text: string, success: string) {
@@ -173,7 +197,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
       if (current === pass.current) setError(cause instanceof Error ? cause.message : "The definition could not be validated.")
       return
     }
-    const next: Reviewed = { ...result, base: currentBase, changes: changesBetween(dashboard, result.document) }
+    const next: Reviewed = { ...result, base: currentBase, changes: draftChanges(dashboard, result.document) }
     if (!checkDocument) {
       setReviewed(next)
       return
@@ -191,7 +215,8 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
     try {
       ensureLibrary(reviewed.document)
       validateAIProviders(reviewed.document, providers, library.queries)
-      onApply(reviewed.document, reviewed.mode)
+      if (reviewed.mode === "edits") onApply(reviewed.document, "Edits applied to the draft. Review the canvas, then save the dashboard.")
+      else onApply(reviewed.document)
       setReviewed(null)
       setNotice("Definition applied to your draft. Save the dashboard when ready.")
       setError("")

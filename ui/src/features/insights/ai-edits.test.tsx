@@ -35,7 +35,7 @@ describe("AI builder widget edits", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply edits to draft" })).toBeEnabled())
     fireEvent.click(screen.getByRole("button", { name: "Apply edits to draft" }))
     expect(onApply).toHaveBeenCalledTimes(1)
-    expect(onApply.mock.calls[0][1]).toBe("edits")
+    expect(onApply.mock.calls[0][1]).toBe("Edits applied to the draft. Review the canvas, then save the dashboard.")
     expect(onApply.mock.calls[0][0].widgets[0]).toMatchObject({ id: "a", title: "Renamed" })
     expect(onApply.mock.calls[0][0].widgets[1]).toMatchObject({ id: "b", title: "Errors" })
   })

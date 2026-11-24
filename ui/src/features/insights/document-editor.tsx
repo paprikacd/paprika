@@ -22,21 +22,16 @@ import { useSavedQueryLibrary } from "./saved-query-context";
 import { documentChangeSummary, documentChangeText } from "./document-change";
 import {
   ChecksList,
-  CHECK_TIMEOUT_MS,
-  CheckTimeout,
   checkCountsText,
-  checkFailureText,
   errorCountText,
   hasErrors,
-  withTimeout,
   type DocumentValidator,
 } from "./checks-list";
-// The field-level review is on demand and stays out of the first-view chunk (see scripts/check-insights-budget.mjs).
-const ChangeReview = lazy(() =>
-  import("./change-review").then((module) => ({ default: module.ChangeReview })),
+// The field-level review, and the diff it computes, are on demand and stay out of the first-view chunk
+// (see scripts/check-insights-budget.mjs).
+const DraftChangeReview = lazy(() =>
+  import("./change-review").then((module) => ({ default: module.DraftChangeReview })),
 );
-import { documentChanges, type JSONObject } from "./dashboard-patch";
-import { dashboardAsSent } from "./layout-compaction";
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
 import styles from "./insights.module.css";
 import { GammaButton } from "./gamma/button";
@@ -51,6 +46,31 @@ type CheckOutcome =
   | { report: CheckReport; document: Dashboard }
   | { failure: string }
   | "cancelled";
+
+/** A check that has not answered within this long is a failed check: Apply stays available. */
+const CHECK_TIMEOUT_MS = 10_000;
+
+class CheckTimeout extends Error {}
+
+/** Settles with the check, or rejects with CheckTimeout after the limit, whether or not the check honours its signal. */
+function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout();
+      reject(new CheckTimeout(`The check did not finish within ${ms / 1000} seconds.`));
+    }, ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 export function DocumentEditor({
   dashboard,
@@ -112,18 +132,6 @@ export function DocumentEditor({
       return null;
     }
   }, [source, format]);
-  // Field-level changes as a save would draw them: both sides are compared in their dashboardAsSent form.
-  const pendingChanges = useMemo(() => {
-    if (!pending) return null;
-    try {
-      return documentChanges(
-        dashboardAsSent(dashboard) as unknown as JSONObject,
-        dashboardAsSent(pending) as unknown as JSONObject,
-      );
-    } catch {
-      return null;
-    }
-  }, [dashboard, pending]);
   // Read after an await, when the render that started the apply is no longer current.
   const latest = useRef({ dashboard, base });
   useEffect(() => {
@@ -340,7 +348,8 @@ export function DocumentEditor({
       ? { text: "Checking dashboard…", tone: "muted" }
       : checkState.status === "failed"
         ? {
-            text: checkFailureText(checkState.message),
+            // A reason that ends in a full stop (a timeout does) keeps one.
+            text: `Could not check this dashboard: ${checkState.message.replace(/\.+$/, "")}. Applying to the canvas does not depend on the check.`,
             tone: "error",
           }
         : checkState.status === "done" && hasErrors(checkState.report)
@@ -518,9 +527,9 @@ export function DocumentEditor({
           Against the canvas: {documentChangeText(documentChangeSummary(dashboard, pending))}
         </p>
       )}
-      {pendingChanges && (
+      {pending && (
         <Suspense fallback={null}>
-          <ChangeReview changes={pendingChanges} onFocusWidget={onFocusWidget} />
+          <DraftChangeReview before={dashboard} after={pending} onFocusWidget={onFocusWidget} />
         </Suspense>
       )}
       <div className={styles.panelFooter}>
