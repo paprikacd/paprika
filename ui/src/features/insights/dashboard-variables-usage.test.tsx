@@ -48,7 +48,7 @@ describe("variable usage on the declarations", () => {
     const onApply = vi.fn();
     render(<DashboardVariablesEditor dashboard={dashboardWith([{ name: "service" }, { name: "region" }])} onApply={onApply} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove variable 1" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Removing service leaves {{service}} in one widget. Remove it anyway?");
+    expect(screen.getByRole("alert")).toHaveTextContent("Requests reads service. Removing it leaves that reference without a value. Remove it anyway?");
     fireEvent.click(screen.getByRole("button", { name: "Keep" }));
     expect(screen.getByLabelText("Variable 1 name")).toHaveValue("service");
     fireEvent.click(screen.getByRole("button", { name: "Remove variable 1" }));
@@ -56,5 +56,34 @@ describe("variable usage on the declarations", () => {
     expect(screen.queryByLabelText("Variable 2 name")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
     expect(onApply.mock.lastCall![0].variables).toEqual([{ name: "region" }]);
+  });
+
+  it("counts another variable's source as a use, lists every reader before removing, and renames the source", () => {
+    const pods: Widget = { ...requests, id: "pods", title: "Pods", query: "up" , selectionBindings: [{ variable: "cluster", source: "label", value: "cluster" }] };
+    const variables: Dashboard["variables"] = [
+      { name: "cluster", defaultValue: "c1" },
+      { name: "service", defaultValue: "api", source: { type: "labelValues", providerId: "metrics", label: "job", selector: "up{cluster={{cluster}}}" } },
+    ];
+    const onApply = vi.fn();
+    render(<DashboardVariablesEditor dashboard={dashboardWith(variables, [requests, pods])} onApply={onApply} />);
+    expect(screen.getByText("Used by 1 widget and 1 variable: Pods, variable service")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Remove variable 1" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Pods, variable service read cluster.");
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    fireEvent.change(screen.getByLabelText("Variable 1 name"), { target: { value: "k8s" } });
+    expect(screen.getByRole("switch", { name: /^Rename references too/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
+    const applied = onApply.mock.lastCall![0] as Dashboard;
+    expect(applied.variables?.[1].source).toMatchObject({ selector: "up{cluster={{k8s}}}" });
+    expect(applied.widgets[1].selectionBindings).toEqual([{ variable: "k8s", source: "label", value: "cluster" }]);
+  });
+
+  it("only rewrites the exact name when two names share a prefix", () => {
+    const both: Widget = { ...requests, query: 'up{job="x"} * on() group_left {{a}} + {{ab}}' };
+    const onApply = vi.fn();
+    render(<DashboardVariablesEditor dashboard={dashboardWith([{ name: "a" }, { name: "ab" }], [both])} onApply={onApply} />);
+    fireEvent.change(screen.getByLabelText("Variable 1 name"), { target: { value: "service" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update variables" }));
+    expect(onApply.mock.lastCall![0].widgets[0].query).toBe('up{job="x"} * on() group_left {{service}} + {{ab}}');
   });
 });

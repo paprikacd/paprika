@@ -914,18 +914,26 @@ export function WidgetEditor({
     .flatMap((entry) => entry.starterQueries ?? []);
   const startersOffered = !draft.queryRef && starterChips.length > 1 &&
     (draft.query.trim() === "" || draft.query === "up" || familyStarters.some((starter) => starter.query === draft.query));
-  /** One undo step: the query, the unit when it was empty or a starter unit, and the title while it is still the default. */
+  /**
+   * One undo step: the query, plus the unit and title while they are still empty, the default or what the previous
+   * starter wrote. A unit or title the author typed is kept, and a starter without a unit clears the previous one's.
+   */
   function applyStarter(starter: StarterQuery) {
-    const starterUnits = new Set(familyStarters.map((entry) => entry.unit).filter((unit): unit is string => unit !== undefined));
-    history.update(current => ({
-      ...current,
-      draft: {
-        ...current.draft,
-        query: starter.query,
-        unit: starter.unit !== undefined && (current.draft.unit === "" || starterUnits.has(current.draft.unit)) ? starter.unit : current.draft.unit,
-        title: current.draft.title === defaultWidgetTitle(current.draft.type, ownDefinition?.label) ? starter.label : current.draft.title,
-      },
-    }));
+    history.update(current => {
+      const previous = familyStarters.find((entry) => entry.query === current.draft.query);
+      const unitFromStarter = current.draft.unit === "" || (previous !== undefined && current.draft.unit === (previous.unit ?? ""));
+      const titleFromStarter = current.draft.title === defaultWidgetTitle(current.draft.type, ownDefinition?.label) ||
+        (previous !== undefined && current.draft.title === previous.label);
+      return {
+        ...current,
+        draft: {
+          ...current.draft,
+          query: starter.query,
+          unit: unitFromStarter ? starter.unit ?? "" : current.draft.unit,
+          title: titleFromStarter ? starter.label : current.draft.title,
+        },
+      };
+    });
     setEditorRevision(revision => revision + 1);
   }
   const contentKey = (value: Widget) => JSON.stringify({ ...value, layout: { w: value.layout.w, h: value.layout.h } });

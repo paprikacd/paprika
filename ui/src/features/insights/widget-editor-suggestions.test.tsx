@@ -16,6 +16,18 @@ describe("visualization suggestions and search", () => {
     expect(callbacks.onApply.mock.lastCall![0]).toMatchObject({ type: "stat" });
   });
 
+  it("leaves the visualization alone until the author picks a suggestion", () => {
+    const subject = { ...widget, type: "timeseries" as const };
+    const callbacks = editorProps({ widget: subject, result: oneSeries });
+    render(<WidgetEditor {...callbacks} widget={subject} result={oneSeries} />);
+    expect(screen.getByRole("group", { name: "Suggested for this data" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Time series");
+    for (const mock of Object.values(callbacks)) if (typeof mock === "function" && "mock" in mock) {
+      for (const call of (mock as unknown as { mock: { calls: unknown[][] } }).mock.calls)
+        expect(JSON.stringify(call)).not.toContain('"type":"stat"');
+    }
+  });
+
   it("shows no suggestions without a loaded result", () => {
     render(<WidgetEditor {...editorProps()} />);
     expect(screen.queryByRole("group", { name: "Suggested for this data" })).toBeNull();

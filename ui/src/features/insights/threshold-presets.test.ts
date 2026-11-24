@@ -37,6 +37,18 @@ describe("threshold presets", () => {
     expect(preset("latency").build("%")).toBeUndefined();
   });
 
+  it("never writes a proportion or a multiple in a unit that measures something else", () => {
+    for (const unit of ["ms", "s", "bytes", "req/s", "B/s"]) {
+      expect(preset("availability").build(unit)).toBeUndefined();
+      expect(preset("errorRatio").build(unit)).toBeUndefined();
+      expect(preset("saturation").build(unit)).toBeUndefined();
+      expect(preset("burnRate").build(unit)).toBeUndefined();
+    }
+    expect(preset("burnRate").build("%")).toBeUndefined();
+    expect(preset("burnRate").build("×")!.map((band) => band.value)).toEqual([0, 2, 10]);
+    expect(preset("burnRate").build("")!.map((band) => band.value)).toEqual([0, 2, 10]);
+  });
+
   it("suggests presets from the unit", () => {
     expect(suggestedPresetIds("%")).toEqual(["availability", "errorRatio", "saturation"]);
     expect(suggestedPresetIds("ms")).toEqual(["latency"]);

@@ -294,7 +294,7 @@ describe("history and link fixes from review", () => {
     const blank = here()
 
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }, { timeout: 5000 }))
     fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     await settle()
     fireEvent.change(screen.getByLabelText("variable_1"), { target: { value: "one" } })

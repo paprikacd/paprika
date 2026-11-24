@@ -16,9 +16,19 @@ function bands(list: readonly Band[]): Threshold[] {
   return list.map(([value, status, label]) => ({ value, status, label }));
 }
 
-/** A percentage unit uses 0 to 100. Any other unit, including none, uses ratios from 0 to 1. */
-function scaled(unit: string, percentScale: readonly Band[], ratioScale: readonly Band[]): Threshold[] {
-  return bands(unit.trim() === "%" ? percentScale : ratioScale);
+/** Units that read a value as a plain ratio from 0 to 1. */
+const RATIO_UNITS = new Set(["", "ratio"]);
+/** Units that read a value as a multiple, as a burn rate is. */
+const MULTIPLE_UNITS = new Set(["", "x", "×"]);
+
+/**
+ * A percentage unit uses 0 to 100, and no unit or `ratio` uses 0 to 1. Any other unit (ms, bytes, req/s) has no
+ * scale for a proportion, so the preset is not offered rather than writing bands of the wrong size.
+ */
+function scaled(unit: string, percentScale: readonly Band[], ratioScale: readonly Band[]): Threshold[] | undefined {
+  const trimmed = unit.trim();
+  if (trimmed === "%") return bands(percentScale);
+  return RATIO_UNITS.has(trimmed) ? bands(ratioScale) : undefined;
 }
 
 export const thresholdPresets: readonly ThresholdPreset[] = [
@@ -49,7 +59,7 @@ export const thresholdPresets: readonly ThresholdPreset[] = [
   {
     id: "burnRate",
     name: "Burn rate",
-    build: () => bands([[0, "ok", "Healthy"], [2, "warning", "Fast burn"], [10, "critical", "Very fast burn"]]),
+    build: (unit) => MULTIPLE_UNITS.has(unit.trim()) ? bands([[0, "ok", "Healthy"], [2, "warning", "Fast burn"], [10, "critical", "Very fast burn"]]) : undefined,
   },
   {
     id: "saturation",
@@ -65,6 +75,6 @@ export function suggestedPresetIds(unit: string): readonly string[] {
   const trimmed = unit.trim();
   if (trimmed === "%") return ["availability", "errorRatio", "saturation"];
   if (trimmed === "ms" || trimmed === "s") return ["latency"];
-  if (trimmed === "x") return ["burnRate"];
+  if (trimmed === "x" || trimmed === "×") return ["burnRate"];
   return [];
 }

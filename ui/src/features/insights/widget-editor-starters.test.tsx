@@ -33,6 +33,21 @@ describe("starter query chips", () => {
     expect(callbacks.onApply.mock.lastCall![0]).toMatchObject({ title: "Checkout health", unit: "ms" });
   });
 
+  it("a second chip replaces the unit and title the first chip wrote", () => {
+    const callbacks = openQuery({ ...widget, title: "Time series", query: "up", unit: "" });
+    fireEvent.click(screen.getByRole("button", { name: "Request rate by job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Targets up by job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(callbacks.onApply.mock.lastCall![0]).toMatchObject({ query: "sum by (job) (up)", unit: "", title: "Targets up by job" });
+  });
+
+  it("keeps a unit the author typed even when another starter uses it", () => {
+    const callbacks = openQuery({ ...widget, title: "Time series", query: "up", unit: "%" });
+    fireEvent.click(screen.getByRole("button", { name: "Request rate by job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(callbacks.onApply.mock.lastCall![0]).toMatchObject({ unit: "%" });
+  });
+
   it("hides the chips once the query is a custom one", () => {
     openQuery({ ...widget, query: "node_load1" });
     expect(screen.queryByRole("group", { name: "Starter queries" })).toBeNull();

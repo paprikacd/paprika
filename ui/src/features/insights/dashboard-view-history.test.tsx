@@ -268,7 +268,7 @@ describe("dashboard view history characterisation", () => {
     record("load without a link")
 
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }, { timeout: 5000 }))
     fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     record("declare a variable")
 

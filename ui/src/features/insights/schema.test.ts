@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { z } from "zod"
+import { seriesStarters, statStarters, traceStarters } from "./starter-queries"
 import {
   checkVariableSourceGraph,
   dashboardSchema,
@@ -265,6 +266,18 @@ describe("dashboard document contract", () => {
       query: "count(up == 1)",
     })
     expect(newWidget("stat", [], [], undefined, starters)).toMatchObject({ query: "up" })
+  })
+
+  it("applies the Prometheus starters only to Prometheus providers", () => {
+    const uptime: Provider = { id: "uptime", name: "Uptime", type: "uptime", capabilities: ["metrics"], state: "OK" }
+    const prom: Provider = { id: "prom", name: "Prometheus", type: "prometheus", capabilities: ["metrics"], state: "OK" }
+    const tempo: Provider = { id: "tempo", name: "Tempo", type: "tempo", capabilities: ["traces"], state: "OK" }
+    expect(newWidget("stat", [uptime], [], undefined, statStarters).query).toBe("up")
+    expect(newWidget("timeseries", [uptime], [], undefined, seriesStarters).query).toBe("up")
+    expect(newWidget("stat", [prom], [], undefined, statStarters).query).toBe("count(up == 1)")
+    expect(newWidget("bar", [prom], [], undefined, seriesStarters).query).toBe("sum by (job) (up)")
+    expect(newWidget("traces", [tempo], [], undefined, traceStarters).query).toBe("{}")
+    expect(newWidget("traces", [tempo], [], undefined, statStarters).query).toBe("{}")
   })
 
   it("never defaults a new widget to a synthetic provider or to one whose last check failed", () => {
