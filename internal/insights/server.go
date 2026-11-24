@@ -103,8 +103,9 @@ type Server struct {
 	// full, by route.
 	uploadRefusals metric.Int64Counter
 	// capacityRejections counts query requests refused for capacity, by pool:
-	// "query" is this service's execution pool, and "gateway" is an observability
-	// gateway 429, labelled with the limit scope it named.
+	// "query" is this service's execution pool, "gateway" is an observability
+	// gateway 429, labelled with the limit scope it named, and "provider" is a
+	// direct provider's own 429.
 	capacityRejections metric.Int64Counter
 }
 
@@ -168,7 +169,7 @@ func (s *Server) createInstruments() error {
 	if err != nil {
 		return fmt.Errorf("create query duration histogram: %w", err)
 	}
-	s.capacityRejections, err = meter.Int64Counter("paprika_insights_query_capacity_rejections", metric.WithDescription("Query requests refused for capacity, by pool (query or gateway) and, for the gateway, the limit scope it named (edge, budget, provider, queue, or unknown)"))
+	s.capacityRejections, err = meter.Int64Counter("paprika_insights_query_capacity_rejections", metric.WithDescription("Query requests refused for capacity, by pool (query, gateway or provider) and, for the gateway, the limit scope it named (edge, budget, provider, queue, principal, or unknown)"))
 	if err != nil {
 		return fmt.Errorf("create capacity rejection counter: %w", err)
 	}
@@ -496,6 +497,27 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 	}, nil
 }
 
+// countProviderRefusal counts a provider query refused for capacity downstream of
+// Insights. A gateway 429 is pool "gateway" with the scope it named (unknown when
+// none); a direct provider's own 429 is pool "provider". Every label value comes
+// from a closed set, never from the caller or the provider.
+func (s *Server) countProviderRefusal(ctx context.Context, err error) {
+	failure := classifyQueryFailure(err)
+	if failure.Code != "rate_limited" {
+		return
+	}
+	var remote *observeError
+	if !errors.As(err, &remote) {
+		s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "provider")))
+		return
+	}
+	scope := failure.LimitScope
+	if scope == "" {
+		scope = "unknown"
+	}
+	s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "gateway"), attribute.String("scope", scope)))
+}
+
 // queryCapacityRefusal is the refusal for a query that could not get an execution
 // slot. Its Retry-After is the wait the query pool's observed hold time implies.
 func (s *Server) queryCapacityRefusal(ctx context.Context) error {
@@ -559,12 +581,8 @@ func (s *Server) executeProviderQuery(ctx context.Context, p *providerClient, q 
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
 	s.queryCount.Add(ctx, 1, attributes)
 	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
-	if failure := classifyQueryFailure(err); err != nil && failure.Code == "rate_limited" {
-		scope := failure.LimitScope
-		if scope == "" {
-			scope = "unknown"
-		}
-		s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "gateway"), attribute.String("scope", scope)))
+	if err != nil {
+		s.countProviderRefusal(ctx, err)
 	}
 	return result, err
 }

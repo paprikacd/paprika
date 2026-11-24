@@ -105,9 +105,13 @@ startup.
 
 **Which limit refused a 429.** Every gateway 429 carries `X-Paprika-Limit-Scope`:
 `edge` (HTTP admission pools), `budget` (the gateway-wide execution slots),
-`provider` (one provider's bulkhead) or `queue` (the admission queue that bounds
-both). Insights holds only the widgets of a provider when the scope is `provider`,
-and every widget on the board otherwise.
+`provider` (one provider's bulkhead), `queue` (the admission queue that bounds
+both), `principal` (the per-caller request rate that `/mcp` and the REST routes
+share) or `unknown` (a `resource_exhausted` that names no limit). Insights holds
+only the widgets of a provider when the scope is `provider`, and every widget on
+the board otherwise, including when the header is missing (an older gateway) or
+names a value it does not know. A 429 from Insights' own query pool names no scope
+and also holds the board.
 
 **What each hop's wait costs.**
 

@@ -243,6 +243,9 @@ export class InsightsQueryError extends InsightsHTTPError {
   }
 }
 
+// The gateway limits a 429 can name. Anything else is dropped, so it holds the whole board.
+const limitScopes = new Set(["edge", "budget", "provider", "queue", "principal"])
+
 const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error", "gateway_unavailable"])
 
 // Fallback copy by code, for a failure whose body is not Insights' JSON envelope
@@ -292,7 +295,7 @@ async function queryFailure(response: Response): Promise<InsightsQueryError> {
   const message = envelopeCode !== undefined ? queryFailureMessages[envelopeCode]
     : envelopeText && response.status !== 403 ? envelopeText
     : serviceFailure ? serviceUnavailableMessage : queryFailureMessages[code]
-  const limitScope = typeof envelope.limitScope === "string" ? envelope.limitScope : undefined
+  const limitScope = typeof envelope.limitScope === "string" && limitScopes.has(envelope.limitScope) ? envelope.limitScope : undefined
   return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics), limitScope)
 }
 

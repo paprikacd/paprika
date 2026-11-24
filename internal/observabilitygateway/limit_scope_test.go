@@ -75,7 +75,7 @@ func TestWriteDashboardErrorSetsLimitScopeHeader(t *testing.T) {
 		{"budget", withLimitScope(ScopeBudget, resourceExhaustedWithRetry("x", time.Second)), "budget"},
 		{"provider", withLimitScope(ScopeProvider, resourceExhaustedWithRetry("x", time.Second)), "provider"},
 		{"queue", withLimitScope(ScopeQueue, resourceExhaustedWithRetry("x", time.Second)), "queue"},
-		{"unnamed", resourceExhaustedWithRetry("x", time.Second), "budget"},
+		{"unnamed", resourceExhaustedWithRetry("x", time.Second), "unknown"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

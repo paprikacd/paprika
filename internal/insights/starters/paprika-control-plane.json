@@ -199,7 +199,7 @@
       "providerId": "metrics-provider-id",
       "query": "sum by (pool, scope) (rate(paprika_insights_query_capacity_rejections_total[5m]))",
       "unit": "/s",
-      "description": "Queries refused with HTTP 429, split by pool. A gateway refusal names the limit that refused it: edge, budget, provider or queue.",
+      "description": "Queries refused with HTTP 429, split by pool. A gateway refusal names the limit that refused it: edge, budget, provider, queue, principal or unknown.",
       "options": { "min": 0 },
       "layout": { "x": 9, "y": 15, "w": 3, "h": 4 }
     }

@@ -180,6 +180,7 @@ func TestLimitPrincipal_SharesBucketWithMCP(t *testing.T) {
 	limited := restCall("alice")
 	require.Equal(t, http.StatusTooManyRequests, limited.Code)
 	assert.Equal(t, "1", limited.Header().Get("Retry-After"))
+	assert.Equal(t, ScopePrincipal, limited.Header().Get(LimitScopeHeader), "the refusal names the caller's own rate limit")
 }
 
 // A REST call with no principal is refused: a route must never run unlimited.

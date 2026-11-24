@@ -119,13 +119,15 @@ function capacityRefusal(error: unknown): { retryAfter: string | null; limitScop
 }
 
 /**
- * The hold key for a refusal. A provider-scoped refusal (or one that names no
- * scope) holds only its own provider. An edge, budget or queue refusal limits
- * every provider, so it holds the whole board.
+ * The hold key for a refusal. Only a refusal that names the provider scope holds
+ * just its own provider. Every other refusal holds the whole board: an edge,
+ * budget, queue or principal limit applies to every provider, and so does
+ * Insights' own query pool, which names no scope. A missing or unrecognised scope
+ * (an older gateway) is treated the same way, so it never narrows a hold.
  */
 const BOARD_HOLD = "*";
 function holdKeyFor(providerId: string, limitScope: string | undefined): string {
-  return limitScope === undefined || limitScope === "provider" ? providerId : BOARD_HOLD;
+  return limitScope === "provider" ? providerId : BOARD_HOLD;
 }
 
 /**
@@ -228,7 +230,7 @@ export function createQueryScheduler(
     entry.attempts++;
     entry.capacityWaitMs += delay;
     entry.waiting = true;
-    // A provider-scoped refusal holds that provider's queued entries; an edge, budget or queue refusal holds the board.
+    // A provider-scoped refusal holds that provider's queued entries; any other refusal holds the board.
     const holdKey = holdKeyFor(entry.request.providerId, refusal.limitScope);
     providerHolds.set(holdKey, Math.max(providerHolds.get(holdKey) ?? 0, Date.now() + delay));
     diagnostics.update(entry.receiptId, { state: "queued", attempts: entry.attempts, capacityWaitMs: entry.capacityWaitMs });

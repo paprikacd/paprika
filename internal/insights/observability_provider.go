@@ -178,11 +178,13 @@ func observeHTTPErrorFor(status int, retryAfter, limitScope string) error {
 // refused a 429.
 const observeLimitScopeHeader = "X-Paprika-Limit-Scope"
 
-// observeLimitScope returns the gateway's limit scope when it is one of the four
-// names the gateway sends, and empty otherwise. The value is never echoed raw.
+// observeLimitScope returns the gateway's limit scope when it is one of the names
+// the gateway sends, and empty otherwise. The value is never echoed raw. Empty (no
+// header, an older gateway, or "unknown") reads as gateway-wide, as every scope but
+// provider does, so a missing or unrecognised name never narrows a hold.
 func observeLimitScope(value string) string {
 	switch value {
-	case "edge", "budget", "provider", "queue":
+	case "edge", "budget", "provider", "queue", "principal":
 		return value
 	}
 	return ""

@@ -161,7 +161,7 @@ below. The gateway emits no metrics of its own; its refusals show up here as
 |-----------------|------|------------|-------------|
 | `paprika_insights_queries` | Counter | `provider`, `kind`, `outcome` | Provider queries by outcome. `catalog_busy` counts a shared listing refused by the catalog pool |
 | `paprika_insights_query_duration_seconds` | Histogram (seconds) | `provider`, `kind`, `outcome` | Provider query duration. Buckets are 5 ms to 60 s, shared with the other duration histograms |
-| `paprika_insights_query_capacity_rejections` | Counter | `pool`, `scope` | Query requests refused with HTTP 429. `pool="query"` is Insights' own execution pool; `pool="gateway"` is a gateway 429, and `scope` names the limit (`edge`, `budget`, `provider`, `queue`, or `unknown`) |
+| `paprika_insights_query_capacity_rejections` | Counter | `pool`, `scope` | Query requests refused for capacity. `pool="query"` is Insights' own execution pool; `pool="gateway"` is a gateway 429, and `scope` names the limit (`edge`, `budget`, `provider`, `queue`, `principal`, or `unknown`); `pool="provider"` is a direct provider's own 429. Only `pool="gateway"` has `scope` |
 | `paprika_insights_dashboard_upload_refusals` | Counter | `route` | Dashboard saves and dry runs refused because the request-body budget was full |
 
 Prometheus appends `_total` to the counters and `_bucket`, `_sum` and `_count` to the
