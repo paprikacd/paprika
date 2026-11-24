@@ -32,8 +32,8 @@ type dashboardReadVariable struct {
 	Source       *dashboardReadVariableSource `json:"source"`
 }
 
-// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. It does not resolve
-// the source: the values come from the console, so the rest of the source only describes it.
+// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. The values are
+// resolved per call and reported as sourceOptions; the rest of the source describes it.
 type dashboardReadVariableSource struct {
 	Type       string                  `json:"type"`
 	ProviderID string                  `json:"providerId"`

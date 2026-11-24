@@ -66,10 +66,10 @@ IDs here are placeholders; run the steps in order.
    For a service, cluster or other list that lives in the data, prefer a `source` over a typed list:
    `{"type":"labelValues","providerId","label","selector?","limit?"}` reads one label's values from a
    Prometheus or Tempo provider, and `{"type":"savedQuery","queryRef","field"}` reads a records column or a
-   series label. The console resolves the source and shows its values; `options` then is only the fallback
-   shown when the source fails. `query_dashboard` does not resolve sources yet, so when you query with a
-   sourced variable, pass an explicit `variables` value. `variableDefinitions` reports the source as
-   `sourceSummary` and the static list as `fallbackOptions`, and an empty override is named in `warnings`.
+   series label. The console resolves the source and shows its values, and `query_dashboard` resolves it too:
+   a sourced variable's `sourceOptions` lists the values its source returned for the call, with `state` and
+   `currentValue`. `options` is only the fallback shown when the source fails. An override outside the
+   returned values still applies and is named in `warnings`, and an empty override is named there too.
    Do not work around a source by binding a constant where a variable would do.
 
 5. **Validate.** `validate_dashboard` takes `document` or `id` and returns schema and lint
@@ -100,7 +100,7 @@ IDs here are placeholders; run the steps in order.
    when the whole source must be ranked.
    Optional: `variables`, `widget_ids`, `start` and `end` (at most 31 days), `history_points`,
    `max_series`, `max_traces`. `variableDefinitions` gives each variable's label, default and
-   options (a sourced variable's are `fallbackOptions`), so read them there rather than calling `get_dashboard`; `optionsOmitted` counts options
+   options (a sourced variable's values are in `sourceOptions`, and its `fallbackOptions` are only its fallback), so read them there rather than calling `get_dashboard`; `optionsOmitted` counts options
    past a 4 KiB per-result budget; `get_dashboard` returns the full list. An override outside the options still applies and is named in
    `warnings`, so check it before you report the signals. Treat `structuredContent` as authoritative; the text is a
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a
