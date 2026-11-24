@@ -24,6 +24,8 @@ func newFakeResultMetrics() *fakeResultMetrics {
 	return &fakeResultMetrics{evictions: map[string]int{}}
 }
 
+func (m *fakeResultMetrics) lookup(string, string, string) {}
+
 func (m *fakeResultMetrics) evicted(reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

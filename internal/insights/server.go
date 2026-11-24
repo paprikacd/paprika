@@ -267,26 +267,26 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 	receipt := newQueryReceipt(&q, wantsQueryReceipt(r))
 	ctx = withQueryReceipt(ctx, receipt)
 	r = r.WithContext(ctx)
+	adm := &admission{s: s}
 	var (
-		p       *providerClient
-		release func()
-		ok      bool
+		p  *providerClient
+		ok bool
 	)
 	if s.observe != nil && strings.HasPrefix(q.ProviderID, observeProviderPrefix) {
-		p, release, ok = s.admitAndResolveShared(w, r, &q)
+		// The catalog listing runs under a slot that stays held until the cache decides whether this request executes.
+		p, adm.held, ok = s.admitAndResolveShared(w, r, &q)
 	} else {
-		// Local providers come from the registry, so they resolve before admission:
-		// they never wait on the shared catalog, and an unknown id is a 404 even
-		// while Insights is saturated.
-		if p, ok = s.resolveLocalQuery(w, r, &q); ok {
-			release, ok = s.admitQueryRequest(w, r)
-		}
+		// Local providers come from the registry, so they resolve before any execution slot is taken:
+		// they never wait on the shared catalog, and an unknown id is a 404 even while Insights is saturated.
+		p, ok = s.resolveLocalQuery(w, r, &q)
 	}
 	if !ok {
 		return
 	}
-	defer release()
-	result, err := s.executeProviderQuery(ctx, p, &q)
+	defer adm.share()
+	result, err := s.throughResultCache(ctx, p, &q, wantsResultRefresh(r), adm, func(ctx context.Context) (QueryResult, error) {
+		return s.executeProviderQuery(ctx, p, &q)
+	})
 	if err != nil {
 		writeQueryFailure(w, err, receipt.response())
 		return
@@ -510,25 +510,20 @@ func (e *capacityRefusal) Error() string { return e.err.Error() }
 
 func (e *capacityRefusal) Unwrap() error { return e.err }
 
-// runProviderQuery admits, then executes an already resolved provider. Callers
-// that resolve providers first (dashboards) keep their existing ordering. The
-// boolean records admission (see below), not provider I/O.
+// runProviderQuery answers an already resolved provider's query through the result cache,
+// and executes under an execution slot when it must run. Callers that resolve providers
+// first (dashboards) keep their existing ordering. The boolean records whether this request
+// took an execution slot for its own execution: a cache hit or a join takes none, and neither
+// does an admission refusal.
 func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
 	receipt := newQueryReceipt(q, false)
 	receipt.bind(p)
 	ctx = withQueryReceipt(ctx, receipt)
-	release, err := s.acquireQuery(ctx)
-	receipt.mark("admission")
-	if err != nil {
-		receipt.fail(err)
-		return QueryResult{Diagnostics: receipt.diagnostics()}, false, err
-	}
-	defer release()
-	result, err := s.executeProviderQuery(ctx, p, q)
-	// The boolean is admission, as on master: queryCount.executed keeps counting
-	// admitted queries, including those that fail before dispatch. The receipt's
-	// dispatched flag records whether provider I/O actually began.
-	return result, true, err
+	adm := &admission{s: s}
+	result, err := s.throughResultCache(ctx, p, q, false, adm, func(ctx context.Context) (QueryResult, error) {
+		return s.executeProviderQuery(ctx, p, q)
+	})
+	return result, adm.admitted, err
 }
 
 // executeProviderQuery runs the query under an admission slot the caller holds.

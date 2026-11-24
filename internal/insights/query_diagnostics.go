@@ -29,6 +29,25 @@ type QueryDiagnostics struct {
 	// TruncationReason is the QueryTruncation.Reason of a truncated result. It
 	// is absent when the result is complete.
 	TruncationReason string `json:"truncationReason,omitempty"`
+	// Cache says how the shared result cache answered. It is absent when the cache is disabled.
+	Cache *QueryDiagnosticCache `json:"cache,omitempty"`
+}
+
+// QueryDiagnosticCache says how the result cache answered a query. Status is hit,
+// joined, miss or bypass. A hit or a join made no provider request: its source is the
+// execution that produced the result, and its age is how long ago that result was stored.
+// Reason names why a query bypassed the cache, or why a miss was not kept.
+type QueryDiagnosticCache struct {
+	Status            string   `json:"status"`
+	SourceExecutionID string   `json:"sourceExecutionId,omitempty"`
+	AgeMs             *float64 `json:"ageMs,omitempty"`
+	Reason            string   `json:"reason,omitempty"`
+}
+
+// servedFromCache reports whether the receipt answers from the cache without a
+// provider request: a hit or a join.
+func (d *QueryDiagnostics) servedFromCache() bool {
+	return d != nil && d.Cache != nil && (d.Cache.Status == "hit" || d.Cache.Status == "joined")
 }
 
 // QueryDiagnosticSource exposes only the authorized public source identity.

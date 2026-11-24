@@ -46,6 +46,7 @@ var errResultCacheNoResult = errors.New("result cache: leader returned no result
 // resultCacheMetrics records cache evictions and occupancy. It is the seam the
 // tests use to observe the cache without OpenTelemetry.
 type resultCacheMetrics interface {
+	lookup(outcome, kind, reason string)
 	evicted(reason string)
 	usage(bytes, entries int)
 }
@@ -226,7 +227,8 @@ func (c *resultCache) complete(key, providerID string, lead *resultFlight, r *Qu
 	case r == nil:
 		lead.err = errResultCacheNoResult
 	default:
-		lead.entry = &resultEntry{key: key, providerID: providerID, executionID: executionID, result: storedResult(r)}
+		// The joiners' age starts when the leader finished, so a join reports the leader's clock.
+		lead.entry = &resultEntry{key: key, providerID: providerID, executionID: executionID, result: storedResult(r), stored: c.now()}
 		if keep {
 			c.insertLocked(lead.entry)
 		}
@@ -310,6 +312,14 @@ func (c *resultCache) removeLocked(elem *list.Element, reason string) {
 	c.reportUsage()
 }
 
+// lookup counts one cache decision: hit, joined, miss or bypass, with the query kind and,
+// for a bypass or an unkept miss, the reason.
+func (c *resultCache) lookup(outcome, kind, reason string) {
+	if c.metrics != nil {
+		c.metrics.lookup(outcome, kind, reason)
+	}
+}
+
 func (c *resultCache) recordEviction(reason string) {
 	if c.metrics != nil {
 		c.metrics.evicted(reason)
@@ -332,12 +342,17 @@ func storedResult(r *QueryResult) QueryResult {
 
 // otelResultCacheMetrics records the cache on the Insights meter.
 type otelResultCacheMetrics struct {
+	lookups   metric.Int64Counter
 	evictions metric.Int64Counter
 	bytes     metric.Int64Gauge
 	entries   metric.Int64Gauge
 }
 
 func newResultCacheMetrics(meter metric.Meter) (*otelResultCacheMetrics, error) {
+	lookups, err := meter.Int64Counter("paprika_insights_result_cache_lookups", metric.WithDescription("Result cache decisions by outcome, kind and bypass reason"))
+	if err != nil {
+		return nil, fmt.Errorf("create result cache lookup counter: %w", err)
+	}
 	evictions, err := meter.Int64Counter("paprika_insights_result_cache_evictions", metric.WithDescription("Result cache entries removed, by reason"))
 	if err != nil {
 		return nil, fmt.Errorf("create result cache eviction counter: %w", err)
@@ -350,7 +365,15 @@ func newResultCacheMetrics(meter metric.Meter) (*otelResultCacheMetrics, error) 
 	if err != nil {
 		return nil, fmt.Errorf("create result cache entries gauge: %w", err)
 	}
-	return &otelResultCacheMetrics{evictions: evictions, bytes: bytes, entries: entries}, nil
+	return &otelResultCacheMetrics{lookups: lookups, evictions: evictions, bytes: bytes, entries: entries}, nil
+}
+
+func (m *otelResultCacheMetrics) lookup(outcome, kind, reason string) {
+	attributes := []attribute.KeyValue{attribute.String("outcome", outcome), attribute.String("kind", kind)}
+	if reason != "" {
+		attributes = append(attributes, attribute.String("reason", reason))
+	}
+	m.lookups.Add(context.Background(), 1, metric.WithAttributes(attributes...))
 }
 
 func (m *otelResultCacheMetrics) evicted(reason string) {
