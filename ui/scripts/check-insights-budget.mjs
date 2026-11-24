@@ -21,8 +21,9 @@ export const BUDGET = {
   jsRaw: 2_557_000, // measured 2,323,640 bytes
   jsGzip: 733_000, // measured 666,191 bytes (Node zlib, level 9)
   // Insights-specific stylesheets only; the global root sheets are excluded.
-  cssRaw: 293_000, // measured 265,715 bytes
-  cssGzip: 45_000, // measured 40,191 bytes
+  // Plugin renderer stylesheets (operational records, rich metrics) load with their widget type, not with the page.
+  cssRaw: 289_000, // measured 262,927 bytes
+  cssGzip: 44_900, // measured 40,799 bytes
 };
 
 function fail(message) {
