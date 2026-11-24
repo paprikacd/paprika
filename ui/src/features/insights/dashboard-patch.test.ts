@@ -12,7 +12,7 @@ import {
 
 type Fixture = {
   etag: string;
-  cases: { name: string; document: JSONObject; arguments: Record<string, unknown>; expect: { document: JSONObject; placements: unknown[] } | { error: string; reason: string } }[];
+  cases: { name: string; document: JSONObject; arguments: Record<string, unknown>; expect: { document: JSONObject; placements: unknown[] } | { error: string; reason: string; message: string } }[];
 };
 
 // The same cases run against the Go port (internal/observabilitygateway/insights_patch_conformance_test.go).
@@ -38,6 +38,7 @@ describe("dashboard patch conformance fixtures", () => {
       expect(result.error).not.toBeNull();
       expect(result.error?.code).toBe(testCase.expect.error);
       expect(result.error?.reason).toBe(testCase.expect.reason);
+      expect(result.error?.message).toBe(testCase.expect.message);
       expect(result.document).toBeNull();
       return;
     }
@@ -71,6 +72,22 @@ describe("applyDashboardPatch", () => {
   it("rejects an input that is not an object", () => {
     expect(validateDashboardPatch([]).error?.reason).toBe("input");
     expect(validateDashboardPatch("patch").error?.reason).toBe("input");
+    // Go reads a non-object argument as having the wrong fields, not as unbounded JSON.
+    expect(validateDashboardPatch([]).error?.message).toBe("invalid patch argument fields");
+  });
+
+  it("never throws on a document whose widgets are not all objects", () => {
+    const document = { ...base(), widgets: [...(base().widgets as JSONObject[]), null, "x"] } as JSONObject;
+    expect(() => documentChanges(document, base())).not.toThrow();
+    expect(applyDashboardPatch(document, { patch: { title: "x" } }).error).toBeNull();
+  });
+
+  it("keeps a __proto__ key as an own field and leaves the prototype alone", () => {
+    const result = applyDashboardPatch(base(), JSON.parse('{"widget_edits":[{"op":"update","id":"a","patch":{"__proto__":{"type":"text"}}}]}'));
+    const widget = (result.document?.widgets as JSONObject[])[0];
+    expect(Object.getPrototypeOf(widget)).toBe(Object.prototype);
+    expect(Object.hasOwn(widget, "__proto__")).toBe(true);
+    expect(JSON.stringify(widget)).toContain('"__proto__":{"type":"text"}');
   });
 });
 
