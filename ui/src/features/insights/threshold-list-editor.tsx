@@ -1,5 +1,6 @@
 "use client"
 
+import { useId, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -22,6 +23,42 @@ function withStatusMark(threshold: Threshold, mark: StatusMark): Threshold {
 }
 
 /**
+ * A band's value as typed text. Only a finite number is written back: an emptied or half-typed field keeps the last
+ * stored value (and says so) instead of silently becoming 0. Blur restores the stored value.
+ */
+function ThresholdValueInput({ value, label, onValue }: { value: number; label: string; onValue: (value: number) => void }) {
+  const [text, setText] = useState(() => value.toString())
+  const [synced, setSynced] = useState(value)
+  const hintId = useId()
+  // Resync when the stored value changes from outside (undo, preset, another band's edit).
+  if (value !== synced) {
+    setSynced(value)
+    setText(value.toString())
+  }
+  const invalid = text.trim() === "" || !Number.isFinite(Number(text))
+  return <>
+    <GammaInput
+      aria-label={label}
+      aria-invalid={invalid || undefined}
+      aria-describedby={invalid ? hintId : undefined}
+      type="number"
+      step="any"
+      value={text}
+      onChange={(event) => {
+        const next = event.target.value
+        setText(next)
+        if (next.trim() === "" || !Number.isFinite(Number(next))) return
+        const parsed = Number(next)
+        setSynced(parsed)
+        onValue(parsed)
+      }}
+      onBlur={() => setText(value.toString())}
+    />
+    {invalid && <small id={hintId} className="text-[11px] text-[var(--gamma-danger)]">Enter a number to update this band.</small>}
+  </>
+}
+
+/**
  * Editable value bands: a value, a status or hue, and a label for each. The widget's Value thresholds and each
  * record column's own thresholds use this one list. `prefix` names the bands in their labels ("Threshold 2 value",
  * "Column 1 threshold 2 value"), so two lists on one screen keep distinct accessible names.
@@ -39,12 +76,10 @@ export function ThresholdListEditor({ thresholds, onChange, prefix = "Threshold"
       <div className={editorStyles.threshold} key={index}>
         <label className={editorStyles.field}>
           At least
-          <GammaInput
-            aria-label={`${prefix} ${index + 1} value`}
-            type="number"
-            step="any"
+          <ThresholdValueInput
+            label={`${prefix} ${index + 1} value`}
             value={threshold.value}
-            onChange={(event) => onChange(thresholds.map((item, i) => i === index ? { ...item, value: Number(event.target.value) } : item))}
+            onValue={(value) => onChange(thresholds.map((item, i) => i === index ? { ...item, value } : item))}
           />
         </label>
         <GammaButton

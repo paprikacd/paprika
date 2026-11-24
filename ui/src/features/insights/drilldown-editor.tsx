@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useState } from "react";
+import { lazy, Suspense, useId, useState } from "react";
+import { useSavedQueryLibrary } from "./saved-query-context";
+import type { DashboardVariable } from "./schema";
+
+// Loaded on demand: the declaration form stays out of the first view.
+const VariableQuickCreate = lazy(() => import("./variable-quick-create"));
+/** The destination option that declares a variable on this dashboard instead of choosing one. */
+const NEW_VARIABLE = "+new-variable";
 import { Link2, Plus, Trash2 } from "lucide-react";
 import { GammaButton } from "./gamma/button";
 import { GammaInput } from "./gamma/input";
@@ -50,7 +57,10 @@ export function DrilldownEditor({
   queryFields,
 }: DrilldownEditorProps) {
   const fieldListId = useId();
+  const library = useSavedQueryLibrary();
   const [pendingDestination, setPendingDestination] = useState<{ linkId: string; from: string; to: string }>();
+  // The binding whose variable is being declared inline: its link and its position.
+  const [declaringBinding, setDeclaringBinding] = useState<{ link: number; binding: number }>();
   const links = widget.drilldowns ?? [];
   const recordColumns = queryFields?.recordColumns;
   const labelNames = recordColumns ? recordColumns.map(column => column.name) : queryFields?.labels.map(label => label.name) ?? [];
@@ -215,8 +225,7 @@ export function DrilldownEditor({
             </div>
             {!variables.length && target && (
               <p className={styles.help}>
-                This destination has no variables. Add them in its dashboard
-                settings to pass context.
+                This destination has no variables. Add them in Manage dashboards on that dashboard to pass context.
               </p>
             )}
             {assigned.map((binding, bindingIndex) => {
@@ -240,6 +249,9 @@ export function DrilldownEditor({
                   description: "Choose a declared variable",
                   disabled: false,
                 });
+              // Only a link back to this dashboard can declare a variable here.
+              const canDeclare = !!library.onDeclareVariable && target?.id === library.dashboardId;
+              if (canDeclare) options.push({ value: NEW_VARIABLE, label: "New variable…", description: "", disabled: false });
               const edit = (next: DrilldownBinding) =>
                 bindings(
                   index,
@@ -258,7 +270,9 @@ export function DrilldownEditor({
                         value={binding.variable}
                         options={options}
                         onValueChange={(variable) =>
-                          edit({ ...binding, variable })
+                          variable === NEW_VARIABLE
+                            ? setDeclaringBinding({ link: index, binding: bindingIndex })
+                            : edit({ ...binding, variable })
                         }
                       />
                     </div>
@@ -284,6 +298,20 @@ export function DrilldownEditor({
                       destination. Choose another variable or remove the
                       binding.
                     </p>
+                  )}
+                  {canDeclare && declaringBinding?.link === index && declaringBinding.binding === bindingIndex && (
+                    <Suspense fallback={null}>
+                      <VariableQuickCreate
+                        initialName={binding.variable}
+                        existing={variables.map((variable) => variable.name)}
+                        onCreate={(variable: DashboardVariable) => {
+                          library.onDeclareVariable!(variable);
+                          edit({ variable: variable.name, source: "label", value: variable.name });
+                          setDeclaringBinding(undefined);
+                        }}
+                        onCancel={() => setDeclaringBinding(undefined)}
+                      />
+                    </Suspense>
                   )}
                   <div className={styles.field}>
                     <span>Value source</span>

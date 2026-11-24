@@ -4,7 +4,7 @@ import { isApplePlatform, type ChartCommands } from "./use-insights-shortcuts";
 import { ariaKeyshortcutsFor, hintFor } from "./shortcuts";
 import { PREVIEW_SIZES, usePreviewSize, type PreviewSize } from "./preview-size";
 import type { PreviewFootprints } from "./canvas";
-import { ChartAppearancePresets } from "./chart-appearance-presets";
+import { StylePresetChoices } from "./chart-appearance-presets";
 import { stringify as stringifyYaml } from "yaml";
 import { providerOption, QuerySourceIcon } from "./source-identity";
 import {
@@ -26,13 +26,16 @@ import {
   supportsTooltipView,
   supportsAnnotationSource,
   preferredProvider,
+  defaultWidgetTitle,
   type Dashboard,
   type Provider,
   type Widget,
   type QueryResult,
   type WidgetOptions,
 } from "./schema";
-import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { getWidgetDefinition, optionSectionsFor, supportsThresholds, useWidgetDefinitions, type StarterQuery, type StyleSectionId } from "./widget-registry";
+import { StarterQueryChips } from "./starter-query-chips";
+import { suggestVisualizations, visualizationValue } from "./visualization-suggestions";
 import { PluginConfigEditor } from "./plugin-config-editor";
 import { SeriesColorEditor } from "./plugins/series-color-editor";
 import type { InsightsClient } from "./client";
@@ -57,6 +60,7 @@ import {
 import { DEFAULT_HEATMAP_THRESHOLDS } from "./chart-renderers";
 import { thresholdHex, type StatusTheme } from "./status";
 import { ThresholdListEditor } from "./threshold-list-editor";
+import { ThresholdPresetChoices } from "./threshold-preset-choices";
 import { useInsightsTheme } from "./insights-theme";
 import { seriesHex, type SeriesTheme } from "./series-palette";
 import { widgetColorSeriesIndex, widgetSeriesColors, type SeriesColorRule } from "./series-colors";
@@ -88,7 +92,7 @@ export const widgetLabels = {
   stat: "Single value",
   table: "Metrics table",
   traces: "Trace explorer",
-  heatmap: "Status heatmap",
+  heatmap: "Status grid",
   plugin: "Plugin",
 };
 
@@ -266,6 +270,7 @@ function StyleEditor({
   const options = widget.options ?? {};
   const update = (patch: Partial<WidgetOptions>) =>
     onChange({ ...widget, options: { ...options, ...patch } });
+  const presets = getWidgetDefinition(widget)?.stylePresets ?? [];
   // Turning on the value bar does not invent bounds. Focus the minimum field
   // once it renders; the existing draft alert explains what is missing.
   const barHintId = useId();
@@ -371,183 +376,215 @@ function StyleEditor({
   const colourApplies = widget.options?.seriesColorMode === "index" || palette !== "series" || seriesCount <= 1;
   const customColor = widget.color !== undefined && colourApplies;
   const seriesModeRow = palette === "series" && widget.type !== "stat";
-  return (
-    <div className={styles.stack}>
-      {widget.type === "timeseries" && <ChartAppearancePresets options={options} onChange={update} />}
-      {supportsTooltipSettings(widget) && (
-        <div className={styles.tooltipShortcut}>
-          <GammaButton
-            type="button"
-            variant="secondary"
-            onClick={onConfigureTooltips}
-          >
-            Configure tooltips <ArrowRight size={14} />
-          </GammaButton>
-        </div>
-      )}
-      {(hasStyleControl("unit") || hasStyleControl("decimals")) && (
-        <div className={styles.row}>
-          {widget.type !== "traces" && hasStyleControl("unit") && (
+  // Each section keeps the controls it had in the flat stack, moved unchanged. The renderer's optionSections order
+  // decides which sections show and in what order; the visible predicate is the one each control already had.
+  const styleId = useId();
+  const blocks: Record<StyleSectionId, { title: string; visible: boolean; content: ReactNode }> = {
+    highlight: {
+      title: "Highlight",
+      visible: supportsThresholds(widget),
+      content: <fieldset className={styles.thresholds}>
+        <legend>Value thresholds</legend>
+        <p className={styles.hint}>
+          {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its status or colour still applies."}
+          {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
+            " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
+        </p>
+        <ThresholdPresetChoices
+          unit={widget.unit}
+          thresholds={options.thresholds ?? []}
+          onChoose={(thresholds) => update({ thresholds })}
+        />
+        <ThresholdListEditor
+          thresholds={options.thresholds ?? []}
+          onChange={(thresholds) => update({ thresholds })}
+        />
+      </fieldset>,
+    },
+    value: {
+      title: "Value",
+      visible: hasStyleControl("unit") || hasStyleControl("decimals") || widget.type === "stat" || widget.type === "timeseries" || widget.type === "traces",
+      content: <>
+        {(hasStyleControl("unit") || hasStyleControl("decimals")) && (
+          <div className={styles.row}>
+            {widget.type !== "traces" && hasStyleControl("unit") && (
+              <label className={styles.field}>
+                Unit
+                <GammaInput
+                  value={widget.unit}
+                  maxLength={24}
+                  placeholder="ms, %, req/s"
+                  onChange={(event) =>
+                    onChange({ ...widget, unit: event.target.value })
+                  }
+                />
+              </label>
+            )}
+            {hasStyleControl("decimals") && numeric("Decimal places", "decimals", 0, 8)}
+          </div>
+        )}
+        {hasStyleControl("decimals") && (
+          <p className={styles.hint}>
+            Use 0–8 decimal places, or leave blank for automatic precision.
+          </p>
+        )}
+        {(widget.type === "stat" || widget.type === "timeseries") && <>
+          {numeric(widget.type === "stat" ? "Warn when last valid sample is older than (seconds)" : "Hatch after latest sample when older than (seconds)", "staleAfterSeconds", 1, 2678400)}
+          <p className={styles.hint}>{widget.type === "stat" ? "Optional. Compared with the end of the selected time range; this describes returned samples, not the source’s scrape health." : "Time series: hatch the time after the latest sample when it is older than this before the range end. Leave blank to use two expected sample intervals."}</p>
+        </>}
+        {widget.type === "traces" && (
+          <p className={styles.hint}>
+            Trace duration is displayed in milliseconds.
+          </p>
+        )}
+      </>,
+    },
+    color: {
+      title: "Color",
+      visible: true,
+      content: <>
+        {(["timeseries", "bar", "stat"].includes(widget.type) || pluginControls.includes("color")) && (
+          <div className={styles.row}>
             <label className={styles.field}>
-              Unit
+              Series color
               <GammaInput
-                value={widget.unit}
-                maxLength={24}
-                placeholder="ms, %, req/s"
+                type="color"
+                value={widget.color ?? paletteColor ?? "#000000"}
                 onChange={(event) =>
-                  onChange({ ...widget, unit: event.target.value })
+                  onChange({ ...widget, color: event.target.value })
                 }
               />
             </label>
-          )}
-          {hasStyleControl("decimals") && numeric("Decimal places", "decimals", 0, 8)}
-        </div>
-      )}
-      {hasStyleControl("decimals") && (
-        <p className={styles.hint}>
-          Use 0–8 decimal places, or leave blank for automatic precision.
-        </p>
-      )}
-      {(widget.type === "stat" || widget.type === "timeseries") && <>
-        {numeric(widget.type === "stat" ? "Warn when last valid sample is older than (seconds)" : "Hatch after latest sample when older than (seconds)", "staleAfterSeconds", 1, 2678400)}
-        <p className={styles.hint}>{widget.type === "stat" ? "Optional. Compared with the end of the selected time range; this describes returned samples, not the source’s scrape health." : "Time series: hatch the time after the latest sample when it is older than this before the range end. Leave blank to use two expected sample intervals."}</p>
-      </>}
-      {widget.type === "traces" && (
-        <p className={styles.hint}>
-          Trace duration is displayed in milliseconds.
-        </p>
-      )}
-      {(["timeseries", "bar", "stat"].includes(widget.type) || pluginControls.includes("color")) && (
+            {palette !== "none" && (
+              <div role="group" aria-label="Series color source" className={styles.row}>
+                <GammaButton
+                  type="button"
+                  variant="secondary"
+                  aria-pressed={!customColor}
+                  onClick={() => onChange({ ...widget, color: undefined })}
+                >
+                  Palette
+                </GammaButton>
+                <GammaButton
+                  type="button"
+                  variant="secondary"
+                  aria-pressed={customColor}
+                  disabled={!seriesCount && palette === "series"}
+                  onClick={() => onChange({ ...widget, color: widget.color ?? paletteColor })}
+                >
+                  Custom
+                </GammaButton>
+              </div>
+            )}
+            {palette === "none" && <p className={styles.hint}>No palette colour applies to this widget. Choose a colour to set one.</p>}
+            {palette === "series" && !seriesCount && (
+              <p className={styles.hint}>Palette shows the colour the first series draws. Custom becomes available once data loads.</p>
+            )}
+            {palette === "series" && seriesCount > 1 && widget.options?.seriesColorMode !== "index" && widget.color !== undefined && (
+              <p className={styles.hint}>A chosen colour applies only when this widget draws one series. These series keep their identity colours.</p>
+            )}
+          </div>
+        )}
+        {seriesModeRow && (
+          <div role="group" aria-label="Series color by" className={styles.row}>
+            <GammaButton
+              type="button"
+              variant="secondary"
+              aria-pressed={options.seriesColorMode !== "index"}
+              onClick={() => update({ seriesColorMode: undefined })}
+            >
+              By name
+            </GammaButton>
+            <GammaButton
+              type="button"
+              variant="secondary"
+              aria-pressed={options.seriesColorMode === "index"}
+              onClick={() => update({ seriesColorMode: "index" })}
+            >
+              By position
+            </GammaButton>
+            <p className={styles.hint}>By name keeps a series’ colour across widgets and refreshes. By position follows result order.</p>
+          </div>
+        )}
         <div className={styles.row}>
           <label className={styles.field}>
-            Series color
+            Background
             <GammaInput
               type="color"
-              value={widget.color ?? paletteColor ?? "#000000"}
-              onChange={(event) =>
-                onChange({ ...widget, color: event.target.value })
-              }
+              value={background}
+              onChange={(event) => update({ background: event.target.value })}
             />
           </label>
-          {palette !== "none" && (
-            <div role="group" aria-label="Series color source" className={styles.row}>
-              <GammaButton
-                type="button"
-                variant="secondary"
-                aria-pressed={!customColor}
-                onClick={() => onChange({ ...widget, color: undefined })}
-              >
-                Palette
-              </GammaButton>
-              <GammaButton
-                type="button"
-                variant="secondary"
-                aria-pressed={customColor}
-                disabled={!seriesCount && palette === "series"}
-                onClick={() => onChange({ ...widget, color: widget.color ?? paletteColor })}
-              >
-                Custom
-              </GammaButton>
-            </div>
-          )}
-          {palette === "none" && <p className={styles.hint}>No palette colour applies to this widget. Choose a colour to set one.</p>}
-          {palette === "series" && !seriesCount && (
-            <p className={styles.hint}>Palette shows the colour the first series draws. Custom becomes available once data loads.</p>
-          )}
-          {palette === "series" && seriesCount > 1 && widget.options?.seriesColorMode !== "index" && widget.color !== undefined && (
-            <p className={styles.hint}>A chosen colour applies only when this widget draws one series. These series keep their identity colours.</p>
-          )}
+          <label className={styles.field}>
+            Text color
+            <GammaInput
+              type="color"
+              value={foreground}
+              onChange={(event) => update({ textColor: event.target.value })}
+            />
+          </label>
         </div>
-      )}
-      {seriesModeRow && (
-        <div role="group" aria-label="Series color by" className={styles.row}>
-          <GammaButton
-            type="button"
-            variant="secondary"
-            aria-pressed={options.seriesColorMode !== "index"}
-            onClick={() => update({ seriesColorMode: undefined })}
-          >
-            By name
-          </GammaButton>
-          <GammaButton
-            type="button"
-            variant="secondary"
-            aria-pressed={options.seriesColorMode === "index"}
-            onClick={() => update({ seriesColorMode: "index" })}
-          >
-            By position
-          </GammaButton>
-          <p className={styles.hint}>By name keeps a series’ colour across widgets and refreshes. By position follows result order.</p>
+        {(textContrast < 4.5 || lowContrastCells) && (
+          <p className={styles.contrastHint} role="status">
+            {textContrast < 4.5
+              ? `Text contrast is ${textContrast.toFixed(1)}:1 on this background. Aim for at least 4.5:1.`
+              : "Text needs more contrast on a heatmap color. Choose a different text or threshold color."}
+          </p>
+        )}
+      </>,
+    },
+    lines: {
+      title: "Lines",
+      visible: widget.type === "timeseries",
+      content: widget.type === "timeseries" && <>
+        <div className={styles.row}>
+          <label className={styles.field}>
+            Display
+            <GammaSelect
+              aria-label="Display"
+              value={options.display ?? "line"}
+              onValueChange={(value) =>
+                update({
+                  display: value as WidgetOptions["display"],
+                })
+              }
+              options={[
+                { value: "line", label: "Line" },
+                { value: "area", label: "Area" },
+              ]}
+            />
+          </label>
+          <label className={styles.field}>
+            Curve
+            <GammaSelect
+              aria-label="Curve"
+              value={options.curve ?? "linear"}
+              onValueChange={(value) =>
+                update({
+                  curve: value as WidgetOptions["curve"],
+                })
+              }
+              options={[
+                { value: "linear", label: "Linear" },
+                { value: "monotone", label: "Smooth" },
+                { value: "step", label: "Step" },
+              ]}
+            />
+          </label>
         </div>
-      )}
-      <div className={styles.row}>
-        <label className={styles.field}>
-          Background
-          <GammaInput
-            type="color"
-            value={background}
-            onChange={(event) => update({ background: event.target.value })}
-          />
-        </label>
-        <label className={styles.field}>
-          Text color
-          <GammaInput
-            type="color"
-            value={foreground}
-            onChange={(event) => update({ textColor: event.target.value })}
-          />
-        </label>
-      </div>
-      {(textContrast < 4.5 || lowContrastCells) && (
-        <p className={styles.contrastHint} role="status">
-          {textContrast < 4.5
-            ? `Text contrast is ${textContrast.toFixed(1)}:1 on this background. Aim for at least 4.5:1.`
-            : "Text needs more contrast on a heatmap color. Choose a different text or threshold color."}
-        </p>
-      )}
-      {widget.type === "timeseries" && (
-        <>
-          <div className={styles.row}>
-            <label className={styles.field}>
-              Display
-              <GammaSelect
-                aria-label="Display"
-                value={options.display ?? "line"}
-                onValueChange={(value) =>
-                  update({
-                    display: value as WidgetOptions["display"],
-                  })
-                }
-                options={[
-                  { value: "line", label: "Line" },
-                  { value: "area", label: "Area" },
-                ]}
-              />
-            </label>
-            <label className={styles.field}>
-              Curve
-              <GammaSelect
-                aria-label="Curve"
-                value={options.curve ?? "linear"}
-                onValueChange={(value) =>
-                  update({
-                    curve: value as WidgetOptions["curve"],
-                  })
-                }
-                options={[
-                  { value: "linear", label: "Linear" },
-                  { value: "monotone", label: "Smooth" },
-                  { value: "step", label: "Step" },
-                ]}
-              />
-            </label>
-          </div>
-          <SeriesColorEditor config={{ seriesColors: options.seriesColors ?? [] }} onChange={(config) => update({ seriesColors: config.seriesColors as WidgetOptions["seriesColors"] })} />
-          <div className={styles.row}>
-            {numeric("Line width", "lineWidth", 0.5, 8, 0.5)}
-            {options.display === "area" &&
-              numeric("Fill opacity", "fillOpacity", 0, 1, 0.05)}
-          </div>
+        <SeriesColorEditor config={{ seriesColors: options.seriesColors ?? [] }} onChange={(config) => update({ seriesColors: config.seriesColors as WidgetOptions["seriesColors"] })} />
+        <div className={styles.row}>
+          {numeric("Line width", "lineWidth", 0.5, 8, 0.5)}
+          {options.display === "area" &&
+            numeric("Fill opacity", "fillOpacity", 0, 1, 0.05)}
+        </div>
+      </>,
+    },
+    axes: {
+      title: "Axes",
+      visible: chart || gauge,
+      content: <>
+        {widget.type === "timeseries" && <>
           <div className={styles.row}>
             <label className={styles.field}>
               Time axis
@@ -578,161 +615,182 @@ function StyleEditor({
             onChange={(showZeroLine) => update({ showZeroLine })}
           />
           <ReferenceLinesEditor options={options} onChange={update} />
-        </>
-      )}
-      {chart && (
-        <>
+        </>}
+        {chart && (
+          <>
+            <div className={styles.row}>
+              <label className={styles.field}>
+                X axis label
+                <GammaInput
+                  value={options.xAxisLabel ?? ""}
+                  maxLength={80}
+                  onChange={(event) => update({ xAxisLabel: event.target.value })}
+                />
+              </label>
+              <label className={styles.field}>
+                Y axis label
+                <GammaInput
+                  value={options.yAxisLabel ?? ""}
+                  maxLength={80}
+                  onChange={(event) => update({ yAxisLabel: event.target.value })}
+                />
+              </label>
+            </div>
+            {chart && (
+              <>
+                <div className={styles.row}>
+                  {numeric("Y minimum", "min")}
+                  {numeric("Y maximum", "max")}
+                </div>
+                <div className={styles.row}>
+                  <label className={styles.field}>
+                    Y-axis unit
+                    <GammaSelect
+                      aria-label="Y-axis unit"
+                      value={options.axisUnit ?? "auto"}
+                      onValueChange={(value) => update({ axisUnit: value as WidgetOptions["axisUnit"] })}
+                      options={[
+                        { value: "auto", label: "Automatic" },
+                        { value: "ticks", label: "In tick labels" },
+                        { value: "caption", label: "Caption above the plot" },
+                      ]}
+                    />
+                  </label>
+                </div>
+                <GammaSwitch
+                  label="Show grid"
+                  checked={options.showGrid !== false}
+                  onChange={(showGrid) => update({ showGrid })}
+                />
+              </>
+            )}
+          </>
+        )}
+        {gauge && (
           <div className={styles.row}>
-            <label className={styles.field}>
-              X axis label
-              <GammaInput
-                value={options.xAxisLabel ?? ""}
-                maxLength={80}
-                onChange={(event) => update({ xAxisLabel: event.target.value })}
-              />
-            </label>
-            <label className={styles.field}>
-              Y axis label
-              <GammaInput
-                value={options.yAxisLabel ?? ""}
-                maxLength={80}
-                onChange={(event) => update({ yAxisLabel: event.target.value })}
-              />
-            </label>
+            {numeric("Minimum", "min")}
+            {numeric("Maximum", "max")}
           </div>
-          {chart && (
-            <>
-              <div className={styles.row}>
-                {numeric("Y minimum", "min")}
-                {numeric("Y maximum", "max")}
-              </div>
-              <div className={styles.row}>
-                <label className={styles.field}>
-                  Y-axis unit
-                  <GammaSelect
-                    aria-label="Y-axis unit"
-                    value={options.axisUnit ?? "auto"}
-                    onValueChange={(value) => update({ axisUnit: value as WidgetOptions["axisUnit"] })}
-                    options={[
-                      { value: "auto", label: "Automatic" },
-                      { value: "ticks", label: "In tick labels" },
-                      { value: "caption", label: "Caption above the plot" },
-                    ]}
-                  />
-                </label>
-              </div>
-              <GammaSwitch
-                label="Show grid"
-                checked={options.showGrid !== false}
-                onChange={(showGrid) => update({ showGrid })}
-              />
-            </>
-          )}
-        </>
-      )}
-      {gauge && (
-        <div className={styles.row}>
-          {numeric("Minimum", "min")}
-          {numeric("Maximum", "max")}
+        )}
+      </>,
+    },
+    card: {
+      title: "Value details",
+      visible: widget.type === "stat",
+      content: widget.type === "stat" && <>
+        <GammaSwitch
+          label="Show value bar"
+          description="Shows the current value on an explicit scale. Enter both bounds; threshold colors apply to the observed value."
+          checked={options.showStatBar === true}
+          onChange={(showStatBar) => {
+            focusBarBound.current = showStatBar
+              ? options.min === undefined ? "min" : options.max === undefined ? "max" : null
+              : null;
+            update({ showStatBar });
+          }}
+        />
+        {options.showStatBar && <div className={styles.row}>
+          {barBound("Bar minimum", "min", barMinimumRef)}
+          {barBound("Bar maximum", "max", barMaximumRef)}
+        </div>}
+        <GammaSwitch
+          label="Show sparkline"
+          checked={options.showSparkline === true}
+          onChange={(showSparkline) => update({ showSparkline, ...(showSparkline && !options.sparklinePlacement ? { sparklinePlacement: "side" } : {}) })}
+        />
+        {options.showSparkline && <label className={styles.field}>
+          Sparkline placement
+          <GammaSelect aria-label="Sparkline placement" value={options.sparklinePlacement ?? "background"}
+            onValueChange={(value) => update({ sparklinePlacement: value as WidgetOptions["sparklinePlacement"] })}
+            options={[{ value: "background", label: "Behind value" }, { value: "side", label: "Beside value" }]} />
+        </label>}
+        <label className={styles.field}>
+          Compare with
+          <GammaSelect aria-label="Compare with" value={options.compare?.window ?? "off"}
+            onValueChange={(value) => update({ compare: value === "off" ? undefined : { window: value as "previous" | "1d" | "7d", ...(options.compare?.good ? { good: options.compare.good } : {}) } })}
+            options={[
+              { value: "off", label: "Off" }, { value: "previous", label: "Previous range" },
+              { value: "1d", label: "1 day earlier" }, { value: "7d", label: "7 days earlier" },
+            ]} />
+        </label>
+        {options.compare && <>
+          <label className={styles.field}>
+            Higher is
+            <GammaSelect aria-label="Higher is" value={options.compare.good ?? "neutral"}
+              onValueChange={(value) => update({ compare: { window: options.compare!.window, ...(value === "neutral" ? {} : { good: value as "up" | "down" }) } })}
+              options={[{ value: "neutral", label: "Neutral" }, { value: "up", label: "Better" }, { value: "down", label: "Worse" }]} />
+          </label>
+          <p className={styles.hint}>Shows the change from the earlier window. Each refresh runs one more query for this stat.</p>
+        </>}
+        <label className={styles.field}>
+          Icon
+          <GammaSelect aria-label="Stat icon" value={options.statIcon ?? "none"}
+            onValueChange={(value) => update({ statIcon: value === "none" ? undefined : value as WidgetOptions["statIcon"] })}
+            options={[
+              { value: "none", label: "None" }, { value: "arrow-down", label: "Arrow down" },
+              { value: "arrow-up", label: "Arrow up" }, { value: "shield", label: "Shield" },
+              { value: "network", label: "Network" }, { value: "activity", label: "Activity" },
+              { value: "target", label: "Target" }, { value: "pie", label: "Pie" },
+            ]} />
+        </label>
+      </>,
+    },
+    cells: {
+      title: "Cells",
+      visible: widget.type === "heatmap",
+      content: widget.type === "heatmap" && <>
+        <GammaSwitch
+          label="Show labels"
+          checked={options.showLabels !== false}
+          onChange={(showLabels) => update({ showLabels })}
+        />
+        <GammaSwitch
+          label="Show values"
+          checked={options.showValues !== false}
+          onChange={(showValues) => update({ showValues })}
+        />
+      </>,
+    },
+    legend: {
+      title: "Legend and grid",
+      visible: ["timeseries", "bar", "heatmap"].includes(widget.type) || pluginControls.includes("legend") || (!chart && pluginControls.includes("grid")),
+      content: <>
+        {!chart && pluginControls.includes("grid") && (
+          <GammaSwitch label="Show grid" checked={options.showGrid !== false} onChange={(showGrid) => update({ showGrid })} />
+        )}
+        {(["timeseries", "bar", "heatmap"].includes(widget.type) || pluginControls.includes("legend")) && (
+          <GammaSwitch
+            label="Show legend"
+            checked={options.showLegend !== false}
+            onChange={(showLegend) => update({ showLegend })}
+          />
+        )}
+      </>,
+    },
+  };
+  return (
+    <div className={styles.stack}>
+      {presets.length > 0 && <StylePresetChoices presets={presets} options={options} onChange={update} />}
+      {supportsTooltipSettings(widget) && (
+        <div className={styles.tooltipShortcut}>
+          <GammaButton
+            type="button"
+            variant="secondary"
+            onClick={onConfigureTooltips}
+          >
+            Configure tooltips <ArrowRight size={14} />
+          </GammaButton>
         </div>
       )}
-      {widget.type === "stat" && (
-        <>
-          <GammaSwitch
-            label="Show value bar"
-            description="Shows the current value on an explicit scale. Enter both bounds; threshold colors apply to the observed value."
-            checked={options.showStatBar === true}
-            onChange={(showStatBar) => {
-              focusBarBound.current = showStatBar
-                ? options.min === undefined ? "min" : options.max === undefined ? "max" : null
-                : null;
-              update({ showStatBar });
-            }}
-          />
-          {options.showStatBar && <div className={styles.row}>
-            {barBound("Bar minimum", "min", barMinimumRef)}
-            {barBound("Bar maximum", "max", barMaximumRef)}
-          </div>}
-          <GammaSwitch
-            label="Show sparkline"
-            checked={options.showSparkline === true}
-            onChange={(showSparkline) => update({ showSparkline, ...(showSparkline && !options.sparklinePlacement ? { sparklinePlacement: "side" } : {}) })}
-          />
-          {options.showSparkline && <label className={styles.field}>
-            Sparkline placement
-            <GammaSelect aria-label="Sparkline placement" value={options.sparklinePlacement ?? "background"}
-              onValueChange={(value) => update({ sparklinePlacement: value as WidgetOptions["sparklinePlacement"] })}
-              options={[{ value: "background", label: "Behind value" }, { value: "side", label: "Beside value" }]} />
-          </label>}
-          <label className={styles.field}>
-            Compare with
-            <GammaSelect aria-label="Compare with" value={options.compare?.window ?? "off"}
-              onValueChange={(value) => update({ compare: value === "off" ? undefined : { window: value as "previous" | "1d" | "7d", ...(options.compare?.good ? { good: options.compare.good } : {}) } })}
-              options={[
-                { value: "off", label: "Off" }, { value: "previous", label: "Previous range" },
-                { value: "1d", label: "1 day earlier" }, { value: "7d", label: "7 days earlier" },
-              ]} />
-          </label>
-          {options.compare && <>
-            <label className={styles.field}>
-              Higher is
-              <GammaSelect aria-label="Higher is" value={options.compare.good ?? "neutral"}
-                onValueChange={(value) => update({ compare: { window: options.compare!.window, ...(value === "neutral" ? {} : { good: value as "up" | "down" }) } })}
-                options={[{ value: "neutral", label: "Neutral" }, { value: "up", label: "Better" }, { value: "down", label: "Worse" }]} />
-            </label>
-            <p className={styles.hint}>Shows the change from the earlier window. Each refresh runs one more query for this stat.</p>
-          </>}
-          <label className={styles.field}>
-            Icon
-            <GammaSelect aria-label="Stat icon" value={options.statIcon ?? "none"}
-              onValueChange={(value) => update({ statIcon: value === "none" ? undefined : value as WidgetOptions["statIcon"] })}
-              options={[
-                { value: "none", label: "None" }, { value: "arrow-down", label: "Arrow down" },
-                { value: "arrow-up", label: "Arrow up" }, { value: "shield", label: "Shield" },
-                { value: "network", label: "Network" }, { value: "activity", label: "Activity" },
-                { value: "target", label: "Target" }, { value: "pie", label: "Pie" },
-              ]} />
-          </label>
-        </>
-      )}
-      {!chart && pluginControls.includes("grid") && (
-        <GammaSwitch label="Show grid" checked={options.showGrid !== false} onChange={(showGrid) => update({ showGrid })} />
-      )}
-      {(["timeseries", "bar", "heatmap"].includes(widget.type) || pluginControls.includes("legend")) && (
-        <GammaSwitch
-          label="Show legend"
-          checked={options.showLegend !== false}
-          onChange={(showLegend) => update({ showLegend })}
-        />
-      )}
-      {widget.type === "heatmap" && (
-        <>
-          <GammaSwitch
-            label="Show labels"
-            checked={options.showLabels !== false}
-            onChange={(showLabels) => update({ showLabels })}
-          />
-          <GammaSwitch
-            label="Show values"
-            checked={options.showValues !== false}
-            onChange={(showValues) => update({ showValues })}
-          />
-        </>
-      )}
-      {(["heatmap", "stat", "bar", "timeseries"].includes(widget.type) || gauge || ["record-table", "status-grid", "uptime-calendar", "uptime-timeline", "connection-map"].includes(widget.pluginId ?? "") || (widget.pluginId === "incident-calendar" && widget.config?.colorMode === "thresholds")) && (
-        <fieldset className={styles.thresholds}>
-          <legend>Value thresholds</legend>
-          <p className={styles.hint}>
-            {widget.type === "timeseries" ? "List values in ascending order. Thresholds appear as horizontal guides; explicit axis bounds can hide guides outside the range." : "List values in ascending order. A value uses the highest threshold it reaches. Below the first threshold, its status or colour still applies."}
-            {(widget.type === "heatmap" || ["status-grid", "uptime-calendar", "uptime-timeline"].includes(widget.pluginId ?? "")) &&
-              " Without custom thresholds, heatmaps are critical below 1 and ok from 1."}
-          </p>
-          <ThresholdListEditor
-            thresholds={options.thresholds ?? []}
-            onChange={(thresholds) => update({ thresholds })}
-          />
-        </fieldset>
-      )}
+      {optionSectionsFor(widget).map((id) => {
+        const block = blocks[id];
+        if (!block.visible) return null;
+        const headingId = `${styleId}-${id}`;
+        return <section key={id} aria-labelledby={headingId} className="grid gap-2.5 border-t border-[var(--gamma-border)] pt-3">
+          <h3 id={headingId} className="m-0 text-[13px] font-semibold">{block.title}</h3>
+          {block.content}
+        </section>;
+      })}
       <GammaButton
         type="button"
         variant="quiet"
@@ -847,6 +905,29 @@ export function WidgetEditor({
   const [queryDraftValid, setQueryDraftValid] = useState(true);
   const [pendingVisualization, setPendingVisualization] = useState<string>();
   const [editorRevision, setEditorRevision] = useState(0);
+  // Starter chips fill an empty or default query, and only for a custom query. A family is every widget of the same kind.
+  const ownDefinition = getWidgetDefinition(draft);
+  const draftProviderType = providers.find((provider) => provider.id === draft.providerId)?.type;
+  const starterChips = (ownDefinition?.starterQueries ?? []).filter((starter) => draftProviderType !== undefined && starter.providerTypes.includes(draftProviderType));
+  const familyStarters = definitions
+    .filter((entry) => ownDefinition !== undefined && entry.dataKind === ownDefinition.dataKind)
+    .flatMap((entry) => entry.starterQueries ?? []);
+  const startersOffered = !draft.queryRef && starterChips.length > 1 &&
+    (draft.query.trim() === "" || draft.query === "up" || familyStarters.some((starter) => starter.query === draft.query));
+  /** One undo step: the query, the unit when it was empty or a starter unit, and the title while it is still the default. */
+  function applyStarter(starter: StarterQuery) {
+    const starterUnits = new Set(familyStarters.map((entry) => entry.unit).filter((unit): unit is string => unit !== undefined));
+    history.update(current => ({
+      ...current,
+      draft: {
+        ...current.draft,
+        query: starter.query,
+        unit: starter.unit !== undefined && (current.draft.unit === "" || starterUnits.has(current.draft.unit)) ? starter.unit : current.draft.unit,
+        title: current.draft.title === defaultWidgetTitle(current.draft.type, ownDefinition?.label) ? starter.label : current.draft.title,
+      },
+    }));
+    setEditorRevision(revision => revision + 1);
+  }
   const contentKey = (value: Widget) => JSON.stringify({ ...value, layout: { w: value.layout.w, h: value.layout.h } });
   const draftKey = JSON.stringify([draft, size, pluginConfig, tooltipPluginConfig, stagedLayout]);
   const [previewRevision, setPreviewRevision] = useState({ key: draftKey, widget });
@@ -1136,6 +1217,9 @@ export function WidgetEditor({
     }));
     if ((tab === "tooltips" && !supportsTooltipSettings(next)) || (tab === "options" && next.type !== "plugin")) setTab("style");
   }
+  const suggestedVisualizations = result
+    ? suggestVisualizations(result, definitions, draft.type === "plugin" ? `plugin:${draft.pluginId}` : draft.type, widgetKind(draft))
+    : [];
   const source = preview && !error ? preview : previewRevision.widget;
   const sourceText = sourceFormat === "yaml"
     ? stringifyYaml(source, { lineWidth: 0 })
@@ -1176,18 +1260,17 @@ export function WidgetEditor({
         Visualization
         <GammaSelect
           aria-label="Visualization"
+          searchable
           value={
             draft.type === "plugin" ? `plugin:${draft.pluginId}` : draft.type
           }
           onValueChange={(value) => chooseVisualization(value)}
           options={[
             ...definitions.map((definition) => ({
-              value:
-                definition.type === "plugin"
-                  ? `plugin:${definition.id}`
-                  : definition.type,
+              value: visualizationValue(definition),
               label: definition.label,
               description: definition.description,
+              ...(definition.type === "heatmap" ? { keywords: ["heatmap"] } : {}),
             })),
             // An unlisted plugin is absent from the list but still registered, so it keeps its own label.
             ...(draft.type === "plugin" && !definitions.some((definition) => definition.type === "plugin" && definition.id === draft.pluginId)
@@ -1202,6 +1285,15 @@ export function WidgetEditor({
           ]}
         />
       </label>
+      {suggestedVisualizations.length > 0 && <div role="group" aria-label="Suggested for this data" className={styles.row}>
+        <span className={styles.hint}>Suggested for this data</span>
+        {suggestedVisualizations.map((value) => {
+          const suggestion = definitions.find((definition) => visualizationValue(definition) === value);
+          return suggestion && <GammaButton key={value} type="button" variant="quiet" size="sm" onClick={() => chooseVisualization(value)}>
+            {suggestion.label}
+          </GammaButton>;
+        })}
+      </div>}
       {pendingDefinition && <div className={styles.stack} role="status">
         {pendingQueryLoss && <p className={styles.hint}>{draft.queryRef
           ? "This visualization uses a different data kind. The saved query connection and its mappings will be removed, and the current query will be replaced with a new query."
@@ -1306,6 +1398,10 @@ export function WidgetEditor({
                       This widget follows the saved query. Switching to a custom
                       query restores your previous custom draft.
                     </p>
+                    {library.onOpenExplorer && <>
+                      <p className={styles.hint}>Save your query in Explore, then choose Dashboard to return here. Your widget draft stays intact.</p>
+                      <GammaButton variant="secondary" onClick={library.onOpenExplorer}>Edit in Explore</GammaButton>
+                    </>}
                     <GammaButton
                       variant="secondary"
                       onClick={() =>
@@ -1340,6 +1436,7 @@ export function WidgetEditor({
                         ]}
                       />
                     </label>
+                    {startersOffered && <StarterQueryChips starters={starterChips} onChoose={applyStarter} />}
                     {draft.type === "plugin" && draft.pluginId === sloSummaryPluginId ? (
                       // The objective is compiled from the configuration at run time, so there is no free query to edit.
                       <SloSourceEditor config={pluginConfig} onConfig={setPluginConfig} onQuery={(query) => history.update(current => current.draft.query === query ? current : { ...current, draft: { ...current.draft, query } }, { group: "chart:query" })} />

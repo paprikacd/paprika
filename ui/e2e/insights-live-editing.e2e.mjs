@@ -249,7 +249,7 @@ try {
     const tagged = { schemaVersion: 1, id: `tagged-${width}`, name: `Tagged requests ${width}`, providerId: "metrics", kind: "metrics", query: "up", description: "Production request health", tags: ["production", "critical", "request-volume", "platform"], metadata: { team: "observability" } }
     await api(`saved-queries/${tagged.id}`, "PUT", tagged, { "If-None-Match": "*" })
     await openScenario(width); await edit()
-    await selectGammaOption(page, panel().getByRole("combobox", { name: "Visualization", exact: true }), /^Status heatmap/)
+    await selectGammaOption(page, panel().getByRole("combobox", { name: "Visualization", exact: true }), /^Status grid/)
     const tabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
     // The editor is lazy-loaded; wait for all tabs before reading their geometry.
     await tabs.getByRole("tab").nth(3).waitFor()
