@@ -1,9 +1,15 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useApplicationDashboards } from "@/lib/insights-coverage"
 import { insightsDashboardHref } from "@/lib/insights-link"
-import { ApplicationInsightsWidget } from "./application-insights-widget"
+
+// The wrapper imports the Insights client (protobuf, schema), so it loads only when the Health tab shows a summary widget.
+const ApplicationInsightsWidget = dynamic(
+  () => import("./application-insights-widget").then((module) => module.ApplicationInsightsWidget),
+  { ssr: false, loading: () => <p className="text-note text-muted-foreground">Loading metrics…</p> },
+)
 
 /** The header link to the most specific Insights dashboard covering the application. Renders nothing when none does. */
 export function ApplicationMetricsLink({ namespace, name }: { namespace: string; name: string }) {
