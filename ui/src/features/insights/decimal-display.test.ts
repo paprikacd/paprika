@@ -64,7 +64,7 @@ describe("no raw metric strings outside the formatters", () => {
     // Each exception names a file and a fragment of the line. Raw machine values in data-* attributes, query and
     // variable parameters (not display text), the non-numeric fallbacks, and the helpers that format numbers.
     const allowed: [file: string, fragment: string][] = [
-      ["chart-renderers.tsx", "? String(trace.durationMs)"],
+      ["renderers/trace-list.tsx", "? String(trace.durationMs)"],
       ["plot-tooltip.tsx", "point.value === null ? \"missing\" : String(point.value)"],
       ["drilldown.ts", "String(context.value)"],
       ["drilldown.ts", "typeof value === \"number\" ? String(value) : value"],
