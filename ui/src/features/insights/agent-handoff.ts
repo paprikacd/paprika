@@ -23,7 +23,8 @@ export interface AgentHandoff {
 
 export function buildAgentHandoff({ id, title, request, endpoint, draft }: AgentHandoffInput): AgentHandoff {
   const lines = [
-    `Edit the Paprika Insights dashboard "${title}" (id: ${id}).`,
+    // JSON quoting keeps a title with quotes or line breaks on one line.
+    `Edit the Paprika Insights dashboard ${JSON.stringify(title)} (id: ${id}).`,
     endpoint ? `Use the Paprika Observe MCP server at ${endpoint}.` : "Use your Paprika Observe MCP server.",
     `Request: ${request?.trim() || "Improve the layout while keeping existing queries and providers."}`,
     `1. Read get_insights_schema (kind "dashboard" and "widget") and list_insights_providers.`,

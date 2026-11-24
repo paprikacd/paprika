@@ -2480,6 +2480,8 @@ export default function InsightsApp({
                     onClose={close}
                     checkDocument={client.validate}
                     onFocusWidget={selectWidget}
+                    // The gateway routes /observe on the host root, like /api/insights, so the UI basePath
+                    // does not apply. The origin carries no path, query or fragment, so no sign-in state.
                     observeEndpoint={client.observeConnection ? new URL("/observe/mcp", window.location.origin).href : undefined}
                     unsaved={dirty}
                   />

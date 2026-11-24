@@ -34,6 +34,18 @@ describe("buildAgentHandoff", () => {
     expect(handoff.text.endsWith(JSON.stringify(draft))).toBe(true);
   });
 
+  it("offers the link at exactly the limit and not one character over", () => {
+    const hrefFor = (request: string) => buildAgentHandoff({ id: "svc", title: "Service", request }).links[0]?.href;
+    const at = "a".repeat(AGENT_LINK_MAX - hrefFor("a")!.length + 1);
+    expect(hrefFor(at)).toHaveLength(AGENT_LINK_MAX);
+    expect(hrefFor(`${at}a`)).toBeUndefined();
+  });
+
+  it("keeps a title with quotes and line breaks on the first line", () => {
+    const handoff = buildAgentHandoff({ id: "svc", title: 'Say "hi"\nnow' });
+    expect(handoff.text.split("\n")[0]).toBe('Edit the Paprika Insights dashboard "Say \\"hi\\"\\nnow" (id: svc).');
+  });
+
   it("omits the link when the prefilled address is longer than the limit", () => {
     const handoff = buildAgentHandoff({ id: "svc", title: "Service", request: "x".repeat(AGENT_LINK_MAX) });
     expect(handoff.links).toEqual([]);
