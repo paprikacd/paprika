@@ -2049,7 +2049,7 @@ export default function InsightsApp({
         {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
         <div className={styles.toolbar} data-tooltip-obstacle>
           {!phoneShell && <div className={styles.toolbarLeft}>
-            <VariableBar dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={applyDashboardVariables} />
+            <VariableBar dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={applyDashboardVariables} onDeclareVariable={editing ? declareVariable : undefined} />
             {/* The phone shell holds Code and Queries in the Dashboard actions menu, so the canvas tools row is not shown. */}
             <div className={styles.canvasTools}>
             <span className={styles.canvasTab}>

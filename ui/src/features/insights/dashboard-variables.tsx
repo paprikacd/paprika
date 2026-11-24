@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  lazy,
+  Suspense,
   useEffect,
   useId,
   useLayoutEffect,
@@ -399,10 +401,15 @@ export interface VariableBarProps {
   loaders?: VariableValueLoaders;
   /** The dashboard's current view range in seconds, which label values and saved queries cover. */
   range?: VariableRange;
+  /** Set only while the dashboard is being edited. It adds a Filter action that declares a variable inline. */
+  onDeclareVariable?: (variable: DashboardVariable) => void;
 }
 
+// Loaded on demand: the declaration form stays out of the first view.
+const VariableQuickCreate = lazy(() => import("./variable-quick-create"));
+
 export function VariableBar(props: VariableBarProps) {
-  if (!props.dashboard.variables?.length) return null;
+  if (!props.dashboard.variables?.length && !props.onDeclareVariable) return null;
   // Declarations reset the editor, but value changes keep dropdown triggers
   // mounted so selecting a filter preserves keyboard focus.
   const revision = JSON.stringify([
@@ -412,8 +419,9 @@ export function VariableBar(props: VariableBarProps) {
   return <VariableBarDraft key={revision} {...props} />;
 }
 
-function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout = "bar", onDirtyChange }: VariableBarProps) {
+function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout = "bar", onDirtyChange, onDeclareVariable }: VariableBarProps) {
   const id = useId();
+  const [declaring, setDeclaring] = useState(false);
   const initial = resolveDashboardVariables(dashboard, values);
   const source = JSON.stringify(Object.entries(initial).sort(([a], [b]) => a.localeCompare(b)));
   const [draft, setDraft] = useState<VariableValues>(initial);
@@ -438,6 +446,10 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
   const dirty = (dashboard.variables ?? []).some(
     ({ name }) => draft[name] !== initial[name],
   );
+  // Filtered means the applied view differs from the dashboard's defaults. It is shown as a status, not as a value.
+  const filtered = (dashboard.variables ?? []).some(
+    ({ name, defaultValue }) => initial[name] !== defaultValue,
+  );
   // A typed value stages until Update view, and so does a sourced variable that accepts typing beside its list.
   const hasTextInputs = dashboard.variables?.some((variable) => !variable.options || Boolean(variable.source));
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange]);
@@ -458,6 +470,7 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
     apply(next);
   }
   return (
+    <>
     <form
       noValidate
       className={styles.variableBar}
@@ -520,16 +533,16 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
           </label>;
         })}
       </div>
-      {hasTextInputs && <div className={styles.barActions}>
-        <GammaButton
+      {(hasTextInputs || filtered || onDeclareVariable) && <div className={styles.barActions}>
+        {hasTextInputs && <GammaButton
           type="submit"
           size="sm"
-          variant="primary"
+          variant={dirty ? "primary" : "quiet"}
           disabled={!dirty}
         >
           Update view
-        </GammaButton>
-        {dirty && (
+        </GammaButton>}
+        {hasTextInputs && dirty && (
           <GammaButton
             size="sm"
             variant="ghost"
@@ -541,6 +554,21 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
             Reset values
           </GammaButton>
         )}
+        {filtered && <span role="status" className="inline-flex items-center rounded-full bg-[var(--gamma-accent-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--gamma-accent)]">Filtered</span>}
+        {filtered && <GammaButton
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setDraft(resolveDashboardVariables(dashboard, {}));
+            apply({});
+          }}
+        >
+          Reset filters
+        </GammaButton>}
+        {onDeclareVariable && <GammaButton type="button" size="sm" variant="quiet" onClick={() => setDeclaring(true)}>
+          <Plus size={13} aria-hidden="true" /> Filter
+        </GammaButton>}
       </div>}
       {error && (
         <p role="alert" className={styles.error}>
@@ -548,6 +576,17 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
         </p>
       )}
     </form>
+    {declaring && onDeclareVariable && <Suspense fallback={null}>
+      <VariableQuickCreate
+        existing={(dashboard.variables ?? []).map((variable) => variable.name)}
+        onCreate={(variable) => {
+          onDeclareVariable(variable);
+          setDeclaring(false);
+        }}
+        onCancel={() => setDeclaring(false)}
+      />
+    </Suspense>}
+    </>
   );
 }
 

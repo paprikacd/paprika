@@ -199,6 +199,8 @@ describe("dashboard navigation", () => {
     expect(parseDashboardURL(location.search)?.variables).toEqual({ variable_1: "active value" })
     fireEvent.click(screen.getByRole("button", { name: "Undo" }))
     await waitFor(() => expect(parseDashboardURL(location.search)?.variables).toBeUndefined())
-    expect(screen.queryByRole("form", { name: "Dashboard variables" })).not.toBeInTheDocument()
+    // Editing keeps the bar for its Filter action, but no variable fields or Update view remain.
+    expect(screen.queryByLabelText("variable_1")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Update view" })).not.toBeInTheDocument()
   })
 })
