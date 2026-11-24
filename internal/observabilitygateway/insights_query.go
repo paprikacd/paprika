@@ -94,7 +94,7 @@ const dashboardQueryOutputSchema = `{"type":"object","required":["schemaVersion"
 func insightsQueryDashboardTool(c *InsightsAuthoringClient) mcp.Tool {
 	return mcp.Tool{
 		Name: "query_dashboard", Title: "Read dashboard signals", Scope: mcp.ScopeObserve,
-		Description: "Execute a saved dashboard with its live saved queries and optional variable overrides. Returns compact, versioned machine-readable signals: exact latest values, unweighted means of returned finite samples, bounded range summaries, trace samples and record previews, plus document versions and missing/error/truncation states. Structured content carries an attention summary (author-declared warning and critical statuses, query failures and staleness, counted per widget), per-widget declared bands, time-series breach intervals within the window and freshness for metric widgets. Compact text leads with that attention summary and includes the execution range, bounded selected variables, widget and provider errors, declared bands, breach intervals and bounded per-series observations for multi-series signals, with omissions disclosed; structured content remains authoritative and may contain more detail. Sample means include duplicate timestamps and are not time weighted or source-wide. Declared bands, breaches and attention describe author-configured thresholds, not alert or service health. Record previews include at most 3 rows and 12 columns; returned counts describe the fetched page, never a source-wide total. When the encoded result would exceed 130 KiB, optional detail is dropped in the order listed in the top-level omitted field (breach intervals, per-widget breaches, band series objects, sample detail), and the text names what was dropped; attention and state are never dropped. Identical queries execute once. variableDefinitions declares each variable's label, default and options; an override outside its options is still applied and named in warnings. A stat with options.compare also returns its change against an earlier window (comparison); state not_run means the window was not queried within budget and is never no change. No layout, query expressions or raw metric sample arrays by default. State describes data availability, not service health. A sourced variable's sourceOptions lists the values its source returned for the current values and range; a current value outside them is kept and marked not_in_values, never replaced. To load a dependent variable's values, pass its parent's value. Read-only; requires paprika:observe and human Insights read permission, not authoring consent.",
+		Description: "Execute a saved dashboard with its live saved queries and optional variable overrides. Returns compact, versioned machine-readable signals: exact latest values, unweighted means of returned finite samples, bounded range summaries, trace samples and record previews, plus document versions and missing/error/truncation states. Structured content carries an attention summary (author-declared warning and critical statuses, query failures and staleness, counted per widget), per-widget declared bands, time-series breach intervals within the window and freshness for metric widgets. Compact text leads with that attention summary and includes the execution range, bounded selected variables, widget and provider errors, declared bands, breach intervals and bounded per-series observations for multi-series signals, with omissions disclosed; structured content remains authoritative and may contain more detail. Sample means include duplicate timestamps and are not time weighted or source-wide. Declared bands, breaches and attention describe author-configured thresholds, not alert or service health. Record previews include at most 3 rows and 12 columns; returned counts describe the fetched page, never a source-wide total. When the encoded result would exceed 130 KiB, optional detail is dropped in the order listed in the top-level omitted field (variable source values, breach intervals, per-widget breaches, band series objects, sample detail), and the text names what was dropped; attention and state are never dropped. Identical queries execute once. variableDefinitions declares each variable's label, default and options; an override outside its options is still applied and named in warnings. A stat with options.compare also returns its change against an earlier window (comparison); state not_run means the window was not queried within budget and is never no change. No layout, query expressions or raw metric sample arrays by default. State describes data availability, not service health. A sourced variable's sourceOptions lists the values its source returned for the current values and range; a current value outside them is kept and marked not_in_values, never replaced. To load a dependent variable's values, pass its parent's value. Read-only; requires paprika:observe and human Insights read permission, not authoring consent.",
 		InputSchema: json.RawMessage(dashboardQueryInputSchema), OutputSchema: json.RawMessage(dashboardQueryOutputSchema),
 		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, raw json.RawMessage) (any, error) {
 			if err := requireDashboardQueryAdmission(ctx); err != nil {
@@ -978,8 +978,6 @@ func appendDashboardDeclaredVariablesText(out *strings.Builder, definitions []da
 	out.WriteString(".\n")
 }
 
-// declaredVariableText is one variable's entry in the declared-variables line: its quoted name, then its label,
-// default and the first options it names, with the count of the rest.
 // sourcedVariableStateText says what a sourced variable resolved to for this call. Each state names its own
 // outcome in plain words, so an agent knows whether the values are usable without reading structuredContent.
 func sourcedVariableStateText(definition *dashboardTextVariable) string {
@@ -1012,9 +1010,19 @@ func readySourceValuesText(definition *dashboardTextVariable) string {
 		}
 		named = append(named, strconv.Quote(shortDashboardText(value, 48)))
 	}
-	text := " values from its " + definition.Source + " source " + strings.Join(named, ", ")
-	if more := len(options.Values) - len(named) + options.ValuesOmitted; more > 0 {
-		text += fmt.Sprintf(" (+%d more; see structuredContent)", more)
+	// Values past the byte budget or dropped by the omission ladder are not in structuredContent either, so they
+	// are counted apart from the listed values the text does not name.
+	var text string
+	if len(named) > 0 {
+		text = " values from its " + definition.Source + " source " + strings.Join(named, ", ")
+		if more := len(options.Values) - len(named); more > 0 {
+			text += fmt.Sprintf(" (+%d more; see structuredContent)", more)
+		}
+		if options.ValuesOmitted > 0 {
+			text += fmt.Sprintf(" (+%d more not listed in this result)", options.ValuesOmitted)
+		}
+	} else {
+		text = fmt.Sprintf("; its %s source returned %d values, not listed in this result", definition.Source, options.ValuesOmitted)
 	}
 	if options.CurrentValue == "not_in_values" {
 		text += " (current value not in source values; kept)"
@@ -1022,10 +1030,38 @@ func readySourceValuesText(definition *dashboardTextVariable) string {
 	return text
 }
 
+// sourcedFallbackText names a sourced variable's fallback options when its source gave no list to choose from,
+// because the console then offers those options.
+func sourcedFallbackText(definition *dashboardTextVariable) string {
+	if definition.SourceOptions.State == "ready" {
+		return ""
+	}
+	named := make([]string, 0, dashboardTextVariableOptions)
+	for index, option := range definition.FallbackOptions {
+		if index == dashboardTextVariableOptions {
+			break
+		}
+		named = append(named, strconv.Quote(shortDashboardText(option, 48)))
+	}
+	text := ""
+	if len(named) > 0 {
+		text = "; fallback options " + strings.Join(named, ", ")
+	}
+	if more := len(definition.FallbackOptions) - len(named) + definition.OptionsOmitted; more > 0 {
+		if len(named) == 0 {
+			text = "; fallback options"
+		}
+		text += fmt.Sprintf(" (+%d more; see structuredContent)", more)
+	}
+	return text
+}
+
+// declaredVariableText is one variable's entry in the declared-variables line: its quoted name, then its label,
+// default and the first options it names, with the count of the rest.
 func declaredVariableText(definition *dashboardTextVariable) string {
 	entry := variableIdentityText(definition)
 	if definition.Source != "" && definition.SourceOptions != nil {
-		return entry + sourcedVariableStateText(definition) + detailOmittedText(definition)
+		return entry + sourcedVariableStateText(definition) + sourcedFallbackText(definition) + detailOmittedText(definition)
 	}
 	return entry + declaredOptionsText(definition) + detailOmittedText(definition)
 }

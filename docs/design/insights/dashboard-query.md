@@ -328,7 +328,7 @@ API clients. It needs the read permission the query-dashboard route needs. The b
 has only these optional fields: `variables` (overrides of declared variables), `names` (at most 20 sourced
 variables; without it every sourced variable resolves), and `start` and `end` (RFC 3339; without them the
 dashboard's own range applies). A name that is not a declared sourced variable is refused with 400. The
-range is rounded outward to the minute, so reads a few seconds apart share one resolution.
+range has each end rounded down to the minute, so reads a few seconds apart share one resolution.
 
 The response is a protobuf message, `VariableOptionsResponse` (`proto/paprika/insights/v1/variable_options.proto`),
 written as protojson: the dashboard's `dashboardEtag`, the bucketed `rangeStart` and `rangeEnd`, and for each

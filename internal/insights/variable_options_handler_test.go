@@ -114,3 +114,57 @@ func TestDashboardVariableOptionsRejectsBadRequests(t *testing.T) {
 		})
 	}
 }
+
+// A shared provider's source is resolved with the caller's delegated identity, never the service token, and a
+// catalog that refuses or is busy reports the source as failed with the matching code instead of an empty list.
+func TestDashboardVariableOptionsUseTheCallersSharedIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		catalog int
+		state   string
+		values  []string
+		code    string
+	}{
+		{"allowed", http.StatusOK, "VARIABLE_OPTIONS_STATE_READY", []string{"alice"}, ""},
+		{"forbidden", http.StatusForbidden, "VARIABLE_OPTIONS_STATE_FAILED", nil, "forbidden"},
+		{"busy", http.StatusTooManyRequests, "VARIABLE_OPTIONS_STATE_FAILED", nil, "rate_limited"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gateway := observeRESTTestGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+				if token != "alice" {
+					t.Errorf("gateway received a service token or another caller: %q", token)
+				}
+				switch r.URL.Path {
+				case "/list_observability_providers":
+					if tc.catalog != http.StatusOK {
+						writeJSON(w, tc.catalog, map[string]any{"error": "refused"})
+						return
+					}
+					writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{{Name: "prod/prom", Namespace: "prod", Type: "prometheus"}}})
+				case "/list_label_values":
+					// The value is the caller's token, so the test sees whose identity read the values.
+					writeJSON(w, 200, map[string]any{"state": "OK", "data": map[string]any{"status": "success", "data": []string{token}}})
+				default:
+					t.Errorf("unexpected gateway path: %s", r.URL.Path)
+				}
+			}))
+			defer gateway.Close()
+			s := observeTestService(t, gateway.URL)
+			document := map[string]any{"schemaVersion": 1, "id": "shared", "title": "Shared", "timeRange": "1h", "refreshInterval": 30, "widgets": []any{}, "variables": []any{
+				map[string]any{"name": "service", "label": "Service", "source": map[string]any{"type": "labelValues", "providerId": observeProviderID("prod/prom"), "label": "service"}},
+			}}
+			raw, err := json.Marshal(document)
+			require.NoError(t, err)
+			_, err = s.store.Put("shared", raw, "", "*")
+			require.NoError(t, err)
+
+			w := request(t, s.Handler(), "POST", "/api/dashboards/shared/variable-options", []byte(`{}`), observeHeaders("alice"))
+			body := readVariableOptions(t, w)
+			require.Len(t, body.Variables, 1)
+			require.Equal(t, tc.state, body.Variables[0].State)
+			require.ElementsMatch(t, tc.values, body.Variables[0].Values)
+			require.Equal(t, tc.code, body.Variables[0].ErrorCode)
+		})
+	}
+}
