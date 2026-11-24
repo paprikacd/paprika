@@ -44,5 +44,10 @@ func TestInsightsVariableOptionsPOSTTakesReadPermission(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, variableOptionsProxyStatus(t, upstream.URL, http.MethodPut, variableOptionsProxyPath, false))
 	require.Equal(t, http.StatusForbidden, variableOptionsProxyStatus(t, upstream.URL, http.MethodPost, variableOptionsProxyPath+"-write", false))
 	require.Equal(t, http.StatusForbidden, variableOptionsProxyStatus(t, upstream.URL, http.MethodPost, variableOptionsProxyPath, true))
+	proxy, err := NewInsightsProxy(t.Context(), insightsAuthConfig("read"), upstream.URL, "service-token-with-at-least-32-characters")
+	require.NoError(t, err)
+	anonymous := httptest.NewRecorder()
+	proxy.ServeHTTP(anonymous, httptest.NewRequestWithContext(t.Context(), http.MethodPost, variableOptionsProxyPath, strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusUnauthorized, anonymous.Code, "the read route still needs a signed-in caller")
 	require.Equal(t, 1, calls, "only the exact authorized read route may reach Insights")
 }
