@@ -26,7 +26,7 @@ describe("previous-period plot overlay", () => {
     expect(within(legend).getByText(/8.00 req\/s/).closest("span")).toHaveAttribute("title", expect.stringContaining(new Date(9999).toISOString()))
     fireEvent.click(screen.getByRole("button", { name: "Inspect chart data for Rate · Previous period" }))
     const dialog = screen.getByRole("dialog", { name: "Rate · Previous period data" })
-    expect(within(dialog).getByText(new Date(9000).toISOString())).toBeInTheDocument()
+    expect(dialog.querySelector(`time[datetime="${new Date(9000).toISOString()}"]`)).toBeInTheDocument()
     expect(within(dialog).getByText("No data")).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole("button", { name: "Close data" }))
     fireEvent.click(screen.getByRole("button", { name: "Reset chart zoom" }))
