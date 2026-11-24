@@ -595,35 +595,44 @@ const IDENTITY_LABELS = new Set(["__name__"]);
  * time, bucket) observation counts once; a missing or invalid observation counts as zero and is reported as skipped. Only
  * labels that vary across groups can split the comparison. With one group nothing varies, so `keys` is empty.
  */
-export function compareHistogramLabels(series: MetricSeries[], config: DistributionConfig, region: HeatmapRegion): { keys: LabelComparison[]; groups: number; skipped: number; selectedShare: number } {
+export function compareHistogramLabels(series: MetricSeries[], config: DistributionConfig, region: HeatmapRegion): { keys: LabelComparison[]; groups: number; skipped: number; selectedShare: number; selectedTotal: number } {
   const bucketLabel = config.bucketLabel ?? "le";
   const { histograms, bounds, allTimes } = groupHistograms(series, config);
   let selectedTotal = 0, restTotal = 0, skipped = 0;
   const selected = new Map<string, Map<string, number>>(), rest = new Map<string, Map<string, number>>();
+  // Each group's observations inside the region and elsewhere. Labels are summed from these, not per cell.
+  const groupSelected = new Array<number>(histograms.length).fill(0), groupRest = new Array<number>(histograms.length).fill(0);
   const keyNames = new Set<string>();
   for (const group of histograms) for (const key of Object.keys(group.labels)) if (!IDENTITY_LABELS.has(key) && key !== bucketLabel && !(key in (config.group ?? {}))) keyNames.add(key);
   const varying = [...keyNames].filter(key => new Set(histograms.map(group => group.labels[key] ?? "")).size > 1).sort().slice(0, MAX_COMPARED_KEYS);
   for (const timestamp of allTimes) {
     for (let index = 0; index < bounds.length; index++) {
       const inRegion = timestamp >= region.startTs && timestamp <= region.endTs && index >= region.lowBucket && index <= region.highBucket;
-      for (const group of histograms) {
+      histograms.forEach((group, groupIndex) => {
         const cell = groupCell(group, bounds, index, timestamp);
         if (cell.state !== "observed") {
           if (inRegion) skipped++;
-          continue;
+          return;
         }
-        const bucket = inRegion ? selected : rest;
-        if (inRegion) selectedTotal += cell.value!;
-        else restTotal += cell.value!;
-        for (const key of varying) {
-          const value = group.labels[key] ?? "";
-          const byValue = bucket.get(key) ?? new Map<string, number>();
-          byValue.set(value, (byValue.get(value) ?? 0) + cell.value!);
-          bucket.set(key, byValue);
-        }
-      }
+        if (inRegion) groupSelected[groupIndex] += cell.value!;
+        else groupRest[groupIndex] += cell.value!;
+      });
     }
   }
+  histograms.forEach((group, groupIndex) => {
+    selectedTotal += groupSelected[groupIndex];
+    restTotal += groupRest[groupIndex];
+    // A group with no observation anywhere adds no value to any label, as it would add none cell by cell.
+    if (groupSelected[groupIndex] + groupRest[groupIndex] === 0) return;
+    for (const key of varying) {
+      const value = group.labels[key] ?? "";
+      for (const [side, amount] of [[selected, groupSelected[groupIndex]], [rest, groupRest[groupIndex]]] as const) {
+        const byValue = side.get(key) ?? new Map<string, number>();
+        byValue.set(value, (byValue.get(value) ?? 0) + amount);
+        side.set(key, byValue);
+      }
+    }
+  });
   const shareOf = (map: Map<string, number> | undefined, value: string, total: number) => total > 0 ? (map?.get(value) ?? 0) / total : 0;
   const keys: LabelComparison[] = varying.map(key => {
     const values = new Set([...selected.get(key)?.keys() ?? [], ...rest.get(key)?.keys() ?? []]);
@@ -638,23 +647,57 @@ export function compareHistogramLabels(series: MetricSeries[], config: Distribut
     };
   }).sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
   const total = selectedTotal + restTotal;
-  return { keys, groups: histograms.length, skipped, selectedShare: total > 0 ? selectedTotal / total : 0 };
+  return { keys, groups: histograms.length, skipped, selectedShare: total > 0 ? selectedTotal / total : 0, selectedTotal };
+}
+
+/**
+ * Why an authored trace filter cannot be joined to a region's duration clauses, or undefined when it can. The filter is a
+ * TraceQL condition placed inside the region's span selector, so it must stay one condition: no braces or pipes outside a
+ * string, balanced parentheses, and closed strings. Anything else could close the selector and change what the search means.
+ */
+export function traceFilterIssue(filter: string): string | undefined {
+  let depth = 0, quote: string | undefined;
+  for (let index = 0; index < filter.length; index++) {
+    const char = filter[index];
+    if (quote) {
+      if (char === "\\") index++;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === '"' || char === "`") quote = char;
+    else if (char === "(") depth++;
+    else if (char === ")" && --depth < 0) return "The trace filter has an unmatched closing parenthesis";
+    // || is TraceQL's or; a single | starts a pipeline after the selector.
+    else if (char === "|" && filter[index + 1] === "|") index++;
+    else if (char === "{" || char === "}" || char === "|") return "The trace filter must be one condition, without braces or pipes";
+  }
+  if (quote) return "The trace filter has an unclosed string";
+  if (depth) return "The trace filter has an unclosed parenthesis";
+  return undefined;
+}
+
+/** A TraceQL duration literal. Milliseconds read best; a bound under a microsecond is written in whole nanoseconds, never in exponent form. */
+function traceDuration(milliseconds: number): string {
+  if (milliseconds >= 1e-3 && milliseconds < 1e15) return `${Number(milliseconds.toPrecision(12))}ms`;
+  return `${Math.max(0, Math.round(milliseconds * 1e6))}ns`;
 }
 
 /**
  * The TraceQL for a selected latency region: spans whose duration lies in the region's bucket bounds, narrowed by the
  * optional filter. Only second and millisecond bucket units convert to a duration. The -Inf and +Inf edges are open, so they
- * add no clause.
+ * add no clause. A filter that is not one condition is refused, so it can never close the span selector.
  */
 export function traceQLForRegion(region: HeatmapRegion, bounds: readonly number[], bucketUnit: string, filter?: string): { query: string } | { unavailable: string } {
   if (bucketUnit !== "s" && bucketUnit !== "ms") return { unavailable: "Bucket unit must be s or ms to search traces by duration" };
+  const issue = filter ? traceFilterIssue(filter) : undefined;
+  if (issue) return { unavailable: issue };
   const scale = bucketUnit === "s" ? 1000 : 1;
   const lower = region.lowBucket > 0 ? bounds[region.lowBucket - 1] : -Infinity;
   const upper = bounds[region.highBucket] ?? Infinity;
-  const ms = (value: number) => `${Number((value * scale).toPrecision(12))}ms`;
   const clauses: string[] = [];
-  if (Number.isFinite(lower) && lower > 0) clauses.push(`duration >= ${ms(lower)}`);
-  if (Number.isFinite(upper)) clauses.push(`duration < ${ms(upper)}`);
+  // A lower bound under half a nanosecond excludes nothing, so it adds no clause.
+  if (Number.isFinite(lower) && lower * scale * 1e6 >= 0.5) clauses.push(`duration >= ${traceDuration(lower * scale)}`);
+  if (Number.isFinite(upper)) clauses.push(`duration < ${traceDuration(upper * scale)}`);
   const body = [...(filter ? [`(${filter})`] : []), ...clauses].join(" && ");
   return { query: body ? `{ ${body} }` : "{}" };
 }
