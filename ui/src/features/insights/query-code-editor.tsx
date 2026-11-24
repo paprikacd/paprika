@@ -15,6 +15,7 @@ import type { DataKind, Provider } from "./schema"
 import { inheritGammaTheme } from "./gamma/inherit-theme"
 import { createQueryLanguage, providerQueryLanguage, queryDiagnostics, queryLanguageNames, type QueryEditorParameter, type QueryLanguage } from "./query-editor-language"
 import { readSQLQuery, sqlQueryIssue, writeSQLQuery, type SQLQueryDraft } from "./query-sql-envelope"
+import "./lazy-style-boundary.css?query-code-editor"
 import styles from "./query-code-editor.module.css"
 
 const externalUpdate = Annotation.define<boolean>()

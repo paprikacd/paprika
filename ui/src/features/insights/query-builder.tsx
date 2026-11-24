@@ -20,6 +20,7 @@ import { QueryCodeEditor } from "./query-code-editor"
 import { providerQueryLanguage, queryLanguageNames, type QueryEditorParameter } from "./query-editor-language"
 import { assertProviderQueryTemplate } from "./provider-query-template"
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step"
+import "./lazy-style-boundary.css?query-builder"
 import styles from "./query-builder.module.css"
 
 export interface GuidedQuery {

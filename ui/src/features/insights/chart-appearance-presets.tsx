@@ -3,6 +3,7 @@
 import type { WidgetOptions } from "./schema";
 import type { StylePreset } from "./widget-registry";
 import { GammaButton } from "./gamma/button";
+import "./lazy-style-boundary.css?editor";
 import styles from "./editor.module.css";
 
 /** A small drawing of what the preset looks like. The mark is decorative: the preset name is the label. */

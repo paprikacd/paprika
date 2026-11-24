@@ -9,7 +9,9 @@ import { statusLevels, type StatusLevel, type StatusMark } from "../status"
 import { StatusMarkFields } from "../status-mark-fields"
 import { ThresholdListEditor } from "../threshold-list-editor"
 import type { Threshold } from "../schema"
+import "../lazy-style-boundary.css?editor"
 import editorStyles from "../editor.module.css"
+import "../lazy-style-boundary.css?record-table-style-editor"
 import styles from "./record-table-style-editor.module.css"
 
 /** Reads a mapping's stored status and hue, ignoring anything the schema would reject. */

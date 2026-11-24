@@ -6,6 +6,7 @@ import { GammaInput } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
 import { statusLevels, thresholdHex, type StatusLevel, type StatusMark, type StatusTheme } from "./status";
 import { STATUS_WORDS } from "./status-chip";
+import "./lazy-style-boundary.css?editor";
 import editorStyles from "./editor.module.css";
 import styles from "./status-chip.module.css";
 

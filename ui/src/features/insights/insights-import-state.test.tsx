@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 async function reviewReplacement() {
   fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-  fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+  fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
   fireEvent.click(screen.getByRole("option", { name: "JSON" }))
   fireEvent.change(screen.getByLabelText("Library import source"), { target: { value: JSON.stringify(incoming) } })
   fireEvent.click(screen.getByRole("button", { name: "Review import" }))

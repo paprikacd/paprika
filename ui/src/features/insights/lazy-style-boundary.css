@@ -1,0 +1,14 @@
+/*
+ * Empty on purpose. It keeps the styles of on-demand UI (panels, editors, dialogs) out of the Insights first view.
+ *
+ * Turbopack groups CSS modules into shared chunks by import order (compute_style_groups). Modules that the first view
+ * does not import can be merged into a chunk that it loads, so a lazy editor's styles download with the page. A global
+ * stylesheet is only ever merged with styles that load in exactly the same places. Importing this file right before a
+ * lazy CSS module, with a query naming that module, gives each lazy module such a neighbour and stops the merge:
+ *
+ *   import "./lazy-style-boundary.css?editor"
+ *   import styles from "./editor.module.css"
+ *
+ * Every import of a guarded module needs the pair (lazy-style-boundary.test.ts checks this). A guarded module that
+ * the first view later imports still works; it only gets a stylesheet of its own. See scripts/check-insights-budget.mjs.
+ */

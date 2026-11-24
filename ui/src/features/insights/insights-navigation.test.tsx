@@ -137,7 +137,7 @@ describe("dashboard navigation", () => {
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Source" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     const importedSource: Dashboard = { ...source, widgets: [{ ...source.widgets[0], options: {
       tooltipView: { type: "stat", source: { type: "query", providerId: "metrics", query: "up" } },

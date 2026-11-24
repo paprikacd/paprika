@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { SavedQuery } from "./schema";
 import type { GammaSelectOption } from "./gamma/select";
 import { QuerySourceIcon } from "./source-identity";
+import "./lazy-style-boundary.css?saved-query-presentation";
 import styles from "./saved-query-presentation.module.css";
 
 export function SavedQueryArtwork({ query }: { query: SavedQuery }) {

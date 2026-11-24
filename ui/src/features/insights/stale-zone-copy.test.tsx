@@ -42,7 +42,7 @@ describe("copying an example whose stored time zone the canonical list lacks", (
     await screen.findByRole("heading", { name: stale.title });
 
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }));
-    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Duplicate" }));
     await screen.findByText("Dashboard duplicated. Save it to add the copy to your library.");
     expect(screen.queryByText(/IANA time zone/)).toBeNull();
 

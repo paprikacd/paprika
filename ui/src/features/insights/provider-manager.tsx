@@ -8,6 +8,7 @@ import type { Provider } from "./schema"
 import { GammaButton } from "./gamma/button"
 import { GammaInput, GammaTextarea } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
+import "./lazy-style-boundary.css?editor"
 import styles from "./editor.module.css"
 
 const envName = /^PAPRIKA_PROVIDER_[A-Z0-9_]+$/

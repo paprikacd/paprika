@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { DashboardManager } from "./dashboard-library";
+import { DashboardManager } from "./dashboard-manager";
 import type { BundleImportResult } from "./bundle-import";
 import type { PortableImportProps } from "./portable-import-panel";
 import { serializeDashboardLibrary } from "./workspace-transfer";

@@ -3,7 +3,7 @@
 import { NO_DATA, PARTIAL_CHIP } from "../benign-states";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { ChevronsDown, Gauge } from "lucide-react";
-import { DEFAULT_MAX_ROWS, evaluateSlo, evaluationTimestamp, validateSloConfig, type SloBurn, type SloConfig, type SloGroup, type SloOverallState, type SloReason } from "../slo";
+import { DEFAULT_MAX_ROWS, SLO_DEFAULT_CONFIG, evaluateSlo, evaluationTimestamp, validateSloConfig, type SloBurn, type SloConfig, type SloGroup, type SloOverallState, type SloReason } from "../slo";
 import { formatBounds, formatReading } from "../units";
 import { StatusChip } from "../status-chip";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
@@ -11,14 +11,8 @@ import { ObservationDetails } from "../observation-tooltip";
 import { TooltipDetail, TooltipFact } from "../tooltip-content";
 import styles from "./slo-summary.module.css";
 
-/** The authored default: a 30 day availability objective on the conventional request counter. It validates as saved. */
-export const SLO_DEFAULT_CONFIG: SloConfig = {
-  objective: 99.9,
-  period: "30d",
-  total: "http_requests_total",
-  bad: 'http_requests_total{code=~"5.."}',
-  burnAlerts: "multiwindow",
-};
+// The default lives with the SLO model, so editors read it without loading this renderer and its stylesheet.
+export { SLO_DEFAULT_CONFIG };
 
 const EXACT = new Intl.NumberFormat("en", { maximumFractionDigits: 4 });
 

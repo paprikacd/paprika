@@ -3,7 +3,9 @@
 import { GammaButton } from "../gamma/button";
 import { GammaInput } from "../gamma/input";
 import { GammaSelect } from "../gamma/select";
+import "../lazy-style-boundary.css?editor";
 import editorStyles from "../editor.module.css";
+import "../lazy-style-boundary.css?record-table-style-editor";
 import styles from "./record-table-style-editor.module.css";
 
 /** Edits the same persisted JSON as advanced configuration; no event query is made. */

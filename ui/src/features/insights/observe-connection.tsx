@@ -4,6 +4,7 @@ import { CheckCircle2, Network, RefreshCw } from "lucide-react"
 import { loadProviderCatalog, type InsightsClient, type ObserveConnection, type ProviderCatalog } from "./client"
 import { GammaButton } from "./gamma/button"
 import { GammaDisclosure } from "./gamma/disclosure"
+import "./lazy-style-boundary.css?observe-connection"
 import styles from "./observe-connection.module.css"
 
 const failure = (error: unknown) => error instanceof Error ? error.message : "Paprika Observe is unavailable. Try refreshing the connection."

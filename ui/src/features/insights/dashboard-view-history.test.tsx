@@ -342,7 +342,7 @@ describe("dashboard view history characterisation", () => {
 
     // The Code panel replaces the whole document, so applyDocument prunes the values it removed.
     fireEvent.click(screen.getByRole("button", { name: "Dashboard as code" }))
-    fireEvent.click(screen.getByRole("button", { name: /^JSON$/ }))
+    fireEvent.click(await screen.findByRole("button", { name: /^JSON$/ }))
     const code = screen.getByLabelText("Dashboard source") as HTMLTextAreaElement
     const next = JSON.parse(code.value) as Dashboard
     delete next.variables

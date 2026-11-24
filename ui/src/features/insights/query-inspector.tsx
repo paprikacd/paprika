@@ -6,6 +6,7 @@ import { GammaButton } from "./gamma/button";
 import { lockBodyScroll } from "./gamma/scroll-lock";
 import type { QueryDiagnosticStore, QueryExecutionReceipt, QueryExecutionState } from "./query-diagnostics";
 import type { QueryDiagnostics } from "./schema";
+import "./lazy-style-boundary.css?query-inspector";
 import styles from "./query-inspector.module.css";
 
 const EMPTY_RECEIPTS: readonly QueryExecutionReceipt[] = [];

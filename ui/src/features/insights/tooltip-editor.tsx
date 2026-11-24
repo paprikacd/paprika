@@ -17,6 +17,7 @@ import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect, type GammaSelectOption } from "./gamma/select";
 import { providerOption, QuerySourceIcon } from "./source-identity";
 import { GammaSwitch } from "./gamma/switch";
+import "./lazy-style-boundary.css?tooltip-editor";
 import styles from "./tooltip-editor.module.css";
 import { useSavedQueryLibrary } from "./saved-query-context";
 import {

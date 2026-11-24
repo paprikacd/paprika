@@ -13,6 +13,7 @@ import {
   type WidgetRecordType,
 } from "./widget-registry";
 import type { QueryResult, Widget } from "./schema";
+import "./lazy-style-boundary.css?editor";
 import styles from "./editor.module.css";
 import type { WidgetConfigEditorLoader } from "./widget-registry";
 import type { QueryFields } from "./query-connections";
