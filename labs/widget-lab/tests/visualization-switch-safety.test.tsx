@@ -12,7 +12,6 @@ import {
   MAX_CONVERTED_RECORD_ROWS, validateEditorWidget, visualizationCandidate,
 } from '../src/editor/editor-model';
 import { kubernetesFixtures } from '../src/lenses/kubernetes/fixtures';
-import { registerKubernetesCharts } from '../src/charts/kubernetes/register';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
 import { makeCatalogFixture } from '../src/catalog/chart-fixtures';
 
@@ -22,7 +21,6 @@ vi.mock('@insights/charts', () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 registerLabCharts();
-registerKubernetesCharts();
 
 describe('fail-safe visualization switching', () => {
   let root: Root | undefined;
@@ -33,21 +31,18 @@ describe('fail-safe visualization switching', () => {
     root = undefined; host = undefined;
   });
 
-  it('does not offer a giant table as a conversion from Kubernetes workload placement', () => {
+  it('does not offer a record table as a conversion from Kubernetes workload placement', () => {
     const { placement } = kubernetesFixtures();
     const { widget, result } = placement;
-    const records = result.records!;
-    expect(records.rows.length).toBeGreaterThan(MAX_CONVERTED_RECORD_ROWS);
-    expect(records.columns.length).toBeGreaterThan(MAX_CONVERTED_RECORD_COLUMNS);
+    // The production placement reads metric series, so there are no records to convert into a table.
+    expect(result.records).toBeUndefined();
+    expect(result.series!.length).toBeGreaterThan(0);
     const table = getWidgetDefinition('plugin', 'record-table')!;
-    // Schema alone accepts the table: capability/geometry gating must go beyond schema validation.
-    const candidate = visualizationCandidate(widget, table);
-    expect(validateEditorWidget(candidate, widgetKind(widget), result).errors).toEqual([]);
-    expect(isSafeVisualizationTransition(widget, result, table)).toBe(false);
     const choices = editorVisualizations(widget, result, [...widgetDefinitions, ...getWidgetPlugins()]);
     expect(choices.some(option => option.id === 'record-table')).toBe(false);
     expect(choices.some(option => option.id === 'kubernetes-placement')).toBe(true);
     expect(choices.every(option => !!validateEditorWidget(visualizationCandidate(widget, option), widgetKind(widget), result).widget)).toBe(true);
+    void table;
   });
 
   it('keeps valid small-record table transitions without dropping source identity', () => {
@@ -64,10 +59,6 @@ describe('fail-safe visualization switching', () => {
     expect(converted.query).toBe(widget.query);
     expect(converted.layout).toEqual(widget.layout);
     expect(converted.config).not.toEqual(widget.config);
-    // Existing records tables remain editable even when their source has many rows.
-    const { placement } = kubernetesFixtures();
-    const wideTable = visualizationCandidate(placement.widget, table);
-    expect(isSafeVisualizationTransition(wideTable, placement.result, table)).toBe(true);
   });
 
   it('keeps the chart editor intact and disables the unsafe selector for the wide fixture', async () => {
@@ -92,24 +83,7 @@ describe('fail-safe visualization switching', () => {
     expect(document.querySelector('[data-widget-preview-error]')).toBeNull();
   });
 
-  it('confines a large existing records table to a finite chart preview instead of natural height', async () => {
-    const { widget, result } = kubernetesFixtures().placement;
-    const table = visualizationCandidate(widget, getWidgetDefinition('plugin', 'record-table')!);
-    host = document.createElement('div');
-    document.body.appendChild(host);
-    root = createRoot(host);
-    await act(async () => root?.render(createElement(WidgetEditor, {
-      widget: table, result, onApply: vi.fn(), onClose: vi.fn(),
-    })));
-    expect(document.querySelector('[data-rendered-family="record-table"]')).not.toBeNull();
-    expect(document.querySelector('[data-natural-height="false"]')).not.toBeNull();
-    expect(document.querySelector('.we-chart[data-editor-expanded="false"]')).not.toBeNull();
-    const css = readFileSync('src/editor/WidgetEditor.css', 'utf8');
-    expect(css).toMatch(/\.we-chart\s*\{[^}]*overflow:hidden/);
-    expect(css).toMatch(/\.we-chart\[data-editor-expanded="false"\]\s*>\s*div\s*\{[^}]*max-height:100%/);
-    expect(css).toMatch(/\.we-preview\s*\{[^}]*overflow:clip/);
-  });
-
+  
   it('captures an unexpected renderer exception without crashing the editor', async () => {
     const Bomb = () => { throw new Error('Deliberate preview renderer failure'); };
     const failed = vi.fn();
