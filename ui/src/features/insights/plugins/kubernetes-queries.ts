@@ -99,6 +99,15 @@ export const KUBERNETES_SIGNALS = {
 export type KubernetesSignal = keyof typeof KUBERNETES_SIGNALS;
 export type KubernetesFamily = "placement" | "bars" | "throttle" | "trend";
 
+/** Plugin ids of the four families. The lab catalogue and the starters use the same strings. */
+export const KUBERNETES_PLUGIN_IDS = {
+  placement: "kubernetes-placement",
+  bars: "kubernetes-resource-bars",
+  throttle: "kubernetes-throttle-matrix",
+  trend: "kubernetes-resource-trend",
+} as const;
+export type KubernetesPluginId = (typeof KUBERNETES_PLUGIN_IDS)[keyof typeof KUBERNETES_PLUGIN_IDS];
+
 export function isKubernetesSignal(value: string): value is KubernetesSignal {
   return Object.prototype.hasOwnProperty.call(KUBERNETES_SIGNALS, value);
 }

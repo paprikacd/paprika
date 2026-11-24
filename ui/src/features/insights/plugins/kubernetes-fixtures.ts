@@ -1,4 +1,5 @@
 import type { QueryResult, Widget } from "../schema";
+import { KUBERNETES_PLUGIN_IDS, type KubernetesPluginId } from "./kubernetes-queries";
 
 /**
  * Synthetic fleet data for tests, the widget lab and the gallery. It encodes one fleet into the series each Kubernetes
@@ -6,13 +7,7 @@ import type { QueryResult, Widget } from "../schema";
  * Nothing here ships to a real provider.
  */
 
-export const KUBERNETES_PLUGIN_IDS = {
-  placement: "kubernetes-placement",
-  bars: "kubernetes-resource-bars",
-  throttle: "kubernetes-throttle-matrix",
-  trend: "kubernetes-resource-trend",
-} as const;
-export type KubernetesPluginId = (typeof KUBERNETES_PLUGIN_IDS)[keyof typeof KUBERNETES_PLUGIN_IDS];
+export { KUBERNETES_PLUGIN_IDS, type KubernetesPluginId };
 export type KubernetesPreset = "ready" | "gaps" | "empty";
 
 export interface FleetNode {

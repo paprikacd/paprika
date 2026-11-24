@@ -14,6 +14,7 @@ import { registerStatusGridPlugin } from "./status-grid";
 import { registerSloSummaryPlugin } from "./slo-summary";
 import { registerUptimeViews } from "./uptime-views";
 import { registerSmallMultiplesPlugin } from "./small-multiples";
+import { registerKubernetesPlugins } from "./kubernetes-plugins";
 import {
   registerWidgetPlugin,
   getWidgetDefinition,
@@ -346,6 +347,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
 /** Example of a bundled, trusted extension. Hosts can register others in the same way. */
 export function registerDefaultWidgetPlugins() {
   registerSmallMultiplesPlugin();
+  registerKubernetesPlugins();
   registerStatusGridPlugin();
   registerUptimeViews();
   registerRecordWidgetPlugins();

@@ -36,6 +36,10 @@ const icons = {
   plugin: Puzzle,
 }
 const pluginIcons = {
+  "kubernetes-placement": Layers,
+  "kubernetes-resource-bars": BarChart3,
+  "kubernetes-throttle-matrix": Grid2X2,
+  "kubernetes-resource-trend": LineChart,
   "distribution-heatmap": Grid2X2,
   "stacked-timeseries": Layers,
   "directional-traffic": ArrowDownUp,
