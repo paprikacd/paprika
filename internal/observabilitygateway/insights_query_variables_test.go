@@ -170,6 +170,10 @@ func TestDashboardVariableSourceOptionsAppearInTheTextSynopsis(t *testing.T) {
 		{"failed", map[string]any{"state": "failed", "error": map[string]any{"code": "invalid_query", "message": "bad selector"}}, `"service"; its source failed (invalid_query)`},
 		{"needs variable", map[string]any{"state": "needs_variable", "needsVariable": "zone"}, `"service"; set zone to load its values`},
 		{"not run", map[string]any{"state": "not_run"}, `"service"; its source was not queried in time`},
+		{"values past the budget", map[string]any{"state": "ready", "values": []any{"api"}, "valuesOmitted": 4},
+			`"service" values from its labelValues source "api" (+4 more not listed in this result)`},
+		{"values dropped by the ladder", map[string]any{"state": "ready", "valuesOmitted": 9, "currentValue": "in_values"},
+			`"service"; its labelValues source returned 9 values, not listed in this result`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			document := variableResult(t)
@@ -180,6 +184,27 @@ func TestDashboardVariableSourceOptionsAppearInTheTextSynopsis(t *testing.T) {
 			text, err := dashboardQueryText(raw)
 			require.NoError(t, err)
 			require.Contains(t, text, tc.want)
+			require.NotContains(t, text, "see structuredContent", "values outside structuredContent are never sent there")
+		})
+	}
+}
+
+// A source that gave no list leaves the console on its fallback options, so the text names them. A ready source
+// replaces them, so they are not named.
+func TestDashboardVariableFallbackOptionsFollowTheSourceState(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		want  bool
+	}{{"failed", true}, {"needs_variable", true}, {"not_run", true}, {"empty", true}, {"ready", false}} {
+		t.Run(tc.state, func(t *testing.T) {
+			document := variableResult(t)
+			document["variableDefinitions"] = []any{map[string]any{"name": "service", "source": "labelValues", "fallbackOptions": []any{"api"},
+				"sourceSummary": map[string]any{"kind": "labelValues", "dependsOnVariables": false}, "sourceOptions": map[string]any{"state": tc.state, "values": []any{"db"}}}}
+			raw, err := json.Marshal(document)
+			require.NoError(t, err)
+			text, err := dashboardQueryText(raw)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, strings.Contains(text, `fallback options "api"`), text)
 		})
 	}
 }
