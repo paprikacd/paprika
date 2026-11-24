@@ -42,6 +42,24 @@ func TestDashboardVariableDefinitionsAndWarningsValidateAgainstTheSchema(t *test
 	require.Error(t, resolved.Validate(document), "non-string options must not validate")
 }
 
+// A multi-value variable's list value, its multi and allowAll flags, a list default, and a sourced variable's
+// missingValues all validate against the advertised schema. The sourceOptions object is closed, so a field the
+// server emits must be declared there or a validating client refuses the whole result.
+func TestDashboardMultiValueVariablesValidateAgainstTheSchema(t *testing.T) {
+	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
+	document := variableResult(t)
+	document["variables"] = map[string]any{"service": "prod", "cluster": []any{"omega", "delta"}, "region": []any{}}
+	document["variableDefinitions"] = []any{
+		map[string]any{"name": "cluster", "multi": true, "defaultValue": []any{"omega"}, "options": []any{"omega", "delta"}},
+		map[string]any{"name": "region", "multi": true, "allowAll": true, "defaultValue": []any{}, "source": "labelValues",
+			"sourceOptions": map[string]any{"state": "ready", "values": []any{"eu"}, "currentValue": "not_in_values", "missingValues": []any{"us"}}},
+	}
+	require.NoError(t, resolved.Validate(document))
+
+	document["variables"] = map[string]any{"cluster": []any{1}}
+	require.Error(t, resolved.Validate(document), "a list of non-strings must not validate")
+}
+
 // The text synopsis names each warning in quoted form, so a text-only client reads what was accepted.
 func TestDashboardVariableWarningsAppearInTheTextSynopsis(t *testing.T) {
 	raw, err := json.Marshal(variableResult(t))
