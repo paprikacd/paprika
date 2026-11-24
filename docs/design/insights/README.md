@@ -11,6 +11,8 @@ The visual canvas, JSON/YAML editor, and OpenUI importer all produce the same ve
 Machine-readable authoring artifacts:
 
 - [Dashboard JSON Schema](./dashboard.schema.json), generated from the canonical Zod schema and checked for drift by a unit test.
+- [Plugin configuration JSON Schema](./widget-plugin-configs.schema.json), one schema per built-in plugin, checked on save.
+- [Contract reference](./contract-reference.md), the generated tables of widget options and plugin configuration. Both schema files and the reference are written by `npm run schema:generate` in `ui/`.
 - [Importable YAML example](./example-dashboard.yaml), with Prometheus health and Tempo trace widgets.
 
 JSON Schema captures field types, required properties, ranges, and strict object shapes. Runtime validation additionally checks unique widget IDs, `x + w <= 12`, the UTF-8 document byte limit, and provider capabilities. Give AI assistants both the schema and the documented semantic constraints.

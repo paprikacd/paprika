@@ -2,7 +2,14 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import { pluginConfigBundle, pluginConfigJSONSchema, stableJSON, type PluginConfigDefinition } from "./contract-artifacts"
+import {
+  contractReferenceMarkdown,
+  dashboardJSONSchema,
+  pluginConfigBundle,
+  pluginConfigJSONSchema,
+  stableJSON,
+  type PluginConfigDefinition,
+} from "./contract-artifacts"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import { getWidgetDefinition } from "./widget-registry"
 
@@ -69,6 +76,13 @@ describe("built-in plugin configuration schemas", () => {
 
   it("publishes the built-in plugin configuration bundle", () => {
     checkOrWrite(new URL("widget-plugin-configs.schema.json", docs), stableJSON(pluginConfigBundle(publishedDefinitions())))
+  })
+
+  it("publishes the generated contract reference", () => {
+    checkOrWrite(
+      new URL("contract-reference.md", docs),
+      contractReferenceMarkdown(dashboardJSONSchema(), pluginConfigBundle(publishedDefinitions())),
+    )
   })
 
   it("refuses a regex whose flag the published schema would lose", () => {
