@@ -41,6 +41,7 @@ type dashboardReadVariableSource struct {
 	Selector   *string                 `json:"selector"`
 	Field      string                  `json:"field"`
 	QueryRef   *dashboardReadReference `json:"queryRef"`
+	Limit      *int                    `json:"limit"`
 }
 
 type dashboardReadWidget struct {
