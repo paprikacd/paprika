@@ -6,8 +6,7 @@ import { GammaDisclosure } from "./gamma/disclosure";
 import { GammaInput } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
 import { compileSloConfigText, SloQueryPreview } from "./slo-query-preview";
-import { SLO_PERIODS, validateSloConfig, type SloErrorCode } from "./slo";
-import { SLO_DEFAULT_CONFIG } from "./plugins/slo-summary";
+import { SLO_DEFAULT_CONFIG, SLO_PERIODS, validateSloConfig, type SloErrorCode } from "./slo";
 import styles from "./editor.module.css";
 
 /** The plain words for each config error. The raw code stays out of the author's view. */
