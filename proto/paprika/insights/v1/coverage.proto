@@ -23,6 +23,10 @@ message ApplicationDashboard {
   // namespace and name, 2 for a name, 1 for a namespace, 0 for an entry that
   // matches every application.
   uint32 specificity = 6;
+  // summary_widget_rows is the summary widget's saved height in dashboard grid
+  // rows, so an application page can size the widget's frame before it loads.
+  // It is 0 when the dashboard names no summary widget.
+  uint32 summary_widget_rows = 7;
 }
 
 // ApplicationDashboardList is the HTTP response for the application-dashboards

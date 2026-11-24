@@ -24,6 +24,13 @@ func cleanUIPath(p string) string {
 	return p
 }
 
+// framableUIPath reports whether a request path is the Insights page. Application pages show one of its widgets in
+// an iframe (the embed mode), so this page alone may be framed, and only by the same origin.
+func framableUIPath(requestPath string) bool {
+	p := cleanUIPath(requestPath)
+	return p == "dashboard/insights" || p == "dashboard/insights/index.html"
+}
+
 func isUIHTMLRequest(sub fs.FS, requestPath string, info fs.FileInfo) bool {
 	if requestPath == "/" || strings.HasSuffix(requestPath, ".html") {
 		return true
@@ -59,6 +66,10 @@ func UIHandler() (http.Handler, error) {
 	return gziphandler.GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		if framableUIPath(r.URL.Path) {
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+			w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+		}
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		if cleanUIPath(r.URL.Path) == "mcp/consent" || strings.HasPrefix(r.URL.Path, "/mcp/consent/") {

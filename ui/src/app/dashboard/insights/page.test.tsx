@@ -16,9 +16,9 @@ vi.mock("@/lib/browser-session", () => ({
 }))
 vi.mock("next/dynamic", async () => {
   const React = await import("react")
-  return { default: () => function Workspace({ initialExample }: { initialExample: boolean }) {
+  return { default: () => function Workspace({ initialExample, embed }: { initialExample: boolean; embed?: { widgetId: string; theme?: string } | null }) {
     const [mount] = React.useState(() => ++state.mounts)
-    return <p>Workspace {mount} {initialExample ? "example" : "live"}</p>
+    return <p>Workspace {mount} {initialExample ? "example" : "live"}{embed ? ` embed ${embed.widgetId} ${embed.theme ?? "preference"}` : ""}</p>
   } }
 })
 beforeEach(() => {
@@ -40,6 +40,15 @@ describe("Insights workspace identity boundary", () => {
     await screen.findByText("Workspace 2 live")
     update({ identityEpoch: 3, revision: 4 })
     await screen.findByText("Workspace 3 live")
+  })
+  it("opens embed mode for an embed link and the workspace otherwise", async () => {
+    window.history.replaceState(null, "", "/dashboard/insights/?dashboard=service&embed=requests&theme=dark")
+    const { unmount } = render(<InsightsPage />)
+    await screen.findByText("Workspace 1 live embed requests dark")
+    unmount()
+    window.history.replaceState(null, "", "/dashboard/insights/?dashboard=service")
+    render(<InsightsPage />)
+    await screen.findByText("Workspace 2 live")
   })
   it("keeps anonymous example dashboards available", async () => {
     window.history.replaceState(null, "", "/dashboard/insights/?example=1")

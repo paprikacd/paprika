@@ -1551,6 +1551,18 @@
       ],
       "server": "dev",
       "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-embed.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "export",
+      "timeoutSeconds": 600
     }
   ]
 }
