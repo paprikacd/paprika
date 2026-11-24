@@ -99,7 +99,7 @@ func insightsRequestPermission(r *http.Request) (auth.Action, auth.Resource) {
 // insightsReadPost lists the POST routes that read or probe without writing.
 // The dry run validates a document and stores nothing, so it takes the read permission.
 func insightsReadPost(path string) bool {
-	return path == InsightsPrefix+"/query" || path == InsightsPrefix+"/query-dashboard" || path == InsightsPrefix+"/dashboards/validate" || (strings.HasPrefix(path, InsightsPrefix+"/providers/") && strings.HasSuffix(path, "/test"))
+	return path == InsightsPrefix+"/query" || path == InsightsPrefix+"/query-dashboard" || path == InsightsPrefix+"/dashboards/validate" || (strings.HasPrefix(path, InsightsPrefix+"/providers/") && strings.HasSuffix(path, "/test")) || (strings.HasPrefix(path, InsightsPrefix+"/dashboards/") && strings.HasSuffix(path, "/variable-options"))
 }
 
 // The API proxy bounds a whole Insights request, and its response-header wait is

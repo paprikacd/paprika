@@ -43,7 +43,8 @@ export function SavedQueryDetails({ query }: { query: SavedQuery }) {
 
 export function savedQuerySearchText(query: SavedQuery): string {
   return [query.name, query.description, query.id, query.providerId, query.query,
-    ...(query.tags ?? []), ...Object.entries(query.metadata ?? {}).flat()].filter(Boolean).join(" ");
+    ...(query.tags ?? []), ...Object.entries(query.metadata ?? {}).flat(),
+    ...(query.parameters ?? []).map((parameter) => parameter.name)].filter(Boolean).join(" ");
 }
 
 export function savedQueryOption(query: SavedQuery): GammaSelectOption {

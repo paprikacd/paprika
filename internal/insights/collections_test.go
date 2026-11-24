@@ -17,7 +17,8 @@ func TestCollectionETagsRefreshAfterWritesAndStillRequireAuthentication(t *testi
 		secretField string
 	}{
 		{"dashboards", dashboard("demo", "Original"), `"widgets"`},
-		{"saved-queries", []byte(`{"schemaVersion":1,"id":"demo","name":"Original","providerId":"prometheus","kind":"metrics","query":"up"}`), `"query":`},
+		// Saved-query summaries carry a bounded query text (R56), so the document-only field is the guard.
+		{"saved-queries", []byte(`{"schemaVersion":1,"id":"demo","name":"Original","providerId":"prometheus","kind":"metrics","query":"up"}`), `"schemaVersion"`},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			empty := request(t, h, http.MethodGet, "/api/"+tc.path, nil, nil)

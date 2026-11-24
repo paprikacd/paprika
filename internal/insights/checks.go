@@ -712,7 +712,7 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 	if err != nil {
 		return dryRunOutcome{}, &dryRunInputError{message: err.Error()}
 	}
-	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets)
+	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets, doc.Variables)
 	if err != nil {
 		return dryRunOutcome{}, err
 	}
@@ -752,7 +752,23 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 	for i := range widgets {
 		states = append(states, widgetDataState(&widgets[i]))
 	}
-	return dryRunOutcome{findings: dataFindings(widgets), widgets: states}
+	return dryRunOutcome{findings: dataFindings(widgets, dryRunVariables(doc, result)), widgets: states}
+}
+
+// dryRunVariables pairs each declared variable with the value the run used and the resolution of its source.
+// Index i is the variable at /variables/i of the document.
+func dryRunVariables(doc *dashboardReadDocument, result *DashboardQueryResult) []dataVariable {
+	variables := make([]dataVariable, 0, len(doc.Variables))
+	for i := range doc.Variables {
+		name := doc.Variables[i].Name
+		value, hasValue := result.Variables[name]
+		variable := dataVariable{index: i, name: name, value: value, hasValue: hasValue}
+		if i < len(result.variableSources) {
+			variable.outcome = result.variableSources[i]
+		}
+		variables = append(variables, variable)
+	}
+	return variables
 }
 
 // dryRunWidgetSample is the sample a widget's data state and data.stale read: the query

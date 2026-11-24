@@ -32,8 +32,8 @@ type dashboardReadVariable struct {
 	Source       *dashboardReadVariableSource `json:"source"`
 }
 
-// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. It does not resolve
-// the source: the values come from the console, so the rest of the source only describes it.
+// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. The values are
+// resolved per call and reported as sourceOptions; the rest of the source describes it.
 type dashboardReadVariableSource struct {
 	Type       string                  `json:"type"`
 	ProviderID string                  `json:"providerId"`
@@ -41,6 +41,7 @@ type dashboardReadVariableSource struct {
 	Selector   *string                 `json:"selector"`
 	Field      string                  `json:"field"`
 	QueryRef   *dashboardReadReference `json:"queryRef"`
+	Limit      *int                    `json:"limit"`
 }
 
 type dashboardReadWidget struct {
@@ -143,11 +144,28 @@ type DashboardQueryVariable struct {
 	// The type is a short fixed word, outside the detail budget.
 	Source        string                        `json:"source,omitempty"`
 	SourceSummary *DashboardQueryVariableSource `json:"sourceSummary,omitempty"`
-	// FallbackOptions are a sourced variable's static options. query_dashboard does not resolve the source, so
-	// these are not the variable's choices.
+	// FallbackOptions are a sourced variable's static options. They are shown only when its source fails, so they
+	// are not the variable's choices; SourceOptions holds those.
 	FallbackOptions []string `json:"fallbackOptions,omitempty"`
-	OptionsOmitted  int      `json:"optionsOmitted,omitempty"`
-	DetailOmitted   bool     `json:"detailOmitted,omitempty"`
+	// SourceOptions is the value list the variable's source returned for this call. See DashboardVariableSourceOptions.
+	SourceOptions  *DashboardVariableSourceOptions `json:"sourceOptions,omitempty"`
+	OptionsOmitted int                             `json:"optionsOmitted,omitempty"`
+	DetailOmitted  bool                            `json:"detailOmitted,omitempty"`
+}
+
+// DashboardVariableSourceOptions is the resolved source of one variable for this call. State is ready, empty,
+// failed, needs_variable or not_run. Values is the list in the source's order, within the call's value budget;
+// ValuesOmitted counts the values past that budget or dropped by the omission ladder. CurrentValue says whether
+// the variable's current value is among the values: in_values, not_in_values or unknown (a truncated list
+// without it). It is absent with no current value, or when the state is not ready or empty.
+type DashboardVariableSourceOptions struct {
+	State         string               `json:"state"`
+	Values        []string             `json:"values,omitempty"`
+	ValuesOmitted int                  `json:"valuesOmitted,omitempty"`
+	Truncated     bool                 `json:"truncated,omitempty"`
+	CurrentValue  string               `json:"currentValue,omitempty"`
+	NeedsVariable string               `json:"needsVariable,omitempty"`
+	Error         *DashboardQueryError `json:"error,omitempty"`
 }
 
 // DashboardQueryVariableSource describes where a sourced variable's values come from, without the values. Only
@@ -254,7 +272,7 @@ func dashboardVariableWarnings(definitions []dashboardReadVariable, overrides ma
 		if definition.Source != nil {
 			switch {
 			case value == "":
-				warnings = append(warnings, definition.Name+"= is empty; query_dashboard does not resolve the variable source, so pass an explicit value")
+				warnings = append(warnings, definition.Name+"= is empty; pass one of its source values")
 			case stringUnits(value) > 1024:
 				warnings = append(warnings, definition.Name+" is longer than 1024 characters")
 			}

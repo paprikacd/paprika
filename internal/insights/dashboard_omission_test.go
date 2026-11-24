@@ -92,6 +92,10 @@ func TestDashboardQuerySmallDashboardKeepsEveryFactWithoutOmitted(t *testing.T) 
 func breachDetailDashboard() *DashboardQueryResult {
 	long := strings.Repeat("n", 96)
 	result := &DashboardQueryResult{SchemaVersion: 1, Dashboard: DashboardQueryDocument{ID: "overview", Title: "Overview"}}
+	// The variableOptions step drops a sourced variable's values, so the fixture declares one with a value list.
+	result.VariableDefinitions = []DashboardQueryVariable{{Name: "zone", Source: "labelValues", SourceOptions: &DashboardVariableSourceOptions{
+		State: "ready", Values: []string{strings.Repeat("z", 120), "eu", "us"},
+	}}}
 	for index := range 48 {
 		breaches := &DashboardBreaches{SeriesEvaluated: 3, LatestLevel: "critical", Intervals: []DashboardBreachInterval{}, Summary: []DashboardBreachLevel{{Level: "critical", Intervals: 2, Samples: 1, DurationMs: 120_000}}}
 		for interval := range 2 {
@@ -364,7 +368,7 @@ func withStatWidgets() *DashboardQueryResult {
 // reads each stat's stale judgement. Only time-series freshness, which was added after the first
 // contract, is dropped.
 func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
-	const steps = 5 // The sample step runs, so the time-series freshness and sample detail are dropped.
+	const steps = 6 // Through the sample step, so the time-series freshness and sample detail are dropped.
 	result := withStatWidgets()
 	result.Dashboard.Title = fillerForStepsOf(t, withStatWidgets, steps)
 	encoded, err := encodeDashboardQueryResult(result)
@@ -390,6 +394,18 @@ func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
 	require.Contains(t, raw, "omitted")
 }
 
+// dashboardOmissionStepNamed returns the ladder step with this name, so a test does not depend on its position.
+func dashboardOmissionStepNamed(t *testing.T, name string) dashboardOmissionStep {
+	t.Helper()
+	for _, step := range dashboardOmissionSteps {
+		if step.name == name {
+			return step
+		}
+	}
+	t.Fatalf("no omission step named %q", name)
+	return dashboardOmissionStep{}
+}
+
 // dashboardOmissionStepNamesThrough names the first n steps in ladder order.
 func dashboardOmissionStepNamesThrough(n int) []string {
 	names := make([]string, 0, n)
@@ -412,7 +428,7 @@ func TestDashboardOmissionDropsStaleSampleStubWhenAttentionReadsStale(t *testing
 		{ID: "critical", Type: "timeseries", Attention: "critical", Sample: stale()},
 		{ID: "stat-stale", Type: "stat", Attention: "stale", Sample: stale(), Freshness: &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "stale", LastTimestamp: &last, AgeSeconds: &age}},
 	}}
-	require.True(t, dashboardOmissionSteps[4].drop(result))
+	require.True(t, dashboardOmissionStepNamed(t, "sample").drop(result))
 	require.Nil(t, result.Widgets[0].Sample, "a stale stub on a widget whose attention reads stale is dropped")
 	require.Nil(t, result.Widgets[0].Freshness)
 	require.NotNil(t, result.Widgets[1].Sample, "a stale stub under a more severe attention is kept")

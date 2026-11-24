@@ -155,6 +155,35 @@ func TestDashboardVariableSourceAppearsInTheTextSynopsis(t *testing.T) {
 	require.Contains(t, text, `"service" takes its values from a labelValues source; pass an explicit value; fallback options "api"`)
 }
 
+// A resolved source says in plain words what its state means for the values. Each state's sentence is kept
+// apart, so an agent can tell an empty source from a failed one, and a ready list shows its values.
+func TestDashboardVariableSourceOptionsAppearInTheTextSynopsis(t *testing.T) {
+	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
+	for _, tc := range []struct {
+		name    string
+		options map[string]any
+		want    string
+	}{
+		{"ready", map[string]any{"state": "ready", "values": []any{"api", "db"}, "currentValue": "not_in_values"},
+			`"service" values from its labelValues source "api", "db" (current value not in source values; kept)`},
+		{"empty", map[string]any{"state": "empty"}, `"service"; its source returned no values`},
+		{"failed", map[string]any{"state": "failed", "error": map[string]any{"code": "invalid_query", "message": "bad selector"}}, `"service"; its source failed (invalid_query)`},
+		{"needs variable", map[string]any{"state": "needs_variable", "needsVariable": "zone"}, `"service"; set zone to load its values`},
+		{"not run", map[string]any{"state": "not_run"}, `"service"; its source was not queried in time`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			document := variableResult(t)
+			document["variableDefinitions"] = []any{map[string]any{"name": "service", "source": "labelValues", "sourceSummary": map[string]any{"kind": "labelValues", "dependsOnVariables": false}, "sourceOptions": tc.options}}
+			require.NoError(t, resolved.Validate(document), "the resolved source must validate against the advertised schema")
+			raw, err := json.Marshal(document)
+			require.NoError(t, err)
+			text, err := dashboardQueryText(raw)
+			require.NoError(t, err)
+			require.Contains(t, text, tc.want)
+		})
+	}
+}
+
 // The source summary and fallback options validate against the advertised schema, and the summary rejects an
 // unknown kind, so the schema constrains the new fields.
 func TestDashboardVariableSourceSummaryValidatesAgainstTheSchema(t *testing.T) {
