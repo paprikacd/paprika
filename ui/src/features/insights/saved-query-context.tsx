@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { Dashboard, SavedQueryEntry } from "./schema"
+import type { ExplorerSeed } from "./explorer"
 
 export interface SavedQueryLibrary {
   queries: SavedQueryEntry[]
@@ -9,7 +10,8 @@ export interface SavedQueryLibrary {
   values: Record<string, string>
   loading?: boolean
   error?: string
-  onOpenExplorer?: () => void
+  /** Opens the Explorer. A seed opens it on a trace search over a range, such as a latency region's traces. */
+  onOpenExplorer?: (seed?: ExplorerSeed) => void
   onRefresh?: () => Promise<void>
 }
 const Context = createContext<SavedQueryLibrary>({ queries: [], variables: [], values: {} })

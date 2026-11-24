@@ -4,7 +4,14 @@ import { axisScale, formatBounds, formatRangeBounds, ticksWithin } from "../unit
 import type { Widget } from "../schema";
 import { widgetSeriesColors } from "../series-colors";
 import { SERIES_PALETTE } from "../series-palette";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
+import { useRegionBrush, type CellIndex } from "./region-brush";
+import { useDashboardWindow } from "../dashboard-window";
+import { useSavedQueryLibrary } from "../saved-query-context";
+import { traceQLForRegion, type HeatmapRegion } from "./rich-metrics-data";
+
+// The region panel is loaded on first use, so the heatmap's first paint never carries it.
+const DistributionRegionPanel = lazy(() => import("./distribution-region-panel").then(module => ({ default: module.DistributionRegionPanel })));
 import { Pin, X } from "lucide-react";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
@@ -187,6 +194,14 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   return { root: setRoot, enabled, detailsEnabled, active, show, togglePin, focus, dismiss, leave, enterPanel, focusPanel };
 }
 
+/** The region between two cells, in time and in bucket index (the rows are the histogram's bounds in ascending order). */
+function regionBetween(timestamps: readonly number[], from: CellIndex, to: CellIndex): HeatmapRegion {
+  return {
+    startTs: timestamps[Math.min(from.column, to.column)], endTs: timestamps[Math.max(from.column, to.column)],
+    lowBucket: Math.min(from.row, to.row), highBucket: Math.max(from.row, to.row),
+  };
+}
+
 /** Half the gap between the first two sample times: the distance at which a point event still belongs to a sample. */
 function halfSampleGap(timestamps: readonly number[]): number {
   return timestamps.length > 1 ? Math.abs(timestamps[1] - timestamps[0]) / 2 : 0;
@@ -338,6 +353,9 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const [anchor, setAnchor] = useState<SVGSVGElement | null>(null), [panel, setPanel] = useState<HTMLDivElement | null>(null);
   const sharedCursor = useChartCursor();
   const eventData = useAnnotationEvents();
+  const [regionState, setRegionState] = useState<{ revision: unknown; region: HeatmapRegion }>();
+  const dashboardWindow = useDashboardWindow();
+  const savedLibrary = useSavedQueryLibrary();
   const { showAxis, descriptionId, embedded: embeddedChart } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: props.embedded || embeddedChart, anchor: ref });
   const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
@@ -418,14 +436,46 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const keys = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!inspection.enabled) return;
     if (event.key === "Tab" && !event.shiftKey && inspection.active?.pinned && inspection.focusPanel()) { event.preventDefault(); return; }
+    // A region is cleared first, so Escape closes it before it closes the inspection under it.
+    if (event.key === "Escape" && region) { event.preventDefault(); event.stopPropagation(); setRegionState(undefined); return; }
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss("escape"); return; }
     let row = inspection.active?.observation.row ?? 0, column = Math.max(0, inspection.active?.observation.column ?? data.timestamps.length - 1);
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
     else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, "keyboard"); return; } else return;
     event.preventDefault();
-    inspection.show(observation(Math.max(0, Math.min(data.rows.length - 1, row)), Math.max(0, Math.min(data.timestamps.length - 1, column))), !!inspection.active?.pinned, "keyboard");
+    const next = { row: Math.max(0, Math.min(data.rows.length - 1, row)), column: Math.max(0, Math.min(data.timestamps.length - 1, column)) };
+    // Shift+Arrow grows the region from its pinned cell, so the keyboard can select the same range a drag does.
+    if (event.shiftKey && inspection.active) {
+      const origin = region ?? regionBetween(data.timestamps, { row: inspection.active.observation.row, column: inspection.active.observation.column }, { row: inspection.active.observation.row, column: inspection.active.observation.column });
+      const grown = regionBetween(data.timestamps, { row: origin.lowBucket, column: data.timestamps.indexOf(origin.startTs) }, { row: origin.highBucket, column: data.timestamps.indexOf(origin.endTs) });
+      setRegionState({ revision: result, region: { startTs: Math.min(grown.startTs, data.timestamps[next.column]), endTs: Math.max(grown.endTs, data.timestamps[next.column]), lowBucket: Math.min(grown.lowBucket, next.row), highBucket: Math.max(grown.highBucket, next.row) } });
+      return;
+    }
+    inspection.show(observation(next.row, next.column), !!inspection.active?.pinned, "keyboard");
   };
+  // A latency region: a two-axis drag over the cells. It belongs to the result it was drawn on, so a refresh clears it.
+  const regionLocate = (clientX: number, clientY: number): CellIndex | null => {
+    const hit = anchor ? locate({ clientX, clientY, currentTarget: anchor } as unknown as PointerEvent<SVGSVGElement>) : undefined;
+    return hit ? { column: hit.column, row: hit.row } : null;
+  };
+  const regionBrush = useRegionBrush({
+    enabled: !embeddedView && data.rows.length > 0,
+    revision: result,
+    locate: regionLocate,
+    commit: (from, to) => setRegionState({ revision: result, region: regionBetween(data.timestamps, from, to) }),
+  });
+  const region = regionState && regionState.revision === result ? regionState.region : undefined;
+  // The rectangle a region covers: its columns' left edge to the last column's right edge, and its rows' buckets from top to bottom.
+  const boxOf = (target: HeatmapRegion) => {
+    const first = Math.max(0, data.timestamps.findIndex(time => time >= target.startTs));
+    let last = first;
+    data.timestamps.forEach((time, index) => { if (time <= target.endTs) last = index; });
+    const left = columns[first]?.left ?? 0, right = (columns[last]?.left ?? 0) + (columns[last]?.width ?? 0);
+    return { x: left, width: Math.max(1, right - left), y: top + (data.rows.length - 1 - target.highBucket) * cellHeight, height: Math.max(1, (target.highBucket - target.lowBucket + 1) * cellHeight) };
+  };
+  const regionBox = region ? boxOf(region) : undefined;
+  const previewBox = regionBrush.preview ? boxOf(regionBetween(data.timestamps, regionBrush.preview.from, regionBrush.preview.to)) : undefined;
   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
   // Arrow moves change only aria-describedby, which screen readers do not re-announce; this polite line says each keyboard step.
   const keyboardStep = inspection.active?.owner === "keyboard" ? inspection.active.observation : undefined;
@@ -433,7 +483,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <span className={styles.srOnly} aria-live="polite">{keyboardSummary}</span>
     <div className={styles.plot} ref={ref} data-chart-entering={entering || undefined}>
-      <svg ref={setAnchor} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
+      <svg ref={setAnchor} {...regionBrush.handlers} className={styles.svg} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`${widget.title}. ${data.rows.length} histogram buckets.${inspection.enabled ? " Arrow keys inspect buckets and time; Enter pins." : ""}`} tabIndex={inspection.enabled ? 0 : undefined} aria-describedby={inspection.active && inspection.detailsEnabled ? id : descriptionId} onKeyDown={keys}
         onFocus={() => inspection.focus(observation(0, data.timestamps.length - 1))}
         onPointerMove={event => { if (event.pointerType === "touch") return; const value = locate(event); if (value) inspection.show(value); else if (inspection.active && !inspection.active.pinned && inspection.active.owner === "pointer") inspection.dismiss(); }}
         onClick={event => { const value = locate(event as unknown as PointerEvent<SVGSVGElement>); if (value) inspection.togglePin(value); }}>
@@ -458,6 +508,12 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
           <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} />
           <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} data-selected-bucket />
         </g>}
+        {/* A region is outlined in ink on a halo; the drag in progress is dashed. Both are decorative: the cells keep the pointer. */}
+        {previewBox && <rect x={previewBox.x} y={previewBox.y} width={previewBox.width} height={previewBox.height} fill="none" stroke="var(--gamma-ink)" strokeWidth={1} strokeDasharray="3 2" pointerEvents="none" aria-hidden="true" data-region-preview />}
+        {regionBox && <g pointerEvents="none" aria-hidden="true" data-distribution-region>
+          <rect x={regionBox.x} y={regionBox.y} width={regionBox.width} height={regionBox.height} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} />
+          <rect x={regionBox.x} y={regionBox.y} width={regionBox.width} height={regionBox.height} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} />
+        </g>}
         {/* Event ticks sit in the top gutter above the cells, with a rule along the plot's top edge. They are never filled bands. */}
         {eventData.events.length > 0 && <g pointerEvents="none" aria-hidden="true">
           <EventTicks events={eventData.events} x={columnX} top={0} bottom={top} />
@@ -471,6 +527,23 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
       </svg>
       {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} events={eventData.events.length ? eventsAt(eventData.events, inspection.active.observation.timestamp, halfSampleGap(data.timestamps)) : undefined} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
+    {region && <Suspense fallback={null}><DistributionRegionPanel
+      region={region}
+      series={result.series ?? []}
+      config={config}
+      bounds={fullData.bounds}
+      timeLabel={`${readoutClock.format(new Date(region.startTs))} to ${readoutClock.format(new Date(region.endTs))}`}
+      bucketLabel={`Buckets ${cellLabel(region.lowBucket > 0 ? fullData.bounds[region.lowBucket - 1] : -Infinity, fullData.bounds[region.highBucket], unit, widget.options?.decimals, fullData.bounds)}`}
+      unit={unit}
+      decimals={widget.options?.decimals}
+      traces={config.traces ? traceQLForRegion(region, fullData.bounds, unit, config.traces.filter) : undefined}
+      onClear={() => setRegionState(undefined)}
+      onTraces={config.traces && savedLibrary.onOpenExplorer ? () => {
+        const found = traceQLForRegion(region, fullData.bounds, unit, config.traces?.filter);
+        if ("query" in found) savedLibrary.onOpenExplorer?.({ providerId: config.traces!.providerId, kind: "traces", query: found.query, start: region.startTs, end: region.endTs });
+      } : undefined}
+      onUseRange={dashboardWindow.apply ? () => dashboardWindow.apply?.({ start: region.startTs, end: region.endTs }) : undefined}
+    /></Suspense>}
     <div className={styles.heatmapFooter}>
     {!embeddedView && <p className={heatmapStyles.quantile} data-heatmap-quantile>{readout}</p>}
     {widget.options?.showLegend !== false && <div className={heatmapStyles.legend} aria-label={`Color encodes bucket ${densityUnit}`}>

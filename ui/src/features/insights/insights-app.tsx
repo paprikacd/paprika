@@ -86,6 +86,7 @@ import { documentFingerprint } from "./fingerprint"
 import { useMobileNavigation, usePhoneShell } from "./use-mobile-navigation"
 import { dashboardActionItems } from "./dashboard-actions"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
+import type { ExplorerSeed } from "./explorer"
 import { useDashboardHistory } from "./history"
 import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
@@ -280,7 +281,7 @@ export default function InsightsApp({
   const [exploring, setExploring] = useState(false)
   const [inspectingQueries, setInspectingQueries] = useState(false)
   const [explorerOpened, setExplorerOpened] = useState(false)
-  const [explorerSource, setExplorerSource] = useState<{ providerId?: string; revision: number }>({ revision: 0 })
+  const [explorerSource, setExplorerSource] = useState<{ providerId?: string; seed?: ExplorerSeed; revision: number }>({ revision: 0 })
   const [explorerDirty, setExplorerDirty] = useState(false)
   const [savedQueries, setSavedQueries] = useState<SavedQueryEntry[]>([])
   const [queriesLoading, setQueriesLoading] = useState(true)
@@ -1628,12 +1629,22 @@ export default function InsightsApp({
     if (generation === libraryMutation.current) updateSavedQueries(entries)
   }, [libraryClient, updateSavedQueries])
 
-  const openQueryExplorer = useCallback(() => {
-    setExplorerOpened(true)
-    setExploring(true)
-    setMobileSidebar(false)
-    setLibraryRevision(value => value + 1)
-  }, [])
+  // A seeded open (a chart's trace search) remounts the Explorer on that seed. Unsaved explorer work is confirmed first, as a provider switch is.
+  const openQueryExplorer = useCallback((seed?: ExplorerSeed) => {
+    const open = () => {
+      if (seed) setExplorerSource(previous => ({ providerId: seed.providerId, seed, revision: previous.revision + 1 }))
+      setExplorerOpened(true)
+      setExploring(true)
+      setMobileSidebar(false)
+      setLibraryRevision(value => value + 1)
+    }
+    if (!seed || !explorerDirty) return open()
+    void confirmation.ask({
+      title: "Discard query changes?",
+      description: "Your unsaved query changes will be lost. Saved queries will remain unchanged.",
+      action: "Discard changes",
+    }).then(confirmed => { if (confirmed) { setExplorerDirty(false); open() } })
+  }, [confirmation, explorerDirty])
 
   async function exploreProvider(provider: Provider) {
     if (explorerDirty && !await confirmation.ask({
@@ -1823,7 +1834,7 @@ export default function InsightsApp({
             title={compactShell ? "Explore" : undefined}
             aria-current={exploring ? "page" : undefined}
             disabled={importingBundle}
-            onClick={openQueryExplorer}
+            onClick={() => openQueryExplorer()}
           ><Search size={16} /> Explore <span>{savedQueries.length}</span></GammaButton>
           <GammaButton data-panel-opener="providers" size="sm" variant="quiet"
             className={styles.sideLink}
@@ -1951,7 +1962,7 @@ export default function InsightsApp({
             {queriesLoading && <p className={styles.loading} role="status">Loading saved queries…</p>}
             {queriesError && <div role="alert"><p>{queriesError}</p><GammaButton variant="secondary" onClick={() => setLibraryRevision(value => value + 1)}>Reload saved queries</GammaButton></div>}
             {queriesLoaded && <Suspense fallback={<p className={styles.loading}>Loading explorer…</p>}>
-              <Explorer key={explorerSource.revision} initialProviderId={explorerSource.providerId} client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={useSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
+              <Explorer key={explorerSource.revision} initialProviderId={explorerSource.providerId} initialSeed={explorerSource.seed} client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={useSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
             </Suspense>}
           </section>
         )}
