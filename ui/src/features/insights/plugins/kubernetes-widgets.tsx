@@ -1,82 +1,25 @@
 "use client";
 
-import { useId, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import type { DrilldownContext } from "../drilldown";
-import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
-import { formatMetricDetails, type Point, type Series } from "../chart-data";
+import { EmptyState } from "../chart-renderers";
+import { formatMetricDetails } from "../chart-data";
 import { densityPalette } from "../density-palette";
 import { seriesSlot } from "../series-palette";
-import { statusToken } from "../status";
-import { useObservationOwner, type ObservationOwner, type TriggerHandlers } from "../observation-owner";
-import { occurrenceKeys } from "../tooltip-identity";
 import { niceAxis, sharedScale } from "../units";
 import { truncationNote } from "../truncation";
-import type { Widget } from "../schema";
 import type { WidgetRendererProps } from "../widget-registry";
-import { placementConfigSchema, placementModel, resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema } from "./kubernetes-data";
+import { resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema } from "./kubernetes-data";
+import { sampleTime, text, useObservations, type Observation, type Observed } from "./kubernetes-observations";
 
 /**
- * Renderers for the Kubernetes widgets. They draw with inline styles that read the design tokens, so they add no CSS
- * module rules to the Insights first view. Every number goes through the shared formatters and honours `decimals`.
- * Hover, focus and click open the shared observation tooltip, as the other Insights renderers do.
- * Embedded copies are static images with the same labels.
+ * Renderers for the Kubernetes bars, throttle and trend widgets. They draw with inline styles that read the design
+ * tokens, so they add no CSS module rules to the Insights first view. Every number goes through the shared formatters
+ * and honours `decimals`. Hover, focus and click open the shared observation tooltip. Embedded copies are static images.
+ * The placement treemap lives in kubernetes-placement.tsx.
  */
 
-const RESOURCE_UNIT = { cpu: "cores", memory: "B" } as const;
 const HATCH: CSSProperties = { backgroundImage: "repeating-linear-gradient(135deg, var(--gamma-chart-hatch) 0 2px, transparent 2px 6px)" };
-
-/** One observation: a mark's reading, shown in the shared tooltip. Keys name the observation across refreshes. */
-interface Observation {
-  key: string;
-  subject: string;
-  series: Series;
-  point: Point;
-  unit: string;
-  description: string;
-  detail: ReactNode;
-  context: DrilldownContext;
-}
-
-interface Observed {
-  index: number;
-  trigger?: TriggerHandlers;
-}
-
-interface Observations {
-  id: string;
-  root: RefObject<HTMLDivElement | null>;
-  observe: (key: string) => Observed | undefined;
-  popover: ReactNode;
-}
-
-/** Shares one observation owner per widget: marks open a single tooltip, and a refresh keeps an open one on its mark. */
-function useObservations(observations: Observation[], widget: Widget, enabled: boolean): Observations {
-  const id = useId(), root = useRef<HTMLDivElement>(null);
-  const keys = occurrenceKeys(observations.map(observation => observation.key));
-  const owner: ObservationOwner = useObservationOwner({
-    enabled,
-    retention: { keys },
-    locate: key => root.current?.querySelector<HTMLElement>(`[data-observation="${keys.indexOf(key)}"]`) ?? null,
-  });
-  const indexByKey = new Map(observations.map((observation, index) => [observation.key, index]));
-  const activeIndex = owner.active ? keys.indexOf(owner.active.key) : -1;
-  const current = activeIndex >= 0 ? observations[activeIndex] : undefined;
-  const observe = (key: string): Observed | undefined => {
-    const index = indexByKey.get(key);
-    if (index === undefined) return undefined;
-    return { index, trigger: enabled ? owner.trigger(keys[index]) : undefined };
-  };
-  const popover = owner.active && current ? (
-    <ObservationTooltip id={id} anchor={owner.active.anchor} avoidWidget anchorOwnsHistoryKeys pinned={owner.active.pinned}
-      onDismiss={owner.dismiss} onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
-      <MetricDetails widget={widget} series={current.series} index={0} point={current.point} unit={current.unit}
-        decimals={widget.options?.decimals} subject={current.subject} seriesLabel={widget.title} description={current.description}>
-        {current.detail}
-      </MetricDetails>
-    </ObservationTooltip>
-  ) : null;
-  return { id, root, observe, popover };
-}
 
 interface MarkProps {
   interactive: boolean;
@@ -98,83 +41,6 @@ function Mark({ interactive, label, context, observed, onActivate, onContextChan
     onPointerEnter={trigger?.onPointerEnter} onPointerLeave={trigger?.onPointerLeave}
     onFocus={event => { onContextChange?.(context); trigger?.onFocus(event); }} onBlur={trigger?.onBlur}
     onClick={event => { (onActivate ?? onContextChange)?.(context); trigger?.onClick(event); }}>{children}</button>;
-}
-
-const text = (value: number | null, unit: string, decimals?: number) => (value === null ? "No data" : formatMetricDetails(value, unit, decimals));
-
-/** The latest sample time in the result. Requests and limits are read at this instant. */
-function sampleTime(series: Series[] | undefined): number {
-  let latest = 0;
-  for (const entry of series ?? []) for (const point of entry.points) if (Number.isFinite(point.timestamp) && point.timestamp > latest) latest = point.timestamp;
-  return latest;
-}
-
-export function KubernetesPlacement({ widget, result, embedded, onActivate, onContextChange }: WidgetRendererProps) {
-  const config = placementConfigSchema.parse(widget.config ?? {});
-  const { model } = placementModel(result, config);
-  const interactive = !embedded;
-  const decimals = widget.options?.decimals;
-  const unit = RESOURCE_UNIT[model.resource];
-  const at = sampleTime(result.series);
-  const observations: Observation[] = model.nodes.flatMap(node => {
-    const allocatable = model.resource === "cpu" ? node.cpuAllocatable : node.memoryAllocatable;
-    return node.pods.flatMap((pod): Observation[] => {
-      const request = model.resource === "cpu" ? pod.cpuRequest : pod.memoryRequest;
-      if (!allocatable || request === null) return [];
-      const labels = { node: node.node, namespace: pod.namespace, pod: pod.pod };
-      return [{
-        key: `${node.node}|${pod.key}`, subject: pod.pod, unit, description: `${model.resource === "cpu" ? "CPU" : "Memory"} request on ${node.node}`,
-        series: { name: pod.pod, labels, points: [{ timestamp: at, value: request }] }, point: { timestamp: at, value: request },
-        detail: <span>{text((request / allocatable) * 100, "%", decimals)} of {text(allocatable, unit, decimals)} allocatable on this node</span>,
-        context: { series: pod.pod, labels },
-      }];
-    });
-  });
-  const { root, observe, popover } = useObservations(observations, widget, interactive && widget.options?.showTooltip !== false);
-  if (!model.nodes.length && !model.pending.length && !model.outside.length) return <EmptyState />;
-  const note = truncationNote(result);
-  return (
-    <div ref={root} className="flex h-full min-h-0 flex-col gap-3 text-xs" data-kubernetes="placement">
-      <ul className="flex flex-col gap-3" aria-label={`${widget.title} nodes`}>
-        {model.nodes.map(node => {
-          const allocatable = model.resource === "cpu" ? node.cpuAllocatable : node.memoryAllocatable;
-          const pressure = node.pressure;
-          const tone = pressure === null ? "var(--gamma-muted)" : pressure > 1 ? statusToken("critical") : pressure >= model.pressureThreshold ? statusToken("warning") : "var(--gamma-ink)";
-          const pods = [...node.pods].sort((a, b) => (b[model.resource === "cpu" ? "cpuRequest" : "memoryRequest"] ?? 0) - (a[model.resource === "cpu" ? "cpuRequest" : "memoryRequest"] ?? 0));
-          return (
-            <li key={node.node} className="flex flex-col gap-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate font-medium text-[var(--gamma-ink)]">{node.node}{node.zone ? ` · ${node.zone}` : ""}{node.ready === false ? " · Not ready" : ""}</span>
-                <span style={{ color: tone }}>{pressure === null ? "No data" : `${formatMetricDetails(pressure * 100, "%", decimals)} requested`}</span>
-              </div>
-              <div role="img" aria-label={`${node.node} ${model.resource} requests ${text(pressure === null ? null : pressure * 100, "%", decimals)} of allocatable`}
-                className="relative flex h-3 w-full overflow-hidden rounded-sm" style={{ background: "var(--gamma-chart-empty)" }}>
-                {pods.map((pod, index) => {
-                  const request = model.resource === "cpu" ? pod.cpuRequest : pod.memoryRequest;
-                  if (!allocatable || request === null) return null;
-                  const width = Math.min(100, (request / allocatable) * 100);
-                  return <Mark key={pod.key} interactive={interactive} label={`${pod.pod}: ${text(request, unit, decimals)}`}
-                    context={{ series: pod.pod, labels: { node: node.node, namespace: pod.namespace, pod: pod.pod } }}
-                    observed={observe(`${node.node}|${pod.key}`)} onActivate={onActivate} onContextChange={onContextChange}
-                    className="block h-full" style={{ width: `${width}%`, background: seriesSlot(index) }}>{null}</Mark>;
-                })}
-              </div>
-              {model.resource === "cpu" && node.cpuRequested !== null && allocatable !== null && <span className="text-[var(--gamma-muted)]">{text(node.cpuRequested, unit, decimals)} of {text(allocatable, unit, decimals)}</span>}
-              {model.resource === "memory" && node.memoryRequested !== null && allocatable !== null && <span className="text-[var(--gamma-muted)]">{text(node.memoryRequested, unit, decimals)} of {text(allocatable, unit, decimals)}</span>}
-              {config.showPods !== false && node.pods.length > 0 && <span className="truncate text-[var(--gamma-muted)]">{node.pods.map(pod => pod.pod).join(", ")}</span>}
-            </li>
-          );
-        })}
-      </ul>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[var(--gamma-muted)]">
-        {model.hiddenNodes > 0 && <span>Showing {model.nodes.length} of {model.totalNodes} nodes</span>}
-        <span>{model.pending.length} pending {model.pending.length === 1 ? "pod" : "pods"}</span>
-        {model.outside.length > 0 && <span>{model.outside.length} outside returned nodes</span>}
-        {note && <span>{note}</span>}
-      </div>
-      {popover}
-    </div>
-  );
 }
 
 export function KubernetesResourceBars({ widget, result, embedded, onActivate, onContextChange }: WidgetRendererProps) {

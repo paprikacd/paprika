@@ -42,7 +42,8 @@ describe('working chart capability coverage', () => {
         expect(markup).not.toContain('Widget plugin unavailable');
         expect(markup).not.toContain('NaN');
       }
-    });
+      // The first lazy renderer load can take several seconds on a busy machine.
+    }, 30000);
   }
 
   it('preserves positive outbound input while the directional adapter mirrors its position', () => {

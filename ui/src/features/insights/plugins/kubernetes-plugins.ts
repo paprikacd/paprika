@@ -24,7 +24,7 @@ const deferred = (load: () => Promise<{ default: ComponentType<WidgetRendererPro
   }
   return Deferred;
 };
-const KubernetesPlacement = deferred(() => import("./kubernetes-widgets").then(module => ({ default: module.KubernetesPlacement })));
+const KubernetesPlacement = deferred(() => import("./kubernetes-placement").then(module => ({ default: module.KubernetesPlacement })));
 const KubernetesResourceBars = deferred(() => import("./kubernetes-widgets").then(module => ({ default: module.KubernetesResourceBars })));
 const KubernetesThrottleMatrix = deferred(() => import("./kubernetes-widgets").then(module => ({ default: module.KubernetesThrottleMatrix })));
 const KubernetesResourceTrend = deferred(() => import("./kubernetes-widgets").then(module => ({ default: module.KubernetesResourceTrend })));

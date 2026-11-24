@@ -6,7 +6,7 @@ PromQL lives in `ui/src/features/insights/plugins/kubernetes-queries.ts`. The st
 
 | Widget (plugin id) | Config | Signals |
 | --- | --- | --- |
-| Workload placement (`kubernetes-placement`) | `resource` cpu or memory, `pressure` 0.5 to 1, `showPods`, `maxNodes` 1 to 64 | `cpu-allocatable`, `memory-allocatable`, `cpu-request`, `memory-request`, `node-ready` |
+| Workload placement (`kubernetes-placement`, node to pod treemap) | `resource` cpu or memory, `pressure` 0.5 to 1, `showPods`, `maxNodes` 1 to 64 | `cpu-allocatable`, `memory-allocatable`, `cpu-request`, `memory-request`, `node-ready` |
 | Resource comparison (`kubernetes-resource-bars`) | `groupLabel`, `maxGroups` 1 to 16, `showLimits`, `showValues` | `cpu-usage`, `cpu-request`, `cpu-limit`, `memory-usage`, `memory-request`, `memory-limit` |
 | CPU throttling matrix (`kubernetes-throttle-matrix`) | `groupLabel`, `rows` 6 to 24, `ceiling` 1 to 100 | `throttled`, `periods` |
 | Namespace resource trend (`kubernetes-resource-trend`) | `showNetwork`, `showRequested`, `fill` | `cpu-usage`, `cpu-request`, `memory-usage`, `memory-request`, `network-rx`, `network-tx` |
@@ -17,6 +17,10 @@ Units: CPU is in cores, memory in bytes, network in bytes per second. Throttle s
 
 - A missing sample is unavailable, never zero. Zero CFS periods is observed but neutral, so it is not painted as throttling.
 - A pod with an empty `node` label is pending. A pod on a node that is not in the returned capacity is listed as outside.
+- Placement is a treemap. A node's box is its allocatable capacity, its pods are tiles sized by request, and the unrequested rest is
+  an open tile. Pending and outside pods sit in their own groups. Zone groups appear only when nodes carry a `zone` label. A node
+  at or above `pressure` is outlined in the warning token, and above 1 in the critical token.
+- Hover, focus and click open the shared observation tooltip on every mark, with values formatted through `decimals`.
 - Bars keep the busiest groups first, up to `maxGroups`. The footer says how many were left out. A limit sum covers only the containers that declare a limit.
 - Each series needs a `signal`; an unknown signal, a negative value or a duplicate identity is reported as an input issue.
 - Every number honours the widget's `decimals` setting.
@@ -26,6 +30,8 @@ Units: CPU is in cores, memory in bytes, network in bytes per second. Throttle s
 A query returns at most 100 series (`maxSeries` in the metrics provider). The default queries fit that cap with the tiles
 that starters place: placement is two series per pod plus three per node, throttle is two per pod, and the trend is six.
 Bars truncate past about 16 groups. The footer says when a result is truncated; the widget does not rank hidden series.
+The placement treemap draws one tile per pod with a positive request, plus one unrequested tile per node. Its tile count is
+bounded by the same series cap as the bars, so it does not need a fallback to bars.
 
 ## Label and exporter assumptions
 
