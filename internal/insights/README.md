@@ -928,3 +928,29 @@ per-provider limit of 2 running queries is the constraint these numbers protect.
 upstream the gateway's per-provider bulkhead refuses the excess first: 26 of 36
 first attempts got a 429 with Retry-After, with or without the per-widget change.
 Repeat the burst against your real provider before raising any capacity value.
+
+## Result cache and collection tags
+
+Insights keeps a short-lived, in-process result cache, so viewers that read the same
+window in the same grain share one provider request. It is bounded to
+`--result-cache-mib` (default 16, 0 disables it, at most 128), 1024 entries and 1 MiB
+per entry, with least-recently-used eviction. An entry lives 15 seconds. Identical
+queries that arrive together join one execution: the first caller runs it and the
+others wait for its result.
+
+The cache key holds the caller's authorization scope and the resolved query. A local
+provider's scope is `local`, because the proxy's global read check is its only check.
+A shared provider's scope is the gateway's digest of the caller's permissions, and a
+gateway that reports none disables sharing for that provider. A window that still
+reaches the present, a truncated result other than a row limit, and an error are not
+kept. A manual Refresh sends `X-Insights-Cache: refresh`, which skips the lookup and
+stores the new result. A provider configuration change drops that provider's entries.
+
+Freshness: a window moves in grains of 2 to 15 seconds, so a board's relative window can
+lag the wall clock by up to 15 seconds, and a cached result can be up to 15 seconds old.
+A revoked grant can therefore still be served for up to 15 seconds. A hit or a join
+reports `cache` in its receipt, with no provider request and no upstream phase.
+
+Dashboard collections are tagged with the store's generation, which moves on every
+write and delete, and with the process's boot. A conditional read whose tag matches
+returns 304 without listing the store, and a restart never matches an earlier tag.

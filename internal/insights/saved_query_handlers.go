@@ -12,11 +12,20 @@ func (s *Server) listSavedQueries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid provider ID")
 		return
 	}
-	documents := s.savedQueries.list(providerID)
-	if r.URL.Query().Get("summary") == "true" {
+	summary := r.URL.Query().Get("summary") == "true"
+	variant := "queries:" + providerID + ":full"
+	if summary {
+		variant = "queries:" + providerID + ":summary"
+	}
+	if tag := collectionTag(s.bootTag, s.savedQueries.Generation(), variant); matchesReadETag(r.Header.Get("If-None-Match"), tag) {
+		writeNotModified(w, tag)
+		return
+	}
+	documents, generation := s.savedQueries.listVersioned(providerID)
+	if summary {
 		documents = summarizeDocuments(documents, []string{"id", "name", "description", "tags", "providerId", "kind", "etag"}, false)
 	}
-	writeCollectionJSON(w, r, map[string]any{"queries": documents})
+	writeTaggedCollection(w, collectionTag(s.bootTag, generation, variant), map[string]any{"queries": documents})
 }
 
 func (s *Server) getSavedQuery(w http.ResponseWriter, r *http.Request) {

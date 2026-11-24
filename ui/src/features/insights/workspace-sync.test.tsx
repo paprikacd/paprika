@@ -4,6 +4,13 @@ import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
 import type { Dashboard, SavedQueryEntry, Widget } from "./schema"
 import type { QueryFetcher } from "./query"
+import { documentFingerprint } from "./fingerprint"
+
+// A passthrough spy: the sync must not fingerprint an unchanged workspace again.
+vi.mock("./fingerprint", async importOriginal => {
+  const actual = await importOriginal<typeof import("./fingerprint")>()
+  return { documentFingerprint: vi.fn(actual.documentFingerprint) }
+})
 
 vi.mock("./canvas", async () => {
   const { useWidgetQuery } = await import("./query")
@@ -169,4 +176,24 @@ it("does not refetch visible widgets when the library snapshot has not changed",
   const calls = vi.mocked(api.query).mock.calls.length
   await act(async () => fireEvent.focus(window))
   expect(api.query).toHaveBeenCalledTimes(calls)
+})
+
+it("does not fingerprint or reconcile an unchanged workspace when the reads return the same objects", async () => {
+  const { api, store } = fixture()
+  // A conditional read answered with 304 hands back the same objects as before.
+  const dashboards = structuredClone(store.dashboards)
+  const queries = structuredClone(store.queries)
+  vi.mocked(api.list).mockResolvedValue(dashboards)
+  vi.mocked(api.listSavedQueries).mockResolvedValue(queries)
+  vi.mocked(api.get).mockResolvedValue({ dashboard: structuredClone(initial), etag: store.etag })
+  await open(api)
+  // The first tick reconciles once and records its inputs.
+  await act(async () => { fireEvent.focus(window) })
+  await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2))
+  await act(async () => {})
+  vi.mocked(documentFingerprint).mockClear()
+  await act(async () => { fireEvent.focus(window) })
+  await waitFor(() => expect(api.list).toHaveBeenCalledTimes(3))
+  await act(async () => {})
+  expect(documentFingerprint).not.toHaveBeenCalled()
 })

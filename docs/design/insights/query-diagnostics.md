@@ -216,3 +216,17 @@ server; otherwise the runner starts an isolated Next server.
 `INSIGHTS_QUERY_INSPECTOR_OUTPUT` selects the screenshot directory. CI runs this
 fixture and uploads the query-inspector artifacts; fixture registration alone
 does not establish a passing browser run or live provider behavior.
+
+## Result cache deliveries
+
+A receipt may carry `cache`, which says how the server's result cache answered:
+`status` is `hit`, `joined`, `miss` or `bypass`. A `hit` returned a stored result and a
+`joined` returned the result of an execution that was already in flight. Neither made a
+provider request, so both report `dispatched: false`, no upstream phase, and a `cache`
+phase. `sourceExecutionId` names the execution that produced the result, and `ageMs`
+is how long ago it was stored (for a join, since the leader finished). A `miss` ran the
+query. `reason` names a bypass (`refresh`, `unscoped`, `uncacheable`) or a miss that was
+not kept (`live_edge`, `uncacheable`). The field is absent when the cache is disabled.
+
+A dashboard signal answered by the cache is reported as `cached` and is not counted as
+executed. Its latency is still the receipt's total.

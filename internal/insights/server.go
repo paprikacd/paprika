@@ -3,6 +3,7 @@ package insights
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -105,6 +106,8 @@ type Server struct {
 	// uploadRefusals counts saves and dry runs refused because the body budget was
 	// full, by route.
 	uploadRefusals metric.Int64Counter
+	// bootTag is random for each process, so a collection tag from before a restart never matches a list served after it.
+	bootTag string
 	// results is the shared result cache, nil when it is disabled. resultMetrics records its evictions and size.
 	results       *resultCache
 	resultMetrics *otelResultCacheMetrics
@@ -144,6 +147,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{capacity: capacity, store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, capacity.QueryConcurrency), queryWaiting: make(chan struct{}, capacity.QueryQueue), queryWaitTimeout: capacity.QueryWait, dashboardParallelism: capacity.DashboardQueryParallelism, dashboardExtra: newDashboardSlotPool(capacity.DashboardQueryParallelism - 1), catalogPhases: make(chan struct{}, capacity.CatalogConcurrency), catalogWaiting: make(chan struct{}, capacity.CatalogQueue), catalogWaitTimeout: capacity.CatalogWait, queryBudget: defaultQueryBudget, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
+	s.bootTag = rand.Text()
 	if err := s.createInstruments(); err != nil {
 		return nil, err
 	}

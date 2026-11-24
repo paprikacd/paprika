@@ -89,7 +89,7 @@ import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
 import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
-import { useWorkspaceRefresh } from "./use-workspace-refresh"
+import { sameSyncInputs, useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { refreshStaggerSpread } from "./refresh-stagger"
 
@@ -465,6 +465,8 @@ export default function InsightsApp({
   }), [])
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
+  // The inputs of the last workspace reconcile; see sameSyncInputs.
+  const lastSyncInputs = useRef<readonly unknown[] | undefined>(undefined)
   const openRequest = useRef(0)
   const bundleImporter = useRef<ReturnType<typeof createBundleImporter> | null>(null)
   const bundleImportActive = useRef(false)
@@ -491,6 +493,15 @@ export default function InsightsApp({
     if (signal.aborted || request !== openRequest.current || generation !== libraryMutation.current ||
       current.busy || current.importingBundle || current.queriesLoading ||
       current.saved !== before.saved || current.dashboards !== before.dashboards || current.savedQueries !== before.savedQueries) return
+    // Every input the reconcile reads. A 304 for the list and the open document hands back the same objects,
+    // so an unchanged workspace is recognised here without fingerprinting it again.
+    const inputs = [documents, entries, active, current.dashboards, current.savedQueries, current.saved, current.dirty, current.editing, current.explorerDirty, current.panel, current.dashboard.id, etags.current.get(current.dashboard.id)]
+    if (sameSyncInputs(lastSyncInputs.current, inputs)) {
+      setQueriesLoaded(true)
+      setQueriesError("")
+      return
+    }
+    lastSyncInputs.current = inputs
     const nextDocuments = active
       ? documents.map(item => item.id === active.dashboard.id ? active.dashboard : item)
       : documents
