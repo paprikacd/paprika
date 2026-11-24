@@ -73,7 +73,7 @@ These contracts record the Next-phase review decisions. Each one names the code 
 | Data validation and lifecycle | `schema.ts`, `internal/insights/`, conditional writes in `client.ts` |
 | Provider access and permissions | `internal/api/insights_proxy.go`, `internal/api/auth/`, service provider configuration |
 | Navigation/transfer | `drilldown.ts`, `workspace-transfer.ts`, `docs/design/insights/drilldowns.md` |
-| Production limits | `docs/design/insights/README.md` and the widget review report; no alert/log/remote-plugin/Grafana-parity claim |
+| Production limits | `docs/design/insights/README.md` (Verification and current scope); dated review reports in `docs/design/insights/receipts/`; no alert/log/remote-plugin/Grafana-parity claim |
 
 English is currently the authored language. Numeric and timestamp formatting follows the renderer's explicit formatters, with the local timezone shown for custom time input. No additional locale or production browser-support promise is made by this local Chromium review. The scope contains no billing or legal-copy change.
 

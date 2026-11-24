@@ -66,7 +66,7 @@ IDs here are placeholders; run the steps in order.
    For several values, declare `"multi":true`, and pass a list: `"variables":{"cluster":["omega","delta"]}`; `[]` is All. Use the list after `=~` (`up{cluster=~{{cluster}}}`), not after `=`, which refuses it.
    For a service, cluster or other list that lives in the data, prefer a `source` over a typed list:
    `{"type":"labelValues","providerId","label","selector?","limit?"}` reads one label's values from a
-   Prometheus or Tempo provider, and `{"type":"savedQuery","queryRef","field"}` reads a records column or a
+   Prometheus or Tempo provider, and `{"type":"savedQuery","queryRef","field","limit?"}` reads a records column or a
    series label. The console resolves the source and shows its values, and `query_dashboard` resolves it too:
    a sourced variable's `sourceOptions` lists the values its source returned for the call, with `state` and
    `currentValue`. `options` is only the fallback shown when the source fails. An override outside the

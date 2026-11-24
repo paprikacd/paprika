@@ -41,7 +41,7 @@ Make a compact KPI an integrated component: identity/icon, label, value/unit, co
 
 Budget title/action, plot, legend and padding separately. Outer card equality does not establish aligned plot rectangles. Compare the actual plot-to-chrome ratio, row pitch, visible records and legend wrapping at the intended panel width. Remove redundant captions and empty bands before reducing text. Keep operational meaning—unit, time, coverage, overrides—visible or directly reachable as appropriate.
 
-Match literal geometry when requested; use the numbers in [pixel reproduction](pixel-reproduction.md) only for those fixtures. The references' 28 outcome bars, approximately 85 timeline columns and 26px destination-row pitch are measurements of specific artwork, not defaults for arbitrary data.
+Match literal geometry when requested; use the numbers in [pixel reproduction](../../../../labs/widget-lab/docs/references/pixel-reproduction.md) only for those fixtures. The references' 28 outcome bars, approximately 85 timeline columns and 26px destination-row pitch are measurements of specific artwork, not defaults for arbitrary data.
 
 ### 3. Use a small optical hierarchy
 

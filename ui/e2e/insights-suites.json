@@ -1,5 +1,5 @@
 {
-  "description": "Every Insights browser suite under ui/e2e, listed once. Run with: node e2e/run-insights.mjs --tag smoke (see ../docs/design/insights/validation.md).",
+  "description": "Every Insights browser suite under ui/e2e, listed once. Run with: node e2e/run-insights.mjs --tag smoke (see ../docs/guides/insights-dev-loop.md).",
   "tags": {
     "smoke": "Browser smoke run on CI trees that touch Insights code (ci.yml fleet-ui-smoke, hack/ci fleet-ui-smoke). Retried once.",
     "full": "The no-argument default of run-insights.mjs.",

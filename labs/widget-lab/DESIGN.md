@@ -22,6 +22,10 @@ omitted:
 
 # Paprika Widget Lab
 
+> Lab-only. This file is a reference for the compact dark direction of the two lab studies. Production design rules,
+> the palette and the status vocabulary are in the root [DESIGN.md](../../DESIGN.md), and production behaviour is in
+> [docs/design/insights/UX-CONTRACT.md](../../docs/design/insights/UX-CONTRACT.md). Where they differ, the root files win.
+
 ## Overview
 
 An interactive surface for an engineer evaluating chart components. The analytical studies follow the user's Edge Watch and Reliability Room references: a dense dark observability console with compact metrics, crisp telemetry, ranked evidence and rich exact inspection. Two studies investigate network activity and request-based service reliability. The original deployment investigation remains available at `#baseline` for comparison. The iteration-06 direction below adds reusable inspection and navigation to the literal studies and chart catalogue.

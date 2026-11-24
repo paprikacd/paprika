@@ -21,15 +21,9 @@ The critique prioritizes three things: controls must look physically contained a
 
 The installed `audit` and `critique` skills now require both full-context views and native-size control crops of the integrated application. Reviewers must inspect open, focused, disabled/error and pressed states, trace the production cascade, and distinguish behavioral, visual and accessibility evidence. A component's provenance or a passing static scan cannot substitute for that evidence.
 
-The `paprika-widgets` skill now includes authoring/provider inventory, explicit icon-only button checks, switch containment, multiline editor height, actual hit areas and tooltip sub-widget invariants. Its coordinated design workflow retains Impeccable's Operate mode, Frontend Design Premium's canonical ownership, the local frontend-design guidance, and the dashboard scope boundary in design-taste-frontend. Gamma source retrieval and adaptations are recorded in [the adapter README](../../../ui/src/features/insights/gamma/README.md).
+The `paprika-widgets` skill now includes authoring/provider inventory, explicit icon-only button checks, switch containment, multiline editor height, actual hit areas and tooltip sub-widget invariants. Its coordinated design workflow retains Impeccable's Operate mode, Frontend Design Premium's canonical ownership, the local frontend-design guidance, and the dashboard scope boundary in design-taste-frontend. Gamma source retrieval and adaptations are recorded in [the adapter README](../../../../ui/src/features/insights/gamma/README.md).
 
-Updated local skill sources:
-
-- `/Users/benebsworth/.agents/skills/audit/SKILL.md`
-- `/Users/benebsworth/.agents/skills/critique/SKILL.md`
-- `/Users/benebsworth/.codex/skills/paprika-widgets/SKILL.md`
-- `/Users/benebsworth/.codex/skills/paprika-widgets/references/design-review.md`
-- `/Users/benebsworth/.codex/skills/paprika-widgets/references/widget-checklist.md`
+Updated local skill sources (user-installed at the time, outside the repository): the `audit` and `critique` skills, and the `paprika-widgets` skill with its `design-review.md` and `widget-checklist.md` references. The unversioned `paprika-widgets` skill cited here was folded into the repository in November 2026; its still-current checks are in [the widget checklist](../../../../.agents/skills/paprika-dashboard-design/references/widget-checklist.md).
 
 The widget skill passes the skill creator's validator. The generic validator rejects the audit/critique skills' pre-existing upstream `args` and `user-invocable` frontmatter keys; these were preserved rather than deleting installed skill metadata. The added Markdown changes do not alter their invocation metadata or the audit-only scope when no fix is requested.
 
@@ -37,7 +31,7 @@ The widget skill passes the skill creator's validator. The generic validator rej
 
 Heatmap Style → Tooltip content now offers **Details and time series**, with three heights and independent grid/axis controls. Existing dashboards retain details-only tooltips. The view reads the hovered series from the parent widget's existing result and shows exact summaries from the full history while bounding the plotted points. No additional provider query is issued.
 
-The reusable trusted renderer boundary contains errors and recursive sub-widget mounting. JSON, YAML, OpenUI and Go validation share the same optional configuration. See [tooltip sub-widgets](tooltip-widgets.md) for the contract and extension rules.
+The reusable trusted renderer boundary contains errors and recursive sub-widget mounting. JSON, YAML, OpenUI and Go validation share the same optional configuration. See [tooltip sub-widgets](../tooltip-widgets.md) for the contract and extension rules.
 
 The final screenshot review caught an additional integration defect in the new sub-view: its history content initially touched the tooltip border while the surrounding sections had a 17px inset. The shared sub-widget wrapper now owns that inset and border-box sizing. The browser suite checks history/plot containment so this specific failure cannot be hidden by passing chart-data tests.
 
@@ -76,7 +70,7 @@ The visual confirmation reviewed toolbar, switch, query, provider, Manage, Code 
 - `final-tooltip-native-top-320x600.png`, `final-tooltip-native-844x390.png`
 - `final-report.json` for the full measurements and scenario results
 
-The production build and TypeScript check pass; all 356 unit tests across 51 files pass; `go test -race ./internal/insights` passes. ESLint reports zero errors and the same three pre-existing warnings outside Insights. `git diff --check` passes. All seven browser-suite results are recorded in [validation](validation.md): 49 scenarios plus 206 widget checks and four explicit N/A cases.
+The production build and TypeScript check pass; all 356 unit tests across 51 files pass; `go test -race ./internal/insights` passes. ESLint reports zero errors and the same three pre-existing warnings outside Insights. `git diff --check` passes. All seven browser-suite results are recorded in [validation](validation-history.md): 49 scenarios plus 206 widget checks and four explicit N/A cases.
 
 The first combined run had one intermittent failure in the existing mobile long-trace detail check (205 of 206 widget checks passed). Its unlabelled assertion and full-page screenshot did not establish whether the failure concerned text or geometry. The original result is preserved as `artifacts/insights/widget-audit/initial-final-run-report.json`, alongside a diagnostic reproduction. The latter established a rendered-text timing issue: `textContent` already held the complete rows and the panel fit at x12/y231/330×529 within 390×844, but the immediate `innerText` read omitted the label block. A bounded animation-frame wait observed the complete visible Trace ID/Service/Operation 15ms later. Native viewport capture confirmed the rows rendered correctly.
 

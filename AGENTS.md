@@ -22,23 +22,26 @@ are served by `get_insights_schema` and the observe server instructions; this fi
   CI also lints the gallery export and the reference fixtures.
 - Visual matrix: `ui/e2e/insights-visual-matrix-linux.sh` (Docker; `--update` records the baseline).
 - Playground: `cd ui && npm run insights:lab` (hot-reloading, synthetic fixtures).
+- Dev loop (unit tests, lint, browser suites and tags, visual matrix): `docs/guides/insights-dev-loop.md`.
 - Local loop: `docs/guides/local-dashboard-polish.md`. `render_dashboard` needs
   `PAPRIKA_OBSERVE_RENDER_URL` and `PAPRIKA_OBSERVE_RENDER_SECRET`; see `docs/guides/observe-browser-renderer.md`.
-- Dated evidence lives in `docs/design/insights/receipts/`, not here.
+- Contracts, guides and dated evidence are indexed in `docs/design/insights/README.md`. Dated evidence lives in
+  `docs/design/insights/receipts/`, not here.
 
 ### Repairing a live dashboard
 
 Repair drifted dashboards with the tested toolkit before writing new queries:
-`hack/dashboard-presentation/patches.json` (reviewed widget edits, applied with
-`patch_dashboard` after the UI release is deployed), `hack/service-overview/`
+`hack/dashboard-presentation/patches.json` (reviewed widget edits, planned and applied with
+the patch applier after the UI release is deployed), `hack/service-overview/`
 (exact-ETag query patches; `migrate.mjs` previews, then applies through an authenticated
 Observe MCP client), `hack/shorted-queries/` (Shorted query fixtures), the coverage gate
 `ui/e2e/service-overview-coverage.mjs`, and the promtool PromQL fixtures. CI runs the hack
 and coverage tests in one step. Missing telemetry stays empty. An absent error-class series
 may become zero only against observed request traffic, and zero-traffic ratios stay
-undefined. The full
-section is in the design skill, and the source requirements are in
-[dashboard data coverage](docs/guides/dashboard-data-coverage.md).
+undefined. The patch applier (`hack/insights-patch/`) plans a set, then writes it with
+`--apply --receipt <file>` using exact ETags; its usage is in `hack/insights-patch/README.md`.
+CI runs `node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs hack/insights-patch/*.test.mjs hack/dashboard-presentation/*.test.mjs`.
+The source requirements are in [dashboard data coverage](docs/guides/dashboard-data-coverage.md).
 
 ## Get changes live and prove Paprika Observe works
 

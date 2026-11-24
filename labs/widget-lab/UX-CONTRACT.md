@@ -1,5 +1,9 @@
 # Widget Lab behavior contract
 
+Lab-only: this contract covers the lab's studies and routes. The product contract for `/dashboard/insights` is
+[docs/design/insights/UX-CONTRACT.md](../../docs/design/insights/UX-CONTRACT.md); the design context is the root
+[DESIGN.md](../../DESIGN.md).
+
 ## Canonical UI Map
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |

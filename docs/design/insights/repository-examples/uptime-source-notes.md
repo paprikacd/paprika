@@ -1,6 +1,6 @@
 # Uptime source inventory and mapping
 
-Inspected `/Users/benebsworth/projects/uptime` at
+Inspected a local `uptime` checkout at
 `d2fb0dd85129049c39e64fef4f9620d298ae0371`, with a clean working tree.
 No applicable `AGENTS.md` was present. This document records source behavior
 and the initial mapping rationale. Both labelled sample examples and live
