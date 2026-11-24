@@ -970,6 +970,26 @@ export function preferredProvider(
   return best;
 }
 
+/** The title a new widget of this type starts with. An author-renamed title never matches, so it is kept. */
+export function defaultWidgetTitle(type: Widget["type"], pluginLabel?: string): string {
+  return {
+    timeseries: "Time series",
+    bar: "Bar chart",
+    stat: "Single value",
+    table: "Metrics table",
+    traces: "Trace explorer",
+    heatmap: "Service heatmap",
+    plugin: pluginLabel ?? "Plugin widget",
+  }[type]
+}
+
+/** A starter query as newWidget reads it. The registry's StarterQuery type has the same shape. */
+export interface StarterChoice {
+  providerTypes: readonly string[]
+  query: string
+  default?: boolean
+}
+
 export function newWidget(
   type: Widget["type"],
   providers: Provider[],
@@ -981,25 +1001,20 @@ export function newWidget(
     defaultOptions?: WidgetOptions
     defaultConfig?: Widget["config"]
   },
+  starters?: readonly StarterChoice[],
 ): Widget {
   if (type === "plugin" && !plugin)
     throw new Error("Choose a registered plugin before adding its widget")
   const kind = type === "plugin" ? plugin!.dataKind : type === "traces" ? "traces" : "metrics"
   const provider = preferredProvider(providers, (p) => p.capabilities.includes(kind))
+  // The default starter for the chosen provider's type. Without one, the widget keeps the built-in query.
+  const starter = provider ? starters?.find((entry) => entry.default && entry.providerTypes.includes(provider.type)) : undefined
   return {
     id: `widget-${crypto.randomUUID()}`,
-    title: {
-      timeseries: "Time series",
-      bar: "Bar chart",
-      stat: "Single value",
-      table: "Metrics table",
-      traces: "Trace explorer",
-      heatmap: "Service heatmap",
-      plugin: plugin?.label ?? "Plugin widget",
-    }[type],
+    title: defaultWidgetTitle(type, plugin?.label),
     type,
     providerId: provider?.id ?? "unconfigured",
-    query: kind === "traces" ? "{}" : "up",
+    query: starter?.query ?? (kind === "traces" ? "{}" : "up"),
     unit: "",
     ...(type === "stat" ? { options: { sparklinePlacement: "side" as const } } : {}),
     ...(type === "heatmap"

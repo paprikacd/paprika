@@ -1193,6 +1193,7 @@ export default function InsightsApp({
       providers,
       dashboard.widgets,
       definition.type === "plugin" ? definition : undefined,
+      definition.starterQueries,
     )
     update({ ...dashboard, widgets: [...dashboard.widgets, widget] })
     selectWidget(widget.id)

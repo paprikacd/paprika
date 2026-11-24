@@ -4,6 +4,7 @@ import { useSyncExternalStore, type ComponentType } from "react";
 import { BuiltinWidgetRenderer } from "./chart-renderers";
 import type { DrilldownContext } from "./drilldown";
 import { barStylePresets, heatmapStylePresets, statStylePresets, timeseriesStylePresets } from "./style-presets";
+import { gridStarters, seriesStarters, statStarters, traceStarters } from "./starter-queries";
 import {
   widgetOptionsSchema,
   type DataKind,
@@ -196,6 +197,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
     stylePresets: timeseriesStylePresets,
+    starterQueries: seriesStarters,
   },
   {
     id: "stat",
@@ -205,6 +207,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
     stylePresets: statStylePresets,
+    starterQueries: statStarters,
   },
   {
     id: "bar",
@@ -214,6 +217,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
     stylePresets: barStylePresets,
+    starterQueries: seriesStarters,
   },
   {
     id: "heatmap",
@@ -223,6 +227,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
     stylePresets: heatmapStylePresets,
+    starterQueries: gridStarters,
   },
   {
     id: "table",
@@ -231,6 +236,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     description: "Get closer to the underlying values",
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
+    starterQueries: gridStarters,
   },
   {
     id: "traces",
@@ -239,6 +245,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
     description: "Follow requests across services",
     dataKind: "traces",
     render: BuiltinWidgetRenderer,
+    starterQueries: traceStarters,
   },
 ] satisfies WidgetDefinition[]);
 

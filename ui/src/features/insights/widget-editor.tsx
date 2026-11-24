@@ -26,13 +26,15 @@ import {
   supportsTooltipView,
   supportsAnnotationSource,
   preferredProvider,
+  defaultWidgetTitle,
   type Dashboard,
   type Provider,
   type Widget,
   type QueryResult,
   type WidgetOptions,
 } from "./schema";
-import { getWidgetDefinition, optionSectionsFor, supportsThresholds, useWidgetDefinitions, type StyleSectionId } from "./widget-registry";
+import { getWidgetDefinition, optionSectionsFor, supportsThresholds, useWidgetDefinitions, type StarterQuery, type StyleSectionId } from "./widget-registry";
+import { StarterQueryChips } from "./starter-query-chips";
 import { PluginConfigEditor } from "./plugin-config-editor";
 import { SeriesColorEditor } from "./plugins/series-color-editor";
 import type { InsightsClient } from "./client";
@@ -902,6 +904,29 @@ export function WidgetEditor({
   const [queryDraftValid, setQueryDraftValid] = useState(true);
   const [pendingVisualization, setPendingVisualization] = useState<string>();
   const [editorRevision, setEditorRevision] = useState(0);
+  // Starter chips fill an empty or default query, and only for a custom query. A family is every widget of the same kind.
+  const ownDefinition = getWidgetDefinition(draft);
+  const draftProviderType = providers.find((provider) => provider.id === draft.providerId)?.type;
+  const starterChips = (ownDefinition?.starterQueries ?? []).filter((starter) => draftProviderType !== undefined && starter.providerTypes.includes(draftProviderType));
+  const familyStarters = definitions
+    .filter((entry) => ownDefinition !== undefined && entry.dataKind === ownDefinition.dataKind)
+    .flatMap((entry) => entry.starterQueries ?? []);
+  const startersOffered = !draft.queryRef && starterChips.length > 1 &&
+    (draft.query.trim() === "" || draft.query === "up" || familyStarters.some((starter) => starter.query === draft.query));
+  /** One undo step: the query, the unit when it was empty or a starter unit, and the title while it is still the default. */
+  function applyStarter(starter: StarterQuery) {
+    const starterUnits = new Set(familyStarters.map((entry) => entry.unit).filter((unit): unit is string => unit !== undefined));
+    history.update(current => ({
+      ...current,
+      draft: {
+        ...current.draft,
+        query: starter.query,
+        unit: starter.unit !== undefined && (current.draft.unit === "" || starterUnits.has(current.draft.unit)) ? starter.unit : current.draft.unit,
+        title: current.draft.title === defaultWidgetTitle(current.draft.type, ownDefinition?.label) ? starter.label : current.draft.title,
+      },
+    }));
+    setEditorRevision(revision => revision + 1);
+  }
   const contentKey = (value: Widget) => JSON.stringify({ ...value, layout: { w: value.layout.w, h: value.layout.h } });
   const draftKey = JSON.stringify([draft, size, pluginConfig, tooltipPluginConfig, stagedLayout]);
   const [previewRevision, setPreviewRevision] = useState({ key: draftKey, widget });
@@ -1395,6 +1420,7 @@ export function WidgetEditor({
                         ]}
                       />
                     </label>
+                    {startersOffered && <StarterQueryChips starters={starterChips} onChoose={applyStarter} />}
                     {draft.type === "plugin" && draft.pluginId === sloSummaryPluginId ? (
                       // The objective is compiled from the configuration at run time, so there is no free query to edit.
                       <SloSourceEditor config={pluginConfig} onConfig={setPluginConfig} onQuery={(query) => history.update(current => current.draft.query === query ? current : { ...current, draft: { ...current.draft, query } }, { group: "chart:query" })} />

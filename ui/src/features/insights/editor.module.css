@@ -184,6 +184,7 @@
 }
 .styleSection { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gamma-border); }
 .styleSection h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.starterChips { display: grid; gap: 6px; }
 .thresholdPresets { display: grid; gap: 6px; }
 .thresholdPresetsHeading { margin: 0; font-size: 12px; font-weight: 600; }
 .thresholdPresetRow { display: flex; flex-wrap: wrap; gap: 6px; }

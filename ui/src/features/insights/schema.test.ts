@@ -258,6 +258,13 @@ describe("dashboard document contract", () => {
     expect(newWidget("stat", [], [])).toMatchObject({
       providerId: "unconfigured",
     })
+    // A family's default starter replaces the built-in query for a provider of its type.
+    const starters = [{ providerTypes: ["prometheus"], query: "count(up == 1)", default: true }]
+    expect(newWidget("stat", providers, dashboard.widgets, undefined, starters)).toMatchObject({
+      providerId: "prometheus",
+      query: "count(up == 1)",
+    })
+    expect(newWidget("stat", [], [], undefined, starters)).toMatchObject({ query: "up" })
   })
 
   it("never defaults a new widget to a synthetic provider or to one whose last check failed", () => {
