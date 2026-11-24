@@ -15,7 +15,7 @@ import { tooltip } from "@tanstack/charts/tooltip";
 import { dateTimeFormat, formatMetric, formatMetricDetails, latestPoint, seriesName } from "./chart-data";
 import { useChartEntrance } from "./chart-entrance";
 import chartEntrance from "./chart-entrance.module.css";
-import { ChartDataInspector } from "./chart-data-inspector";
+import { WidgetFooterActions } from "./widget-footer";
 import { widgetSeriesColors } from "./series-colors";
 import {
   EMPTY_OPTIONS,
@@ -393,7 +393,7 @@ export function BarChart({ widget, series, onContextChange, onActivate }: {
           })}
         </div>
       )}
-      {!embedded && <ChartDataInspector widget={widget} series={series} />}
+      {!embedded && <WidgetFooterActions widget={widget} inspect={series} />}
       </div>}
       {plotTooltip.panel}
       {series.length > MAX_SERIES && (

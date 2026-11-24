@@ -9,7 +9,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { ArrowDownUp, Grid2X2, Layers, Pin, X } from "lucide-react";
 import { metricAnnotationEditor, seriesColorEditor } from "./sub-editors";
 import { seriesShown } from "../benign-states";
-import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
+import { EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { useDashboardTimeZone } from "../dashboard-time-zone";
 import { GammaButton } from "../gamma/button";
@@ -22,7 +22,7 @@ import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
 import { compactSeriesLabels } from "../series-display";
 import { validTimestamp } from "../widget-context";
 import { useAnnotationEvents } from "../annotation-events";
-import { ChartEvents } from "../chart-events";
+import { WidgetFooterActions } from "../widget-footer";
 import { TimeWindowLens } from "../time-window-lens";
 import { useTooltipWidgetData } from "../tooltip-widget-data";
 import { useTooltipDismiss } from "../tooltip-dismiss";
@@ -720,11 +720,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       {selection?.previous?.truncated && <span>Partial prior result</span>}
     </div>}
     <div className={styles.chartFooter} data-metric-footer>
-    {!props.embedded && !embeddedChart && <ChartEvents events={annotations} />}
-    {!props.embedded && !embeddedChart && <div className={styles.comparisonActions}>
-      <TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />
-      {prior.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={prior.map(entry => entry.original)} buttonText="Inspect prior data" />}
-    </div>}
+    {!props.embedded && !embeddedChart && <WidgetFooterActions widget={widget} events={annotations} compare={<TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />} inspectPrior={prior.map(entry => entry.original)} inspect={fullSeries} />}
 
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}

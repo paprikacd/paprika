@@ -16,6 +16,7 @@ import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } f
 import { Grid2X2 } from "lucide-react";
 import type { QueryResult, Widget } from "../schema";
 import styles from "./small-multiples.module.css";
+import { WidgetFooterActions } from "../widget-footer";
 
 const configSchema = z.strictObject({ maxSeries: z.number().int().min(1).max(12).optional(), columns: z.number().int().min(1).max(6).optional(), maxPoints: z.number().int().min(8).max(240).optional() });
 const left = 2, right = 598, top = 8, bottom = 92;
@@ -149,7 +150,7 @@ export function SmallMultiples({ widget, result, embedded, onContextChange }: Wi
   return <div className={styles.root}><div className={styles.scroll} ref={scroll} role="region" aria-label={`${widget.title} trends`} aria-describedby={overflow ? overflowId : undefined} tabIndex={overflow && !embedded && !parentEmbedded ? 0 : undefined} onKeyDown={scrollKeys}>
     <div className={styles.grid} ref={grid} style={{ "--multiple-columns": config.columns ?? 3 } as CSSProperties}>
       {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} color={colors[index].color} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
-    </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}</div></div>;
+    </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}{!embedded && <WidgetFooterActions widget={widget} inspect={series} />}</div></div>;
 }
 export function registerSmallMultiplesPlugin() {
   if (!getWidgetDefinition("plugin", "small-multiples")) registerWidgetPlugin({ id: "small-multiples", label: "Small multiples", description: "Compare metric series using shared time and value scales", dataKind: "metrics", render: SmallMultiples,

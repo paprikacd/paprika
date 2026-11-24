@@ -18,9 +18,8 @@ import { tooltip } from "@tanstack/charts/tooltip";
 import type { ChartLinearGradient } from "@tanstack/charts";
 import { curveMonotoneX, curveStepAfter } from "d3-shape";
 import { useAnnotationEvents } from "./annotation-events";
-import { ChartEvents } from "./chart-events";
+import { WidgetFooterActions } from "./widget-footer";
 import { useChartCursor } from "./chart-cursor";
-import { ChartDataInspector } from "./chart-data-inspector";
 import {
   dateTimeOptions,
   downsamplePoints,
@@ -781,9 +780,7 @@ export function TimeSeriesChart({
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}
-      {!embedded && <div className={styles.chartActions} data-chart-actions><ChartEvents events={visibleEvents} /><TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />
-      {!embedded && previousData.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={previousData.map(entry => entry.original)} buttonText="Inspect prior data" />}
-      <ChartDataInspector widget={widget} series={visibleSeries} /></div>}
+      {!embedded && <WidgetFooterActions widget={widget} events={visibleEvents} compare={<TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />} inspectPrior={previousData.map(entry => entry.original)} inspect={visibleSeries} />}
       </div>}
 
       {widget.annotationSource && !embedded && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
