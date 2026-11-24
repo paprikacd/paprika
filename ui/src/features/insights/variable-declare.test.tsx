@@ -92,6 +92,38 @@ describe("declaring from a link", () => {
     expect(within(screen.getByRole("listbox")).getByRole("option", { name: "New variable…" })).toBeVisible();
   });
 
+  it("keeps the binding's value source and label key when it declares the target", async () => {
+    const keyed = { ...link, bindings: [{ variable: "env", source: "label" as const, value: "deployment_env" }] };
+    const onChange = vi.fn();
+    const onDeclareVariable = vi.fn();
+    render(
+      <SavedQueryLibraryProvider queries={[]} variables={[]} values={{}} onDeclareVariable={onDeclareVariable} dashboardId="service">
+        <DrilldownEditor widget={{ ...table, drilldowns: [keyed] } as Widget} dashboards={[self]} onChange={onChange} />
+      </SavedQueryLibraryProvider>,
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Link 1 binding 1 variable" }));
+    fireEvent.click(within(screen.getByRole("listbox")).getByRole("option", { name: "New variable…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create variable" }, { timeout: 5000 }));
+    expect(onDeclareVariable).toHaveBeenCalledWith({ name: "env" });
+    expect(onChange.mock.lastCall![0].drilldowns[0].bindings).toEqual([{ variable: "env", source: "label", value: "deployment_env" }]);
+  });
+
+  it("lets a link back to a dashboard without variables declare one and bind it", async () => {
+    const onChange = vi.fn();
+    const onDeclareVariable = vi.fn();
+    render(
+      <SavedQueryLibraryProvider queries={[]} variables={[]} values={{}} onDeclareVariable={onDeclareVariable} dashboardId="service">
+        <DrilldownEditor widget={{ ...table, drilldowns: [{ ...link, bindings: [] }] } as Widget} dashboards={[self]} onChange={onChange} />
+      </SavedQueryLibraryProvider>,
+    );
+    expect(screen.getByText("This dashboard has no variables yet. Declare one to pass context.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "New variable…" }));
+    fireEvent.change(await screen.findByLabelText("New variable name", undefined, { timeout: 5000 }), { target: { value: "service" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create variable" }));
+    expect(onDeclareVariable).toHaveBeenCalledWith({ name: "service" });
+    expect(onChange.mock.lastCall![0].drilldowns[0].bindings).toEqual([{ variable: "service", source: "label", value: "service" }]);
+  });
+
   it("does not offer it for another dashboard", () => {
     const widget = { ...table, drilldowns: [{ ...link, dashboardId: "other" }] } as Widget;
     render(

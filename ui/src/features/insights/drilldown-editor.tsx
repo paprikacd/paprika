@@ -123,6 +123,8 @@ export function DrilldownEditor({
           description: dashboard.folder || dashboard.id,
           keywords: [dashboard.id, dashboard.folder ?? ""],
         }));
+        // Only a link back to this dashboard can declare a variable here.
+        const canDeclare = !!library.onDeclareVariable && target?.id === library.dashboardId;
         if (!target)
           targetOptions.unshift({
             value: link.dashboardId,
@@ -225,7 +227,9 @@ export function DrilldownEditor({
             </div>
             {!variables.length && target && (
               <p className={styles.help}>
-                This destination has no variables. Add them in Manage dashboards on that dashboard to pass context.
+                {canDeclare
+                  ? "This dashboard has no variables yet. Declare one to pass context."
+                  : "This destination has no variables. Add them in Manage dashboards on that dashboard to pass context."}
               </p>
             )}
             {assigned.map((binding, bindingIndex) => {
@@ -249,8 +253,6 @@ export function DrilldownEditor({
                   description: "Choose a declared variable",
                   disabled: false,
                 });
-              // Only a link back to this dashboard can declare a variable here.
-              const canDeclare = !!library.onDeclareVariable && target?.id === library.dashboardId;
               if (canDeclare) options.push({ value: NEW_VARIABLE, label: "New variable…", description: "", disabled: false });
               const edit = (next: DrilldownBinding) =>
                 bindings(
@@ -306,7 +308,8 @@ export function DrilldownEditor({
                         existing={variables.map((variable) => variable.name)}
                         onCreate={(variable: DashboardVariable) => {
                           library.onDeclareVariable!(variable);
-                          edit({ variable: variable.name, source: "label", value: variable.name });
+                          // Only the target changes: the binding keeps the value source and label key it had.
+                          edit({ ...binding, variable: variable.name });
                           setDeclaringBinding(undefined);
                         }}
                         onCancel={() => setDeclaringBinding(undefined)}
@@ -402,6 +405,25 @@ export function DrilldownEditor({
             >
               <Plus size={13} aria-hidden="true" /> Add variable binding
             </GammaButton>
+            {/* With every variable bound, or none declared, a self-link can still declare one and bind it. */}
+            {canDeclare && !available.length && assigned.length < MAX_DASHBOARD_VARIABLES && (
+              <GammaButton size="sm" variant="quiet" onClick={() => setDeclaringBinding({ link: index, binding: -1 })}>
+                New variable…
+              </GammaButton>
+            )}
+            {canDeclare && declaringBinding?.link === index && declaringBinding.binding === -1 && (
+              <Suspense fallback={null}>
+                <VariableQuickCreate
+                  existing={variables.map((variable) => variable.name)}
+                  onCreate={(variable: DashboardVariable) => {
+                    library.onDeclareVariable!(variable);
+                    bindings(index, [...assigned, { variable: variable.name, source: "label", value: variable.name }]);
+                    setDeclaringBinding(undefined);
+                  }}
+                  onCancel={() => setDeclaringBinding(undefined)}
+                />
+              </Suspense>
+            )}
             {!!variables.length && (
               <p className={styles.help}>
                 Variables without a binding use the destination’s defaults.
