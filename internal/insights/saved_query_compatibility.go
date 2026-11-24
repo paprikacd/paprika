@@ -64,7 +64,7 @@ func queryReferenceIssues(query *SavedQuery, reference persistedQueryReference) 
 			issues["missing:"+binding.Parameter] = fmt.Sprintf("bound parameter %q no longer exists", binding.Parameter)
 			continue
 		}
-		addBindingTypeIssue(issues, binding, parameter)
+		addBindingTypeIssue(issues, binding, &parameter)
 	}
 	for _, parameter := range query.Parameters {
 		if len(parameter.DefaultValue) == 0 && !bound[parameter.Name] {
@@ -100,7 +100,7 @@ func (s *Store) validateSavedQueryReplacement(previous, incoming *SavedQuery) er
 	return nil
 }
 
-func addBindingTypeIssue(issues map[string]string, binding persistedQueryBinding, parameter SavedQueryParameter) {
+func addBindingTypeIssue(issues map[string]string, binding persistedQueryBinding, parameter *SavedQueryParameter) {
 	switch binding.Source {
 	case "constant":
 		if !compatibleBindingLiteral(binding.Value, parameter.Type) {

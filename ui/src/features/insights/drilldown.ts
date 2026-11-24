@@ -96,8 +96,16 @@ export function interpolateQuery(query: string, variables: VariableValues): stri
   return interpolateLiterals(query, checkedValues(variables))
 }
 
-/** Tooltip observations may also supply finite numeric literals, never query syntax. */
-export function interpolateQueryLiterals(query: string, variables: Record<string, string | number>): string {
+/**
+ * Tooltip observations and saved-query parameters may also supply finite numeric literals, and lists for
+ * parameters of several values, never query syntax. kinds names each parameter's template kind; a "strings"
+ * parameter takes a list, and a single string fills it as one item.
+ */
+export function interpolateQueryLiterals(
+  query: string,
+  variables: Record<string, string | number | string[]>,
+  kinds: Record<string, "string" | "number" | "strings"> = {},
+): string {
   if (!variables || typeof variables !== "object" || Array.isArray(variables))
     throw new Error("Query variables must be a JSON object")
   const entries = Object.entries(variables)
@@ -109,9 +117,9 @@ export function interpolateQueryLiterals(query: string, variables: Record<string
       if (!Number.isFinite(value)) throw new Error(`Query variable “${name}” must be finite`)
       return [name, value]
     }
-    return [name, variableValueSchema.parse(value)]
+    return [name, variableInputSchema.parse(value)]
   }))
-  return interpolateLiterals(query, values)
+  return interpolateTypedTemplate(query, values, kinds)
 }
 
 /**

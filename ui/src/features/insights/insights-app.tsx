@@ -125,7 +125,6 @@ import {
   resolveDashboardVariables,
   resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart,
 } from "./drilldown"
-import { singleValues } from "./variable-values"
 import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
 
 import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
@@ -1022,7 +1021,7 @@ export default function InsightsApp({
       const saved = savedQueries.find(query => query.id === request.queryRef.id)
       if (!saved) throw new Error(`Saved query “${request.queryRef.id}” is unavailable.`)
       assertProviderQueryTemplate(providers.find(provider => provider.id === saved.providerId)?.type, saved.query)
-      const definition = resolveSavedQueryReference(request.queryRef, savedQueries, singleValues(request.variables), saved.kind)
+      const definition = resolveSavedQueryReference(request.queryRef, savedQueries, request.variables, saved.kind)
       if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
         throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
       const minStepSeconds = providers.find(provider => provider.id === definition.providerId)?.minStepSeconds

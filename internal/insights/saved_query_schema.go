@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 const maxSavedQueryBytes = 32 << 10
@@ -28,10 +30,21 @@ type SavedQuery struct {
 }
 
 type SavedQueryParameter struct {
-	Name         string          `json:"name"`
-	Label        string          `json:"label,omitempty"`
-	Type         string          `json:"type"`
+	Name  string `json:"name"`
+	Label string `json:"label,omitempty"`
+	Type  string `json:"type"`
+	// Multi makes a string parameter take a list of values. Its default is a list, and an empty list is All.
+	Multi        bool            `json:"multi,omitempty"`
 	DefaultValue json.RawMessage `json:"defaultValue,omitempty"`
+}
+
+// templateKind is the kind a parameter's value fills in a query template: "strings" for a list of values,
+// otherwise its type. The template validator and the resolver both key on it.
+func (p *SavedQueryParameter) templateKind() string {
+	if p.Multi {
+		return "strings"
+	}
+	return p.Type
 }
 
 func validateSavedQuery(id string, raw json.RawMessage) (SavedQuery, error) {
@@ -79,7 +92,19 @@ func validSavedQueryImageURL(value string) bool {
 	return validImageURLPort(parsed.Port())
 }
 
+// validateListLiteral checks a default for a parameter of several values: a list of bounded, unique strings.
+func validateListLiteral(raw json.RawMessage) error {
+	var list variablevalue.Value
+	if json.Unmarshal(raw, &list) != nil || !list.List || list.Validate() != nil {
+		return errors.New("query list values must be arrays of up to 100 unique bounded strings")
+	}
+	return nil
+}
+
 func validateQueryLiteral(raw json.RawMessage, kind string) error {
+	if kind == "strings" {
+		return validateListLiteral(raw)
+	}
 	var value any
 	if json.Unmarshal(raw, &value) != nil {
 		return errors.New("query values must be bounded strings or finite numbers")
@@ -325,7 +350,7 @@ func savedQueryParameterTypes(fields map[string]json.RawMessage) (map[string]str
 }
 
 func validateSavedQueryParameter(item json.RawMessage, types map[string]string) error {
-	fields, err := requireObjectShape(item, []string{"name", "type"}, []string{"label", "defaultValue"})
+	fields, err := requireObjectShape(item, []string{"name", "type"}, []string{"label", "defaultValue", "multi"})
 	if err != nil {
 		return err
 	}
@@ -333,13 +358,31 @@ func validateSavedQueryParameter(item json.RawMessage, types map[string]string) 
 	if json.Unmarshal(item, &parameter) != nil || !validVariableName(parameter.Name) || types[parameter.Name] != "" || stringUnits(parameter.Label) > 80 || (parameter.Type != "string" && parameter.Type != "number") {
 		return errors.New("saved query parameters require unique valid names, bounded labels, and string or number types")
 	}
-	if value, ok := fields["defaultValue"]; ok {
-		if err := validateQueryLiteral(value, parameter.Type); err != nil {
-			return err
-		}
+	if err := validateSeveralValues(&parameter); err != nil {
+		return err
 	}
-	types[parameter.Name] = parameter.Type
+	if err := validateParameterDefault(fields, &parameter); err != nil {
+		return err
+	}
+	types[parameter.Name] = parameter.templateKind()
 	return nil
+}
+
+// validateSeveralValues allows a several-values flag only on a string parameter.
+func validateSeveralValues(parameter *SavedQueryParameter) error {
+	if parameter.Multi && parameter.Type != "string" {
+		return errors.New("only a string parameter can take several values")
+	}
+	return nil
+}
+
+// validateParameterDefault checks a parameter's default when it has one, in the parameter's template kind.
+func validateParameterDefault(fields map[string]json.RawMessage, parameter *SavedQueryParameter) error {
+	value, ok := fields["defaultValue"]
+	if !ok {
+		return nil
+	}
+	return validateQueryLiteral(value, parameter.templateKind())
 }
 
 func decodeSavedQuery(raw json.RawMessage, id string, query *SavedQuery) error {

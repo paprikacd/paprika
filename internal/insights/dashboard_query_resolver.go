@@ -420,7 +420,7 @@ func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadRefere
 	values := make(map[string]any, len(parameters))
 	types := make(map[string]string, len(parameters))
 	for _, parameter := range saved.Parameters {
-		types[parameter.Name] = parameter.Type
+		types[parameter.Name] = parameter.templateKind()
 		if len(parameter.DefaultValue) > 0 {
 			var value any
 			if err := json.Unmarshal(parameter.DefaultValue, &value); err != nil {
@@ -438,7 +438,7 @@ func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadRefere
 		if err != nil {
 			return "", err
 		}
-		checked, err := dashboardParameterValue(parameter.Type, value)
+		checked, err := dashboardParameterValue(parameter.templateKind(), value)
 		if err != nil {
 			return "", err
 		}
@@ -446,7 +446,7 @@ func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadRefere
 	}
 	for name, parameter := range parameters {
 		value := values[name] // An absent required default fails the same typed-value validation.
-		checked, err := dashboardParameterValue(parameter.Type, value)
+		checked, err := dashboardParameterValue(parameter.templateKind(), value)
 		if err != nil {
 			return "", err
 		}
@@ -481,10 +481,41 @@ func dashboardParameterValue(kind string, value any) (any, error) {
 		}
 		return nil, errors.New("saved query value must be bounded text")
 	}
+	if kind == "strings" {
+		return dashboardListParameterValue(value)
+	}
 	if kind != "number" {
 		return nil, errors.New("unsupported saved query parameter type")
 	}
 	return dashboardNumericParameterValue(value)
+}
+
+// dashboardListParameterValue checks a value for a parameter of several values. A single string is one item, so a
+// single-value variable or a fixed string fills a list parameter. The list is bounded like a variable list, and an
+// empty list is All, which binds as NULL in a SQL array.
+func dashboardListParameterValue(value any) (any, error) {
+	var items []string
+	switch typed := value.(type) {
+	case string:
+		items = []string{typed}
+	case []string:
+		items = typed
+	case []any:
+		items = make([]string, 0, len(typed))
+		for _, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				return nil, errors.New("saved query list values must be strings")
+			}
+			items = append(items, text)
+		}
+	default:
+		return nil, errors.New("saved query value must be a list of bounded text")
+	}
+	if err := variablevalue.List(items).Validate(); err != nil {
+		return nil, errors.New("saved query list value is out of bounds")
+	}
+	return items, nil
 }
 
 func dashboardNumericParameterValue(value any) (any, error) {

@@ -107,9 +107,20 @@ export const savedQueryParameterSchema = z.strictObject({
   name: variableNameSchema,
   label: z.string().max(80).optional(),
   type: z.enum(["string", "number"]),
-  defaultValue: z.union([variableValueSchema, z.number().finite()]).optional(),
+  /** A string parameter that takes a list of values. Its default is a list, and an empty list is All. */
+  multi: z.boolean().optional(),
+  defaultValue: z.union([variableInputSchema, z.number().finite()]).optional(),
 }).superRefine((parameter, context) => {
-  if (parameter.defaultValue !== undefined && typeof parameter.defaultValue !== parameter.type)
+  if (parameter.multi && parameter.type !== "string")
+    context.addIssue({ code: "custom", path: ["multi"], message: "Only a string parameter can take several values" })
+  const fallback = parameter.defaultValue
+  if (fallback === undefined) return
+  if (parameter.multi) {
+    if (!Array.isArray(fallback))
+      context.addIssue({ code: "custom", path: ["defaultValue"], message: "Use a list default for a parameter with several values" })
+    return
+  }
+  if (typeof fallback !== parameter.type)
     context.addIssue({ code: "custom", path: ["defaultValue"], message: `Use a ${parameter.type} default value` })
 })
 export const MAX_SAVED_QUERY_TAGS = 12

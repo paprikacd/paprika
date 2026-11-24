@@ -190,9 +190,12 @@ export function SavedQueryBindingEditor({
                       update(parameter.name, {
                         parameter: parameter.name,
                         source,
+                        // A list default is not a fixed value: constants take one text or number.
                         value:
-                          parameter.defaultValue ??
-                          (parameter.type === "number" ? 0 : ""),
+                          typeof parameter.defaultValue === "string" ||
+                          typeof parameter.defaultValue === "number"
+                            ? parameter.defaultValue
+                            : parameter.type === "number" ? 0 : "",
                       });
                     else if (source === "label")
                       update(parameter.name, {
