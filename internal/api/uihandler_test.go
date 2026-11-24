@@ -156,6 +156,40 @@ func TestOAuthConsentPageDoesNotSendReferrers(t *testing.T) {
 	}
 }
 
+func TestOnlyTheInsightsPageMayBeFramedBySameOrigin(t *testing.T) {
+	handler, err := UIHandler()
+	if err != nil {
+		t.Fatalf("UIHandler() error = %v", err)
+	}
+	cases := []struct {
+		path      string
+		frame     string
+		ancestors string
+	}{
+		{path: "/dashboard/insights/?dashboard=a&embed=b", frame: "SAMEORIGIN", ancestors: "frame-ancestors 'self'"},
+		{path: "/dashboard/insights", frame: "SAMEORIGIN", ancestors: "frame-ancestors 'self'"},
+		{path: "/dashboard/insights/index.html", frame: "SAMEORIGIN", ancestors: "frame-ancestors 'self'"},
+		{path: "/dashboard/", frame: "DENY"},
+		{path: "/dashboard/application/", frame: "DENY"},
+		{path: "/dashboard/insights-other/", frame: "DENY"},
+		{path: "/dashboard/insights/index.txt", frame: "DENY"},
+		{path: "/mcp/consent/", frame: "DENY"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if got := rec.Header().Get("X-Frame-Options"); got != tc.frame {
+				t.Fatalf("X-Frame-Options = %q, want %q", got, tc.frame)
+			}
+			if got := rec.Header().Get("Content-Security-Policy"); got != tc.ancestors {
+				t.Fatalf("Content-Security-Policy = %q, want %q", got, tc.ancestors)
+			}
+		})
+	}
+}
+
 func TestEmbeddedDashboardBundleContainsCommandCenter(t *testing.T) {
 	sub, err := fs.Sub(uiFiles, "uistatic")
 	if err != nil {
