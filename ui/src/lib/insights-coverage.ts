@@ -8,6 +8,8 @@ export type ApplicationDashboard = {
   folder?: string
   variables: Record<string, string>
   summaryWidgetId?: string
+  /** The summary widget's saved height in dashboard grid rows. */
+  summaryWidgetRows?: number
   specificity: number
 }
 
