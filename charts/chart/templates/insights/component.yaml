@@ -80,6 +80,10 @@ kind: Service
 metadata:
   name: {{ $name }}
   namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: insights
 spec:
   type: ClusterIP
   selector:

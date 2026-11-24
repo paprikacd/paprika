@@ -35,6 +35,16 @@ spec:
               app.kubernetes.io/component: observability-gateway
       ports:
         - { protocol: TCP, port: 8090 }
+    {{- /* Prometheus scrapes /metrics on the service port from the release namespace,
+    as the other components' metrics do. The /api routes stay bearer-authenticated. */}}
+    {{- if .Values.prometheus.enable }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - { protocol: TCP, port: 8090 }
+    {{- end }}
   egress:
     - to:
         - namespaceSelector:

@@ -119,12 +119,17 @@ func TestStarterMetricsMatchTheSignalsReference(t *testing.T) {
 			}
 			var allowed []string
 			for _, name := range names {
-				signal, ok := signals[name]
+				// A histogram's _bucket series is the reference row of its base name.
+				signal, ok := signals[strings.TrimSuffix(name, "_bucket")]
 				if !ok {
 					t.Errorf("%s/%s: %s is not in the metric reference", starter.ID, widget.ID, name)
 					continue
 				}
 				allowed = append(allowed, signal.labels...)
+				// Every histogram bucket series carries le, which the reference does not list.
+				if signal.kind == "Histogram" {
+					allowed = append(allowed, "le")
+				}
 				if signal.kind == "Counter" && !regexp.MustCompile(`(?:rate|increase)\(\s*`+regexp.QuoteMeta(name)+`[\[{]`).MatchString(widget.Query) {
 					t.Errorf("%s/%s: counter %s must be read through rate() or increase()", starter.ID, widget.ID, name)
 				}
