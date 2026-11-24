@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -213,4 +214,32 @@ func TestResolveVariableSourcesMarksUnstartedFetchesNotRun(t *testing.T) {
 	require.Equal(t, "not_run", outcomes[1].state, "a fetch the budget ends before starting is not run")
 	require.Equal(t, 2, count.Planned)
 	require.Equal(t, 1, count.Executed)
+}
+
+// When the widgets of a read spend the whole budget, no source is queried. Each one is not_run, never a
+// failed timeout, because the source itself did not fail.
+func TestResolveVariableSourcesAfterTheBudgetIsSpentAreNotRun(t *testing.T) {
+	fake := &variableSourceServer{}
+	provider := httptest.NewServer(fake.handler(0))
+	defer provider.Close()
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Prometheus", Type: "prometheus", URL: provider.URL})
+	spent, cancel := context.WithTimeout(t.Context(), 0)
+	defer cancel()
+	r := httptest.NewRequestWithContext(spent, http.MethodPost, "/", nil)
+	definitions := []dashboardReadVariable{
+		{Name: "zone", Source: labelValuesSource("zone", nil)},
+		{Name: "service", Source: &dashboardReadVariableSource{Type: "savedQuery", Field: "service", QueryRef: &dashboardReadReference{ID: "hosts"}}},
+	}
+	saved := map[string]dashboardSavedSnapshot{"hosts": {Query: SavedQuery{ID: "hosts", ProviderID: "prometheus", Kind: "metrics", Query: "up"}}}
+	cache := &dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
+
+	outcomes, count := s.resolveVariableSources(r, time.Minute, definitions, nil, saved, 1700000030, 1700000500, cache, nil)
+
+	for i := range outcomes {
+		require.Equal(t, "not_run", outcomes[i].state, definitions[i].Name)
+		require.Nil(t, outcomes[i].failure, definitions[i].Name)
+	}
+	require.Equal(t, 2, count.Planned)
+	require.Zero(t, count.Executed)
+	require.Empty(t, fake.paths, "no provider is called once the budget is spent")
 }

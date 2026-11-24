@@ -21,7 +21,7 @@ const variableValueLimit = 100
 // variableValueMaxUnits is the longest value, in UTF-16 units, that a dashboard can hold.
 const variableValueMaxUnits = 1024
 
-// variableRangeBucketSeconds rounds a read's range outward to whole minutes, so that reads a few seconds
+// variableRangeBucketSeconds rounds both ends of a read's range down to whole minutes, so that reads a few seconds
 // apart share one resolved source. It matches the console's cache key.
 const variableRangeBucketSeconds = 60
 
@@ -36,7 +36,7 @@ type variableSourceOutcome struct {
 	sourced       bool
 }
 
-// variableBucket returns the range in Unix seconds, rounded outward to the bucket. The end is always
+// variableBucket returns the range in Unix seconds, each end rounded down to the bucket. The end is always
 // after the start, so a sub-minute range still resolves to one bucket.
 func variableBucket(start, end float64) (bucketStart, bucketEnd int64) {
 	bucketStart = int64(math.Floor(start/variableRangeBucketSeconds)) * variableRangeBucketSeconds
@@ -279,6 +279,13 @@ func (s *Server) planVariableSources(env *variableSourceEnv, only map[string]boo
 			continue
 		}
 		prepared, failure := s.prepareVariableSource(env, definition.Source, used)
+		if failure != nil && env.request.Context().Err() != nil {
+			// The budget ended while the provider was being resolved, or before: the widgets of a slow read can
+			// spend it all. The source was never queried, so it is not_run, as a fetch that cannot start is.
+			outcomes[i] = variableSourceOutcome{state: "not_run", sourced: true}
+			count.Planned++
+			continue
+		}
 		if failure != nil {
 			outcomes[i] = variableSourceOutcome{state: "failed", failure: failure, sourced: true}
 			continue

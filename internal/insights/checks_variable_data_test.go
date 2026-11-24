@@ -46,3 +46,19 @@ func TestDataVariableValueRuleSkipsAnEmptyOverride(t *testing.T) {
 	variables := []dataVariable{{index: 0, name: "zone", value: variablevalue.Single(""), hasValue: true, outcome: variableSourceOutcome{sourced: true, state: "ready", values: []string{"a"}}}}
 	require.Empty(t, dataFindings(nil, variables))
 }
+
+// TestDryRunResolvesVariableSources runs the validate endpoint with execute, so the rules read the sources the
+// dry run resolved itself: a default outside its source, an empty source and a missing saved query.
+func TestDryRunResolvesVariableSources(t *testing.T) {
+	s, _ := variableOptionsTestService(t)
+	document := `{"schemaVersion":1,"id":"sourced","title":"Sourced","timeRange":"1h","refreshInterval":30,"widgets":[],"variables":[
+		{"name":"zone","label":"Zone","defaultValue":"zz","source":{"type":"labelValues","providerId":"prometheus","label":"zone"}},
+		{"name":"rack","label":"Rack","source":{"type":"labelValues","providerId":"prometheus","label":"rack"}},
+		{"name":"host","label":"Host","source":{"type":"savedQuery","queryRef":{"id":"gone"},"field":"host"}}]}`
+	report, raw := executeDryRunRequest(t, s, document, nil)
+	require.Equal(t, []string{
+		"data.variable-source-error /variables/2/source",
+		"data.variable-source-empty /variables/1/source",
+		"data.variable-value-not-in-source /variables/0",
+	}, dataFindingsOf(report), raw)
+}
