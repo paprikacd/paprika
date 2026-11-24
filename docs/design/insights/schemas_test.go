@@ -10,7 +10,7 @@ import (
 )
 
 func TestDocumentUsesPublishedArtifactsAndRetainsLocalReferences(t *testing.T) {
-	for kind, filename := range map[string]string{"dashboard": "dashboard.schema.json", "saved_query": "saved-query.schema.json"} {
+	for kind, filename := range map[string]string{"dashboard": "dashboard.schema.json", "saved_query": "saved-query.schema.json", "plugin": "widget-plugin-configs.schema.json"} {
 		t.Run(kind, func(t *testing.T) {
 			published, err := os.ReadFile(filename) //nolint:gosec // Filenames come only from the two fixed canonical artifact paths above.
 			require.NoError(t, err)

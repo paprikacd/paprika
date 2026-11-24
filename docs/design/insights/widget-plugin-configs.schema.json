@@ -1,0 +1,1218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Paprika Insights built-in plugin configurations",
+  "description": "Configuration schemas for the built-in widget plugins, keyed by plugin id. Each widget's config must pass its plugin's schema.",
+  "$comment": "Written by npm run schema:generate from each plugin's configSchema. Go checks a plugin's config on save through these schemas. Plugin ids outside this bundle are not checked here.",
+  "$defs": {
+    "connection-map": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "default": "latitude",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "longitude": {
+          "default": "longitude",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "label": {
+          "default": "label",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "showLocations": {
+          "type": "boolean"
+        },
+        "maxPoints": {
+          "default": 120,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "display": {
+          "default": "markers",
+          "type": "string",
+          "enum": [
+            "markers",
+            "density"
+          ]
+        },
+        "showGrid": {
+          "type": "boolean"
+        },
+        "showCoordinates": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "directional-traffic": {
+      "type": "object",
+      "properties": {
+        "directionLabel": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "outboundValue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "symmetricAxis": {
+          "type": "boolean"
+        },
+        "seriesColors": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "traffic",
+                  "success",
+                  "client-error",
+                  "server-error",
+                  "p50",
+                  "p95",
+                  "p99"
+                ]
+              }
+            },
+            "required": [
+              "label",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "maxPoints": {
+          "type": "integer",
+          "minimum": 12,
+          "maximum": 240
+        },
+        "legendDisplay": {
+          "type": "string",
+          "enum": [
+            "compact",
+            "table"
+          ]
+        },
+        "legendPosition": {
+          "type": "string",
+          "enum": [
+            "bottom",
+            "right"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "distribution-heatmap": {
+      "type": "object",
+      "properties": {
+        "bucketLabel": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "bucketUnit": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "densityUnit": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "group": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "aggregation": {
+          "type": "string",
+          "enum": [
+            "none",
+            "sum"
+          ]
+        },
+        "colorScale": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "logarithmic"
+          ]
+        },
+        "maxBuckets": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 48
+        },
+        "maxColumns": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 120
+        },
+        "traces": {
+          "type": "object",
+          "properties": {
+            "providerId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "filter": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "providerId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "geo-heatmap": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "map",
+          "type": "string",
+          "enum": [
+            "map",
+            "grid"
+          ]
+        },
+        "latitude": {
+          "default": "latitude",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "longitude": {
+          "default": "longitude",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "label": {
+          "default": "label",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "aggregation": {
+          "default": "count",
+          "type": "string",
+          "enum": [
+            "count",
+            "sum",
+            "mean"
+          ]
+        },
+        "radius": {
+          "default": 18,
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 36
+        },
+        "gridColumns": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 48
+        },
+        "maxRecords": {
+          "default": 200,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "incident-calendar": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "default": "date",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "aggregation": {
+          "default": "count",
+          "type": "string",
+          "enum": [
+            "count",
+            "sum",
+            "max"
+          ]
+        },
+        "colorMode": {
+          "default": "intensity",
+          "type": "string",
+          "enum": [
+            "intensity",
+            "thresholds"
+          ]
+        },
+        "months": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "endDate": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "kubernetes-placement": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string",
+          "enum": [
+            "cpu",
+            "memory"
+          ]
+        },
+        "pressure": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1
+        },
+        "showPods": {
+          "type": "boolean"
+        },
+        "maxNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "kubernetes-resource-bars": {
+      "type": "object",
+      "properties": {
+        "groupLabel": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "maxGroups": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "showLimits": {
+          "type": "boolean"
+        },
+        "showValues": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "kubernetes-resource-trend": {
+      "type": "object",
+      "properties": {
+        "showNetwork": {
+          "type": "boolean"
+        },
+        "showRequested": {
+          "type": "boolean"
+        },
+        "fill": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "kubernetes-throttle-matrix": {
+      "type": "object",
+      "properties": {
+        "groupLabel": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 6,
+          "maximum": 24
+        },
+        "ceiling": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "pie": {
+      "type": "object",
+      "properties": {
+        "donut": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "pipeline-topology": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "default": "source",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "target": {
+          "default": "target",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "maxNodes": {
+          "default": 32,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 64
+        },
+        "maxEdges": {
+          "default": 80,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "record-list": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "subtitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "record-matrix": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "y": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "value"
+      ],
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "record-table": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "minItems": 1,
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 100
+        },
+        "density": {
+          "default": "comfortable",
+          "type": "string",
+          "enum": [
+            "compact",
+            "comfortable"
+          ]
+        },
+        "showSearch": {
+          "default": true,
+          "type": "boolean"
+        },
+        "showRowNumbers": {
+          "type": "boolean"
+        },
+        "cellStyles": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "column": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "display": {
+                "type": "string",
+                "enum": [
+                  "bar",
+                  "bar-segments",
+                  "color-text",
+                  "color-background",
+                  "sparkline",
+                  "status-badge"
+                ]
+              },
+              "barColorMode": {
+                "type": "string",
+                "enum": [
+                  "gradient",
+                  "value"
+                ]
+              },
+              "thresholdColumn": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "mappings": {
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "info",
+                        "warning",
+                        "critical",
+                        "unknown"
+                      ]
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[\\da-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 24
+              },
+              "segments": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 60
+              },
+              "thresholds": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "number"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "info",
+                        "warning",
+                        "critical",
+                        "unknown"
+                      ]
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "column",
+              "display"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "rank": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "order": {
+              "default": "descending",
+              "type": "string",
+              "enum": [
+                "descending",
+                "ascending"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "rail": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        "timeSelection": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "duration": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "durationUnit": {
+              "type": "string",
+              "enum": [
+                "milliseconds",
+                "seconds",
+                "minutes"
+              ]
+            },
+            "paddingSeconds": {
+              "default": 0,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 86400
+            }
+          },
+          "required": [
+            "start",
+            "duration",
+            "durationUnit"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "record-treemap": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "colorField": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "colorMin": {
+          "type": "number"
+        },
+        "colorMax": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "records-bar": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "y": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rightAxis": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "annotations": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "x",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "records-line": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "y": {
+          "minItems": 1,
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "group": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rightAxis": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "annotations": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "x",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false,
+      "x-dataKind": "records"
+    },
+    "small-multiples": {
+      "type": "object",
+      "properties": {
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "maxPoints": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 240
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "stacked-timeseries": {
+      "type": "object",
+      "properties": {
+        "display": {
+          "type": "string",
+          "enum": [
+            "area",
+            "bar"
+          ]
+        },
+        "annotations": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warning",
+                  "critical"
+                ]
+              }
+            },
+            "required": [
+              "timestamp",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "seriesColors": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "traffic",
+                  "success",
+                  "client-error",
+                  "server-error",
+                  "p50",
+                  "p95",
+                  "p99"
+                ]
+              }
+            },
+            "required": [
+              "label",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "maxPoints": {
+          "type": "integer",
+          "minimum": 12,
+          "maximum": 240
+        },
+        "legendDisplay": {
+          "type": "string",
+          "enum": [
+            "compact",
+            "table"
+          ]
+        },
+        "legendPosition": {
+          "type": "string",
+          "enum": [
+            "bottom",
+            "right"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "status-grid": {
+      "type": "object",
+      "properties": {
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2048
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "status-history": {
+      "type": "object",
+      "properties": {
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        "maxPoints": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 120
+        },
+        "labelField": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "showTimeAxis": {
+          "type": "boolean"
+        },
+        "segmented": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "threshold-gauge": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "display": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "segmented",
+            "radial"
+          ]
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "segments": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 60
+        },
+        "showThresholds": {
+          "type": "boolean"
+        },
+        "seriesMode": {
+          "type": "string",
+          "enum": [
+            "first",
+            "all"
+          ]
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "showStatus": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "uptime-calendar": {
+      "type": "object",
+      "properties": {
+        "maxDays": {
+          "type": "integer",
+          "minimum": 7,
+          "maximum": 366
+        },
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    },
+    "uptime-timeline": {
+      "type": "object",
+      "properties": {
+        "maxDays": {
+          "type": "integer",
+          "minimum": 7,
+          "maximum": 366
+        },
+        "maxSeries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        }
+      },
+      "additionalProperties": false,
+      "x-dataKind": "metrics"
+    }
+  }
+}

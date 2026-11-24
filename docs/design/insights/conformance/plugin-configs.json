@@ -1,0 +1,496 @@
+{
+  "cases": [
+    {
+      "name": "connection-map accepts a density view",
+      "pluginId": "connection-map",
+      "config": {
+        "display": "density",
+        "maxPoints": 50
+      },
+      "valid": true
+    },
+    {
+      "name": "connection-map refuses zero points",
+      "pluginId": "connection-map",
+      "config": {
+        "maxPoints": 0
+      },
+      "valid": false,
+      "pointer": "/maxPoints"
+    },
+    {
+      "name": "directional-traffic accepts a small series count",
+      "pluginId": "directional-traffic",
+      "config": {
+        "maxSeries": 4
+      },
+      "valid": true
+    },
+    {
+      "name": "directional-traffic refuses 13 series",
+      "pluginId": "directional-traffic",
+      "config": {
+        "maxSeries": 13
+      },
+      "valid": false,
+      "pointer": "/maxSeries"
+    },
+    {
+      "name": "distribution-heatmap accepts a summed group",
+      "pluginId": "distribution-heatmap",
+      "config": {
+        "aggregation": "sum",
+        "maxBuckets": 12
+      },
+      "valid": true
+    },
+    {
+      "name": "distribution-heatmap refuses 49 buckets",
+      "pluginId": "distribution-heatmap",
+      "config": {
+        "maxBuckets": 49
+      },
+      "valid": false,
+      "pointer": "/maxBuckets"
+    },
+    {
+      "name": "geo-heatmap accepts a grid with count",
+      "pluginId": "geo-heatmap",
+      "config": {
+        "mode": "grid",
+        "aggregation": "count"
+      },
+      "valid": true
+    },
+    {
+      "name": "geo-heatmap refuses an unknown mode",
+      "pluginId": "geo-heatmap",
+      "config": {
+        "mode": "sphere"
+      },
+      "valid": false,
+      "pointer": "/mode"
+    },
+    {
+      "name": "geo-heatmap sum without a value field is refused by Zod only",
+      "pluginId": "geo-heatmap",
+      "config": {
+        "aggregation": "sum"
+      },
+      "valid": false,
+      "jsonSchemaGap": "superRefine: sum needs a value field; the published schema does not carry it"
+    },
+    {
+      "name": "incident-calendar accepts three months",
+      "pluginId": "incident-calendar",
+      "config": {
+        "months": 3,
+        "colorMode": "thresholds"
+      },
+      "valid": true
+    },
+    {
+      "name": "incident-calendar refuses seven months",
+      "pluginId": "incident-calendar",
+      "config": {
+        "months": 7
+      },
+      "valid": false,
+      "pointer": "/months"
+    },
+    {
+      "name": "incident-calendar impossible calendar date is refused by Zod only",
+      "pluginId": "incident-calendar",
+      "config": {
+        "endDate": "2026-02-30"
+      },
+      "valid": false,
+      "jsonSchemaGap": "date check: the published schema has no calendar-date validation"
+    },
+    {
+      "name": "kubernetes-placement accepts memory pressure",
+      "pluginId": "kubernetes-placement",
+      "config": {
+        "resource": "memory",
+        "pressure": 0.9
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-placement refuses pressure below 0.5",
+      "pluginId": "kubernetes-placement",
+      "config": {
+        "pressure": 0.4
+      },
+      "valid": false,
+      "pointer": "/pressure"
+    },
+    {
+      "name": "kubernetes-resource-bars accepts eight groups",
+      "pluginId": "kubernetes-resource-bars",
+      "config": {
+        "maxGroups": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-resource-bars refuses 17 groups",
+      "pluginId": "kubernetes-resource-bars",
+      "config": {
+        "maxGroups": 17
+      },
+      "valid": false,
+      "pointer": "/maxGroups"
+    },
+    {
+      "name": "kubernetes-resource-trend accepts a filled trend",
+      "pluginId": "kubernetes-resource-trend",
+      "config": {
+        "fill": true
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-resource-trend refuses a string flag",
+      "pluginId": "kubernetes-resource-trend",
+      "config": {
+        "fill": "yes"
+      },
+      "valid": false,
+      "pointer": "/fill"
+    },
+    {
+      "name": "kubernetes-throttle-matrix accepts twelve rows",
+      "pluginId": "kubernetes-throttle-matrix",
+      "config": {
+        "rows": 12,
+        "ceiling": 50
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-throttle-matrix refuses five rows",
+      "pluginId": "kubernetes-throttle-matrix",
+      "config": {
+        "rows": 5
+      },
+      "valid": false,
+      "pointer": "/rows"
+    },
+    {
+      "name": "pie accepts a donut",
+      "pluginId": "pie",
+      "config": {
+        "donut": true
+      },
+      "valid": true
+    },
+    {
+      "name": "pie refuses a string flag",
+      "pluginId": "pie",
+      "config": {
+        "donut": "no"
+      },
+      "valid": false,
+      "pointer": "/donut"
+    },
+    {
+      "name": "pipeline-topology accepts ten nodes",
+      "pluginId": "pipeline-topology",
+      "config": {
+        "maxNodes": 10
+      },
+      "valid": true
+    },
+    {
+      "name": "pipeline-topology refuses one node",
+      "pluginId": "pipeline-topology",
+      "config": {
+        "maxNodes": 1
+      },
+      "valid": false,
+      "pointer": "/maxNodes"
+    },
+    {
+      "name": "record-list accepts a title",
+      "pluginId": "record-list",
+      "config": {
+        "title": "Deploys"
+      },
+      "valid": true
+    },
+    {
+      "name": "record-list refuses a missing title",
+      "pluginId": "record-list",
+      "config": {},
+      "valid": false,
+      "pointer": ""
+    },
+    {
+      "name": "record-matrix accepts its three fields",
+      "pluginId": "record-matrix",
+      "config": {
+        "x": "day",
+        "y": "service",
+        "value": "count"
+      },
+      "valid": true
+    },
+    {
+      "name": "record-matrix with no config is refused",
+      "pluginId": "record-matrix",
+      "config": null,
+      "valid": false,
+      "pointer": ""
+    },
+    {
+      "name": "record-table accepts columns and a page size",
+      "pluginId": "record-table",
+      "config": {
+        "columns": [
+          "name"
+        ],
+        "pageSize": 20
+      },
+      "valid": true
+    },
+    {
+      "name": "record-table refuses a page size of two",
+      "pluginId": "record-table",
+      "config": {
+        "pageSize": 2
+      },
+      "valid": false,
+      "pointer": "/pageSize"
+    },
+    {
+      "name": "record-table accepts an uppercase hex mapping colour",
+      "pluginId": "record-table",
+      "config": {
+        "cellStyles": [
+          {
+            "column": "status",
+            "display": "status-badge",
+            "mappings": [
+              {
+                "value": "ok",
+                "color": "#FFAA00"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-table rank with value equal to status is refused by Zod only",
+      "pluginId": "record-table",
+      "config": {
+        "rank": {
+          "status": "state",
+          "value": "state"
+        }
+      },
+      "valid": false,
+      "jsonSchemaGap": "superRefine: rank value and status must differ; not in the published schema"
+    },
+    {
+      "name": "record-table mapping with neither status nor colour is refused by Zod only",
+      "pluginId": "record-table",
+      "config": {
+        "cellStyles": [
+          {
+            "column": "state",
+            "display": "status-badge",
+            "mappings": [
+              {
+                "value": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false,
+      "jsonSchemaGap": "superRefine: a mapping names a status or a colour; the published schema does not carry it"
+    },
+    {
+      "name": "record-treemap accepts label and value",
+      "pluginId": "record-treemap",
+      "config": {
+        "label": "name",
+        "value": "size"
+      },
+      "valid": true
+    },
+    {
+      "name": "record-treemap refuses a missing value",
+      "pluginId": "record-treemap",
+      "config": {
+        "label": "name"
+      },
+      "valid": false,
+      "pointer": ""
+    },
+    {
+      "name": "records-bar accepts x and y",
+      "pluginId": "records-bar",
+      "config": {
+        "x": "day",
+        "y": [
+          "count"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "records-bar refuses a missing y",
+      "pluginId": "records-bar",
+      "config": {
+        "x": "day"
+      },
+      "valid": false,
+      "pointer": ""
+    },
+    {
+      "name": "records-line accepts x and y",
+      "pluginId": "records-line",
+      "config": {
+        "x": "day",
+        "y": [
+          "count"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "records-line refuses a missing y",
+      "pluginId": "records-line",
+      "config": {
+        "x": "day"
+      },
+      "valid": false,
+      "pointer": ""
+    },
+    {
+      "name": "small-multiples accepts three columns",
+      "pluginId": "small-multiples",
+      "config": {
+        "columns": 3
+      },
+      "valid": true
+    },
+    {
+      "name": "small-multiples refuses zero columns",
+      "pluginId": "small-multiples",
+      "config": {
+        "columns": 0
+      },
+      "valid": false,
+      "pointer": "/columns"
+    },
+    {
+      "name": "stacked-timeseries accepts bar display",
+      "pluginId": "stacked-timeseries",
+      "config": {
+        "display": "bar"
+      },
+      "valid": true
+    },
+    {
+      "name": "stacked-timeseries refuses a pie display",
+      "pluginId": "stacked-timeseries",
+      "config": {
+        "display": "pie"
+      },
+      "valid": false,
+      "pointer": "/display"
+    },
+    {
+      "name": "status-grid accepts 100 series",
+      "pluginId": "status-grid",
+      "config": {
+        "maxSeries": 100
+      },
+      "valid": true
+    },
+    {
+      "name": "status-grid refuses zero series",
+      "pluginId": "status-grid",
+      "config": {
+        "maxSeries": 0
+      },
+      "valid": false,
+      "pointer": "/maxSeries"
+    },
+    {
+      "name": "status-history accepts segments",
+      "pluginId": "status-history",
+      "config": {
+        "segmented": true
+      },
+      "valid": true
+    },
+    {
+      "name": "status-history refuses 200 points",
+      "pluginId": "status-history",
+      "config": {
+        "maxPoints": 200
+      },
+      "valid": false,
+      "pointer": "/maxPoints"
+    },
+    {
+      "name": "threshold-gauge accepts a radial gauge",
+      "pluginId": "threshold-gauge",
+      "config": {
+        "display": "radial"
+      },
+      "valid": true
+    },
+    {
+      "name": "threshold-gauge refuses four segments",
+      "pluginId": "threshold-gauge",
+      "config": {
+        "segments": 4
+      },
+      "valid": false,
+      "pointer": "/segments"
+    },
+    {
+      "name": "uptime-calendar accepts 90 days",
+      "pluginId": "uptime-calendar",
+      "config": {
+        "maxDays": 90,
+        "maxSeries": 1
+      },
+      "valid": true
+    },
+    {
+      "name": "uptime-calendar refuses three days",
+      "pluginId": "uptime-calendar",
+      "config": {
+        "maxDays": 3
+      },
+      "valid": false,
+      "pointer": "/maxDays"
+    },
+    {
+      "name": "uptime-timeline accepts eight series",
+      "pluginId": "uptime-timeline",
+      "config": {
+        "maxDays": 90,
+        "maxSeries": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "uptime-timeline refuses 25 series",
+      "pluginId": "uptime-timeline",
+      "config": {
+        "maxSeries": 25
+      },
+      "valid": false,
+      "pointer": "/maxSeries"
+    }
+  ]
+}

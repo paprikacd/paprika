@@ -16,6 +16,17 @@ var dashboardSchema []byte
 //go:embed saved-query.schema.json
 var savedQuerySchema []byte
 
+// pluginConfigSchemaBundle holds one configuration schema per built-in plugin id, under $defs.
+//
+//go:embed widget-plugin-configs.schema.json
+var pluginConfigSchemaBundle []byte
+
+// PluginConfigSchemas returns the published built-in plugin configuration bundle. Each plugin's schema is at
+// $defs/<plugin id>, and every bundled plugin declares its data kind in x-dataKind. The caller gets its own copy.
+func PluginConfigSchemas() json.RawMessage {
+	return append(json.RawMessage(nil), pluginConfigSchemaBundle...)
+}
+
 // widgetPluginList is the committed list of plugin ids the UI registers by
 // default. The UI test widget-plugin-list.test.ts regenerates and checks it.
 //
@@ -62,7 +73,7 @@ func decodeWidgetPluginList() (widgetPluginListDocument, error) {
 	return list, nil
 }
 
-var ErrUnknownKind = errors.New("schema kind must be dashboard, widget, or saved_query")
+var ErrUnknownKind = errors.New("schema kind must be dashboard, widget, saved_query, or plugin")
 
 // Document returns an independent, compact schema. Widget extraction retains
 // the root definitions because recursive plugin configuration refers to them.
@@ -73,6 +84,8 @@ func Document(kind string) (json.RawMessage, error) {
 		source = dashboardSchema
 	case "saved_query":
 		source = savedQuerySchema
+	case "plugin":
+		source = pluginConfigSchemaBundle
 	case "widget":
 		return widgetDocument()
 	default:

@@ -104,3 +104,62 @@ function withoutSchema(value: Json): Json {
   delete rest.$schema
   return rest
 }
+
+/** One built-in plugin's configuration contract, as the registry holds it. */
+export interface PluginConfigDefinition {
+  id: string;
+  dataKind: string;
+  configSchema: z.ZodType;
+}
+
+const JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+
+/**
+ * The published configuration schema of one plugin. The writer refuses what the JSON Schema cannot carry: a regex
+ * with flags (the flag would be lost, so the published schema could reject a value Zod accepts), any unrepresentable
+ * type, and any reference, because the bundle must stay self-contained for agents and Go.
+ */
+export function pluginConfigJSONSchema(definition: PluginConfigDefinition): Json {
+  const generated = z.toJSONSchema(definition.configSchema, {
+    io: "input",
+    unrepresentable: "throw",
+    override: ({ zodSchema }) => refuseFlaggedRegex(zodSchema, definition.id),
+  }) as Json
+  assertNoReferences(generated, definition.id)
+  return { ...withoutSchema(generated), "x-dataKind": definition.dataKind }
+}
+
+/** The bundle of every built-in plugin configuration, keyed by plugin id. Ids must be unique. */
+export function pluginConfigBundle(definitions: readonly PluginConfigDefinition[]): Json {
+  const sorted = [...definitions].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  for (let index = 1; index < sorted.length; index++)
+    if (sorted[index].id === sorted[index - 1].id) throw new Error(`duplicate plugin configuration id ${sorted[index].id}`)
+  return {
+    $schema: JSON_SCHEMA_DIALECT,
+    title: "Paprika Insights built-in plugin configurations",
+    description: "Configuration schemas for the built-in widget plugins, keyed by plugin id. Each widget's config must pass its plugin's schema.",
+    $comment: "Written by npm run schema:generate from each plugin's configSchema. Go checks a plugin's config on save through these schemas. Plugin ids outside this bundle are not checked here.",
+    $defs: Object.fromEntries(sorted.map((definition) => [definition.id, pluginConfigJSONSchema(definition)])),
+  }
+}
+
+function refuseFlaggedRegex(schema: unknown, pluginId: string) {
+  const checks = (schema as { _zod?: { def?: { checks?: unknown[] } } })._zod?.def?.checks ?? []
+  for (const check of checks) {
+    const pattern = (check as { _zod?: { def?: { pattern?: RegExp } } })._zod?.def?.pattern
+    if (pattern?.flags)
+      throw new Error(`plugin "${pluginId}": regex /${pattern.source}/${pattern.flags} has flags the published schema cannot carry`)
+  }
+}
+
+function assertNoReferences(value: unknown, pluginId: string, path = "") {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoReferences(item, pluginId, `${path}/${index}`))
+    return
+  }
+  if (value === null || typeof value !== "object") return
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "$ref") throw new Error(`plugin "${pluginId}": published schema has a reference at ${path || "/"}`)
+    assertNoReferences(child, pluginId, `${path}/${key}`)
+  }
+}
