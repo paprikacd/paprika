@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AnnotationEventsProvider, eventsAt, eventsInRange, type RecordedEvent } from "./annotation-events";
 import { WidgetVisualization } from "./charts";
@@ -78,5 +78,32 @@ describe("event ticks on the other time-based widgets", () => {
     const result: QueryResult = { series: [{ name: "api", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 0 }, { timestamp: 3000, value: 1 }] }] };
     const { container } = render(<AnnotationEventsProvider state={{ events: [pointEvent] }}><StatusHistory widget={widget} result={result} /></AnnotationEventsProvider>);
     expect(container.querySelectorAll("[data-event-tick]")).toHaveLength(1);
+  });
+
+  it("lists a stat sparkline's events in its sample inspector, so the keyboard reaches them", () => {
+    const stat: Widget = { id: "stat", title: "Latency", type: "stat", providerId: "metrics", query: "latency", unit: "ms", layout: { x: 0, y: 0, w: 4, h: 2 }, options: { showSparkline: true } };
+    const result: QueryResult = { series: [{ name: "latency", labels: {}, points: [{ timestamp: 1000, value: 1 }, { timestamp: 2000, value: 2 }, { timestamp: 3000, value: 3 }] }] };
+    const { container } = render(<AnnotationEventsProvider state={{ events }}><WidgetVisualization widget={stat} result={result} /></AnnotationEventsProvider>);
+    const sparkline = container.querySelector<SVGSVGElement>("[data-stat-sparkline]")!;
+    act(() => sparkline.focus());
+    // Focus inspects the latest sample, at 3000, which no event covers.
+    expect(screen.queryByRole("list", { name: "Events at this time" })).toBeNull();
+    fireEvent.keyDown(sparkline, { key: "ArrowLeft" });
+    expect(within(screen.getByRole("list", { name: "Events at this time" })).getByText("Deploy")).toBeInTheDocument();
+  });
+
+  it("keeps ticks inside the plotted range and out of the pointer's way", () => {
+    const widget: Widget = { id: "hosts", title: "Host trends", type: "plugin", pluginId: "small-multiples", dataKind: "metrics", providerId: "metrics", query: "up", unit: "%", layout: { x: 0, y: 0, w: 8, h: 4 }, config: { columns: 1, maxSeries: 1, maxPoints: 8 } } as Widget;
+    const result: QueryResult = { series: [{ name: "alpha", labels: {}, points: [{ timestamp: 1000, value: 0 }, { timestamp: 3000, value: 10 }] }] };
+    // An interval that began before the panel's first sample, a point at that sample, and an event after the panel ends.
+    const early: RecordedEvent = { timestamp: at(0), endTimestamp: at(2000), label: "Incident" };
+    const edge: RecordedEvent = { timestamp: at(1000), label: "Deploy" };
+    const late: RecordedEvent = { timestamp: at(9000), label: "Later" };
+    const { container } = render(<AnnotationEventsProvider state={{ events: [early, edge, late] }}><SmallMultiples widget={widget} result={result} /></AnnotationEventsProvider>);
+    const bar = container.querySelector('[data-event-tick="interval"]')!;
+    const points = container.querySelectorAll('[data-event-tick="point"]');
+    expect(points).toHaveLength(1);
+    expect(Number(bar.getAttribute("x"))).toBe(Number(points[0].getAttribute("x1")));
+    for (const tick of container.querySelectorAll("[data-event-tick]")) expect(tick.closest("g")?.getAttribute("pointer-events")).toBe("none");
   });
 });

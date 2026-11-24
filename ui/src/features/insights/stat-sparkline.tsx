@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Widget } from "./schema";
-import { eventsInRange, type RecordedEvent } from "./annotation-events";
+import { eventsAt, type RecordedEvent } from "./annotation-events";
+import { InspectorEvents } from "./inspector-events";
 import { EventTicks } from "./event-ticks";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
@@ -302,7 +303,7 @@ export function StatSparkline({
           data-sample-value={point.value}
         />
       ))}
-      {events && observations.length > 0 && <EventTicks events={eventsInRange(events, observations[0].timestamp, observations[observations.length - 1].timestamp)} x={(timestamp) => history.x({ timestamp, value: null })} top={0} bottom={64} />}
+      {events && observations.length > 0 && <EventTicks events={events} range={{ start: observations[0].timestamp, end: observations[observations.length - 1].timestamp }} x={(timestamp) => history.x({ timestamp, value: null })} top={0} bottom={64} />}
       {selected && <g data-stat-cursor="" aria-hidden="true">
         <line x1={history.x(selected)} x2={history.x(selected)} y1="0" y2="64" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
         {/* A ring at the sample: a currentColor band around a core in the card colour, both at fixed screen size. */}
@@ -314,6 +315,8 @@ export function StatSparkline({
     </svg>
     {selected && current && anchor && <ObservationTooltip id={tooltipId} anchor={anchor} anchorRect={sampleRect} preferSide anchorOwnsHistoryKeys pinned={current.pinned} onDismiss={() => owner.dismiss()} onEnter={() => owner.panelEnter()} onLeave={() => owner.panelLeave()}>
       <MetricDetails widget={widget} series={series} index={0} point={selected} unit={unit} description="Recorded sample" />
+      {/* The ticks are pointer-transparent, so the inspected sample is how a pointer or the keyboard reaches its events. */}
+      {events && <InspectorEvents events={eventsAt(events, selected.timestamp, observations.length > 1 ? Math.abs(observations[1].timestamp - observations[0].timestamp) / 2 : 0)} />}
     </ObservationTooltip>}
     </>
   );

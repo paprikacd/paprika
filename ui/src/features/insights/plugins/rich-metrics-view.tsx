@@ -517,7 +517,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         </g>}
         {/* Event ticks sit in the top gutter above the cells, with a rule along the plot's top edge. They are never filled bands. */}
         {eventData.events.length > 0 && <g pointerEvents="none" aria-hidden="true">
-          <EventTicks events={eventData.events} x={columnX} top={0} bottom={top} />
+          <EventTicks events={eventData.events} range={{ start: data.timestamps[0], end: data.timestamps[data.timestamps.length - 1] }} x={columnX} top={0} bottom={top} />
           <line x1={left} x2={left + plotWidth} y1={top - .5} y2={top - .5} stroke="var(--gamma-ink)" strokeOpacity={.35} strokeWidth={1} />
         </g>}
         {cursorTime !== undefined && <>
