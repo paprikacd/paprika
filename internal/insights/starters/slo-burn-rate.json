@@ -5,7 +5,6 @@
   "description": "99.9% availability objective over 30 days, as one SLO card with availability, error budget and multiwindow burn pairs. Its query is compiled from its config at run time. The burn-rate charts keep the 1-hour and 6-hour burn with the 2x, 6x and 14.4x bands. Assumes http_requests_total (service, namespace, code labels); 5xx is failure. Needs 30 days of counter retention. Auto refresh is 60s. Change the objective in the card's config.",
   "timeRange": "6h",
   "refreshInterval": 60,
-  "covers": { "applications": [{}], "variables": { "namespace": "namespace", "service": "name" }, "summaryWidget": "slo-summary" },
   "variables": [
     {
       "name": "service",
