@@ -76,6 +76,50 @@ describe("query scheduler capacity backoff", () => {
     expect(calls).toEqual(["first", "other", "first", "second"])
   })
 
+  it("holds every provider while a board-wide refusal (budget, edge or queue) backs off", async () => {
+    const calls: string[] = []
+    let firstRefusals = 0
+    const fetcher = vi.fn(async (r: QueryRequest) => {
+      calls.push(r.query)
+      if (r.query === "first" && firstRefusals++ === 0) {
+        throw Object.assign(refusal("2"), { limitScope: "budget" })
+      }
+      return data
+    })
+    const scheduler = createQueryScheduler(fetcher, { concurrency: 1, cacheTTL: 0 })
+    const signal = () => new AbortController().signal
+    const first = scheduler({ ...request, query: "first" }, signal())
+    const other = scheduler({ ...request, providerId: "logs", query: "other" }, signal())
+    // The budget refused the first, so the other provider waits too, instead of starting during the backoff.
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toEqual(["first"])
+    await vi.advanceTimersByTimeAsync(2000)
+    await Promise.all([first, other])
+    expect(calls).toEqual(["first", "first", "other"])
+  })
+
+  it("keeps other providers running while a provider-scoped refusal backs off", async () => {
+    const calls: string[] = []
+    let firstRefusals = 0
+    const fetcher = vi.fn(async (r: QueryRequest) => {
+      calls.push(r.query)
+      if (r.query === "first" && firstRefusals++ === 0) {
+        throw Object.assign(refusal("2"), { limitScope: "provider" })
+      }
+      return data
+    })
+    const scheduler = createQueryScheduler(fetcher, { concurrency: 1, cacheTTL: 0 })
+    const signal = () => new AbortController().signal
+    const first = scheduler({ ...request, query: "first" }, signal())
+    const other = scheduler({ ...request, providerId: "logs", query: "other" }, signal())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toEqual(["first", "other"])
+    // The refused first replays once its own provider's hold ends.
+    await vi.advanceTimersByTimeAsync(2000)
+    await Promise.all([first, other])
+    expect(calls).toEqual(["first", "other", "first"])
+  })
+
   it("re-drains the held provider when its hold ends, after the refused entry is cancelled", async () => {
     const calls: string[] = []
     const fetcher = vi.fn(async (r: QueryRequest) => {

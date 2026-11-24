@@ -246,7 +246,7 @@ func resourceExhaustedWithRetry(message string, delay time.Duration) error {
 
 // waitForQuerySlot waits for a slot. When the waiter queue is full it refuses at
 // once, naming fullHint() as its retry delay.
-func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}, fullHint func() time.Duration) error {
+func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}, fullHint func() time.Duration, scope LimitScope) error {
 	if err := contextError(ctx); err != nil {
 		return err
 	}
@@ -263,7 +263,7 @@ func waitForQuerySlot(ctx context.Context, active, waiting chan struct{}, fullHi
 	case waiting <- struct{}{}:
 		defer func() { <-waiting }()
 	default:
-		return resourceExhaustedWithRetry("observability query queue is full; retry shortly", fullHint())
+		return withLimitScope(scope, resourceExhaustedWithRetry("observability query queue is full; retry shortly", fullHint()))
 	}
 	select {
 	case active <- struct{}{}:
@@ -290,8 +290,8 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 	select {
 	case b.admitted <- struct{}{}:
 	default:
-		return nil, nil, resourceExhaustedWithRetry("observability gateway admission queue is full; retry shortly",
-			retryDelay(&b.hold, len(b.admitted)-cap(b.active), cap(b.active)))
+		return nil, nil, withLimitScope(ScopeQueue, resourceExhaustedWithRetry("observability gateway admission queue is full; retry shortly",
+			retryDelay(&b.hold, len(b.admitted)-cap(b.active), cap(b.active))))
 	}
 	sample := &holdSample{}
 	ctx = context.WithValue(ctx, holdSampleKey{}, sample)
@@ -317,14 +317,14 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 		return retryDelay(holdEstimatorFor(b.holdLookup(provider), &b.hold), len(slots.waiting), cap(slots.active))
 	}
 	globalHint := func() time.Duration { return retryDelay(&b.hold, len(b.waiting), cap(b.active)) }
-	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting, providerHint); err != nil {
+	if err := waitForQuerySlot(queueCtx, slots.active, slots.waiting, providerHint, ScopeProvider); err != nil {
 		release()
-		return nil, nil, queueWaitError(ctx, queueCtx, err, providerHint())
+		return nil, nil, queueWaitError(ctx, queueCtx, err, providerHint(), ScopeProvider)
 	}
 	providerAcquired = true
-	if err := waitForQuerySlot(queueCtx, b.active, b.waiting, globalHint); err != nil {
+	if err := waitForQuerySlot(queueCtx, b.active, b.waiting, globalHint, ScopeBudget); err != nil {
 		release()
-		return nil, nil, queueWaitError(ctx, queueCtx, err, globalHint())
+		return nil, nil, queueWaitError(ctx, queueCtx, err, globalHint(), ScopeBudget)
 	}
 	globalAcquired, acquired = true, b.clock()
 	bounded, cancel := context.WithTimeout(ctx, b.timeout)
@@ -346,11 +346,11 @@ func (b *executionBudget) begin(ctx context.Context, provider string) (context.C
 // timer ended the wait, the caller still has budget, so the answer is a
 // resource_exhausted with a retry hint: a busy provider, not a spent request. A
 // caller deadline or cancellation keeps the code contextError gave it.
-func queueWaitError(caller, queue context.Context, err error, delay time.Duration) error {
+func queueWaitError(caller, queue context.Context, err error, delay time.Duration, scope LimitScope) error {
 	if caller.Err() != nil || !errors.Is(queue.Err(), context.DeadlineExceeded) {
 		return err
 	}
-	return resourceExhaustedWithRetry("observability query waited too long for a free slot; retry shortly", delay)
+	return withLimitScope(scope, resourceExhaustedWithRetry("observability query waited too long for a free slot; retry shortly", delay))
 }
 
 func contextError(ctx context.Context) error {

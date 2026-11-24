@@ -364,6 +364,7 @@ func (p observabilityAdmissionPool) release() { <-p.slots }
 // with the Retry-After the pool estimates, and no-store.
 func rejectObservabilityAdmission(w http.ResponseWriter, retryAfter int) {
 	w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+	observabilitygateway.SetLimitScopeHeader(w, observabilitygateway.ScopeEdge)
 	w.Header().Set("Cache-Control", "no-store")
 	http.Error(w, "observability gateway is at its request limit; retry later", http.StatusTooManyRequests)
 }

@@ -23,6 +23,9 @@ type DashboardSummaryOptions struct {
 type DashboardQueryError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// LimitScope names the gateway limit that refused a rate_limited query: edge,
+	// budget, provider or queue. It is absent when the refusal named none.
+	LimitScope string `json:"limitScope,omitempty"`
 	// transient marks a failure a retry can clear, under a code that does not
 	// say so. It is not part of the wire form.
 	transient bool

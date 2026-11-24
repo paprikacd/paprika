@@ -328,6 +328,7 @@ func writeDashboardError(w http.ResponseWriter, err error) {
 	case connect.CodeResourceExhausted:
 		status, code, description = http.StatusTooManyRequests, "temporarily_unavailable", "observability gateway is at its request limit; retry later"
 		w.Header().Set("Retry-After", strconv.Itoa(connectRetryAfterSeconds(err, defaultRetryAfterSeconds)))
+		w.Header().Set(LimitScopeHeader, limitScopeHeaderValue(err))
 	case connect.CodeDeadlineExceeded:
 		status, code, description = http.StatusGatewayTimeout, "temporarily_unavailable", "observability request exceeded its time budget"
 	case connect.CodeCanceled:
