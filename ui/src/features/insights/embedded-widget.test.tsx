@@ -90,4 +90,24 @@ describe("embedded widget", () => {
     );
     expect(await screen.findByText(/This widget is no longer on the dashboard/)).toBeInTheDocument();
   });
+
+  it("shows loading, then the load failure", async () => {
+    const { client } = clientFor();
+    let reject!: (error: Error) => void;
+    (client.get as ReturnType<typeof vi.fn>).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+    render(<EmbeddedWidget client={client} dashboardId="service-overview" widgetId="requests" variables={{}} href="/x" />);
+    expect(screen.getByText("Loading metrics…")).toBeInTheDocument();
+    reject(new Error("Dashboard not found"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Dashboard not found");
+  });
+
+  it("takes the host's appearance and only its own height on the host page", async () => {
+    const { client } = clientFor();
+    render(<EmbeddedWidget client={client} dashboardId="service-overview" widgetId="requests" variables={{}} href="/x" theme="light" />);
+    const tile = (await screen.findByText("Request rate:no-links")).closest("[data-insights-theme]") as HTMLElement;
+    expect(tile).toHaveAttribute("data-insights-theme", "light");
+    // The Insights page root is a full-viewport flex row; inside a console page it must not be.
+    expect(parseFloat(tile.style.minHeight)).toBe(0);
+    expect(tile.style.display).toBe("block");
+  });
 });

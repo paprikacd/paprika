@@ -28,6 +28,8 @@ export function ApplicationInsightsWidget({
       widgetId={widgetId}
       variables={variables}
       href={href}
+      // The console has one, light appearance; the tile matches it, not the Insights preference.
+      theme="light"
     />
   )
 }

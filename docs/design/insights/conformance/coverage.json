@@ -1,5 +1,5 @@
 {
-  "description": "Dashboard covers validity. Go (coverage.go) and zod (schema.ts) must reach each verdict, and the published JSON Schema must agree except where a case names a jsonSchemaGap: JSON Schema cannot check a variable or widget reference.",
+  "description": "Dashboard covers and application link validity. Go (coverage.go) and zod (schema.ts) must reach each verdict, and the published JSON Schema must agree except where a case names a jsonSchemaGap: JSON Schema cannot check a variable or widget reference.",
   "cases": [
     {
       "name": "an empty entry matches every application",
@@ -52,6 +52,61 @@
       "valid": false,
       "jsonSchemaGap": "reference",
       "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"covers":{"applications":[{}],"summaryWidget":"missing"},"widgets":[{"id":"up","title":"Up","type":"stat","providerId":"prom","query":"up","unit":"","layout":{"x":0,"y":0,"w":4,"h":2}}]}
+    },
+    {
+      "name": "a dotted application name",
+      "valid": true,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"covers":{"applications":[{"name":"checkout.v2"}]},"widgets":[]}
+    },
+    {
+      "name": "a name ending in a hyphen",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"covers":{"applications":[{"name":"checkout-"}]},"widgets":[]}
+    },
+    {
+      "name": "a namespace over 63 characters",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"covers":{"applications":[{"namespace":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},"widgets":[]}
+    },
+    {
+      "name": "a null namespace",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"covers":{"applications":[{"namespace":null}]},"widgets":[]}
+    },
+    {
+      "name": "an application link beside a dashboard link",
+      "valid": true,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"details","title":"Details","dashboardId":"service-details"},{"id":"open-application","title":"Open application","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"constant","value":"checkout"}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
+    },
+    {
+      "name": "an application link that also names a dashboard",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"open-application","title":"Open application","dashboardId":"service-details","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"label","value":"application"}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
+    },
+    {
+      "name": "an application link without a name",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"open-application","title":"Open application","application":{"namespace":{"source":"label","value":"namespace"}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
+    },
+    {
+      "name": "an application link with an unknown source",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"open-application","title":"Open application","application":{"namespace":{"source":"variable","value":"namespace"},"name":{"source":"label","value":"application"}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
+    },
+    {
+      "name": "an application link with an empty value",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"open-application","title":"Open application","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"constant","value":""}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
+    },
+    {
+      "name": "an application link with a value over 253 characters",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"open-application","title":"Open application","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"constant","value":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
+    },
+    {
+      "name": "an application link with a dashboard link member",
+      "valid": false,
+      "document": {"schemaVersion":1,"id":"demo","title":"Demo","timeRange":"1h","refreshInterval":0,"widgets":[{"id":"lag","title":"Lag","type":"table","providerId":"prom","query":"up","unit":"","drilldowns":[{"id":"open-application","title":"Open application","carryTimeRange":true,"application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"label","value":"application"}}}],"layout":{"x":0,"y":0,"w":4,"h":3}}]}
     }
   ]
 }
