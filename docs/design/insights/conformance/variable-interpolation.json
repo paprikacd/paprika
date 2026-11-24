@@ -1,0 +1,132 @@
+{
+  "description": "Dashboard variable interpolation. The Go resolver (dashboard_query_resolver.go) and the console (drilldown.ts) must give the same query text, or both must refuse. Each case is a raw query template, the placeholder types and the values. expected is the query text; error true means both must refuse.",
+  "interpolate": [
+    {
+      "name": "single value",
+      "template": "up{c={{c}}}",
+      "types": { "c": "string" },
+      "values": { "c": "omega" },
+      "expected": "up{c=\"omega\"}"
+    },
+    {
+      "name": "list alternation",
+      "template": "up{c=~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["omega", "delta"] },
+      "expected": "up{c=~\"omega|delta\"}"
+    },
+    {
+      "name": "list items are regex-escaped",
+      "template": "up{c=~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["a.b", "c|d", "e\"f", "g\\h"] },
+      "expected": "up{c=~\"a\\\\.b|c\\\\|d|e\\\"f|g\\\\\\\\h\"}"
+    },
+    {
+      "name": "one item",
+      "template": "up{c=~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["omega"] },
+      "expected": "up{c=~\"omega\"}"
+    },
+    {
+      "name": "empty item stays an empty alternative",
+      "template": "up{c=~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["", "a"] },
+      "expected": "up{c=~\"|a\"}"
+    },
+    {
+      "name": "All after =~ is .+",
+      "template": "up{c=~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": [] },
+      "expected": "up{c=~\".+\"}"
+    },
+    {
+      "name": "negated list",
+      "template": "up{c!~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["a", "b"] },
+      "expected": "up{c!~\"a|b\"}"
+    },
+    {
+      "name": "negated All is refused",
+      "template": "up{c!~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": [] },
+      "error": true
+    },
+    {
+      "name": "TraceQL regex list",
+      "template": "{ resource.service.name =~ {{s}} }",
+      "types": { "s": "strings" },
+      "values": { "s": ["a", "b"] },
+      "expected": "{ resource.service.name =~ \"a|b\" }"
+    },
+    {
+      "name": "LogQL line filter list",
+      "template": "{app=\"x\"} |~ {{q}}",
+      "types": { "q": "strings" },
+      "values": { "q": ["a", "b"] },
+      "expected": "{app=\"x\"} |~ \"a|b\""
+    },
+    {
+      "name": "list after equality is refused",
+      "template": "up{c={{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["a"] },
+      "error": true
+    },
+    {
+      "name": "list after not-equal is refused",
+      "template": "up{c!={{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": ["a"] },
+      "error": true
+    },
+    {
+      "name": "list as a function argument is refused",
+      "template": "topk({{c}}, up)",
+      "types": { "c": "strings" },
+      "values": { "c": ["a"] },
+      "error": true
+    },
+    {
+      "name": "SQL array parameter",
+      "template": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[{{s}}]}",
+      "types": { "s": "strings" },
+      "values": { "s": ["a", "b"] },
+      "expected": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[[\"a\",\"b\"]]}"
+    },
+    {
+      "name": "SQL All binds null",
+      "template": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[{{s}}]}",
+      "types": { "s": "strings" },
+      "values": { "s": [] },
+      "expected": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[null]}"
+    },
+    {
+      "name": "SQL second parameter",
+      "template": "{\"sql\":\"SELECT 1 WHERE n = $1 AND s = ANY($2::text[])\",\"parameters\":[{{n}}, {{s}}]}",
+      "types": { "n": "string", "s": "strings" },
+      "values": { "n": "x", "s": ["a"] },
+      "expected": "{\"sql\":\"SELECT 1 WHERE n = $1 AND s = ANY($2::text[])\",\"parameters\":[\"x\", [\"a\"]]}"
+    },
+    {
+      "name": "single string for a multi parameter is wrapped",
+      "template": "up{c=~{{c}}}",
+      "types": { "c": "strings" },
+      "values": { "c": "omega" },
+      "expected": "up{c=~\"omega\"}"
+    },
+    {
+      "name": "number",
+      "template": "x > {{n}}",
+      "types": { "n": "number" },
+      "values": { "n": 5 },
+      "expected": "x > 5"
+    }
+  ],
+  "resolve": []
+}

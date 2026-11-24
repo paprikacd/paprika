@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -464,6 +465,7 @@ func interpolateDashboardLiterals(template string, types map[string]string, valu
 		return "", err
 	}
 	var output strings.Builder
+	consumed := 0 // Bytes of template already handled; remaining starts there.
 	for remaining := template; remaining != ""; {
 		start := strings.Index(remaining, "{{")
 		if start < 0 {
@@ -476,18 +478,83 @@ func interpolateDashboardLiterals(template string, types map[string]string, valu
 		if !exists {
 			return "", errors.New("query parameter has no value")
 		}
-		literal, err := dashboardLiteral(value)
+		literal, err := interpolatedLiteral(value, types[name], listContextBefore(template[:consumed+start]))
 		if err != nil {
 			return "", err
 		}
 		output.WriteString(remaining[:start])
 		output.WriteString(literal)
+		consumed += end + 2
 		remaining = remaining[end+2:]
 	}
 	if stringUnits(output.String()) > 8192 {
 		return "", errors.New("query exceeds the expanded limit")
 	}
 	return output.String(), nil
+}
+
+// interpolatedLiteral renders one placeholder. A "strings" parameter always renders as a list, so a single
+// string is wrapped as a one-item list. The context comes from the template text before the placeholder.
+func interpolatedLiteral(value any, kind string, context listContext) (string, error) {
+	if items, ok := dashboardListItems(value); ok {
+		return dashboardListLiteral(items, context)
+	}
+	if text, ok := value.(string); ok && kind == "strings" {
+		return dashboardListLiteral([]string{text}, context)
+	}
+	return dashboardLiteral(value)
+}
+
+func dashboardListItems(value any) ([]string, bool) {
+	switch items := value.(type) {
+	case []string:
+		return items, true
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			text, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, text)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// dashboardListLiteral renders a list of values for a regex, negated regex or SQL array position. Regex items
+// are escaped like Go's regexp.QuoteMeta (the TypeScript interpolator escapes the same characters), joined with
+// "|" and written as one string literal. All is ".+" after =~ and "null" as a SQL array element. Negated All is
+// refused, because it would exclude every value. No anchors are added: the providers match the alternation as
+// they match any regex.
+func dashboardListLiteral(items []string, context listContext) (string, error) {
+	switch context {
+	case contextRegex, contextNegated:
+		if len(items) == 0 {
+			if context == contextNegated {
+				return "", errors.New("an All value cannot follow !~; it would exclude every value")
+			}
+			return dashboardStringLiteral(".+"), nil
+		}
+		escaped := make([]string, len(items))
+		for index, item := range items {
+			escaped[index] = regexp.QuoteMeta(item)
+		}
+		return dashboardStringLiteral(strings.Join(escaped, "|")), nil
+	case contextArray:
+		if len(items) == 0 {
+			return "null", nil
+		}
+		quoted := make([]string, len(items))
+		for index, item := range items {
+			quoted[index] = dashboardStringLiteral(item)
+		}
+		return "[" + strings.Join(quoted, ",") + "]", nil
+	case contextNone:
+		return "", errors.New("query list values need =~, !~ or a SQL parameters array")
+	}
+	return "", errors.New("query list values need =~, !~ or a SQL parameters array")
 }
 
 func dashboardLiteral(value any) (string, error) {

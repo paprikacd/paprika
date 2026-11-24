@@ -131,10 +131,7 @@ func validateSavedQueryTemplate(query string, types map[string]string) error {
 }
 
 func validateTemplatePlaceholder(text []rune, start int, types map[string]string, state queryTemplateState) (int, error) {
-	end := start + 2
-	for end+1 < len(text) && (text[end] != '}' || text[end+1] != '}') {
-		end++
-	}
+	end := placeholderEnd(text, start)
 	if end+1 >= len(text) {
 		return 0, errors.New("finish the query parameter placeholder with }}")
 	}
@@ -148,7 +145,64 @@ func validateTemplatePlaceholder(text []rune, start int, types map[string]string
 	if !validPlaceholderBoundaries(text, start, end, types[name]) {
 		return 0, errors.New("query parameters must be complete literal values, not token fragments")
 	}
+	if err := validateListPlaceholder(text, start, name, types[name]); err != nil {
+		return 0, err
+	}
 	return end, nil
+}
+
+// placeholderEnd returns the index of the first closing brace of the placeholder that opens at start.
+func placeholderEnd(text []rune, start int) int {
+	end := start + 2
+	for end+1 < len(text) && (text[end] != '}' || text[end+1] != '}') {
+		end++
+	}
+	return end
+}
+
+// validateListPlaceholder refuses a list-valued placeholder outside a regex, negated regex or array position.
+func validateListPlaceholder(text []rune, start int, name, kind string) error {
+	if kind != "strings" || placeholderContext(text, start) != contextNone {
+		return nil
+	}
+	return listPlaceholderError(name, string(text[:start]))
+}
+
+// listContext says where a list-valued placeholder sits. A list of values needs a regex or negated-regex
+// operator before it, or an element position in a SQL parameters array. It is not valid anywhere else.
+type listContext int
+
+const (
+	contextNone listContext = iota
+	contextRegex
+	contextNegated
+	contextArray
+)
+
+// listContextBefore classifies the template text that precedes a placeholder. Trailing ASCII whitespace is
+// ignored. The TypeScript interpolator (drilldown.ts placeholderContext) applies the same rules.
+func listContextBefore(before string) listContext {
+	trimmed := strings.TrimRight(before, " \t\n\r\f\v")
+	switch {
+	case strings.HasSuffix(trimmed, "=~"), strings.HasSuffix(trimmed, "|~"):
+		return contextRegex
+	case strings.HasSuffix(trimmed, "!~"):
+		return contextNegated
+	case strings.HasSuffix(trimmed, "["), strings.HasSuffix(trimmed, ","):
+		return contextArray
+	}
+	return contextNone
+}
+
+func placeholderContext(text []rune, start int) listContext {
+	return listContextBefore(string(text[:start]))
+}
+
+func listPlaceholderError(name, before string) error {
+	if strings.HasSuffix(strings.TrimRight(before, " \t\n\r\f\v"), "=") {
+		return fmt.Errorf("variable “%s” holds several values; use =~ or !~ before {{%s}}, not =", name, name)
+	}
+	return fmt.Errorf("use {{%s}} after =~ or !~, or as an element of a SQL parameters array", name)
 }
 
 func validPlaceholderBoundaries(text []rune, start, end int, kind string) bool {
