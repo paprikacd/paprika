@@ -14,7 +14,7 @@ import { defineChart } from "@tanstack/charts/scene";
 import { tooltip } from "@tanstack/charts/tooltip";
 import type { ChartLinearGradient } from "@tanstack/charts";
 import { curveMonotoneX, curveStepAfter } from "d3-shape";
-import { useAnnotationEvents } from "./annotation-events";
+import { eventsAt, useAnnotationEvents } from "./annotation-events";
 import { ChartEvents } from "./chart-events";
 import { useChartCursor } from "./chart-cursor";
 import { ChartDataInspector } from "./chart-data-inspector";
@@ -59,6 +59,7 @@ import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
 import { useBaseline } from "./baseline-context";
+import { InspectorEvents } from "./inspector-events";
 import { bandSegments, baselineRunsText, seriesBaselines, type BaselinePoint, type SeriesBaseline } from "./baseline";
 import { comparisonLabel } from "./stat-comparison";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
@@ -287,12 +288,17 @@ export function TimeSeriesChart({
   const baselineLabel = baseline ? (baseline.window === "rolling" ? "last 12 samples" : comparisonLabel(baseline.window, baseline.span).replace(/^vs /, "")) : "";
   const runClock = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }), [timeZone]);
   const baselinePoints = useMemo(() => new Map(baselines.map(entry => [entry.index, new Map<number, BaselinePoint>(entry.points.map(point => [point.timestamp, point]))] as const)), [baselines]);
+  // The pinned observation's extra lines: its band, then the events that cover its time (at most three, critical first).
   const describeBaseline = useCallback((seriesIndex: number, timestamp: number) => {
-    const point = baselinePoints.get(seriesIndex)?.get(timestamp);
-    if (!baseline || !point) return null;
-    const range = `${formatMetric(point.lower, widget.unit, false, options.decimals)}–${formatMetric(point.upper, widget.unit, false, options.decimals)}`;
-    return <div data-baseline-tooltip>{baselineLabel} range: {range}{point.outside ? " · Outside the range" : ""}</div>;
-  }, [baseline, baselinePoints, baselineLabel, widget.unit, options.decimals]);
+    const point = baselineOn ? baselinePoints.get(seriesIndex)?.get(timestamp) : undefined;
+    const events = eventsAt(eventData.events, timestamp, (sampleCadence(series[seriesIndex]?.points ?? []) ?? 0) / 2);
+    if (!point && !events.length) return null;
+    const range = point ? `${formatMetric(point.lower, widget.unit, false, options.decimals)}–${formatMetric(point.upper, widget.unit, false, options.decimals)}` : "";
+    return <>
+      {point && <div data-baseline-tooltip>{baselineLabel} range: {range}{point.outside ? " · Outside the range" : ""}</div>}
+      <InspectorEvents events={events} />
+    </>;
+  }, [baselineOn, baselinePoints, baselineLabel, eventData.events, series, widget.unit, options.decimals]);
   const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels, onActivate, describeBaseline);
   // A legend entry activates its series when the widget has selection bindings. Without them the legend stays a static list.
   const legendActivates = !!onActivate && !!widget.selectionBindings?.length;
@@ -402,7 +408,7 @@ export function TimeSeriesChart({
     ? xAt(cursor.timestamp) : undefined;
   // Event markers are decorative and never intercept chart pointer input.
   const eventStart = dataStart ?? 0, eventEnd = timeEnd ?? 0;
-  const eventsInView = widget.annotationSource && !embedded && dataStart !== undefined ? eventData.events.filter(event => {
+  const eventsInView = eventData.events.length > 0 && !embedded && dataStart !== undefined ? eventData.events.filter(event => {
     const at = Date.parse(event.timestamp);
     return at <= eventEnd && Date.parse(event.endTimestamp ?? event.timestamp) >= eventStart;
   }) : [];

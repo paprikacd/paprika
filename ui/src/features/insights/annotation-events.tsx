@@ -91,3 +91,27 @@ export function useRecordedEvents(source: AnnotationSource | undefined, fetcher:
   if (!source || !enabled) return { events: [] }
   return state?.key === key && state.revision === revision ? state.value : { events: [], loading: true }
 }
+
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 }
+const eventStart = (event: RecordedEvent) => Date.parse(event.timestamp)
+const eventFinish = (event: RecordedEvent) => event.endTimestamp ? Date.parse(event.endTimestamp) : eventStart(event)
+
+/**
+ * The events a sample falls on: an interval that contains it, or a point event within `toleranceMs` of it. Critical events
+ * come first, and at most three are returned, so a hover names what happened without listing the whole window.
+ */
+export function eventsAt(events: readonly RecordedEvent[], timestamp: number, toleranceMs: number): RecordedEvent[] {
+  return events
+    .filter(event => {
+      const start = eventStart(event), finish = eventFinish(event)
+      if (!Number.isFinite(start)) return false
+      return finish > start ? timestamp >= start && timestamp <= finish : Math.abs(timestamp - start) <= toleranceMs
+    })
+    .sort((a, b) => (SEVERITY_ORDER[a.severity ?? ""] ?? 3) - (SEVERITY_ORDER[b.severity ?? ""] ?? 3))
+    .slice(0, 3)
+}
+
+/** The events that overlap a range, in the order they were recorded. */
+export function eventsInRange(events: readonly RecordedEvent[], start: number, end: number): RecordedEvent[] {
+  return events.filter(event => Number.isFinite(eventStart(event)) && eventStart(event) <= end && eventFinish(event) >= start)
+}

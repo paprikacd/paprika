@@ -4,6 +4,9 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { arc, pie } from "d3-shape"
 import { z } from "zod"
 import { EmptyState, MetricDetails, ObservationTooltip, formatMetric, seriesName, thresholdForValue } from "../chart-renderers"
+import { eventsAt, eventsInRange, useAnnotationEvents } from "../annotation-events"
+import { eventTone } from "../event-ticks"
+import { InspectorEvents } from "../inspector-events"
 import { thresholdPaint } from "../status"
 import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip"
 import type { Point, Series } from "../chart-data"
@@ -159,6 +162,7 @@ function findHistorySample(rows: readonly { entry: Series; cells: readonly { poi
 
 export function StatusHistory({ widget,result,onContextChange,embedded }: WidgetRendererProps) {
   const timeZone = useDashboardTimeZone()
+  const eventData = useAnnotationEvents()
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: "medium", timeStyle: "medium" }), [timeZone])
   // A city/zone stays accurate when the historical range crosses a DST change.
   const zoneLabel = timeZone.split("/").at(-1)!.replaceAll("_", " ")
@@ -195,6 +199,13 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
   const located = owner.active ? findHistorySample(data.rows, rowKeys, JSON.parse(owner.active.key) as HistoryIdentity) : undefined
   const active = located && owner.active ? { entry: located.entry, point: located.point, index: located.index, cell: located.cell, anchor: owner.active.anchor, pinned: owner.active.pinned } : undefined
   if (!data.rows.length) return <EmptyState />
+  // Event ticks sit over the rows as thin rules on the layout's own time scale. A pinned sample names the events at its time.
+  const eventTimes = data.domain ? { start: data.domain.start, end: data.domain.end } : undefined
+  const tickLeft = (timestamp: number) => eventTimes && eventTimes.end > eventTimes.start ? (timestamp - eventTimes.start) / (eventTimes.end - eventTimes.start) * 100 : 50
+  const shownEvents = eventTimes ? eventsInRange(eventData.events, eventTimes.start, eventTimes.end) : []
+  // Half the first series' sample spacing: the distance at which a point event still belongs to a pinned sample.
+  const sampleTimes = (series[0]?.points ?? []).map(point => point.timestamp).filter(Number.isFinite)
+  const historyHalfGap = sampleTimes.length > 1 ? Math.abs(sampleTimes[1] - sampleTimes[0]) / 2 : 0
   const keys = data.rows.flatMap((row, rowIndex) => row.cells.map((_, cellIndex) => `${rowIndex}-${cellIndex}`))
   const tabKey = keys.includes(keyboardKey) ? keyboardKey : keys[0]
   // A focus ring for the focused sample in this row: a tile-coloured gap, then a text-coloured ring, outside the fill.
@@ -279,9 +290,9 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
         onKeyDown={event => navigate(event,index,i)}
         onBlur={event => { setRingKey(undefined); trigger.onBlur(event) }}
         onClick={event => { onContextChange?.({labels:entry.labels,value:finite ? point.value : null,series:name,timestamp:point.timestamp}); owner.toggle(markKey, event.currentTarget) }}>{hits[i] && <span aria-hidden="true" data-history-hit={`${index}-${i}`} className={historyStyles.hit} style={hitStyle(hits[i], mark, edge)} />}</button>
-    })}{runFrames(cells)}{focusRing(index, cells)}</div></div>
+    })}{shownEvents.map((event, eventIndex) => <span key={`event-${eventIndex}`} aria-hidden="true" data-event-tick="" style={{ position: "absolute", top: 0, bottom: 0, left: `${tickLeft(Date.parse(event.timestamp))}%`, width: 1, background: eventTone(event.severity), opacity: 0.6, pointerEvents: "none" }} />)}{runFrames(cells)}{focusRing(index, cells)}</div></div>
   })}</div></div>{ticks.length > 0 && <div className={historyStyles.timeAxis} role="group" aria-label={`Status history time scale in ${timeZone}`}><span title={timeZone}>{zoneLabel}</span><div className={historyStyles.tickRow}>{ticks.map((tick,index) => <time key={index} dateTime={new Date(tick.timestamp).toISOString()} title={new Date(tick.timestamp).toISOString()}>{tick.label}</time>)}</div></div>}<div className={`${styles.note} ${historyStyles.footer}`}>{widget.options?.showLegend !== false && <div className={historyStyles.legend} role="group" aria-label="Status history legend">{thresholds.map((threshold,index) => <span key={index}>{threshold.status ? <StatusChip status={threshold.status} color={threshold.color} label={legendLabel(threshold,index)} /> : <><i style={{background:thresholdPaint(threshold)}} />{legendLabel(threshold,index)}</>}</span>)}{!thresholds.length && <span><i style={{background:widget.color ?? "var(--gamma-accent, #53876a)"}} />Observed</span>}<span><i className={historyStyles.unknown} />Unknown</span>{hasMixed && <span><i className={historyStyles.mixed} />Mixed / uncertain</span>}</div>}<span title="Empty intervals are unobserved" aria-label="Earlier to latest; empty intervals are unobserved">Earlier → latest</span>{series.length > maxSeries ? <span>Sampled view · {Math.min(maxSeries,series.length)} of {series.length} series</span> : data.sampled && <span>Sampled</span>}{hasMixed && widget.options?.showLegend === false && <span>Striped intervals: mixed / uncertain</span>}{data.duplicateTimes && <span>Multiple observations share a timestamp</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}</div>
-    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={() => owner.dismiss()} onEnter={() => owner.panelEnter()} onLeave={() => owner.panelLeave()}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} subject={labelFor(active.entry,active.index)} seriesLabel={widget.title} description="Recorded sample">{activeThreshold?.status ? <StatusChip status={activeThreshold.status} color={activeThreshold.color} label={activeThreshold.label} /> : activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails></ObservationTooltip>}
+    {active && <ObservationTooltip id={id} anchor={active.anchor} avoidWidget pinned={active.pinned} onDismiss={() => owner.dismiss()} onEnter={() => owner.panelEnter()} onLeave={() => owner.panelLeave()}><MetricDetails widget={widget} series={{...active.entry,name:labelFor(active.entry,active.index)}} index={active.index} point={active.point} unit={widget.unit} decimals={widget.options?.decimals} subject={labelFor(active.entry,active.index)} seriesLabel={widget.title} description="Recorded sample">{activeThreshold?.status ? <StatusChip status={activeThreshold.status} color={activeThreshold.color} label={activeThreshold.label} /> : activeThreshold?.label && <span>{activeThreshold.label}</span>}</MetricDetails><InspectorEvents events={eventsAt(eventData.events, active.point.timestamp, historyHalfGap)} /></ObservationTooltip>}
   </div>
 }
 

@@ -3,6 +3,9 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
+import { eventsAt, eventsInRange, useAnnotationEvents } from "../annotation-events";
+import { EventTicks } from "../event-ticks";
+import { InspectorEvents } from "../inspector-events";
 import { formatSharedScale } from "../units";
 import { downsamplePoints, formatMetric, formatTimeTick, latestPoint, seriesName, type Point, type Series } from "../chart-data";
 import { validTimestamp } from "../widget-context";
@@ -57,6 +60,9 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
   const owner = useObservationOwner({ enabled: interactive, retention: { revision: result } });
   const current = owner.active;
   const selected = current ? points[Number(current.key)] : undefined;
+  // Event ticks mark the panel's time, and the pinned sample names the events that cover its time.
+  const eventData = useAnnotationEvents();
+  const eventTolerance = points.length > 1 ? Math.abs(points[1].timestamp - points[0].timestamp) / 2 : 0;
   const pointAt = (event: PointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     if (!bounds.width || !points.length) return undefined;
@@ -103,10 +109,12 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
       <g clipPath={`url(#${id}-plot)`}><path d={path} className={styles.line} stroke={color} data-multiple-path="true" />
       {isolated.map(({x,y}, pointIndex) => <circle key={pointIndex} cx={x} cy={y} r="3" fill={color} className={styles.point} data-isolated-sample="true" />)}
       {coordinatesOfSelected?.y !== undefined && <circle cx={coordinatesOfSelected.x} cy={coordinatesOfSelected.y} r="3" fill={color} className={styles.point} />}</g>
+      {eventData.events.length > 0 && <EventTicks events={eventsInRange(eventData.events, domain.start, domain.end)} x={timestamp => coordinates({ timestamp, value: null }, domain).x} top={top} bottom={bottom} />}
     </svg>
     <div className={styles.xAxis} aria-hidden="true"><span>{formatTimeTick(domain.start, domain.end - domain.start)}</span><span>{formatTimeTick(domain.end, domain.end - domain.start)}</span></div></div>
     {detailsEnabled && current && selected && <ObservationTooltip id={id} anchor={current.anchor} avoidWidget pinned={current.pinned} onDismiss={owner.dismiss} onEnter={owner.panelEnter} onLeave={owner.panelLeave}>
       <MetricDetails widget={widget} series={entry} index={index} point={selected} unit={widget.unit} decimals={widget.options?.decimals} description="Recorded sample" />
+      <InspectorEvents events={eventsAt(eventData.events, selected.timestamp, eventTolerance)} />
     </ObservationTooltip>}
   </section>;
 }

@@ -18,7 +18,9 @@ import { useEmbeddedWidget, useWidgetPresentation } from "../widget-presentation
 import { useChartCursor, useChartCursorPublisher } from "../chart-cursor";
 import { compactSeriesLabels } from "../series-display";
 import { validTimestamp } from "../widget-context";
-import { useAnnotationEvents } from "../annotation-events";
+import { eventsAt, useAnnotationEvents, type RecordedEvent } from "../annotation-events";
+import { EventTicks } from "../event-ticks";
+import { InspectorEvents } from "../inspector-events";
 import { ChartEvents } from "../chart-events";
 import { TimeWindowLens } from "../time-window-lens";
 import { useTooltipWidgetData } from "../tooltip-widget-data";
@@ -185,7 +187,12 @@ function useInspection({ result, widget, embedded, onContextChange }: WidgetRend
   return { root: setRoot, enabled, detailsEnabled, active, show, togglePin, focus, dismiss, leave, enterPanel, focusPanel };
 }
 
-function Inspector({ widget, observation, peers, extra, footer, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; pinned: boolean; decimals?: number; onPin: () => void; onClose: (reason?: TooltipDismissReason) => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
+/** Half the gap between the first two sample times: the distance at which a point event still belongs to a sample. */
+function halfSampleGap(timestamps: readonly number[]): number {
+  return timestamps.length > 1 ? Math.abs(timestamps[1] - timestamps[0]) / 2 : 0;
+}
+
+function Inspector({ widget, observation, peers, extra, footer, events, pinned, decimals, onPin, onClose, id, anchor, setPanel, onEnter, onLeave }: { widget: Widget; observation: Observation; peers?: { name: string; display: string; color: string; value: number | null }[]; extra?: ReactNode; footer?: ReactNode; events?: readonly RecordedEvent[]; pinned: boolean; decimals?: number; onPin: () => void; onClose: (reason?: TooltipDismissReason) => void; id: string; anchor: SVGSVGElement; setPanel: (element: HTMLDivElement | null) => void; onEnter: () => void; onLeave: () => void }) {
   return <ObservationTooltip id={id} anchor={anchor} avoidWidget pinned={pinned} panelRef={setPanel} role="region" ariaLabel="Observation details" className={styles.inspector} tabIndex={pinned ? 0 : undefined} options={readTooltipPlacement(widget.options)} onDismiss={onClose} onEnter={onEnter} onLeave={onLeave}>
     {pinned && <div className={tooltipStyles.tooltipToolbar}><span>Pinned observation</span><GammaButton size="sm" iconOnly variant="quiet" aria-label="Close observation" onClick={() => onClose("close")}><X size={14} /></GammaButton></div>}
     <div className={styles.inspectorDetails} data-observation-details>
@@ -197,6 +204,7 @@ function Inspector({ widget, observation, peers, extra, footer, pinned, decimals
     {peers && peers.length > 1 && <TooltipSection><ul aria-label="Series at selected time" className={styles.inspectorPeers}>
       {peers.map((peer, index) => <li key={index} data-series-index={index} data-series-name={peer.name} data-series-value={peer.value === null ? "missing" : peer.value}><i aria-hidden="true" style={{ background: peer.color }} /><LegendName name={peer.name} display={peer.display} /><b>{peer.value === null ? "No observation" : formatMetric(peer.value, observation.unit, false, decimals)}</b></li>)}
     </ul></TooltipSection>}
+    {events && events.length > 0 && <TooltipSection><InspectorEvents events={events} /></TooltipSection>}
     {extra && <TooltipSection>{extra}</TooltipSection>}
     {observation.note && <TooltipSection><p className={styles.note}>{observation.note}</p></TooltipSection>}
     {pinned && <ObservationDrilldowns widget={widget} context={{ series: observation.name, labels: observation.series.labels, value: observation.value, timestamp: observation.timestamp }} />}
@@ -329,6 +337,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const { ref, width, height } = useSize();
   const [anchor, setAnchor] = useState<SVGSVGElement | null>(null), [panel, setPanel] = useState<HTMLDivElement | null>(null);
   const sharedCursor = useChartCursor();
+  const eventData = useAnnotationEvents();
   const { showAxis, descriptionId, embedded: embeddedChart } = useWidgetPresentation();
   const entering = useChartEntrance({ disabled: props.embedded || embeddedChart, anchor: ref });
   const unit = config.bucketUnit || widget.unit, densityUnit = config.densityUnit ?? "observations/s";
@@ -449,13 +458,18 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
           <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={4} />
           <rect x={selected.x} y={selected.y} width={selected.width} height={selected.height} fill="none" stroke="var(--gamma-ink)" strokeWidth={2} data-selected-bucket />
         </g>}
+        {/* Event ticks sit in the top gutter above the cells, with a rule along the plot's top edge. They are never filled bands. */}
+        {eventData.events.length > 0 && <g pointerEvents="none" aria-hidden="true">
+          <EventTicks events={eventData.events} x={columnX} top={0} bottom={top} />
+          <line x1={left} x2={left + plotWidth} y1={top - .5} y2={top - .5} stroke="var(--gamma-ink)" strokeOpacity={.35} strokeWidth={1} />
+        </g>}
         {cursorTime !== undefined && <>
           <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} stroke="var(--widget-background, var(--gamma-bg))" strokeWidth={3} pointerEvents="none" aria-hidden="true" />
           <line x1={columnX(cursorTime)} x2={columnX(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />
         </>}
         {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan, timeZone)}</text>)}
       </svg>
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} events={eventData.events.length ? eventsAt(eventData.events, inspection.active.observation.timestamp, halfSampleGap(data.timestamps)) : undefined} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     <div className={styles.heatmapFooter}>
     {!embeddedView && <p className={heatmapStyles.quantile} data-heatmap-quantile>{readout}</p>}
@@ -695,7 +709,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         {cursorTime !== undefined && <line x1={x(cursorTime)} x2={x(cursorTime)} y1={top} y2={height - bottom} className={styles.crosshair} data-shared-cursor={cursorTime} />}
         {showAxis && timeTicks(displayTimes, plotWidth).map(index => <text key={index} x={x(displayTimes[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === displayTimes.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(displayTimes[index], span, timeZone)}</text>)}
       </svg>}
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} footer={stackFooter} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} peers={data.tracks.map((track, index) => ({ name: track.name, display: displayLabels[index], color: color(index), value: track.cells[inspection.active!.observation.column].value }))} footer={stackFooter} events={queried.length ? eventsAt(queried, inspection.active.observation.timestamp, halfSampleGap(data.timestamps)) : undefined} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
     {widget.options?.showLegend !== false && <SeriesLegend table={tableLegend} revision={legendRevision}>{tableLegend ? <table className={styles.legendTable}>
       <caption>Raw returned observations. Current is the latest sample, including missing values. Mean is the arithmetic mean of finite samples; max is the largest finite sample. Statistics use all returned samples before display sampling.</caption>

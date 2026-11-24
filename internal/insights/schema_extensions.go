@@ -171,7 +171,7 @@ func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
 	if err := json.Unmarshal(widget["type"], &kind); err != nil {
 		return false
 	}
-	if kind == "timeseries" {
+	if slices.Contains(annotationFamilyTypes, kind) {
 		return true
 	}
 	if kind != "plugin" {
@@ -181,12 +181,19 @@ func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
 	if err := json.Unmarshal(widget["pluginId"], &pluginID); err != nil {
 		return false
 	}
-	return pluginID == "stacked-timeseries" || pluginID == "directional-traffic"
+	return slices.Contains(annotationFamilyPlugins, pluginID)
 }
+
+// annotationFamilyTypes and annotationFamilyPlugins are the time-based widgets that accept an event query. They mirror
+// ANNOTATION_FAMILIES in ui/src/features/insights/schema.ts, which the UI validates against.
+var (
+	annotationFamilyTypes   = []string{"timeseries", "stat"}
+	annotationFamilyPlugins = []string{"stacked-timeseries", "directional-traffic", "distribution-heatmap", "small-multiples", "status-history"}
+)
 
 func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.RawMessage) error {
 	if !supportsWidgetAnnotationSource(widget) {
-		return errors.New("event queries require a time-series or directional-traffic widget")
+		return errors.New("event queries require a time-based widget")
 	}
 	fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
 	if err != nil {

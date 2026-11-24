@@ -553,9 +553,18 @@ export const customTimeRangeSchema = z
     return Date.parse(range.from) > 0 && duration > 0 && duration <= 31 * 24 * 60 * 60 * 1000
   }, "Choose an increasing time range of at most 31 days, after the Unix epoch")
 
-/** Event markers are supported on time-based line and traffic charts. */
+/**
+ * The time-based widgets that accept an event query: time series and stat sparklines, and the plugins that draw over time.
+ * Gauges, tables, records views and calendars are not time-based here. The Go validator mirrors these lists.
+ */
+export const ANNOTATION_FAMILIES = {
+  types: ["timeseries", "stat"],
+  plugins: ["stacked-timeseries", "directional-traffic", "distribution-heatmap", "small-multiples", "status-history"],
+} as const
+
 export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
-  return type === "timeseries" || (type === "plugin" && (pluginId === "stacked-timeseries" || pluginId === "directional-traffic"))
+  if ((ANNOTATION_FAMILIES.types as readonly string[]).includes(type)) return true
+  return type === "plugin" && (ANNOTATION_FAMILIES.plugins as readonly string[]).includes(pluginId ?? "")
 }
 
 export const widgetSchema = z
@@ -599,7 +608,7 @@ export const widgetSchema = z
     if (widget.type !== "stat" && widget.layout.h < 2)
       context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
     if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))
-      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-series or directional-traffic widget" })
+      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-based widget" })
     const boundVariables = new Set<string>()
     widget.selectionBindings?.forEach((binding, index) => {
       if (boundVariables.has(binding.variable))
