@@ -1,4 +1,5 @@
 export { default as InsightsApp } from "./insights-app"
+export { default as EmbeddedWidget } from "./embedded-widget"
 export {
   createInsightsClient,
   type InsightsClient,

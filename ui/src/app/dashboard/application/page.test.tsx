@@ -26,8 +26,14 @@ const mockSearch = vi.hoisted(() => ({
   value: "namespace=payments&name=checkout-api",
 }))
 
+const mockCoverage = vi.hoisted(() => ({ dashboards: [] as unknown[] }))
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mockSearch.value),
+}))
+
+vi.mock("@/lib/insights-coverage", () => ({
+  useApplicationDashboards: () => ({ data: mockCoverage.dashboards }),
 }))
 
 vi.mock("@connectrpc/connect", () => ({
@@ -125,6 +131,7 @@ describe("ApplicationDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSearch.value = "namespace=payments&name=checkout-api"
+    mockCoverage.dashboards = []
     mockClient.getApplication.mockResolvedValue({ application: { ...APPLICATION } })
     mockClient.queryApplications.mockResolvedValue(new QueryApplicationsResponse())
     mockClient.listReleases.mockResolvedValue({ releases: [] })
@@ -147,6 +154,17 @@ describe("ApplicationDetailPage", () => {
     ).toBeInTheDocument()
     expect(screen.getByText("Degraded")).toBeInTheDocument()
     expect(screen.getByText("3 out of sync")).toBeInTheDocument()
+  })
+
+  it("links the top covering Insights dashboard as Open metrics, with its variables", async () => {
+    mockCoverage.dashboards = [{
+      id: "service-overview", title: "Service overview", variables: { namespace: "payments", service: "checkout-api" },
+      summaryWidgetId: "request-rate", specificity: 3,
+    }]
+    render(<ApplicationDetailPage />)
+    const link = await screen.findByRole("link", { name: "Open metrics" })
+    expect(link.getAttribute("href")).toContain("dashboard=service-overview")
+    expect(link.getAttribute("href")).toContain("vars=")
   })
 
   it("keeps a pending gate's decision behind a disclosure that starts open", async () => {

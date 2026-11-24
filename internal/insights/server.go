@@ -225,6 +225,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/starters", s.listStarters)
 	api.HandleFunc("GET /api/starters/{id}", s.getStarter)
 	api.HandleFunc("GET /api/dashboards", s.listDashboards)
+	api.HandleFunc("GET /api/application-dashboards", s.listApplicationDashboards)
 	api.HandleFunc("GET /api/dashboards/{id}", s.getDashboard)
 	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)

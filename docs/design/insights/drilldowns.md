@@ -15,6 +15,8 @@ Library imports allocate all new IDs before rewriting links between imported das
 
 ## Document contract
 
+A widget's `drilldowns` entry is either a dashboard link (`dashboardId`, optional `carryTimeRange` and `bindings`) or an application link. An application link has `id`, `title` and `application: {namespace, name}`. Each of `namespace` and `name` is `{source: "label" | "constant", value}`: a label names a key of the signal, and a constant is a fixed name of 1 to 253 characters. An application link opens the Paprika application page. It never carries a dashboard ID, and a link with both is refused. The Go validator (`validateApplicationLink`) and Zod (`widgetLinkSchema`) reach the same verdict.
+
 ### Filter this dashboard from a selection
 
 Timeseries, bar, table, heatmap and trace widgets, and the record treemap, table, list, matrix, record line/bar chart, pie, status-history, geo-heatmap and connection-map plugins, can set dashboard variables from a selection. Add the variable first, then add a selection binding on the widget's **Links** tab and choose its field or label. Activating a mark applies the filter to other queries:

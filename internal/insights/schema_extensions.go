@@ -34,6 +34,12 @@ func validateDashboardExtensions(root map[string]json.RawMessage) error {
 			}
 		}
 	}
+	// covers runs last: its variable and widget checks read the declared variables and widgets.
+	if raw, ok := root["covers"]; ok {
+		if err := validateDashboardCovers(raw, root); err != nil {
+			return in("covers", err)
+		}
+	}
 	return nil
 }
 

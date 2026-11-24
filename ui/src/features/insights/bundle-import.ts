@@ -2,7 +2,7 @@ import { checksFromError, type InsightsClient } from "./client"
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { documentFingerprint } from "./fingerprint"
 import { compactDashboardLayout } from "./layout-compaction"
-import { dashboardSchema, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
+import { dashboardSchema, isApplicationLink, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
 import {
   buildDashboardBundle, parseDashboardBundle, queryImportStatus,
   remapBundleQueryReferences, savedQueryFingerprint, selectBundleDashboards,
@@ -241,7 +241,7 @@ export function createBundleImporter() {
             const target = compactDashboardLayout(dashboardSchema.parse({
               ...resolved, id: session.dashboardIds.get(document.id)!,
               widgets: resolved.widgets.map(widget => ({ ...widget, ...(widget.drilldowns ? {
-                drilldowns: widget.drilldowns.map(link => ({ ...link, dashboardId: session!.dashboardIds.get(link.dashboardId) ?? link.dashboardId })),
+                drilldowns: widget.drilldowns.map(link => isApplicationLink(link) ? link : ({ ...link, dashboardId: session!.dashboardIds.get(link.dashboardId) ?? link.dashboardId })),
               } : {}) })),
             }))
             const fingerprint = documentFingerprint(target)

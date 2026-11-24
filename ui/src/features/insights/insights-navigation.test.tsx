@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
-import type { Dashboard, Drilldown } from "./schema"
+import type { Dashboard, WidgetLink } from "./schema"
 import type { DrilldownContext } from "./drilldown"
 import type { QueryFetcher } from "./query"
 import { parseDashboardURL } from "./drilldown"
@@ -10,7 +10,7 @@ import { parseDashboardURL } from "./drilldown"
 vi.mock("./canvas", () => ({
   DashboardCanvas: ({ dashboard, fetcher, tooltipFetcher, onDrilldown }: {
     dashboard: Dashboard; fetcher: QueryFetcher; tooltipFetcher: QueryFetcher;
-    onDrilldown: (link: Drilldown, context: DrilldownContext) => void;
+    onDrilldown: (link: WidgetLink, context: DrilldownContext) => void;
   }) => <div>
     <output data-testid="view-range">{JSON.stringify(dashboard.customTimeRange)}</output>
     <button onClick={() => onDrilldown(dashboard.widgets[0].drilldowns![0], {
@@ -153,7 +153,7 @@ describe("dashboard navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import 1 as new" }))
     await waitFor(() => expect(imports).toHaveLength(2))
     expect(imports[0].id).not.toBe("target")
-    expect(imports[1].widgets[0].drilldowns![0].dashboardId).toBe(imports[0].id)
+    expect(imports[1].widgets[0].drilldowns![0]).toMatchObject({ dashboardId: imports[0].id })
     expect(imports[1].widgets[0].providerId).toBe("corrected")
     expect(imports[1].widgets[0].options?.tooltipView?.source).toMatchObject({ providerId: "corrected" })
     expect(vi.mocked(api.save).mock.calls[1][0].id).toBe(imports[1].id)

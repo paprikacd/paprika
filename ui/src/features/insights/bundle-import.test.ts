@@ -139,7 +139,7 @@ describe("portable bundle persistence", () => {
     const detailId = [...f.dashboards.keys()][0]
     const firstId = vi.mocked(save).mock.calls[0][0].id
     expect(await f.run(batch, f.environment)).toMatchObject({ complete: true, added: 1, totalAdded: 2 })
-    expect(f.dashboards.get(firstId)?.widgets[0].drilldowns?.[0].dashboardId).toBe(detailId)
+    expect(f.dashboards.get(firstId)?.widgets[0].drilldowns?.[0]).toMatchObject({ dashboardId: detailId })
     expect(f.client.save).toHaveBeenCalledTimes(3)
   })
 
@@ -375,6 +375,6 @@ describe("reviewed import updates", () => {
     const copyId = [...f.dashboards.keys()].find(id => id !== dashboard.id)!
     await expect(f.run({ ...f.update, dashboardChoices: { overview: "copy", "copy-source": "copy" } }, f.environment)).rejects.toThrow("destinations are fixed")
     expect(await f.run(f.update, f.environment)).toMatchObject({ complete: true })
-    expect(f.dashboards.get(dashboard.id)?.widgets[0].drilldowns?.[0].dashboardId).toBe(copyId)
+    expect(f.dashboards.get(dashboard.id)?.widgets[0].drilldowns?.[0]).toMatchObject({ dashboardId: copyId })
   })
 })

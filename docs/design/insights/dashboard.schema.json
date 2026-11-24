@@ -52,6 +52,67 @@
       "maxLength": 64,
       "description": "IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of chart axes, metric tooltips, observation inspectors, comparison windows, status history and range labels. Omitted, these displays use the viewer's zone. UTC-based calendar aggregation and raw ISO timestamps are unchanged."
     },
+    "covers": {
+      "type": "object",
+      "properties": {
+        "applications": {
+          "minItems": 1,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+                "description": "A Kubernetes namespace name: lowercase letters, digits and hyphens, at most 63 characters."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+                "description": "An application name: lowercase letters, digits, dots and hyphens, at most 253 characters."
+              }
+            },
+            "additionalProperties": false,
+            "description": "One application. An omitted namespace or name matches any value, so an empty object matches every application."
+          },
+          "description": "The applications this dashboard covers. The dashboard is listed for an application that matches any entry."
+        },
+        "variables": {
+          "description": "Maps a declared dashboard variable to the application namespace or name it takes.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "namespace",
+              "name"
+            ]
+          }
+        },
+        "summaryWidget": {
+          "description": "The id of the widget shown as the summary on an application page.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+        }
+      },
+      "required": [
+        "applications"
+      ],
+      "additionalProperties": false,
+      "description": "The applications this dashboard is for. Application pages list the dashboards whose coverage matches."
+    },
     "variables": {
       "maxItems": 20,
       "type": "array",
@@ -1248,68 +1309,148 @@
             "maxItems": 8,
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
-                },
-                "title": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120
-                },
-                "dashboardId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
-                },
-                "carryTimeRange": {
-                  "type": "boolean"
-                },
-                "bindings": {
-                  "maxItems": 20,
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "variable": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 64,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                      },
-                      "source": {
-                        "type": "string",
-                        "enum": [
-                          "label",
-                          "value",
-                          "series",
-                          "constant"
-                        ]
-                      },
-                      "value": {
-                        "type": "string",
-                        "maxLength": 1024
-                      }
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
                     },
-                    "required": [
-                      "variable",
-                      "source"
-                    ],
-                    "additionalProperties": false
-                  }
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "dashboardId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                    },
+                    "carryTimeRange": {
+                      "type": "boolean"
+                    },
+                    "bindings": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "variable": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "label",
+                              "value",
+                              "series",
+                              "constant"
+                            ]
+                          },
+                          "value": {
+                            "type": "string",
+                            "maxLength": 1024
+                          }
+                        },
+                        "required": [
+                          "variable",
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "dashboardId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "application": {
+                      "type": "object",
+                      "properties": {
+                        "namespace": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "label",
+                                "constant"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "name": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "label",
+                                "constant"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "namespace",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "application"
+                  ],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "id",
-                "title",
-                "dashboardId"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "selectionBindings": {
