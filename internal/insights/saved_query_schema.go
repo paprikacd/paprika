@@ -355,7 +355,7 @@ func validateSavedQueryParameter(item json.RawMessage, types map[string]string) 
 		return err
 	}
 	var parameter SavedQueryParameter
-	if json.Unmarshal(item, &parameter) != nil || !validVariableName(parameter.Name) || types[parameter.Name] != "" || stringUnits(parameter.Label) > 80 || (parameter.Type != "string" && parameter.Type != "number") {
+	if json.Unmarshal(item, &parameter) != nil || !validVariableName(parameter.Name) || types[parameter.Name] != "" || textLength(parameter.Label) > 80 || (parameter.Type != "string" && parameter.Type != "number") {
 		return errors.New("saved query parameters require unique valid names, bounded labels, and string or number types")
 	}
 	if err := validateSeveralValues(&parameter); err != nil {
@@ -508,14 +508,14 @@ func validSavedQueryMetadataEntry(key, value string) bool {
 }
 
 func validateSavedQueryText(query *SavedQuery) error {
-	if trimJS(query.Name) == "" || stringUnits(trimJS(query.Name)) > 120 || stringUnits(query.Description) > 500 || trimJS(query.Query) == "" || stringUnits(trimJS(query.Query)) > 8192 {
+	if trimJS(query.Name) == "" || textLength(trimJS(query.Name)) > 120 || textLength(query.Description) > 500 || trimJS(query.Query) == "" || textLength(trimJS(query.Query)) > 8192 {
 		return errors.New("saved query name, description, or query exceeds its bounds")
 	}
 	return nil
 }
 
 func validTooltipQueryLabel(tooltip bool, label string) bool {
-	return tooltip && label != "" && stringUnits(label) <= 128
+	return tooltip && label != "" && textLength(label) <= 128
 }
 func validTooltipQueryField(tooltip bool, field string) bool {
 	return tooltip && slices.Contains([]string{"value", "timestamp", "series"}, field)

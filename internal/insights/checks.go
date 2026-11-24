@@ -294,8 +294,8 @@ func unanchoredSchemaInto(set *findingSet, id string, document Dashboard) {
 	}
 	shapeOK := widgetShapeInto(set, widgets)
 	var header dashboardHeader
-	if json.Unmarshal(document, &header) != nil {
-		set.add(findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
+	if err := json.Unmarshal(document, &header); err != nil {
+		set.add(findingAt("", structDecodeError(err), ""))
 		return
 	}
 	for _, finding := range identityFindings(id, &header) {
@@ -388,8 +388,8 @@ func widgetContentInto(set *findingSet, widgets []json.RawMessage, shapeOK []boo
 			continue
 		}
 		var widget dashboardWidget
-		if json.Unmarshal(raw, &widget) != nil {
-			set.add(findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
+		if err := json.Unmarshal(raw, &widget); err != nil {
+			set.add(findingAt(widgetBase(i), structDecodeError(err), widgetIDOf(raw)))
 			continue
 		}
 		if err := validateDashboardWidget(&widget, seen); err != nil {
@@ -547,6 +547,19 @@ func decodeMember(raw []byte, v any, message string) error {
 		return errAt(fieldPointer(typeErr.Field), message)
 	}
 	return errors.New(message)
+}
+
+// structDecodeError is the finding for a document or widget that does not decode into its Go struct. Its integer
+// members (schemaVersion, refreshInterval, layout) refuse an integral number spelled 2.0 or 2e0. JavaScript reads that
+// spelling as 2, so the editor never sends it, but an API client can; the finding names the member and the spelling
+// instead of calling a valid JSON object invalid. Stored documents keep their bytes and every Go reader decodes these
+// members as integers, so accepting the spelling here would only move the failure to a later read.
+func structDecodeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) && typeErr.Field != "" && strings.HasPrefix(typeErr.Value, "number") {
+		return errAt(fieldPointer(typeErr.Field), typeErr.Field+" must be a whole number written without a decimal point or exponent, such as 2")
+	}
+	return errAt("", "dashboard must be a valid JSON object")
 }
 
 // fieldPointer turns the dotted member path encoding/json reports into a JSON Pointer.

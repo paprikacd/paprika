@@ -49,7 +49,7 @@ func validateDashboardFolder(raw json.RawMessage) error {
 		return errors.New("folder must be a string")
 	}
 	folder = trimJS(folder)
-	if folder == "" || stringUnits(folder) > 160 || folderUnsafe.MatchString(folder) {
+	if folder == "" || textLength(folder) > 160 || folderUnsafe.MatchString(folder) {
 		return errors.New("folder must be a path of at most 160 characters")
 	}
 	for _, segment := range strings.Split(folder, "/") {
@@ -225,7 +225,7 @@ func validateWidgetAnnotationColumns(fields map[string]json.RawMessage) error {
 			continue
 		}
 		var column string
-		if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || stringUnits(column) > 128 {
+		if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || textLength(column) > 128 {
 			return fieldErr(name, "event query column names must contain 1–128 characters")
 		}
 	}
@@ -467,7 +467,7 @@ func validateTooltipQuerySource(raw json.RawMessage, providerID, query string) e
 	if !validID.MatchString(providerID) {
 		return fieldErr("providerId", "tooltip query source requires a valid provider ID and query up to 8192 characters")
 	}
-	if trimJS(query) == "" || stringUnits(trimJS(query)) > 8192 {
+	if trimJS(query) == "" || textLength(trimJS(query)) > 8192 {
 		return fieldErr("query", "tooltip query source requires a valid provider ID and query up to 8192 characters")
 	}
 	if rawBindings, ok := fields["bindings"]; ok {
@@ -519,7 +519,7 @@ func validateWidgetAxisLabels(options map[string]json.RawMessage) error {
 	for _, field := range []string{"xAxisLabel", "yAxisLabel"} {
 		if value, ok := options[field]; ok {
 			var text string
-			if json.Unmarshal(value, &text) != nil || stringUnits(text) > 80 {
+			if json.Unmarshal(value, &text) != nil || textLength(text) > 80 {
 				return fieldErr(field, "axis labels must be strings of at most 80 characters")
 			}
 		}
@@ -537,7 +537,7 @@ func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error
 		field, limit := bound.field, bound.limit
 		if value, ok := options[field]; ok {
 			var text string
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || stringUnits(text) > limit {
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || textLength(text) > limit {
 				return fieldErr(field, fmt.Sprintf("%s must be a string of at most %d characters", field, limit))
 			}
 		}
@@ -668,7 +668,7 @@ func validateWidgetReferenceLine(raw json.RawMessage) error {
 
 func validateReferenceLineLabel(raw json.RawMessage) error {
 	var text string
-	if json.Unmarshal(raw, &text) != nil || stringUnits(text) < 1 || stringUnits(text) > 80 {
+	if json.Unmarshal(raw, &text) != nil || textLength(text) < 1 || textLength(text) > 80 {
 		return errors.New("reference line labels must be 1 to 80 characters")
 	}
 	return nil
@@ -795,7 +795,7 @@ func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
 	if !validPromLabel.MatchString(rule.Label) || len(rule.Label) > 100 {
 		return [2]string{}, fieldErr("label", "series colors require a valid metric label, nonempty value, and six-digit hex color")
 	}
-	if stringUnits(rule.Value) < 1 || stringUnits(rule.Value) > 256 {
+	if textLength(rule.Value) < 1 || textLength(rule.Value) > 256 {
 		return [2]string{}, fieldErr("value", "series colors require a valid metric label, nonempty value, and six-digit hex color")
 	}
 	if err := validateSeriesColorChoice(rule.Color, rule.Role); err != nil {
@@ -973,7 +973,7 @@ func validateTooltipText(view map[string]json.RawMessage) error {
 				return fieldErr(field, "tooltip title must not be empty")
 			}
 		}
-		if stringUnits(text) > maximum {
+		if textLength(text) > maximum {
 			return fieldErr(field, "tooltip title and unit must be bounded strings")
 		}
 	}
@@ -1026,7 +1026,7 @@ func validateTooltipBinding(rawBinding json.RawMessage, seen map[string]bool) er
 }
 
 func validTooltipLabelKey(label string) bool {
-	return label != "" && stringUnits(label) <= 128
+	return label != "" && textLength(label) <= 128
 }
 
 func reservedObjectKey(key string) bool {

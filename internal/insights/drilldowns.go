@@ -155,7 +155,7 @@ func validateLabelValuesSource(raw json.RawMessage) ([]string, error) {
 	if !validID.MatchString(source.ProviderID) {
 		return nil, fieldErr("providerId", message)
 	}
-	if source.Label == "" || stringUnits(source.Label) > 128 {
+	if source.Label == "" || textLength(source.Label) > 128 {
 		return nil, fieldErr("label", message)
 	}
 	if err := validateVariableSourceLimit(source.Limit); err != nil {
@@ -169,7 +169,7 @@ func validateLabelValuesSource(raw json.RawMessage) ([]string, error) {
 
 // validateVariableSourceSelector checks a selector template and returns its placeholder variables.
 func validateVariableSourceSelector(selector *string, message string) ([]string, error) {
-	if selector == nil || *selector == "" || stringUnits(*selector) > 1024 {
+	if selector == nil || *selector == "" || textLength(*selector) > 1024 {
 		return nil, fieldErr("selector", message)
 	}
 	var refs []string
@@ -206,7 +206,7 @@ func validateSavedQueryVariableSource(raw json.RawMessage) ([]string, error) {
 	if err := decodeMember(raw, &source, message); err != nil {
 		return nil, err
 	}
-	if source.Field == "" || stringUnits(source.Field) > 128 {
+	if source.Field == "" || textLength(source.Field) > 128 {
 		return nil, fieldErr("field", message)
 	}
 	if err := validateVariableSourceLimit(source.Limit); err != nil {
@@ -278,7 +278,7 @@ func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error
 	if !validVariableName(variable.Name) || seen[variable.Name] {
 		return fieldErr("name", message)
 	}
-	if stringUnits(variable.Label) > 80 {
+	if textLength(variable.Label) > 80 {
 		return fieldErr("label", message)
 	}
 	if err := validateDashboardVariableSeveral(fields, variable.Multi, variable.AllowAll); err != nil {
@@ -389,7 +389,7 @@ func validateDashboardLink(item json.RawMessage, seen map[string]bool) error {
 	if !validID.MatchString(link.DashboardID) {
 		return fieldErr("dashboardId", message)
 	}
-	if trimJS(link.Title) == "" || stringUnits(trimJS(link.Title)) > 120 {
+	if trimJS(link.Title) == "" || textLength(trimJS(link.Title)) > 120 {
 		return fieldErr("title", message)
 	}
 	seen[link.ID] = true
@@ -444,7 +444,7 @@ func validateApplicationLink(item json.RawMessage, seen map[string]bool) error {
 	if !validID.MatchString(link.ID) || seen[link.ID] {
 		return fieldErr("id", message)
 	}
-	if trimJS(link.Title) == "" || stringUnits(trimJS(link.Title)) > 120 {
+	if trimJS(link.Title) == "" || textLength(trimJS(link.Title)) > 120 {
 		return fieldErr("title", message)
 	}
 	seen[link.ID] = true
@@ -480,7 +480,7 @@ func validateApplicationValue(raw json.RawMessage, message string) error {
 	if value.Source != "label" && value.Source != "constant" {
 		return fieldErr("source", message)
 	}
-	if value.Value == "" || stringUnits(value.Value) > 253 {
+	if value.Value == "" || textLength(value.Value) > 253 {
 		return fieldErr("value", message)
 	}
 	return nil
