@@ -24,6 +24,8 @@ export const distributionConfigSchema = z.strictObject({
   colorScale: z.enum(["linear", "logarithmic"]).optional(),
   maxBuckets: z.number().int().min(1).max(48).optional(),
   maxColumns: z.number().int().min(8).max(120).optional(),
+  /** Trace search for a selected latency region: the provider to search and an optional TraceQL filter to narrow it. */
+  traces: z.strictObject({ providerId: z.string().trim().min(1).max(128), filter: z.string().trim().min(1).max(512).optional() }).optional(),
 });
 export const metricAnnotationSchema = z.strictObject({
   timestamp: z.iso.datetime({ offset: true }),
@@ -425,8 +427,29 @@ export interface DistributionData {
   groups: number;
 }
 
+/**
+ * One group's observation for one bucket at one time: the difference of its cumulative counts. Missing when either end is a gap,
+ * invalid when the counts decrease beyond floating-point noise. The tolerance is relative to the bucket's own scale, so a
+ * materially decreasing tiny rate is never reported as an observed zero.
+ */
+export function groupCell(group: HistogramGroup, bounds: readonly number[], index: number, timestamp: number): { value: number | null; state: "observed" | "missing" | "invalid" } {
+  const high = group.buckets.get(bounds[index])!.get(timestamp);
+  const low = index ? group.buckets.get(bounds[index - 1])!.get(timestamp) : 0;
+  if (!finite(high) || !finite(low)) return { value: null, state: "missing" };
+  const tolerance = Math.max(Math.abs(high), Math.abs(low)) * 1e-9;
+  if (high < 0 || low < 0 || high < low - tolerance) return { value: null, state: "invalid" };
+  return { value: Math.max(0, high - low), state: "observed" };
+}
+
 /** Input is cumulative bucket observations (normally query-side rates), not raw counter deltas over time. */
-export function buildDistribution(series: MetricSeries[], config: DistributionConfig): DistributionData {
+/** One histogram group: its labels, and each bucket's cumulative observations by time. Bucket boundaries are keys. */
+export interface HistogramGroup { labels: Record<string, string>; buckets: Map<number, Map<number, number | null>> }
+
+/**
+ * The histogram groups, their shared bucket boundaries and every returned time. Shared by the distribution and the region
+ * comparison, so both read one grouping. Throws when the groups cannot be pooled or their boundaries differ.
+ */
+export function groupHistograms(series: MetricSeries[], config: DistributionConfig): { histograms: HistogramGroup[]; bounds: number[]; allTimes: number[] } {
   const bucketLabel = config.bucketLabel ?? "le";
   const groups = new Map<string, { labels: Record<string, string>; buckets: Map<number, Map<number, number | null>> }>();
   for (const entry of series) {
@@ -457,21 +480,22 @@ export function buildDistribution(series: MetricSeries[], config: DistributionCo
   if (histograms.some(group => [...group.buckets.keys()].sort((a, b) => a - b).join(",") !== signature))
     throw new MetricDataError("Histogram groups have different bucket boundaries and cannot be summed.");
   const allTimes = [...new Set(histograms.flatMap(group => [...group.buckets.values()].flatMap(map => [...map.keys()])))].sort((a, b) => a - b);
+  return { histograms, bounds, allTimes };
+}
+
+export function buildDistribution(series: MetricSeries[], config: DistributionConfig): DistributionData {
+  const bucketLabel = config.bucketLabel ?? "le";
+  const { histograms, bounds, allTimes } = groupHistograms(series, config);
   const commonLabels = Object.fromEntries(Object.entries(histograms[0]?.labels ?? {}).filter(([key, value]) => histograms.every(group => group.labels[key] === value)));
   // Every bucket over every returned window, before truncation and sampling. A missing group makes the
   // cell missing even when another group is invalid. Invalid counts are reported per bucket.
-  const bucketCells = bounds.map((upper, index) => allTimes.map((timestamp): { value: number | null; state: DistributionCellState } => {
+  const bucketCells = bounds.map((_, index) => allTimes.map((timestamp): { value: number | null; state: DistributionCellState } => {
     let sum = 0, missing = false, invalid = false;
     for (const group of histograms) {
-      const high = group.buckets.get(upper)!.get(timestamp);
-      const low = index ? group.buckets.get(bounds[index - 1])!.get(timestamp) : 0;
-      if (!finite(high) || !finite(low)) { missing = true; break; }
-      // Compare floating-point noise relative to the actual bucket scale.
-      // An absolute floor would turn materially decreasing tiny rates into
-      // a fabricated observed zero.
-      const tolerance = Math.max(Math.abs(high), Math.abs(low)) * 1e-9;
-      if (high < 0 || low < 0 || high < low - tolerance) { invalid = true; continue; }
-      sum += Math.max(0, high - low);
+      const cell = groupCell(group, bounds, index, timestamp);
+      if (cell.state === "missing") { missing = true; break; }
+      if (cell.state === "invalid") { invalid = true; continue; }
+      sum += cell.value!;
     }
     if (missing) return { value: null, state: "missing" };
     if (invalid) return { value: null, state: "invalid" };
@@ -544,4 +568,93 @@ export function buildDistribution(series: MetricSeries[], config: DistributionCo
     rows: rows.map(row => ({ ...row, cells: indices.map(i => row.cells[i]) })), timestamps: indices.map(i => allTimes[i]), quantiles, merged, highest, bounds, max, minPositive,
     invalidCells, omittedBuckets: bounds.length - rows.length, sampled: indices.length < allTimes.length, groups: histograms.length,
   };
+}
+
+/** A selected latency region: the time window and an inclusive run of bucket indices into the histogram's bounds. */
+export interface HeatmapRegion { startTs: number; endTs: number; lowBucket: number; highBucket: number }
+
+/** One value of a label: its share of the selected cells and of the rest. Shares are fractions of each side's total. */
+export interface LabelValueShare { value: string; selected: number; rest: number }
+
+/** How one label splits the selected cells from the rest. `score` is half the total variation between the two shares. */
+export interface LabelComparison {
+  key: string;
+  score: number;
+  values: LabelValueShare[];
+  /** Values beyond the eight shown, pooled so each side still adds to its whole. */
+  otherSelected: number;
+  otherRest: number;
+}
+
+const MAX_COMPARED_KEYS = 8, MAX_COMPARED_VALUES = 8;
+/** Labels that identify the histogram itself rather than a group: they never split a comparison. */
+const IDENTITY_LABELS = new Set(["__name__"]);
+
+/**
+ * Compares the labels of the histogram groups inside a selected latency region with the rest of the window. Each (group,
+ * time, bucket) observation counts once; a missing or invalid observation counts as zero and is reported as skipped. Only
+ * labels that vary across groups can split the comparison. With one group nothing varies, so `keys` is empty.
+ */
+export function compareHistogramLabels(series: MetricSeries[], config: DistributionConfig, region: HeatmapRegion): { keys: LabelComparison[]; groups: number; skipped: number; selectedShare: number } {
+  const bucketLabel = config.bucketLabel ?? "le";
+  const { histograms, bounds, allTimes } = groupHistograms(series, config);
+  let selectedTotal = 0, restTotal = 0, skipped = 0;
+  const selected = new Map<string, Map<string, number>>(), rest = new Map<string, Map<string, number>>();
+  const keyNames = new Set<string>();
+  for (const group of histograms) for (const key of Object.keys(group.labels)) if (!IDENTITY_LABELS.has(key) && key !== bucketLabel && !(key in (config.group ?? {}))) keyNames.add(key);
+  const varying = [...keyNames].filter(key => new Set(histograms.map(group => group.labels[key] ?? "")).size > 1).sort().slice(0, MAX_COMPARED_KEYS);
+  for (const timestamp of allTimes) {
+    for (let index = 0; index < bounds.length; index++) {
+      const inRegion = timestamp >= region.startTs && timestamp <= region.endTs && index >= region.lowBucket && index <= region.highBucket;
+      for (const group of histograms) {
+        const cell = groupCell(group, bounds, index, timestamp);
+        if (cell.state !== "observed") {
+          if (inRegion) skipped++;
+          continue;
+        }
+        const bucket = inRegion ? selected : rest;
+        if (inRegion) selectedTotal += cell.value!;
+        else restTotal += cell.value!;
+        for (const key of varying) {
+          const value = group.labels[key] ?? "";
+          const byValue = bucket.get(key) ?? new Map<string, number>();
+          byValue.set(value, (byValue.get(value) ?? 0) + cell.value!);
+          bucket.set(key, byValue);
+        }
+      }
+    }
+  }
+  const shareOf = (map: Map<string, number> | undefined, value: string, total: number) => total > 0 ? (map?.get(value) ?? 0) / total : 0;
+  const keys: LabelComparison[] = varying.map(key => {
+    const values = new Set([...selected.get(key)?.keys() ?? [], ...rest.get(key)?.keys() ?? []]);
+    const shares = [...values].map(value => ({ value, selected: shareOf(selected.get(key), value, selectedTotal), rest: shareOf(rest.get(key), value, restTotal) }));
+    const score = shares.reduce((sum, share) => sum + Math.abs(share.selected - share.rest), 0) / 2;
+    const ranked = shares.toSorted((a, b) => b.selected - b.rest - (a.selected - a.rest) || a.value.localeCompare(b.value));
+    const shown = ranked.slice(0, MAX_COMPARED_VALUES), hidden = ranked.slice(MAX_COMPARED_VALUES);
+    return {
+      key, score, values: shown,
+      otherSelected: hidden.reduce((sum, share) => sum + share.selected, 0),
+      otherRest: hidden.reduce((sum, share) => sum + share.rest, 0),
+    };
+  }).sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
+  const total = selectedTotal + restTotal;
+  return { keys, groups: histograms.length, skipped, selectedShare: total > 0 ? selectedTotal / total : 0 };
+}
+
+/**
+ * The TraceQL for a selected latency region: spans whose duration lies in the region's bucket bounds, narrowed by the
+ * optional filter. Only second and millisecond bucket units convert to a duration. The -Inf and +Inf edges are open, so they
+ * add no clause.
+ */
+export function traceQLForRegion(region: HeatmapRegion, bounds: readonly number[], bucketUnit: string, filter?: string): { query: string } | { unavailable: string } {
+  if (bucketUnit !== "s" && bucketUnit !== "ms") return { unavailable: "Bucket unit must be s or ms to search traces by duration" };
+  const scale = bucketUnit === "s" ? 1000 : 1;
+  const lower = region.lowBucket > 0 ? bounds[region.lowBucket - 1] : -Infinity;
+  const upper = bounds[region.highBucket] ?? Infinity;
+  const ms = (value: number) => `${Number((value * scale).toPrecision(12))}ms`;
+  const clauses: string[] = [];
+  if (Number.isFinite(lower) && lower > 0) clauses.push(`duration >= ${ms(lower)}`);
+  if (Number.isFinite(upper)) clauses.push(`duration < ${ms(upper)}`);
+  const body = [...(filter ? [`(${filter})`] : []), ...clauses].join(" && ");
+  return { query: body ? `{ ${body} }` : "{}" };
 }
