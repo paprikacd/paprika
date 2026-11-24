@@ -47,9 +47,17 @@ sort last. A cut then drops whole nodes from the end. At most one node keeps som
 pods are listed as outside returned nodes. With `namespace` on the pod series, every pod would sort before every node and a
 cut would drop all node capacity first.
 
-The throttle matrix draws at most 36 columns. A longer result groups consecutive samples: a cell's share is the sum of
+The throttle matrix draws at most 36 columns, and fewer when the tile is narrow: it measures its width and keeps the
+columns that fit at 7 px each, so a row never wraps. A longer result groups consecutive samples: a cell's share is the sum of
 throttled periods over the sum of periods, and its counts are the mean per sample, because the samples are overlapping
 five-minute windows.
+
+## Layout
+
+The renderers style themselves with `kubernetes.module.css`, which loads with them, so they look the same in the product,
+the widget lab and the public gallery. `ui/e2e/insights-kubernetes-responsive.e2e.mjs` renders all four with the
+production fixtures at 2 to 12 column tile widths and 1512, 1024, 768 and 390 px viewports, light and dark, and fails on
+horizontal overflow, a wrapped row or a misaligned throttle header.
 
 ## Label and exporter assumptions
 
