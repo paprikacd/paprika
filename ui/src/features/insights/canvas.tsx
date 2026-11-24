@@ -55,6 +55,8 @@ import {
 import { dashboardRange } from "./time-range";
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 import { useStaggeredWindow } from "./refresh-stagger";
+import { prefetchSupported, useIdlePrefetch } from "./idle-prefetch";
+import type { QueryDiagnosticStore } from "./query-diagnostics";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
 import {
@@ -99,6 +101,11 @@ type Fetcher = (
   query: QueryRequest,
   signal: AbortSignal,
 ) => Promise<QueryResult>;
+
+/** The scheduler's receipts, when the fetcher reports them. Idle prefetch reads them to see whether the scheduler is busy. */
+function fetcherDiagnostics(fetcher: Fetcher): QueryDiagnosticStore | undefined {
+  return (fetcher as { diagnostics?: QueryDiagnosticStore }).diagnostics;
+}
 /** The selected widget's latest result, reported with the fetcher it came from. */
 export interface WidgetResultSnapshot {
   widgetId: string;
@@ -239,6 +246,7 @@ const Tile = memo(function Tile({
   boardStart,
   boardEnd,
   refreshStaggerMs = 0,
+  prefetch = false,
   editing,
   draggable,
   naturalHeight = false,
@@ -269,6 +277,8 @@ const Tile = memo(function Tile({
   boardStart: number;
   boardEnd: number;
   refreshStaggerMs?: number;
+  /** The scheduler is idle enough to warm this tile before it is in view. */
+  prefetch?: boolean;
   editing: boolean;
   draggable: boolean;
   naturalHeight?: boolean;
@@ -317,7 +327,8 @@ const Tile = memo(function Tile({
         if (entry) setVisible(entry.isIntersecting);
       },
       {
-        rootMargin: "200px",
+        // A tile starts loading one viewport before it scrolls into view, so a scroll rarely waits on a query.
+        rootMargin: "100% 0px",
       },
     );
     observer.observe(element.current);
@@ -325,6 +336,9 @@ const Tile = memo(function Tile({
   }, []);
   // A focused editor stays engaged while its author scrolls down to query controls.
   const engaged = visible || focused;
+  // A prefetching tile queries once, before it is in view. Once it has an answer it waits for the viewport again.
+  const [prefetchedOnce, setPrefetchedOnce] = useState(false);
+  const prefetching = prefetch && !engaged && !prefetchedOnce;
   const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
   // A tile whose source is not in the loaded list waits while the list is pending or
   // unavailable. A loaded source queries even when the shared catalog failed, so local
@@ -339,10 +353,11 @@ const Tile = memo(function Tile({
     start,
     end,
     step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds),
-    enabled: active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
+    enabled: active && (engaged || prefetching) && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
     retention: memoryOf.retention,
   });
+  if (prefetching && settled && !prefetchedOnce) setPrefetchedOnce(true);
   // A paused, never-queried tile has no result yet; it is not an empty query
   // response. Keep that distinction through the observer-to-effect handoff.
   const canQuery = !!widget.queryRef || (!!provider && !!widget.providerId && !!widget.query.trim());
@@ -1005,6 +1020,12 @@ export function DashboardCanvas({
   }, [dashboard.id, dashboard.widgets, layout, draggable, editingOrder]);
   // Chips step through widgets in the order they are now laid out, so a drag in edit mode changes the order they follow.
   const attentionOrder = useMemo(() => [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => ({ id: item.i })), [layout]);
+  // Idle prefetch warms the next tiles in reading order, only when the board is read (not edited or focused),
+  // the scheduler reports diagnostics to measure its idleness, and Save-Data is off.
+  const prefetchIds = attentionOrder.map((item) => item.id);
+  const connection = typeof navigator === "undefined" ? undefined : (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  const diagnostics = fetcherDiagnostics(fetcher);
+  const prefetched = useIdlePrefetch(prefetchIds, diagnostics, active && !editing && !focus && !!diagnostics && prefetchSupported(prefetchIds.length, connection));
   const range = dashboardRange(dashboard, end);
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
@@ -1039,6 +1060,7 @@ export function DashboardCanvas({
                   boardStart={range.start}
                   boardEnd={range.end}
                   refreshStaggerMs={refreshStaggerMs}
+                  prefetch={prefetched.has(widget.id)}
                   naturalHeight={!focus && stackedView && intrinsicStat(widget)}
                   referenceCompact={referenceCompact && !editing}
                   editing={editing}
