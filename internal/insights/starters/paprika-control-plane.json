@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "paprika-control-plane",
   "title": "Paprika control plane",
-  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, phase counts, Insights' own query health, and control-plane container CPU and memory against requests and limits. Exhausted release retries turn critical above zero; stale applications, stuck releases and a degraded fleet index turn warning above zero.",
+  "description": "Whether Paprika is keeping up: apps behind spec, exhausted retries, stuck releases, fleet index health, controller liveness, reconcile lag, phase counts, Insights query health, and container CPU and memory (container_cpu_usage_seconds_total, container_memory_working_set_bytes, kube_pod_container_resource_requests, kube_pod_container_resource_limits). Exhausted retries turn critical above zero; stale apps, stuck releases and a degraded fleet index turn warning.",
   "timeRange": "6h",
   "refreshInterval": 30,
   "widgets": [
