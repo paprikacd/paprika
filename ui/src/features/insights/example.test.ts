@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { exampleQuery } from "./example";
+import { exampleDashboard, exampleQuery } from "./example";
+import { interpolateQuery, resolveDashboardVariables } from "./drilldown";
 import { resolveSavedQueryReference } from "./saved-queries";
 import type { SavedQuery } from "./schema";
 
@@ -53,15 +54,15 @@ describe("example service selector data", () => {
 
   it("preserves service availability outages when filtering up", async () => {
     const all = await query("up");
-    for (const name of ["repo-server", "worker-west", "auth-service"]) {
+    for (const name of ["payments", "worker-west", "auth-service"]) {
       expect((await query(`up{service=${JSON.stringify(name)}}`)).series)
         .toEqual(all.series!.filter((series) => series.labels.service === name));
     }
     expect((await query('up{service="worker-west"}')).series![0].points.at(-1)!.value).toBe(0);
-    expect((await query('up{service="repo-server"}')).series![0].points[30].value).toBe(0);
+    expect((await query('up{service="payments"}')).series![0].points[30].value).toBe(0);
   });
 
-  it.each(["missing-service", "", 'api-gateway"} or up{service="repo-server', "api-gateway\\prod\n{{service}}"])(
+  it.each(["missing-service", "", 'api-gateway"} or up{service="payments', "api-gateway\\prod\n{{service}}"])(
     "does not fall back to unscoped data for an unknown or escaped hovered label %j",
     async (service) => {
       expect((await hovered(service)).series).toEqual([]);
@@ -70,14 +71,25 @@ describe("example service selector data", () => {
   );
 
   it("decodes quoted matcher escapes and handles additional labels and spacing", async () => {
-    expect((await query('sum(rate(http_requests_total{job="paprika", service = "api\\u002dgateway"}[5m]))')).series)
+    expect((await query('sum(rate(http_requests_total{job="example", service = "api\\u002dgateway"}[5m]))')).series)
       .toEqual((await hovered("api-gateway")).series);
   });
 
   it("does not interpret another label's quoted data or a comment as a service selector", async () => {
-    const text = 'prefix }, service="repo-server" { {{service}}';
+    const text = 'prefix }, service="payments" { {{service}}';
     expect((await query(`sum(rate(http_requests_total{note=${JSON.stringify(text)}}[5m])) # service="missing"`)).series)
       .toEqual((await query("sum(rate(http_requests_total[5m]))")).series);
+  });
+
+  it("defaults the service variable so the stat widgets read one service", async () => {
+    const values = resolveDashboardVariables(exampleDashboard);
+    expect(values).toEqual({ service: "checkout" });
+    const requests = exampleDashboard.widgets.find((widget) => widget.id === "requests")!;
+    const result = await exampleQuery(
+      { providerId: "example-prometheus", kind: "metrics", query: interpolateQuery(requests.query, values), ...range },
+      signal,
+    );
+    expect(result.series!.map((series) => series.name)).toEqual(["checkout"]);
   });
 
   it("reports unsupported service operators instead of pretending to apply them", async () => {

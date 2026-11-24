@@ -23,13 +23,21 @@ export const exampleDashboard: Dashboard = {
   folder: "Examples/Services",
   timeRange: "1h",
   refreshInterval: 0,
+  variables: [
+    {
+      name: "service",
+      label: "Service",
+      defaultValue: "checkout",
+      options: ["api-gateway", "checkout", "payments", "worker-east", "worker-west", "auth-service"],
+    },
+  ],
   widgets: [
     {
       id: "requests",
       title: "Request rate",
       type: "stat",
       providerId: "example-prometheus",
-      query: "sum(rate(http_requests_total[5m]))",
+      query: "sum(rate(http_requests_total{service={{service}}}[5m]))",
       unit: "req/s",
       color: "#2867b9",
       options: { showSparkline: true, sparklinePlacement: "side", decimals: 0 },
@@ -41,7 +49,7 @@ export const exampleDashboard: Dashboard = {
       type: "stat",
       providerId: "example-prometheus",
       query:
-        "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) * 1000",
+        "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service={{service}}}[5m]))) * 1000",
       unit: "ms",
       color: "#087f8c",
       options: { showSparkline: true, sparklinePlacement: "side", decimals: 1 },
@@ -53,9 +61,8 @@ export const exampleDashboard: Dashboard = {
       type: "stat",
       providerId: "example-prometheus",
       query:
-        'sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100',
+        'sum(rate(http_requests_total{status=~"5..",service={{service}}}[5m])) / sum(rate(http_requests_total{service={{service}}}[5m])) * 100',
       unit: "%",
-      color: "#b65332",
       options: { showSparkline: true, sparklinePlacement: "side", decimals: 2 },
       layout: { x: 8, y: 0, w: 4, h: 2 },
     },
@@ -76,6 +83,7 @@ export const exampleDashboard: Dashboard = {
       providerId: "example-prometheus",
       query: "sum by (service) (rate(http_requests_total[5m]))",
       unit: "req/s",
+      selectionBindings: [{ variable: "service", source: "label", value: "service" }],
       layout: { x: 8, y: 2, w: 4, h: 4 },
     },
     {
@@ -88,12 +96,13 @@ export const exampleDashboard: Dashboard = {
       unit: "",
       options: {
         thresholds: [
-          { value: 0, color: "#c0644f", label: "Unavailable" },
-          { value: 1, color: "#648b76", label: "Healthy" },
+          { value: 0, status: "critical", label: "Unavailable" },
+          { value: 1, status: "ok", label: "Healthy" },
         ],
         showLegend: true,
         decimals: 0,
       },
+      selectionBindings: [{ variable: "service", source: "label", value: "service" }],
       layout: { x: 0, y: 6, w: 12, h: 4 },
     },
     {
@@ -111,8 +120,8 @@ export const exampleDashboard: Dashboard = {
 
 const exampleServices = [
   "api-gateway",
-  "release-controller",
-  "repo-server",
+  "checkout",
+  "payments",
   "worker-east",
   "worker-west",
   "auth-service",
@@ -156,10 +165,10 @@ export async function exampleQuery(
     return {
       series: selectedServices.map((name) => ({
         name,
-        labels: { service: name, job: "paprika" },
+        labels: { service: name, job: "example" },
         points: Array.from({ length: 121 }, (_, i) => ({
           timestamp: (request.start + ((request.end - request.start) * i) / 120) * 1000,
-          value: (name === "repo-server" && i >= 30 && i < 42) || (name === "worker-west" && i >= 81) ? 0 : 1,
+          value: (name === "payments" && i >= 30 && i < 42) || (name === "worker-west" && i >= 81) ? 0 : 1,
         })),
       })),
     }
@@ -169,23 +178,23 @@ export async function exampleQuery(
         {
           traceId: "e5a71bd983fa4a51",
           service: "api-gateway",
-          operation: "GET /api/applications",
+          operation: "GET /api/products",
           durationMs: 142,
           startTime: request.end * 1000 - 12000,
           status: "ok",
         },
         {
           traceId: "c87ab23e764b92c1",
-          service: "release-controller",
-          operation: "reconcile release",
+          service: "checkout",
+          operation: "POST /orders",
           durationMs: 286,
           startTime: request.end * 1000 - 28000,
           status: "ok",
         },
         {
           traceId: "a13dc9ed5a9e7f21",
-          service: "repo-server",
-          operation: "POST /render",
+          service: "payments",
+          operation: "POST /charge",
           durationMs: 510,
           startTime: request.end * 1000 - 42000,
           status: "error",
@@ -193,7 +202,7 @@ export async function exampleQuery(
         {
           traceId: "f92a6e20b3194d5a",
           service: "api-gateway",
-          operation: "GET /api/pipelines",
+          operation: "GET /api/cart",
           durationMs: 118,
           startTime: request.end * 1000 - 64000,
           status: "ok",
@@ -238,8 +247,8 @@ export const exampleMetadata: InsightsClient["metadata"] = async (id, options, s
     return { values: [], series: {
       sample: true, count: 9, limit: 1000, start: end - 86400, end,
       labels: [
-        { name: "job", cardinality: 1, values: ["paprika"] },
-        { name: "service", cardinality: 3, values: ["api-gateway", "release-controller", "repo-server"] },
+        { name: "job", cardinality: 1, values: ["example"] },
+        { name: "service", cardinality: 3, values: ["api-gateway", "checkout", "payments"] },
         { name: "status", cardinality: 3, values: ["200", "404", "500"] },
       ],
     } }
@@ -253,9 +262,9 @@ export const exampleMetadata: InsightsClient["metadata"] = async (id, options, s
     values:
       (
         {
-          service: ["api-gateway", "release-controller", "repo-server"],
+          service: ["api-gateway", "checkout", "payments"],
           cluster: ["omega", "delta"],
-          job: ["paprika"],
+          job: ["example"],
           status: ["200", "404", "500"],
         } as Record<string, string[]>
       )[options.label ?? ""] ?? [],
