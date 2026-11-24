@@ -13,7 +13,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["src/features/insights/plugins/**/*.{ts,tsx}", "src/features/insights/**/*-renderers.tsx", "src/features/insights/stat-sparkline.tsx"],
+    files: ["src/features/insights/plugins/**/*.{ts,tsx}", "src/features/insights/**/*-renderers.tsx", "src/features/insights/renderers/**/*.{ts,tsx}", "src/features/insights/stat-sparkline.tsx"],
     ignores: ["src/features/insights/tooltip-dismiss.ts", "src/features/insights/observation-owner.ts", "**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": ["error", observationTimerRule],

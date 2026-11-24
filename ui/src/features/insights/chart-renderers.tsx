@@ -62,6 +62,7 @@ import { TimeSeriesChart } from "./time-series-chart";
 import { BarChart } from "./bar-chart";
 import { displaySeriesNames } from "./series-display";
 import { sourceNotice, truncationOf } from "./truncation";
+import { Trace, MAX_ROWS, statusReported, critical, criticalStroke } from "./renderers/shared";
 export { TimeSeriesChart, resolveTimeSeriesDomain } from "./time-series-chart";
 export { BarChart } from "./bar-chart";
 export { ChartDataInspector } from "./chart-data-inspector";
@@ -72,27 +73,6 @@ export {
   chartYAxisLayout,
 } from "./chart-renderer-shared";
 
-type Trace = NonNullable<QueryResult["traces"]>[number];
-
-const MAX_ROWS = 100;
-
-/** The API's "unknown" means a search result did not report a status. */
-function statusReported(status: string | undefined): boolean {
-  const value = (status ?? "").trim().toLowerCase();
-  return value !== "" && value !== "unknown";
-}
-
-/** Heatmap cells take the critical frame only; warning cells keep their fill and label. */
-function critical(threshold: Threshold | undefined) {
-  return threshold?.status === "critical" ? "critical" : undefined;
-}
-/**
- * The frame is drawn in the cell's own text colour, which is the ink that reads on its fill. Page ink has only about
- * 1.2 to 1.3:1 against the critical fill, so it would not be visible.
- */
-function criticalStroke(threshold: Threshold | undefined): CSSProperties {
-  return critical(threshold) ? ({ "--status-stroke-color": "currentColor" } as CSSProperties) : {};
-}
 
 /** The value text a heatmap cell shows. Its width (heatmapValueEm) sizes the value so a long unit or number stays inside its cell. */
 function heatmapValueText(value: number | undefined, unit: Widget["unit"], decimals: number | undefined): string {
