@@ -391,6 +391,6 @@ export function registerDefaultWidgetPlugins() {
       { key: "showStatus", label: "Show status beside each horizontal gauge", kind: "boolean", help: "Shows the matching threshold label or Unknown for each gauge in a horizontal series bank." },
       { key: "label", label: "Meter label", kind: "text", placeholder: "Series name" },
     ],
-    parseConfig: (config) => gaugeConfigSchema.parse(config ?? {}),
+    configSchema: gaugeConfigSchema,
   });
 }

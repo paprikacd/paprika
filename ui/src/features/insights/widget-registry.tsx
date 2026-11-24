@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore, type ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
+import type { ZodType } from "zod";
 import { BuiltinWidgetRenderer } from "./chart-renderers";
 import type { DrilldownContext } from "./drilldown";
 import { barStylePresets, heatmapStylePresets, statStylePresets, timeseriesStylePresets } from "./style-presets";
@@ -49,7 +50,13 @@ export interface WidgetDefinition {
   listed?: boolean;
   /** Only expose controls the renderer actually implements. */
   styleControls?: readonly ("unit" | "decimals" | "color" | "legend" | "grid" | "tooltips")[];
+  /**
+   * Parses the plugin's configuration. Set configSchema instead when the plugin has a Zod schema; registration then
+   * derives parseConfig from it, so the editor, the viewer and the dashboard checks share one parser.
+   */
   parseConfig?: (config: Widget["config"]) => Widget["config"];
+  /** The plugin's configuration schema, which the registry turns into parseConfig. Each configuration must be an object. */
+  configSchema?: ZodType;
   /**
    * Checks loaded data against the configuration before the editor accepts it. Return one issue per problem;
    * an empty list means the renderer can draw the result. A check that throws is reported as one issue.
@@ -336,8 +343,14 @@ export function registerWidgetPlugin(plugin: WidgetPlugin): () => void {
     (typeof plugin.render !== "object" || !plugin.render)
   )
     throw new Error("Widget plugin needs a React renderer");
+  const parseConfig =
+    plugin.parseConfig ??
+    (plugin.configSchema
+      ? (config: Widget["config"]) => plugin.configSchema?.parse(config ?? {}) as Widget["config"]
+      : undefined);
   const definition = Object.freeze({
     ...plugin,
+    ...(parseConfig ? { parseConfig } : {}),
     type: "plugin" as const,
     ...(plugin.defaultOptions
       ? { defaultOptions: widgetOptionsSchema.parse(plugin.defaultOptions) }

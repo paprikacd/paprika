@@ -166,5 +166,5 @@ export function registerSmallMultiplesPlugin() {
     defaultConfig: { maxSeries: 6, columns: 3, maxPoints: 120 }, styleControls: ["unit", "decimals", "grid", "tooltips"],
     icon: Grid2X2, capabilities: { colorFallback: "series" },
     configFields: [{ key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 }, { key: "columns", label: "Columns", kind: "number", min: 1, max: 6, step: 1 }, { key: "maxPoints", label: "Maximum plotted samples", kind: "number", min: 8, max: 240, step: 1 }],
-    parseConfig: config => configSchema.parse(config ?? {}) });
+    configSchema });
 }

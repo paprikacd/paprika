@@ -1017,7 +1017,7 @@ export function registerRecordWidgetPlugins() {
         description: entry.description,
         render: entry.render,
         dataKind: "records",
-        parseConfig: (config) => entry.schema.parse(config ?? {}),
+        configSchema: entry.schema,
         ...("styleControls" in entry ? { styleControls: entry.styleControls } : {}),
         ...(entry.id === "record-table" ? {
           sizing: {

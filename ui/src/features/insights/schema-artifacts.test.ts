@@ -49,7 +49,7 @@ describe("published dashboard authoring artifacts", () => {
     }
     // Drop the four published refinements Zod cannot emit, then compare the generated remainder.
     const published = structuredClone(widget) as Record<string, unknown>
-    const at = (...keys: string[]) => keys.reduce((node, key) => (node as Record<string, unknown>)[key], published) as Record<string, unknown>
+    const at = (...keys: string[]) => keys.reduce<unknown>((node, key) => (node as Record<string, unknown>)[key], published) as Record<string, unknown>
     delete published.allOf
     delete at("properties", "options").allOf
     delete at("properties", "options", "properties", "thresholds", "items").anyOf

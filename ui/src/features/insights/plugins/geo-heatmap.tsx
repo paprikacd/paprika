@@ -90,7 +90,7 @@ export function registerGeoHeatmapPlugin() {
     sizing: { mode: "fill", minHeight: 320 },
     icon: Globe2,
     capabilities: { tooltipIntro: "Inspect a hex to see its recorded values and shared labels." },
-    parseConfig: config => geoHeatmapConfig.parse(config ?? {}), defaultConfig: { mode: "map", latitude: "latitude", longitude: "longitude", label: "label", aggregation: "count" },
+    configSchema: geoHeatmapConfig, defaultConfig: { mode: "map", latitude: "latitude", longitude: "longitude", label: "label", aggregation: "count" },
     styleControls: ["unit", "decimals", "legend", "grid", "tooltips"],
     configFields: [
       { key: "mode", label: "Layout", kind: "select", options: [{ value: "map", label: "Geographic hex bins" }, { value: "grid", label: "Record honeycomb" }] },

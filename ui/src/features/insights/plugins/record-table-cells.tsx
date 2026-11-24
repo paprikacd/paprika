@@ -16,7 +16,7 @@ import styles from "./records.module.css"
 const mappingSchema = z.strictObject({
   value: z.string().min(1).max(128),
   status: z.enum(statusLevels).optional(),
-  color: z.string().regex(/^#[\da-f]{6}$/i).optional(),
+  color: z.string().regex(/^#[\da-fA-F]{6}$/).optional(),
 }).refine(mapping => mapping.status !== undefined || mapping.color !== undefined, "Name a status or a hex colour")
 
 const cellStyle = z.strictObject({
