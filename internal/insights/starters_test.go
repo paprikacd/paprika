@@ -226,3 +226,29 @@ func TestStarterQueriesInterpolateWithTheirDefaults(t *testing.T) {
 		}
 	}
 }
+
+// TestStarterCoverageIsLimitedToNamespaceCapacity checks which starters claim applications. Only
+// namespace-capacity covers every application, through its namespace variable: its metrics carry the namespace label and
+// nothing else. The other starters assume the application name is a service label, which is not general, so they
+// declare no covers and do not appear on application pages.
+func TestStarterCoverageIsLimitedToNamespaceCapacity(t *testing.T) {
+	var covering []string
+	for _, starter := range readStarters(t) {
+		var head struct {
+			Covers json.RawMessage `json:"covers"`
+		}
+		if err := json.Unmarshal(starter.Document, &head); err != nil {
+			t.Fatalf("%s: %v", starter.ID, err)
+		}
+		if len(head.Covers) == 0 {
+			continue
+		}
+		covering = append(covering, starter.ID)
+		if starter.ID != "namespace-capacity" {
+			t.Errorf("%s declares covers; only namespace-capacity may, because its labels do not assume an application name", starter.ID)
+		}
+	}
+	if !slices.Equal(covering, []string{"namespace-capacity"}) {
+		t.Fatalf("covering starters = %v, want [namespace-capacity]", covering)
+	}
+}

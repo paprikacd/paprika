@@ -5,7 +5,6 @@
   "description": "The RED signals for one service: request rate, error ratio and latency. Assumes the common client-library metrics http_requests_total (with service, namespace and code labels, where code is the HTTP status) and http_request_duration_seconds_bucket (with service and namespace labels). The service variable defaults to .* (every service in the namespace); set it to one service name, or to a regex such as checkout|payments.",
   "timeRange": "1h",
   "refreshInterval": 30,
-  "covers": { "applications": [{}], "variables": { "namespace": "namespace", "service": "name" }, "summaryWidget": "request-rate" },
   "variables": [
     { "name": "service", "label": "Service", "defaultValue": ".*" },
     { "name": "namespace", "label": "Namespace", "defaultValue": "default" }

@@ -34,7 +34,8 @@ export function variableReferences(dashboard: Dashboard, name: string): Variable
       (tooltipSource?.type === "saved" && readsVariable(tooltipSource.ref.bindings, name)) ||
       (widget.selectionBindings ?? []).some((binding) => binding.variable === name) ||
       (widget.drilldowns ?? []).some((drilldown) =>
-        drilldown.dashboardId === dashboard.id && (drilldown.bindings ?? []).some((binding) => binding.variable === name),
+        // Application links carry no bindings and open no dashboard, so only dashboard drilldowns count.
+        "dashboardId" in drilldown && drilldown.dashboardId === dashboard.id && (drilldown.bindings ?? []).some((binding) => binding.variable === name),
       );
     if (reads) uses.push({ kind: "widget", widgetId: widget.id, widgetTitle: widget.title });
   }
@@ -66,7 +67,7 @@ export function rewriteVariableReferences(dashboard: Dashboard, renames: Readonl
     if (widget.annotationSource) widget.annotationSource.queryRef.bindings = mapBindings(widget.annotationSource.queryRef.bindings);
     if (widget.selectionBindings) widget.selectionBindings = mapSelection(widget.selectionBindings);
     for (const drilldown of widget.drilldowns ?? []) {
-      if (drilldown.dashboardId === dashboard.id) drilldown.bindings = mapSelection(drilldown.bindings);
+      if ("dashboardId" in drilldown && drilldown.dashboardId === dashboard.id) drilldown.bindings = mapSelection(drilldown.bindings);
     }
     const source = widget.options?.tooltipView?.source;
     if (source?.type === "saved" && source.ref.bindings) source.ref.bindings = mapBindings(source.ref.bindings);

@@ -79,7 +79,7 @@ describe("renaming references", () => {
       }),
     ], [{ name: "service" }]);
     const next = rewriteVariableReferences(dashboard, { service: "app" });
-    expect(next.widgets[0].drilldowns?.[0].bindings?.[0]).toMatchObject({ variable: "service" });
+    expect(next.widgets[0].drilldowns?.[0]).toMatchObject({ bindings: [{ variable: "service" }] });
     expect(next.widgets[0].queryRef?.bindings?.[0]).toMatchObject({ source: "constant", value: "prod" });
   });
 
