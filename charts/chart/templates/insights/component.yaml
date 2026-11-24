@@ -159,6 +159,10 @@ spec:
             {{- if not (kindIs "invalid" $capacity.dashboardQueryParallelism) }}
             - --dashboard-query-parallelism={{ $capacity.dashboardQueryParallelism }}
             {{- end }}
+            {{- /* The result cache budget is emitted only when set, so an older image still starts on its built-in. */}}
+            {{- if not (kindIs "invalid" .Values.insights.resultCacheMiB) }}
+            - --result-cache-mib={{ .Values.insights.resultCacheMiB }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8090

@@ -19,6 +19,23 @@ func parseCapacityFlags(t *testing.T, args ...string) insights.Capacity {
 }
 
 // Without flags the capacity is zero everywhere, so Insights applies its defaults.
+func TestResultCacheFlagDefaultsToSixteenMiBAndParses(t *testing.T) {
+	t.Parallel()
+	parse := func(args ...string) int {
+		fs := flag.NewFlagSet("insights", flag.ContinueOnError)
+		budget := registerResultCacheFlag(fs)
+		require.NoError(t, fs.Parse(args))
+		return *budget
+	}
+	require.Equal(t, insights.DefaultResultCacheMiB, parse())
+	require.Equal(t, 16, parse())
+	require.Equal(t, 0, parse("--result-cache-mib=0"), "zero disables the cache")
+	require.Equal(t, 128, parse("--result-cache-mib=128"))
+	require.EqualValues(t, -1, resultCacheBudget(insights.MaxResultCacheMiB+1), "an out of range budget is refused by NewServer")
+	require.EqualValues(t, -1, resultCacheBudget(-1))
+	require.EqualValues(t, 16, resultCacheBudget(16))
+}
+
 func TestCapacityFlagsDefaultToZero(t *testing.T) {
 	require.Equal(t, insights.Capacity{}, parseCapacityFlags(t))
 }

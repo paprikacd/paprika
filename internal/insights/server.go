@@ -37,6 +37,10 @@ type Config struct {
 	// to browsers. InsecureDev is exclusively for a loopback development server.
 	Token       string `json:"-"`
 	InsecureDev bool   `json:"-"`
+	// ResultCacheMiB is the byte budget of the shared result cache. Zero disables it;
+	// the largest accepted budget is MaxResultCacheMiB. It is int32 so Config stays under
+	// the size gocritic reports, and it sits after the bool to share its word.
+	ResultCacheMiB int32 `json:"resultCacheMiB,omitempty"`
 }
 
 type Server struct {
@@ -101,6 +105,9 @@ type Server struct {
 	// uploadRefusals counts saves and dry runs refused because the body budget was
 	// full, by route.
 	uploadRefusals metric.Int64Counter
+	// results is the shared result cache, nil when it is disabled. resultMetrics records its evictions and size.
+	results       *resultCache
+	resultMetrics *otelResultCacheMetrics
 }
 
 // defaultQueryBudget bounds one /api/query end to end.
@@ -140,6 +147,7 @@ func NewServer(config Config, store *Store) (*Server, error) {
 	if err := s.createInstruments(); err != nil {
 		return nil, err
 	}
+	s.results = newResultCache(int(config.ResultCacheMiB)<<20, s.resultMetrics, time.Now)
 	// Only a startup that has succeeded may move documents out of the stores, so the instruments come first.
 	if err := commitStartupQuarantine(store, savedQueries); err != nil {
 		return nil, err
@@ -164,6 +172,10 @@ func (s *Server) createInstruments() error {
 	s.uploadRefusals, err = newUploadRefusalCounter(meter)
 	if err != nil {
 		return err
+	}
+	s.resultMetrics, err = newResultCacheMetrics(meter)
+	if err != nil {
+		return fmt.Errorf("create result cache metrics: %w", err)
 	}
 	return registerRevisionFailureCounter(meter, s.store)
 }
@@ -926,6 +938,9 @@ func validateServerConfig(config *Config, store *Store) error {
 	}
 	if !config.InsecureDev && len(config.Token) < 32 {
 		return errors.New("PAPRIKA_INSIGHTS_TOKEN must contain at least 32 characters")
+	}
+	if config.ResultCacheMiB < 0 || int(config.ResultCacheMiB) > MaxResultCacheMiB {
+		return fmt.Errorf("result cache budget must be between 0 and %d MiB", MaxResultCacheMiB)
 	}
 	if len(config.Providers) > 32 {
 		return errors.New("at most 32 providers may be configured")
