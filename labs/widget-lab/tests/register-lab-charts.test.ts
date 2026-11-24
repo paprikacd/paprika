@@ -9,7 +9,6 @@ describe('lab renderer registration', () => {
 
     const { registerLabCharts } = await import('../src/charts/register-lab-charts');
     const { ZoomableConnectionMap } = await import('../src/renderer-extensions/connection-map');
-    const { DistributionHeatmap } = await import('@insights/plugins/rich-metrics');
     const { operationalRecordPluginEntries } = await import('@insights/plugins/operational-records');
     const { ThresholdGauge } = await import('@insights/plugins/threshold-gauge');
     registerLabCharts();
@@ -21,8 +20,8 @@ describe('lab renderer registration', () => {
     expect(productionEntry.render).not.toBe(ZoomableConnectionMap);
     expect(connectionMap?.configFields).toEqual(productionEntry.configFields);
     expect(connectionMap?.defaultConfig).toEqual(productionEntry.defaultConfig);
-    // Production's guarded defaults fill the rest of the same registry, with production's renderers.
-    expect(registry.getWidgetDefinition('plugin', 'distribution-heatmap')?.render).toBe(DistributionHeatmap);
+    // Production's guarded defaults fill the rest of the same registry. Its plugin renderers load on first use.
+    expect(registry.getWidgetDefinition('plugin', 'distribution-heatmap')?.render).toBeDefined();
     expect(registry.getWidgetDefinition('plugin', 'threshold-gauge')?.render).toBe(ThresholdGauge);
     expect(registry.getWidgetDefinition('plugin', 'record-table')).toBeDefined();
     expect(registry.getWidgetPlugins().filter(plugin => plugin.id === 'connection-map')).toHaveLength(1);

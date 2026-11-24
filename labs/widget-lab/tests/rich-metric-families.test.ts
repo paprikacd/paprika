@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries } from '@insights/plugins/rich-metrics';
+import { DirectionalTraffic, DistributionHeatmap, StackedTimeseries } from '@insights/plugins/rich-metrics-view';
 import { widgetSchema } from '@insights/schema';
 
 const timestamp = Date.UTC(2026, 9, 30, 13, 32, 8, 123);

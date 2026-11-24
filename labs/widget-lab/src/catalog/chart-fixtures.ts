@@ -36,6 +36,15 @@ export const chartCatalog: readonly CatalogFeature[] = [
   { id: 'incident-calendar', label: 'Incident calendar', question: 'On which UTC dates did recorded incidents start?', contract: 'Counts represent recorded incident starts, not outage duration or a claim of healthy coverage on empty dates. Calendar selection does not change an SLO denominator.', inspect: 'Select a date to see its aggregate and source labels.', presets: ['ready', 'empty', 'error'], owner: 'incident-calendar · IncidentCalendar / buildIncidentCalendar' },
   { id: 'connection-map', label: 'Connection geography', question: 'Where are the supplied connection observations located?', contract: 'WGS84 coordinates drive the same equirectangular projection as the land geometry. Values are exact observations; color comes from the supplied classification.', inspect: 'Scroll over the map to zoom; drag or use pan controls, select a location, then reset the world view. Ctrl/Command + scroll remains browser zoom.', presets: standard, owner: 'connection-map · buildConnectionMap + GeoMap', localExtension: 'Shared bounded viewport, stable location identity, fixed-size markers and accessible navigation.' },
 ];
+/**
+ * Entries whose fixture widget is a built-in type or a plugin listed in docs/design/insights/widget-plugins.json.
+ * Every other entry is a lab-only concept study. tests/catalog-tier.test.ts holds this list to the fixtures.
+ */
+export const productCatalogIds: ReadonlySet<string> = new Set<string>([
+  'stat', 'timeseries', 'directional-traffic', 'stacked-timeseries', 'distribution-heatmap', 'status-history', 'record-table',
+  'budget-meter', 'segmented-meter', 'incident-calendar', 'connection-map',
+  'kubernetes-placement', 'kubernetes-resource-bars', 'kubernetes-throttle-matrix', 'kubernetes-resource-trend',
+]);
 export const allChartCatalog: readonly CatalogFeature[] = [...chartCatalog, ...conceptChartCatalog, ...profilingChartCatalog, ...analyticsChartCatalog, ...spatialChartCatalog, ...explorationChartCatalog, ...energyChartCatalog, ...clinicalChartCatalog, ...waferChartCatalog, ...orbitalChartCatalog,...kubernetesChartCatalog,...performanceChartCatalog,...distributedChartCatalog];
 
 const base = { providerId: 'catalog-fixture', query: 'deterministic_catalog_fixture', layout: { x: 0, y: 0, w: 8, h: 5 } };
