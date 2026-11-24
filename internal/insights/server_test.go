@@ -193,7 +193,7 @@ func TestDashboardMatchesStrictFrontendContract(t *testing.T) {
 		"empty color":              strings.Replace(valid, `"type":"timeseries"`, `"type":"timeseries","color":""`, 1),
 		"css color":                strings.Replace(valid, `"type":"timeseries"`, `"type":"timeseries","color":"red"`, 1),
 		"long title":               string(dashboard("demo", strings.Repeat("a", 121))),
-		"long unicode title":       string(dashboard("demo", strings.Repeat("😀", 61))),
+		"long unicode title":       string(dashboard("demo", strings.Repeat("😀", 121))), // Zod counts code points
 		"only JS whitespace title": string(dashboard("demo", "\ufeff")),
 		"long unit":                strings.Replace(valid, `"unit":"req/s"`, `"unit":"`+strings.Repeat("x", 25)+`"`, 1),
 		"long query":               strings.Replace(valid, `"query":"up"`, `"query":"`+strings.Repeat("x", 8193)+`"`, 1),

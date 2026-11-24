@@ -81,7 +81,7 @@ const SAVED_QUERY_METADATA = {
 
 /** The dashboard document contract, with the published refinements attached. */
 export function dashboardJSONSchema(): Json {
-  const generated = z.toJSONSchema(dashboardSchema) as Json
+  const generated = z.toJSONSchema(dashboardSchema, { unrepresentable: "throw", override: ({ zodSchema }) => refuseFlaggedRegex(zodSchema, "dashboard") }) as Json
   const widget = (propertyNode(generated, "widgets").items ?? {}) as Json
   widget.allOf = structuredClone(WIDGET_ALL_OF)
   const options = propertyNode(widget, "options") as Json
@@ -95,7 +95,7 @@ export function dashboardJSONSchema(): Json {
 
 /** The saved-query contract. */
 export function savedQueryJSONSchema(): Json {
-  const generated = z.toJSONSchema(savedQuerySchema) as Json
+  const generated = z.toJSONSchema(savedQuerySchema, { unrepresentable: "throw", override: ({ zodSchema }) => refuseFlaggedRegex(zodSchema, "saved query") }) as Json
   return { $schema: generated.$schema, ...SAVED_QUERY_METADATA, ...withoutSchema(generated) }
 }
 
@@ -123,7 +123,7 @@ export function pluginConfigJSONSchema(definition: PluginConfigDefinition): Json
   const generated = z.toJSONSchema(definition.configSchema, {
     io: "input",
     unrepresentable: "throw",
-    override: ({ zodSchema }) => refuseFlaggedRegex(zodSchema, definition.id),
+    override: ({ zodSchema }) => refuseFlaggedRegex(zodSchema, `plugin "${definition.id}"`),
   }) as Json
   assertNoReferences(generated, definition.id)
   return { ...withoutSchema(generated), "x-dataKind": definition.dataKind }
@@ -143,12 +143,12 @@ export function pluginConfigBundle(definitions: readonly PluginConfigDefinition[
   }
 }
 
-function refuseFlaggedRegex(schema: unknown, pluginId: string) {
+function refuseFlaggedRegex(schema: unknown, contract: string) {
   const checks = (schema as { _zod?: { def?: { checks?: unknown[] } } })._zod?.def?.checks ?? []
   for (const check of checks) {
     const pattern = (check as { _zod?: { def?: { pattern?: RegExp } } })._zod?.def?.pattern
     if (pattern?.flags)
-      throw new Error(`plugin "${pluginId}": regex /${pattern.source}/${pattern.flags} has flags the published schema cannot carry`)
+      throw new Error(`${contract}: regex /${pattern.source}/${pattern.flags} has flags the published schema cannot carry`)
   }
 }
 
