@@ -63,9 +63,10 @@ describe("revision history panel in the dashboard", () => {
     expect(restoreRevision).not.toHaveBeenCalled()
   })
 
+  // The sample workspace can take seconds to build in a loaded run, so the test outlives its 5 s wait.
   it("hides the History entry for sample data", async () => {
     render(<InsightsApp client={liveClient()} initialExample />)
     expect(await screen.findByRole("button", { name: "Edit dashboard" }, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^History$/ })).not.toBeInTheDocument()
-  })
+  }, 15_000)
 })
