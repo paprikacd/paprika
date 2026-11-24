@@ -1424,7 +1424,7 @@ export function WidgetEditor({
                     </p>
                     {library.onOpenExplorer && <>
                       <p className={styles.hint}>Save your query in Explore, then choose Dashboard to return here. Your widget draft stays intact.</p>
-                      <GammaButton variant="secondary" onClick={library.onOpenExplorer}>Edit in Explore</GammaButton>
+                      <GammaButton variant="secondary" onClick={() => library.onOpenExplorer?.()}>Edit in Explore</GammaButton>
                     </>}
                     <GammaButton
                       variant="secondary"

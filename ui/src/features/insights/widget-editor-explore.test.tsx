@@ -18,6 +18,8 @@ describe("Edit in Explore for a linked saved query", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit in Explore" }));
     expect(onOpenExplorer).toHaveBeenCalledOnce();
+    // The click event is not a trace seed: a seeded open would remount Explore on an empty query and an invalid range.
+    expect(onOpenExplorer).toHaveBeenCalledWith();
     unmount();
 
     render(
