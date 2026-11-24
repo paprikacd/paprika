@@ -32,7 +32,8 @@ import {
 } from "../chart-renderers";
 import { formatMetricDetails } from "../chart-data";
 import styles from "../chart-styles.module.css";
-import { metricContext, validTimestamp } from "../widget-context";
+import { metricContext } from "../widget-context";
+import { latestRaw } from "../chart-kit/latest";
 import { widgetTextColor } from "../appearance";
 import { thresholdPaint, thresholdText } from "../status";
 import { STATUS_WORDS, StatusChip, bandReading } from "../status-chip";
@@ -57,8 +58,7 @@ type GaugeConfig = z.infer<typeof gaugeConfigSchema>;
 type GaugeSeries = NonNullable<WidgetRendererProps["result"]["series"]>[number];
 
 function latestGaugePoint(series: GaugeSeries) {
-  return series.points.reduce<(typeof series.points)[number] | undefined>((latest, point) =>
-    validTimestamp(point.timestamp) && (!latest || point.timestamp >= latest.timestamp) ? point : latest, undefined);
+  return latestRaw(series.points);
 }
 
 function gaugeBounds(widget: WidgetRendererProps["widget"]) {

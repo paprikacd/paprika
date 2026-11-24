@@ -11,7 +11,7 @@ import { formatBounds } from "../units";
 import { compactSeriesLabels } from "../series-display";
 import { occurrenceKeys } from "../tooltip-identity";
 import { useObservationOwner } from "../observation-owner";
-import { validTimestamp } from "../widget-context";
+import { latestRaw } from "../chart-kit/latest";
 import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
@@ -22,7 +22,7 @@ export const statusGridConfigSchema = z.strictObject({ maxSeries: z.number().int
 
 /** The current status is the newest recorded sample, even when it is null. */
 export function latestStatusPoint(series: Series): Point | undefined {
-  return series.points.reduce<Point | undefined>((latest, point) => validTimestamp(point.timestamp) && (!latest || point.timestamp >= latest.timestamp) ? point : latest, undefined);
+  return latestRaw(series.points);
 }
 
 export function StatusGrid({ widget, result, onContextChange, embedded }: WidgetRendererProps) {

@@ -12,7 +12,7 @@ import { thresholdPaint } from "../status"
 import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip"
 import type { Point, Series } from "../chart-data"
 import type { Threshold } from "../schema"
-import { validTimestamp } from "../widget-context"
+import { latestRaw } from "../chart-kit/latest"
 import { truncationNote } from "../truncation"
 import { useEmbeddedWidget } from "../widget-presentation"
 import { compactSeriesLabels } from "../series-display"
@@ -61,7 +61,7 @@ export function MetricPie({ widget, result, onContextChange, embedded }: WidgetR
     return ()=>observer?.disconnect()
   },[result,widget.options?.showLegend])
   const samples = useMemo(() => (result.series ?? []).map((series, index) => {
-    const latest = series.points.filter(point => validTimestamp(point.timestamp)).reduce<(typeof series.points)[number] | undefined>((last, point) => !last || point.timestamp >= last.timestamp ? point : last, undefined)
+    const latest = latestRaw(series.points)
     return { series, name: seriesName(series,index), latest }
   }), [result])
   const positive = samples.filter(sample => typeof sample.latest?.value === "number" && Number.isFinite(sample.latest.value) && sample.latest.value > 0)
