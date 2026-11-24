@@ -1,7 +1,10 @@
 import { supportsDashboardSelection } from "./selection-support";
+import { supportsAnnotationSource } from "./schema";
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -31,8 +34,9 @@ import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
 import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
 import { fullDateTimeOptions, latestPoint } from "./chart-data";
-import { priorWindowQuery, refineWindowQuery, statComparison, type ObservationWindow, type StatComparison } from "./time-window";
+import { comparisonOffset, priorWindowQuery, refineWindowQuery, statComparison, type ComparisonWindow, type ObservationWindow, type StatComparison } from "./time-window";
 import { StatComparisonContext, type StatComparisonState } from "./stat-comparison";
+import { BaselineContext, type BaselineState } from "./baseline-context";
 import { truncationOf } from "./truncation";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
@@ -117,9 +121,12 @@ export interface WidgetResultSnapshot {
  * What a canvas keeps for one widget between remounts: the last outcome it showed and whether its draw-in has played.
  * It lives with the canvas, so it ends with the page session and never reaches another user's session.
  */
-interface WidgetMemory { retained?: RetainedQuery; priorRetained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
+interface WidgetMemory { retained?: RetainedQuery; priorRetained?: RetainedQuery; baselineRetained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
+/** The dashboard's own recorded events, shared with every time-based widget that has no event source of its own. */
+const DashboardEventsContext = createContext<ReturnType<typeof useRecordedEvents> | undefined>(undefined);
+
 /** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
-function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; priorRetention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
+function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; priorRetention: QueryRetention; baselineRetention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
   return {
     retention: {
       read: () => memory.get(key)?.retained,
@@ -128,6 +135,10 @@ function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention:
     priorRetention: {
       read: () => memory.get(key)?.priorRetained,
       write: (priorRetained) => { memory.set(key, { ...memory.get(key), priorRetained, entered: memory.get(key)?.entered ?? false }); },
+    },
+    baselineRetention: {
+      read: () => memory.get(key)?.baselineRetained,
+      write: (baselineRetained) => { memory.set(key, { ...memory.get(key), baselineRetained, entered: memory.get(key)?.entered ?? false }); },
     },
     annotationRetention: {
       read: () => memory.get(key)?.annotation,
@@ -226,6 +237,60 @@ function StatComparisonScope({ widget, compare, fetcher, start, end, minStepSeco
     error: shown?.outcome ? undefined : shown?.error,
   }), [compare.good, compare.window, rangeMs, shown, widget.options?.decimals, widget.unit]);
   return <StatComparisonContext.Provider value={state}>{children}</StatComparisonContext.Provider>;
+}
+
+/**
+ * A time series with a baseline fetches its earlier window once the displayed result has a sample, as a stat's comparison does.
+ * A rolling baseline reads the chart's own samples and runs no query. The band waits for a settled earlier result of this range,
+ * so a new range never bands against the previous range's earlier window.
+ */
+function BaselineScope({ widget, baseline, fetcher, start, end, minStepSeconds, enabled, debounceMs, retention, primary, children }: {
+  widget: Widget;
+  baseline: NonNullable<NonNullable<Widget["options"]>["baseline"]>;
+  fetcher: Fetcher;
+  start: number;
+  end: number;
+  /** The provider's finest step; the earlier window keeps the primary query's step rule. */
+  minStepSeconds?: number;
+  enabled: boolean;
+  debounceMs: number;
+  retention: QueryRetention;
+  /** The result on screen, or undefined when there is none or it failed. */
+  primary?: QueryResult;
+  children: ReactNode;
+}) {
+  const rangeMs = useMemo(() => ({ start: start * 1000, end: end * 1000 }), [start, end]);
+  const span = rangeMs.end - rangeMs.start;
+  const rolling = baseline.window === "rolling";
+  const earlier = baseline.window === "rolling" ? undefined : priorWindowQuery(rangeMs, baseline.window, minStepSeconds);
+  const earlierRange = earlier && !("unavailable" in earlier) ? earlier : undefined;
+  const hasSample = !!primary?.series?.some(entry => latestPoint(entry));
+  const earlierQuery = useWidgetQuery(widget, {
+    fetcher,
+    start: earlierRange ? earlierRange.start : start,
+    end: earlierRange ? earlierRange.end : end,
+    step: earlierRange ? earlierRange.step : queryStep(span / 1000, DEFAULT_TARGET_POINTS, minStepSeconds),
+    enabled: enabled && !!earlierRange && hasSample,
+    debounceMs,
+    retention,
+  });
+  const offsetMs = rolling ? 0 : comparisonOffset(rangeMs, baseline.window as ComparisonWindow);
+  const stepMs = (earlierRange?.step ?? queryStep(span / 1000, DEFAULT_TARGET_POINTS, minStepSeconds)) * 1000;
+  const band = baseline.band ?? "range";
+  const unavailable = !rolling && !earlierRange;
+  const settled = earlierQuery.settled;
+  const priorData = earlierQuery.data;
+  const priorError = earlierQuery.error;
+  const priorKind = priorData ? truncationOf(priorData) : "none";
+  const state = useMemo<BaselineState>(() => {
+    const base = { window: baseline.window, band, offsetMs, stepMs, span };
+    if (rolling || !hasSample) return { ...base, state: "ready" };
+    if (unavailable) return { ...base, state: "unavailable" };
+    if (!settled) return { ...base, state: "loading" };
+    if (!priorData) return priorError ? { ...base, state: "error", error: priorError } : { ...base, state: "loading" };
+    return { ...base, state: "ready", prior: priorData, partial: priorKind !== "none" && priorKind !== "limit" };
+  }, [band, baseline.window, hasSample, offsetMs, priorData, priorError, priorKind, rolling, settled, span, stepMs, unavailable]);
+  return <BaselineContext.Provider value={state}>{children}</BaselineContext.Provider>;
 }
 
 // The layout edit a key or menu step asks for, or undefined when the key is not a step. Shared by the step and its blocked check.
@@ -364,7 +429,12 @@ const Tile = memo(function Tile({
   const canQuery = !!widget.queryRef || (!!provider && !!widget.providerId && !!widget.query.trim());
   const awaitingFirstResult = active && canQuery && !data && !error;
   const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && engaged && !library.loading && !library.error, memoryOf.annotationRetention);
-  const annotationState = widget.annotationSource && library.error ? { events: [], error: library.error } : annotationData;
+  // A widget's own event source always wins. Otherwise a time-based widget shows the dashboard's events unless it opts out.
+  const inheritedEvents = useContext(DashboardEventsContext);
+  const inheritsEvents = !widget.annotationSource && supportsAnnotationSource(widget.type, widget.pluginId) && widget.options?.showEvents !== false;
+  const annotationState = widget.annotationSource
+    ? (library.error ? { events: [], error: library.error } : annotationData)
+    : inheritsEvents && inheritedEvents ? inheritedEvents : annotationData;
   const fetchTrace = useCallback((traceId: string, signal: AbortSignal) => fetcher({
     providerId: widget.providerId, query: widget.query, kind: "traces", start, end,
     step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds), traceId,
@@ -391,6 +461,7 @@ const Tile = memo(function Tile({
   const refinable = provider?.minStepSeconds !== undefined;
   const windowActions = useMemo(() => ({ apply: editing ? undefined : onTimeRange, previous, refine: refinable ? refine : undefined, minStepSeconds: provider?.minStepSeconds, rangeEnd: end * 1000 }), [editing, onTimeRange, previous, refine, refinable, provider?.minStepSeconds, end]);
   const compare = widget.type === "stat" ? widget.options?.compare : undefined;
+  const baseline = widget.type === "timeseries" ? widget.options?.baseline : undefined;
   const connectionKey = queryConnectionKey(widget, { start, end });
   useEffect(() => {
     if (selected && onQueryFields) onQueryFields({ widgetId: widget.id, key: connectionKey, fetcher, fields: data && !error ? queryFields(data) : undefined });
@@ -794,6 +865,21 @@ const Tile = memo(function Tile({
             >
               {visualization}
             </StatComparisonScope>
+          ) : baseline ? (
+            <BaselineScope
+              widget={widget}
+              baseline={baseline}
+              fetcher={fetcher}
+              start={start}
+              end={end}
+              minStepSeconds={provider?.minStepSeconds}
+              enabled={active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider) && !error}
+              debounceMs={editing && selected ? 350 : 0}
+              retention={memoryOf.baselineRetention}
+              primary={savedQueryLoading || error ? undefined : data}
+            >
+              {visualization}
+            </BaselineScope>
           ) : visualization}</WidgetAttentionContext.Provider></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
         )}
       </div>
@@ -903,7 +989,7 @@ export function DashboardCanvas({
   const [memory] = useState(() => new Map<string, WidgetMemory>());
   useEffect(() => {
     // Forget widgets that were removed from this dashboard. Other dashboards keep theirs for a return visit.
-    const live = new Set(dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`));
+    const live = new Set([...dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`), `${dashboard.id}:dashboard-events`]);
     for (const key of memory.keys()) if (key.startsWith(`${dashboard.id}:`) && !live.has(key)) memory.delete(key);
   }, [dashboard.id, dashboard.widgets, memory]);
   const { width, containerRef, mounted } = useContainerWidth({
@@ -1030,6 +1116,11 @@ export function DashboardCanvas({
   const diagnostics = fetcherDiagnostics(fetcher);
   const prefetched = useIdlePrefetch(prefetchIds, diagnostics, active && !editing && !focus && !!diagnostics && prefetchSupported(prefetchIds.length, connection));
   const range = dashboardRange(dashboard, end);
+  // The dashboard's own event source is queried once for the canvas, and its events are shared with every time-based widget
+  // that has no source of its own. Its provider is the first time-based widget's, the same one a widget's own source uses.
+  const dashboardEventsRetention = useMemo(() => memoryFor(memory, `${dashboard.id}:dashboard-events`).annotationRetention, [memory, dashboard.id]);
+  const dashboardEventProvider = useMemo(() => dashboard.widgets.find(widget => supportsAnnotationSource(widget.type, widget.pluginId))?.providerId ?? "", [dashboard.widgets]);
+  const dashboardEvents = useRecordedEvents(dashboard.annotationSource, fetcher, dashboardEventProvider, range.start, range.end, active && !!dashboard.annotationSource && !library.loading && !library.error, dashboardEventsRetention);
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
   ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
@@ -1092,6 +1183,7 @@ export function DashboardCanvas({
     ? { mode: "fixed" }
     : dashboard.refreshInterval ? { mode: "every", seconds: dashboard.refreshInterval } : { mode: "off" };
   return (
+    <DashboardEventsContext.Provider value={dashboardEvents}>
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
     <AttentionStoreProvider>
     <SampleAsOfProvider>
@@ -1167,5 +1259,6 @@ export function DashboardCanvas({
     </SampleAsOfProvider>
     </AttentionStoreProvider>
     </DashboardTimeZoneProvider>
+    </DashboardEventsContext.Provider>
   );
 }

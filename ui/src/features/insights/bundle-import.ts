@@ -69,11 +69,14 @@ interface ImportSession {
 }
 function message(error: unknown) { return error instanceof Error ? error.message : "Import failed." }
 function referencedQueries(dashboard: Dashboard): Set<string> {
-  return new Set(dashboard.widgets.flatMap(widget => [
-    ...(widget.queryRef ? [widget.queryRef.id] : []),
-    ...(widget.annotationSource ? [widget.annotationSource.queryRef.id] : []),
-    ...(widget.options?.tooltipView?.source?.type === "saved" ? [widget.options.tooltipView.source.ref.id] : []),
-  ]))
+  return new Set([
+    ...(dashboard.annotationSource ? [dashboard.annotationSource.queryRef.id] : []),
+    ...dashboard.widgets.flatMap(widget => [
+      ...(widget.queryRef ? [widget.queryRef.id] : []),
+      ...(widget.annotationSource ? [widget.annotationSource.queryRef.id] : []),
+      ...(widget.options?.tooltipView?.source?.type === "saved" ? [widget.options.tooltipView.source.ref.id] : []),
+    ]),
+  ])
 }
 function checkBaseline(name: string, fingerprint: string, etag: string | undefined, baseline: ImportBaseline | undefined, replacing = false) {
   if (!baseline || baseline.fingerprint !== fingerprint || (baseline.etag !== undefined && baseline.etag !== etag))

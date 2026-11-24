@@ -200,6 +200,9 @@ func (s *Store) usesSavedQuery(id string) bool {
 					QueryRef struct{ ID string } `json:"queryRef"`
 				} `json:"source"`
 			}
+			AnnotationSource struct {
+				QueryRef struct{ ID string } `json:"queryRef"`
+			} `json:"annotationSource"`
 			Widgets []struct {
 				QueryRef         struct{ ID string } `json:"queryRef"`
 				AnnotationSource struct {
@@ -220,6 +223,9 @@ func (s *Store) usesSavedQuery(id string) bool {
 			if variable.Source.QueryRef.ID == id {
 				return true
 			}
+		}
+		if dashboard.AnnotationSource.QueryRef.ID == id {
+			return true
 		}
 		for _, widget := range dashboard.Widgets {
 			if widget.QueryRef.ID == id || widget.AnnotationSource.QueryRef.ID == id || (widget.Options.TooltipView.Source.Type == "saved" && widget.Options.TooltipView.Source.Ref.ID == id) {

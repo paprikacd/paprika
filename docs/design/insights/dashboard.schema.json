@@ -1258,6 +1258,34 @@
                 "type": "number",
                 "minimum": 8,
                 "maximum": 120
+              },
+              "baseline": {
+                "type": "object",
+                "properties": {
+                  "window": {
+                    "type": "string",
+                    "enum": [
+                      "previous",
+                      "1d",
+                      "7d",
+                      "rolling"
+                    ]
+                  },
+                  "band": {
+                    "type": "string",
+                    "enum": [
+                      "range",
+                      "p10p90"
+                    ]
+                  }
+                },
+                "required": [
+                  "window"
+                ],
+                "additionalProperties": false
+              },
+              "showEvents": {
+                "type": "boolean"
               }
             },
             "allOf": [
@@ -1658,10 +1686,144 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "required": [
+                "options"
+              ],
+              "properties": {
+                "options": {
+                  "required": [
+                    "baseline"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "type": {
+                  "const": "timeseries"
+                }
+              }
+            }
           }
         ],
         "additionalProperties": false
       }
+    },
+    "annotationSource": {
+      "type": "object",
+      "properties": {
+        "queryRef": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+            },
+            "bindings": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "parameter": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "source": {
+                        "type": "string",
+                        "const": "variable"
+                      },
+                      "variable": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "required": [
+                      "parameter",
+                      "source",
+                      "variable"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "parameter": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "source": {
+                        "type": "string",
+                        "const": "constant"
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 1024
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "parameter",
+                      "source",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "timestampColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "endColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "labelColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "severityColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "queryRef",
+        "timestampColumn",
+        "labelColumn"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

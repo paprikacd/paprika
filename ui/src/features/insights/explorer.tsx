@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { InsightsClient } from "./client";
+import type { ExplorerSeed } from "./saved-query-context";
 import {
   savedQuerySchema,
   type Dashboard,
@@ -155,6 +156,7 @@ function resultWidget(query: SavedQuery, type: string, config?: Widget["config"]
   };
 }
 
+
 export function Explorer({
   client,
   providers,
@@ -163,6 +165,7 @@ export function Explorer({
   onUse,
   onClose,
   initialProviderId,
+  initialSeed,
   active = true,
   onDirtyChange,
 }: {
@@ -173,29 +176,31 @@ export function Explorer({
   onUse: (query: SavedQuery) => void;
   onClose: () => void;
   initialProviderId?: string;
+  initialSeed?: ExplorerSeed;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(() =>
-    fromQuery(
-      newQuery(
-        providers.find((provider) => provider.id === initialProviderId) ??
-          preferredProvider(providers, () => true),
-      ),
-    ),
-  );
+  const [draft, setDraft] = useState<Draft>(() => {
+    const base = newQuery(
+      providers.find((provider) => provider.id === (initialSeed?.providerId ?? initialProviderId)) ??
+        preferredProvider(providers, () => true),
+    );
+    return fromQuery(initialSeed ? { ...base, kind: initialSeed.kind, query: initialSeed.query } : base);
+  });
   const [baseline, setBaseline] = useState(() => fingerprint(draft));
   const [persisted, setPersisted] = useState<SavedQueryEntry>();
   const [detailsTab, setDetailsTab] = useState("overview");
   const [testValues, setTestValues] = useState<Record<string, string>>({});
-  const [time, setTime] = useState<Dashboard>({
+  const [time, setTime] = useState<Dashboard>(() => ({
     schemaVersion: 1,
     id: "explore",
     title: "Explore",
     timeRange: "1h",
     refreshInterval: 0,
     widgets: [],
-  });
+    // A seeded search covers the chart's brushed range, so its traces are the ones the chart region names.
+    ...(initialSeed ? { customTimeRange: { from: new Date(initialSeed.start).toISOString(), to: new Date(initialSeed.end).toISOString() } } : {}),
+  }));
   const [view, setView] = useState<string>("timeseries");
   const [queryValid, setQueryValid] = useState(true);
   const [recordMappings, setRecordMappings] = useState<Record<string, Record<string, string>>>({});

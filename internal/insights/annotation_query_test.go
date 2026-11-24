@@ -18,9 +18,14 @@ func TestAnnotationSourceAcceptsTimeBasedVisualizations(t *testing.T) {
 		valid                      bool
 	}{
 		{"timeseries", "timeseries", "", true},
+		{"stat", "stat", "", true},
 		{"stacked", "plugin", "stacked-timeseries", true},
 		{"directional", "plugin", "directional-traffic", true},
+		{"heatmap", "plugin", "distribution-heatmap", true},
+		{"small multiples", "plugin", "small-multiples", true},
+		{"status history", "plugin", "status-history", true},
 		{"bar", "bar", "", false},
+		{"gauge", "gauge", "", false},
 		{"record-table", "plugin", "record-table", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -36,7 +41,7 @@ func TestAnnotationSourceAcceptsTimeBasedVisualizations(t *testing.T) {
 			if tc.valid {
 				require.NoError(t, err)
 			} else {
-				require.ErrorContains(t, err, "time-series or directional-traffic")
+				require.ErrorContains(t, err, "event queries require a time-based widget")
 			}
 		})
 	}
