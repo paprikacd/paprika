@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { renderSettled } from './support/render-settled';
 import { describe, expect, it } from 'vitest';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
 import { chartCatalog, makeCatalogFixture } from '../src/catalog/chart-fixtures';
@@ -27,7 +28,7 @@ describe('working chart capability coverage', () => {
   });
 
   for (const feature of chartCatalog) {
-    it(`${feature.id} accepts each supported fixture through the existing schema and registered renderer`, () => {
+    it(`${feature.id} accepts each supported fixture through the existing schema and registered renderer`, async () => {
       for (const preset of feature.presets) {
         const { widget, result } = makeCatalogFixture(feature.id, preset);
         expect(widgetSchema.safeParse(widget).success).toBe(true);
@@ -36,12 +37,13 @@ describe('working chart capability coverage', () => {
         expect(definition.dataKind).toBe(widgetKind(widget));
         const config = definition.parseConfig?.(widget.config) ?? widget.config;
         if (result.records) expect(parseRecordFrame(result.records)).toEqual(result.records);
-        const markup = renderToStaticMarkup(createElement(definition.render, { widget: { ...widget, config }, result, embedded: true }));
+        const markup = await renderSettled(createElement(definition.render, { widget: { ...widget, config }, result, embedded: true }));
         expect(markup).not.toContain('Widget could not render');
         expect(markup).not.toContain('Widget plugin unavailable');
         expect(markup).not.toContain('NaN');
       }
-    });
+      // The first lazy renderer load can take several seconds on a busy machine.
+    }, 30000);
   }
 
   it('preserves positive outbound input while the directional adapter mirrors its position', () => {

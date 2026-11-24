@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { getWidgetDefinition } from "../widget-registry";
 import { KUBERNETES_PLUGIN_IDS, kubernetesFixture, type KubernetesPluginId, type KubernetesPreset } from "./kubernetes-fixtures";
 import { registerKubernetesPlugins } from "./kubernetes-plugins";
-import { KubernetesPlacement, KubernetesResourceBars, KubernetesResourceTrend, KubernetesThrottleMatrix } from "./kubernetes-widgets";
+import { KubernetesPlacement } from "./kubernetes-placement";
+import { KubernetesResourceBars, KubernetesResourceTrend, KubernetesThrottleMatrix } from "./kubernetes-widgets";
 
 const ids = Object.values(KUBERNETES_PLUGIN_IDS) as KubernetesPluginId[];
 const presets: KubernetesPreset[] = ["ready", "gaps", "empty"];
@@ -41,8 +42,25 @@ describe("Kubernetes plugin renderers", () => {
       registerKubernetesPlugins();
       const html = render(id, preset);
       expect(html).not.toMatch(/NaN|Infinity|undefined/);
+      // Hover text comes from the shared observation tooltip, never a native title attribute.
+      expect(html).not.toMatch(/\stitle="/);
     });
   }
+
+  it("draws the placement as a node to pod treemap with the unrequested rest and pending pods", () => {
+    registerKubernetesPlugins();
+    const html = render(KUBERNETES_PLUGIN_IDS.placement, "ready");
+    expect(html).toContain('role="group"');
+    expect(html).toContain("Unrequested");
+    expect(html).toContain("Pending");
+    expect(html).not.toMatch(/<rect[^>]*data-kubernetes/);
+    expect(html).toMatch(/<svg[^>]*>.*<rect/s);
+  });
+
+  it("marks every interactive mark for the shared observation owner", () => {
+    registerKubernetesPlugins();
+    for (const id of ids) expect(render(id, "ready")).toContain("data-observation=");
+  });
 
   it("honours decimals in every numeric label", () => {
     registerKubernetesPlugins();

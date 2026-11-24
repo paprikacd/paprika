@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { lensRoutes } from '../src/lenses/lens-routes';
+import { allChartCatalog } from '../src/catalog/chart-fixtures';
 const markup = readFileSync('../../landing/index.html','utf8');
 const javascript = readFileSync('../../landing/chart-showcase.js','utf8');
 describe('public chart showcase',()=>{
@@ -31,6 +33,16 @@ describe('public chart showcase',()=>{
     expect(document.querySelector('[data-chart-route="charts"]')?.hasAttribute('aria-current')).toBe(false);
     expect(document.querySelector<HTMLAnchorElement>('[data-chart-open]')?.href).toBe(frame.src);
     expect(document.querySelector('[data-chart-caption]')?.textContent).toContain('workload placement');
+  });
+  it('states counts the gallery serves',()=>{
+    const count=(label:string)=>Number(new RegExp(`<strong>(\\d+)\\+?</strong> ${label}`).exec(markup)?.[1]);
+    expect(count('dashboard studies')).toBe(lensRoutes.length+2);
+    expect(count('chart examples')).toBeLessThanOrEqual(allChartCatalog.length);
+  });
+  it('labels concept studies and claims no more than the product renders',()=>{
+    expect(markup).toContain('Charts marked In Paprika use the product');
+    expect(markup).not.toContain("Paprika's real chart renderers");
+    for (const route of ['performance-workbench','finance','distributed-systems']) expect(markup).toMatch(new RegExp(`data-chart-route="${route}" data-chart-description="Concept study:`));
   });
   it('retains ordinary new-tab behaviour',()=>{
     const link=document.querySelector<HTMLAnchorElement>('[data-chart-route="finance"]')!;

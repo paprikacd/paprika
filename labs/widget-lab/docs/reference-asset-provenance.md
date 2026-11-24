@@ -9,6 +9,8 @@ Recorded 31 October 2026. The iteration-04 reference studies use native HTML and
 | `docs/reference/edge-watch.png` | User attachment `image(20261030-100941).png` | 1592 × 988 | `7ebe883c90ce7268416833f73a9476764d36f908fb190576e01839ea31192eb6` |
 | `docs/reference/reliability-room.png` | User attachment `image(20261030-100917).png` | 1592 × 988 | `389173443f4f686d1eef84850b83bbd50d088170030461d84d95da41a7de9a15` |
 
+The overlay copies in `public/reference/` are WebP renditions of these PNGs at the same 1592 × 988 size, made with `cwebp -q 85 -m 6`. `ReferenceCompare.tsx` loads them. The PNGs above stay the canonical sources, and the trace scripts read them.
+
 The user requested literal pixel reproduction. Labels, values, dates, table content, initial open inspectors and plot composition are reproduced as an **authored synthetic concept fixture**. This is not a recovered telemetry dataset or evidence that the pictured services, addresses or incidents were observed by Paprika. The earlier analytical lab retains its separate numerical contracts.
 
 ## Trace geometry

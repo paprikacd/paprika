@@ -40,11 +40,11 @@ describe("Kubernetes starter tiles", () => {
   it("store configs that the adapters accept on the matching fixtures", () => {
     const placement = widget(namespace, "placement");
     expect(placementConfigSchema.parse(placement.config ?? {})).toBeTruthy();
-    expect(placementModel(kubernetesFixture(KUBERNETES_PLUGIN_IDS.placement, "ready").result, placement.config).issues).toEqual([]);
+    expect(placementModel(kubernetesFixture(KUBERNETES_PLUGIN_IDS.placement, "ready").result, placement.config as never).issues).toEqual([]);
 
     const bars = widget(namespace, "resource-by-pod");
     expect(resourceBarsConfigSchema.parse(bars.config ?? {})).toBeTruthy();
-    expect(resourceGroups(kubernetesFixture(KUBERNETES_PLUGIN_IDS.bars, "ready").result, bars.config).issues).toEqual([]);
+    expect(resourceGroups(kubernetesFixture(KUBERNETES_PLUGIN_IDS.bars, "ready").result, bars.config as never).issues).toEqual([]);
 
     // The control plane groups by container, which the pod-keyed fixture does not carry; the parse is the check here.
     const cp = widget(controlPlane, "container-resources");
@@ -52,10 +52,10 @@ describe("Kubernetes starter tiles", () => {
 
     const throttle = widget(namespace, "throttle-by-pod");
     expect(throttleConfigSchema.parse(throttle.config ?? {})).toBeTruthy();
-    expect(throttleCells(kubernetesFixture(KUBERNETES_PLUGIN_IDS.throttle, "ready").result, throttle.config).issues).toEqual([]);
+    expect(throttleCells(kubernetesFixture(KUBERNETES_PLUGIN_IDS.throttle, "ready").result, throttle.config as never).issues).toEqual([]);
 
     const trend = widget(namespace, "resource-trend");
     expect(resourceTrendConfigSchema.parse(trend.config ?? {})).toBeTruthy();
-    expect(resourceStrips(kubernetesFixture(KUBERNETES_PLUGIN_IDS.trend, "ready").result, trend.config).issues).toEqual([]);
+    expect(resourceStrips(kubernetesFixture(KUBERNETES_PLUGIN_IDS.trend, "ready").result, trend.config as never).issues).toEqual([]);
   });
 });
