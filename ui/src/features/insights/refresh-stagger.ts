@@ -30,7 +30,9 @@ export function useStaggeredWindow(
   staggerMs: number,
 ): { start: number; end: number } {
   const [applied, setApplied] = useState({ start, end });
-  const immediate = staggerMs <= 0;
+  // Only a tick staggers: the same span moved forward. A new span or an earlier window is a range change, which
+  // every tile adopts at once even while the board's last change was an automatic tick.
+  const immediate = staggerMs <= 0 || end - start !== applied.end - applied.start || end < applied.end;
   if (immediate && (applied.start !== start || applied.end !== end)) setApplied({ start, end });
   useEffect(() => {
     if (immediate || (applied.start === start && applied.end === end)) return;

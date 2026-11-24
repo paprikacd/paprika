@@ -2421,7 +2421,7 @@ export default function InsightsApp({
                 fetcher={fetcher}
                 tooltipFetcher={scheduledFetcher}
                 end={alignedEnd}
-                refreshStaggerMs={autoTick ? refreshStaggerSpread(viewDashboard.refreshInterval ?? 0) : 0}
+                refreshStaggerMs={autoTick && !editing ? refreshStaggerSpread(viewDashboard.refreshInterval ?? 0) : 0}
                 editing={editing}
                 dense={dense}
                 referenceCompact={compactShell && finePointer}

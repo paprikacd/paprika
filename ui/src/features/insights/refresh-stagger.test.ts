@@ -42,43 +42,59 @@ describe("staggerOffsetMs", () => {
 
 describe("useStaggeredWindow", () => {
   it("adopts a new window at once with no stagger", () => {
-    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow("requests", 0, end, 0), { initialProps: { end: 100 } });
-    expect(result.current).toEqual({ start: 0, end: 100 });
+    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow("requests", end - 60, end, 0), { initialProps: { end: 100 } });
+    expect(result.current).toEqual({ start: 100 - 60, end: 100 });
     rerender({ end: 110 });
-    expect(result.current).toEqual({ start: 0, end: 110 });
+    expect(result.current).toEqual({ start: 110 - 60, end: 110 });
   });
 
   it("keeps the old window until the offset elapses, then adopts the new one", () => {
     const id = "requests";
     const offset = staggerOffsetMs(id, 4000);
-    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow(id, 0, end, 4000), { initialProps: { end: 100 } });
-    expect(result.current).toEqual({ start: 0, end: 100 });
+    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow(id, end - 60, end, 4000), { initialProps: { end: 100 } });
+    expect(result.current).toEqual({ start: 100 - 60, end: 100 });
     rerender({ end: 110 });
-    expect(result.current).toEqual({ start: 0, end: 100 });
+    expect(result.current).toEqual({ start: 100 - 60, end: 100 });
     act(() => {
       vi.advanceTimersByTime(offset + 1);
     });
-    expect(result.current).toEqual({ start: 0, end: 110 });
+    expect(result.current).toEqual({ start: 110 - 60, end: 110 });
   });
 
   it("cancels a superseded change, so a stale window is never adopted", () => {
-    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow("requests", 0, end, 4000), { initialProps: { end: 100 } });
+    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow("requests", end - 60, end, 4000), { initialProps: { end: 100 } });
     rerender({ end: 110 });
     rerender({ end: 120 });
     act(() => {
       vi.advanceTimersByTime(4000);
     });
-    expect(result.current).toEqual({ start: 0, end: 120 });
+    expect(result.current).toEqual({ start: 120 - 60, end: 120 });
+  });
+
+  it("adopts a new span at once even while the board's last change was a tick", () => {
+    // An author changes the saved range in edit mode, or a remote sync does, without a manual refresh.
+    const { result, rerender } = renderHook(
+      ({ start, end }) => useStaggeredWindow("requests", start, end, 4000),
+      { initialProps: { start: 40, end: 100 } },
+    );
+    rerender({ start: 110 - 3600, end: 110 });
+    expect(result.current).toEqual({ start: 110 - 3600, end: 110 });
+  });
+
+  it("adopts an earlier window at once", () => {
+    const { result, rerender } = renderHook(({ end }) => useStaggeredWindow("requests", end - 60, end, 4000), { initialProps: { end: 100 } });
+    rerender({ end: 90 });
+    expect(result.current).toEqual({ start: 30, end: 90 });
   });
 
   it("adopts at once when the stagger is switched off mid-wait", () => {
     const { result, rerender } = renderHook(
-      ({ end, stagger }) => useStaggeredWindow("requests", 0, end, stagger),
+      ({ end, stagger }) => useStaggeredWindow("requests", end - 60, end, stagger),
       { initialProps: { end: 100, stagger: 4000 } },
     );
     rerender({ end: 110, stagger: 4000 });
     expect(result.current.end).toBe(100);
     rerender({ end: 110, stagger: 0 });
-    expect(result.current).toEqual({ start: 0, end: 110 });
+    expect(result.current).toEqual({ start: 110 - 60, end: 110 });
   });
 });
