@@ -145,7 +145,7 @@ export function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width
       // A plugin's narrow minimum (a statistics table under a plot, a sparkline table) reserves a fifth track. This is a
       // view projection and never changes the saved layout.
       const minimumHeight = widget.type === "stat" ? mode === "stacked" ? 2 : 1 : heatmapText ? mode === "compact" ? 5 : 6 : hints?.get(widget.id)?.narrowMinRows ?? 4
-      const h = Math.max(minimumHeight, widget.layout.h, Math.ceil(((minimumHeights?.get(widget.id) ?? 0) + 16) / 74))
+      const h = Math.max(minimumHeight, widget.layout.h, pixelsToRows(minimumHeights?.get(widget.id) ?? 0))
       if (x + w > 12 || (metricWidths.has(widget.id) && x > 0 && x % w !== 0)) {
         y += rowHeight
         x = 0

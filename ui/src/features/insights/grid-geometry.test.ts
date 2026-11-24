@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { DENSE_GRID, STANDARD_GRID, columnWidth, gridOf, pixelsToRows, rowsToPixels } from "./grid-geometry";
 
@@ -33,4 +33,20 @@ it("keeps the stacked view gap in step with the standard row gap", () => {
   const rule = /\.stackedView\s*\{([^}]*)\}/.exec(css);
   expect(rule).not.toBeNull();
   expect(rule![1]).toContain(`gap: ${STANDARD_GRID.gapY}px`);
+});
+
+// The row pitch (74 standard, 29 dense) and the gap pairs belong to grid-geometry.ts. A copy elsewhere drifts silently.
+it("keeps the grid arithmetic in grid-geometry.ts", () => {
+  const root = join(process.cwd(), "src/features/insights");
+  const sources = (directory: string): string[] => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return entry.name === "testdata" ? [] : sources(path);
+    return /\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name) && entry.name !== "grid-geometry.ts" ? [path] : [];
+  });
+  const forbidden = [/[*/] ?(74|29)\b/, /\+ ?(16|4)\) ?\/ ?(74|29)/, /\[(16, ?16|8, ?4)\]/, /rowHeight: ?(58|25)\b/];
+  const offenders = sources(root).flatMap((path) => {
+    const text = readFileSync(path, "utf8");
+    return forbidden.filter((pattern) => pattern.test(text)).map((pattern) => `${path.slice(root.length + 1)}: ${pattern}`);
+  });
+  expect(offenders).toEqual([]);
 });
