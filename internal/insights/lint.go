@@ -57,8 +57,9 @@ var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, v
 // linear in the document size.
 type lintDocument struct {
 	variables map[string]bool
-	// multi names each declared variable that takes several values.
-	multi map[string]bool
+	// multi names each declared variable that takes several values, and allowAll each that can also be All.
+	multi    map[string]bool
+	allowAll map[string]bool
 	// sourceVariables lists each declared variable with the members the variable rules read.
 	sourceVariables []lintVariable
 	// annotationVariables are the variables the dashboard-level event query reads, with its pointer.
@@ -297,10 +298,11 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 	if json.Unmarshal(document, &wire) != nil {
 		return nil, false
 	}
-	doc := &lintDocument{variables: make(map[string]bool, len(wire.Variables)), multi: make(map[string]bool, len(wire.Variables))}
+	doc := &lintDocument{variables: make(map[string]bool, len(wire.Variables)), multi: make(map[string]bool, len(wire.Variables)), allowAll: make(map[string]bool, len(wire.Variables))}
 	for i := range wire.Variables {
 		doc.variables[wire.Variables[i].Name] = true
 		doc.multi[wire.Variables[i].Name] = wire.Variables[i].Multi
+		doc.allowAll[wire.Variables[i].Name] = wire.Variables[i].Multi && wire.Variables[i].AllowAll
 		doc.sourceVariables = append(doc.sourceVariables, lintVariableOf(i, &wire.Variables[i]))
 	}
 	for i := range wire.Widgets {

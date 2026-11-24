@@ -18,7 +18,7 @@ export const dashboardCompositionGuidance: readonly string[] = [
   "A label-values variable with a selector needs a Prometheus provider, because only Prometheus matches a selector.",
   "A variable with a source sets a defaultValue, because a source does not choose a value on its own.",
   "A variable source reads a metrics or records saved query, because a traces result has no column or series label to supply values.",
-  "A variable with several values is used after =~ or !~, or as an element of a SQL parameters array, and binds only a saved query parameter of several values.",
+  "A variable with several values is used after =~ or !~, or as an element of a SQL parameters array, and binds only a saved query parameter of several values. With Include All, All binds NULL in that array, so guard the parameter: ($1::text[] IS NULL OR service = ANY($1::text[])).",
   "On a stat, set min and max only together with showStatBar, which requires both. A bar that is switched off may keep bounds it already has; do not remove them to tidy the document.",
   "Avoid widget-internal scrolling; a KPI that needs a scrollbar is too small or too dense. Do not force max to 100 on rate charts unless the full 0 to 100 range is essential.",
   "selectionBindings activate only on a timeseries, bar, table, heatmap or traces widget, or a selectable plugin; on any other widget they are retained but inactive. Do not let a selecting widget read the variable it sets; drive filtered panels from an unfiltered overview chart grouped by that label.",

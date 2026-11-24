@@ -87,7 +87,7 @@ func (s *Server) providerTypesOf(r *http.Request, document Dashboard) map[string
 		}
 		types[savedQueryKindKey(id)] = kind
 	}
-	for key, flag := range s.resolveSavedQueryParameterKinds(lintSavedQueryIDs(doc)) {
+	for key, flag := range s.resolveSavedQueryParameterKinds(lintBoundSavedQueryIDs(doc)) {
 		if types == nil {
 			types = map[string]string{}
 		}
