@@ -39,6 +39,7 @@ import {
 import { validTimestamp } from "./widget-context";
 import { SERIES_ROLES, seriesSlot } from "./series-palette";
 import styles from "./tooltip-widgets.module.css";
+import { seriesShown } from "./benign-states";
 
 export const MAX_TOOLTIP_POINTS = 240;
 export const MAX_TOOLTIP_SERIES = 12;
@@ -399,8 +400,8 @@ export const TooltipSubWidget = memo(function TooltipSubWidget({
             )}
           {context.totalSeries > MAX_TOOLTIP_SERIES && (
             <p className={styles.note} role="status">
-              Showing {MAX_TOOLTIP_SERIES} of {context.totalSeries} series in
-              this tooltip. Narrow the query to see others.
+              {seriesShown(MAX_TOOLTIP_SERIES, context.totalSeries)} in this
+              tooltip. Narrow the query to see others.
             </p>
           )}
           {context.totalTraces > MAX_TOOLTIP_TRACES && (

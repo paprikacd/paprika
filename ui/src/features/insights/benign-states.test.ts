@@ -27,7 +27,11 @@ describe("benign state copy", () => {
 describe("benign state scan", () => {
   const root = join(process.cwd(), "src/features/insights");
   const copyModules = new Set(["benign-states.ts", "truncation.ts"]);
-  const forbidden = [/"No data/, /`No data/, />No data</, /Stale · /, /series not shown/, /First \d+ of/, /First \{[A-Za-z_]+\} of/];
+  const forbidden = [
+    /["'`]No data/, />No data</, /Stale · /, /series not shown/, /First \d+ of/, /First \{[A-Za-z_]+\} of/,
+    // A series cap written out in JSX or a template instead of seriesShown().
+    /Showing (\{[^}]+\}|\$\{[^}]+\}|\d+) of (\{[^}]+\}|\$\{[^}]+\}|\d+) series/,
+  ];
 
   function sourceFiles(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

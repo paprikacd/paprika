@@ -40,6 +40,7 @@ import { useEmbeddedWidget } from "../widget-presentation";
 import { compactSeriesLabels } from "../series-display";
 import { truncationNote } from "../truncation";
 import meterStyles from "./capacity-meter.module.css";
+import { seriesShown } from "../benign-states";
 
 export const gaugeConfigSchema = z.strictObject({
   label: z.string().max(100).optional(),
@@ -279,7 +280,7 @@ function GaugeBank(props: WidgetRendererProps & { config: GaugeConfig; series: G
     {overflow && <p ref={hintElement} className={meterStyles.bankHint} id={hint} data-gauge-overflow-hint>Scroll to see all gauges <span aria-hidden="true">↕</span></p>}
     <GaugeLegend widget={props.widget} config={config} compactRows={compactRows} />
     {(omitted > 0 || props.result.truncated) && <p className={meterStyles.bankNotice} role="status">
-      {omitted > 0 && <span>Showing {selected.length} of {series.length} series</span>}
+      {omitted > 0 && <span>{seriesShown(selected.length, series.length)}</span>}
       {truncationNote(props.result) && <span>{truncationNote(props.result)}</span>}
     </p>}
   </div>;
