@@ -473,19 +473,24 @@ jobs:
 
       - name: Decide whether the Insights browser checks are affected
         id: insights-relevance
-        # Prints relevant=true or relevant=false (see ui/e2e/run-insights.mjs --relevance). The fetch uses the
-        # job token only for this step, so the checkout keeps persist-credentials: false. Any doubt means true.
+        # Prints relevant=true or relevant=false (see ui/e2e/insights-relevance.mjs). Only pull requests can skip:
+        # a push to master passes no base, which always runs. The fetch uses the job token only for this step, so
+        # the checkout keeps persist-credentials: false; the encoded header is masked and git output is discarded.
+        # Any doubt means true, and the steps below run unless the output is exactly false.
         run: |
-          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
-          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          if [ -n "$BASE_SHA" ]; then
+            auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+            echo "::add-mask::$auth"
+            export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          fi
           node e2e/run-insights.mjs --relevance "$BASE_SHA" >> "$GITHUB_OUTPUT"
         working-directory: ui
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
 
       - name: Run Insights MCP and dashboard browser smoke
-        if: steps.insights-relevance.outputs.relevant == 'true'
+        if: steps.insights-relevance.outputs.relevant != 'false'
         # About 12 minutes on a typical runner; slower runners have taken over 15.
         timeout-minutes: 20
         run: node e2e/run-insights.mjs --tag smoke --retries 1
@@ -496,7 +501,7 @@ jobs:
           INSIGHTS_QUERY_INSPECTOR_OUTPUT: ${{ github.workspace }}/artifacts/insights/query-inspector
 
       - name: Generate reference dashboards and check keyboard shortcuts through the UI
-        if: steps.insights-relevance.outputs.relevant == 'true'
+        if: steps.insights-relevance.outputs.relevant != 'false'
         timeout-minutes: 10
         run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs e2e/insights-builder.e2e.mjs
         working-directory: ui
@@ -505,7 +510,7 @@ jobs:
           INSIGHTS_BUILDER_KEYBOARD_ONLY: "1"
 
       - name: Check Insights visual structure baseline
-        if: steps.insights-relevance.outputs.relevant == 'true'
+        if: steps.insights-relevance.outputs.relevant != 'false'
         timeout-minutes: 10
         run: node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs
         working-directory: ui

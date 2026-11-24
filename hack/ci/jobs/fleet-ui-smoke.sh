@@ -44,13 +44,15 @@ fi
 
 # ci.yml: Decide whether the Insights browser checks are affected. The rule is in ui/e2e/insights-suites.json
 # (smokeSkipPaths): the checks are skipped only when every file changed since the merge base with master is in
-# that list. A missing master, an unknown base or a git error runs them.
+# that list. A missing master, an unknown base, a git error or a failed check runs them: only an exact
+# relevant=false skips. On master itself the merge base is HEAD, so the empty diff runs them.
 insights_base=$(git -C "$CI_REPO_ROOT" merge-base HEAD master 2>/dev/null || true)
 insights_verdict=relevant=true
 if [ -n "$insights_base" ]; then
-  insights_verdict=$(cd ui && node e2e/run-insights.mjs --relevance "$insights_base")
+  insights_verdict=$(cd ui && node e2e/run-insights.mjs --relevance "$insights_base") || insights_verdict=relevant=true
 fi
-insights_relevant=${insights_verdict#relevant=}
+insights_relevant=true
+if [ "$insights_verdict" = relevant=false ]; then insights_relevant=false; fi
 
 # ci.yml: Run Insights MCP and dashboard browser smoke (timeout-minutes: 20)
 if [ "$insights_relevant" = true ]; then

@@ -109,10 +109,10 @@ The E2E wrapper starts an isolated development server when `INSIGHTS_E2E_URL` is
 The maintained `premium-ui.json` commands below are quoted exactly from the inspected configuration; run from the repository context expected by that configuration and recheck current values:
 
 ```sh
-rtk proxy npm --prefix ui test
-rtk proxy env INSIGHTS_E2E_URL=http://127.0.0.1:3015 node ui/e2e/run-insights.mjs
-rtk proxy npm --prefix ui exec -- tsc --project ui/tsconfig.json --noEmit --pretty false
-rtk proxy npm --prefix ui run build
+npm --prefix ui test
+env INSIGHTS_E2E_URL=http://127.0.0.1:3015 node ui/e2e/run-insights.mjs
+npm --prefix ui exec -- tsc --project ui/tsconfig.json --noEmit --pretty false
+npm --prefix ui run build
 ```
 
 Keep numerical fixtures, interaction checks and visual evidence distinct. Existing rich-data tests cover timestamp mismatch, missing stack members, nonmonotonic bucket groups, raw statistics before sampling and overflow-safe means. The reference-dashboard acceptance document describes complete imported compositions with shared filters and persistence exercised through the real app; its deterministic observations are test-only. Add a screenshot review for the changed whole dashboard and relevant narrow/theme/interaction states. Static lint and unit success do not establish visual quality, complete accessibility or performance.

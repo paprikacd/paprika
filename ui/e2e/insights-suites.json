@@ -14,8 +14,9 @@
     "credentials": "Reads a provider or connection configuration file from the environment."
   },
   "smokeSkipPaths": [
-    "docs/**",
     "**/*.md",
+    "docs/**/*.png",
+    "docs/**/*.jpg",
     ".agents/**",
     "landing/**"
   ],

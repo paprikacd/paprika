@@ -7,18 +7,14 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { buildGoBinary } from "../../ui/e2e/insights-go-build.mjs"
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
 const temporary = await mkdtemp(join(tmpdir(), "paprika-duplicate-observations-"))
 const ready = join(temporary, "ready.json"), binary = join(temporary, "observe-fixture")
 let fixture, child
-const run = async (command, args) => {
-  const process = spawn(command, args, { cwd: root, stdio: "inherit" })
-  const [code] = await once(process, "exit")
-  assert.equal(code, 0, `${command} failed`)
-}
 try {
-  await run("rtk", ["proxy", "go", "build", "-o", binary, "./hack/insights-observe-e2e"])
+  await buildGoBinary(root, "./hack/insights-observe-e2e", binary)
   child = spawn(binary, [`--ready-file=${ready}`, `--data-dir=${join(temporary, "data")}`], { cwd: root, stdio: ["ignore", "ignore", "pipe"] })
   let errorLog = ""; child.stderr.on("data", value => { errorLog += value })
   const deadline = Date.now() + 30000
