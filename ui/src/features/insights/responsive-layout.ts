@@ -1,10 +1,8 @@
 import type { Layout } from "react-grid-layout"
 import type { Widget } from "./schema"
+import { columnWidth, gridOf, pixelsToRows, rowsToPixels } from "./grid-geometry"
 
 export type CanvasMode = "wide" | "compact" | "stacked"
-
-/** The wide grid's column count, as the canvas passes it to react-grid-layout. */
-const GRID_COLUMNS = 12
 
 /** A canvas enters the wide grid at 960px and keeps it down to 880px. The gap stops a panel or a scrollbar that
  * narrows the canvas by a few pixels from flipping the projection back and forth. */
@@ -230,7 +228,7 @@ export function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, 
     const group = `${item.y}:${item.h}`
     // The renderer declares its useful card height once. Compact viewing must
     // not silently compress a map or readable table beneath that contract.
-    const minimum = Math.ceil(((minimumHeights?.get(item.i) ?? 0) + 4) / 29)
+    const minimum = pixelsToRows(minimumHeights?.get(item.i) ?? 0, true)
     fineGroups.set(group, Math.max(fineGroups.get(group) ?? 0, fineHeight(item), minimum))
   }
   const fine: Layout[number][] = []
@@ -275,15 +273,13 @@ export function tileFootprint(widgets: readonly Widget[], id: string, options: T
     : canvasLayout(widgets, options.mode, options.width, options.minimumHeights)
   const item = layout.find(entry => entry.i === id)
   if (!item) return undefined
-  const rowHeight = dense ? 25 : 58
-  const [gapX, gapY] = dense ? [8, 4] : [16, 16]
-  const columnWidth = (options.width - (GRID_COLUMNS - 1) * gapX) / GRID_COLUMNS
-  const span = item.h * (rowHeight + gapY) - gapY
+  const { gapX } = gridOf(dense)
+  const span = rowsToPixels(item.h, dense)
   // The wide grid draws the saved height as it is, so the footprint does too. The compact projection already counts a
   // renderer's minimum in its rows; the guard keeps that minimum for any caller that passes one without those rows.
   const height = options.mode === "wide" ? span : Math.max(span, options.minimumHeights?.get(id) ?? 0)
   return {
-    width: item.w * columnWidth + (item.w - 1) * gapX,
+    width: item.w * columnWidth(options.width, dense) + (item.w - 1) * gapX,
     height,
   }
 }

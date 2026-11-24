@@ -56,6 +56,7 @@ import { dashboardRange } from "./time-range";
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
+import { GRID_COLUMNS, gridOf, rowsToPixels } from "./grid-geometry";
 import {
   dragSettle,
   gridPlacement,
@@ -998,9 +999,9 @@ export function DashboardCanvas({
   // Chips step through widgets in the order they are now laid out, so a drag in edit mode changes the order they follow.
   const attentionOrder = useMemo(() => [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => ({ id: item.i })), [layout]);
   const range = dashboardRange(dashboard, end);
-  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
+  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, rowsToPixels(canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
-  ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
+  ], mode, width, minimumHeights)[0].h)) : undefined;
   const previewFootprints: PreviewFootprints | undefined = focus && unfocusedGrid ? (() => {
     // The staged widget replaces its saved copy, so the footprint follows the Layout tab. A new widget is appended.
     const widgets = dashboard.widgets.some(item => item.id === focus.widget.id)
@@ -1012,8 +1013,9 @@ export function DashboardCanvas({
     return { dashboard: footprint(false), compact: footprint(true) };
   })() : undefined;
   const stackedView = mode === "stacked" && !editing;
+  const gridGeometry = gridOf(dense && !editing && mode === "wide");
   const tiles = (focus ? [focus.widget] : orderedWidgets).map((widget, index) => (
-              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
+              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: rowsToPixels(layout[index].h) } : undefined}>
                 <Tile
                   key={`${dashboard.id}:${widget.id}`}
                   widget={widget}
@@ -1091,9 +1093,9 @@ export function DashboardCanvas({
             width={width}
             layout={layout}
             gridConfig={{
-              cols: 12,
-              rowHeight: dense && !editing && mode === "wide" ? 25 : 58,
-              margin: dense && !editing && mode === "wide" ? [8, 4] : [16, 16],
+              cols: GRID_COLUMNS,
+              rowHeight: gridGeometry.rowHeight,
+              margin: [gridGeometry.gapX, gridGeometry.gapY],
               containerPadding: [0, 0],
             }}
             dragConfig={{
