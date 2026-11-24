@@ -157,7 +157,7 @@ it("reexecutes a visible saved-query reference when its remote definition change
   store.queries = [{ ...signal, query: "up * 2", etag: '\"q2\"' }]
   fireEvent.focus(window)
   await waitFor(() => expect(screen.getByLabelText("Resolved widget value")).toHaveTextContent("2"))
-  expect(api.query).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up * 2", providerId: "metrics" }), expect.any(AbortSignal), { replayCapacity: false })
+  expect(api.query).toHaveBeenLastCalledWith(expect.objectContaining({ query: "up * 2", providerId: "metrics" }), expect.any(AbortSignal), expect.objectContaining({ replayCapacity: false }))
   expect(api.save).not.toHaveBeenCalled()
 })
 

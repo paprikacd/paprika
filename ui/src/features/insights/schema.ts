@@ -840,7 +840,7 @@ export const queryDiagnosticsSchema = z.object({
     scope: z.enum(["provider", "gateway"]),
   }),
   phases: z.array(z.object({
-    name: z.enum(["admission", "catalog", "upstream", "normalization", "provider"]),
+    name: z.enum(["admission", "catalog", "cache", "upstream", "normalization", "provider"]),
     owner: z.enum(["insights", "provider"]),
     clock: z.enum(["server-monotonic", "unavailable"]),
     durationMs: queryTimingSchema.nullable(),
@@ -857,10 +857,26 @@ export const queryDiagnosticsSchema = z.object({
   }).optional(),
   truncated: z.boolean(),
   truncationReason: z.enum(["row_limit", "partial", "provider_warning"]).optional().catch(undefined),
+  /** How the server's result cache answered. Absent when the cache is disabled. A malformed cache object is dropped. */
+  cache: z.object({
+    status: z.enum(["hit", "joined", "miss", "bypass"]),
+    sourceExecutionId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/).optional(),
+    ageMs: queryTimingSchema.optional(),
+    reason: z.enum(["refresh", "unscoped", "live_edge", "uncacheable"]).optional().catch(undefined),
+  }).optional().catch(undefined),
 }).superRefine((receipt, context) => {
   if (!receipt.effective.dispatched && (receipt.effective.rangeApplied ||
     receipt.effective.start !== undefined || receipt.effective.end !== undefined || receipt.effective.step !== undefined)) {
     context.addIssue({ code: "custom", path: ["effective"], message: "An undispatched query has no applied bounds" })
+  }
+  if (receipt.cache && (receipt.cache.status === "hit" || receipt.cache.status === "joined")) {
+    // A delivery from the cache made no provider request, so it has no dispatch and no upstream phase.
+    if (receipt.effective.dispatched) {
+      context.addIssue({ code: "custom", path: ["effective"], message: "A cached delivery made no provider request" })
+    }
+    if (receipt.phases.some(phase => phase.name === "upstream" || phase.name === "provider")) {
+      context.addIssue({ code: "custom", path: ["phases"], message: "A cached delivery has no upstream phase" })
+    }
   }
   const seen = new Set<string>()
   let exclusiveMs = 0

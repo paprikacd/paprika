@@ -92,6 +92,9 @@ import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { refreshStaggerSpread } from "./refresh-stagger"
+
+/** After a manual refresh, queries ask the server for a fresh execution for this long, so the refreshed window is not served from the cache. */
+const MANUAL_REFRESH_BYPASS_MS = 5_000
 import { visibleTileControl } from "./tile-controls"
 import { useCanvasDensity } from "./canvas-density"
 import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
@@ -401,6 +404,8 @@ export default function InsightsApp({
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
   // Whether the current end came from an automatic tick. An automatic tick staggers across the tiles; any other change adopts at once.
   const [autoTick, setAutoTick] = useState(false)
+  // When the user last pressed Refresh. Queries in the bypass window skip the server's result cache.
+  const [refreshedAt, setRefreshedAt] = useState(0)
   const advanceEnd = useCallback((auto: boolean) => {
     setEnd(Math.floor(Date.now() / 1000))
     setAutoTick(auto)
@@ -981,9 +986,9 @@ export default function InsightsApp({
     // A refresh or provider edit invalidates cached fixed-range observations too.
     void queryRevision
     // The scheduler owns the capacity backoff, so its slot is free while a refused query waits.
-    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false })
+    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false, refresh: Date.now() - refreshedAt < MANUAL_REFRESH_BYPASS_MS })
     return createQueryScheduler(query)
-  }, [client, activeExample, queryRevision])
+  }, [client, activeExample, queryRevision, refreshedAt])
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
@@ -2116,6 +2121,7 @@ export default function InsightsApp({
               aria-label="Refresh data"
               onClick={() => {
                 advanceEnd(false)
+                setRefreshedAt(Date.now())
                 setQueryRevision((value) => value + 1)
                 setLibraryRevision((value) => value + 1)
               }}
