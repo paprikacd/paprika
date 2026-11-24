@@ -26,17 +26,40 @@ var widgetPluginList []byte
 // default, sorted. Hosts may register further plugins, so a plugin id outside this
 // list is not an error by itself.
 func BuiltInWidgetPlugins() ([]string, error) {
-	var list struct {
-		SchemaVersion int      `json:"schemaVersion"`
-		PluginIDs     []string `json:"pluginIds"`
-	}
-	if err := json.Unmarshal(widgetPluginList, &list); err != nil {
-		return nil, fmt.Errorf("decode embedded widget plugin list: %w", err)
-	}
-	if list.SchemaVersion != 1 || len(list.PluginIDs) == 0 {
-		return nil, errors.New("embedded widget plugin list has no plugin ids")
+	list, err := decodeWidgetPluginList()
+	if err != nil {
+		return nil, err
 	}
 	return list.PluginIDs, nil
+}
+
+// BuiltInWidgetPluginCapabilities returns the document capabilities of the built-in
+// plugins, keyed by plugin id and then by capability name ("annotations",
+// "tooltipView", "selection"). Only supported capabilities appear. It is generated
+// from ui/src/features/insights/plugins/plugin-capabilities.ts.
+func BuiltInWidgetPluginCapabilities() (map[string]map[string]bool, error) {
+	list, err := decodeWidgetPluginList()
+	if err != nil {
+		return nil, err
+	}
+	return list.Capabilities, nil
+}
+
+type widgetPluginListDocument struct {
+	SchemaVersion int                        `json:"schemaVersion"`
+	PluginIDs     []string                   `json:"pluginIds"`
+	Capabilities  map[string]map[string]bool `json:"capabilities"`
+}
+
+func decodeWidgetPluginList() (widgetPluginListDocument, error) {
+	var list widgetPluginListDocument
+	if err := json.Unmarshal(widgetPluginList, &list); err != nil {
+		return list, fmt.Errorf("decode embedded widget plugin list: %w", err)
+	}
+	if list.SchemaVersion != 1 || len(list.PluginIDs) == 0 {
+		return list, errors.New("embedded widget plugin list has no plugin ids")
+	}
+	return list, nil
 }
 
 var ErrUnknownKind = errors.New("schema kind must be dashboard, widget, or saved_query")

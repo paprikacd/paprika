@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { pluginSupports } from "./plugins/plugin-capabilities"
 import { SERIES_COLOR_MODES, seriesColorRulesSchema } from "./series-colors"
 import { statusLevels } from "./status"
 import { sloSummaryConfigSchema } from "./slo-config"
@@ -548,7 +549,7 @@ export const customTimeRangeSchema = z
 
 /** Event markers are supported on time-based line and traffic charts. */
 export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
-  return type === "timeseries" || (type === "plugin" && (pluginId === "stacked-timeseries" || pluginId === "directional-traffic"))
+  return type === "timeseries" || (type === "plugin" && pluginSupports(pluginId, "annotations"))
 }
 
 export const widgetSchema = z
@@ -758,7 +759,7 @@ export type TooltipQuerySource = Extract<TooltipSource, { type: "query" }>
 export type TooltipBinding = z.infer<typeof tooltipBindingSchema>
 
 export function supportsTooltipView(type: Widget["type"], pluginId?: string): boolean {
-  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginId === "geo-heatmap")
+  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginSupports(pluginId, "tooltipView"))
 }
 export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>

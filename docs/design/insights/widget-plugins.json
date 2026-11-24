@@ -22,5 +22,44 @@
     "threshold-gauge",
     "uptime-calendar",
     "uptime-timeline"
-  ]
+  ],
+  "capabilities": {
+    "connection-map": {
+      "selection": true
+    },
+    "directional-traffic": {
+      "annotations": true
+    },
+    "geo-heatmap": {
+      "selection": true,
+      "tooltipView": true
+    },
+    "pie": {
+      "selection": true
+    },
+    "record-list": {
+      "selection": true
+    },
+    "record-matrix": {
+      "selection": true
+    },
+    "record-table": {
+      "selection": true
+    },
+    "record-treemap": {
+      "selection": true
+    },
+    "records-bar": {
+      "selection": true
+    },
+    "records-line": {
+      "selection": true
+    },
+    "stacked-timeseries": {
+      "annotations": true
+    },
+    "status-history": {
+      "selection": true
+    }
+  }
 }
