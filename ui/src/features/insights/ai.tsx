@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useRef, useState } from "react"
+import { useId, useMemo, useRef, useState } from "react"
 import { Check, Copy, Sparkles, X } from "lucide-react"
 import { parseDocument } from "yaml"
 import { copyToClipboard } from "@/lib/clipboard"
@@ -16,6 +16,8 @@ import { ChangeReview } from "./change-review"
 import { applyDashboardPatch, documentChanges, readDashboardPatchSource, type DocumentChanges, type JSONObject, type Placement } from "./dashboard-patch"
 import { dashboardAsSent } from "./layout-compaction"
 import { ChecksList, CHECK_TIMEOUT_MS, errorCountText, hasErrors, withTimeout, type DocumentValidator } from "./checks-list"
+import { buildAgentHandoff } from "./agent-handoff"
+import { GammaDisclosure } from "./gamma/disclosure"
 
 export { buildAIContext, dashboardToOpenUI, insightsLibrary, parseOpenUIDashboard } from "./openui"
 
@@ -31,6 +33,10 @@ interface AIBuilderProps {
   checkDocument?: DocumentValidator
   /** Focuses or scrolls to a widget on the canvas, for a finding's or change's "Show widget" action. */
   onFocusWidget?: (widgetId: string) => void
+  /** The Observe MCP endpoint. Without it, the handoff omits the setup command. */
+  observeEndpoint?: string
+  /** The draft has changes that are not saved. The handoff then hands the agent the draft itself. */
+  unsaved?: boolean
 }
 
 interface Reviewed {
@@ -61,7 +67,7 @@ function changesBetween(before: Dashboard, after: Dashboard): DocumentChanges | 
   }
 }
 
-export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocument, onFocusWidget }: AIBuilderProps) {
+export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocument, onFocusWidget, observeEndpoint, unsaved = false }: AIBuilderProps) {
   const id = useId()
   const library = useSavedQueryLibrary()
   const [request, setRequest] = useState("")
@@ -80,6 +86,29 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
   function ensureLibrary(document: Dashboard) {
     if (usesSaved(document) && savedLibraryBlocked)
       throw new Error(library.loading ? "Saved queries are still loading. Review again when the library is ready." : `Saved queries could not be loaded: ${library.error}. Reload the query library before reviewing this definition.`)
+  }
+
+  const handoff = useMemo(
+    () => buildAgentHandoff({ id: dashboard.id, title: dashboard.title, request, endpoint: observeEndpoint, draft: unsaved ? dashboard : undefined }),
+    [dashboard, request, observeEndpoint, unsaved],
+  )
+
+  async function copyAgentText(text: string, success: string) {
+    try {
+      await copyToClipboard(text)
+      setNotice(success)
+      setError("")
+    } catch {
+      setError("The text could not be copied. Allow clipboard access and try again.")
+    }
+  }
+
+  function copyInstructions() {
+    // The agent's reply is a JSON object, so the review switches to JSON before the reply is pasted.
+    pass.current++
+    setFormat("json")
+    setReviewed(null)
+    void copyAgentText(handoff.text, "Instructions copied. Paste the agent’s JSON reply below.")
   }
 
   async function copyContext() {
@@ -203,6 +232,28 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
           Copy AI prompt
         </GammaButton>
         {savedLibraryBlocked && <p className={styles.hint}>{library.loading ? "Saved queries are loading; wait before copying a prompt that needs them." : "The saved-query library is unavailable. Definitions using custom queries can still be reviewed."}</p>}
+        <GammaDisclosure title="Use your agent with Paprika Observe">
+          <div className="grid justify-items-start gap-2 p-1">
+            <p className={styles.hint}>
+              Your agent reads this dashboard through Observe and replies with widget edits. Review them here before they reach the draft.
+            </p>
+            <GammaButton size="sm" variant="secondary" type="button" className={styles.secondary} onClick={copyInstructions}>
+              <Copy size={14} aria-hidden="true" />
+              Copy agent instructions
+            </GammaButton>
+            {handoff.setupCommand && (
+              <GammaButton size="sm" variant="secondary" type="button" className={styles.secondary} onClick={() => void copyAgentText(handoff.setupCommand!, "Setup command copied.")}>
+                <Copy size={14} aria-hidden="true" />
+                Copy setup command
+              </GammaButton>
+            )}
+            {handoff.links.map((link) => (
+              <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer" className="text-[13px] text-[color:var(--gamma-accent-text)] underline underline-offset-2">
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </GammaDisclosure>
       </section>
       <section className={styles.step} aria-labelledby={`${id}-definition`}>
         <h3 id={`${id}-definition`}>
@@ -307,8 +358,8 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
         </p>
       </section>
       <footer className={styles.footer}>
-        Works with your preferred AI assistant. No model is connected here; copied context is only
-        sent when you paste it into your assistant.
+        Works with your preferred AI assistant. No model is connected here. Copied text and links are
+        sent only when you paste or open them.
       </footer>
     </section>
   )

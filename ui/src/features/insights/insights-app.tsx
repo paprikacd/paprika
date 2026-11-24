@@ -2480,6 +2480,8 @@ export default function InsightsApp({
                     onClose={close}
                     checkDocument={client.validate}
                     onFocusWidget={selectWidget}
+                    observeEndpoint={client.observeConnection ? new URL("/observe/mcp", window.location.origin).href : undefined}
+                    unsaved={dirty}
                   />
                 </Suspense>
               )}
