@@ -180,7 +180,12 @@ try {
         const stops = await tabStopsToCanvas(page)
         const start = stops.indexOf("Dashboard actions")
         assert.ok(start >= 0, `Dashboard actions is a tab stop: ${stops.join(", ")}`)
-        assert.deepEqual(stops.slice(start), ["Dashboard actions", "Time range", "Refresh data"], "Tab order from the header to the canvas")
+        // The example declares a service variable (R78), so its chip sits in the control row after Dashboard actions, as on the
+        // edge dashboard below. A flagged attention chip (for example "1 critical") can follow Refresh, before the canvas.
+        const [, chip, ...controls] = stops.slice(start)
+        assert.match(chip ?? "", /^Dashboard variables: Service/, `The variables chip follows Dashboard actions: ${stops.slice(start).join(", ")}`)
+        assert.deepEqual(controls.slice(0, 2), ["Time range", "Refresh data"], "Time range and Refresh follow the variables chip")
+        for (const stop of controls.slice(2)) assert.match(stop, /: show first \w+ widget, /, `Only attention chips follow Refresh: ${stop}`)
         assert.equal(stops.includes("Edit dashboard") || stops.includes("Dashboard as code"), false, "Edit and Code are only in the menu")
         const controlRow = await checkControlRow(page)
         const menu = await checkMenu(page, viewport)

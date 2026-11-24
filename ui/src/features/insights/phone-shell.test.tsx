@@ -189,6 +189,21 @@ describe("phone control row", () => {
     expect(chip).toHaveFocus();
   });
 
+  it("orders the header as Dashboard actions, variables chip, time range, refresh, then the canvas", async () => {
+    setup({ variables: [{ name: "cluster", label: "Cluster", options: ["omega", "alpha"], defaultValue: "omega" }] });
+    await screen.findByRole("heading", { name: "Edge Watch" });
+    const actions = screen.getByRole("button", { name: "Dashboard actions" });
+    const chip = screen.getByRole("button", { name: /^Dashboard variables:/ });
+    const time = screen.getByRole("combobox", { name: "Time range" });
+    const refresh = screen.getByRole("button", { name: "Refresh data" });
+    const canvas = await screen.findByTestId("canvas");
+    const following = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(following(actions, chip)).toBe(true);
+    expect(following(chip, time)).toBe(true);
+    expect(following(time, refresh)).toBe(true);
+    expect(following(refresh, canvas)).toBe(true);
+  });
+
   it("clamps the description to two lines with the full text in the page, and no disclosure", async () => {
     const description = "Synthetic local observations. Node readiness is independently sampled; missing samples remain unknown.";
     setup({ description });
