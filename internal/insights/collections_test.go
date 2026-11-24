@@ -139,3 +139,34 @@ func TestCollectionTagsSeparateVariantsAndRestarts(t *testing.T) {
 	require.Equal(t, http.StatusOK, stale.Code, "a tag from before the restart does not match")
 	require.NotEqual(t, full, stale.Header().Get("ETag"))
 }
+
+// A saved-query search is its own listing: its tag differs from the unfiltered list and from another
+// search, so a tag from one never answers the other with 304. Arbitrary search text never reaches the tag.
+func TestSavedQuerySearchesCarryTheirOwnCollectionTags(t *testing.T) {
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Metrics", Type: "prometheus", URL: "https://metrics.example.test"})
+	h := s.Handler()
+	for _, id := range []string{"requests", "errors"} {
+		document := []byte(`{"schemaVersion":1,"id":"` + id + `","name":"` + id + `","providerId":"prometheus","kind":"metrics","query":"up"}`)
+		created := request(t, h, http.MethodPut, "/api/saved-queries/"+id, document, map[string]string{"If-None-Match": "*"})
+		require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	}
+	tagOf := func(path string) string {
+		t.Helper()
+		w := request(t, h, http.MethodGet, path, nil, nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		return w.Header().Get("ETag")
+	}
+	all := tagOf("/api/saved-queries")
+	requests := tagOf("/api/saved-queries?q=requests")
+	errorsTag := tagOf("/api/saved-queries?q=errors")
+	require.NotEqual(t, all, requests)
+	require.NotEqual(t, requests, errorsTag)
+	require.Equal(t, requests, tagOf("/api/saved-queries?q=%20REQUESTS%20"), "the same terms name the same listing")
+	require.NotContains(t, tagOf(`/api/saved-queries?q=%22%0Aquote`), `quote`, "search text is hashed")
+
+	stale := request(t, h, http.MethodGet, "/api/saved-queries?q=errors", nil, map[string]string{"If-None-Match": requests})
+	require.Equal(t, http.StatusOK, stale.Code, "another search's tag does not match")
+	require.Contains(t, stale.Body.String(), `"errors"`)
+	require.NotContains(t, stale.Body.String(), `"requests"`)
+	require.Equal(t, http.StatusNotModified, request(t, h, http.MethodGet, "/api/saved-queries?q=errors", nil, map[string]string{"If-None-Match": errorsTag}).Code)
+}
