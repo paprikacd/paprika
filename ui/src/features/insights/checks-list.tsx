@@ -133,6 +133,11 @@ export function ChecksList({ report, dashboard, onFocusWidget, label, headingLev
 /** Checks a document as a save would send it. The client's validate call has this shape. */
 export type DocumentValidator = (document: Dashboard, signal?: AbortSignal) => Promise<CheckReport>;
 
+/** The line shown when a check could not run. A reason that ends in a full stop keeps one. */
+export function checkFailureText(reason: string): string {
+  return `Could not check this dashboard: ${reason.replace(/\.+$/, "")}. Applying to the canvas does not depend on the check.`;
+}
+
 /** A check that has not answered within this long is a failed check: Apply stays available. */
 export const CHECK_TIMEOUT_MS = 10_000;
 

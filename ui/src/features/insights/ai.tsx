@@ -15,13 +15,15 @@ import { documentChangeSummary, documentChangeText } from "./document-change"
 import { ChangeReview } from "./change-review"
 import { applyDashboardPatch, documentChanges, readDashboardPatchSource, type DocumentChanges, type JSONObject, type Placement } from "./dashboard-patch"
 import { dashboardAsSent } from "./layout-compaction"
-import { ChecksList, CHECK_TIMEOUT_MS, errorCountText, hasErrors, withTimeout, type DocumentValidator } from "./checks-list"
+import { ChecksList, CHECK_TIMEOUT_MS, checkFailureText, errorCountText, hasErrors, withTimeout, type DocumentValidator } from "./checks-list"
 import { buildAgentHandoff } from "./agent-handoff"
 import { GammaDisclosure } from "./gamma/disclosure"
 
 export { buildAIContext, dashboardToOpenUI, insightsLibrary, parseOpenUIDashboard } from "./openui"
 
 export type ApplyMode = "document" | "edits"
+
+const widgetCountText = (count: number) => `${count} widget${count === 1 ? "" : "s"}`
 
 interface AIBuilderProps {
   dashboard: Dashboard
@@ -76,6 +78,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
   const [reviewed, setReviewed] = useState<Reviewed | null>(null)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  const [checking, setChecking] = useState(false)
   // Each edit of the source or format starts a new pass; a review that finishes after one is stale and dropped.
   const pass = useRef(0)
   const currentBase = JSON.stringify(dashboard)
@@ -108,6 +111,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
     pass.current++
     setFormat("json")
     setReviewed(null)
+    setChecking(false)
     void copyAgentText(handoff.text, "Instructions copied. Paste the agent’s JSON reply below.")
   }
 
@@ -133,7 +137,11 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
       if (failure.reason === "unchanged") throw new Error("These edits do not change the draft.")
       throw new Error(failure.editIndex !== undefined ? `Edit ${failure.editIndex + 1}: ${failure.message}` : failure.message)
     }
-    return { document: dashboardSchema.parse(applied.document), mode: "edits", placements: applied.placements }
+    // The merged draft is read with the same schema and messages as a pasted dashboard.
+    const parsed = dashboardSchema.safeParse(applied.document)
+    if (!parsed.success)
+      throw new Error(parsed.error.issues.map((issue) => `${issue.path.join(".") || "dashboard"}: ${issue.message}`).join("\n"))
+    return { document: parsed.data, mode: "edits", placements: applied.placements }
   }
 
   async function runChecks(document: Dashboard): Promise<Pick<Reviewed, "report" | "checkFailed">> {
@@ -151,6 +159,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
   async function review() {
     const current = ++pass.current
     setReviewed(null)
+    setChecking(false)
     setError("")
     setNotice("")
     let result: ReturnType<typeof readReview>
@@ -169,8 +178,11 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
       setReviewed(next)
       return
     }
+    setChecking(true)
     const checked = await runChecks(result.document)
-    if (current === pass.current) setReviewed({ ...next, ...checked })
+    if (current !== pass.current) return
+    setChecking(false)
+    setReviewed({ ...next, ...checked })
   }
 
   function apply() {
@@ -269,6 +281,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
                 pass.current++
                 setFormat(item)
                 setReviewed(null)
+                setChecking(false)
                 setError("")
                 setNotice("")
               }}
@@ -291,6 +304,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
             pass.current++
             setSource(event.target.value)
             setReviewed(null)
+            setChecking(false)
             setError("")
             setNotice("")
           }}
@@ -314,7 +328,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
               <Check size={15} aria-hidden="true" />
               <strong>
                 {reviewed.mode === "edits"
-                  ? `Edits valid · ${reviewed.changes?.widgets.length ?? 0} widgets changed`
+                  ? `Edits valid · ${widgetCountText(reviewed.changes?.widgets.length ?? 0)} changed`
                   : `Definition valid · ${reviewed.document.widgets.length} widgets`}
               </strong>
             </div>
@@ -324,12 +338,17 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
             </p>
             {reviewed.checkFailed && (
               <p>
-                Could not check this dashboard: {reviewed.checkFailed}. Applying to the canvas does not depend on the check.
+                {checkFailureText(reviewed.checkFailed)}
               </p>
             )}
             {blockedByErrors && reviewed.report && <p>{errorCountText(reviewed.report)}. Fix them before applying.</p>}
             {!isCurrent && <p>The canvas changed. Review again before applying.</p>}
           </div>
+        )}
+        {checking && (
+          <p className={styles.hint} role="status">
+            Checking definition…
+          </p>
         )}
         {error && (
           <p className={styles.error} role="alert">
@@ -354,7 +373,9 @@ export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocumen
           {applyLabel}
         </GammaButton>
         <p className={styles.hint}>
-          Applying replaces the current draft. You can undo it before saving.
+          {reviewed?.mode === "edits"
+            ? "Applying changes only the widgets listed above. You can undo it before saving."
+            : "Applying replaces the current draft. You can undo it before saving."}
         </p>
       </section>
       <footer className={styles.footer}>

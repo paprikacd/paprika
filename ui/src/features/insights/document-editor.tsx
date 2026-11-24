@@ -25,6 +25,7 @@ import {
   CHECK_TIMEOUT_MS,
   CheckTimeout,
   checkCountsText,
+  checkFailureText,
   errorCountText,
   hasErrors,
   withTimeout,
@@ -339,7 +340,7 @@ export function DocumentEditor({
       ? { text: "Checking dashboard…", tone: "muted" }
       : checkState.status === "failed"
         ? {
-            text: `Could not check this dashboard: ${checkState.message}. Applying to the canvas does not depend on the check.`,
+            text: checkFailureText(checkState.message),
             tone: "error",
           }
         : checkState.status === "done" && hasErrors(checkState.report)
