@@ -265,7 +265,7 @@ func TestObserveForwardedRetryAfterIsCappedAtTheReplayCap(t *testing.T) {
 	}{{"1", 1}, {"10", 10}, {"11", 0}, {"60", 0}, {"0", 0}, {"soon", 0}} {
 		t.Run(tc.header, func(t *testing.T) {
 			var remote *observeError
-			require.ErrorAs(t, observeHTTPErrorFor(http.StatusTooManyRequests, tc.header), &remote)
+			require.ErrorAs(t, observeHTTPErrorFor(http.StatusTooManyRequests, tc.header, ""), &remote)
 			assert.Equal(t, tc.want, remote.retryAfter)
 		})
 	}

@@ -1040,7 +1040,7 @@ tasks:
           echo "FAIL[insights-netpol-omega]: render errored"; rc=1
         elif [ "$(printf '%s\n' "$np_out" | np_names)" != "paprika-controller-manager-ingress paprika-insights " ]; then
           echo "FAIL[insights-netpol-omega]: the omega stack must render only the Insights and manager ingress policies"; rc=1
-        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-omega ingress-api-gateway.txt egress-dns-gateway.txt; then
+        elif ! printf '%s\n' "$np_out" | np_exact insights-netpol-omega ingress-api-gateway-scrape.txt egress-dns-gateway.txt; then
           rc=1
         else
           echo "ok[insights-netpol-omega]"

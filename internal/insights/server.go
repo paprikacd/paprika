@@ -25,6 +25,7 @@ import (
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/capacityhint"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 type Config struct {
@@ -101,6 +102,10 @@ type Server struct {
 	// uploadRefusals counts saves and dry runs refused because the body budget was
 	// full, by route.
 	uploadRefusals metric.Int64Counter
+	// capacityRejections counts query requests refused for capacity, by pool:
+	// "query" is this service's execution pool, and "gateway" is an observability
+	// gateway 429, labelled with the limit scope it named.
+	capacityRejections metric.Int64Counter
 }
 
 // defaultQueryBudget bounds one /api/query end to end.
@@ -157,9 +162,15 @@ func (s *Server) createInstruments() error {
 	if err != nil {
 		return fmt.Errorf("create query counter: %w", err)
 	}
-	s.queryDuration, err = meter.Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"))
+	// The bounds are seconds. Without them OTel's millisecond defaults put every query under 5 s in one bucket.
+	s.queryDuration, err = meter.Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"),
+		metric.WithExplicitBucketBoundaries(metrics.SecondsBuckets()...))
 	if err != nil {
 		return fmt.Errorf("create query duration histogram: %w", err)
+	}
+	s.capacityRejections, err = meter.Int64Counter("paprika_insights_query_capacity_rejections", metric.WithDescription("Query requests refused for capacity, by pool (query or gateway) and, for the gateway, the limit scope it named (edge, budget, provider, queue, or unknown)"))
+	if err != nil {
+		return fmt.Errorf("create capacity rejection counter: %w", err)
 	}
 	s.uploadRefusals, err = newUploadRefusalCounter(meter)
 	if err != nil {
@@ -449,7 +460,7 @@ func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	case s.queryWaiting <- struct{}{}:
 		defer func() { <-s.queryWaiting }()
 	default:
-		return nil, s.queryCapacityRefusal()
+		return nil, s.queryCapacityRefusal(ctx)
 	}
 	timer := time.NewTimer(s.queryWaitTimeout)
 	defer timer.Stop()
@@ -459,7 +470,7 @@ func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("query admission context: %w", ctx.Err())
 	case <-timer.C:
-		return nil, s.queryCapacityRefusal()
+		return nil, s.queryCapacityRefusal(ctx)
 	}
 }
 
@@ -479,7 +490,8 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 
 // queryCapacityRefusal is the refusal for a query that could not get an execution
 // slot. Its Retry-After is the wait the query pool's observed hold time implies.
-func (s *Server) queryCapacityRefusal() error {
+func (s *Server) queryCapacityRefusal(ctx context.Context) error {
+	s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "query")))
 	return &capacityRefusal{err: errQueryCapacity, retryAfter: s.queryHold.Seconds(len(s.queryWaiting), cap(s.queries))}
 }
 
@@ -539,6 +551,13 @@ func (s *Server) executeProviderQuery(ctx context.Context, p *providerClient, q 
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
 	s.queryCount.Add(ctx, 1, attributes)
 	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
+	if failure := classifyQueryFailure(err); err != nil && failure.Code == "rate_limited" {
+		scope := failure.LimitScope
+		if scope == "" {
+			scope = "unknown"
+		}
+		s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "gateway"), attribute.String("scope", scope)))
+	}
 	return result, err
 }
 

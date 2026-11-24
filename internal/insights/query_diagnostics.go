@@ -25,7 +25,10 @@ type QueryDiagnostics struct {
 	Phases      []QueryDiagnosticPhase `json:"phases"`
 	TotalMs     float64                `json:"totalMs"`
 	Counts      *QueryResultCounts     `json:"counts,omitempty"`
-	Truncated   bool                   `json:"truncated"`
+	// LimitScope is the gateway limit that refused the query (edge, budget,
+	// provider or queue), set when the outcome is capacity and the gateway named one.
+	LimitScope string `json:"limitScope,omitempty"`
+	Truncated  bool   `json:"truncated"`
 	// TruncationReason is the QueryTruncation.Reason of a truncated result. It
 	// is absent when the result is complete.
 	TruncationReason string `json:"truncationReason,omitempty"`
@@ -273,6 +276,7 @@ func (d *QueryDiagnostics) complete(result *QueryResult, err error) {
 			d.Outcome = "timeout"
 		case "rate_limited":
 			d.Outcome = "capacity"
+			d.LimitScope = classifyQueryFailure(err).LimitScope
 		default:
 			d.Outcome = "error"
 		}
@@ -317,16 +321,22 @@ func writeQueryFailure(w http.ResponseWriter, err error, diagnostics *QueryDiagn
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 	}
-	code := classifyQueryFailure(err).Code
+	failure := classifyQueryFailure(err)
 	if diagnostics == nil {
-		writeJSON(w, status, map[string]string{"error": message, "code": code})
+		writeJSON(w, status, queryFailureBody{Error: message, Code: failure.Code, LimitScope: failure.LimitScope})
 		return
 	}
-	writeJSON(w, status, struct {
-		Error       string            `json:"error"`
-		Code        string            `json:"code"`
-		Diagnostics *QueryDiagnostics `json:"diagnostics"`
-	}{Error: message, Code: code, Diagnostics: diagnostics})
+	writeJSON(w, status, queryFailureBody{Error: message, Code: failure.Code, LimitScope: failure.LimitScope, Diagnostics: diagnostics})
+}
+
+// queryFailureBody is the JSON of a failed query. LimitScope is set only on a
+// rate-limited refusal whose gateway named its limit, so a board can hold just
+// the widgets that limit affects. Diagnostics is absent without a receipt.
+type queryFailureBody struct {
+	Error       string            `json:"error"`
+	Code        string            `json:"code"`
+	LimitScope  string            `json:"limitScope,omitempty"`
+	Diagnostics *QueryDiagnostics `json:"diagnostics,omitempty"`
 }
 
 // queryErrorResponse maps a failed query phase to its status and message. The

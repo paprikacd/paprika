@@ -63,7 +63,7 @@ type dataOptions struct {
 
 // transientQueryCodes are failures a retry can clear. They never produce a data
 // finding; the widget reports unavailable instead.
-var transientQueryCodes = map[string]bool{"rate_limited": true, "timeout": true, "canceled": true}
+var transientQueryCodes = map[string]bool{"rate_limited": true, "timeout": true, "canceled": true, "gateway_unavailable": true}
 
 // providerQueryCodes are failures whose cause is the widget's provider setting.
 var providerQueryCodes = map[string]bool{"provider_not_found": true, "forbidden": true, "incompatible_provider": true}
@@ -81,6 +81,7 @@ var queryCodeText = map[string]string{
 	"invalid_annotation_columns":   "the event query does not return the configured columns",
 	"annotation_columns_truncated": "a configured event column sits beyond the first 12 columns",
 	"provider_error":               "the provider query could not be completed",
+	"gateway_unavailable":          "the observability gateway could not complete the query",
 	"rate_limited":                 "query capacity is exhausted",
 	"timeout":                      "the provider query exceeded its time budget",
 	"canceled":                     "the dry run was canceled",

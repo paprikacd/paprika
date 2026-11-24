@@ -148,11 +148,11 @@ func readRESTResponse(ctx, opCtx context.Context, response *http.Response, limit
 // canceled request and a provider that is not fully configured. The MCP domain
 // codes and the REST envelope both map to them.
 func observeCanceledError() error {
-	return &observeError{http.StatusRequestTimeout, "observability request was canceled", 0}
+	return &observeError{http.StatusRequestTimeout, "observability request was canceled", 0, ""}
 }
 
 func observeNotConfiguredError() error {
-	return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured", 0}
+	return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured", 0, ""}
 }
 
 // observeEnvelopeMaxBytes bounds the gateway's error envelope when a 408 or 503
@@ -167,7 +167,7 @@ const observeEnvelopeMaxBytes = 4 << 10
 func observeRESTStatusError(response *http.Response) error {
 	status := response.StatusCode
 	if status != http.StatusRequestTimeout && status != http.StatusServiceUnavailable {
-		return observeHTTPErrorFor(status, response.Header.Get("Retry-After"))
+		return observeHTTPErrorFor(status, response.Header.Get("Retry-After"), response.Header.Get(observeLimitScopeHeader))
 	}
 	if !gatewayUnavailableEnvelope(response) {
 		return observeHTTPError(http.StatusBadGateway)

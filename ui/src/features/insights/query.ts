@@ -111,10 +111,21 @@ export interface QuerySchedulerOptions {
   maxCapacityWaitMs?: number;
 }
 
-/** The Retry-After of an admission 429 from the query route, or undefined for any other error. */
-function capacityRefusal(error: unknown): { retryAfter: string | null } | undefined {
+/** The Retry-After and gateway limit scope of an admission 429 from the query route, or undefined for any other error. */
+function capacityRefusal(error: unknown): { retryAfter: string | null; limitScope?: string } | undefined {
   if (!error || typeof error !== "object" || (error as { status?: unknown }).status !== 429) return undefined;
-  return { retryAfter: (error as { retryAfter?: string | null }).retryAfter ?? null };
+  const { retryAfter, limitScope } = error as { retryAfter?: string | null; limitScope?: string };
+  return { retryAfter: retryAfter ?? null, limitScope };
+}
+
+/**
+ * The hold key for a refusal. A provider-scoped refusal (or one that names no
+ * scope) holds only its own provider. An edge, budget or queue refusal limits
+ * every provider, so it holds the whole board.
+ */
+const BOARD_HOLD = "*";
+function holdKeyFor(providerId: string, limitScope: string | undefined): string {
+  return limitScope === undefined || limitScope === "provider" ? providerId : BOARD_HOLD;
 }
 
 /**
@@ -217,9 +228,9 @@ export function createQueryScheduler(
     entry.attempts++;
     entry.capacityWaitMs += delay;
     entry.waiting = true;
-    // The provider refused, so its other queued entries wait out the same backoff. Other providers keep their slots.
-    const providerId = entry.request.providerId;
-    providerHolds.set(providerId, Math.max(providerHolds.get(providerId) ?? 0, Date.now() + delay));
+    // A provider-scoped refusal holds that provider's queued entries; an edge, budget or queue refusal holds the board.
+    const holdKey = holdKeyFor(entry.request.providerId, refusal.limitScope);
+    providerHolds.set(holdKey, Math.max(providerHolds.get(holdKey) ?? 0, Date.now() + delay));
     diagnostics.update(entry.receiptId, { state: "queued", attempts: entry.attempts, capacityWaitMs: entry.capacityWaitMs });
     entry.retryTimer = setTimeout(() => {
       entry.retryTimer = undefined;
@@ -241,7 +252,7 @@ export function createQueryScheduler(
       const now = Date.now();
       let index = -1;
       for (let i = 0; i < queue.length; i++) {
-        const until = providerHolds.get(queue[i].request.providerId) ?? 0;
+        const until = Math.max(providerHolds.get(queue[i].request.providerId) ?? 0, providerHolds.get(BOARD_HOLD) ?? 0);
         if (until <= now) {
           index = i;
           break;

@@ -231,13 +231,21 @@ export class InsightsHTTPError extends Error {
  * is unchanged; the fixed code and the sanitized receipt, when sent, ride along.
  */
 export class InsightsQueryError extends InsightsHTTPError {
-  constructor(message: string, status: number, retryAfter: string | null, readonly code: string, readonly diagnostics?: QueryDiagnostics) {
+  constructor(
+    message: string,
+    status: number,
+    retryAfter: string | null,
+    readonly code: string,
+    readonly diagnostics?: QueryDiagnostics,
+    /** The gateway limit that refused a 429 (edge, budget, provider or queue), when it named one. */
+    readonly limitScope?: string,
+  ) {
     super(message, status, retryAfter)
     this.name = "InsightsQueryError"
   }
 }
 
-const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error"])
+const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error", "gateway_unavailable"])
 
 // Fallback copy by code, for a failure whose body is not Insights' JSON envelope
 // (a proxy page) or carries no error text. Insights writes its query failures
@@ -250,6 +258,7 @@ const queryFailureMessages: Record<string, string> = {
   invalid_query: "The data source rejected this query. Check the expression and time bounds.",
   provider_not_found: "The data source is unavailable. Choose a connected source.",
   provider_error: "The data source could not complete this query. Retry, or check its connection.",
+  gateway_unavailable: "Insights could not reach the observability gateway. Retry shortly.",
 }
 
 const serviceUnavailableMessage = "Insights is unavailable. Check the service and provider configuration."
@@ -285,7 +294,8 @@ async function queryFailure(response: Response): Promise<InsightsQueryError> {
   const message = envelopeCode !== undefined ? queryFailureMessages[envelopeCode]
     : envelopeText && response.status !== 403 ? envelopeText
     : serviceFailure ? serviceUnavailableMessage : queryFailureMessages[code]
-  return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics))
+  const limitScope = typeof envelope.limitScope === "string" ? envelope.limitScope : undefined
+  return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics), limitScope)
 }
 
 const SEVERITY_BY_NAME: Record<string, Severity> = {
