@@ -4,7 +4,7 @@ Review scope: all six built-in renderers and the bundled Threshold gauge, their 
 
 ## Review authorities
 
-- `paprika-widgets`: shared/per-type checklist and host/plugin/document boundaries.
+- `paprika-widgets`: shared/per-type checklist and host/plugin/document boundaries. The unversioned `paprika-widgets` skill cited here was folded into the repository in November 2026; its still-current checks are in [the widget checklist](../../../../.agents/skills/paprika-dashboard-design/references/widget-checklist.md).
 - Impeccable: **Operate** mode, technical audit, craft checks, one initial visual batch and one confirmation batch. Its context command permitted scoped fixes to existing UI. The earlier spring/overshoot finding remains fixed through Gamma's emphasized easing alias.
 - Frontend Design Premium and its upstream frontend-design: canonical component resolution, production states, focus, responsive behavior and static verification.
 - Explicit local frontend-design: hierarchy, typography, visual restraint and existing product context.

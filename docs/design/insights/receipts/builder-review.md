@@ -23,13 +23,7 @@ The installed `audit` and `critique` skills now require both full-context views 
 
 The `paprika-widgets` skill now includes authoring/provider inventory, explicit icon-only button checks, switch containment, multiline editor height, actual hit areas and tooltip sub-widget invariants. Its coordinated design workflow retains Impeccable's Operate mode, Frontend Design Premium's canonical ownership, the local frontend-design guidance, and the dashboard scope boundary in design-taste-frontend. Gamma source retrieval and adaptations are recorded in [the adapter README](../../../../ui/src/features/insights/gamma/README.md).
 
-Updated local skill sources:
-
-- `/Users/benebsworth/.agents/skills/audit/SKILL.md`
-- `/Users/benebsworth/.agents/skills/critique/SKILL.md`
-- `/Users/benebsworth/.codex/skills/paprika-widgets/SKILL.md`
-- `/Users/benebsworth/.codex/skills/paprika-widgets/references/design-review.md`
-- `/Users/benebsworth/.codex/skills/paprika-widgets/references/widget-checklist.md`
+Updated local skill sources (user-installed at the time, outside the repository): the `audit` and `critique` skills, and the `paprika-widgets` skill with its `design-review.md` and `widget-checklist.md` references. The unversioned `paprika-widgets` skill cited here was folded into the repository in November 2026; its still-current checks are in [the widget checklist](../../../../.agents/skills/paprika-dashboard-design/references/widget-checklist.md).
 
 The widget skill passes the skill creator's validator. The generic validator rejects the audit/critique skills' pre-existing upstream `args` and `user-invocable` frontmatter keys; these were preserved rather than deleting installed skill metadata. The added Markdown changes do not alter their invocation metadata or the audit-only scope when no fix is requested.
 

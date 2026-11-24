@@ -19,7 +19,7 @@ Partial imports preserve completed decisions and copy identities. Copy/existing-
 - Gamma discovery used the maintained `disclosure-stack` brief and source; hashes and adaptation details are in `artifacts/insights/import-review/gamma-discovery.json`. Existing button/input/select owners remain unchanged.
 - The initial Impeccable scan found an unnecessary decorative left border in the replacement notice. It was replaced with the ordinary full Gamma border. The final detector reports zero findings; output is recorded in `artifacts/insights/import-review/impeccable.json`; no suppression was added.
 - Premium strict reports the same seven known false positives: four intentionally actionless focus/selection fixture buttons, two native form test fixtures, and the shared textarea whose `resize: none` rule lives in its CSS module. None originates in the new import UI. No suppression was added.
-- The installed `paprika-widgets` skill and checklist now describe explicit reviewed replacement, ETag/compatibility requirements and the desktop/mobile visual gates. Skill validation passes.
+- The installed `paprika-widgets` skill and checklist now describe explicit reviewed replacement, ETag/compatibility requirements and the desktop/mobile visual gates. Skill validation passes. The unversioned `paprika-widgets` skill cited here was folded into the repository in November 2026; its still-current checks are in [the widget checklist](../../../../.agents/skills/paprika-dashboard-design/references/widget-checklist.md).
 
 ## Native and service review
 

@@ -102,7 +102,7 @@ Codes use the dashboard reader's public error vocabulary: `canceled`,
 `provider_error` and `gateway_unavailable`. The receipt spells its cancellation outcome `cancelled`.
 A rate-limited failure from the observability gateway also carries `limitScope`
 (`edge`, `budget`, `provider`, `queue` or `principal`), taken from the gateway's
-`X-Paprika-Limit-Scope` header; any other value is dropped. A provider-scoped
+`X-Paprika-Limit-Scope` header (each scope is defined in [the observability gateway guide](../../guides/observability-gateway.md)); any other value is dropped. A provider-scoped
 refusal holds only that provider's widgets on a board. Every other refusal,
 including one with no `limitScope` (Insights' own pool, an older gateway), holds
 every widget.
@@ -228,7 +228,7 @@ does not establish a passing browser run or live provider behavior.
 
 ## Result cache deliveries
 
-A receipt may carry `cache`, which says how the server's result cache answered:
+A receipt may carry `cache`, which says how the server's result cache answered (the cache itself, its bounds and its freshness are specified in [the service contract](../../../internal/insights/README.md#result-cache-and-collection-tags)):
 `status` is `hit`, `joined`, `miss` or `bypass`. A `hit` returned a stored result and a
 `joined` returned the result of an execution that was already in flight. Neither made a
 provider request, so both report `dispatched: false`, no upstream phase, and a `cache`

@@ -2,7 +2,52 @@
 
 Insights is an observability dashboard workspace inside Paprika. Its UI lives behind a small `InsightsApp` entry point and `InsightsClient` interface in `ui/src/features/insights`. Provider requests and dashboard persistence run in the separate `paprika-insights` Go component. The route is `/dashboard/insights/`.
 
-The visual direction is documented in [the generated wireframes and exact prompts](./receipts/prompts.md). The warm canvas, fine borders, compact controls, and restrained paprika, sage, and blue palette let the data carry most of the visual weight. Wireframes contain illustrative data and labels; they are not evidence of implemented functionality.
+The design context is the root [DESIGN.md](../../../DESIGN.md). The October 2026 wireframes that set the first visual direction are kept as evidence in [receipts/prompts.md](./receipts/prompts.md); they contain illustrative data, not implemented behaviour.
+
+## How these docs are organised
+
+This directory holds three kinds of document. Only the first is the current contract.
+
+**Current contract.** Each topic is described once, in the file named here.
+
+| Topic | Document |
+| --- | --- |
+| Document fields, OpenUI, provider and persistence boundary | This README |
+| Machine contracts: [dashboard.schema.json](dashboard.schema.json), [saved-query.schema.json](saved-query.schema.json), [widget-plugins.json](widget-plugins.json) | Generated and drift-checked; embedded by the Go package in [schemas.go](schemas.go), so they must not move |
+| Shared Go and TypeScript fixtures | [conformance/](conformance/) |
+| UI behaviour owners, status, breach and attention rules, number display, stat comparisons, baseline bands, SLO cards | [UX-CONTRACT.md](UX-CONTRACT.md) |
+| Variables (several values, All, sources), click-to-filter and links | [drilldowns.md](drilldowns.md) |
+| `query_dashboard`, the variable options endpoint, admission | [dashboard-query.md](dashboard-query.md) |
+| Schema discovery, `patch_dashboard` and `widget_edits`, revision history, the shared patch merge | [targeted-authoring.md](targeted-authoring.md) |
+| `covers`, the application lookup and embed mode | [coverage.md](coverage.md) |
+| Kubernetes widgets | [kubernetes-widgets.md](kubernetes-widgets.md) |
+| Tooltip widgets | [tooltip-widgets.md](tooltip-widgets.md) |
+| Explore and saved queries | [explorer.md](explorer.md) |
+| Portable bundles and import review | [portable-bundles.md](portable-bundles.md) |
+| Execution receipts, failure codes, result cache deliveries, gateway limit scope | [query-diagnostics.md](query-diagnostics.md) |
+| Rich chart input contracts | [artboard-implementation.md](artboard-implementation.md) |
+| Service API, permissions, result cache, lint rules | [internal/insights/README.md](../../../internal/insights/README.md) |
+| Design context, status and series vocabulary | [DESIGN.md](../../../DESIGN.md) |
+| Status token mirror | [status-tokens.json](status-tokens.json) |
+
+**Guides and plans.**
+
+- [Insights dev loop](../../guides/insights-dev-loop.md): playground, unit tests, lint, browser suites, visual matrix.
+- [Local dashboard loop](../../guides/local-dashboard-polish.md), [widget lab](../../guides/widget-lab.md) and [dashboard data coverage](../../guides/dashboard-data-coverage.md).
+- [Gamma discovery](gamma-discovery.md), [live Omega acceptance](omega-validation.md) and the [react-grid-layout exit plan](grid-library-exit.md).
+- Provenance: [world land outline](world-land-source.md), [gamma-source-catalogue.json](gamma-source-catalogue.json); verification gates: [premium-ui.json](premium-ui.json).
+- The review protocol is in the [design skill's validation reference](../../../.agents/skills/paprika-dashboard-design/references/validation.md).
+
+**Dated evidence** lives in [receipts/](receipts/). Each file records what was built or checked on one day. Never cite one as current behaviour.
+
+| Receipt | Date |
+| --- | --- |
+| [Validation history](receipts/validation-history.md), [builder](receipts/builder-review.md), [Explorer](receipts/explorer-review.md), [import](receipts/import-review.md), [portable bundles](receipts/portable-bundles-review.md), [tooltip host](receipts/tooltip-host-review.md), [tooltip query](receipts/tooltip-query-review.md) and [saved-query tooltip](receipts/tooltip-saved-review.md) reviews | 24 October 2026 |
+| [Visual direction wireframes](receipts/prompts.md) | 23 October 2026 |
+| [Observability integration](receipts/observability-integration-validation.md), [Observe authoring](receipts/observe-authoring-validation.md), [Observe as a data source](receipts/observe-data-source-validation.md), [service overview](receipts/service-overview-validation.md), [query_dashboard acceptance](receipts/dashboard-query-acceptance-2026-10.md) | 26 and 27 October 2026 |
+| [Rich chart verification](receipts/artboard-verification-2026-10-29.md), [reference dashboard acceptance](receipts/reference-dashboard-acceptance.md) | 29 October 2026 |
+| [Widget review](receipts/widget-review.md), [five-lens review protocol](receipts/review-loop.md) (superseded) | 29 and 30 October 2026 |
+| [Omega control room](receipts/omega-control-room-2026-11-06.md), [local dashboard polish](receipts/local-dashboard-polish-2026-11-07.md), [local polish brief](receipts/local-polish-brief.md) | 6 to 9 November 2026 |
 
 ## One document across every authoring mode
 
@@ -44,19 +89,29 @@ widgets:
 | `id`, widget `id`, `providerId` | 1–80 ASCII letters, digits, `_` or `-`; start with a letter or digit. |
 | `title` | Nonempty, at most 120 characters. |
 | `description` | Optional, at most 500 characters. |
-| `timeRange` | `15m`, `1h`, `6h`, `24h`, or `7d`. |
+| `timeRange` | `15m`, `30m`, `1h`, `6h`, `24h`, `7d` or `30d`. |
 | `refreshInterval` | `0`, `15`, `30`, or `60` seconds. `0` disables automatic refresh. |
 | `widgets` | At most 48, with unique identifiers. |
 | `folder` | Optional slash-separated path up to 160 characters, e.g. `Production/Payments`. |
 | `customTimeRange` | Optional `{from,to}` ISO dates with timezones; increasing, at most 31 days; overrides the preset. |
-| `covers` | Optional `{applications,variables?,summaryWidget?}`: the applications (namespace and name, each optional) the dashboard is for, the declared variables that take the namespace or name, and the summary widget id. Application pages list matching dashboards and show the first one's summary widget in a same-origin frame of the Insights page in embed mode: `/dashboard/insights/?dashboard=<id>&embed=<widgetId>&theme=light` (or `dark`) with the usual `vars`, `range` and `refresh` renders that one widget read-only, filling the frame, with an Open dashboard link to the top window. Only the Insights page may be framed, and only by the same origin. The lookup ranks a namespace and name match above a name, a namespace, and `{}`, so an exact match comes first. First-party starters declare `covers` only where it holds for every application: `namespace-capacity` covers `{}` through its namespace variable. `service-overview` and `slo-burn-rate` declare none, because they assume the application name is a `service` label. |
+| `timeZone` | Optional IANA zone for the calendar axis, observation inspector and window labels; omitted, the viewer's zone applies. |
+| `variables` | Optional, at most 20. See [drilldowns](drilldowns.md). |
+| `annotationSource` | Optional recorded events from a saved records query, inherited by every time-based widget without its own. See [recorded chart events](../../guides/insights-chart-events.md). |
+| `covers` | Optional `{applications,variables?,summaryWidget?}`: which applications the dashboard is for. See [coverage](coverage.md). |
 | widget `type` | `timeseries`, `bar`, `stat`, `table`, `traces`, `heatmap`, or `plugin`. |
-| widget `query` | Nonempty PromQL or TraceQL, at most 8,192 characters. |
+| widget `query` | Nonempty query in the provider's native language (PromQL, TraceQL, SQL, or a records operation in JSON), at most 8,192 characters. |
 | widget `unit` | Display suffix, at most 24 characters. Values are not converted implicitly. |
 | widget `color` | Optional six-digit hex color. |
-| widget `options` | Axis labels, line/area display, interpolation, grid, legend, heatmap label/value visibility, tooltips, precision, bounds, line width/fill, background/text colors, and ascending value thresholds. |
-| widget `pluginId`, `dataKind`, `config` | For plugin widgets only: registered ID, `metrics` or `traces`, and optional JSON settings bounded to 16 KiB and eight nesting levels. |
+| widget `options` | Presentation options per widget type. See [the widget option catalogue](#widget-option-catalogue). |
+| widget `pluginId`, `dataKind`, `config` | For plugin widgets only: registered ID, `metrics`, `traces` or `records`, and optional JSON settings bounded to 16 KiB and eight nesting levels. |
 | widget `layout` | 12 columns; `x` 0–11, `y` 0–1000, `w` 1–12, `h` 1–12 for stat widgets and 2–12 for other widgets, and `x + w <= 12`. |
+
+### Widget option catalogue
+
+This section is a placeholder. The catalogue of widget options will be generated from the schema in a later
+change (review item R69) and will replace it; do not hand-write option tables here or elsewhere. Until then,
+read the option definitions in [dashboard.schema.json](dashboard.schema.json) (or `get_insights_schema` over
+MCP), and the behaviour of each option in [UX-CONTRACT.md](UX-CONTRACT.md).
 
 Source documents are limited to 256 KiB of UTF-8. Unknown properties, duplicate widget IDs, duplicate YAML mapping keys, YAML aliases and merge properties are rejected. YAML is decoded only as data; there is no executable tag loader. JSON/YAML export remains suitable for version control. Importing a plain dashboard document edits the active dashboard while retaining its persistence identity. Portable bundles open a separate import review and create new dashboards with their saved-query dependencies; see [portable bundles](portable-bundles.md).
 
@@ -124,7 +179,7 @@ markers. `list_metric_series` preserves bounded label/cardinality inspection.
 Data sources shows **Paprika Observe MCP**, its actual connection status,
 supported read tools and discovered providers. **Refresh connection** checks
 both discovery and the caller's current provider access. Choose **Explore** on
-a provider to open its PromQL or TraceQL editor; the editor explains the tool's
+a provider to open its query editor; the editor explains the tool's
 provider, time-range and step bindings. Normal widget canvases stay focused on
 data. The connection uses existing Paprika permissions, with no client token
 or endpoint form. This is specifically the Paprika Observe integration, not a
@@ -133,9 +188,10 @@ general-purpose MCP tool runner.
 Saved-query descriptions, tags, typed parameters and dashboard/tooltip bindings
 continue to live in Insights. The existing scheduler resolves their templates
 once before querying the shared provider; existing MCP authoring tools and the
-UI continue to use the same document stores. Other gateway connector
-types remain available through MCP and Observability; the dashboard currently
-supports PromQL metrics and TraceQL searches.
+UI continue to use the same document stores. Dashboards read metrics
+(PromQL), traces (TraceQL) and typed records (SQL and application JSON, through
+`query_records`); other gateway connector types remain available through MCP and
+Observability.
 
 Use `deploymentMode: split` and enable `insights.enabled` and
 `observabilityGateway.enabled` in the chart, with
@@ -206,35 +262,12 @@ Responsive layouts follow the **measured canvas width**, including space occupie
 
 ## Verification and current scope
 
-The [widget review](receipts/widget-review.md), [builder/query/provider review](receipts/builder-review.md), [tooltip query review](receipts/tooltip-query-review.md), [tooltip host review](receipts/tooltip-host-review.md), [behavior owners](UX-CONTRACT.md), and root [design context](../../../DESIGN.md) record the Gamma reviews. The installed `paprika-widgets` skill coordinates audit, critique, Impeccable, Frontend Design Premium, frontend-design and the applicable design-taste guidance. The builder review adds measured control geometry and native viewport captures so component imports and passing clicks cannot substitute for visual verification.
+How to run the unit, lint and browser checks is in [the Insights dev loop](../../guides/insights-dev-loop.md).
+Review evidence is in [receipts/](receipts/), indexed above, and the review protocol and widget checklist
+are in the [design skill](../../../.agents/skills/paprika-dashboard-design/SKILL.md). Browser suites write
+screenshots and reports under `artifacts/insights/`.
 
-See the [completed validation report](./receipts/validation-history.md) for the production build, unit/race tests, Helm checks, and browser scenarios.
-
-Targeted tests cover source round trips, schema constraints, YAML aliases, OpenUI parsing, provider compatibility, review/apply behavior, undo/redo, HTTP authentication headers, conditional writes, query scheduling, and chart data handling. Browser-level checks should cover dragging/resizing, keyboard inspector controls, source editing, AI review, persistence after reload, responsive layout, and query failures.
-
-From the `ui` directory, run the focused unit suites with:
-
-```sh
-npm test -- src/features/insights
-```
-
-The browser suites use the installed Playwright package and Chromium (`npx playwright install chromium` if the browser is not installed). The live suite also needs Go on `PATH`. To start a local Next development server, run all browser suites, and shut down the test-owned server:
-
-```sh
-node e2e/run-insights.mjs
-```
-
-If a Next development server is already running, reuse it to avoid a second server's build-directory lock:
-
-```sh
-INSIGHTS_E2E_URL=http://127.0.0.1:3015 node e2e/run-insights.mjs
-```
-
-The suites can also run individually as `node e2e/insights.e2e.mjs`, `node e2e/insights-advanced.e2e.mjs`, `node e2e/insights-responsive.e2e.mjs`, and `node e2e/insights-live.e2e.mjs`. The first checks canvas/source/AI authoring. The advanced suite checks heatmap styles, registered plugins, absolute time ranges, folder operations, library export/import/provider remapping, and mobile controls. The responsive suite checks shrink/grow cycles, layout preservation, heatmap visibility settings, and pointer/keyboard/touch tooltips. The live suite starts the actual Go Insights service against deterministic HTTP providers and checks querying, provider management/discovery, persistence/restart, fixed ranges, and conflicts. It uses a test-only browser route bridge for the static Next app; production proxy authentication is checked separately in Go tests. Screenshots and JSON reports are written under `artifacts/insights/`.
-
-This implementation is the dashboard-building foundation for replacing Grafana in Paprika. It does not claim Grafana feature parity: alert rule management, log providers, trace waterfalls, user-specific dashboard permissions, and a connected model/chat backend remain separate extensions. Widget plugins are trusted application modules, not a marketplace or remote-code loader.
-
-The runner also includes drilldown, all-widget, builder and queried-tooltip suites. The newest `insights-tooltip-query.e2e.mjs` uses the actual Go service and a test-owned gateway that propagates aborts to deterministic providers. It checks all seven tooltip visualization choices, exact label and point/row interpolation, query cancellation/staleness, persistence, import remapping and native Gamma controls on desktop/mobile.
+This implementation is the dashboard-building foundation for replacing Grafana in Paprika. It does not claim Grafana feature parity: alert rule management, log providers, user-specific dashboard permissions, and a connected model/chat backend remain separate extensions. Widget plugins are trusted application modules, not a marketplace or remote-code loader. The trace explorer's on-demand span waterfall is described in [the trace waterfall guide](../../guides/insights-trace-waterfall.md).
 
 ## Data source explorer and saved queries
 

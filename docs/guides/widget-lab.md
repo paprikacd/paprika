@@ -35,7 +35,7 @@ The build writes `labs/widget-lab/dist/`, which is ignored by Git. All displayed
 | Guided configuration, fields and JSON editing | [`src/editor`](../../labs/widget-lab/src/editor/) |
 | Domain widgets and authoring verification | [Iteration 10 report](../../labs/widget-lab/docs/iteration-10-authoring-and-domain-widgets.md) |
 | Responsive Edge Watch and Reliability Room, viewport evidence and 575-test verification | [Iteration 11 report](../../labs/widget-lab/docs/iteration-11-responsive-reference-dashboards.md), [browser measurements](../../labs/widget-lab/docs/qa/iteration-11-browser-evidence.json) |
-| Design and interaction contracts | [`DESIGN.md`](../../labs/widget-lab/DESIGN.md), [`UX-CONTRACT.md`](../../labs/widget-lab/UX-CONTRACT.md) |
+| Lab design and interaction notes (lab-only; production rules are the root [`DESIGN.md`](../../DESIGN.md)) | [`DESIGN.md`](../../labs/widget-lab/DESIGN.md), [`UX-CONTRACT.md`](../../labs/widget-lab/UX-CONTRACT.md) |
 | Attribution and renderer ownership | [`attribution/`](../../labs/widget-lab/attribution/) (upstream license and Gamma attribution at `bb52aed8`), [lab-only wrappers and the production gap each covers](../../labs/widget-lab/src/renderer-extensions/README.md) |
 
 Import provenance: the initial import is source commit `29b22f4c919e7f821f18d64b96baa71b0966ca42`. The retired per-file manifest and regenerated patch are at commit `af11b6c3` (git history). The lab keeps no export manifest or sync script; Git tracks the current files.

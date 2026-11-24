@@ -1,22 +1,6 @@
 # Insights validation — 24 October 2026
 
-## Running the browser suites
-
-Every Insights browser suite is listed once in `ui/e2e/insights-suites.json`, with its tags, the prerequisites it needs and a timeout. Run from `ui/`:
-
-```sh
-node e2e/run-insights.mjs --list --tag smoke   # print the selection; starts nothing
-node e2e/run-insights.mjs --tag smoke --retries 1   # the CI smoke set; a suite that passes on retry is reported as flaky
-node e2e/run-insights.mjs                      # the "full" tag (the no-argument default)
-node e2e/run-insights.mjs --tag perf          # performance suites, against the static export in ui/out
-node e2e/run-insights.mjs e2e/insights-x.e2e.mjs   # named suites, listed or not
-```
-
-Suites run in sequence. A failing suite does not stop the rest; the run prints a summary and exits non-zero. Each suite gets its timeout from the manifest. Without `INSIGHTS_E2E_URL`, `dev` suites use a `next dev` server and `perf` suites use a static server over `ui/out`, so run `npm run build` first. Set `INSIGHTS_E2E_URL` to use one server for every suite.
-
-Browser suites need Playwright Chromium and the Go toolchain (each binary is built with `go build`). Suites marked `gallery` need the gallery Docker stack at `PAPRIKA_GALLERY_BASE_URL` and are run directly with `node e2e/<suite>`, not through the runner. `postgres`, `uptime` and `credentials` suites need the environment named in their file. The CI smoke step runs `--tag smoke --retries 1`. On a pull request (and in the local `task ci` job, against the merge base with master) it skips only when every changed file matches the manifest's `smokeSkipPaths`: Markdown, images under `docs/`, `.agents/` and `landing/`. Other files under `docs/` count as code, because `docs/design/insights` is a Go package that embeds the schemas into the service. Pushes to master, renames out of a code path, empty diffs and any git error run the suites (`e2e/insights-relevance.mjs`).
-
-`node --test e2e/insights-suites.test.mjs` checks that the manifest lists every `insights*.e2e.mjs` file once and that the smoke tag matches the CI set.
+> Dated evidence. How to run the browser suites today is in [the Insights dev loop](../../../guides/insights-dev-loop.md).
 
 Validated locally against the production static export. No cluster deployment was performed.
 

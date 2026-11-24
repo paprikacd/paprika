@@ -1,4 +1,8 @@
-# Paprika dashboard five-lens review protocol
+# Paprika dashboard five-lens review protocol (superseded)
+
+> Evidence from October 2026, kept for history. The current review protocol is the "Review protocol" section of
+> [the design skill's validation reference](../../../../.agents/skills/paprika-dashboard-design/references/validation.md).
+> The `skill://` lens paths below were local install paths and do not resolve elsewhere.
 
 ## Scope and authority
 Review the actual Insights operational journey, not isolated cards. Preserve root DESIGN.md, UX-CONTRACT.md, maintained Gamma adapters, normalized data and saved-document semantics. Insights supports light/dark/System independently of the main shell. Sample data must remain explicitly identified. Native sample UI review does not require Omega access; it cannot establish Omega/provider integration. Missing reference images prevent reference parity, not evaluation of the real UI.
