@@ -209,6 +209,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
+	api.HandleFunc("POST /api/dashboards/{id}/variable-options", s.dashboardVariableOptions)
 	api.HandleFunc("GET /api/dashboards/{id}/revisions", s.listDashboardRevisions)
 	api.HandleFunc("GET /api/dashboards/{id}/revisions/{revision}", s.getDashboardRevision)
 	api.HandleFunc("POST /api/dashboards/{id}/revisions/{revision}/restore", s.restoreDashboardRevision)
