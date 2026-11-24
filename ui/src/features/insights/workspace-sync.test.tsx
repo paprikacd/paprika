@@ -61,7 +61,7 @@ it("opens the selected MCP provider from Data sources and preserves an existing 
   ])
   await open(api)
   fireEvent.click(screen.getByRole("button", { name: "Data sources 2" }))
-  fireEvent.click(screen.getByRole("button", { name: "Explore Traces" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Explore Traces" }))
   await explorerReady()
   expect(await screen.findByRole("combobox", { name: "Explore data source" })).toHaveTextContent("Traces")
   expect(screen.getByText("POST /observe/api/query")).toBeVisible()

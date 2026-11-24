@@ -1179,7 +1179,7 @@ it("applies and saves the chart from the action on the unapplied-chart notice", 
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     fireEvent.change(screen.getByLabelText("Library import source"), {
       target: {
@@ -1242,7 +1242,7 @@ it("applies and saves the chart from the action on the unapplied-chart notice", 
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     fireEvent.change(screen.getByLabelText("Library import source"), {
       target: {
@@ -1281,7 +1281,7 @@ it("applies and saves the chart from the action on the unapplied-chart notice", 
     render(<InsightsApp client={api} onBack={onBack} />)
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     fireEvent.change(screen.getByLabelText("Library import source"), { target: { value: JSON.stringify({ ...first, id: "portable", title: "Guarded import" }) } })
     fireEvent.click(screen.getByRole("button", { name: "Review import" }))
@@ -1326,7 +1326,7 @@ it("applies and saves the chart from the action on the unapplied-chart notice", 
     const view = render(<InsightsApp client={api} initialExample />)
     await screen.findByRole("heading", { name: "Dashboard A" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     fireEvent.change(screen.getByLabelText("Library import source"), { target: { value: serializeDashboardLibrary([document], "json", [query]) } })
     fireEvent.click(screen.getByRole("button", { name: "Review import" }))
@@ -1490,7 +1490,7 @@ describe("Insights findings wiring", () => {
 
   async function reviewLibrary(api: InsightsClient, incoming: Dashboard) {
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     fireEvent.change(screen.getByLabelText("Library import source"), { target: { value: serializeDashboardLibrary([incoming], "json") } })
     fireEvent.click(screen.getByRole("button", { name: "Review import" }))

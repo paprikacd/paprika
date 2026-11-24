@@ -106,11 +106,8 @@ import { visibleTileControl } from "./tile-controls"
 import { useCanvasDensity } from "./canvas-density"
 import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
-import { DocumentEditor } from "./document-editor"
-import { ChecksList } from "./checks-list"
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
-import { ProviderManager } from "./provider-manager"
-import { DashboardManager, DashboardTree } from "./dashboard-library"
+import { DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
 import { TimeRangeControl, alignedDashboardEnd, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
@@ -162,6 +159,11 @@ const Explorer = lazy(() => import("./explorer").then(module => ({ default: modu
 const ShortcutList = lazy(() => import("./shortcut-list").then(module => ({ default: module.ShortcutList })))
 // The inspector is opened on demand, so its code stays out of the first view.
 const QueryInspector = lazy(() => import("./query-inspector").then(module => ({ default: module.QueryInspector })))
+// Builder panels and save checks open on request, so their code and styles load then rather than with the first view.
+const DocumentEditor = lazy(() => import("./document-editor").then(module => ({ default: module.DocumentEditor })))
+const ProviderManager = lazy(() => import("./provider-manager").then(module => ({ default: module.ProviderManager })))
+const DashboardManager = lazy(() => import("./dashboard-manager").then(module => ({ default: module.DashboardManager })))
+const ChecksList = lazy(() => import("./checks-list").then(module => ({ default: module.ChecksList })))
 const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
 // Shown after a save that leaves a dirty chart draft out of the dashboard. Closing the chart editor clears it.
 const UNAPPLIED_CHART_NOTICE = "Saved. Chart changes are still unapplied."
@@ -298,6 +300,12 @@ function InsightsWorkspace({
   }, [])
   const markEditorMounted = useCallback(() => setEditorMounted(true), [])
   const markGalleryMounted = useCallback(() => setGalleryMounted(true), [])
+  // Lazy builder panels that hold focus targets. Focus waits for each one's first mount; later opens are cached.
+  const [mountedPanels, setMountedPanels] = useState<ReadonlySet<string>>(() => new Set())
+  const markPanelMounted = useCallback((name: string) => setMountedPanels((current) => current.has(name) ? current : new Set(current).add(name)), [])
+  const markSourceMounted = useCallback(() => markPanelMounted("source"), [markPanelMounted])
+  const markProvidersMounted = useCallback(() => markPanelMounted("providers"), [markPanelMounted])
+  const markManageMounted = useCallback(() => markPanelMounted("manage"), [markPanelMounted])
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [exploring, setExploring] = useState(false)
   const [inspectingQueries, setInspectingQueries] = useState(false)
@@ -774,7 +782,10 @@ function InsightsWorkspace({
       return visibleTileControl(document, `[data-widget-edit="${opener}"], [data-widget-actions="${opener}"]`) ??
         document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]')
     },
-    panel === "examples" ? galleryMounted : panel === "widget" ? editorMounted : true,
+    panel === "examples" ? galleryMounted
+      : panel === "widget" ? editorMounted
+      : panel === "source" || panel === "providers" || panel === "manage" ? mountedPanels.has(panel)
+      : true,
   )
 
   useEffect(() => {
@@ -2299,7 +2310,7 @@ function InsightsWorkspace({
           </div>
         )}
         {saveFindings && error === saveFindings.message && (
-          <ChecksList label="Save checks" report={saveFindings.report} dashboard={dashboard} onFocusWidget={selectWidget} />
+          <Suspense fallback={null}><ChecksList label="Save checks" report={saveFindings.report} dashboard={dashboard} onFocusWidget={selectWidget} /></Suspense>
         )}
         {/* Always mounted, so a notice is announced when its content appears. */}
         <div role="status" data-link-notice>
@@ -2553,18 +2564,23 @@ function InsightsWorkspace({
                 </LazyPanelBoundary>
               )}
               {panel === "source" && (
-                <DocumentEditor
-                  key={dashboard.id}
-                  dashboard={dashboard}
-                  providers={providers}
-                  onImportBundle={importBundle}
-                  onReviewBundle={reviewBundle}
-                  onRefreshQueries={refreshSavedQueries}
-                  checkDocument={client.validate}
-                  onFocusWidget={selectWidget}
-                  onApply={applyDocument}
-                  onClose={close}
-                />
+                <LazyPanelBoundary label="Dashboard source" unsaved={dirty || widgetDraftDirty} onClose={close}>
+                  <Suspense fallback={<p className={styles.loading} role="status">Loading dashboard source…</p>}>
+                    <DocumentEditor
+                      key={dashboard.id}
+                      dashboard={dashboard}
+                      providers={providers}
+                      onImportBundle={importBundle}
+                      onReviewBundle={reviewBundle}
+                      onRefreshQueries={refreshSavedQueries}
+                      checkDocument={client.validate}
+                      onFocusWidget={selectWidget}
+                      onApply={applyDocument}
+                      onClose={close}
+                    />
+                    <MountSignal onMount={markSourceMounted} />
+                  </Suspense>
+                </LazyPanelBoundary>
               )}
               {panel === "ai" && (
                 <Suspense
@@ -2593,22 +2609,27 @@ function InsightsWorkspace({
                 />
               )}
               {panel === "providers" && (
-                <ProviderManager
-                  client={client}
-                  providers={providers}
-                  unsupportedProviders={unsupportedProviders}
-                  example={mode === "example"}
-                  onClose={close}
-                  onExplore={exploreProvider}
-                  loadCatalog={refreshCatalog}
-                  onChange={(catalog) => {
-                    // The manager's listing is authoritative now: it replaces any failed or pending load.
-                    acceptCatalog(catalog)
-                    setSourceRequest(null)
-                    setQueryRevision((value) => value + 1)
-                    setLibraryRevision((value) => value + 1)
-                  }}
-                />
+                <LazyPanelBoundary label="Data sources" unsaved={dirty || widgetDraftDirty} onClose={close}>
+                  <Suspense fallback={<p className={styles.loading} role="status">Loading data sources…</p>}>
+                    <ProviderManager
+                      client={client}
+                      providers={providers}
+                      unsupportedProviders={unsupportedProviders}
+                      example={mode === "example"}
+                      onClose={close}
+                      onExplore={exploreProvider}
+                      loadCatalog={refreshCatalog}
+                      onChange={(catalog) => {
+                        // The manager's listing is authoritative now: it replaces any failed or pending load.
+                        acceptCatalog(catalog)
+                        setSourceRequest(null)
+                        setQueryRevision((value) => value + 1)
+                        setLibraryRevision((value) => value + 1)
+                      }}
+                    />
+                    <MountSignal onMount={markProvidersMounted} />
+                  </Suspense>
+                </LazyPanelBoundary>
               )}
               {panel === "history" && (
                 <LazyPanelBoundary label="Revision history" unsaved={dirty || widgetDraftDirty} onClose={close}>
@@ -2627,31 +2648,36 @@ function InsightsWorkspace({
                 </LazyPanelBoundary>
               )}
               {panel === "manage" && (
-                <DashboardManager
-                  key={dashboard.id}
-                  dashboard={dashboard}
-                  dashboards={dashboards}
-                  providers={providers}
-                  variableCatalog={variableCatalog}
-                  busy={busy}
-                  onClose={close}
-                  onApply={(next) => {
-                    syncVariableDefinitions(next)
-                    update(next)
-                    setEditing(true)
-                  }}
-                  onDetailsChange={(next, group) => {
-                    update(next, { group })
-                    setEditing(true)
-                  }}
-                  onDetailsEnd={endGroup}
-                  onDuplicate={duplicateDashboard}
-                  onDelete={deleteDashboard}
-                  onImportBundle={importBundle}
-                  onReviewBundle={reviewBundle}
-                  validateDocument={client.validate}
-                  onRefreshQueries={refreshSavedQueries}
-                />
+                <LazyPanelBoundary label="Manage dashboards" unsaved={dirty || widgetDraftDirty} onClose={close}>
+                  <Suspense fallback={<p className={styles.loading} role="status">Loading dashboard manager…</p>}>
+                    <DashboardManager
+                      key={dashboard.id}
+                      dashboard={dashboard}
+                      dashboards={dashboards}
+                      providers={providers}
+                      variableCatalog={variableCatalog}
+                      busy={busy}
+                      onClose={close}
+                      onApply={(next) => {
+                        syncVariableDefinitions(next)
+                        update(next)
+                        setEditing(true)
+                      }}
+                      onDetailsChange={(next, group) => {
+                        update(next, { group })
+                        setEditing(true)
+                      }}
+                      onDetailsEnd={endGroup}
+                      onDuplicate={duplicateDashboard}
+                      onDelete={deleteDashboard}
+                      onImportBundle={importBundle}
+                      onReviewBundle={reviewBundle}
+                      validateDocument={client.validate}
+                      onRefreshQueries={refreshSavedQueries}
+                    />
+                    <MountSignal onMount={markManageMounted} />
+                  </Suspense>
+                </LazyPanelBoundary>
               )}
 
             </aside>
