@@ -588,7 +588,9 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 		if !exists {
 			err = errors.New("invalid saved dashboard range")
 		}
-		end = now.Truncate(time.Second)
+		// The end is aligned to the grain of this range, so every viewer and query tool that reads the
+		// same dashboard in the same grain asks for the same window.
+		end = querystep.AlignEnd(now, duration)
 		start = end.Add(-duration)
 	}
 	start, end = start.UTC().Truncate(time.Millisecond), end.UTC().Truncate(time.Millisecond)

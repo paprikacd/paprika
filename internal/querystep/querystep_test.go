@@ -19,6 +19,12 @@ type conformance struct {
 		MinStepSeconds float64 `json:"minStepSeconds"`
 		Step           float64 `json:"step"`
 	} `json:"cases"`
+	AlignCases []struct {
+		Name         string  `json:"name"`
+		RangeSeconds float64 `json:"rangeSeconds"`
+		NowSeconds   int64   `json:"nowSeconds"`
+		End          int64   `json:"end"`
+	} `json:"alignCases"`
 }
 
 func seconds(s float64) time.Duration {
@@ -39,6 +45,30 @@ func TestConformance(t *testing.T) {
 			got := For(seconds(tt.RangeSeconds), tt.TargetPoints, seconds(tt.MinStepSeconds))
 			require.Equal(t, seconds(tt.Step), got)
 		})
+	}
+}
+
+func TestAlignConformance(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../docs/design/insights/conformance/query-step.json")
+	require.NoError(t, err)
+	var doc conformance
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	require.GreaterOrEqual(t, len(doc.AlignCases), 10)
+
+	for _, tt := range doc.AlignCases {
+		t.Run(tt.Name, func(t *testing.T) {
+			t.Parallel()
+			end := AlignEnd(time.Unix(tt.NowSeconds, 500_000_000), seconds(tt.RangeSeconds))
+			require.Equal(t, tt.End, end.Unix())
+		})
+	}
+}
+
+func TestAlignGrainNeverExceedsTheCap(t *testing.T) {
+	t.Parallel()
+	for _, span := range []time.Duration{time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour, 31 * 24 * time.Hour} {
+		require.LessOrEqual(t, AlignGrain(span), MaxAlignGrain, "span %s", span)
 	}
 }
 

@@ -101,7 +101,7 @@ import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
-import { TimeRangeControl, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
+import { TimeRangeControl, alignedDashboardEnd, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
@@ -1000,7 +1000,9 @@ export default function InsightsApp({
     assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
     return { ...resolved, query: interpolateQuery(request.query, variableValues) }
   }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceContext])
-  const range = dashboardRange(viewDashboard, end)
+  // The view reads its window to the shared grain, so viewers and query_dashboard ask for the same window.
+  const alignedEnd = alignedDashboardEnd(viewDashboard, end)
+  const range = dashboardRange(viewDashboard, alignedEnd)
   // Values for variable sources come from the same metadata and query paths the widgets use.
   const variableLoaders = useMemo<VariableValueLoaders>(() => ({
     // The principal is the scope, so values loaded under one sign-in never serve another; a token renewal keeps them.
@@ -2356,7 +2358,7 @@ export default function InsightsApp({
                 providers={providers}
                 fetcher={fetcher}
                 tooltipFetcher={scheduledFetcher}
-                end={end}
+                end={alignedEnd}
                 editing={editing}
                 dense={dense}
                 referenceCompact={compactShell && finePointer}
