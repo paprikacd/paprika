@@ -39,6 +39,16 @@ type lintHit struct {
 	message  string
 	// pair names the two widgets of a layout overlap; it is zero for other hits.
 	pair overlapKey
+	// grandfather names the stored state that keeps this hit a warning, when a rule has one (see storedLint).
+	grandfather string
+}
+
+// storedLint is what a stored dashboard already had. A save that leaves one of those things in place is a warning,
+// not an error, so an unrelated edit still saves. overlaps names the widget pairs that overlap, and pluginConfigs
+// names the widget configurations (see pluginConfigKey) that the plugin schemas already refuse.
+type storedLint struct {
+	overlaps      map[overlapKey]bool
+	pluginConfigs map[string]bool
 }
 
 const (
@@ -468,17 +478,17 @@ const overlapRuleID = "layout.overlap"
 // finding, errors first. It is the full list the tests and the lint command read.
 func lintFindings(document Dashboard) []*insightsv1.CheckFinding {
 	set := newFindingSet(unboundedFindings)
-	lintInto(set, document, nil, nil)
+	lintInto(set, document, storedLint{}, nil)
 	return set.findings()
 }
 
 // lintInto runs every rule over a schema-valid document and adds its findings to
 // set. Findings are added errors first, then warnings, then info, and in rule and
 // hit order within each severity, so the same document always reports the same
-// list. known names the widget pairs a stored dashboard already overlapped: those
-// overlaps are warnings, not errors. providerTypes is the resolved provider types
-// (see lintDocument). A document the schema rejects is not read.
-func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool, providerTypes map[string]string) {
+// list. stored names what a stored dashboard already had: those overlaps and
+// configurations are warnings, not errors. providerTypes is the resolved provider
+// types (see lintDocument). A document the schema rejects is not read.
+func lintInto(set *findingSet, document Dashboard, stored storedLint, providerTypes map[string]string) {
 	doc, ok := decodeLintDocument(document)
 	if !ok {
 		return
@@ -491,7 +501,7 @@ func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool, pr
 		for i := range hits {
 			hit := &hits[i]
 			finding := lintFinding(rule, hit)
-			finding.Severity = hitSeverity(rule, hit, known)
+			finding.Severity = hitSeverity(rule, hit, stored)
 			bySeverity[finding.Severity] = append(bySeverity[finding.Severity], finding)
 		}
 	}
@@ -504,30 +514,38 @@ func lintInto(set *findingSet, document Dashboard, known map[overlapKey]bool, pr
 
 // hitSeverity is the severity a rule's hit is reported at. A layout overlap between
 // a pair the stored dashboard already had is a warning, so a harmless edit that
-// leaves it in place is saved.
-func hitSeverity(rule lintRule, hit *lintHit, known map[overlapKey]bool) insightsv1.Severity {
-	if rule.ID == overlapRuleID && known[hit.pair] {
+// leaves it in place is saved. A plugin configuration the stored dashboard already
+// had is a warning for the same reason. Store load never runs lint, so a stored
+// document that is now invalid still opens.
+func hitSeverity(rule lintRule, hit *lintHit, stored storedLint) insightsv1.Severity {
+	if rule.ID == overlapRuleID && stored.overlaps[hit.pair] {
+		return warningSeverity
+	}
+	if rule.ID == pluginConfigRuleID && stored.pluginConfigs[hit.grandfather] {
 		return warningSeverity
 	}
 	return rule.Severity
 }
 
-// storedOverlaps names the widget pairs that overlap in a stored dashboard. A save
-// that leaves one of those pairs overlapping is not blocked. A create has no stored
-// dashboard, so it has no such pairs.
-func storedOverlaps(stored Dashboard) map[overlapKey]bool {
+// storedLintState names what a stored dashboard already had, as a save reads it. A save
+// that leaves one of those overlaps or configurations in place is not blocked. A create
+// has no stored dashboard, so it has none of them.
+func storedLintState(stored Dashboard) storedLint {
 	if stored == nil {
-		return nil
+		return storedLint{}
 	}
 	doc, ok := decodeLintDocument(stored)
 	if !ok {
-		return nil
+		return storedLint{}
 	}
-	known := map[overlapKey]bool{}
+	state := storedLint{overlaps: map[overlapKey]bool{}, pluginConfigs: map[string]bool{}}
 	for _, pair := range overlapPairs(doc) {
-		known[pair.key] = true
+		state.overlaps[pair.key] = true
 	}
-	return known
+	for _, hit := range checkPluginConfig(doc) {
+		state.pluginConfigs[hit.grandfather] = true
+	}
+	return state
 }
 
 func lintFinding(rule lintRule, hit *lintHit) *insightsv1.CheckFinding {
@@ -583,7 +601,7 @@ func saveReport(id string, document, stored Dashboard, keep int, providerTypes f
 		if providerTypes != nil {
 			types = providerTypes()
 		}
-		lintInto(set, document, storedOverlaps(stored), types)
+		lintInto(set, document, storedLintState(stored), types)
 	}
 	return set
 }

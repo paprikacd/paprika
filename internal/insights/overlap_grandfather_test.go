@@ -124,9 +124,9 @@ func TestCreateKeepsOverlapAsError(t *testing.T) {
 // The overlap pairs of a stored document are read the same way a save reads them, so
 // the grandfathered set matches the pairs a save reports.
 func TestStoredOverlapPairsMatchTheSavedPairs(t *testing.T) {
-	known := storedOverlaps(overlappingDocument("demo"))
+	known := storedLintState(overlappingDocument("demo")).overlaps
 	require.Equal(t, map[overlapKey]bool{overlapKeyOf("a", "b"): true}, known)
-	require.Nil(t, storedOverlaps(nil), "a create has no stored overlaps")
+	require.Nil(t, storedLintState(nil).overlaps, "a create has no stored overlaps")
 }
 
 func replaceOnce(t *testing.T, s, old, replacement string) string {

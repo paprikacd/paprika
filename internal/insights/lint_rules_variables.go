@@ -11,7 +11,7 @@ import (
 )
 
 // guidanceVariables is the guidance line the variable and plugin rules map to.
-const guidanceVariables = "Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id."
+const guidanceVariables = "Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id and a config its plugin accepts."
 
 // Guidance lines for variable sources. Each rule's summary is its line verbatim. The undeclared source
 // dependency rule shares guidanceVariables, which already says every placeholder and binding must be declared.
