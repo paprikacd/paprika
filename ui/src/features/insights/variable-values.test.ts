@@ -59,6 +59,31 @@ describe("dashboard links with lists", () => {
     const url = buildDashboardURL({ dashboardId: "service-health", variables: { cluster: [] } })
     expect(parseDashboardLink(url.slice(url.indexOf("?"))).navigation?.variables).toEqual({ cluster: [] })
   })
+  it("round-trips a list at the 100-item cap and at the 1024-unit budget", () => {
+    const hundred = Array.from({ length: 100 }, (_, index) => `cl-${String(index).padStart(5, "0")}`)
+    const budget = ["a".repeat(511), "é".repeat(256) + "b".repeat(256)]
+    for (const cluster of [hundred, budget]) {
+      const url = buildDashboardURL({ dashboardId: "service-health", variables: { cluster } })
+      const parsed = parseDashboardLink(url.slice(url.indexOf("?")))
+      expect(parsed.rejected).toEqual([])
+      expect(resolveLinkView(dashboard, parsed.navigation!).state.variables).toEqual({ cluster })
+    }
+  })
+  it("rejects a link list past the cap or the budget instead of truncating it", () => {
+    for (const cluster of [
+      Array.from({ length: 101 }, (_, index) => String(index)),
+      ["a".repeat(512), "b".repeat(512)],
+    ]) {
+      const search = `?dashboard=service-health&vars=${encodeURIComponent(JSON.stringify({ cluster }))}`
+      const parsed = parseDashboardLink(search)
+      expect(parsed.navigation?.variables).toEqual({})
+      expect(parsed.rejected).toContainEqual({ kind: "variable", name: "cluster" })
+    }
+  })
+  it("refuses to build a link for a list past the cap", () => {
+    const cluster = Array.from({ length: 101 }, (_, index) => String(index))
+    expect(() => buildDashboardURL({ dashboardId: "service-health", variables: { cluster } })).toThrow()
+  })
   it("reports a list for a single-value variable as invalid and keeps the rest", () => {
     const view = resolveLinkView(
       dashboard,
