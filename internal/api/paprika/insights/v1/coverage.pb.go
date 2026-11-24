@@ -37,9 +37,13 @@ type ApplicationDashboard struct {
 	// specificity is the score of the best covers entry that matched: 3 for a
 	// namespace and name, 2 for a name, 1 for a namespace, 0 for an entry that
 	// matches every application.
-	Specificity   uint32 `protobuf:"varint,6,opt,name=specificity,proto3" json:"specificity,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Specificity uint32 `protobuf:"varint,6,opt,name=specificity,proto3" json:"specificity,omitempty"`
+	// summary_widget_rows is the summary widget's saved height in dashboard grid
+	// rows, so an application page can size the widget's frame before it loads.
+	// It is 0 when the dashboard names no summary widget.
+	SummaryWidgetRows uint32 `protobuf:"varint,7,opt,name=summary_widget_rows,json=summaryWidgetRows,proto3" json:"summary_widget_rows,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ApplicationDashboard) Reset() {
@@ -114,6 +118,13 @@ func (x *ApplicationDashboard) GetSpecificity() uint32 {
 	return 0
 }
 
+func (x *ApplicationDashboard) GetSummaryWidgetRows() uint32 {
+	if x != nil {
+		return x.SummaryWidgetRows
+	}
+	return 0
+}
+
 // ApplicationDashboardList is the HTTP response for the application-dashboards
 // lookup. Dashboards are most specific first.
 type ApplicationDashboardList struct {
@@ -173,14 +184,15 @@ var File_paprika_insights_v1_coverage_proto protoreflect.FileDescriptor
 
 const file_paprika_insights_v1_coverage_proto_rawDesc = "" +
 	"\n" +
-	"\"paprika/insights/v1/coverage.proto\x12\x13paprika.insights.v1\"\xb8\x02\n" +
+	"\"paprika/insights/v1/coverage.proto\x12\x13paprika.insights.v1\"\xe8\x02\n" +
 	"\x14ApplicationDashboard\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x16\n" +
 	"\x06folder\x18\x03 \x01(\tR\x06folder\x12V\n" +
 	"\tvariables\x18\x04 \x03(\v28.paprika.insights.v1.ApplicationDashboard.VariablesEntryR\tvariables\x12*\n" +
 	"\x11summary_widget_id\x18\x05 \x01(\tR\x0fsummaryWidgetId\x12 \n" +
-	"\vspecificity\x18\x06 \x01(\rR\vspecificity\x1a<\n" +
+	"\vspecificity\x18\x06 \x01(\rR\vspecificity\x12.\n" +
+	"\x13summary_widget_rows\x18\a \x01(\rR\x11summaryWidgetRows\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x83\x01\n" +

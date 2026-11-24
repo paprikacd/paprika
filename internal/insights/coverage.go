@@ -48,13 +48,35 @@ type coverageVariable struct {
 	Options []string `json:"options"`
 }
 
+// coverageWidget is the part of a widget the lookup reads: its id and saved height.
+type coverageWidget struct {
+	ID     string `json:"id"`
+	Layout struct {
+		H uint32 `json:"h"`
+	} `json:"layout"`
+}
+
 // coverageStored is the part of a stored document the lookup reads.
 type coverageStored struct {
 	ID        string             `json:"id"`
 	Title     string             `json:"title"`
 	Folder    string             `json:"folder"`
 	Variables []coverageVariable `json:"variables"`
+	Widgets   []coverageWidget   `json:"widgets"`
 	Covers    *coverageCovers    `json:"covers"`
+}
+
+// summaryRows is the saved height of the summary widget in grid rows, or 0 when there is none.
+func (doc *coverageStored) summaryRows() uint32 {
+	if doc.Covers == nil || doc.Covers.SummaryWidget == "" {
+		return 0
+	}
+	for _, widget := range doc.Widgets {
+		if widget.ID == doc.Covers.SummaryWidget {
+			return widget.Layout.H
+		}
+	}
+	return 0
 }
 
 func validCoverageName(value string, limit int) bool {
@@ -240,12 +262,13 @@ func coverageMatch(document []byte, namespace, name string) (*insightsv1.Applica
 		return nil, false
 	}
 	return &insightsv1.ApplicationDashboard{
-		Id:              doc.ID,
-		Title:           doc.Title,
-		Folder:          doc.Folder,
-		Variables:       coverageValues(doc.Variables, doc.Covers.Variables, namespace, name),
-		SummaryWidgetId: doc.Covers.SummaryWidget,
-		Specificity:     specificity,
+		Id:                doc.ID,
+		Title:             doc.Title,
+		Folder:            doc.Folder,
+		Variables:         coverageValues(doc.Variables, doc.Covers.Variables, namespace, name),
+		SummaryWidgetId:   doc.Covers.SummaryWidget,
+		Specificity:       specificity,
+		SummaryWidgetRows: doc.summaryRows(),
 	}, true
 }
 

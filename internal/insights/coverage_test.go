@@ -16,10 +16,11 @@ func coverageDocument(id, fields string) []byte {
 
 type applicationDashboardsResponse struct {
 	Dashboards []struct {
-		ID              string            `json:"id"`
-		Variables       map[string]string `json:"variables"`
-		SummaryWidgetID string            `json:"summaryWidgetId"`
-		Specificity     uint32            `json:"specificity"`
+		ID                string            `json:"id"`
+		Variables         map[string]string `json:"variables"`
+		SummaryWidgetID   string            `json:"summaryWidgetId"`
+		SummaryWidgetRows uint32            `json:"summaryWidgetRows"`
+		Specificity       uint32            `json:"specificity"`
 	} `json:"dashboards"`
 	Truncated bool `json:"truncated"`
 }
@@ -59,6 +60,7 @@ func TestApplicationDashboardsOrderBySpecificityAndCoverage(t *testing.T) {
 	require.Equal(t, []string{"exact", "by-name", "by-namespace", "all"}, ids)
 	require.Equal(t, uint32(3), found.Dashboards[0].Specificity)
 	require.Equal(t, uint32(0), found.Dashboards[3].Specificity)
+	require.Zero(t, found.Dashboards[0].SummaryWidgetRows, "no summary widget, no height")
 
 	other, _ := lookupApplicationDashboards(t, h, "namespace=payments&name=billing")
 	require.Len(t, other.Dashboards, 2)
@@ -87,6 +89,7 @@ func TestApplicationDashboardsOmitVariableValuesOutsideOptions(t *testing.T) {
 	require.Len(t, listed.Dashboards, 1)
 	require.Equal(t, map[string]string{"namespace": "payments"}, listed.Dashboards[0].Variables)
 	require.Equal(t, "up", listed.Dashboards[0].SummaryWidgetID)
+	require.Equal(t, uint32(2), listed.Dashboards[0].SummaryWidgetRows, "the summary widget's saved height sizes its frame")
 
 	withOption, _ := lookupApplicationDashboards(t, h, "namespace=payments&name=api")
 	require.Equal(t, map[string]string{"service": "api", "namespace": "payments"}, withOption.Dashboards[0].Variables)

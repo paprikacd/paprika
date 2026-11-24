@@ -20,6 +20,7 @@ export const ApplicationDashboard = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "variables", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
     { no: 5, name: "summary_widget_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 6, name: "specificity", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 7, name: "summary_widget_rows", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
   ],
 );
 

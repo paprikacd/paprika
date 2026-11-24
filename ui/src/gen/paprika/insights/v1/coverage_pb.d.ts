@@ -54,6 +54,15 @@ export declare class ApplicationDashboard extends Message<ApplicationDashboard> 
    */
   specificity: number;
 
+  /**
+   * summary_widget_rows is the summary widget's saved height in dashboard grid
+   * rows, so an application page can size the widget's frame before it loads.
+   * It is 0 when the dashboard names no summary widget.
+   *
+   * @generated from field: uint32 summary_widget_rows = 7;
+   */
+  summaryWidgetRows: number;
+
   constructor(data?: PartialMessage<ApplicationDashboard>);
 
   static readonly runtime: typeof proto3;
