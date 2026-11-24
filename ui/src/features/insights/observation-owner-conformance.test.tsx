@@ -234,7 +234,7 @@ const OWNERS: OwnerCase[] = [
   },
   {
     owner: "heatmap",
-    host: "chart-renderers.tsx",
+    host: "renderers/heatmap.tsx",
     tokens: ["api", "worker", "db"],
     retention: "keyed",
     result: heatmapResult,
