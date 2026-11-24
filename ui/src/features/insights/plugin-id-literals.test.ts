@@ -20,6 +20,10 @@ const allowed: Record<string, { ids: readonly string[]; reason: string }> = {
     ids: ["record-table"],
     reason: "A records query saved from the explorer opens on the record table, the default records view.",
   },
+  "contract-artifacts.ts": {
+    ids: ["slo-summary"],
+    reason: "Publishes the SLO configuration rule into the widget JSON Schema, the same document check schema.ts holds.",
+  },
   "schema.ts": {
     ids: ["pie", "slo-summary"],
     reason: "\"pie\" is a stat icon name, not the plugin. The SLO configuration check is a document rule for the SLO plugin, mirrored by internal/insights/slo.go.",
