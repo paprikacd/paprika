@@ -51,7 +51,7 @@ IDs here are placeholders; run the steps in order.
    the authored objective, not service health. Do not write a `queryRef` or `options.thresholds`; both are lint errors or warnings.
 
 3. **Reuse saved queries.** Check `list_saved_queries` and `get_saved_query` before inventing
-   PromQL or SQL. Create new ones with `create_saved_query` before `create_dashboard`
+   PromQL or SQL. Pass `q` to `list_saved_queries` to find a query by metric, service or tag. Create new ones with `create_saved_query` before `create_dashboard`
    references them. Paprika's `paprika_*` metrics are listed in [paprika-signals.md](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/paprika-signals.md).
 
 4. **Compose.** Follow the composition rules in the server instructions and

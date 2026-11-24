@@ -430,7 +430,7 @@ When Insights is configured, the same MCP endpoint additionally exposes:
 |---|---|---|
 | `list_insights_providers` | `paprika:observe` | Discover provider IDs used in saved UI documents |
 | `get_insights_schema` | `paprika:observe` | Discover canonical dashboard, widget or saved-query JSON Schema and examples |
-| `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags |
+| `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags. `list_saved_queries` takes `q`, which every word must match in a query's name, description, ID, tags, metadata, parameter names or query text |
 | `list_dashboards`, `get_dashboard` | `paprika:observe` | Read shared dashboards and their ETags |
 | `query_dashboard` | `paprika:observe` | Execute a saved dashboard and read compact, versioned live signals with optional variable overrides |
 | `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |
