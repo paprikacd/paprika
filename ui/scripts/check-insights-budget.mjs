@@ -19,7 +19,9 @@ import { gzipSync } from "node:zlib";
 export const BUDGET = {
   // Measured after the map land outline moved out of the first view.
   jsRaw: 2_557_000, // measured 2,323,640 bytes
-  jsGzip: 733_000, // measured 666,191 bytes (Node zlib, level 9)
+  // Raised by 7,000 for the widget_edits review in Build with AI (the lazy AIBuilder chunk is listed for the page).
+  // Measured 735,281 bytes after that change; the previous budget left 103 bytes of headroom (Node zlib, level 9).
+  jsGzip: 740_000,
   // Insights-specific stylesheets only; the global root sheets are excluded.
   cssRaw: 293_000, // measured 265,715 bytes
   cssGzip: 45_000, // measured 40,191 bytes

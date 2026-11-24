@@ -1,38 +1,82 @@
 "use client"
 
-import { useId, useState } from "react"
+import { useId, useRef, useState } from "react"
 import { Check, Copy, Sparkles, X } from "lucide-react"
+import { parseDocument } from "yaml"
 import { copyToClipboard } from "@/lib/clipboard"
-import { MAX_DOCUMENT_BYTES, parseDashboard, type Dashboard, type Provider } from "./schema"
+import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
+import { MAX_DOCUMENT_BYTES, dashboardSchema, parseDashboard, type Dashboard, type Provider } from "./schema"
 import { buildAIContext, parseOpenUIDashboard, validateAIProviders } from "./openui"
 import styles from "./ai.module.css"
 import { GammaButton } from "./gamma/button"
 import { GammaTextarea } from "./gamma/input"
 import { useSavedQueryLibrary } from "./saved-query-context"
 import { documentChangeSummary, documentChangeText } from "./document-change"
+import { ChangeReview } from "./change-review"
+import { applyDashboardPatch, documentChanges, readDashboardPatchSource, type DocumentChanges, type JSONObject, type Placement } from "./dashboard-patch"
+import { dashboardAsSent } from "./layout-compaction"
+import { ChecksList, CHECK_TIMEOUT_MS, errorCountText, hasErrors, withTimeout, type DocumentValidator } from "./checks-list"
 
 export { buildAIContext, dashboardToOpenUI, insightsLibrary, parseOpenUIDashboard } from "./openui"
+
+export type ApplyMode = "document" | "edits"
 
 interface AIBuilderProps {
   dashboard: Dashboard
   providers: Provider[]
-  onApply: (dashboard: Dashboard) => void
+  /** "document" replaces the draft with a whole dashboard; "edits" applies widget_edits to the current draft. */
+  onApply: (dashboard: Dashboard, mode: ApplyMode) => void
   onClose: () => void
+  /** Dry-run checks for a reviewed definition. Error findings block Apply; a failed check does not. */
+  checkDocument?: DocumentValidator
+  /** Focuses or scrolls to a widget on the canvas, for a finding's or change's "Show widget" action. */
+  onFocusWidget?: (widgetId: string) => void
 }
 
-export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderProps) {
+interface Reviewed {
+  document: Dashboard
+  base: string
+  mode: ApplyMode
+  placements: Placement[]
+  changes: DocumentChanges | null
+  report?: CheckReport
+  checkFailed?: string
+}
+
+/** Parses JSON or YAML text the way the source editor does: strict keys, no aliases, size-bounded. */
+function readSource(source: string, format: "json" | "yaml"): unknown {
+  if (new TextEncoder().encode(source).byteLength > MAX_DOCUMENT_BYTES) throw new Error("Dashboard documents must be smaller than 256 KiB")
+  if (format === "json") return JSON.parse(source)
+  const document = parseDocument(source, { uniqueKeys: true, merge: false })
+  if (document.errors.length) throw new Error(document.errors[0].message)
+  return document.toJS({ maxAliasCount: 0 })
+}
+
+/** The dashboard as a save would write it, for comparing two drafts. Null when either side cannot be read. */
+function changesBetween(before: Dashboard, after: Dashboard): DocumentChanges | null {
+  try {
+    return documentChanges(dashboardAsSent(before) as unknown as JSONObject, dashboardAsSent(after) as unknown as JSONObject)
+  } catch {
+    return null
+  }
+}
+
+export function AIBuilder({ dashboard, providers, onApply, onClose, checkDocument, onFocusWidget }: AIBuilderProps) {
   const id = useId()
   const library = useSavedQueryLibrary()
   const [request, setRequest] = useState("")
   const [source, setSource] = useState("")
   const [format, setFormat] = useState<"openui" | "json" | "yaml">("openui")
-  const [reviewed, setReviewed] = useState<{ document: Dashboard; base: string } | null>(null)
+  const [reviewed, setReviewed] = useState<Reviewed | null>(null)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  // Each edit of the source or format starts a new pass; a review that finishes after one is stale and dropped.
+  const pass = useRef(0)
   const currentBase = JSON.stringify(dashboard)
   const isCurrent = reviewed?.base === currentBase
   const usesSaved = (document: Dashboard) => document.widgets.some(widget => widget.queryRef || widget.options?.tooltipView?.source?.type === "saved")
   const savedLibraryBlocked = !!(library.loading || library.error)
+  const blockedByErrors = !!reviewed?.report && hasErrors(reviewed.report)
   function ensureLibrary(document: Dashboard) {
     if (usesSaved(document) && savedLibraryBlocked)
       throw new Error(library.loading ? "Saved queries are still loading. Review again when the library is ready." : `Saved queries could not be loaded: ${library.error}. Reload the query library before reviewing this definition.`)
@@ -48,32 +92,65 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
     }
   }
 
-  function review() {
-    setReviewed(null)
-    setError("")
-    setNotice("")
+  /** Reads the source as a whole dashboard, or as widget_edits applied to the current draft. */
+  function readReview(): { document: Dashboard; mode: ApplyMode; placements: Placement[] } {
+    if (format === "openui") return { document: parseOpenUIDashboard(source), mode: "document", placements: [] }
+    const patch = readDashboardPatchSource(readSource(source, format))
+    if (!patch) return { document: parseDashboard(source, format), mode: "document", placements: [] }
+    if (patch.id !== undefined && patch.id !== dashboard.id) throw new Error(`These edits are for dashboard “${patch.id}”.`)
+    const applied = applyDashboardPatch(JSON.parse(currentBase), patch)
+    if (applied.error) {
+      const { error: failure } = applied
+      if (failure.reason === "unchanged") throw new Error("These edits do not change the draft.")
+      throw new Error(failure.editIndex !== undefined ? `Edit ${failure.editIndex + 1}: ${failure.message}` : failure.message)
+    }
+    return { document: dashboardSchema.parse(applied.document), mode: "edits", placements: applied.placements }
+  }
+
+  async function runChecks(document: Dashboard): Promise<Pick<Reviewed, "report" | "checkFailed">> {
+    if (!checkDocument) return {}
+    const controller = new AbortController()
     try {
-      const document =
-        format === "openui" ? parseOpenUIDashboard(source) : parseDashboard(source, format)
-      ensureLibrary(document)
-      validateAIProviders(document, providers, library.queries)
-      if (document.id !== dashboard.id)
-        throw new Error(
-          `Keep the current dashboard id “${dashboard.id}” when editing this dashboard.`,
-        )
-      setReviewed({ document, base: currentBase })
+      const report = await withTimeout(checkDocument(document, controller.signal), CHECK_TIMEOUT_MS, () => controller.abort())
+      return { report }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The definition could not be validated.")
+      const failure = cause instanceof Error ? cause.message : "Could not check this dashboard."
+      return { checkFailed: failure }
     }
   }
 
+  async function review() {
+    const current = ++pass.current
+    setReviewed(null)
+    setError("")
+    setNotice("")
+    let result: ReturnType<typeof readReview>
+    try {
+      result = readReview()
+      ensureLibrary(result.document)
+      validateAIProviders(result.document, providers, library.queries)
+      if (result.document.id !== dashboard.id)
+        throw new Error(`Keep the current dashboard id “${dashboard.id}” when editing this dashboard.`)
+    } catch (cause) {
+      if (current === pass.current) setError(cause instanceof Error ? cause.message : "The definition could not be validated.")
+      return
+    }
+    const next: Reviewed = { ...result, base: currentBase, changes: changesBetween(dashboard, result.document) }
+    if (!checkDocument) {
+      setReviewed(next)
+      return
+    }
+    const checked = await runChecks(result.document)
+    if (current === pass.current) setReviewed({ ...next, ...checked })
+  }
+
   function apply() {
-    if (!reviewed || !isCurrent) return
+    if (!reviewed || !isCurrent || blockedByErrors) return
     // Recheck provider capability in case configuration changed since review.
     try {
       ensureLibrary(reviewed.document)
       validateAIProviders(reviewed.document, providers, library.queries)
-      onApply(reviewed.document)
+      onApply(reviewed.document, reviewed.mode)
       setReviewed(null)
       setNotice("Definition applied to your draft. Save the dashboard when ready.")
       setError("")
@@ -82,7 +159,8 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
     }
   }
 
-  const change = reviewed ? documentChangeSummary(dashboard, reviewed.document) : null
+  const change = reviewed && reviewed.mode === "document" ? documentChangeSummary(dashboard, reviewed.document) : null
+  const applyLabel = reviewed?.mode === "edits" ? "Apply edits to draft" : "Replace dashboard draft"
 
   return (
     <section className={styles.panel} aria-label="Build with AI">
@@ -137,6 +215,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
               key={item}
               aria-pressed={format === item}
               onClick={() => {
+                pass.current++
                 setFormat(item)
                 setReviewed(null)
                 setError("")
@@ -158,6 +237,7 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
           rows={11}
           maxLength={MAX_DOCUMENT_BYTES}
           onChange={(event) => {
+            pass.current++
             setSource(event.target.value)
             setReviewed(null)
             setError("")
@@ -166,13 +246,13 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
           placeholder={
             format === "openui"
               ? "root = Dashboard(…)\nwidget0 = TimeSeries(…)"
-              : `Paste a complete ${format.toUpperCase()} dashboard…`
+              : `Paste a ${format.toUpperCase()} dashboard or {"widget_edits":[…]}…`
           }
         />
         <GammaButton size="sm" variant="secondary"
           type="button"
           className={styles.secondary}
-          onClick={review}
+          onClick={() => void review()}
           disabled={!source.trim()}
         >
           Review definition
@@ -181,14 +261,22 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
           <div className={styles.review} role="status">
             <div>
               <Check size={15} aria-hidden="true" />
-              <strong>Definition valid · {reviewed.document.widgets.length} widgets</strong>
+              <strong>
+                {reviewed.mode === "edits"
+                  ? `Edits valid · ${reviewed.changes?.widgets.length ?? 0} widgets changed`
+                  : `Definition valid · ${reviewed.document.widgets.length} widgets`}
+              </strong>
             </div>
-            <p>
-              {change ? documentChangeText(change) : ""}
-            </p>
+            {change && <p>{documentChangeText(change)}</p>}
             <p>
               {reviewed.document.title} · {reviewed.document.timeRange} window
             </p>
+            {reviewed.checkFailed && (
+              <p>
+                Could not check this dashboard: {reviewed.checkFailed}. Applying to the canvas does not depend on the check.
+              </p>
+            )}
+            {blockedByErrors && reviewed.report && <p>{errorCountText(reviewed.report)}. Fix them before applying.</p>}
             {!isCurrent && <p>The canvas changed. Review again before applying.</p>}
           </div>
         )}
@@ -202,13 +290,17 @@ export function AIBuilder({ dashboard, providers, onApply, onClose }: AIBuilderP
             {notice}
           </p>
         )}
+        {reviewed?.report && (
+          <ChecksList label="Definition checks" report={reviewed.report} dashboard={reviewed.document} onFocusWidget={onFocusWidget} />
+        )}
+        {reviewed?.changes && <ChangeReview changes={reviewed.changes} onFocusWidget={onFocusWidget} />}
         <GammaButton size="sm" variant="primary"
           type="button"
           className={styles.primary}
-          disabled={!reviewed || !isCurrent || (usesSaved(reviewed.document) && savedLibraryBlocked)}
+          disabled={!reviewed || !isCurrent || blockedByErrors || (usesSaved(reviewed.document) && savedLibraryBlocked)}
           onClick={apply}
         >
-          Replace dashboard draft
+          {applyLabel}
         </GammaButton>
         <p className={styles.hint}>
           Applying replaces the current draft. You can undo it before saving.

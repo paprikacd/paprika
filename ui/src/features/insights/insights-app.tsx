@@ -1155,7 +1155,7 @@ export default function InsightsApp({
     [update],
   )
 
-  function applyDocument(next: Dashboard) {
+  function applyDocument(next: Dashboard, mode: "document" | "edits" = "document") {
     syncVariableDefinitions(next)
     // Importing a document edits the active dashboard; a document cannot silently
     // switch persistence identity and overwrite another saved dashboard.
@@ -1176,7 +1176,7 @@ export default function InsightsApp({
     })
     setEditing(true)
     close()
-    setMessage("Dashboard draft replaced. Review the canvas, then save the dashboard.")
+    setMessage(mode === "edits" ? "Edits applied to the draft. Review the canvas, then save the dashboard." : "Dashboard draft replaced. Review the canvas, then save the dashboard.")
   }
   function syncVariableDefinitions(next: Dashboard) {
     if (!currentRoute?.variables) return
@@ -2478,6 +2478,8 @@ export default function InsightsApp({
                     providers={providers}
                     onApply={applyDocument}
                     onClose={close}
+                    checkDocument={client.validate}
+                    onFocusWidget={selectWidget}
                   />
                 </Suspense>
               )}
