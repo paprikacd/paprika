@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // interpolationConformance mirrors docs/design/insights/conformance/variable-interpolation.json. The console
@@ -21,6 +23,13 @@ type interpolationConformance struct {
 		Expected *string           `json:"expected"`
 		Error    bool              `json:"error"`
 	} `json:"interpolate"`
+	Resolve []struct {
+		Name      string                  `json:"name"`
+		Variables []dashboardReadVariable `json:"variables"`
+		Overrides json.RawMessage         `json:"overrides"`
+		Expected  map[string]any          `json:"expected"`
+		Error     bool                    `json:"error"`
+	} `json:"resolve"`
 }
 
 func loadInterpolationConformance(t *testing.T) interpolationConformance {
@@ -44,6 +53,33 @@ func TestVariableInterpolationConformanceFixtures(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, entry.Expected, "a fixture needs expected or error")
 			require.Equal(t, *entry.Expected, got)
+		})
+	}
+}
+
+// Resolution decodes the overrides as the query_dashboard boundary does, then applies the declarations.
+func TestVariableResolutionConformanceFixtures(t *testing.T) {
+	fixtures := loadInterpolationConformance(t)
+	require.NotEmpty(t, fixtures.Resolve)
+	for _, entry := range fixtures.Resolve {
+		t.Run(entry.Name, func(t *testing.T) {
+			resolved, err := func() (map[string]variablevalue.Value, error) {
+				var overrides map[string]variablevalue.Value
+				if err := json.Unmarshal(entry.Overrides, &overrides); err != nil {
+					return nil, err
+				}
+				return dashboardVariableValues(entry.Variables, overrides)
+			}()
+			if entry.Error {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			encoded, err := json.Marshal(resolved)
+			require.NoError(t, err)
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(encoded, &got))
+			require.Equal(t, entry.Expected, got)
 		})
 	}
 }
