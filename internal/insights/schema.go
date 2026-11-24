@@ -95,6 +95,10 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 			"incident-calendar uses dataKind=records with config {date?:string,value?:string,label?:string,status?:string,aggregation?:count|sum|max,colorMode?:intensity|thresholds,months?:1..6,endDate?:YYYY-MM-DD}; defaults are date, count, intensity colors and 3 months ending at the latest returned date. Dates use UTC and must be valid calendar dates or ISO timestamps; numeric dates are Unix milliseconds. Sum/max require a numeric value field, while count counts observed rows. In thresholds colorMode, options.thresholds color the aggregated daily value; unmapped values remain neutral. Days without observations stay unknown rather than becoming zero. Explicit endDate controls the visible UTC month window.",
 		},
 	}
+	if kind == "plugin" {
+		// The plugin kind answers only with plugin configuration, so the document notes above do not apply to it.
+		response.Notes = pluginSchemaNotes()
+	}
 	if kind == "dashboard" {
 		response.Notes = append(response.Notes, schemaStarterNote, schemaRevisionNote)
 	}
@@ -102,6 +106,7 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 		response.Notes = append(response.Notes, "Stat examples (widget and dashboard kinds): request-rate is the compact stat (layout h<=2, title, value, decimals and at most one sparkline, no bar). error-budget-remaining is the bounded-scale stat: showStatBar with explicit min and max, thresholds at the budget bands (critical below 25, warning from 25, ok from 50) and layout h>=3. Compact stat (h<=2) = title + value + at most one sparkline. showStatBar is for a bounded quantity with explicit min and max; the h>=3 height is an authoring rule that the validator does not enforce.", "Thresholds: options.thresholds?:[{value:number,status?:ok|info|warning|critical|unknown,color?:six-digit hex,label?:string(0..80)}] (at most 12, values strictly ascending) name a status, a colour or both. A status is a theme-resolved semantic level: ok for healthy, warning and critical for breaches, info for context, unknown for an indeterminate state, so one document shares its meaning across light, dark and compact themes. A color is an optional hue override; use it only where a specific hue carries meaning, not to restate a status. A value uses the highest threshold it reaches, and values below the first threshold use it too. Give a label wherever labels appear.", "Kubernetes plugins (type=plugin, dataKind=metrics): kubernetes-placement {resource?:cpu|memory,pressure?:0.5-1,showPods?:bool,maxNodes?:1-64}; kubernetes-resource-bars {groupLabel?:label,maxGroups?:1-16,showLimits?:bool,showValues?:bool}; kubernetes-throttle-matrix {groupLabel?:label,rows?:6-24,ceiling?:1-100}; kubernetes-resource-trend {showNetwork?,showRequested?,fill?:bool}. Each series needs a signal label with one of cpu-allocatable, memory-allocatable, cpu-request, memory-request, node-ready, cpu-usage, cpu-limit, memory-usage, memory-limit, throttled, periods, network-rx or network-tx; see docs/design/insights/kubernetes-widgets.md.")
 		response.Notes = append(response.Notes, guidance.DashboardComposition()...)
 		response.Notes = append(response.Notes, guidance.DashboardWorkflow()...)
+		response.Notes = append(response.Notes, schemaPluginPointerNote)
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil || len(encoded) > maxSchemaResponseBytes {
@@ -138,6 +143,8 @@ func authoringSchemaExample(kind string) json.RawMessage {
 		return json.RawMessage(schemaDashboardExample)
 	case "widget":
 		return json.RawMessage(schemaWidgetExample)
+	case "plugin":
+		return json.RawMessage(schemaRecordWidgetExample)
 	default:
 		return json.RawMessage(schemaSavedQueryExample)
 	}

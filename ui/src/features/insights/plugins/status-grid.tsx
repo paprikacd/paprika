@@ -137,6 +137,6 @@ export function registerStatusGridPlugin() {
     icon: Grid2X2,
     capabilities: { thresholds: true, defaultStatusThresholds: true, colorFallback: "chart2" },
     configFields:[{key:"maxSeries",label:"Maximum monitors",kind:"number",min:1,max:2048,step:1,help:"Show up to this many returned series. Omitted monitors are counted below the grid."}],
-    parseConfig:config => statusGridConfigSchema.parse(config ?? {}),
+    configSchema: statusGridConfigSchema,
   });
 }

@@ -39,7 +39,7 @@ var dashboardComposition = []string{
 	"Keep provenance out of titles and descriptions: source and query detail belongs in tooltips or authoring metadata. Write a description only when it adds meaning the viewer needs.",
 	"Show a unit once, as the widget unit, not in axis labels, tick labels or titles.",
 	"Place widgets without overlaps and fill each row; a gap beside a widget is not closed automatically.",
-	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id.",
+	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id and a config its plugin accepts.",
 	"A label-values variable with a selector needs a Prometheus provider, because only Prometheus matches a selector.",
 	"A variable with a source sets a defaultValue, because a source does not choose a value on its own.",
 	"A variable source reads a metrics or records saved query, because a traces result has no column or series label to supply values.",
@@ -74,7 +74,7 @@ var mcpDashboardComposition = []string{
 	"Set staleAfterSeconds only when the scrape or evaluation interval is known, at least twice it, on stat and time-series widgets.",
 	"Keep provenance out of titles and descriptions; write a description only when the viewer needs it. Show a unit once, as the widget unit.",
 	"Place widgets without overlaps and fill each row. Avoid widget-internal scrolling, and do not force max to 100 on rate charts.",
-	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id.",
+	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id and a config its plugin accepts.",
 	"On a stat, set min and max only with showStatBar, which requires both; keep bounds a stat already has.",
 }
 

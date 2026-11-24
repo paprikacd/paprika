@@ -224,5 +224,5 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>
 export const RecordBar=(props:WidgetRendererProps)=><RecordChart {...props} bar/>
 export function registerRecordChartPlugins(){
-  for(const entry of [{id:"records-line",label:"Record line chart",render:RecordLine},{id:"records-bar",label:"Record bar chart",render:RecordBar}])if(!getWidgetDefinition("plugin",entry.id))registerWidgetPlugin({...entry,dataKind:"records",capabilities:{colorFallback:"series"},description:"Plot exact application records and authored historical datasets",parseConfig:config=>configSchema.parse(config??{}),styleControls:["decimals"]})
+  for(const entry of [{id:"records-line",label:"Record line chart",render:RecordLine},{id:"records-bar",label:"Record bar chart",render:RecordBar}])if(!getWidgetDefinition("plugin",entry.id))registerWidgetPlugin({...entry,dataKind:"records",capabilities:{colorFallback:"series"},description:"Plot exact application records and authored historical datasets",configSchema,styleControls:["decimals"]})
 }

@@ -299,8 +299,8 @@ export function StatusHistory({ widget,result,onContextChange,embedded }: Widget
 }
 
 export function registerMetricDistributionPlugins() {
-  if (!getWidgetDefinition("plugin","pie")) registerWidgetPlugin({id:"pie",label:"Pie / donut",description:"Compare positive shares at the latest observation",dataKind:"metrics",render:MetricPie,parseConfig:config=>pieConfig.parse(config ?? {}),styleControls:["decimals"]})
-  if (!getWidgetDefinition("plugin","status-history")) registerWidgetPlugin({id:"status-history",label:"Status history",description:"See recorded states over time, including unknown samples",dataKind:"metrics",render:StatusHistory,parseConfig:config=>historyConfig.parse(config ?? {}),styleControls:["decimals"],configFields:[
+  if (!getWidgetDefinition("plugin","pie")) registerWidgetPlugin({id:"pie",label:"Pie / donut",description:"Compare positive shares at the latest observation",dataKind:"metrics",render:MetricPie,configSchema: pieConfig,styleControls:["decimals"]})
+  if (!getWidgetDefinition("plugin","status-history")) registerWidgetPlugin({id:"status-history",label:"Status history",description:"See recorded states over time, including unknown samples",dataKind:"metrics",render:StatusHistory,configSchema: historyConfig,styleControls:["decimals"],configFields:[
     {key:"maxSeries",label:"Maximum series",kind:"number",min:1,max:24},
     {key:"maxPoints",label:"Maximum samples per series",kind:"number",min:8,max:120},
     {key:"labelField",label:"Series label field",kind:"text",help:"Optional metric label used to name each row; missing labels retain the series name."},

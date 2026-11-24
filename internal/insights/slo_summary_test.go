@@ -239,7 +239,7 @@ func sloProviderDocument(t *testing.T, providerID string) Dashboard {
 // findingsWithProviders runs lint with resolved provider types, as a save or a dry run does.
 func findingsWithProviders(document Dashboard, providerTypes map[string]string) []*insightsv1.CheckFinding {
 	set := newFindingSet(unboundedFindings)
-	lintInto(set, document, nil, providerTypes)
+	lintInto(set, document, storedLint{}, providerTypes)
 	return set.findings()
 }
 

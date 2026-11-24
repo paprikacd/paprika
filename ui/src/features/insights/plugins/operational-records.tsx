@@ -17,19 +17,19 @@ const IncidentCalendar = lazy(() => loadView().then((module) => ({ default: modu
  */
 export function operationalRecordPluginEntries(): Omit<WidgetPlugin, "dataKind">[] {
   return [
-    {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,parseConfig:(config:unknown)=>connectionMapConfig.parse(config??{}),
+    {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,configSchema: connectionMapConfig,
       sizing:{mode:"fill",minHeight:240},
       icon:Globe2,
       capabilities:{thresholds:true},
       defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label",display:"markers",showLocations:true},
       styleControls:["unit","decimals","legend","tooltips","color"],
       configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"display",label:"Map display",kind:"select" as const,options:[{value:"markers",label:"Markers"},{value:"density",label:"Compact dots"}],help:"Small dots mark the supplied locations; size follows the absolute value. It does not interpolate between them."},{key:"showGrid",label:"Show coordinate grid",kind:"boolean" as const,defaultFor:config=>config?.display!=="density"},{key:"showCoordinates",label:"Show coordinate labels",kind:"boolean" as const,defaultFor:config=>config?.display!=="density"},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
-    {id:"pipeline-topology",label:"Pipeline topology",description:"Follow recorded directed connections, including cycles and missing values",render:PipelineTopology,parseConfig:(config:unknown)=>pipelineTopologyConfig.parse(config??{}),
+    {id:"pipeline-topology",label:"Pipeline topology",description:"Follow recorded directed connections, including cycles and missing values",render:PipelineTopology,configSchema: pipelineTopologyConfig,
       icon:Network,
       defaultConfig:{source:"source",target:"target"},
       styleControls:["unit","decimals","tooltips"],
       configFields:[{key:"source",label:"Source stage field",kind:"text" as const},{key:"target",label:"Target stage field",kind:"text" as const},{key:"value",label:"Connection value field",kind:"text" as const,help:"Optional numeric field. Duplicate connections sum their values; missing values remain unknown."},{key:"status",label:"Status field",kind:"text" as const},{key:"maxNodes",label:"Maximum stages",kind:"number" as const,min:2,max:64},{key:"maxEdges",label:"Maximum connections",kind:"number" as const,min:1,max:200}]},
-    {id:"incident-calendar",label:"Incident calendar",description:"Aggregate recorded events by UTC day without inventing healthy days",render:IncidentCalendar,parseConfig:(config:unknown)=>incidentCalendarConfig.parse(config??{}),
+    {id:"incident-calendar",label:"Incident calendar",description:"Aggregate recorded events by UTC day without inventing healthy days",render:IncidentCalendar,configSchema: incidentCalendarConfig,
       sizing:{mode:"fill",denseRoom:()=>"calendar",referenceFineRows:config=>config?.months===1?11:undefined},
       icon:CalendarDays,
       capabilities:{thresholds:config=>config?.colorMode==="thresholds"},

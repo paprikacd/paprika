@@ -208,7 +208,7 @@ func validateDashboardAnnotationSource(raw json.RawMessage) error {
 
 // validateAnnotationSourceShape checks an event query's saved-query reference and its columns. The widget and the dashboard share it.
 func validateAnnotationSourceShape(raw json.RawMessage) error {
-	fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
+	fields, err := requireObjectShape(raw, annotationSourceRequiredFields, annotationSourceOptionalFields)
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func validateSLOSummaryWidget(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "compare", "baseline", "showEvents", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "seriesColorMode", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
+	options, err := requireObjectShape(raw, nil, optionFields)
 	if err != nil {
 		return err
 	}
@@ -336,7 +336,7 @@ func validateTimeSeriesBaseline(raw json.RawMessage) error {
 }
 
 func validateTooltipView(raw json.RawMessage) error {
-	view, err := requireObjectShape(raw, []string{"type"}, []string{"height", "showGrid", "showAxis", "showLegend", "showSparkline", "title", "unit", "color", "decimals", "pluginId", "dataKind", "config", "source"})
+	view, err := requireObjectShape(raw, tooltipViewRequiredFields, tooltipViewOptionalFields)
 	if err != nil {
 		return err
 	}
@@ -635,7 +635,7 @@ func validateWidgetReferenceLines(options map[string]json.RawMessage) error {
 }
 
 func validateWidgetReferenceLine(raw json.RawMessage) error {
-	fields, err := requireObjectShape(raw, []string{"value"}, []string{"label", "color"})
+	fields, err := requireObjectShape(raw, referenceLineRequiredFields, referenceLineOptionalFields)
 	if err != nil {
 		return err
 	}
@@ -776,7 +776,7 @@ func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
 var seriesColorRoles = []string{"traffic", "success", "client-error", "server-error", "p50", "p95", "p99"}
 
 func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
-	members, err := requireObjectShape(entry, []string{"label", "value"}, []string{"color", "role"})
+	members, err := requireObjectShape(entry, seriesRuleRequiredFields, seriesRuleOptionalFields)
 	if err != nil {
 		return [2]string{}, err
 	}
@@ -856,7 +856,7 @@ var statusLevels = []string{"ok", "info", "warning", "critical", "unknown"}
 // validateWidgetThreshold mirrors thresholdSchema in schema.ts: value is required; status (a semantic level) and
 // color (a hue override) are optional but at least one must be named; label is optional and may be empty.
 func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, error) {
-	fields, err := requireObjectShape(raw, []string{"value"}, []string{"status", "color", "label"})
+	fields, err := requireObjectShape(raw, thresholdRequiredFields, thresholdOptionalFields)
 	if err != nil {
 		return 0, err
 	}

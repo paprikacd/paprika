@@ -41,7 +41,7 @@ export function registerKubernetesPlugins() {
       icon: Layers,
       dataKind: "metrics" as const, render: KubernetesPlacement,
       defaultConfig: {} as Widget["config"],
-      parseConfig: (config: Widget["config"]) => placementConfigSchema.parse(config ?? {}),
+      configSchema: placementConfigSchema,
       validateInput: (result: Parameters<typeof placementModel>[0], config: Widget["config"]) => placementModel(result, config).issues,
       styleControls: ["decimals", "legend", "tooltips"] as const,
       configFields: [
@@ -57,7 +57,7 @@ export function registerKubernetesPlugins() {
       icon: BarChart3,
       dataKind: "metrics" as const, render: KubernetesResourceBars,
       defaultConfig: { groupLabel: "pod" } as Widget["config"],
-      parseConfig: (config: Widget["config"]) => resourceBarsConfigSchema.parse(config ?? {}),
+      configSchema: resourceBarsConfigSchema,
       validateInput: (result: Parameters<typeof resourceGroups>[0], config: Widget["config"]) => resourceGroups(result, config).issues,
       styleControls: ["decimals", "legend", "tooltips"] as const,
       configFields: [
@@ -73,7 +73,7 @@ export function registerKubernetesPlugins() {
       icon: Grid2X2,
       dataKind: "metrics" as const, render: KubernetesThrottleMatrix,
       defaultConfig: {} as Widget["config"],
-      parseConfig: (config: Widget["config"]) => throttleConfigSchema.parse(config ?? {}),
+      configSchema: throttleConfigSchema,
       validateInput: (result: Parameters<typeof throttleCells>[0], config: Widget["config"]) => throttleCells(result, config).issues,
       styleControls: ["decimals", "tooltips"] as const,
       configFields: [
@@ -88,7 +88,7 @@ export function registerKubernetesPlugins() {
       icon: LineChart,
       dataKind: "metrics" as const, render: KubernetesResourceTrend,
       defaultConfig: {} as Widget["config"],
-      parseConfig: (config: Widget["config"]) => resourceTrendConfigSchema.parse(config ?? {}),
+      configSchema: resourceTrendConfigSchema,
       validateInput: (result: Parameters<typeof resourceStrips>[0], config: Widget["config"]) => resourceStrips(result, config).issues,
       styleControls: ["decimals", "legend", "tooltips"] as const,
       configFields: [

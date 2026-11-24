@@ -247,6 +247,9 @@ jobs:
       - name: Regenerate protobuf clients
         run: make generate-proto
 
+      - name: Regenerate Insights contract artifacts
+        run: (cd ui && npm run schema:generate)
+
       - name: Check generated code
         run: |
           git diff --exit-code
