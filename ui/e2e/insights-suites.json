@@ -1,0 +1,1532 @@
+{
+  "description": "Every Insights browser suite under ui/e2e, listed once. Run with: node e2e/run-insights.mjs --tag smoke (see ../docs/design/insights/validation.md).",
+  "tags": {
+    "smoke": "Browser smoke run on CI trees that touch Insights code (ci.yml fleet-ui-smoke, hack/ci fleet-ui-smoke). Retried once.",
+    "full": "The no-argument default of run-insights.mjs.",
+    "perf": "Performance suites. They run against the static export in ui/out, not next dev."
+  },
+  "needs": {
+    "go": "Go toolchain: the suite builds a Paprika Go binary.",
+    "ui": "Runs against the UI server (next dev, or the export for perf-tagged suites), set by run-insights.mjs.",
+    "gallery": "Gallery Docker stack reachable at PAPRIKA_GALLERY_BASE_URL (demo/insights-gallery). Run the suite directly, not through run-insights.mjs.",
+    "postgres": "Docker PostgreSQL container (application records).",
+    "uptime": "Uptime platform reachable through UPTIME_* variables.",
+    "credentials": "Reads a provider or connection configuration file from the environment."
+  },
+  "smokeSkipPaths": [
+    "docs/**",
+    "**/*.md",
+    ".agents/**",
+    "landing/**"
+  ],
+  "suites": [
+    {
+      "file": "e2e/insights-query-inspector.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-dashboard-query.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-observe-authoring.e2e.mjs",
+      "tags": [
+        "smoke"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-render-worker.e2e.mjs",
+      "tags": [
+        "smoke"
+      ],
+      "needs": [
+        "go"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-tooltip-peers.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-compact-stat.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-compact-stat-compare.e2e.mjs",
+      "tags": [
+        "smoke"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-status-history-axis.e2e.mjs",
+      "tags": [
+        "smoke"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-dashboard-polish.e2e.mjs",
+      "tags": [
+        "smoke"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-presentation.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-variable-filter.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-repository-examples.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-charts.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-rich-charts.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-chart-system.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-editor-focus.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-edit-performance.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full",
+        "perf"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "export",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-tooltip-structure.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-tooltip-motion.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-hex-contour.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-builtin-selection.e2e.mjs",
+      "tags": [
+        "smoke"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-phone-shell.e2e.mjs",
+      "tags": [
+        "smoke",
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-advanced.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-responsive.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-live.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-lazy-widget.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-live-editing.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-drilldown.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-widget-audit.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-builder.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-tooltip-query.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-observation-drilldown.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-explorer.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 900
+    },
+    {
+      "file": "e2e/insights-observability.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-portable.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-import-review.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-stacked-a11y.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-status-grid.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-uptime-views.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-uptime-authoring.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-uptime-live.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-heatmap-iteration.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-gauge-layout.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-legend-layout.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-polish.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-reference-dashboards.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-source-provenance.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-sparkline.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-geo-heatmap.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-geo-interaction.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-connection-glow.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-series-colors.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-small-multiples.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-metric-annotations.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-ai-context-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-annotation-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-application-records.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "postgres",
+        "uptime"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-auth.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-bar-labels-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-chart-footer-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-collection-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-compact-canvas-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-compact-records-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-connection-map-accessibility-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-dashboard-query-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-dashboard-time-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-directional-axis-authoring-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-distribution-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-drilldown-destination-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-edge-network-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-event-conversion-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-event-range-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-explore-feedback-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-fleet-conditions-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-gallery-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-gallery-stress-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-gauge-extremes-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-gauge-inspection-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-geo-authoring-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-geo-linked-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-geo-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-heatmap-scale-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-inactive-selection-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-inactive-tooltip-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-incident-severity-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-legend-mean-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-legend-values-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-link-labels-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-map-overlap-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-market-range-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-metric-pie-tooltip-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-mobile-inspector-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-observation-drilldown-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-observation-placement-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-omega-authoring.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-omega.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-partial-empty-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-pie-extreme-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-query-context-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-query-kind-label-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-query-retry-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-fields-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-row-numbers-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-scale-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-sparkline-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "gallery",
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-sparkline-threshold-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-table-inspector-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-tooltip-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-treemap-tooltip-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-record-window-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-rich-metrics-prior-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-sample-freshness-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-save-guidance-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-selection-bindings.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-selection-fields-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-series-comparison-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-series-identity.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-service-overview.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-signal-pie-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-signal-traces-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-small-multiples-labels-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-sql-range-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-stacked-extremes-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-stat-missing-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-status-selection-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-strip-height.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-table-gauge-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-table-status-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-targeted-authoring-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-timeseries-colors-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-tooltip-drilldown-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-tooltip-matrix-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-tooltip-placement-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-topology-layout-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-trace-waterfall-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "credentials"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-treemap-color.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-treemap-responsive-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "ui",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-visual-matrix.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-window-live.e2e.mjs",
+      "tags": [],
+      "needs": [
+        "go",
+        "gallery"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    }
+  ]
+}

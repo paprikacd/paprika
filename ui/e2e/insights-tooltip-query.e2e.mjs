@@ -15,6 +15,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { buildGoBinary } from "./insights-go-build.mjs"
 
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -90,12 +91,6 @@ async function until(predicate, message, timeout = 10_000) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 25)) }
   throw new Error(message)
-}
-async function run(command, args) {
-  const child = spawn(command, args, { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
-  let logs = ""
-  child.stdout.on("data", data => { logs += data }); child.stderr.on("data", data => { logs += data })
-  const [code] = await once(child, "exit"); assert.equal(code, 0, logs)
 }
 async function saved() { const response = await fetch(`${serviceURL}/api/dashboards/tooltip-query`); assert.equal(response.status, 200); return response.json() }
 function dashboard(view, hostType = "heatmap", parentQuery) {
@@ -454,7 +449,7 @@ try {
     { id: "metrics", name: "Query metrics", type: "prometheus", url: `http://127.0.0.1:${upstreamPort}/prometheus` },
     { id: "traces", name: "Query traces", type: "tempo", url: `http://127.0.0.1:${upstreamPort}/tempo` },
   ] }))
-  await run("rtk", ["proxy", "go", "build", "-o", binary, "./cmd/paprika-insights"])
+  await buildGoBinary(repository, "./cmd/paprika-insights", binary)
   service = spawn(binary, ["--dev", `--listen=127.0.0.1:${servicePort}`, `--data-dir=${join(temporary, "data")}`, `--providers=${join(temporary, "providers.json")}`], { cwd: repository, env: { ...process.env, OTEL_EXPORTER_OTLP_ENDPOINT: "" }, stdio: ["ignore", "pipe", "pipe"] })
   service.stdout.on("data", data => { serviceOutput += data }); service.stderr.on("data", data => { serviceOutput += data })
   await until(async () => { try { return (await fetch(`${serviceURL}/readyz`)).ok } catch { return false } }, `Insights service did not start: ${serviceOutput}`)

@@ -1,5 +1,23 @@
 # Insights validation — 24 October 2026
 
+## Running the browser suites
+
+Every Insights browser suite is listed once in `ui/e2e/insights-suites.json`, with its tags, the prerequisites it needs and a timeout. Run from `ui/`:
+
+```sh
+node e2e/run-insights.mjs --list --tag smoke   # print the selection; starts nothing
+node e2e/run-insights.mjs --tag smoke --retries 1   # the CI smoke set; a suite that passes on retry is reported as flaky
+node e2e/run-insights.mjs                      # the "full" tag (the no-argument default)
+node e2e/run-insights.mjs --tag perf          # performance suites, against the static export in ui/out
+node e2e/run-insights.mjs e2e/insights-x.e2e.mjs   # named suites, listed or not
+```
+
+Suites run in sequence. A failing suite does not stop the rest; the run prints a summary and exits non-zero. Each suite gets its timeout from the manifest. Without `INSIGHTS_E2E_URL`, `dev` suites use a `next dev` server and `perf` suites use a static server over `ui/out`, so run `npm run build` first. Set `INSIGHTS_E2E_URL` to use one server for every suite.
+
+Browser suites need Playwright Chromium and the Go toolchain (each binary is built with `go build`). Suites marked `gallery` need the gallery Docker stack at `PAPRIKA_GALLERY_BASE_URL` and are run directly with `node e2e/<suite>`, not through the runner. `postgres`, `uptime` and `credentials` suites need the environment named in their file. The CI smoke step runs `--tag smoke --retries 1` and skips when no change since master touches anything outside the manifest's `smokeSkipPaths` (documentation and agent files).
+
+`node --test e2e/insights-suites.test.mjs` checks that the manifest lists every `insights*.e2e.mjs` file once and that the smoke tag matches the CI set.
+
 Validated locally against the production static export. No cluster deployment was performed.
 
 The latest [saved-query tooltip and Single value review](tooltip-saved-review.md) passes **640 UI tests across 67 files**, production build/TypeScript, scoped ESLint and `go test -race ./internal/insights ./internal/api ./internal/api/auth -count=1`. The final production export is `qDGcsaVsRR0N-1LTr-vqA`. Two targeted real-service browser suites pass **40 scenarios** with zero page errors: [16 Explorer scenarios](../../../artifacts/insights/explorer/sparkline-final-sixteen-report.json) and [24 tooltip-query scenarios](../../../artifacts/insights/tooltip-query/sparkline-final-24-report.json). The full eleven-suite runner was not repeated for this scoped change.

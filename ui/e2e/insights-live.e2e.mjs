@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { buildGoBinary } from "./insights-go-build.mjs"
 import { selectGammaOption } from "./gamma-controls.mjs"
 
 const repository = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -100,14 +101,6 @@ async function listen(server) {
   return server.address().port
 }
 
-async function run(command, args) {
-  const child = spawn(command, args, { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
-  let logs = ""
-  child.stdout.on("data", (data) => { logs += data })
-  child.stderr.on("data", (data) => { logs += data })
-  const [code] = await once(child, "exit")
-  assert.equal(code, 0, `${command} failed: ${logs}`)
-}
 
 async function startService() {
   serviceEvents.push({ event: "start", at: new Date().toISOString() })
@@ -213,7 +206,7 @@ try {
     { id: "live-prometheus", name: "Live Prometheus", type: "prometheus", url: `http://127.0.0.1:${providerPort}/prometheus` },
     { id: "live-tempo", name: "Live Tempo", type: "tempo", url: `http://127.0.0.1:${providerPort}/tempo` },
   ] }))
-  await run("rtk", ["proxy", "go", "build", "-o", binary, "./cmd/paprika-insights"])
+  await buildGoBinary(repository, "./cmd/paprika-insights", binary)
   await startService()
   browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ viewport: { width: 1512, height: 1050 }, reducedMotion: "reduce", timezoneId: "UTC" })

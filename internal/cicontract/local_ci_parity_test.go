@@ -35,7 +35,8 @@ var localCIGitHubActions = map[string]string{
 
 // localCIGitHubOnlyRunSteps are `run:` steps with no command of their own locally, keyed "job/step name".
 var localCIGitHubOnlyRunSteps = map[string]string{
-	"cluster-integration/Install kind": "kind is downloaded, checksum-verified and installed at its pinned version by hack/ci/tools.sh",
+	"cluster-integration/Install kind":                                       "kind is downloaded, checksum-verified and installed at its pinned version by hack/ci/tools.sh",
+	"fleet-ui-smoke/Decide whether the Insights browser checks are affected": "ci.yml reads the base commit from the event and fetches it with the job token; the local job takes the merge base with master itself (hack/ci/jobs/fleet-ui-smoke.sh)",
 }
 
 // localCIPlatformForks are run steps whose local mirror branches on the host OS, because the ci.yml command is
@@ -228,8 +229,9 @@ func checkLocalCIJob(t localCIReporter, job string, spec map[string]any, script 
 		if uses := scalarString(step["uses"]); uses != "" {
 			checkLocalCIAction(t, job, stepName, uses, script)
 		}
+		_, gitHubOnly := localCIGitHubOnlyRunSteps[job+"/"+stepName]
 		if _, hasRun := step["run"]; hasRun {
-			if _, gitHubOnly := localCIGitHubOnlyRunSteps[job+"/"+stepName]; !gitHubOnly {
+			if !gitHubOnly {
 				// Inline assignments are accepted only for names that ci.yml sets to that value for this job or step.
 				allowed := localCIEnvValues(jobEnv, mappingOrEmpty(step["env"]))
 				_, forked := localCIPlatformForks[job+"/"+stepName]
@@ -237,7 +239,10 @@ func checkLocalCIJob(t localCIReporter, job string, spec map[string]any, script 
 					scalarString(step["timeout-minutes"]), script, allowed, scalarString(step["if"]) != "" || forked)
 			}
 		}
-		checkLocalCIEnv(t, job, "step "+stepName+" env", script, mappingOrEmpty(step["env"]))
+		// A GitHub-only step's environment (event-derived values) has no local equivalent to compare.
+		if !gitHubOnly {
+			checkLocalCIEnv(t, job, "step "+stepName+" env", script, mappingOrEmpty(step["env"]))
+		}
 	}
 }
 

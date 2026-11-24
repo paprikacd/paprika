@@ -10,6 +10,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { buildGoBinary } from "./insights-go-build.mjs"
 
 
 const root = resolve(fileURLToPath(new URL("../../", import.meta.url)))
@@ -60,8 +61,7 @@ try {
   await new Promise(resolve => reservation.close(resolve))
   const api = `http://127.0.0.1:${port}`
   const binary = join(temporary, "insights")
-  const build = spawn("rtk", ["proxy", "go", "build", "-o", binary, "./cmd/paprika-insights"], { cwd: root, stdio: "inherit" })
-  assert.equal((await once(build, "exit"))[0], 0)
+  await buildGoBinary(root, "./cmd/paprika-insights", binary)
   await writeFile(join(temporary, "providers.json"), JSON.stringify({ providers: [{ id: "metrics", name: "Prometheus", type: "prometheus", url: `http://127.0.0.1:${providerPort}` }] }))
   service = spawn(binary, ["--dev", `--listen=127.0.0.1:${port}`, `--data-dir=${join(temporary, "data")}`, `--providers=${join(temporary, "providers.json")}`], { cwd: root, env: { ...process.env, OTEL_EXPORTER_OTLP_ENDPOINT: "" }, stdio: ["ignore", "pipe", "pipe"] })
   service.stdout.on("data", data => { logs += data }); service.stderr.on("data", data => { logs += data })
