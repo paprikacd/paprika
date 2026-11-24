@@ -30,6 +30,16 @@ func baselineWindowText(band *dashboardTextBaseline) string {
 	return comparisonDurationPhrase(*band.OffsetSeconds) + " earlier"
 }
 
+// baselineShareText is the share of samples outside the band at the widget's decimals, or Auto without them. A share that
+// counts any outside sample never reads as zero: it falls back to Auto, which keeps three significant figures.
+func baselineShareText(percent float64, outside int, decimals *int) string {
+	text := dashboardReadingWithUnit(percent, "%", decimals)
+	if outside > 0 && isZeroPercentText(text) {
+		return dashboardReadingWithUnit(percent, "%", nil)
+	}
+	return text
+}
+
 // appendDashboardBaselineText states each time series' band: how many evaluated samples lie outside it. The words describe
 // the chart's own history. They are not an alert, and a state other than ok or partial says why there is no band.
 func appendDashboardBaselineText(out *strings.Builder, widgets []dashboardTextWidget) {
@@ -42,7 +52,7 @@ func appendDashboardBaselineText(out *strings.Builder, widgets []dashboardTextWi
 		var line strings.Builder
 		fmt.Fprintf(&line, "widget %s: baseline %s: state=%s", strconv.Quote(shortDashboardText(widget.ID, 80)), baselineWindowText(band), strconv.Quote(shortDashboardText(band.State, 24)))
 		if band.Fraction != nil {
-			fmt.Fprintf(&line, " outside the %s range in %.0f%% of samples", baselineWindowText(band), *band.Fraction*100)
+			fmt.Fprintf(&line, " outside the %s range in %s of samples", baselineWindowText(band), baselineShareText(*band.Fraction*100, band.Outside, widget.Decimals))
 		}
 		fmt.Fprintf(&line, " evaluated=%d outside=%d", band.Evaluated, band.Outside)
 		if band.Reason != "" {
