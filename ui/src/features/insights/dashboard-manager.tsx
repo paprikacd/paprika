@@ -1,4 +1,4 @@
-// The dashboard settings panel. It opens on request, so it loads then rather than with the first view.
+// The Manage dashboards panel. It opens on request, so it loads then rather than with the first view.
 import { lazy, Suspense, useId, useState } from "react";
 import { Copy, Download, Settings2, Trash2, X } from "lucide-react";
 import { dashboardSchema, type Dashboard, type Provider } from "./schema";

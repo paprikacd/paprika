@@ -272,6 +272,13 @@ describe("session expiry and access after render", () => {
   })
 })
 
+// The Data sources panel loads on demand, and its card disables Refresh while its first connection check runs.
+async function enabledRefresh() {
+  const refresh = await screen.findByRole("button", { name: "Refresh connection and providers" })
+  await waitFor(() => expect(refresh).toBeEnabled())
+  return refresh
+}
+
 // Builds a mock client whose providers call is the given behaviour.
 function api_(providers: InsightsClient["providers"] | ReturnType<typeof vi.fn>): InsightsClient & { providers: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> } {
   return api(providers as InsightsClient["providers"]) as InsightsClient & { providers: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> }
@@ -300,7 +307,7 @@ describe("a shared catalog that is busy after the workspace renders", () => {
     await screen.findByRole("heading", { name: "Dashboard A" })
     await waitFor(() => expect(queriedShared(client)).toBe(true))
     fireEvent.click(screen.getAllByRole("button", { name: /Data sources/ })[0])
-    fireEvent.click(await screen.findByRole("button", { name: "Refresh connection and providers" }))
+    fireEvent.click(await enabledRefresh())
     // While the refresh is in flight, the shared tiles are busy, not stale-and-clean.
     await waitFor(() => expect(document.querySelector('[data-widget-id="inline"] [aria-busy="true"]')).not.toBeNull())
     await act(async () => answerRefresh(await busyCatalog(1)))
@@ -389,7 +396,7 @@ describe("a shared catalog that is busy after the workspace renders", () => {
     await screen.findByRole("heading", { name: "Dashboard A" })
     await waitFor(() => expect(queriedShared(client)).toBe(true))
     fireEvent.click(screen.getAllByRole("button", { name: /Data sources/ })[0])
-    fireEvent.click(await screen.findByRole("button", { name: "Refresh connection and providers" }))
+    fireEvent.click(await enabledRefresh())
     await waitFor(() => expect(document.querySelector("[data-source-state]")?.getAttribute("data-source-state")).toBe("pending"))
     fireEvent.click(screen.getByRole("button", { name: "Close data sources" }))
     await waitFor(() => expect(document.querySelector("[data-source-state]")?.getAttribute("data-source-state")).toBe("ready"), { timeout: 3000 })
@@ -447,7 +454,7 @@ describe("replays stop with their request", () => {
     await waitFor(() => expect(counts.listings).toBe(5), { timeout: 8000 })
     fireEvent.click(screen.getAllByRole("button", { name: /Data sources/ })[0])
     refreshWanted = true
-    fireEvent.click(await screen.findByRole("button", { name: "Refresh connection and providers" }))
+    fireEvent.click(await enabledRefresh())
     await waitFor(() => expect(document.querySelector("[data-source-state]")?.getAttribute("data-source-state")).toBe("ready"), { timeout: 5000 })
     const settled = counts.listings
     await new Promise(resolve => setTimeout(resolve, 4000))
