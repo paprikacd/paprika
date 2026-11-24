@@ -77,7 +77,7 @@ describe("no raw metric strings outside the formatters", () => {
       ["plugins/records.tsx", "Invalid history"],
       ["plugins/record-charts.tsx", "const contextText="],
       ["plugins/record-table-cells.tsx", "const displayed = "],
-      ["chart-renderers.tsx", "data-metric-value={String(first.point.value)}"],
+      ["renderers/stat.tsx", "data-metric-value={String(first.point.value)}"],
       ["metric-tooltip-content.tsx", "data-metric-value="],
       ["example-catalog-query.ts", "const key = String(row[stock])"],
       ["plugins/operational-records-data.ts", "const labelValue"],

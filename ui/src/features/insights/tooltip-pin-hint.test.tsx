@@ -41,7 +41,7 @@ describe("TooltipPinHint instructions", () => {
   });
 
   it("is never rendered by a host: the observation panel owns the footer, so each host cannot forget or restyle it", () => {
-    for (const file of ["plot-tooltip.tsx", "observation-tooltip.tsx", "chart-renderers.tsx", "stat-sparkline.tsx", "plugins/record-charts.tsx", "plugins/metric-distributions.tsx", "plugins/records.tsx", "plugins/small-multiples.tsx", "plugins/status-grid.tsx", "plugins/uptime-views.tsx", "plugins/rich-metrics.tsx"]) {
+    for (const file of ["plot-tooltip.tsx", "observation-tooltip.tsx", "chart-renderers.tsx", "renderers/stat.tsx", "stat-sparkline.tsx", "plugins/record-charts.tsx", "plugins/metric-distributions.tsx", "plugins/records.tsx", "plugins/small-multiples.tsx", "plugins/status-grid.tsx", "plugins/uptime-views.tsx", "plugins/rich-metrics.tsx"]) {
       const source = readFileSync(join(process.cwd(), "src/features/insights", file), "utf8");
       expect(source.match(/<TooltipPinHint\b/g) ?? [], file).toHaveLength(file === "observation-tooltip.tsx" ? 1 : 0);
       expect(source, file).not.toContain("<TooltipInstructions");

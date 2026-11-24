@@ -17,6 +17,7 @@ describe("observation timer lint guard", () => {
     "src/features/insights/plugins/records.tsx",
     "src/features/insights/plugins/new-host.tsx",
     "src/features/insights/chart-renderers.tsx",
+    "src/features/insights/renderers/stat.tsx",
     "src/features/insights/fixture-renderers.tsx",
     "src/features/insights/stat-sparkline.tsx",
     "src/features/insights/plugins/slo-summary.tsx",
