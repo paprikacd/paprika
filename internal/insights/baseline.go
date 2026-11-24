@@ -13,6 +13,7 @@ import (
 
 const (
 	baselineRollingSamples = 12
+	baselineRollingGuard   = 6
 	baselineRollingMin     = 6
 	baselinePriorNeighbors = 5
 	baselineP10P90Min      = 5
@@ -92,21 +93,20 @@ func baselineMedian(values []float64) float64 {
 	return baselineQuantile(sorted, 0.5)
 }
 
-// baselineRollingNeighbours returns the 12 finite samples before the timestamp, or none when fewer than 6 exist.
-func baselineRollingNeighbours(current []baselineSample, timestamp float64) []float64 {
-	var earlier []float64
-	for _, sample := range current {
-		if sample.timestamp < timestamp {
-			earlier = append(earlier, sample.value)
-		}
-	}
-	if len(earlier) > baselineRollingSamples {
-		earlier = earlier[len(earlier)-baselineRollingSamples:]
-	}
-	if len(earlier) < baselineRollingMin {
+// baselineRollingNeighbours returns the lagged rolling window of a sample with before samples strictly earlier than it:
+// the 12 samples that end 6 samples earlier, or none when fewer than 6 exist. The gap keeps a shift outside its own band
+// for the gap's samples, so a step change forms a run; see ROLLING_GUARD in baseline.ts.
+func baselineRollingNeighbours(current []baselineSample, before int) []float64 {
+	end := max(0, before-baselineRollingGuard)
+	start := max(0, end-baselineRollingSamples)
+	if end-start < baselineRollingMin {
 		return nil
 	}
-	return earlier
+	window := make([]float64, 0, end-start)
+	for _, sample := range current[start:end] {
+		window = append(window, sample.value)
+	}
+	return window
 }
 
 type baselineCandidate struct {
@@ -199,9 +199,9 @@ func (tracker *baselineRunTracker) add(timestamp float64, outside bool) {
 
 // baselineNeighbours returns the samples a current sample is judged against: its rolling history, or the prior
 // window's neighbourhood.
-func baselineNeighbours(current, prior []baselineSample, sample baselineSample, options baselineOptions) []float64 {
+func baselineNeighbours(current, prior []baselineSample, sample baselineSample, before int, options baselineOptions) []float64 {
 	if options.Window == "rolling" {
-		return baselineRollingNeighbours(current, sample.timestamp)
+		return baselineRollingNeighbours(current, before)
 	}
 	return baselinePriorNeighbours(prior, options.OffsetMs, options.StepMs, sample.timestamp)
 }
@@ -209,8 +209,13 @@ func baselineNeighbours(current, prior []baselineSample, sample baselineSample, 
 func baselineEvaluate(index int, current, prior []baselineSample, hasPrior bool, options baselineOptions) seriesBaseline {
 	result := seriesBaseline{Index: index}
 	var tracker baselineRunTracker
+	// current is sorted by time, so the count of strictly earlier samples only grows.
+	before := 0
 	for _, sample := range current {
-		neighbours := baselineNeighbours(current, prior, sample, options)
+		for current[before].timestamp < sample.timestamp {
+			before++
+		}
+		neighbours := baselineNeighbours(current, prior, sample, before, options)
 		lower, upper, ok := baselineBandOf(neighbours, options.Band)
 		if !ok {
 			tracker.close()

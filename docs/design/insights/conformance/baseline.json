@@ -705,50 +705,6 @@
       ]
     },
     {
-      "name": "a rolling baseline needs six earlier samples",
-      "window": "rolling",
-      "band": "range",
-      "current": [
-        {
-          "name": "latency",
-          "labels": {
-            "route": "/a"
-          },
-          "points": [
-            {
-              "timestamp": 7200000,
-              "value": 10
-            },
-            {
-              "timestamp": 7260000,
-              "value": 10
-            },
-            {
-              "timestamp": 7320000,
-              "value": 10
-            },
-            {
-              "timestamp": 7380000,
-              "value": 10
-            },
-            {
-              "timestamp": 7440000,
-              "value": 10
-            }
-          ]
-        }
-      ],
-      "prior": null,
-      "expect": [
-        {
-          "index": 0,
-          "evaluated": 0,
-          "outside": 0,
-          "runs": []
-        }
-      ]
-    },
-    {
       "name": "the robust sigma floor keeps small moves quiet",
       "window": "previous",
       "band": "range",
@@ -872,7 +828,7 @@
       ]
     },
     {
-      "name": "a rolling baseline reads the chart's own earlier samples",
+      "name": "a rolling baseline needs twelve earlier samples: six in its window and the six of the gap",
       "window": "rolling",
       "band": "range",
       "current": [
@@ -916,10 +872,138 @@
             },
             {
               "timestamp": 7680000,
-              "value": 50
+              "value": 10
             },
             {
               "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": null,
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 0,
+          "outside": 0,
+          "runs": []
+        }
+      ]
+    },
+    {
+      "name": "a lasting step change forms a run before the lagged rolling band takes it in",
+      "window": "rolling",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            },
+            {
+              "timestamp": 7920000,
+              "value": 10
+            },
+            {
+              "timestamp": 7980000,
+              "value": 10
+            },
+            {
+              "timestamp": 8040000,
+              "value": 10
+            },
+            {
+              "timestamp": 8100000,
+              "value": 10
+            },
+            {
+              "timestamp": 8160000,
+              "value": 50
+            },
+            {
+              "timestamp": 8220000,
+              "value": 50
+            },
+            {
+              "timestamp": 8280000,
+              "value": 50
+            },
+            {
+              "timestamp": 8340000,
+              "value": 50
+            },
+            {
+              "timestamp": 8400000,
+              "value": 50
+            },
+            {
+              "timestamp": 8460000,
+              "value": 50
+            },
+            {
+              "timestamp": 8520000,
+              "value": 50
+            },
+            {
+              "timestamp": 8580000,
               "value": 50
             }
           ]
@@ -929,16 +1013,126 @@
       "expect": [
         {
           "index": 0,
-          "evaluated": 4,
+          "evaluated": 12,
+          "outside": 7,
+          "runs": [
+            {
+              "start": 8160000,
+              "end": 8520000,
+              "samples": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a single rolling blip is counted but never a run",
+      "window": "rolling",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            },
+            {
+              "timestamp": 7920000,
+              "value": 10
+            },
+            {
+              "timestamp": 7980000,
+              "value": 10
+            },
+            {
+              "timestamp": 8040000,
+              "value": 10
+            },
+            {
+              "timestamp": 8100000,
+              "value": 50
+            },
+            {
+              "timestamp": 8160000,
+              "value": 10
+            },
+            {
+              "timestamp": 8220000,
+              "value": 10
+            },
+            {
+              "timestamp": 8280000,
+              "value": 10
+            },
+            {
+              "timestamp": 8340000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": null,
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 8,
           "outside": 1,
           "runs": []
         }
       ]
     },
     {
-      "name": "a rolling baseline adapts within two samples of a shift",
+      "name": "a p10p90 rolling band holds a step change one sample longer",
       "window": "rolling",
-      "band": "range",
+      "band": "p10p90",
       "current": [
         {
           "name": "latency",
@@ -976,14 +1170,70 @@
             },
             {
               "timestamp": 7620000,
-              "value": 50
+              "value": 10
             },
             {
               "timestamp": 7680000,
-              "value": 50
+              "value": 10
             },
             {
               "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            },
+            {
+              "timestamp": 7920000,
+              "value": 10
+            },
+            {
+              "timestamp": 7980000,
+              "value": 10
+            },
+            {
+              "timestamp": 8040000,
+              "value": 10
+            },
+            {
+              "timestamp": 8100000,
+              "value": 10
+            },
+            {
+              "timestamp": 8160000,
+              "value": 50
+            },
+            {
+              "timestamp": 8220000,
+              "value": 50
+            },
+            {
+              "timestamp": 8280000,
+              "value": 50
+            },
+            {
+              "timestamp": 8340000,
+              "value": 50
+            },
+            {
+              "timestamp": 8400000,
+              "value": 50
+            },
+            {
+              "timestamp": 8460000,
+              "value": 50
+            },
+            {
+              "timestamp": 8520000,
+              "value": 50
+            },
+            {
+              "timestamp": 8580000,
               "value": 50
             }
           ]
@@ -993,9 +1243,15 @@
       "expect": [
         {
           "index": 0,
-          "evaluated": 4,
-          "outside": 1,
-          "runs": []
+          "evaluated": 12,
+          "outside": 8,
+          "runs": [
+            {
+              "start": 8160000,
+              "end": 8580000,
+              "samples": 8
+            }
+          ]
         }
       ]
     }

@@ -29,8 +29,13 @@ export interface BaselineOptions {
   stepMs: number
 }
 
-/** The rolling baseline reads the 12 finite samples before each sample, and needs at least 6 of them. */
+/**
+ * The rolling baseline is lagged: a sample is judged against the 12 finite samples that end 6 samples before it, and needs
+ * at least 6 of them. Without the gap a shift enters its own band within a sample or two, so a step change never forms a
+ * run; with it, a shift stays outside for the 6 samples of the gap and the one after, then becomes the new normal.
+ */
 export const ROLLING_SAMPLES = 12
+export const ROLLING_GUARD = 6
 export const ROLLING_MIN = 6
 /** A prior window contributes at most its 5 nearest samples to a sample's neighbourhood. */
 export const PRIOR_NEIGHBOURS = 5
@@ -61,10 +66,14 @@ function median(values: number[]): number {
   return quantile([...values].sort((a, b) => a - b), 0.5)
 }
 
-/** The neighbourhood of a rolling sample: the 12 finite samples before it, or none when fewer than 6 exist. */
-function rollingNeighbours(current: Sample[], timestamp: number): number[] {
-  const earlier = current.filter(sample => sample.timestamp < timestamp).slice(-ROLLING_SAMPLES).map(sample => sample.value)
-  return earlier.length >= ROLLING_MIN ? earlier : []
+/**
+ * The neighbourhood of a rolling sample, given how many samples come strictly before it: the 12 samples that end 6 samples
+ * earlier, or none when fewer than 6 exist. Samples at the same time are never each other's neighbours.
+ */
+function rollingNeighbours(current: Sample[], before: number): number[] {
+  const end = Math.max(0, before - ROLLING_GUARD)
+  const window = current.slice(Math.max(0, end - ROLLING_SAMPLES), end).map(sample => sample.value)
+  return window.length >= ROLLING_MIN ? window : []
 }
 
 /** The prior samples within two steps of the sample, shifted by the offset: the 5 nearest, nearest first, ties by time. */
@@ -103,9 +112,12 @@ function evaluate(index: number, current: Sample[], prior: Sample[] | undefined,
     if (open && open.samples >= 2) runs.push(open)
     open = undefined
   }
+  // current is sorted by time, so the count of strictly earlier samples only grows.
+  let before = 0
   for (const sample of current) {
+    while (current[before].timestamp < sample.timestamp) before++
     const neighbours = options.window === "rolling"
-      ? rollingNeighbours(current, sample.timestamp)
+      ? rollingNeighbours(current, before)
       : priorNeighbours(prior ?? [], options.offsetMs, options.stepMs, sample.timestamp)
     const band = neighbours.length ? bandOf(neighbours, options.band) : undefined
     if (!band) {

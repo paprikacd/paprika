@@ -621,7 +621,7 @@ function StyleEditor({
               options={[
                 { value: "off", label: "Off" }, { value: "previous", label: "Previous period" },
                 { value: "1d", label: "1 day earlier" }, { value: "7d", label: "7 days earlier" },
-                { value: "rolling", label: "Last 12 samples" },
+                { value: "rolling", label: "Rolling: 12 samples before the last 6" },
               ]} />
           </label>
           {options.baseline && <>

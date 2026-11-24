@@ -75,7 +75,32 @@ describe("time-series baseline band", () => {
 
   it("labels a rolling baseline by its samples", () => {
     const { container } = renderBaseline(stateFor({ window: "rolling", prior: undefined }), current, { ...widget.options, baseline: { window: "rolling" } })
-    expect(container.querySelector("[data-baseline-chip]")).toHaveTextContent("Band: last 12 samples")
+    expect(container.querySelector("[data-baseline-chip]")).toHaveTextContent("Band: 12 samples before the last 6")
+  })
+
+  it("marks a lasting step change as a run on a rolling baseline", () => {
+    // 16 samples at 10, then 8 at 50. The lagged band keeps the shift outside for seven samples before taking it in.
+    const shifted = series([...Array(16).fill(10), ...Array(8).fill(50)], HOUR_MS * 10)
+    const { container } = renderBaseline(stateFor({ window: "rolling", prior: undefined }), shifted, { ...widget.options, baseline: { window: "rolling" } })
+    const runs = container.querySelectorAll("[data-baseline-run]")
+    expect(runs).toHaveLength(1)
+    expect(Number(runs[0].getAttribute("data-from"))).toBe(HOUR_MS * 10 + minute(16))
+    expect(Number(runs[0].getAttribute("data-to"))).toBe(HOUR_MS * 10 + minute(22))
+    expect(container.querySelector("[data-baseline-runs]")).toHaveTextContent(/^Outside the rolling range \d\d:\d\d–\d\d:\d\d$/)
+  })
+
+  // The band's range in the tooltip honours the widget's decimals, and Auto prints three significant figures, never float noise.
+  it.each([
+    [2, "10.12 req/s–10.99 req/s"],
+    [undefined, "10.1 req/s–11 req/s"],
+  ])("formats the band range in the tooltip with decimals %s", (decimals, text) => {
+    const earlier = series(Array(10).fill(0).map((_, index) => index % 2 ? 10.987654321 : 10.123456789), HOUR_MS * 9)
+    renderBaseline(stateFor({ prior: earlier }), current, { ...widget.options, decimals })
+    const chart = screen.getByRole("img", { name: widget.title })
+    act(() => chart.focus())
+    const line = document.querySelector("[data-baseline-tooltip]")
+    expect(line).not.toBeNull()
+    expect(line).toHaveTextContent(`10 h earlier range: ${text}`)
   })
 })
 

@@ -19,10 +19,10 @@ type dashboardTextBaseline struct {
 }
 
 // baselineWindowText names the band's earlier period as a reader would: the offset for a previous period, or the
-// recent samples for a rolling band.
+// lagged recent samples for a rolling band.
 func baselineWindowText(band *dashboardTextBaseline) string {
 	if band.Window == "rolling" {
-		return "last 12 samples"
+		return "rolling"
 	}
 	if band.OffsetSeconds == nil {
 		return "earlier"

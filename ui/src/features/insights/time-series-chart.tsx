@@ -285,7 +285,7 @@ export function TimeSeriesChart({
       runs: bandWindow ? entry.runs.filter(run => run.end >= bandWindow.start && run.start <= bandWindow.end) : entry.runs,
     }));
   }, [baselineOn, baseline, series, bandWindow]);
-  const baselineLabel = baseline ? (baseline.window === "rolling" ? "last 12 samples" : comparisonLabel(baseline.window, baseline.span).replace(/^vs /, "")) : "";
+  const baselineLabel = baseline ? (baseline.window === "rolling" ? "rolling" : comparisonLabel(baseline.window, baseline.span).replace(/^vs /, "")) : "";
   const runClock = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }), [timeZone]);
   const baselinePoints = useMemo(() => new Map(baselines.map(entry => [entry.index, new Map<number, BaselinePoint>(entry.points.map(point => [point.timestamp, point]))] as const)), [baselines]);
   // The pinned observation's extra lines: its band, then the events that cover its time (at most three, critical first).
@@ -736,7 +736,7 @@ export function TimeSeriesChart({
         </ul>
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
-      {baselineOn && baseline && <span className={styles.notice} data-baseline-chip>{`Band: ${baseline.window === "rolling" ? "last 12 samples" : comparisonLabel(baseline.window, baseline.span)}`}</span>}
+      {baselineOn && baseline && <span className={styles.notice} data-baseline-chip>{`Band: ${baseline.window === "rolling" ? "12 samples before the last 6" : comparisonLabel(baseline.window, baseline.span)}`}</span>}
       {baselineOn && baseline?.state === "unavailable" && <span role="status" className={styles.notice}>Baseline unavailable: no earlier period for this range</span>}
       {baselineOn && baseline?.state === "error" && <span role="status" className={styles.notice}>Baseline unavailable: the earlier period did not load</span>}
       {baselineOn && baseline?.partial && <span className={styles.notice}>Partial earlier result</span>}
