@@ -154,4 +154,23 @@ describe("refreshing a dashboard", () => {
     rerender(<DashboardCanvas {...canvas} selected="requests" end={3600} />);
     await waitFor(() => expect(onQueryResult).toHaveBeenLastCalledWith(expect.objectContaining({ widgetId: "requests", fetcher, result: series() })));
   });
+
+  it("adopts an automatic tick's window after the tile's stagger, and a manual refresh's at once", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const fetcher = vi.fn(async () => series());
+    const canvas = { dashboard, active: true, providers, fetcher, editing: false, onSelect: vi.fn(), onLayout: vi.fn() };
+    const { rerender } = render(<DashboardCanvas {...canvas} end={3600} refreshStaggerMs={0} />);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ end: 3600 }), expect.anything()));
+
+    // An automatic tick staggers: the new end is not requested in the same synchronous pass.
+    fetcher.mockClear();
+    rerender(<DashboardCanvas {...canvas} end={3630} refreshStaggerMs={200} />);
+    expect(fetcher).not.toHaveBeenCalledWith(expect.objectContaining({ end: 3630 }), expect.anything());
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ end: 3630 }), expect.anything()), { timeout: 1_000 });
+
+    // A manual refresh uses no stagger, so the new end is requested in the same pass.
+    fetcher.mockClear();
+    rerender(<DashboardCanvas {...canvas} end={3660} refreshStaggerMs={0} />);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ end: 3660 }), expect.anything()));
+  });
 });

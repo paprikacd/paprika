@@ -54,6 +54,7 @@ import {
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
+import { useStaggeredWindow } from "./refresh-stagger";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
 import {
@@ -235,8 +236,9 @@ const Tile = memo(function Tile({
   active,
   provider,
   fetcher,
-  start,
-  end,
+  boardStart,
+  boardEnd,
+  refreshStaggerMs = 0,
   editing,
   draggable,
   naturalHeight = false,
@@ -263,8 +265,10 @@ const Tile = memo(function Tile({
   active: boolean;
   provider?: Provider;
   fetcher: Fetcher;
-  start: number;
-  end: number;
+  /** The board's window. A tick may reach the tile a moment later, so the tile staggers its adoption by refreshStaggerMs. */
+  boardStart: number;
+  boardEnd: number;
+  refreshStaggerMs?: number;
   editing: boolean;
   draggable: boolean;
   naturalHeight?: boolean;
@@ -292,6 +296,7 @@ const Tile = memo(function Tile({
   /** The variable values a selection is compared against, so a mark can show that it is the applied filter. */
   selectionScope?: SelectionScope;
 }) {
+  const { start, end } = useStaggeredWindow(widget.id, boardStart, boardEnd, refreshStaggerMs);
   const recordCellStyles = widget.config?.cellStyles;
   const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
     Array.isArray(recordCellStyles) && ["sparkline", "bar-segments", "status-badge"].every(display =>
@@ -817,6 +822,7 @@ export function DashboardCanvas({
   fetcher,
   tooltipFetcher = fetcher,
   end,
+  refreshStaggerMs = 0,
   editing,
   dense = false,
   referenceCompact = false,
@@ -842,6 +848,8 @@ export function DashboardCanvas({
   fetcher: Fetcher;
   tooltipFetcher?: Fetcher;
   end: number;
+  /** Spreads automatic refresh across the tiles. Zero adopts the new window at once, as a manual refresh does. */
+  refreshStaggerMs?: number;
   editing: boolean;
   dense?: boolean;
   referenceCompact?: boolean;
@@ -1028,8 +1036,9 @@ export function DashboardCanvas({
                         : widget.providerId),
                   )}
                   fetcher={fetcher}
-                  start={range.start}
-                  end={range.end}
+                  boardStart={range.start}
+                  boardEnd={range.end}
+                  refreshStaggerMs={refreshStaggerMs}
                   naturalHeight={!focus && stackedView && intrinsicStat(widget)}
                   referenceCompact={referenceCompact && !editing}
                   editing={editing}

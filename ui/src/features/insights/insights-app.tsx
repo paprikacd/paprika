@@ -91,6 +91,7 @@ import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import { useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
+import { refreshStaggerSpread } from "./refresh-stagger"
 import { visibleTileControl } from "./tile-controls"
 import { useCanvasDensity } from "./canvas-density"
 import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
@@ -398,6 +399,12 @@ export default function InsightsApp({
   }, [])
   const navigationToggle = useRef<HTMLButtonElement>(null)
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
+  // Whether the current end came from an automatic tick. An automatic tick staggers across the tiles; any other change adopts at once.
+  const [autoTick, setAutoTick] = useState(false)
+  const advanceEnd = useCallback((auto: boolean) => {
+    setEnd(Math.floor(Date.now() / 1000))
+    setAutoTick(auto)
+  }, [])
   const [retry, setRetry] = useState(0)
   // The shared source list loads behind a rendered workspace. Only tiles that need it wait.
   const [sources, setSources] = useState<SourceState>({ status: "ready" })
@@ -958,17 +965,17 @@ export default function InsightsApp({
     // A fixed window pauses auto refresh; a relative window keeps refreshing at the view's interval.
     if (!viewDashboard.refreshInterval || viewDashboard.customTimeRange) return
     const timer = setInterval(() => {
-      if (!document.hidden) setEnd(Math.floor(Date.now() / 1000))
+      if (!document.hidden) advanceEnd(true)
     }, viewDashboard.refreshInterval * 1000)
     const onVisible = () => {
-      if (!document.hidden) setEnd(Math.floor(Date.now() / 1000))
+      if (!document.hidden) advanceEnd(true)
     }
     document.addEventListener("visibilitychange", onVisible)
     return () => {
       clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisible)
     }
-  }, [viewDashboard.refreshInterval, viewDashboard.customTimeRange])
+  }, [viewDashboard.refreshInterval, viewDashboard.customTimeRange, advanceEnd])
 
   const scheduledFetcher = useMemo(() => {
     // A refresh or provider edit invalidates cached fixed-range observations too.
@@ -1325,7 +1332,7 @@ export default function InsightsApp({
         setEditing(false)
       }
       applyView(nextState, action)
-      setEnd(Math.floor(Date.now() / 1000))
+      advanceEnd(false)
       // Back and Forward within the same dashboard change only the view: an open panel keeps its unapplied text.
       if (!(action === "popstate" && item.id === dashboard.id)) close()
       setError("")
@@ -1428,7 +1435,7 @@ export default function InsightsApp({
         ? { ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: choice.customTimeRange }
         : { ...currentRoute, dashboardId: dashboard.id, range: choice.timeRange, customTimeRange: undefined }
       applyView(view, "range")
-      setEnd(Math.floor(Date.now() / 1000))
+      advanceEnd(false)
       setError("")
       return true
     } catch (cause) {
@@ -1440,7 +1447,7 @@ export default function InsightsApp({
   function resetViewRange() {
     try {
       applyView({ ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: undefined }, "range")
-      setEnd(Math.floor(Date.now() / 1000))
+      advanceEnd(false)
       setError("")
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not reset the time range")
@@ -2108,7 +2115,7 @@ export default function InsightsApp({
               className={styles.iconButton}
               aria-label="Refresh data"
               onClick={() => {
-                setEnd(Math.floor(Date.now() / 1000))
+                advanceEnd(false)
                 setQueryRevision((value) => value + 1)
                 setLibraryRevision((value) => value + 1)
               }}
@@ -2359,6 +2366,7 @@ export default function InsightsApp({
                 fetcher={fetcher}
                 tooltipFetcher={scheduledFetcher}
                 end={alignedEnd}
+                refreshStaggerMs={autoTick ? refreshStaggerSpread(viewDashboard.refreshInterval ?? 0) : 0}
                 editing={editing}
                 dense={dense}
                 referenceCompact={compactShell && finePointer}
