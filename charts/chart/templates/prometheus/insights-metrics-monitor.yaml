@@ -1,5 +1,6 @@
-{{- /* Insights serves /metrics on its service listener (port "http", 8090), not on the
-  metrics bind address, so this monitor is gated on Insights and Prometheus alone. */}}
+{{- /* With prometheus.enable, Insights serves /metrics on a metrics-only listener (port
+  "metrics", 8080) that is not the metrics bind address, so this monitor is gated on
+  Insights and Prometheus alone. */}}
 {{- if and .Values.insights.enabled .Values.prometheus.enable }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -21,7 +22,7 @@ spec:
     scrapeTimeout: {{ . }}
     {{- end }}
     path: /metrics
-    port: http
+    port: metrics
     scheme: http
   selector:
     matchLabels:

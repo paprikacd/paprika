@@ -193,6 +193,14 @@ func commitStartupQuarantine(store *Store, savedQueries *savedQueryStore) error 
 	return nil
 }
 
+// MetricsHandler serves only GET /metrics, for a listener that a scraper may reach
+// without reaching the service API. Every other path is 404.
+func (s *Server) MetricsHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))
+	return mux
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))

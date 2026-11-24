@@ -151,9 +151,9 @@ These use the OTel API (`otel.Meter("paprika")`) and appear with the
 ### Insights
 
 Insights and the observability gateway serve `/metrics`. With `prometheus.enable`,
-the chart renders a ServiceMonitor for each: Insights on its service port (`http`,
-8090, plain HTTP), and the gateway on its `metrics` port when
-`metrics.bindAddress` enables it. Insights' query series are the OTel instruments
+the chart renders a ServiceMonitor for each: Insights on its metrics-only listener
+(`metrics`, 8080, plain HTTP, started with `--metrics-listen`), and the gateway on its
+`metrics` port when `metrics.bindAddress` enables it. Insights' query series are the OTel instruments
 below. The gateway emits no metrics of its own; its refusals show up here as
 `paprika_insights_query_capacity_rejections_total{pool="gateway",scope=...}`.
 

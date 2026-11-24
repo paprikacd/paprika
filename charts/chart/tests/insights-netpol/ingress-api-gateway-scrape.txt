@@ -15,4 +15,4 @@
             matchLabels:
               kubernetes.io/metadata.name: paprika-system
       ports:
-        - { protocol: TCP, port: 8090 }
+        - { protocol: TCP, port: 8080 }

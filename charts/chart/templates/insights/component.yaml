@@ -93,6 +93,11 @@ spec:
     - name: http
       port: 8090
       targetPort: http
+    {{- if .Values.prometheus.enable }}
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+    {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -141,6 +146,10 @@ spec:
             - --listen=:8090
             - --data-dir=/var/lib/paprika-insights
             - --providers=/etc/paprika-insights/providers.json
+            {{- /* A scrape reaches /metrics on its own port, so the NetworkPolicy admits the scraper there and not to /api. */}}
+            {{- if .Values.prometheus.enable }}
+            - --metrics-listen=:8080
+            {{- end }}
             {{- /* Each capacity flag is emitted only when set, so an older image still starts on its built-in. */}}
             {{- if not (kindIs "invalid" $capacity.queryConcurrency) }}
             - --query-concurrency={{ $capacity.queryConcurrency }}
@@ -166,6 +175,10 @@ spec:
           ports:
             - name: http
               containerPort: 8090
+            {{- if .Values.prometheus.enable }}
+            - name: metrics
+              containerPort: 8080
+            {{- end }}
           env:
             {{- if .Values.observabilityGateway.enabled }}
             - name: PAPRIKA_OBSERVABILITY_GATEWAY_ADDR
