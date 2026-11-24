@@ -38,6 +38,8 @@ type Store struct {
 	documents map[string]Dashboard
 	// quarantine holds the invalid documents OpenStore found. They move only in commitQuarantine.
 	quarantine []pendingQuarantine
+	// generation counts the writes and deletes applied under mu. A collection tag built from it changes with the list.
+	generation uint64
 	// revisions holds the in-memory history index of each dashboard; see revision_store.go.
 	revisions map[string]*revisionHistory
 	// revisionBytes is the blob bytes of every retained revision. revisionBudget and revisionLimit bound it.
@@ -141,6 +143,13 @@ func (s *Store) commitQuarantine() error {
 }
 
 func (s *Store) List() []Dashboard {
+	documents, _ := s.ListVersioned()
+	return documents
+}
+
+// ListVersioned lists the dashboards and the generation they were read at. The generation
+// moves on every write and delete, so a collection tag built from it changes with the list.
+func (s *Store) ListVersioned() (list []Dashboard, generation uint64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ids := make([]string, 0, len(s.documents))
@@ -152,7 +161,14 @@ func (s *Store) List() []Dashboard {
 	for _, id := range ids {
 		documents = append(documents, bytes.Clone(s.documents[id]))
 	}
-	return documents
+	return documents, s.generation
+}
+
+// Generation returns the number of writes and deletes the store has applied since it opened.
+func (s *Store) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
 }
 
 func (s *Store) Get(id string) (document Dashboard, version string, err error) {
@@ -186,6 +202,7 @@ func (s *Store) Delete(id, ifMatch string) error {
 		return fmt.Errorf("delete dashboard: %w", err)
 	}
 	delete(s.documents, id)
+	s.generation++
 	s.removeRevisionHistoryLocked(id)
 	return syncDirectory(s.dir)
 }

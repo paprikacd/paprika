@@ -56,6 +56,21 @@ func (b *authorizedBackend) authorize(ctx context.Context, provider string) erro
 	return nil
 }
 
+// AuthorizationScope returns the caller's authorization scope: a digest that fixes every
+// provider decision for this principal (see auth.ScopeDigester). It is "" when the
+// authorizer cannot report one, so a caller must then not share decisions between requests.
+func (b *authorizedBackend) AuthorizationScope(ctx context.Context) (string, error) {
+	p, err := b.principal(ctx)
+	if err != nil {
+		return "", err
+	}
+	digester, ok := b.authorizer.(auth.ScopeDigester)
+	if !ok {
+		return "", nil
+	}
+	return digester.ScopeDigest(p), nil
+}
+
 func (b *authorizedBackend) ListProviders(ctx context.Context) ([]ProviderInfo, error) {
 	if _, err := b.principal(ctx); err != nil {
 		return nil, err

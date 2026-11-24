@@ -168,6 +168,8 @@ type DashboardQueryCount struct {
 	Planned      int `json:"planned"`
 	Executed     int `json:"executed"`
 	Deduplicated int `json:"deduplicated"`
+	// Cached counts the queries answered from the result cache without a provider request. They are not in Executed. Absent when none were.
+	Cached int `json:"cached,omitempty"`
 	// Comparison counts the earlier-window queries of stats that declare a comparison. Absent when none do.
 	Comparison *DashboardComparisonCount `json:"comparison,omitempty"`
 	// VariableOptions counts the variable source fetches: distinct fetches planned, and those executed. Absent when no
@@ -629,7 +631,9 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 		if !exists {
 			err = errors.New("invalid saved dashboard range")
 		}
-		end = now.Truncate(time.Second)
+		// The end is aligned to the grain of this range, so every viewer and query tool that reads the
+		// same dashboard in the same grain asks for the same window.
+		end = querystep.AlignEnd(now, duration)
 		start = end.Add(-duration)
 	}
 	start, end = start.UTC().Truncate(time.Millisecond), end.UTC().Truncate(time.Millisecond)
@@ -712,6 +716,9 @@ func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *
 	}
 	if executed {
 		result.QueryCount.Executed++
+	}
+	if signal.Cached {
+		result.QueryCount.Cached++
 	}
 	if signal.Error != nil || signal.State == "partial" {
 		result.State = "partial"
@@ -832,14 +839,16 @@ func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options Da
 	}
 	signal := summarizeDashboardResult(&raw, options)
 	signal.LatencyMs = latency
+	signal.Cached = raw.Diagnostics.servedFromCache()
 	return signal, executed, columns, &raw
 }
 
 // dashboardSignalLatency is the receipt's total: the time from asking for Insights admission to the gateway's
 // answer. It includes the admission wait and gateway queueing. It is nil when the query was not admitted,
-// because no gateway work then happened.
+// because no gateway work then happened. A cache hit or join was not admitted either, but its receipt still
+// records how long the answer took to come back, so its latency is kept.
 func dashboardSignalLatency(admitted bool, diagnostics *QueryDiagnostics) *int64 {
-	if !admitted || diagnostics == nil {
+	if diagnostics == nil || (!admitted && !diagnostics.servedFromCache()) {
 		return nil
 	}
 	latency := max(int64(math.Round(diagnostics.TotalMs)), 0)

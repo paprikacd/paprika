@@ -48,6 +48,7 @@ func (s *Server) putProviderConfigLocked(config *ProviderConfig, ifMatch, ifNone
 		return out
 	}
 	view, err := s.providers.put(config, ifMatch, ifNoneMatch)
+	s.forgetResults(config.ID)
 	if err != nil {
 		providerStoreError(out, err)
 		return out
@@ -75,6 +76,7 @@ func (s *Server) deleteProviderConfigLocked(id, ifMatch string) *bufferedRespons
 		writeError(out, 409, "provider is used by saved queries; remove those queries before deleting it")
 		return out
 	}
+	s.forgetResults(id)
 	if err := s.providers.remove(id, ifMatch); err != nil {
 		providerStoreError(out, err)
 		return out

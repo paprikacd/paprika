@@ -1,6 +1,6 @@
 import { act, fireEvent, renderHook } from "@testing-library/react"
-import { afterEach, expect, it, vi } from "vitest"
-import { useWorkspaceRefresh, WORKSPACE_REFRESH_INTERVAL } from "./use-workspace-refresh"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { sameSyncInputs, useWorkspaceRefresh, WORKSPACE_REFRESH_INTERVAL } from "./use-workspace-refresh"
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -41,4 +41,16 @@ it("uses the latest callback and recovers a background refresh error", async () 
   await act(async () => fireEvent.focus(window))
   expect(second).toHaveBeenCalledOnce()
   expect(view.result.current).toBe("")
+})
+
+describe("sameSyncInputs", () => {
+  it("recognises identical inputs by identity and nothing else", () => {
+    const list = [{ id: "a" }]
+    const other = [{ id: "a" }]
+    expect(sameSyncInputs(undefined, [list])).toBe(false)
+    expect(sameSyncInputs([list, "x"], [list, "x"])).toBe(true)
+    expect(sameSyncInputs([list], [other])).toBe(false)
+    expect(sameSyncInputs([list, "x"], [list])).toBe(false)
+    expect(sameSyncInputs([NaN], [NaN])).toBe(true)
+  })
 })

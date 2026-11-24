@@ -24,6 +24,7 @@
     "insights": {
       "type": "object",
       "properties": {
+        "resultCacheMiB": {"description": "Byte budget of the shared result cache, in MiB. null omits its flag, so the Insights built-in (16) applies; 0 disables the cache.", "type": ["integer", "null"], "minimum": 0, "maximum": 128},
         "capacity": {
           "description": "Admission capacity for Insights' own pools. null omits its flag, so the Insights built-in applies.",
           "type": "object",

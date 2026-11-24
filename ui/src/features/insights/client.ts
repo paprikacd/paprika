@@ -165,6 +165,11 @@ export interface QueryCallOptions {
    * scheduler releases its slot while it backs off). Defaults to true.
    */
   replayCapacity?: boolean;
+  /**
+   * Asks the server for a fresh execution: it skips its result cache and stores the new result. Used by a manual refresh,
+   * so the refreshed window is not answered from an earlier one.
+   */
+  refresh?: boolean;
 }
 
 function canRetryCapacity(requestPath: string, init: RequestInit): boolean {
@@ -712,7 +717,7 @@ export function createInsightsClient(
         await request("/query", {
           method: "POST",
           body: JSON.stringify(body),
-          headers: { "X-Insights-Diagnostics": "1" },
+          headers: options?.refresh ? { "X-Insights-Diagnostics": "1", "X-Insights-Cache": "refresh" } : { "X-Insights-Diagnostics": "1" },
           signal,
         }, undefined, false, false, options?.replayCapacity ?? true)
       )

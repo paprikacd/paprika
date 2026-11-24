@@ -1,6 +1,8 @@
 package insights
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -28,7 +30,14 @@ func (s *Server) listSavedQueries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	terms := strings.Fields(strings.ToLower(q))
-	documents := s.savedQueries.list(providerID)
+	summary := r.URL.Query().Get("summary") == "true"
+	variant := savedQueryListVariant(providerID, terms, summary)
+	// A conditional read asks the store's generation first, so an unchanged list is not listed or encoded again.
+	if tag := collectionTag(s.bootTag, s.savedQueries.Generation(), variant); matchesReadETag(r.Header.Get("If-None-Match"), tag) {
+		writeNotModified(w, tag)
+		return
+	}
+	documents, generation := s.savedQueries.listVersioned(providerID)
 	if len(terms) > 0 {
 		matched := documents[:0]
 		for _, document := range documents {
@@ -38,10 +47,26 @@ func (s *Server) listSavedQueries(w http.ResponseWriter, r *http.Request) {
 		}
 		documents = matched
 	}
-	if r.URL.Query().Get("summary") == "true" {
+	if summary {
 		documents = summarizeSavedQueries(documents)
 	}
-	writeCollectionJSON(w, r, map[string]any{"queries": documents})
+	writeTaggedCollection(w, collectionTag(s.bootTag, generation, variant), map[string]any{"queries": documents})
+}
+
+// savedQueryListVariant names one listing of the saved-query collection: the provider filter, the shape and
+// the search. The search terms are hashed, so arbitrary text never reaches the ETag header and two different
+// searches never share a tag.
+func savedQueryListVariant(providerID string, terms []string, summary bool) string {
+	shape := "full"
+	if summary {
+		shape = "summary"
+	}
+	variant := "queries:" + providerID + ":" + shape
+	if len(terms) > 0 {
+		digest := sha256.Sum256([]byte(strings.Join(terms, "\x00")))
+		variant += ":q" + hex.EncodeToString(digest[:12])
+	}
+	return variant
 }
 
 // savedQueryMatches reports whether every term appears, case-insensitively, in at least one

@@ -294,3 +294,43 @@ describe("query receipt session isolation", () => {
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
 })
+
+describe("server result cache receipts", () => {
+  const cachedPhase = { name: "cache" as const, owner: "insights" as const, clock: "server-monotonic" as const, durationMs: 1.2, relationship: "exclusive" as const }
+
+  function cachedReceipt(status: "hit" | "joined", overrides: Partial<QueryDiagnostics> = {}): QueryDiagnostics {
+    return receipt({
+      effective: { dispatched: false, rangeApplied: false, scope: "provider" },
+      phases: [cachedPhase],
+      totalMs: 1.2,
+      cache: { status, sourceExecutionId: "execution-a", ageMs: 120 },
+      ...overrides,
+    })
+  }
+
+  it("parses a cache hit and a join that made no provider request", () => {
+    expect(parseQueryDiagnostics(cachedReceipt("hit"))?.cache).toEqual({ status: "hit", sourceExecutionId: "execution-a", ageMs: 120 })
+    expect(parseQueryDiagnostics(cachedReceipt("joined"))?.cache?.status).toBe("joined")
+  })
+
+  it("rejects a cached delivery that claims a provider dispatch or an upstream phase", () => {
+    expect(parseQueryDiagnostics(cachedReceipt("hit", { effective: { dispatched: true, rangeApplied: true, scope: "provider", start: input.start, end: input.end, step: input.step } }))).toBeUndefined()
+    expect(parseQueryDiagnostics(cachedReceipt("joined", { phases: [cachedPhase, { name: "upstream", owner: "insights", clock: "server-monotonic", durationMs: 800, relationship: "exclusive" }] }))).toBeUndefined()
+  })
+
+  it("drops a malformed cache object and keeps the rest of the receipt", () => {
+    const parsed = parseQueryDiagnostics(receipt({ cache: { status: "stale" } as unknown as QueryDiagnostics["cache"] }))
+    expect(parsed).toBeDefined()
+    expect(parsed?.cache).toBeUndefined()
+  })
+
+  it("sends the cache refresh header only when a refresh is asked for", async () => {
+    const fetcher = mockFetch(response({ series, diagnostics: receipt() }), response({ series, diagnostics: receipt() }))
+    await createInsightsClient().query(input, new AbortController().signal, { refresh: true })
+    await createInsightsClient().query(input, new AbortController().signal)
+    const refreshHeaders = new Headers(fetcher.mock.calls[0][1].headers)
+    const plainHeaders = new Headers(fetcher.mock.calls[1][1].headers)
+    expect(refreshHeaders.get("X-Insights-Cache")).toBe("refresh")
+    expect(plainHeaders.get("X-Insights-Cache")).toBeNull()
+  })
+})
