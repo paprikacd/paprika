@@ -26,7 +26,8 @@ export function useRegionBrush(options: RegionBrushOptions) {
   useLayoutEffect(() => {
     latest.current = options;
   });
-  type Drag = { id: number; owner: Element; start: CellIndex; clientX: number; clientY: number; active: boolean; revision: unknown };
+  // last is the latest cell the drag crossed, so a release just outside the cells keeps the region the preview showed.
+  type Drag = { id: number; owner: Element; start: CellIndex; last: CellIndex; clientX: number; clientY: number; active: boolean; revision: unknown };
   const drag = useRef<Drag | null>(null);
   const stale = (current: Drag) => !Object.is(current.revision, latest.current.revision);
   const suppressClick = useRef(false);
@@ -67,7 +68,7 @@ export function useRegionBrush(options: RegionBrushOptions) {
         if (!start) return;
         suppressClick.current = false;
         const owner = (event.target as Element).closest("svg") ?? event.currentTarget;
-        drag.current = { id: event.pointerId, owner, start, clientX: event.clientX, clientY: event.clientY, active: false, revision: latest.current.revision };
+        drag.current = { id: event.pointerId, owner, start, last: start, clientX: event.clientX, clientY: event.clientY, active: false, revision: latest.current.revision };
         owner.setPointerCapture(event.pointerId);
       },
       onPointerMoveCapture: (event: PointerEvent<Element>) => {
@@ -90,6 +91,7 @@ export function useRegionBrush(options: RegionBrushOptions) {
         }
         event.preventDefault();
         event.stopPropagation();
+        current.last = cell;
         setPreview({ from: current.start, to: cell });
       },
       onPointerUpCapture: (event: PointerEvent<Element>) => {
@@ -102,8 +104,7 @@ export function useRegionBrush(options: RegionBrushOptions) {
         if (current.active) {
           event.preventDefault();
           event.stopPropagation();
-          const cell = latest.current.locate(event.clientX, event.clientY);
-          if (cell) latest.current.commit(current.start, cell);
+          latest.current.commit(current.start, latest.current.locate(event.clientX, event.clientY) ?? current.last);
         }
         finish();
       },

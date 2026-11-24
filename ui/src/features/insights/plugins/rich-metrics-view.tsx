@@ -354,7 +354,9 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   const [anchor, setAnchor] = useState<SVGSVGElement | null>(null), [panel, setPanel] = useState<HTMLDivElement | null>(null);
   const sharedCursor = useChartCursor();
   const eventData = useAnnotationEvents();
-  const [regionState, setRegionState] = useState<{ revision: unknown; region: HeatmapRegion }>();
+  // A region and, when the keyboard drew it, its fixed corner and the corner Shift+Arrow moves.
+  const [regionState, setRegionState] = useState<{ revision: unknown; region: HeatmapRegion; anchor?: CellIndex; cursor?: CellIndex }>();
+  const [regionPanel, setRegionPanel] = useState<HTMLDivElement | null>(null);
   const dashboardWindow = useDashboardWindow();
   const savedLibrary = useSavedQueryLibrary();
   const { showAxis, descriptionId, embedded: embeddedChart } = useWidgetPresentation();
@@ -436,21 +438,25 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   };
   const keys = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!inspection.enabled) return;
+    // An open region's panel takes Tab first, as a pinned inspector's does, because the panel is portaled away from the chart.
+    if (event.key === "Tab" && !event.shiftKey && region && regionPanel) { event.preventDefault(); regionPanel.focus({ preventScroll: true }); return; }
     if (event.key === "Tab" && !event.shiftKey && inspection.active?.pinned && inspection.focusPanel()) { event.preventDefault(); return; }
     // A region is cleared first, so Escape closes it before it closes the inspection under it.
     if (event.key === "Escape" && region) { event.preventDefault(); event.stopPropagation(); setRegionState(undefined); return; }
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); inspection.dismiss("escape"); return; }
-    let row = inspection.active?.observation.row ?? 0, column = Math.max(0, inspection.active?.observation.column ?? data.timestamps.length - 1);
+    const activeCell = inspection.active ? { row: inspection.active.observation.row, column: inspection.active.observation.column } : undefined;
+    // Shift+Arrow moves the region's free corner, which starts at the pinned cell; plain arrows move the inspected cell.
+    const keyboardRegion = event.shiftKey && activeCell && activeCell.column >= 0 ? (region && regionState?.anchor && regionState.cursor ? { anchor: regionState.anchor, cursor: regionState.cursor } : { anchor: activeCell, cursor: activeCell }) : undefined;
+    let row = keyboardRegion?.cursor.row ?? inspection.active?.observation.row ?? 0, column = Math.max(0, keyboardRegion?.cursor.column ?? inspection.active?.observation.column ?? data.timestamps.length - 1);
     if (event.key === "ArrowRight") column++; else if (event.key === "ArrowLeft") column--;
     else if (event.key === "ArrowUp") row++; else if (event.key === "ArrowDown") row--;
     else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspection.show(observation(row, column), true, "keyboard"); return; } else return;
     event.preventDefault();
     const next = { row: Math.max(0, Math.min(data.rows.length - 1, row)), column: Math.max(0, Math.min(data.timestamps.length - 1, column)) };
-    // Shift+Arrow grows the region from its pinned cell, so the keyboard can select the same range a drag does.
-    if (event.shiftKey && inspection.active) {
-      const origin = region ?? regionBetween(data.timestamps, { row: inspection.active.observation.row, column: inspection.active.observation.column }, { row: inspection.active.observation.row, column: inspection.active.observation.column });
-      const grown = regionBetween(data.timestamps, { row: origin.lowBucket, column: data.timestamps.indexOf(origin.startTs) }, { row: origin.highBucket, column: data.timestamps.indexOf(origin.endTs) });
-      setRegionState({ revision: result, region: { startTs: Math.min(grown.startTs, data.timestamps[next.column]), endTs: Math.max(grown.endTs, data.timestamps[next.column]), lowBucket: Math.min(grown.lowBucket, next.row), highBucket: Math.max(grown.highBucket, next.row) } });
+    // Shift+Arrow spans the region from the pinned cell to the moved corner, so the keyboard can select the same range a drag
+    // does, and can shrink it again.
+    if (keyboardRegion) {
+      setRegionState({ revision: result, region: regionBetween(data.timestamps, keyboardRegion.anchor, next), anchor: keyboardRegion.anchor, cursor: next });
       return;
     }
     inspection.show(observation(next.row, next.column), !!inspection.active?.pinned, "keyboard");
@@ -467,6 +473,13 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
     commit: (from, to) => setRegionState({ revision: result, region: regionBetween(data.timestamps, from, to) }),
   });
   const region = regionState && regionState.revision === result ? regionState.region : undefined;
+  // A column's observations are the increments since the sample before it, so a region covers the time from the source sample
+  // before its first column to its last column. A one-column region is then a real range for the trace search and the window.
+  const regionSpan = (target: HeatmapRegion) => {
+    const earlier = sourceTimes.filter(time => time < target.startTs).at(-1);
+    const step = sourceTimes.length > 1 ? sourceTimes[1] - sourceTimes[0] : 0;
+    return { start: earlier ?? target.startTs - step, end: target.endTs };
+  };
   // The rectangle a region covers: its columns' left edge to the last column's right edge, and its rows' buckets from top to bottom.
   const boxOf = (target: HeatmapRegion) => {
     const first = Math.max(0, data.timestamps.findIndex(time => time >= target.startTs));
@@ -526,25 +539,31 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
         </>}
         {showAxis && timeTicks(data.timestamps, plotWidth).map(index => <text key={index} x={columnX(data.timestamps[index])} y={height - 8} textAnchor={index === 0 ? "start" : index === data.timestamps.length - 1 ? "end" : "middle"} className={styles.tick}>{formatTimeTick(data.timestamps[index], timeSpan, timeZone)}</text>)}
       </svg>
-      {inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} events={eventData.events.length ? eventsAt(eventData.events, inspection.active.observation.timestamp, halfSampleGap(data.timestamps)) : undefined} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
+      {/* The region's panel is pinned beside the region, like an inspector, so it never takes height from the plot. While a
+          region is open it replaces the cell inspector; clearing the region brings the pinned cell back. */}
+      {region && regionBox && anchor && <ObservationTooltip id={`${id}-region`} anchor={anchor} anchorRect={() => { const bounds = anchor.getBoundingClientRect(); return new DOMRect(bounds.left + regionBox.x, bounds.top + regionBox.y, regionBox.width, regionBox.height); }} pinned pinHint={false} role="region" ariaLabel="Selected latency region" tabIndex={0} panelRef={setRegionPanel} className={styles.inspector} options={readTooltipPlacement(widget.options)} onDismiss={() => setRegionState(undefined)}>
+        <Suspense fallback={null}><DistributionRegionPanel
+          region={region}
+          series={result.series ?? []}
+          partial={result.truncated === true}
+          config={config}
+          bounds={fullData.bounds}
+          timeLabel={`${readoutClock.format(new Date(regionSpan(region).start))} to ${readoutClock.format(new Date(region.endTs))}`}
+          bucketLabel={`Buckets ${cellLabel(region.lowBucket > 0 ? fullData.bounds[region.lowBucket - 1] : -Infinity, fullData.bounds[region.highBucket], unit, widget.options?.decimals, fullData.bounds)}`}
+          unit={unit}
+          decimals={widget.options?.decimals}
+          traces={config.traces ? traceQLForRegion(region, fullData.bounds, unit, config.traces.filter) : undefined}
+          onClear={() => setRegionState(undefined)}
+          onTraces={config.traces && savedLibrary.onOpenExplorer ? () => {
+            const found = traceQLForRegion(region, fullData.bounds, unit, config.traces?.filter);
+            const span = regionSpan(region);
+            if ("query" in found) savedLibrary.onOpenExplorer?.({ providerId: config.traces!.providerId, kind: "traces", query: found.query, start: span.start, end: span.end });
+          } : undefined}
+          onUseRange={dashboardWindow.apply ? () => dashboardWindow.apply?.(regionSpan(region)) : undefined}
+        /></Suspense>
+      </ObservationTooltip>}
+      {!region && inspection.active && inspection.detailsEnabled && anchor && <Inspector widget={widget} id={id} anchor={anchor} setPanel={setPanel} onEnter={inspection.enterPanel} onLeave={inspection.leave} observation={inspection.active.observation} extra={histogram} events={eventData.events.length ? eventsAt(eventData.events, inspection.active.observation.timestamp, halfSampleGap(data.timestamps)) : undefined} pinned={inspection.active.pinned} decimals={widget.options?.decimals} onClose={inspection.dismiss} onPin={() => inspection.active?.pinned ? inspection.dismiss() : inspection.show(inspection.active!.observation, true)} />}
     </div>
-    {region && <Suspense fallback={null}><DistributionRegionPanel
-      region={region}
-      series={result.series ?? []}
-      config={config}
-      bounds={fullData.bounds}
-      timeLabel={`${readoutClock.format(new Date(region.startTs))} to ${readoutClock.format(new Date(region.endTs))}`}
-      bucketLabel={`Buckets ${cellLabel(region.lowBucket > 0 ? fullData.bounds[region.lowBucket - 1] : -Infinity, fullData.bounds[region.highBucket], unit, widget.options?.decimals, fullData.bounds)}`}
-      unit={unit}
-      decimals={widget.options?.decimals}
-      traces={config.traces ? traceQLForRegion(region, fullData.bounds, unit, config.traces.filter) : undefined}
-      onClear={() => setRegionState(undefined)}
-      onTraces={config.traces && savedLibrary.onOpenExplorer ? () => {
-        const found = traceQLForRegion(region, fullData.bounds, unit, config.traces?.filter);
-        if ("query" in found) savedLibrary.onOpenExplorer?.({ providerId: config.traces!.providerId, kind: "traces", query: found.query, start: region.startTs, end: region.endTs });
-      } : undefined}
-      onUseRange={dashboardWindow.apply ? () => dashboardWindow.apply?.({ start: region.startTs, end: region.endTs }) : undefined}
-    /></Suspense>}
     <div className={styles.heatmapFooter}>
     {!embeddedView && <p className={heatmapStyles.quantile} data-heatmap-quantile>{readout}</p>}
     {widget.options?.showLegend !== false && <div className={heatmapStyles.legend} aria-label={`Color encodes bucket ${densityUnit}`}>

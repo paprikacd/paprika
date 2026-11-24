@@ -10,6 +10,8 @@ import { compareHistogramLabels, type DistributionConfig, type HeatmapRegion, ty
 export interface DistributionRegionPanelProps {
   region: HeatmapRegion;
   series: readonly MetricSeries[];
+  /** The result was truncated, so the comparison reads only the series that were returned. */
+  partial?: boolean;
   config: DistributionConfig;
   bounds: readonly number[];
   /** The region's time range and bucket range, already formatted in the dashboard's zone and the bucket unit. */
@@ -25,14 +27,15 @@ export interface DistributionRegionPanelProps {
   onUseRange?: () => void;
 }
 
-export function DistributionRegionPanel({ region, series, config, timeLabel, bucketLabel, decimals, traces, onClear, onTraces, onUseRange }: DistributionRegionPanelProps) {
+export function DistributionRegionPanel({ region, series, partial, config, timeLabel, bucketLabel, decimals, traces, onClear, onTraces, onUseRange }: DistributionRegionPanelProps) {
   const [comparing, setComparing] = useState(false);
   // One pass over the region serves both the share and the label comparison.
   const comparison = useMemo(() => compareHistogramLabels(series as MetricSeries[], config, region), [series, config, region]);
   const share = comparison.selectedShare;
   const label = comparison.keys[0];
   return (
-    <section aria-label="Selected latency region" data-distribution-region-panel className="mt-2 grid gap-2 text-sm">
+    // The pinned panel around this one names the region, so this body carries no landmark of its own.
+    <div data-distribution-region-panel className="grid gap-2 text-sm">
       <div className="grid gap-0.5">
         <strong className="font-medium">{timeLabel}</strong>
         <span className="opacity-80">{bucketLabel}</span>
@@ -48,21 +51,25 @@ export function DistributionRegionPanel({ region, series, config, timeLabel, buc
       {comparing && (
         comparison.groups < 2 || !label ? (
           <p className="text-xs opacity-80">This query sums every label away. Group it by a label, for example sum by (le, route), to compare.</p>
+        ) : comparison.selectedTotal <= 0 ? (
+          <p className="text-xs opacity-80">No observations in this region to compare.</p>
         ) : (
           <div className="grid gap-1.5" aria-label={`Share of selected and other observations by ${label.key}`}>
+            <span className="text-xs font-medium">{label.key}</span>
             {label.values.map(value => (
               <div key={value.value} className="grid gap-0.5 text-xs">
-                <span>{value.value}</span>
+                <span>{value.value === "" ? "No value" : value.value}</span>
                 <span className="block h-1.5 rounded" style={{ width: `${Math.round(value.selected * 100)}%`, background: "var(--gamma-ink)" }} aria-label={`${value.value} selected ${formatMetric(value.selected * 100, "%", false, decimals)}`} />
                 <span className="block h-1.5 rounded" style={{ width: `${Math.round(value.rest * 100)}%`, background: "var(--gamma-muted)" }} aria-label={`${value.value} elsewhere ${formatMetric(value.rest * 100, "%", false, decimals)}`} />
               </div>
             ))}
             {(label.otherSelected > 0 || label.otherRest > 0) && <span className="text-xs opacity-80">Other values: {formatMetric(label.otherSelected * 100, "%", false, decimals)} selected, {formatMetric(label.otherRest * 100, "%", false, decimals)} elsewhere</span>}
             {comparison.skipped > 0 && <span className="text-xs opacity-80">{comparison.skipped} cells skipped: missing or invalid in this window</span>}
+            {partial && <span className="text-xs opacity-80">Partial: the result was truncated, so only the returned series are compared.</span>}
           </div>
         )
       )}
-    </section>
+    </div>
   );
 }
 
