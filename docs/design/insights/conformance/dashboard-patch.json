@@ -1,0 +1,4351 @@
+{
+  "description": "Shared dashboard patch cases. The TypeScript module (ui/src/features/insights/dashboard-patch.ts) and the Go port (internal/observabilitygateway/insights_patch.go) must both produce these results. Go ignores expect.reason.",
+  "etag": "\"0000000000000000000000000000000000000000000000000000000000000000\"",
+  "cases": [
+    {
+      "name": "update-nested-merge-keeps-siblings",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "options": {
+                "decimals": 3
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 3,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "update-null-deletes-key",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "options": {
+                "showSparkline": null
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "update-array-replaces-whole-value",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "options": {
+                "seriesColors": [
+                  "#333333"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#333333"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "update-partial-layout-keeps-other-members",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "layout": {
+                "w": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 4,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "relayout-moves-widgets-by-patch",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "b",
+            "patch": {
+              "layout": {
+                "x": 0,
+                "y": 8
+              }
+            }
+          },
+          {
+            "op": "update",
+            "id": "c",
+            "patch": {
+              "layout": {
+                "x": 6,
+                "y": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 6,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "patch-dashboard-fields-only",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "timeRange": "6h"
+        }
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "6h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "patch-with-widget-edits",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "description": "Shows service health"
+        },
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "b",
+            "patch": {
+              "title": "Error rate"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Error rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ],
+          "description": "Shows service health"
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "patch-nested-null-on-missing-object-gives-empty",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "meta": {
+            "owner": null
+          }
+        }
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ],
+          "meta": {}
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "patch-object-replaces-scalar",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "folder": {
+            "name": "Services"
+          }
+        }
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": {
+            "name": "Services"
+          },
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "remove-keeps-order-of-others",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "remove",
+            "id": "a"
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "add-free-slot-has-no-requested",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "d",
+              "title": "Traffic",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "d",
+              "title": "Traffic",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": [
+          {
+            "id": "d",
+            "layout": {
+              "x": 0,
+              "y": 8,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "add-overlapping-moves-to-first-free-slot",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "e",
+              "title": "Overlap",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "e",
+              "title": "Overlap",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 6,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": [
+          {
+            "id": "e",
+            "layout": {
+              "x": 6,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            },
+            "requested": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "add-two-overlapping-stack",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "e1",
+              "title": "Overlap",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            }
+          },
+          {
+            "op": "add",
+            "widget": {
+              "id": "e2",
+              "title": "Overlap",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "e1",
+              "title": "Overlap",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 6,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "e2",
+              "title": "Overlap",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": [
+          {
+            "id": "e1",
+            "layout": {
+              "x": 6,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            },
+            "requested": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "e2",
+            "layout": {
+              "x": 0,
+              "y": 8,
+              "w": 6,
+              "h": 4
+            },
+            "requested": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "add-listed-before-remove-that-frees-slot",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "d",
+              "title": "Traffic",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            }
+          },
+          {
+            "op": "remove",
+            "id": "a"
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "d",
+              "title": "Traffic",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": [
+          {
+            "id": "d",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "add-unreadable-width-is-kept-without-placement",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "f",
+              "title": "Wide",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 13,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "f",
+              "title": "Wide",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 13,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "add-unreadable-fractional-x-is-kept-without-placement",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "f",
+              "title": "Fractional",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 1.5,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "document": {
+          "schemaVersion": 1,
+          "id": "demo",
+          "title": "Service overview",
+          "timeRange": "1h",
+          "folder": "Services",
+          "widgets": [
+            {
+              "id": "a",
+              "title": "Rate",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "req/s",
+              "options": {
+                "decimals": 2,
+                "showSparkline": true,
+                "seriesColors": [
+                  "#111111",
+                  "#222222"
+                ]
+              },
+              "layout": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "b",
+              "title": "Errors",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "%",
+              "options": {
+                "decimals": 1
+              },
+              "layout": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "c",
+              "title": "Latency",
+              "type": "timeseries",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "ms",
+              "options": {},
+              "layout": {
+                "x": 0,
+                "y": 4,
+                "w": 6,
+                "h": 4
+              }
+            },
+            {
+              "id": "f",
+              "title": "Fractional",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 1.5,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          ]
+        },
+        "placements": []
+      }
+    },
+    {
+      "name": "update-missing-target-is-not-found",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "zz",
+            "patch": {
+              "title": "x"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "not_found",
+        "reason": "missing"
+      }
+    },
+    {
+      "name": "remove-missing-target-is-not-found",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "remove",
+            "id": "zz"
+          }
+        ]
+      },
+      "expect": {
+        "error": "not_found",
+        "reason": "missing"
+      }
+    },
+    {
+      "name": "add-duplicate-existing-id",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "id": "a",
+              "title": "Again",
+              "type": "stat",
+              "providerId": "metrics",
+              "query": "up",
+              "unit": "",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "exists"
+      }
+    },
+    {
+      "name": "duplicate-edit-target",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "remove",
+            "id": "a"
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "duplicate"
+      }
+    },
+    {
+      "name": "update-patch-cannot-change-id",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "id": "x"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "immutable"
+      }
+    },
+    {
+      "name": "patch-cannot-change-widgets",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "widgets": []
+        }
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "immutable"
+      }
+    },
+    {
+      "name": "patch-cannot-change-id",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "id": "other"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "immutable"
+      }
+    },
+    {
+      "name": "patch-cannot-change-schema-version",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "schemaVersion": 2
+        }
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "immutable"
+      }
+    },
+    {
+      "name": "widget-edit-missing-op",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "id": "a",
+            "patch": {
+              "title": "x"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "widget-edit-unknown-op",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "replace",
+            "id": "a"
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "widget-edit-extra-field",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "remove",
+            "id": "a",
+            "patch": {}
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "empty-widget-edits",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": []
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "neither-patch-nor-edits",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {},
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "empty-update-patch",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {}
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "bad-widget-id",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "bad id!",
+            "patch": {
+              "title": "x"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "add-without-widget-id",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "add",
+            "widget": {
+              "title": "x",
+              "layout": {
+                "x": 0,
+                "y": 8,
+                "w": 6,
+                "h": 4
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "unchanged-patch-is-rejected",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "a",
+            "patch": {
+              "options": {
+                "decimals": 2
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "unchanged"
+      }
+    },
+    {
+      "name": "unknown-top-level-field",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "patch": {
+          "title": "x"
+        },
+        "bogus": 1
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "input"
+      }
+    },
+    {
+      "name": "more-than-48-edits",
+      "document": {
+        "schemaVersion": 1,
+        "id": "demo",
+        "title": "Service overview",
+        "timeRange": "1h",
+        "folder": "Services",
+        "widgets": [
+          {
+            "id": "a",
+            "title": "Rate",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "req/s",
+            "options": {
+              "decimals": 2,
+              "showSparkline": true,
+              "seriesColors": [
+                "#111111",
+                "#222222"
+              ]
+            },
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "b",
+            "title": "Errors",
+            "type": "stat",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "%",
+            "options": {
+              "decimals": 1
+            },
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            }
+          },
+          {
+            "id": "c",
+            "title": "Latency",
+            "type": "timeseries",
+            "providerId": "metrics",
+            "query": "up",
+            "unit": "ms",
+            "options": {},
+            "layout": {
+              "x": 0,
+              "y": 4,
+              "w": 6,
+              "h": 4
+            }
+          }
+        ]
+      },
+      "arguments": {
+        "widget_edits": [
+          {
+            "op": "update",
+            "id": "w0",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w1",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w2",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w3",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w4",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w5",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w6",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w7",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w8",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w9",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w10",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w11",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w12",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w13",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w14",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w15",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w16",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w17",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w18",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w19",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w20",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w21",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w22",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w23",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w24",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w25",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w26",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w27",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w28",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w29",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w30",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w31",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w32",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w33",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w34",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w35",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w36",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w37",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w38",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w39",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w40",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w41",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w42",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w43",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w44",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w45",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w46",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w47",
+            "patch": {
+              "title": "x"
+            }
+          },
+          {
+            "op": "update",
+            "id": "w48",
+            "patch": {
+              "title": "x"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": "invalid_argument",
+        "reason": "limit"
+      }
+    }
+  ]
+}

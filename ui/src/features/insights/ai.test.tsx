@@ -78,7 +78,7 @@ describe("AI handoff builder", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Review definition" }))
     fireEvent.click(screen.getByRole("button", { name: "Replace dashboard draft" }))
-    expect(onApply).toHaveBeenCalledWith(next)
+    expect(onApply).toHaveBeenCalledWith(next, "document")
   })
 
   it("requires another review if the underlying canvas changes", () => {
