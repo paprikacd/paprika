@@ -120,6 +120,11 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   // The revision the last restore created. Its drifted saved queries are read from the reloaded list.
   const [restoredHead, setRestoredHead] = useState<number>()
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  // Where focus goes once the confirm step closes: back to its trigger on cancel, or to the panel heading when a restore
+  // ends, because the preview that held focus is gone.
+  const focusAfterConfirm = useRef<"trigger" | "heading">(undefined)
   const listRequest = useRef<AbortController>(undefined)
   const previewRequest = useRef<AbortController>(undefined)
   const dashboardId = dashboard.id
@@ -165,8 +170,20 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   }, [listRevisions, dashboardId, refreshKey])
 
   useEffect(() => {
-    if (confirming) cancelRef.current?.focus()
+    if (confirming) {
+      cancelRef.current?.focus()
+      return
+    }
+    const target = focusAfterConfirm.current
+    focusAfterConfirm.current = undefined
+    if (target === "trigger") triggerRef.current?.focus()
+    else if (target === "heading") headingRef.current?.focus()
   }, [confirming])
+
+  function cancelConfirm() {
+    focusAfterConfirm.current = "trigger"
+    setConfirming(false)
+  }
 
   useEffect(() => () => previewRequest.current?.abort(), [])
 
@@ -193,6 +210,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   }
 
   const reloadAfterConflict = async () => {
+    focusAfterConfirm.current = "heading"
     setConfirming(false)
     setPreview(undefined)
     await loadList()
@@ -207,6 +225,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
     setRestoredHead(undefined)
     try {
       const result = await client.restoreRevision(dashboardId, number, list.currentEtag)
+      focusAfterConfirm.current = "heading"
       setConfirming(false)
       setPreview(undefined)
       onRestored(result.dashboard, result.etag)
@@ -240,7 +259,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
   return (
     <section className={`${shared.inspector} flex min-h-0 flex-col gap-3`} aria-labelledby="dashboard-history-title" data-testid="dashboard-history">
       <div className={shared.panelHeading}>
-        <h2 id="dashboard-history-title"><History size={18} aria-hidden="true" /> History</h2>
+        <h2 id="dashboard-history-title" ref={headingRef} tabIndex={-1} className="outline-none"><History size={18} aria-hidden="true" /> History</h2>
         <GammaButton iconOnly variant="quiet" size="sm" className={shared.iconButton} aria-label="Close history" onClick={onClose}>
           <X size={18} aria-hidden="true" />
         </GammaButton>
@@ -325,6 +344,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
               {!isCurrent && preview.status === "ready" && !confirming && (
                 <>
                   <GammaButton
+                    ref={triggerRef}
                     variant="primary"
                     size="sm"
                     disabled={!canRestore || restoring}
@@ -342,7 +362,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
               )}
 
               {confirming && (
-                <div role="group" aria-label="Confirm restore" className="flex flex-col gap-2 rounded-md border border-[var(--gamma-border)] p-3">
+                <div role="group" aria-label="Confirm restore" onKeyDown={event => { if (event.key === "Escape" && !restoring) { event.stopPropagation(); cancelConfirm() } }} className="flex flex-col gap-2 rounded-md border border-[var(--gamma-border)] p-3">
                   <p className="text-sm text-[var(--gamma-ink)]">
                     Restore revision {preview.number}? It becomes a new revision at the top of the list. Your current revision stays in the history.
                   </p>
@@ -350,7 +370,7 @@ export function DashboardHistory({ dashboard, client, canRestore, refreshKey, on
                     <GammaButton variant="primary" size="sm" disabled={restoring || !canRestore} aria-describedby={!canRestore ? "dashboard-history-confirm-hint" : undefined} onClick={() => void restore(preview.number)}>
                       {restoring ? "Restoring…" : `Restore revision ${preview.number}`}
                     </GammaButton>
-                    <GammaButton ref={cancelRef} variant="secondary" size="sm" disabled={restoring} onClick={() => setConfirming(false)}>
+                    <GammaButton ref={cancelRef} variant="secondary" size="sm" disabled={restoring} onClick={cancelConfirm}>
                       Cancel
                     </GammaButton>
                   </div>

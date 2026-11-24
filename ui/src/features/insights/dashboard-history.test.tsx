@@ -217,6 +217,27 @@ describe("DashboardHistory", () => {
     view.unmount()
   })
 
+  it("returns focus to the restore button when the confirm step is cancelled or dismissed with Escape", async () => {
+    renderPanel()
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    const trigger = await screen.findByRole("button", { name: "Restore revision 1" })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(screen.getByRole("button", { name: "Restore revision 1" })).toHaveFocus()
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" })
+    expect(screen.queryByRole("group", { name: "Confirm restore" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Restore revision 1" })).toHaveFocus()
+  })
+
+  it("moves focus to the panel heading after a restore removes the preview", async () => {
+    renderPanel()
+    fireEvent.click(await screen.findByRole("button", { name: /Revision 1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Restore revision 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 1" }))
+    await waitFor(() => expect(screen.getByRole("heading", { name: "History" })).toHaveFocus())
+  })
+
   it("computes widget changes by ID and title", () => {
     const widget = (id: string, title: string) => ({ ...liveDashboard.widgets[0], id, title })
     const current = { ...liveDashboard, widgets: [widget("a", "A"), widget("b", "B")] }
