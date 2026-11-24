@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   buildDashboardURL,
+  interpolateQuery,
   parseDashboardLink,
   resolveDashboardVariables,
   resolveLinkView,
@@ -92,6 +93,21 @@ describe("list helpers", () => {
   it("formats the trigger text", () => {
     expect(formatVariableValue([])).toBe("All")
     expect(formatVariableValue(["omega", "delta"])).toBe("omega, delta")
-    expect(formatVariableValue(["omega-east-1", "delta-west-2", "eu-central-3"])).toBe("omega-east-1 +2")
+    expect(formatVariableValue(["omega-east-1", "delta-west-2", "eu-central-3"])).toBe("3 selected")
+    // A long first item never makes the summary long.
+    expect(formatVariableValue(["x".repeat(400), "b"])).toBe("2 selected")
+  })
+})
+
+describe("list refusals name the variable", () => {
+  it("says which operator to use after an equality", () => {
+    expect(() => interpolateQuery("up{c={{cluster}}}", { cluster: ["a"] })).toThrow(
+      "Dashboard variable “cluster” holds several values; use =~ or !~ before {{cluster}}, not =",
+    )
+  })
+  it("says where a list fits in any other position", () => {
+    expect(() => interpolateQuery("topk({{cluster}}, up)", { cluster: ["a"] })).toThrow(
+      "Use {{cluster}} after =~ or !~, or as an element of a SQL parameters array",
+    )
   })
 })

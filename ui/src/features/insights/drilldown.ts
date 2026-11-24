@@ -176,7 +176,7 @@ function interpolateLiterals(query: string, values: Record<string, string | numb
         throw new Error(`Set dashboard variable “${name}” before running this query`)
       const value = values[name]
       output += Array.isArray(value)
-        ? listLiteral(value, placeholderContext(query, index))
+        ? listLiteral(value, placeholderContext(query, index), name, query.slice(0, index))
         : JSON.stringify(value)
       index = end + 1
       continue

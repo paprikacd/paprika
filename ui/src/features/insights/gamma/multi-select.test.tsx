@@ -86,4 +86,62 @@ describe("GammaMultiSelect", () => {
     render(<Harness initial={["omega", "delta"]} onCommit={vi.fn()} />);
     expect(screen.getByRole("combobox", { name: "Cluster" })).toHaveTextContent("omega, delta");
   });
+
+  it("summarises a long pick as a count and keeps the full text as a title", () => {
+    const long = [
+      { value: "omega-east-1", label: "omega-east-1" },
+      { value: "delta-west-2", label: "delta-west-2" },
+      { value: "eu-central-3", label: "eu-central-3" },
+    ];
+    render(<GammaMultiSelect aria-label="Cluster" values={long.map((item) => item.value)} options={long} onValuesChange={vi.fn()} />);
+    const trigger = screen.getByRole("combobox", { name: "Cluster" });
+    expect(trigger).toHaveTextContent("3 selected");
+    expect(within(trigger).getByText("3 selected")).toHaveAttribute("title", "omega-east-1, delta-west-2, eu-central-3");
+  });
+
+  it("toggles rows from the keyboard, keeps the panel open, and commits on Tab", () => {
+    const onCommit = vi.fn();
+    render(<Harness allowAll onCommit={onCommit} />);
+    const trigger = screen.getByRole("combobox", { name: "Cluster" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const list = screen.getByRole("listbox");
+    // All is first and active; move to omega and toggle it with Space, then delta with Enter.
+    expect(trigger).toHaveAttribute("aria-activedescendant", within(list).getByRole("option", { name: "All" }).id);
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: " " });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(within(list).getByRole("option", { name: "omega" })).toHaveAttribute("aria-selected", "true");
+    expect(within(list).getByRole("option", { name: "All" })).toHaveAttribute("aria-selected", "false");
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.keyDown(trigger, { key: "Tab" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(["omega", "delta"]);
+  });
+
+  it("commits once on an outside click", () => {
+    const onCommit = vi.fn();
+    render(<Harness onCommit={onCommit} />);
+    const list = openPanel();
+    fireEvent.click(within(list).getByRole("option", { name: "delta" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith(["delta"]);
+  });
+
+  it("keeps one row for a value whose list finishes loading while the panel is open", () => {
+    const onCommit = vi.fn();
+    const { rerender } = render(<GammaMultiSelect aria-label="Cluster" values={["delta"]} options={[]} onValuesChange={onCommit} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Cluster" }));
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(1);
+    rerender(<GammaMultiSelect aria-label="Cluster" values={["delta"]} options={options} onValuesChange={onCommit} />);
+    const list = screen.getByRole("listbox");
+    expect(within(list).getAllByRole("option").map((row) => row.textContent)).toEqual(["omega", "delta", "eu"]);
+    fireEvent.click(within(list).getByRole("option", { name: "eu" }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Cluster" }), { key: "Escape" });
+    expect(onCommit).toHaveBeenCalledWith(["delta", "eu"]);
+  });
 });

@@ -61,13 +61,17 @@ export function sameVariableValue(left: VariableValue, right: VariableValue): bo
   return left.length === right.length && left.every((item, index) => item === right[index])
 }
 
-/** Short text for a trigger or a summary: All, the single value, "a, b", or "a +N" past two items. */
+/**
+ * Short text for a trigger or a summary: All, the single value, "a, b" while that fits in 24 characters, or a
+ * count ("3 selected"). A count never grows with the items, so a long first value cannot widen a narrow bar.
+ */
 export function formatVariableValue(value: VariableValue, allLabel = "All"): string {
   if (typeof value === "string") return value
   if (value.length === 0) return allLabel
+  if (value.length === 1) return value[0]
   const joined = value.join(", ")
   if (joined.length <= 24) return joined
-  return `${value[0]} +${value.length - 1}`
+  return `${value.length} selected`
 }
 
 /** Escapes each item for a regex and joins them with |. The escaped set matches Go's regexp.QuoteMeta. */
@@ -89,8 +93,12 @@ export function placeholderContext(template: string, index: number): ListContext
   return "none"
 }
 
-/** The query text for a list value in a context. Matches dashboardListLiteral in the Go resolver. */
-export function listLiteral(items: string[], context: ListContext): string {
+/**
+ * The query text for a list value in a context. Matches dashboardListLiteral in the Go resolver. Given the
+ * variable's name and the template text before it, a refusal names the variable and the operator to use, as
+ * listPlaceholderError does in Go.
+ */
+export function listLiteral(items: string[], context: ListContext, name?: string, before = ""): string {
   if (context === "regex" || context === "negated") {
     if (items.length === 0) {
       if (context === "negated") throw new Error("An All value cannot follow !~; it would exclude every value")
@@ -102,5 +110,8 @@ export function listLiteral(items: string[], context: ListContext): string {
     if (items.length === 0) return "null"
     return `[${items.map((item) => JSON.stringify(item)).join(",")}]`
   }
-  throw new Error("Query list values need =~, !~ or a SQL parameters array")
+  if (name === undefined) throw new Error("Query list values need =~, !~ or a SQL parameters array")
+  if (before.replace(/[ \t\n\r\f\v]+$/, "").endsWith("="))
+    throw new Error(`Dashboard variable “${name}” holds several values; use =~ or !~ before {{${name}}}, not =`)
+  throw new Error(`Use {{${name}}} after =~ or !~, or as an element of a SQL parameters array`)
 }

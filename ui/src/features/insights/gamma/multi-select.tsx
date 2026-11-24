@@ -78,7 +78,8 @@ export function GammaMultiSelect({
 
   const normalized = query.trim().toLocaleLowerCase();
   const declared = options.map((option) => option.value);
-  const rows = [...declared, ...extras];
+  // A sourced list can finish loading while the panel is open, so an extra may since have become a declared row.
+  const rows = [...declared, ...extras.filter((value) => !declared.includes(value))];
   const matchesQuery = (value: string) => {
     if (!normalized) return true;
     const option = options.find((item) => item.value === value);
@@ -95,7 +96,8 @@ export function GammaMultiSelect({
   // Closing commits the picks once, in row order, and only when they differ from the committed values.
   const finish = useCallback(() => {
     setOpen(false);
-    const next = orderedValues([...options.map((option) => option.value), ...extras], draft);
+    const listed = options.map((option) => option.value);
+    const next = orderedValues([...listed, ...extras.filter((value) => !listed.includes(value))], draft);
     if (!sameVariableValue(next, [...values])) onValuesChange(next);
   }, [draft, extras, options, values, onValuesChange]);
 
@@ -162,7 +164,10 @@ export function GammaMultiSelect({
     }
   }
 
-  const triggerValue = formatVariableValue([...values], "All");
+  // The trigger names picks by their labels, so an empty-string value reads "Empty value", not a blank.
+  const labels = values.map((value) => options.find((option) => option.value === value)?.label ?? (value || "Empty value"));
+  const triggerValue = formatVariableValue(labels, "All");
+  const fullText = labels.join(", ");
   const label = ariaLabel ?? "Choose values";
   return (
     <>
@@ -197,7 +202,10 @@ export function GammaMultiSelect({
       >
         <span className={styles.selectValue}>
           <span className={styles.selectCopy}>
-            <span className={styles.selectLabel}>{values.length || allowAll ? triggerValue : placeholder}</span>
+            {/* A count or a truncated value keeps its full text as a title. */}
+            <span className={styles.selectLabel} title={values.length ? fullText : undefined}>
+              {values.length || allowAll ? triggerValue : placeholder}
+            </span>
           </span>
         </span>
         <ChevronDown size={15} aria-hidden="true" />
