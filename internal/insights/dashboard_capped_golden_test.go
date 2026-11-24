@@ -61,7 +61,7 @@ func TestDashboardCappedGoldens(t *testing.T) {
 	require.Equal(t, 52, wantAttention.Checked, "every widget in the golden fixture carries samples, so all 52 are checked")
 	require.Equal(t, 48, wantAttention.Critical)
 	require.Equal(t, 4, wantAttention.Stale)
-	for n := 1; n <= len(dashboardOmissionSteps); n++ {
+	for n := 1; n <= applicableSteps(cappedGoldenFixture); n++ {
 		result := cappedGoldenFixture()
 		filler := fillerForStepsOf(t, cappedGoldenFixture, n)
 		result.Dashboard.Title = filler
@@ -69,7 +69,7 @@ func TestDashboardCappedGoldens(t *testing.T) {
 		writeDashboardQueryResult(w, result)
 		require.Equal(t, http.StatusOK, w.Code, "the capped fixture must fit after %d steps", n)
 		require.Equal(t, DashboardQueryResponseBytes, w.Body.Len())
-		require.Equal(t, dashboardOmissionStepNamesThrough(n), result.Omitted)
+		require.Equal(t, applyFirstSteps(cappedGoldenFixture(), n), result.Omitted)
 		require.Equal(t, wantAttention, result.Attention, "attention is unchanged after %d steps", n)
 
 		stored := bytes.Replace(w.Body.Bytes(), []byte(`"`+filler+`"`), []byte(`"`+dashboardCappedGoldenFiller+`"`), 1)

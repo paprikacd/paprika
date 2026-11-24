@@ -270,6 +270,9 @@ func savedQueryReferences(document Dashboard) []string {
 		ID string `json:"id"`
 	}
 	var parsed struct {
+		AnnotationSource *struct {
+			QueryRef *reference `json:"queryRef"`
+		} `json:"annotationSource"`
 		Widgets []struct {
 			QueryRef         *reference `json:"queryRef"`
 			AnnotationSource *struct {
@@ -281,6 +284,9 @@ func savedQueryReferences(document Dashboard) []string {
 		return nil
 	}
 	seen := make(map[string]bool)
+	if parsed.AnnotationSource != nil && parsed.AnnotationSource.QueryRef != nil {
+		seen[parsed.AnnotationSource.QueryRef.ID] = true
+	}
 	for _, widget := range parsed.Widgets {
 		if widget.QueryRef != nil {
 			seen[widget.QueryRef.ID] = true

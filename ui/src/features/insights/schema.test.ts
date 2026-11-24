@@ -472,6 +472,24 @@ describe("dashboard document contract", () => {
   })
 })
 
+describe("time-series baselines", () => {
+  const timeseries = { ...dashboard.widgets[0], type: "timeseries" as const }
+
+  it("accepts a baseline on a time series for each window and band", () => {
+    for (const window of ["previous", "1d", "7d", "rolling"])
+      expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window } } }).success).toBe(true)
+    expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window: "7d", band: "p10p90" } } }).success).toBe(true)
+  })
+
+  it("rejects a baseline on a stat and an unknown window or band", () => {
+    const stat = widgetSchema.safeParse({ ...timeseries, type: "stat", options: { baseline: { window: "1d" } } })
+    expect(stat.success).toBe(false)
+    expect(stat.error?.issues.map((issue) => issue.path.join("."))).toContain("options.baseline")
+    expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window: "2d" } } }).success).toBe(false)
+    expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window: "1d", band: "stddev" } } }).success).toBe(false)
+  })
+})
+
 describe("variable source graph messages", () => {
   // Same text as the Go validator (internal/insights/drilldowns.go), so both layers report one message.
   it("names an undeclared dependency with the shared wording", () => {

@@ -48,6 +48,8 @@ function references(dashboards: readonly Dashboard[]) {
     kind: DataKind | "variable";
   }[] = [];
   for (const dashboard of dashboards) {
+    if (dashboard.annotationSource)
+      result.push({ dashboard, reference: dashboard.annotationSource.queryRef, kind: "records" });
     for (const variable of dashboard.variables ?? [])
       if (variable.source?.type === "savedQuery")
         result.push({ dashboard, reference: variable.source.queryRef, kind: "variable" });
@@ -325,6 +327,9 @@ export function remapBundleQueryReferences(
                 : variable,
             ),
           }
+        : {}),
+      ...(document.annotationSource
+        ? { annotationSource: { ...document.annotationSource, queryRef: { ...document.annotationSource.queryRef, id: mappedId(document.annotationSource.queryRef.id) } } }
         : {}),
       widgets: document.widgets.map((widget) => {
         const view = widget.options?.tooltipView;

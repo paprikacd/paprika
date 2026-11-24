@@ -116,6 +116,11 @@ func lintVariableOf(i int, variable *wireVariable) lintVariable {
 // variable.
 func checkUndeclaredVariables(doc *lintDocument) []lintHit {
 	var hits []lintHit
+	for _, ref := range doc.annotationVariables {
+		if !doc.variables[ref.variable] {
+			hits = append(hits, lintHit{pointer: ref.pointer, message: fmt.Sprintf("the dashboard event query reads variable %q, which the dashboard does not declare", ref.variable)})
+		}
+	}
 	for i := range doc.widgets {
 		widget := &doc.widgets[i]
 		for _, ref := range widget.variables {

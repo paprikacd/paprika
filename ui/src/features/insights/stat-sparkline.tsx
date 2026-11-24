@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Widget } from "./schema";
+import { eventsInRange, type RecordedEvent } from "./annotation-events";
+import { EventTicks } from "./event-ticks";
 import { ObservationTooltip } from "./observation-tooltip";
 import { installTooltipPointerTracking } from "./tooltip-pointer";
 import { isRestoringTooltipFocus } from "./tooltip-focus";
@@ -46,6 +48,7 @@ export function StatSparkline({
   widget,
   decimals,
   latestLabel = "Displayed latest valid sample",
+  events,
   onSelect,
 }: {
   series: Series;
@@ -53,6 +56,8 @@ export function StatSparkline({
   unit: string;
   color?: string;
   widget?: Widget;
+  /** Recorded events drawn as ticks over the trend. Only the tile's own sparkline passes them. */
+  events?: readonly RecordedEvent[];
   /** Fraction digits for the summary; the widget's decimals when omitted. */
   decimals?: number;
   latestLabel?: string;
@@ -297,6 +302,7 @@ export function StatSparkline({
           data-sample-value={point.value}
         />
       ))}
+      {events && observations.length > 0 && <EventTicks events={eventsInRange(events, observations[0].timestamp, observations[observations.length - 1].timestamp)} x={(timestamp) => history.x({ timestamp, value: null })} top={0} bottom={64} />}
       {selected && <g data-stat-cursor="" aria-hidden="true">
         <line x1={history.x(selected)} x2={history.x(selected)} y1="0" y2="64" stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
         {/* A ring at the sample: a currentColor band around a core in the card colour, both at fixed screen size. */}

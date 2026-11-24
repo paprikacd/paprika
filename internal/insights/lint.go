@@ -58,7 +58,9 @@ type lintDocument struct {
 	variables map[string]bool
 	// sourceVariables lists each declared variable with the members the variable rules read.
 	sourceVariables []lintVariable
-	widgets         []lintWidget
+	// annotationVariables are the variables the dashboard-level event query reads, with its pointer.
+	annotationVariables []lintVariableRef
+	widgets             []lintWidget
 	// providerTypes maps a provider id to its type, as the server resolved it for this check. An id
 	// that is absent is unknown, and a rule that needs its type does not fire. The CLI check resolves no
 	// providers, so it leaves the map nil.
@@ -115,7 +117,9 @@ type lintVariableRef struct {
 // here because the schema check has already rejected them on every save.
 type wireDocument struct {
 	Variables []wireVariable `json:"variables"`
-	Widgets   []wireWidget   `json:"widgets"`
+	// AnnotationSource is the dashboard-level event source. Its query reference names variables like a widget's does.
+	AnnotationSource *wireAnnotation `json:"annotationSource"`
+	Widgets          []wireWidget    `json:"widgets"`
 }
 
 // wireVariable mirrors the variable members the variable rules read.
@@ -290,6 +294,9 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 	}
 	for i := range wire.Widgets {
 		doc.widgets = append(doc.widgets, lintWidgetOf(i, &wire.Widgets[i]))
+	}
+	if wire.AnnotationSource != nil {
+		doc.annotationVariables = variableRefs("/annotationSource/queryRef", wire.AnnotationSource.QueryRef)
 	}
 	return doc, true
 }

@@ -189,6 +189,15 @@ Provider creation is outside this skill.
 
 `Forbidden` means the backend refused the supplied credentials, a permissions answer, not a connectivity one. Empty successful results, unavailable providers and sanitized errors do not prove health.
 
+## Latency tail: heatmap brush → traces
+
+To find which traces make up a slow tail on a distribution heatmap:
+
+1. Group the histogram by a label, for example `sum by (le, route)`, so the heatmap can compare groups. A single `sum by (le)` has nothing to compare.
+2. Set `config.traces` to the trace provider and, optionally, a TraceQL `filter` such as `resource.service.name = "checkout"`.
+3. In the UI, drag across the slow cells. The region panel shows its share of the window, the label comparison, and "Traces in this range", which opens Explorer on that duration window. The panel never sets the dashboard range unless you choose "Use this time range for all charts".
+4. Agents can reproduce the search with `query_traces` over the same window, using `{ <filter> && duration >= Lms && duration < Ums }`, where the bounds are the region's bucket edges. Only second and millisecond bucket units convert; other units have no trace search.
+
 ## Rate limits and capacity
 
 - **HTTP 429 on the transport**: this client is throttled. Stop parallel calls, honour
