@@ -471,33 +471,24 @@ jobs:
         env:
           SESSION_E2E_STATIC: "1"
 
+      - name: Decide whether the Insights browser checks are affected
+        id: insights-relevance
+        # Prints relevant=true or relevant=false (see ui/e2e/run-insights.mjs --relevance). The fetch uses the
+        # job token only for this step, so the checkout keeps persist-credentials: false. Any doubt means true.
+        run: |
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          node e2e/run-insights.mjs --relevance "$BASE_SHA" >> "$GITHUB_OUTPUT"
+        working-directory: ui
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+
       - name: Run Insights MCP and dashboard browser smoke
+        if: steps.insights-relevance.outputs.relevant == 'true'
         # About 12 minutes on a typical runner; slower runners have taken over 15.
         timeout-minutes: 20
-        run: >-
-          node e2e/run-insights.mjs
-          e2e/insights-query-inspector.e2e.mjs
-          e2e/insights-dashboard-query.e2e.mjs
-          e2e/insights-observe-authoring.e2e.mjs
-          e2e/insights-render-worker.e2e.mjs
-          e2e/insights-tooltip-peers.e2e.mjs
-          e2e/insights-compact-stat.e2e.mjs
-          e2e/insights-compact-stat-compare.e2e.mjs
-          e2e/insights-status-history-axis.e2e.mjs
-          e2e/insights-dashboard-polish.e2e.mjs
-          e2e/insights-presentation.e2e.mjs
-          e2e/insights-variable-filter.e2e.mjs
-          e2e/insights-repository-examples.e2e.mjs
-          e2e/insights-record-charts.e2e.mjs
-          e2e/insights-rich-charts.e2e.mjs
-          e2e/insights-chart-system.e2e.mjs
-          e2e/insights-editor-focus.e2e.mjs
-          e2e/insights-edit-performance.e2e.mjs
-          e2e/insights-tooltip-structure.e2e.mjs
-          e2e/insights-tooltip-motion.e2e.mjs
-          e2e/insights-hex-contour.e2e.mjs
-          e2e/insights-builtin-selection.e2e.mjs
-          e2e/insights-phone-shell.e2e.mjs
+        run: node e2e/run-insights.mjs --tag smoke --retries 1
         working-directory: ui
         env:
           INSIGHTS_POLISH_OUTPUT: ${{ github.workspace }}/artifacts/insights/dashboard-polish
@@ -505,6 +496,7 @@ jobs:
           INSIGHTS_QUERY_INSPECTOR_OUTPUT: ${{ github.workspace }}/artifacts/insights/query-inspector
 
       - name: Generate reference dashboards and check keyboard shortcuts through the UI
+        if: steps.insights-relevance.outputs.relevant == 'true'
         timeout-minutes: 10
         run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs e2e/insights-builder.e2e.mjs
         working-directory: ui
@@ -513,6 +505,7 @@ jobs:
           INSIGHTS_BUILDER_KEYBOARD_ONLY: "1"
 
       - name: Check Insights visual structure baseline
+        if: steps.insights-relevance.outputs.relevant == 'true'
         timeout-minutes: 10
         run: node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs
         working-directory: ui

@@ -1,6 +1,10 @@
 package cicontract
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -27,9 +31,11 @@ func TestDashboardRendererDeploymentContract(t *testing.T) {
 	}
 	fleet := requireMappingValue(t, workflow.jobs, "fleet-ui-smoke", "ci.yml jobs")
 	smoke := requireNamedStep(t, fleet, "Run Insights MCP and dashboard browser smoke", "fleet-ui-smoke")
-	if !strings.Contains(scalarString(smoke["run"]), "e2e/insights-render-worker.e2e.mjs") {
-		t.Fatal("publication must be gated by a real authenticated browser render")
+	// The smoke step runs the manifest's smoke tag; the render worker must be a member of that tag.
+	if !strings.Contains(scalarString(smoke["run"]), "--tag smoke") {
+		t.Fatal("smoke step must run the smoke tag from ui/e2e/insights-suites.json")
 	}
+	requireRenderWorkerInSmoke(t, repositoryRoot(t))
 	vke := vkeDeployJob(t)
 	chart := requireNamedStep(t, vke, "Deploy Paprika chart", "deploy-vke")
 	run := scalarString(chart["run"])
@@ -47,5 +53,34 @@ func TestDashboardRendererDeploymentContract(t *testing.T) {
 	healthRun := scalarString(health["run"])
 	if !strings.Contains(healthRun, `bash hack/check-dashboard-renderer-health.sh "${VKE_NAMESPACE}" "${HELM_RELEASE}"`) || strings.Contains(healthRun, " exec ") {
 		t.Fatal("renderer verification must use the existing port-forward permission, not pod exec")
+	}
+}
+
+// requireRenderWorkerInSmoke checks that the Insights render worker suite carries the smoke tag in the suite
+// manifest, so the browser render that gates the renderer image publication runs in CI.
+func requireRenderWorkerInSmoke(t *testing.T, root string) {
+	t.Helper()
+	// #nosec G304 -- the path is a fixed repository location.
+	manifestData, err := os.ReadFile(filepath.Join(root, "ui", "e2e", "insights-suites.json"))
+	if err != nil {
+		t.Fatalf("read Insights suite manifest: %v", err)
+	}
+	var manifest struct {
+		Suites []struct {
+			File string   `json:"file"`
+			Tags []string `json:"tags"`
+		} `json:"suites"`
+	}
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("parse Insights suite manifest: %v", err)
+	}
+	renderWorkerInSmoke := false
+	for _, suite := range manifest.Suites {
+		if suite.File == "e2e/insights-render-worker.e2e.mjs" && slices.Contains(suite.Tags, "smoke") {
+			renderWorkerInSmoke = true
+		}
+	}
+	if !renderWorkerInSmoke {
+		t.Fatal("publication must be gated by a real authenticated browser render: the render worker suite must carry the smoke tag")
 	}
 }

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { buildGoBinary } from "./insights-go-build.mjs"
 import { selectDashboardVariable, selectGammaOption } from "./gamma-controls.mjs"
 import { assertMetricCall, assertObserveMCP, assertObserveREST, readObserveProtocol } from "./observe-protocol.mjs"
 import { plannedStep } from "./query-step.mjs";
@@ -122,8 +123,7 @@ try {
   if (process.env.INSIGHTS_OBSERVE_FIXTURE) fixture = JSON.parse(await readFile(process.env.INSIGHTS_OBSERVE_FIXTURE, "utf8"))
   else {
     const binary = join(temporary, "observe-e2e"), ready = join(temporary, "ready.json")
-    const build = spawn("rtk", ["proxy", "go", "build", "-o", binary, "./hack/insights-observe-e2e"], { cwd: repository, stdio: "inherit" })
-    assert.equal((await once(build, "exit"))[0], 0, "Integration harness must build")
+    await buildGoBinary(repository, "./hack/insights-observe-e2e", binary)
     processHandle = spawn(binary, [`--ready-file=${ready}`, `--ui-dir=${join(repository, "ui/out")}`, `--data-dir=${join(temporary, "data")}`, ...(process.env.INSIGHTS_E2E_URL ? [`--ui-url=${process.env.INSIGHTS_E2E_URL}`] : [])], { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
     processHandle.stdout.on("data", data => { outputLog += data }); processHandle.stderr.on("data", data => { outputLog += data })
     await until(async () => { try { fixture = JSON.parse(await readFile(ready, "utf8")); return true } catch { return false } }, `Harness did not become ready: ${outputLog}`, 30000)

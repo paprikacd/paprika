@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer, request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { buildGoBinary } from "./insights-go-build.mjs"
 
 export async function until(predicate, message, timeout = 12_000) {
   const deadline = Date.now() + timeout
@@ -33,12 +34,7 @@ export async function portableEnvironment(repository, staticURL) {
   const binary = join(temporary, "insights")
   const fixtures = []
   const providerRequests = []
-  const build = spawn("go", ["build", "-o", binary, "./cmd/paprika-insights"], { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
-  let logs = ""
-  build.stdout.on("data", data => { logs += data })
-  build.stderr.on("data", data => { logs += data })
-  const [status] = await once(build, "exit")
-  assert.equal(status, 0, logs)
+  await buildGoBinary(repository, "./cmd/paprika-insights", binary)
   const upstream = createServer((request, response) => {
     const url = new URL(request.url, "http://localhost")
     const entry = { path: url.pathname, params: Object.fromEntries(url.searchParams) }
