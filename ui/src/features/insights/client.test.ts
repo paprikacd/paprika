@@ -165,6 +165,15 @@ describe("Insights revision history client", () => {
     expect(result.revision).toBe(3)
   })
 
+  it("reads one revision's stored document with its content ETag", async () => {
+    const fetcher = mockFetch(response({ ...dashboard, title: "Earlier" }, 200, { ETag: '"first"', "X-Paprika-Revision": "1" }))
+    const result = await createInsightsClient().getRevision!("production", 1)
+    expect(fetcher.mock.calls[0][0]).toBe("/api/insights/dashboards/production/revisions/1")
+    expect(fetcher.mock.calls[0][1].method).toBeUndefined()
+    expect(result.dashboard.title).toBe("Earlier")
+    expect(result.etag).toBe('"first"')
+  })
+
   it("sends no message header when none is given", async () => {
     const fetcher = mockFetch(response(dashboard, 200, { ETag: '"restored"', "X-Paprika-Revision": "3" }))
     await createInsightsClient().restoreRevision!("production", 1, '"current"')

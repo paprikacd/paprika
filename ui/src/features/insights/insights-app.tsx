@@ -37,6 +37,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  History,
   Sparkles,
   Settings2,
   Undo2,
@@ -145,6 +146,7 @@ function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   }
 }
 
+const DashboardHistory = lazy(() => import("./dashboard-history").then(module => ({ default: module.DashboardHistory })))
 const Explorer = lazy(() => import("./explorer").then(module => ({ default: module.Explorer })))
 // The shortcut list opens only on request, so it loads then rather than with the first view.
 const ShortcutList = lazy(() => import("./shortcut-list").then(module => ({ default: module.ShortcutList })))
@@ -328,7 +330,7 @@ export default function InsightsApp({
   const widgetOpener = useRef<string | undefined>(undefined)
   const invalidWidgetSaveHintId = useId()
   const [panel, setPanel] = useState<
-    "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | "starters" | null
+    "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | "starters" | "history" | null
   >(null)
   const [selected, setSelected] = useState<string>()
   const [message, setMessage] = useState("")
@@ -1647,6 +1649,18 @@ export default function InsightsApp({
     openQueryExplorer()
   }
 
+  // Sample data keeps no revisions. A host that predates revision history serves no listing.
+  const historyAvailable = mode !== "example" && !!client.listRevisions
+  // A restored revision is the saved document now: the canvas, the saved fingerprint and the ETag all move to it.
+  function applyRestoredDocument(restored: Dashboard, etag?: string) {
+    if (etag) etags.current.set(restored.id, etag)
+    else etags.current.delete(restored.id)
+    setDashboards(items => [...items.filter(item => item.id !== restored.id), restored])
+    reset(restored)
+    setSaved(documentFingerprint(restored))
+    setQueryRevision(value => value + 1)
+    setMessage("Dashboard restored from an earlier revision.")
+  }
   function importClient(): InsightsClient {
     return mode === "example"
       ? { ...libraryClient, ...createExampleDashboardImportClient(localStorage) }
@@ -1983,7 +1997,7 @@ export default function InsightsApp({
               openerName="dashboard-actions"
               className={styles.iconButton}
               disabled={importingBundle}
-              items={dashboardActionItems({ phoneShell, refreshInterval: viewDashboard.refreshInterval, customRange: !!viewDashboard.customTimeRange }, {
+              items={dashboardActionItems({ phoneShell, refreshInterval: viewDashboard.refreshInterval, customRange: !!viewDashboard.customTimeRange, history: historyAvailable }, {
                 edit: () => { focusTitleOnEdit.current = true; setEditing(true) },
                 togglePanel: name => openBuilderPanel(panel === name ? null : name),
                 inspectQueries: () => setInspectingQueries(value => !value),
@@ -1991,6 +2005,13 @@ export default function InsightsApp({
                 shortcuts: () => setShortcutsOpen(true),
               })}
             /> : <>
+            {historyAvailable && <GammaButton data-panel-opener="history" size="sm" variant="secondary"
+              className={styles.secondary}
+              disabled={importingBundle}
+              onClick={() => openBuilderPanel(panel === "history" ? null : "history")}
+            >
+              <History size={15} /> History
+            </GammaButton>}
             <GammaButton data-panel-opener="manage" size="sm" variant="secondary"
               className={styles.secondary}
               aria-label="Manage dashboards"
@@ -2506,6 +2527,20 @@ export default function InsightsApp({
                     setLibraryRevision((value) => value + 1)
                   }}
                 />
+              )}
+              {panel === "history" && (
+                <LazyPanelBoundary label="Revision history" unsaved={dirty || widgetDraftDirty} onClose={close}>
+                  <Suspense fallback={<p className={styles.loading} role="status">Loading history…</p>}>
+                    <DashboardHistory
+                      dashboard={dashboard}
+                      client={client}
+                      canRestore={!dirty && !widgetDraftDirty && !busy && !importingBundle}
+                      refreshKey={saved}
+                      onRestored={applyRestoredDocument}
+                      onClose={close}
+                    />
+                  </Suspense>
+                </LazyPanelBoundary>
               )}
               {panel === "manage" && (
                 <DashboardManager

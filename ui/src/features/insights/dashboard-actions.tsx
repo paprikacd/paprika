@@ -1,8 +1,8 @@
-import { Braces, Clock3, Keyboard, Pencil, Settings2, Sparkles } from "lucide-react"
+import { Braces, Clock3, History, Keyboard, Pencil, Settings2, Sparkles } from "lucide-react"
 import type { GammaActionMenuItem } from "./gamma/action-menu"
 import type { Dashboard } from "./schema"
 
-export type DashboardPanelName = "manage" | "ai" | "source"
+export type DashboardPanelName = "manage" | "ai" | "source" | "history"
 
 export interface DashboardActionState {
   /** Phone shell: the header holds one menu with every dashboard action. */
@@ -10,6 +10,8 @@ export interface DashboardActionState {
   refreshInterval: Dashboard["refreshInterval"]
   /** A fixed custom range has no auto refresh; the radios are shown disabled. */
   customRange: boolean
+  /** Revision history exists for this dashboard: saved dashboards on a host that serves it. */
+  history?: boolean
 }
 
 export interface DashboardActionHandlers {
@@ -39,6 +41,7 @@ export function dashboardActionItems(
 ): GammaActionMenuItem[] {
   if (!state.phoneShell) {
     return [
+      ...(state.history ? [{ id: "history", label: "Revision history", icon: <History size={15} />, onSelect: () => handlers.togglePanel("history") }] : []),
       { id: "manage", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => handlers.togglePanel("manage") },
       { id: "ai", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => handlers.togglePanel("ai") },
       { id: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard size={15} />, onSelect: handlers.shortcuts },
@@ -49,6 +52,7 @@ export function dashboardActionItems(
     { id: "edit", group: "Dashboard", label: "Edit dashboard", icon: <Pencil size={15} />, onSelect: handlers.edit },
     { id: "code", group: "Dashboard", label: "Dashboard as code", icon: <Braces size={15} />, onSelect: () => handlers.togglePanel("source") },
     { id: "queries", group: "Dashboard", label: "Query inspector", icon: <Clock3 size={15} />, onSelect: handlers.inspectQueries },
+    ...(state.history ? [{ id: "history", group: "Dashboard", label: "Revision history", icon: <History size={15} />, onSelect: () => handlers.togglePanel("history") }] : []),
     { id: "manage", group: "Workspace", label: "Manage dashboards", icon: <Settings2 size={15} />, onSelect: () => handlers.togglePanel("manage") },
     { id: "ai", group: "Workspace", label: "Build with AI", icon: <Sparkles size={15} />, onSelect: () => handlers.togglePanel("ai") },
     ...refreshOptions.map<GammaActionMenuItem>(option => ({
