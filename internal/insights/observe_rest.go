@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptrace"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -224,15 +225,22 @@ type observeRESTExplore struct {
 
 // observeRESTProvidersResponse is the gateway's DashboardProvidersResponse.
 type observeRESTProvidersResponse struct {
-	Providers []observeCatalogProvider `json:"providers"`
+	Providers          []observeCatalogProvider `json:"providers"`
+	AuthorizationScope string                   `json:"authorizationScope,omitempty"`
 }
 
 // sharedListing is one decoded shared catalog: the providers Insights can query,
-// and the providers it lists but cannot query, each with a reason.
+// and the providers it lists but cannot query, each with a reason. The scope is the
+// gateway's authorization digest for this caller. It is empty when the gateway
+// reported none, and then the caller's results must not be shared.
 type sharedListing struct {
 	providers   []Provider
 	unsupported []UnsupportedProvider
+	scope       string
 }
+
+// authorizationScopePattern matches a gateway scope: a lowercase hex SHA-256.
+var authorizationScopePattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // listShared fetches the caller's shared catalog over REST.
 func (g *observeGateway) listShared(ctx context.Context, token string) (sharedListing, error) {
@@ -244,7 +252,15 @@ func (g *observeGateway) listShared(ctx context.Context, token string) (sharedLi
 	if json.Unmarshal(body, &response) != nil || response.Providers == nil {
 		return sharedListing{}, errUpstream
 	}
-	return sharedProvidersFromCatalog(response.Providers)
+	listing, err := sharedProvidersFromCatalog(response.Providers)
+	if err != nil {
+		return sharedListing{}, err
+	}
+	// A malformed scope is dropped rather than failing the listing: the caller then gets no sharing.
+	if authorizationScopePattern.MatchString(response.AuthorizationScope) {
+		listing.scope = response.AuthorizationScope
+	}
+	return listing, nil
 }
 
 // sharedProvidersFromCatalog splits the catalog into the entries Insights can

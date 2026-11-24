@@ -125,6 +125,34 @@ func TestObserveRESTRequestsCarryDelegationAndExactFields(t *testing.T) {
 
 // Redirects are never followed: the gateway's own authorization cannot be sent
 // to another origin, and a redirect is an upstream failure.
+// The gateway's authorization scope is kept only when it is a lowercase SHA-256 hex digest.
+// A malformed one is dropped, so the caller's results are never shared under it.
+func TestObserveRESTKeepsOnlyWellFormedAuthorizationScopes(t *testing.T) {
+	valid := strings.Repeat("ab", 32)
+	for _, test := range []struct {
+		name  string
+		scope string
+		want  string
+	}{
+		{"well formed digest is kept", valid, valid},
+		{"empty scope is none", "", ""},
+		{"upper case hex is dropped", strings.ToUpper(valid), ""},
+		{"short digest is dropped", valid[:63], ""},
+		{"non hex digest is dropped", strings.Repeat("z", 64), ""},
+		{"digest with trailing text is dropped", valid + "x", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{}, "authorizationScope": test.scope})
+			}))
+			defer gateway.Close()
+			listing, err := mustObserveGateway(t, gateway.URL).listShared(t.Context(), "alice")
+			require.NoError(t, err)
+			assert.Equal(t, test.want, listing.scope)
+		})
+	}
+}
+
 func TestObserveRESTRefusesRedirectsAndForeignPaths(t *testing.T) {
 	var elsewhere atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
