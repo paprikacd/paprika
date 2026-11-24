@@ -1,6 +1,6 @@
 "use client";
 
-import { NO_DATA } from "../benign-states";
+import { NO_DATA, PARTIAL_CHIP } from "../benign-states";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { ChevronsDown, Gauge } from "lucide-react";
 import { DEFAULT_MAX_ROWS, evaluateSlo, evaluationTimestamp, validateSloConfig, type SloBurn, type SloConfig, type SloGroup, type SloOverallState, type SloReason } from "../slo";
@@ -135,7 +135,7 @@ const STATE_CHIP: Record<SloOverallState, { status: "ok" | "warning" | "critical
   at_risk: { status: "warning", label: "At risk" },
   breaching: { status: "critical", label: "Breaching" },
   unknown: { status: "unknown", label: NO_DATA },
-  partial: { status: "unknown", label: "Partial" },
+  partial: { status: "unknown", label: PARTIAL_CHIP },
 };
 
 const COUNT = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
