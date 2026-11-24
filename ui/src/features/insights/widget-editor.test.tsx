@@ -492,17 +492,17 @@ describe("widget inspector", () => {
     const callbacks = editorProps();
     const eventSource = { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" };
     render(<WidgetEditor {...callbacks} widget={{ ...widget, annotationSource: eventSource }} />);
-    choose("Visualization", /^Single value/);
+    choose("Visualization", /^Bar chart/);
     expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Time series");
     expect(screen.getByText(/event query.*removed from this draft/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Keep current visualization" }));
     expect(screen.queryByRole("button", { name: "Remove event query and switch" })).not.toBeInTheDocument();
     expect(callbacks.onApply).not.toHaveBeenCalled();
-    choose("Visualization", /^Single value/);
+    choose("Visualization", /^Bar chart/);
     fireEvent.click(screen.getByRole("button", { name: "Remove event query and switch" }));
-    expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Single value");
+    expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Bar chart");
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
-    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "stat" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "bar" }));
     expect(callbacks.onApply.mock.calls.at(-1)![0].annotationSource).toBeUndefined();
   });
 

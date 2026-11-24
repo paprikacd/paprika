@@ -16,7 +16,9 @@ type dashboardReadDocument struct {
 	TimeRange       string                  `json:"timeRange"`
 	CustomTimeRange *dashboardReadTimeRange `json:"customTimeRange"`
 	Variables       []dashboardReadVariable `json:"variables"`
-	Widgets         []dashboardReadWidget   `json:"widgets"`
+	// AnnotationSource is the dashboard-level event source that time-based widgets without their own inherit.
+	AnnotationSource *dashboardReadAnnotation `json:"annotationSource"`
+	Widgets          []dashboardReadWidget    `json:"widgets"`
 }
 
 type dashboardReadTimeRange struct {
@@ -64,6 +66,8 @@ type dashboardReadWidget struct {
 		Compare *dashboardReadCompare `json:"compare"`
 		// Baseline is a time series' band. Nil leaves the series without one.
 		Baseline *dashboardReadBaseline `json:"baseline"`
+		// ShowEvents set to false hides the dashboard's event source on this widget. Nil shows it.
+		ShowEvents *bool `json:"showEvents"`
 		// The declared scale and styling the dry-run data rules compare against.
 		// Query output never reads them.
 		Min           *float64        `json:"min"`

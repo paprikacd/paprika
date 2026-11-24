@@ -88,10 +88,13 @@ export function useRecordedEvents(source: AnnotationSource | undefined, fetcher:
     }).catch(error => settle({ events: [], error: error instanceof Error ? error.message : "Event query failed." }))
     return () => controller.abort()
   }, [enabled, revision, key, prepared])
-  if (!source || !enabled) return { events: [] }
-  return state?.key === key && state.revision === revision ? state.value : { events: [], loading: true }
+  // The empty states are shared objects, so a canvas that re-renders with no source does not hand every tile a new value.
+  if (!source || !enabled) return NO_EVENTS
+  return state?.key === key && state.revision === revision ? state.value : LOADING_EVENTS
 }
 
+const NO_EVENTS: AnnotationState = { events: [] }
+const LOADING_EVENTS: AnnotationState = { events: [], loading: true }
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 }
 const eventStart = (event: RecordedEvent) => Date.parse(event.timestamp)
 const eventFinish = (event: RecordedEvent) => event.endTimestamp ? Date.parse(event.endTimestamp) : eventStart(event)

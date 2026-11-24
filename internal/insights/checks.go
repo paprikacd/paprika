@@ -39,10 +39,10 @@ const (
 )
 
 var dashboardRequiredFields = []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}
-var dashboardOptionalFields = []string{"description", "folder", "customTimeRange", "timeZone", "variables"}
+var dashboardOptionalFields = []string{"description", "folder", "customTimeRange", "timeZone", "variables", "annotationSource"}
 
 // dashboardExtensionFields is the order validateDashboardExtensions checks them in.
-var dashboardExtensionFields = []string{"variables", "folder", "customTimeRange", "timeZone"}
+var dashboardExtensionFields = []string{"variables", "folder", "customTimeRange", "timeZone", "annotationSource"}
 
 // checkFixes gives agents the allowed values for the most common rule
 // violations. Rules without an entry have a message that already says enough.
@@ -434,7 +434,7 @@ func ruleFor(pointer string) string {
 		return ruleDocumentTimeRange
 	case "refreshInterval":
 		return ruleDocumentRefresh
-	case "variables", "folder", "customTimeRange", "timeZone":
+	case "variables", "folder", "customTimeRange", "timeZone", "annotationSource":
 		return "schema.document." + segments[0]
 	case "widgets":
 		if len(segments) == 1 {
@@ -721,7 +721,7 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 		ObservedAt: now.Format(time.RFC3339Nano), Range: queryRange, Variables: values,
 		Widgets: make([]DashboardQueryWidget, 0, len(doc.Widgets)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
-	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, start, end, dryRunSummaryOptions)
+	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, doc.AnnotationSource, start, end, dryRunSummaryOptions)
 	return dryRunWidgets(&doc, &result, saved), nil
 }
 

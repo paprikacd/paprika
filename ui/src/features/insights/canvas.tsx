@@ -1,7 +1,10 @@
 import { supportsDashboardSelection } from "./selection-support";
+import { supportsAnnotationSource } from "./schema";
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -110,6 +113,9 @@ export interface WidgetResultSnapshot {
  * It lives with the canvas, so it ends with the page session and never reaches another user's session.
  */
 interface WidgetMemory { retained?: RetainedQuery; priorRetained?: RetainedQuery; baselineRetained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
+/** The dashboard's own recorded events, shared with every time-based widget that has no event source of its own. */
+const DashboardEventsContext = createContext<ReturnType<typeof useRecordedEvents> | undefined>(undefined);
+
 /** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
 function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; priorRetention: QueryRetention; baselineRetention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
   return {
@@ -402,7 +408,12 @@ const Tile = memo(function Tile({
   const canQuery = !!widget.queryRef || (!!provider && !!widget.providerId && !!widget.query.trim());
   const awaitingFirstResult = active && canQuery && !data && !error;
   const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && engaged && !library.loading && !library.error, memoryOf.annotationRetention);
-  const annotationState = widget.annotationSource && library.error ? { events: [], error: library.error } : annotationData;
+  // A widget's own event source always wins. Otherwise a time-based widget shows the dashboard's events unless it opts out.
+  const inheritedEvents = useContext(DashboardEventsContext);
+  const inheritsEvents = !widget.annotationSource && supportsAnnotationSource(widget.type, widget.pluginId) && widget.options?.showEvents !== false;
+  const annotationState = widget.annotationSource
+    ? (library.error ? { events: [], error: library.error } : annotationData)
+    : inheritsEvents && inheritedEvents ? inheritedEvents : annotationData;
   const fetchTrace = useCallback((traceId: string, signal: AbortSignal) => fetcher({
     providerId: widget.providerId, query: widget.query, kind: "traces", start, end,
     step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds), traceId,
@@ -952,7 +963,7 @@ export function DashboardCanvas({
   const [memory] = useState(() => new Map<string, WidgetMemory>());
   useEffect(() => {
     // Forget widgets that were removed from this dashboard. Other dashboards keep theirs for a return visit.
-    const live = new Set(dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`));
+    const live = new Set([...dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`), `${dashboard.id}:dashboard-events`]);
     for (const key of memory.keys()) if (key.startsWith(`${dashboard.id}:`) && !live.has(key)) memory.delete(key);
   }, [dashboard.id, dashboard.widgets, memory]);
   const { width, containerRef, mounted } = useContainerWidth({
@@ -1073,6 +1084,11 @@ export function DashboardCanvas({
   // Chips step through widgets in the order they are now laid out, so a drag in edit mode changes the order they follow.
   const attentionOrder = useMemo(() => [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => ({ id: item.i })), [layout]);
   const range = dashboardRange(dashboard, end);
+  // The dashboard's own event source is queried once for the canvas, and its events are shared with every time-based widget
+  // that has no source of its own. Its provider is the first time-based widget's, the same one a widget's own source uses.
+  const dashboardEventsRetention = useMemo(() => memoryFor(memory, `${dashboard.id}:dashboard-events`).annotationRetention, [memory, dashboard.id]);
+  const dashboardEventProvider = useMemo(() => dashboard.widgets.find(widget => supportsAnnotationSource(widget.type, widget.pluginId))?.providerId ?? "", [dashboard.widgets]);
+  const dashboardEvents = useRecordedEvents(dashboard.annotationSource, fetcher, dashboardEventProvider, range.start, range.end, active && !!dashboard.annotationSource && !library.loading && !library.error, dashboardEventsRetention);
   const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
   ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
@@ -1133,6 +1149,7 @@ export function DashboardCanvas({
     ? { mode: "fixed" }
     : dashboard.refreshInterval ? { mode: "every", seconds: dashboard.refreshInterval } : { mode: "off" };
   return (
+    <DashboardEventsContext.Provider value={dashboardEvents}>
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
     <AttentionStoreProvider>
     <SampleAsOfProvider>
@@ -1208,5 +1225,6 @@ export function DashboardCanvas({
     </SampleAsOfProvider>
     </AttentionStoreProvider>
     </DashboardTimeZoneProvider>
+    </DashboardEventsContext.Provider>
   );
 }

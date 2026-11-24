@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -56,6 +57,8 @@ type DashboardQueryResult struct {
 	QueryCount    DashboardQueryCount      `json:"queryCount"`
 	State         string                   `json:"state"`
 	Attention     DashboardAttention       `json:"attention"`
+	// Annotations is the dashboard-level event source, when a selected time-based widget inherits it. See DashboardQueryAnnotations.
+	Annotations *DashboardQueryAnnotations `json:"annotations,omitempty"`
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
 	comparisons       []dashboardComparisonPlan
 	comparisonQueries []Query
@@ -217,7 +220,7 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	result.VariableDefinitions = dashboardQueryVariables(document.Variables)
 	result.Warnings = dashboardVariableWarnings(document.Variables, input.Variables)
-	s.runDashboardPlan(r, &result, selected, saved, document.Variables, start, end, options)
+	s.runDashboardPlan(r, &result, selected, saved, document.Variables, document.AnnotationSource, start, end, options)
 	writeDashboardQueryResult(w, &result)
 }
 
@@ -226,7 +229,7 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 // queryDashboard and the dry run of the validate endpoint both call it, so they
 // share planning, provider resolution, admission and the caller's deadline;
 // neither has its own path.
-func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, options DashboardSummaryOptions) {
+func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, source *dashboardReadAnnotation, start, end float64, options DashboardSummaryOptions) {
 	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
 	minStep := func(providerID string) float64 {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
@@ -235,7 +238,7 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		}
 		return provider.public.MinStepSeconds
 	}
-	queries := planDashboardQueries(result, selected, saved, definitions, start, end, minStep, func(providerID, template string, slo bool) *DashboardQueryError {
+	queries := planDashboardQueries(result, selected, saved, definitions, source, start, end, minStep, func(providerID, template string, slo bool) *DashboardQueryError {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
 		if err != nil {
 			return nil // Execution reports the cached provider failure as a signal.
@@ -281,7 +284,7 @@ func dashboardWidgetStep(widget *dashboardReadWidget, start, end, providerMinSte
 	return policyStepSeconds(end-start, providerMinStep)
 }
 
-func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators ...dashboardQueryValidator) []Query {
+func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, source *dashboardReadAnnotation, start, end float64, minStep dashboardMinStep, validators ...dashboardQueryValidator) []Query {
 	seenSaved := make(map[string]bool)
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
@@ -327,6 +330,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, minStep, validators)
 		result.Widgets = append(result.Widgets, output)
 	}
+	planDashboardSourceAnnotation(result, source, selected, saved, seenSaved, seenQueries, &queries, definitions, start, end, minStep, validators)
 	result.QueryCount.Planned = len(queries)
 	result.Range.StepSeconds = policyStepSeconds(end-start, coarsestMinStep)
 	return queries
@@ -358,13 +362,20 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 	return output
 }
 
-func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
-	source := widget.AnnotationSource
-	if source == nil {
-		return
-	}
-	output.AnnotationSavedQueryID = source.QueryRef.ID
-	output.AnnotationColumns = &dashboardReadAnnotationColumns{Timestamp: source.TimestampColumn, End: source.EndColumn, Label: source.LabelColumn, Severity: source.SeverityColumn}
+// DashboardQueryAnnotations is the dashboard-level event source: its saved query and signal, and the time-based widgets that
+// inherit it. It is planned only when at least one selected widget inherits it, and a failure never changes a widget's data.
+type DashboardQueryAnnotations struct {
+	SavedQueryID string                          `json:"savedQueryId"`
+	SignalID     string                          `json:"signalId,omitempty"`
+	Error        *DashboardQueryError            `json:"error,omitempty"`
+	Columns      *dashboardReadAnnotationColumns `json:"columns,omitempty"`
+	WidgetIDs    []string                        `json:"widgetIds"`
+}
+
+// planAnnotationSource plans one event query: its saved query, its signal and its column mapping. The caller records the
+// failure and the signal on whichever result owns the source. An identical event query shares its signal.
+func planAnnotationSource(source *dashboardReadAnnotation, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) (signalID string, columns *dashboardReadAnnotationColumns, failure *DashboardQueryError) {
+	columns = &dashboardReadAnnotationColumns{Timestamp: source.TimestampColumn, End: source.EndColumn, Label: source.LabelColumn, Severity: source.SeverityColumn}
 	if !seenSaved[source.QueryRef.ID] {
 		if snapshot, found := saved[source.QueryRef.ID]; found {
 			result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: source.QueryRef.ID, ETag: snapshot.ETag})
@@ -379,15 +390,84 @@ func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQuery
 		eventError = validatePlannedDashboardQuery(eventWidget, &eventQuery, saved, validators)
 	}
 	if eventError != nil {
-		output.AnnotationError = eventError
-		result.State = "partial"
-	} else if signalID, found := seenQueries[eventQuery]; found {
-		output.AnnotationSignalID = signalID
+		return "", columns, eventError
+	}
+	if signal, found := seenQueries[eventQuery]; found {
 		result.QueryCount.Deduplicated++
-	} else {
-		output.AnnotationSignalID = fmt.Sprintf("q%d", len(*queries)+1)
-		seenQueries[eventQuery] = output.AnnotationSignalID
-		*queries = append(*queries, eventQuery)
+		return signal, columns, nil
+	}
+	signal := fmt.Sprintf("q%d", len(*queries)+1)
+	seenQueries[eventQuery] = signal
+	*queries = append(*queries, eventQuery)
+	return signal, columns, nil
+}
+
+func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
+	source := widget.AnnotationSource
+	if source == nil {
+		return
+	}
+	output.AnnotationSavedQueryID = source.QueryRef.ID
+	signalID, columns, failure := planAnnotationSource(source, result, saved, seenSaved, seenQueries, queries, definitions, start, end, minStep, validators)
+	output.AnnotationColumns = columns
+	if failure != nil {
+		output.AnnotationError = failure
+		result.State = "partial"
+		return
+	}
+	output.AnnotationSignalID = signalID
+}
+
+// inheritsDashboardEvents reports whether a time-based widget shows the dashboard's event source: it has none of its own,
+// it is a widget type that takes events, and it has not opted out.
+func inheritsDashboardEvents(widget *dashboardReadWidget) bool {
+	return widget.AnnotationSource == nil && (widget.Options.ShowEvents == nil || *widget.Options.ShowEvents)
+}
+
+// planDashboardSourceAnnotation plans the dashboard-level event source once, when a selected widget inherits it.
+func planDashboardSourceAnnotation(result *DashboardQueryResult, source *dashboardReadAnnotation, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
+	if source == nil {
+		return
+	}
+	var inheriting []string
+	for index := range selected {
+		widget := &selected[index]
+		if inheritsDashboardEvents(widget) && supportsReadAnnotation(widget) {
+			inheriting = append(inheriting, widget.ID)
+		}
+	}
+	if len(inheriting) == 0 {
+		return
+	}
+	signalID, columns, failure := planAnnotationSource(source, result, saved, seenSaved, seenQueries, queries, definitions, start, end, minStep, validators)
+	result.Annotations = &DashboardQueryAnnotations{SavedQueryID: source.QueryRef.ID, SignalID: signalID, Columns: columns, WidgetIDs: inheriting}
+	if failure != nil {
+		result.Annotations.Error = failure
+		result.State = "partial"
+	}
+}
+
+// supportsReadAnnotation reports whether a widget type takes event queries. It mirrors the schema's annotation families.
+func supportsReadAnnotation(widget *dashboardReadWidget) bool {
+	if slices.Contains(annotationFamilyTypes, widget.Type) {
+		return true
+	}
+	return widget.Type == "plugin" && slices.Contains(annotationFamilyPlugins, widget.PluginID)
+}
+
+// applyDashboardSourceAnnotation checks the dashboard-level event source's columns against its signal's result.
+func applyDashboardSourceAnnotation(result *DashboardQueryResult, signal *DashboardSignal, columns []dataframe.Column) {
+	annotations := result.Annotations
+	if annotations == nil || annotations.SignalID != signal.ID || annotations.Columns == nil {
+		return
+	}
+	failure := signal.Error
+	if failure == nil {
+		failure = validateAnnotationColumns(columns, annotations.Columns)
+	}
+	if failure != nil {
+		annotations.Error = failure
+		result.State = "partial"
 	}
 }
 
@@ -680,6 +760,7 @@ func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *
 		applyDashboardSignal(widget, signal, raw, query.End, options.MaxSeries)
 		applyDashboardAnnotation(widget, signal, columns, result)
 	}
+	applyDashboardSourceAnnotation(result, signal, columns)
 	if executed {
 		result.QueryCount.Executed++
 	}

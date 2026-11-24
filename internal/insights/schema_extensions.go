@@ -26,7 +26,7 @@ func validateDashboardExtensions(root map[string]json.RawMessage) error {
 		field    string
 		validate func(json.RawMessage) error
 	}{
-		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange}, {"timeZone", validateDashboardTimeZone},
+		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange}, {"timeZone", validateDashboardTimeZone}, {"annotationSource", validateDashboardAnnotationSource},
 	} {
 		if raw, ok := root[check.field]; ok {
 			if err := check.validate(raw); err != nil {
@@ -195,6 +195,16 @@ func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.
 	if !supportsWidgetAnnotationSource(widget) {
 		return errors.New("event queries require a time-based widget")
 	}
+	return validateAnnotationSourceShape(raw)
+}
+
+// validateDashboardAnnotationSource checks the dashboard-level event source, which widgets without their own inherit.
+func validateDashboardAnnotationSource(raw json.RawMessage) error {
+	return validateAnnotationSourceShape(raw)
+}
+
+// validateAnnotationSourceShape checks an event query's saved-query reference and its columns. The widget and the dashboard share it.
+func validateAnnotationSourceShape(raw json.RawMessage) error {
 	fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
 	if err != nil {
 		return err
@@ -270,7 +280,7 @@ func validateSLOSummaryWidget(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "compare", "baseline", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "seriesColorMode", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
+	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "compare", "baseline", "showEvents", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "seriesColorMode", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
 	if err != nil {
 		return err
 	}
@@ -533,7 +543,7 @@ func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error
 }
 
 func validateWidgetFlags(options map[string]json.RawMessage) error {
-	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar", "gridX", "showZeroLine"} {
+	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar", "gridX", "showZeroLine", "showEvents"} {
 		if value, ok := options[field]; ok {
 			var flag bool
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &flag) != nil {
