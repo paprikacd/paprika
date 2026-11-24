@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "namespace-capacity",
   "title": "Namespace capacity",
-  "description": "CPU, memory and throttling for the containers of one namespace. Assumes the kubelet cAdvisor metrics container_cpu_usage_seconds_total, container_memory_working_set_bytes, container_cpu_cfs_throttled_periods_total and container_cpu_cfs_periods_total, which carry namespace, pod and container labels, and kube-state-metrics for kube_pod_container_resource_requests, which carries the requested CPU per pod. Choose the namespace variable after importing.",
+  "description": "CPU, memory and throttling per namespace. Assumes cAdvisor container_cpu_usage_seconds_total, container_memory_working_set_bytes, container_cpu_cfs_throttled_periods_total, container_cpu_cfs_periods_total, container_network_receive_bytes_total and container_network_transmit_bytes_total, and kube-state-metrics kube_pod_info, kube_pod_container_resource_requests, kube_pod_container_resource_limits, kube_node_status_allocatable and kube_node_status_condition. Choose the namespace after importing.",
   "timeRange": "6h",
   "refreshInterval": 60,
   "variables": [
@@ -80,6 +80,54 @@
         "decimals": 0
       },
       "layout": { "x": 0, "y": 6, "w": 12, "h": 4 }
+    },
+    {
+      "id": "placement",
+      "title": "Workload placement by node",
+      "type": "plugin",
+      "pluginId": "kubernetes-placement",
+      "dataKind": "metrics",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(max by (node) (kube_node_status_allocatable{resource=\"cpu\",unit=\"core\"}) and on (node) count by (node) (kube_pod_info{namespace={{namespace}},node!=\"\"}), \"signal\", \"cpu-allocatable\", \"\", \"\") or label_replace(max by (node) (kube_node_status_allocatable{resource=\"memory\",unit=\"byte\"}) and on (node) count by (node) (kube_pod_info{namespace={{namespace}},node!=\"\"}), \"signal\", \"memory-allocatable\", \"\", \"\") or label_replace(sum by (namespace, pod, node) (kube_pod_container_resource_requests{namespace={{namespace}},resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-request\", \"\", \"\") or label_replace(sum by (namespace, pod, node) (kube_pod_container_resource_requests{namespace={{namespace}},resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-request\", \"\", \"\") or label_replace(max by (node) (kube_node_status_condition{condition=\"Ready\",status=\"true\"}) and on (node) count by (node) (kube_pod_info{namespace={{namespace}},node!=\"\"}), \"signal\", \"node-ready\", \"\", \"\")",
+      "unit": "",
+      "config": {"resource": "cpu"},
+      "layout": {"x": 0, "y": 10, "w": 12, "h": 7}
+    },
+    {
+      "id": "throttle-by-pod",
+      "title": "CPU throttling by pod",
+      "type": "plugin",
+      "pluginId": "kubernetes-throttle-matrix",
+      "dataKind": "metrics",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(sum by (pod) (increase(container_cpu_cfs_throttled_periods_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m])), \"signal\", \"throttled\", \"\", \"\") or label_replace(sum by (pod) (increase(container_cpu_cfs_periods_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m])), \"signal\", \"periods\", \"\", \"\")",
+      "unit": "",
+      "config": {},
+      "layout": {"x": 0, "y": 17, "w": 12, "h": 6}
+    },
+    {
+      "id": "resource-by-pod",
+      "title": "Requests and usage by pod",
+      "type": "plugin",
+      "pluginId": "kubernetes-resource-bars",
+      "dataKind": "metrics",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(sum by (pod) (rate(container_cpu_usage_seconds_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m])), \"signal\", \"cpu-usage\", \"\", \"\") or label_replace(sum by (pod) (kube_pod_container_resource_requests{namespace={{namespace}},container!=\"\",container!=\"POD\",resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-request\", \"\", \"\") or label_replace(sum by (pod) (kube_pod_container_resource_limits{namespace={{namespace}},resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-limit\", \"\", \"\") or label_replace(sum by (pod) (container_memory_working_set_bytes{namespace={{namespace}},container!=\"\",container!=\"POD\"}), \"signal\", \"memory-usage\", \"\", \"\") or label_replace(sum by (pod) (kube_pod_container_resource_requests{namespace={{namespace}},container!=\"\",container!=\"POD\",resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-request\", \"\", \"\") or label_replace(sum by (pod) (kube_pod_container_resource_limits{namespace={{namespace}},resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-limit\", \"\", \"\")",
+      "unit": "",
+      "config": {"groupLabel": "pod", "maxGroups": 8},
+      "layout": {"x": 0, "y": 23, "w": 6, "h": 6}
+    },
+    {
+      "id": "resource-trend",
+      "title": "Namespace resource trend",
+      "type": "plugin",
+      "pluginId": "kubernetes-resource-trend",
+      "dataKind": "metrics",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(sum(rate(container_cpu_usage_seconds_total{namespace={{namespace}},container!=\"\",container!=\"POD\"}[5m])), \"signal\", \"cpu-usage\", \"\", \"\") or label_replace(sum(kube_pod_container_resource_requests{namespace={{namespace}},resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-request\", \"\", \"\") or label_replace(sum(container_memory_working_set_bytes{namespace={{namespace}},container!=\"\",container!=\"POD\"}), \"signal\", \"memory-usage\", \"\", \"\") or label_replace(sum(kube_pod_container_resource_requests{namespace={{namespace}},resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-request\", \"\", \"\") or label_replace(sum(rate(container_network_receive_bytes_total{namespace={{namespace}}}[5m])), \"signal\", \"network-rx\", \"\", \"\") or label_replace(sum(rate(container_network_transmit_bytes_total{namespace={{namespace}}}[5m])), \"signal\", \"network-tx\", \"\", \"\")",
+      "unit": "",
+      "config": {},
+      "layout": {"x": 6, "y": 23, "w": 6, "h": 6}
     }
   ]
 }

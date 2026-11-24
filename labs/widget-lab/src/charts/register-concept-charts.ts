@@ -1,5 +1,4 @@
 import { registerDistributedCharts } from './distributed/register';
-import { registerKubernetesCharts } from './kubernetes/register';
 import { registerPerformanceCharts } from './performance/register';
 import { registerEnergyCharts } from './energy/register';
 import { registerClinicalCharts } from './clinical/register';
@@ -30,7 +29,6 @@ export function registerConceptCharts() {
   registerClinicalCharts();
   registerWaferCharts();
   registerOrbitalCharts();
-  registerKubernetesCharts();
   registerPerformanceCharts();
   registerDistributedCharts();
 }

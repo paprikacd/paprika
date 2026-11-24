@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "paprika-control-plane",
   "title": "Paprika control plane",
-  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, how applications and releases sit across phases, and Insights' own query rate, error ratio, p95 latency and capacity refusals. Exhausted release retries turn critical above zero; stale applications, stuck releases and a degraded fleet index turn warning above zero.",
+  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, phase counts, Insights' own query health, and control-plane container CPU and memory against requests and limits. Exhausted release retries turn critical above zero; stale applications, stuck releases and a degraded fleet index turn warning above zero.",
   "timeRange": "6h",
   "refreshInterval": 30,
   "widgets": [
@@ -202,6 +202,18 @@
       "description": "Queries refused with HTTP 429, split by pool. A gateway refusal names the limit that refused it: edge, budget, provider, queue, principal or unknown.",
       "options": { "min": 0 },
       "layout": { "x": 9, "y": 15, "w": 3, "h": 4 }
+    },
+    {
+      "id": "container-resources",
+      "title": "Control-plane container resources",
+      "type": "plugin",
+      "pluginId": "kubernetes-resource-bars",
+      "dataKind": "metrics",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(sum by (container) (rate(container_cpu_usage_seconds_total{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\"}[5m])), \"signal\", \"cpu-usage\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_requests{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-request\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_limits{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-limit\", \"\", \"\") or label_replace(sum by (container) (container_memory_working_set_bytes{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\"}), \"signal\", \"memory-usage\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_requests{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-request\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_limits{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-limit\", \"\", \"\")",
+      "unit": "",
+      "config": { "groupLabel": "container", "maxGroups": 9 },
+      "layout": { "x": 0, "y": 19, "w": 12, "h": 6 }
     }
   ]
 }

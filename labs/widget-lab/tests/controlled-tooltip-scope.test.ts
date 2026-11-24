@@ -3,10 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { OrbitalGroundTrack, OrbitalSkyplot, OrbitalContactTimeline } from '../src/charts/orbital/OrbitalCharts';
 import { OrbitalPassProfile } from '../src/charts/orbital/OrbitalPassProfile';
-import { KubernetesResourceTrend } from '../src/charts/kubernetes/KubernetesCharts';
 import { WaferDieMap } from '../src/charts/wafer/WaferMap';
 import { orbitalFixtures } from '../src/lenses/orbital/fixtures';
-import { kubernetesFixtures } from '../src/lenses/kubernetes/fixtures';
 import { waferFixtures } from '../src/lenses/wafer/fixtures';
 import { resolveInspectionState } from '../src/charts/shared/inspection-state';
 
@@ -35,15 +33,6 @@ describe('linked dashboard scope and local tooltip ownership', () => {
       if (name === 'qualification profile') expect(html).toContain('Qualifying duration');
     });
   }
-
-  it('retains the linked Kubernetes timestamp marker without treating it as a local pin', () => {
-    const panel = kubernetesFixtures().trend, records = panel.result.records!;
-    const stamp = records.rows[10][records.columns.findIndex(column => column.key === 'timestamp')] as number;
-    const widget = { ...panel.widget, config: { ...panel.widget.config, selectedAt: stamp } };
-    const html = renderToStaticMarkup(createElement(KubernetesResourceTrend, { ...panel, widget }));
-    expect(html).not.toContain('data-requested-tooltip');
-    expect(html).toContain('kube-point-focus');
-  });
 
   it('retains the controlled wafer highlight while tooltips wait for local interaction', () => {
     const data = waferFixtures();

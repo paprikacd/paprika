@@ -102,7 +102,7 @@ jobs:
   ui:
     name: UI
     runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,9 +123,17 @@ jobs:
         run: npm ci
         working-directory: ui
 
+      - name: Install widget lab dependencies
+        run: npm ci
+        working-directory: labs/widget-lab
+
       - name: Test
         run: npm test
         working-directory: ui
+
+      - name: Widget lab tests
+        run: npm test -- --maxWorkers=2
+        working-directory: labs/widget-lab
 
       - name: Browser-render worker and visual probe tests
         run: node --test render-worker.test.mjs dashboard-probe.test.mjs e2e/fixtures/visual-matrix-diff.test.mjs

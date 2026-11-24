@@ -92,9 +92,9 @@ describe("starter picker", () => {
   it("keeps the template thumbnail's proportions when the grid is tall", async () => {
     renderPicker();
     const card = await screen.findByRole("button", { name: "Paprika control plane" });
-    // The control plane grid is 19 rows tall (including the Insights health row). Its thumbnail
-    // is capped by height, 140px over 19 rows of a 12-column grid, so it is never squashed.
-    expect((card.querySelector('[data-testid="starter-thumbnail"]') as HTMLElement).style.maxWidth).toBe("88px");
+    // The control plane grid is 25 rows tall (the Insights health row and the container tile). Its thumbnail
+    // is capped by height, 140px over 25 rows of a 12-column grid, so it is never squashed.
+    expect((card.querySelector('[data-testid="starter-thumbnail"]') as HTMLElement).style.maxWidth).toBe("67px");
   });
 
   it("moves focus to the stable heading when a template is chosen and when the list returns", async () => {

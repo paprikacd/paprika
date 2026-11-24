@@ -12,7 +12,7 @@
 | Scrollbar | App-wide stylesheet consuming Gamma | DESIGN.md | Document and bounded data table | Visible scroll access, no horizontal page overflow |
 | Baseline summary | `src/data/telemetry.ts` | `docs/data-contract.md` | Scope and scenario | Numerical tests |
 | Regional range | RegionalLatency | Explicit p50/p95 interval contract | All/selected region | Shared domain, exact labels, keyboard filter |
-| Study navigation | App.tsx, DashboardNavigation native hash links and labelled native lens picker | `lensRoutes`, reference studies and catalogue | 19 dashboard lenses, chart library; retained analytical routes | Link grid above 1200px, grouped picker at 1200px and below, current route, keyboard selection, back/forward and preserved artboard geometry |
+| Study navigation | App.tsx, DashboardNavigation native hash links and labelled native lens picker | `lensRoutes`, reference studies and catalogue | 24 dashboard lenses (26 with Edge Watch and Reliability Room), chart library; retained analytical routes | Link grid above 1200px, grouped picker at 1200px and below, current route, keyboard selection, back/forward and preserved artboard geometry |
 | Compact metric | StudyPrimitives MetricCard and Sparkline | Study data summaries | Semantic tone, optional bounded trend, actual-value emphasis | Values, units, gaps, unique SVG resources and unchanged-value stability |
 | Panel information | StudyPrimitives Panel | The panel's metric/cadence contract | Information disclosure and optional visible caption | Keyboard activation, Escape focus return, outside/blur dismissal |
 | Network study | EdgeWatch and edge-telemetry | Deterministic scoped byte/request counts | Gateway, duration, fixture, snapshot, 10s/1m display | Integer conservation, gateway aggregation, identity, gaps and mirrored display |
@@ -127,7 +127,7 @@ Browser evidence and numerical validation are recorded separately in `docs/itera
 
 ## Iteration 08 — expanded chart and investigation contracts
 
-The ten new lenses add **27 registered plugin identities and 29 catalogue examples**; totals are **51 catalogue examples and 19 dashboard lenses**. Routes, renderer identities and configured examples are separate inventories. All new charts use the existing `Widget`/`QueryResult`, trusted registry and `WidgetVisualization` path. The [iteration-08 report](docs/iteration-08-chart-expansion.md) records the complete inventory and execution evidence.
+At iteration 08, the ten new lenses added **27 registered plugin identities and 29 catalogue examples**; totals were **51 catalogue examples and 19 dashboard lenses**. Later iterations changed these counts. Routes, renderer identities and configured examples are separate inventories. All new charts use the existing `Widget`/`QueryResult`, trusted registry and `WidgetVisualization` path. The [iteration-08 report](docs/iteration-08-chart-expansion.md) records the complete inventory and execution evidence.
 
 | Behavior | Owner and required outcome |
 | --- | --- |

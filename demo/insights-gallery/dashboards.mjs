@@ -487,7 +487,7 @@ export function galleryDocuments(providers) {
   dashboards.push(stress);
   const controlPlane = structuredClone(controlPlaneStarter);
   Object.assign(controlPlane, { id: "local-gallery-control-plane", title: "Paprika control plane · Local demo", folder: "Local gallery demos", refreshInterval: 0 });
-  controlPlane.description = `${controlPlaneStarter.description} Synthetic local data includes one seeded payments incident.`;
+  // The starter description is at the 500-character dashboard limit, so the copy keeps it as is. The title already says "Local demo".
   for (const widget of controlPlane.widgets) widget.providerId = providers.metrics;
   dashboards.push(controlPlane);
   return { dashboards, savedQueries };
