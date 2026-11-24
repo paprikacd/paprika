@@ -96,3 +96,22 @@ func rungAbove(step time.Duration) (time.Duration, bool) {
 	}
 	return 0, false
 }
+
+// MaxAlignGrain caps the grain that aligns a relative window. A longer range
+// would otherwise snap its end to a coarse step, so a board could lag its
+// wall clock by minutes. A 15-second cap keeps the lag bounded.
+const MaxAlignGrain = 15 * time.Second
+
+// AlignGrain returns the grain a relative window of span ends on: the
+// default-density step for span, capped at MaxAlignGrain. Viewers and the
+// query tool that share a dashboard range compute the same grain, so their
+// window ends match and their cache keys match.
+func AlignGrain(span time.Duration) time.Duration {
+	return min(For(span, DefaultTargetPoints, 0), MaxAlignGrain)
+}
+
+// AlignEnd returns now floored to the AlignGrain of span, in UTC.
+func AlignEnd(now time.Time, span time.Duration) time.Time {
+	grain := int64(AlignGrain(span) / time.Second)
+	return time.Unix(now.Unix()/grain*grain, 0).UTC()
+}

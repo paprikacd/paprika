@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
+import { DEFAULT_TARGET_POINTS, MAX_ALIGN_GRAIN_SECONDS, alignGrain, alignedWindowEnd, queryStep } from "./query-step";
 
 type Fixture = {
   ladderSeconds: number[];
   cases: { name: string; rangeSeconds: number; targetPoints: number; minStepSeconds: number; step: number }[];
+  alignCases: { name: string; rangeSeconds: number; nowSeconds: number; end: number }[];
 };
 
 // The same cases are run by the Go port (internal/querystep), so they live in docs/design and are read relative to this file.
@@ -16,6 +17,16 @@ const fixture: Fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
 describe("query step conformance fixtures", () => {
   it.each(fixture.cases.map((testCase) => [testCase.name, testCase] as const))("%s", (_name, testCase) => {
     expect(queryStep(testCase.rangeSeconds, testCase.targetPoints, testCase.minStepSeconds)).toBe(testCase.step);
+  });
+});
+
+describe("query step align conformance fixtures", () => {
+  it.each(fixture.alignCases.map((testCase) => [testCase.name, testCase] as const))("%s", (_name, testCase) => {
+    expect(alignedWindowEnd(testCase.nowSeconds, testCase.rangeSeconds)).toBe(testCase.end);
+  });
+
+  it("caps the grain at 15 seconds", () => {
+    expect(alignGrain(7 * 24 * 3600)).toBe(MAX_ALIGN_GRAIN_SECONDS);
   });
 });
 

@@ -92,8 +92,12 @@ import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import { useDashboardHistory } from "./history"
 import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
-import { useWorkspaceRefresh } from "./use-workspace-refresh"
+import { sameSyncInputs, useWorkspaceRefresh } from "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
+import { refreshStaggerSpread } from "./refresh-stagger"
+
+/** After a manual refresh, queries ask the server for a fresh execution for this long, so the refreshed window is not served from the cache. */
+const MANUAL_REFRESH_BYPASS_MS = 5_000
 import { visibleTileControl } from "./tile-controls"
 import { useCanvasDensity } from "./canvas-density"
 import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
@@ -104,7 +108,7 @@ import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { ProviderManager } from "./provider-manager"
 import { DashboardManager, DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
-import { TimeRangeControl, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
+import { TimeRangeControl, alignedDashboardEnd, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
@@ -402,6 +406,14 @@ export default function InsightsApp({
   }, [])
   const navigationToggle = useRef<HTMLButtonElement>(null)
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
+  // Whether the current end came from an automatic tick. An automatic tick staggers across the tiles; any other change adopts at once.
+  const [autoTick, setAutoTick] = useState(false)
+  // When the user last pressed Refresh. Queries in the bypass window skip the server's result cache.
+  const [refreshedAt, setRefreshedAt] = useState(0)
+  const advanceEnd = useCallback((auto: boolean) => {
+    setEnd(Math.floor(Date.now() / 1000))
+    setAutoTick(auto)
+  }, [])
   const [retry, setRetry] = useState(0)
   // The shared source list loads behind a rendered workspace. Only tiles that need it wait.
   const [sources, setSources] = useState<SourceState>({ status: "ready" })
@@ -457,6 +469,8 @@ export default function InsightsApp({
   }), [])
   const [queryRevision, setQueryRevision] = useState(0)
   const etags = useRef(new Map<string, string>())
+  // The inputs of the last workspace reconcile; see sameSyncInputs.
+  const lastSyncInputs = useRef<readonly unknown[] | undefined>(undefined)
   const openRequest = useRef(0)
   const bundleImporter = useRef<ReturnType<typeof createBundleImporter> | null>(null)
   const bundleImportActive = useRef(false)
@@ -483,6 +497,15 @@ export default function InsightsApp({
     if (signal.aborted || request !== openRequest.current || generation !== libraryMutation.current ||
       current.busy || current.importingBundle || current.queriesLoading ||
       current.saved !== before.saved || current.dashboards !== before.dashboards || current.savedQueries !== before.savedQueries) return
+    // Every input the reconcile reads. A 304 for the list and the open document hands back the same objects,
+    // so an unchanged workspace is recognised here without fingerprinting it again.
+    const inputs = [documents, entries, active, current.dashboards, current.savedQueries, current.saved, current.dirty, current.editing, current.explorerDirty, current.panel, current.dashboard.id, etags.current.get(current.dashboard.id)]
+    if (sameSyncInputs(lastSyncInputs.current, inputs)) {
+      setQueriesLoaded(true)
+      setQueriesError("")
+      return
+    }
+    lastSyncInputs.current = inputs
     const nextDocuments = active
       ? documents.map(item => item.id === active.dashboard.id ? active.dashboard : item)
       : documents
@@ -962,25 +985,25 @@ export default function InsightsApp({
     // A fixed window pauses auto refresh; a relative window keeps refreshing at the view's interval.
     if (!viewDashboard.refreshInterval || viewDashboard.customTimeRange) return
     const timer = setInterval(() => {
-      if (!document.hidden) setEnd(Math.floor(Date.now() / 1000))
+      if (!document.hidden) advanceEnd(true)
     }, viewDashboard.refreshInterval * 1000)
     const onVisible = () => {
-      if (!document.hidden) setEnd(Math.floor(Date.now() / 1000))
+      if (!document.hidden) advanceEnd(true)
     }
     document.addEventListener("visibilitychange", onVisible)
     return () => {
       clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisible)
     }
-  }, [viewDashboard.refreshInterval, viewDashboard.customTimeRange])
+  }, [viewDashboard.refreshInterval, viewDashboard.customTimeRange, advanceEnd])
 
   const scheduledFetcher = useMemo(() => {
     // A refresh or provider edit invalidates cached fixed-range observations too.
     void queryRevision
     // The scheduler owns the capacity backoff, so its slot is free while a refused query waits.
-    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false })
+    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false, refresh: Date.now() - refreshedAt < MANUAL_REFRESH_BYPASS_MS })
     return createQueryScheduler(query)
-  }, [client, activeExample, queryRevision])
+  }, [client, activeExample, queryRevision, refreshedAt])
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
@@ -1004,7 +1027,9 @@ export default function InsightsApp({
     assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
     return { ...resolved, query: interpolateQuery(request.query, variableValues) }
   }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceContext])
-  const range = dashboardRange(viewDashboard, end)
+  // The view reads its window to the shared grain, so viewers and query_dashboard ask for the same window.
+  const alignedEnd = alignedDashboardEnd(viewDashboard, end)
+  const range = dashboardRange(viewDashboard, alignedEnd)
   // Values for variable sources come from the same metadata and query paths the widgets use.
   const variableLoaders = useMemo<VariableValueLoaders>(() => ({
     // The principal is the scope, so values loaded under one sign-in never serve another; a token renewal keeps them.
@@ -1342,7 +1367,7 @@ export default function InsightsApp({
         setEditing(false)
       }
       applyView(nextState, action)
-      setEnd(Math.floor(Date.now() / 1000))
+      advanceEnd(false)
       // Back and Forward within the same dashboard change only the view: an open panel keeps its unapplied text.
       if (!(action === "popstate" && item.id === dashboard.id)) close()
       setError("")
@@ -1445,7 +1470,7 @@ export default function InsightsApp({
         ? { ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: choice.customTimeRange }
         : { ...currentRoute, dashboardId: dashboard.id, range: choice.timeRange, customTimeRange: undefined }
       applyView(view, "range")
-      setEnd(Math.floor(Date.now() / 1000))
+      advanceEnd(false)
       setError("")
       return true
     } catch (cause) {
@@ -1457,7 +1482,7 @@ export default function InsightsApp({
   function resetViewRange() {
     try {
       applyView({ ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: undefined }, "range")
-      setEnd(Math.floor(Date.now() / 1000))
+      advanceEnd(false)
       setError("")
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not reset the time range")
@@ -2144,7 +2169,8 @@ export default function InsightsApp({
               className={styles.iconButton}
               aria-label="Refresh data"
               onClick={() => {
-                setEnd(Math.floor(Date.now() / 1000))
+                advanceEnd(false)
+                setRefreshedAt(Date.now())
                 setQueryRevision((value) => value + 1)
                 setLibraryRevision((value) => value + 1)
               }}
@@ -2394,7 +2420,8 @@ export default function InsightsApp({
                 providers={providers}
                 fetcher={fetcher}
                 tooltipFetcher={scheduledFetcher}
-                end={end}
+                end={alignedEnd}
+                refreshStaggerMs={autoTick ? refreshStaggerSpread(viewDashboard.refreshInterval ?? 0) : 0}
                 editing={editing}
                 dense={dense}
                 referenceCompact={compactShell && finePointer}

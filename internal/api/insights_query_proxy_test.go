@@ -53,6 +53,26 @@ func TestInsightsDashboardQueryPOSTIsReadOnlyAtExactRoute(t *testing.T) {
 	require.Equal(t, 1, calls, "only the exact authorized read route may reach Insights")
 }
 
+// The cache refresh request is a plain header. It reaches Insights, as the receipt opt-in does.
+func TestInsightsQueryProxyForwardsTheCacheRefresh(t *testing.T) {
+	const serviceToken = "service-token-with-at-least-32-characters"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "refresh", r.Header.Get("X-Insights-Cache"))
+		_, _ = io.WriteString(w, `{"series":[]}`)
+	}))
+	defer upstream.Close()
+	proxy, err := NewInsightsProxy(t.Context(), insightsAuthConfig("read"), upstream.URL, serviceToken)
+	require.NoError(t, err)
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: "reader", Secret: insightsAuthConfig("read").TokenSecret, Audience: auth.ConsoleAPIAudience})
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/insights/query", strings.NewReader(`{"providerId":"p"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Insights-Cache", "refresh")
+	response := httptest.NewRecorder()
+	proxy.ServeHTTP(response, req)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+}
+
 // The query receipt opt-in is a plain flag. It reaches Insights, and no other
 // caller header does.
 func TestInsightsQueryProxyForwardsOnlyTheReceiptOptIn(t *testing.T) {

@@ -15,7 +15,7 @@ const stateLabels: Record<QueryExecutionState, string> = {
   queued: "Queued", running: "Running", complete: "Complete", partial: "Partial",
   error: "Error", timeout: "Timed out", cancelled: "Cancelled", capacity: "At capacity",
 };
-const phaseLabels = { admission: "Service admission", catalog: "Shared catalog", upstream: "Upstream round trip", normalization: "Normalization", provider: "Provider execution" };
+const phaseLabels = { admission: "Service admission", catalog: "Shared catalog", cache: "Server cache", upstream: "Upstream round trip", normalization: "Normalization", provider: "Provider execution" };
 
 export function queryDuration(value: number | undefined | null): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return "Unknown";
@@ -173,6 +173,7 @@ function ReceiptDetails({ receipt }: { receipt: QueryExecutionReceipt }) {
     <div className={styles.detailHeading}><h3>{shortId(receipt)} receipt</h3><State receipt={receipt} /></div>
     <p className={styles.observed}>Requested <time dateTime={new Date(receipt.observedAt).toISOString()}>{utc(receipt.observedAt / 1000)}</time></p>
     {receipt.error && <p className={styles.error}>{receipt.error}</p>}
+    {backend?.cache && (backend.cache.status === "hit" || backend.cache.status === "joined") && <p className={styles.callout}>Insights reused execution <strong>{backend.cache.sourceExecutionId}</strong> ({((backend.cache.ageMs ?? 0) / 1000).toFixed(1)} s old). No provider request was made.</p>}
     {receipt.reuse === "cache" && <p className={styles.callout}>Reused execution <strong>{receipt.executionId}</strong>. This delivery made no upstream request. Server timings below belong to the original execution.</p>}
     {receipt.sharedConsumers > 0 && <p className={styles.callout}>{receipt.consumers} consumers shared this execution; it is counted once. {receipt.cancelledConsumers > 0 ? `${receipt.cancelledConsumers} consumers cancelled.` : ""}</p>}
     <section aria-label="Browser timing ledger">
@@ -207,6 +208,7 @@ function ReceiptDetails({ receipt }: { receipt: QueryExecutionReceipt }) {
         <div><dt>Source</dt><dd>{receipt.source.providerId} · {receipt.source.kind}</dd></div>
         <div><dt>Execution</dt><dd>{receipt.executionId}</dd></div>
         {backend && <div><dt>Service receipt</dt><dd>{backend.executionId}</dd></div>}
+        {backend?.cache && <div><dt>Server cache</dt><dd>{backend.cache.status}{backend.cache.reason ? ` · ${backend.cache.reason}` : ""}</dd></div>}
       </dl>
       <Bounds receipt={receipt} backend={backend} />
     </section>

@@ -76,6 +76,29 @@ func TestDashboardAPIAuthenticatesAndFiltersProviders(t *testing.T) {
 	require.Zero(t, cl.reads.Load(), "authorization must reject before provider/credential reads")
 }
 
+func TestDashboardAPIReportsAuthorizationScope(t *testing.T) {
+	t.Parallel()
+	cl := &countedClient{Client: fake.NewClientBuilder().WithScheme(newBackendScheme(t)).WithObjects(
+		providerCR("allowed", "prom", connector.ProviderPrometheus, nil),
+	).Build()}
+
+	// An RBAC authorizer reports a digest of the caller's permissions.
+	mux, secret := dashboardTestMux(t, NewAuthorizedBackend(cl, dashboardTestAuthorizer()))
+	token := catalogTestToken(t, secret, string(mcp.ScopeObserve))
+	rec := doCatalogRequest(t, mux, http.MethodGet, "/observe/api/providers", token, "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var rbac DashboardProvidersResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rbac))
+	require.Regexp(t, `^[0-9a-f]{64}$`, rbac.AuthorizationScope)
+
+	// A non-RBAC authorizer reports none, and the field is omitted, so callers must not share.
+	mux, secret = dashboardTestMux(t, NewAuthorizedBackend(cl, &auth.AllowAllAuthorizer{}))
+	token = catalogTestToken(t, secret, string(mcp.ScopeObserve))
+	rec = doCatalogRequest(t, mux, http.MethodGet, "/observe/api/providers", token, "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "authorizationScope")
+}
+
 func TestDashboardAPIAndMCPShareProviderQueries(t *testing.T) {
 	t.Parallel()
 	var rangeCalls, instantCalls atomic.Int32

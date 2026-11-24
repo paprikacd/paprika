@@ -88,3 +88,54 @@ func TestDocumentVersionsRemainStrongWhenReadETagsAreWeakened(t *testing.T) {
 		})
 	}
 }
+
+// Every write and delete moves the collection tag, so a conditional read never answers with a list that predates it.
+func TestCollectionTagsMoveOnEveryWriteAndDelete(t *testing.T) {
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Metrics", Type: "prometheus", URL: "https://metrics.example.test"})
+	h := s.Handler()
+	tagOf := func(path string) string {
+		t.Helper()
+		w := request(t, h, http.MethodGet, path, nil, nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		return w.Header().Get("ETag")
+	}
+	savedQuery := []byte(`{"schemaVersion":1,"id":"demo","name":"Original","providerId":"prometheus","kind":"metrics","query":"up"}`)
+	for _, tc := range []struct {
+		path     string
+		document []byte
+	}{
+		{"dashboards", dashboard("demo", "Original")},
+		{"saved-queries", savedQuery},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			before := tagOf("/api/" + tc.path)
+			created := request(t, h, http.MethodPut, "/api/"+tc.path+"/demo", tc.document, map[string]string{"If-None-Match": "*"})
+			require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+			afterPut := tagOf("/api/" + tc.path)
+			require.NotEqual(t, before, afterPut, "a create moves the tag")
+			deleted := request(t, h, http.MethodDelete, "/api/"+tc.path+"/demo", nil, map[string]string{"If-Match": created.Header().Get("ETag")})
+			require.Contains(t, []int{http.StatusOK, http.StatusNoContent}, deleted.Code, deleted.Body.String())
+			require.NotEqual(t, afterPut, tagOf("/api/"+tc.path), "a delete moves the tag")
+		})
+	}
+}
+
+// Summary and full listings are different bodies, so they carry different tags, and a tag from
+// before a restart never matches the list a restarted process serves.
+func TestCollectionTagsSeparateVariantsAndRestarts(t *testing.T) {
+	s, store := testService(t)
+	h := s.Handler()
+	created := request(t, h, http.MethodPut, "/api/dashboards/demo", dashboard("demo", "Original"), map[string]string{"If-None-Match": "*"})
+	require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	full := request(t, h, http.MethodGet, "/api/dashboards", nil, nil).Header().Get("ETag")
+	summary := request(t, h, http.MethodGet, "/api/dashboards?summary=true", nil, nil).Header().Get("ETag")
+	require.NotEqual(t, full, summary)
+	require.Equal(t, http.StatusNotModified, request(t, h, http.MethodGet, "/api/dashboards?summary=true", nil, map[string]string{"If-None-Match": summary}).Code)
+	require.Equal(t, http.StatusOK, request(t, h, http.MethodGet, "/api/dashboards?summary=true", nil, map[string]string{"If-None-Match": full}).Code, "the summary does not match the full tag")
+
+	restarted, err := NewServer(Config{Token: testToken}, store)
+	require.NoError(t, err)
+	stale := request(t, restarted.Handler(), http.MethodGet, "/api/dashboards", nil, map[string]string{"If-None-Match": full})
+	require.Equal(t, http.StatusOK, stale.Code, "a tag from before the restart does not match")
+	require.NotEqual(t, full, stale.Header().Get("ETag"))
+}
