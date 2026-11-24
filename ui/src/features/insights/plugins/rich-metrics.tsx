@@ -5,7 +5,8 @@ import type { Widget } from "../schema";
 import { widgetSeriesColors } from "../series-colors";
 import { SERIES_PALETTE } from "../series-palette";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
-import { Pin, X } from "lucide-react";
+import { ArrowDownUp, Grid2X2, Layers, Pin, X } from "lucide-react";
+import { metricAnnotationEditor, seriesColorEditor } from "./sub-editors";
 import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { useDashboardTimeZone } from "../dashboard-time-zone";
@@ -756,6 +757,8 @@ export function registerRichMetricPlugins() {
       { key: "maxBuckets", label: "Maximum buckets", kind: "number", min: 1, max: 48, step: 1 },
       { key: "maxColumns", label: "Maximum time columns", kind: "number", min: 8, max: 120, step: 1 },
     ], parseConfig: value => distributionConfigSchema.parse(value ?? {}),
+    icon: Grid2X2,
+    capabilities: { inspectorPlacement: true },
   });
   if (!getWidgetDefinition("plugin", "stacked-timeseries")) registerWidgetPlugin({
     id: "stacked-timeseries", label: "Stacked time series", description: "Compare contributions with stacked areas or time bars", dataKind: "metrics", render: StackedTimeseries,
@@ -769,6 +772,9 @@ export function registerRichMetricPlugins() {
       { key: "maxPoints", label: "Maximum time columns", kind: "number", min: 12, max: 240, step: 1 },
     ], parseConfig: value => stackedConfigSchema.parse(value ?? {}),
     sizing: legendPlotSizing,
+    icon: Layers,
+    capabilities: { inspectorPlacement: true, colorFallback: "series" },
+    configEditors: [seriesColorEditor, metricAnnotationEditor],
   });
   if (!getWidgetDefinition("plugin", "directional-traffic")) registerWidgetPlugin({
     id: "directional-traffic", label: "Directional traffic", description: "Inbound above zero and outbound below, with original values", dataKind: "metrics", render: DirectionalTraffic,
@@ -784,5 +790,8 @@ export function registerRichMetricPlugins() {
       { key: "maxPoints", label: "Maximum time columns", kind: "number", min: 12, max: 240, step: 1 },
     ], parseConfig: value => directionalConfigSchema.parse(value ?? {}),
     sizing: legendPlotSizing,
+    icon: ArrowDownUp,
+    capabilities: { inspectorPlacement: true, colorFallback: "series" },
+    configEditors: [seriesColorEditor],
   });
 }

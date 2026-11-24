@@ -13,6 +13,7 @@ import { truncationNote } from "../truncation"
 import { useEmbeddedWidget } from "../widget-presentation"
 import { compactSeriesLabels } from "../series-display"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
+import { ChartNoAxesCombined } from "lucide-react"
 import styles from "./records.module.css"
 import historyStyles from "./status-history.module.css"
 import { useDashboardTimeZone } from "../dashboard-time-zone"
@@ -293,5 +294,5 @@ export function registerMetricDistributionPlugins() {
     {key:"labelField",label:"Series label field",kind:"text",help:"Optional metric label used to name each row; missing labels retain the series name."},
     {key:"showTimeAxis",label:"Show time axis",kind:"boolean",help:"Show the observed time domain in the dashboard timezone."},
     {key:"segmented",label:"Separate samples",kind:"boolean",help:"Draw fine boundaries at each recorded sample."},
-  ],sizing:{mode:"fill",denseRoom:()=>"tall",referenceFineRows:config=>typeof config?.maxSeries==="number"&&config.maxSeries<=6?8:undefined}})
+  ],sizing:{mode:"fill",denseRoom:()=>"tall",referenceFineRows:config=>typeof config?.maxSeries==="number"&&config.maxSeries<=6?8:undefined},icon:ChartNoAxesCombined})
 }

@@ -12,6 +12,7 @@ import { widgetSeriesColors } from "../series-colors";
 import { useObservationOwner } from "../observation-owner";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+import { Grid2X2 } from "lucide-react";
 import type { QueryResult, Widget } from "../schema";
 import styles from "./small-multiples.module.css";
 
@@ -152,6 +153,7 @@ export function SmallMultiples({ widget, result, embedded, onContextChange }: Wi
 export function registerSmallMultiplesPlugin() {
   if (!getWidgetDefinition("plugin", "small-multiples")) registerWidgetPlugin({ id: "small-multiples", label: "Small multiples", description: "Compare metric series using shared time and value scales", dataKind: "metrics", render: SmallMultiples,
     defaultConfig: { maxSeries: 6, columns: 3, maxPoints: 120 }, styleControls: ["unit", "decimals", "grid", "tooltips"],
+    icon: Grid2X2, capabilities: { colorFallback: "series" },
     configFields: [{ key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 }, { key: "columns", label: "Columns", kind: "number", min: 1, max: 6, step: 1 }, { key: "maxPoints", label: "Maximum plotted samples", kind: "number", min: 8, max: 240, step: 1 }],
     parseConfig: config => configSchema.parse(config ?? {}) });
 }

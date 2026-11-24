@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { ChevronsDown } from "lucide-react";
+import { ChevronsDown, Gauge } from "lucide-react";
 import { DEFAULT_MAX_ROWS, evaluateSlo, evaluationTimestamp, validateSloConfig, type SloBurn, type SloConfig, type SloGroup, type SloOverallState, type SloReason } from "../slo";
 import { formatBounds, formatReading } from "../units";
 import { StatusChip } from "../status-chip";
@@ -412,5 +412,6 @@ export function registerSloSummaryPlugin() {
     // phone width. A services card grows with its row cap (sloMinHeight). The minimum grows the narrow projection's track
     // (responsive-layout.ts), so a short saved card is not clipped.
     sizing: { mode: "intrinsic", minHeight: SINGLE_MIN_HEIGHT, minHeightFor: sloMinHeight },
+    icon: Gauge,
   });
 }

@@ -14,6 +14,7 @@ import { validTimestamp } from "../widget-context";
 import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+import { Grid2X2 } from "lucide-react";
 import styles from "./status-grid.module.css";
 
 export const statusGridConfigSchema = z.strictObject({ maxSeries: z.number().int().min(1).max(2048).optional() });
@@ -132,6 +133,8 @@ export function registerStatusGridPlugin() {
   if (!getWidgetDefinition("plugin", "status-grid")) registerWidgetPlugin({
     id:"status-grid", label:"Monitor status grid", description:"Compare the latest status of many monitors in a compact grid", dataKind:"metrics", render:StatusGrid,
     styleControls:["unit", "decimals", "legend", "tooltips"], defaultOptions:{ thresholds:DEFAULT_HEATMAP_THRESHOLDS }, defaultConfig:{ maxSeries:512 },
+    icon: Grid2X2,
+    capabilities: { thresholds: true, defaultStatusThresholds: true, colorFallback: "chart2" },
     configFields:[{key:"maxSeries",label:"Maximum monitors",kind:"number",min:1,max:2048,step:1,help:"Show up to this many returned series. Omitted monitors are counted below the grid."}],
     parseConfig:config => statusGridConfigSchema.parse(config ?? {}),
   });

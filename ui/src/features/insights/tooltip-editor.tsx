@@ -11,7 +11,7 @@ import {
   type TooltipView,
   type Widget,
 } from "./schema";
-import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { capabilitiesOf, getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
 import { GammaButton } from "./gamma/button";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect, type GammaSelectOption } from "./gamma/select";
@@ -96,8 +96,9 @@ export function TooltipEditor({
   const libraryLoading = library.loading || refreshing;
   const libraryError = (refreshError?.queries === library.queries ? refreshError.message : "") || library.error;
   const chart = view?.type === "timeseries" || view?.type === "bar";
-  const gauge = view?.type === "plugin" && view.pluginId === "threshold-gauge";
-  const knownRenderer = view?.type !== "plugin" || gauge;
+  // A plugin takes the view controls only when its renderer declares them.
+  const pluginViewControls = view?.type === "plugin" && capabilitiesOf(view).tooltipViewControls !== undefined;
+  const knownRenderer = view?.type !== "plugin" || pluginViewControls;
   const sourceProvider =
     source && compatible.find((provider) => provider.id === source.providerId);
   const language = providerQueryLanguage(sourceProvider || undefined, kind);
@@ -670,7 +671,7 @@ export function TooltipEditor({
               Leave blank for Auto, or choose 0–8 places.
             </p>
           )}
-          {(chart || view.type === "stat" || gauge) && (
+          {(chart || view.type === "stat" || pluginViewControls) && (
             <div className={styles.row}>
               <label className={styles.field}>
                 <span>Series color</span>
@@ -703,7 +704,7 @@ export function TooltipEditor({
               />
             </>
           )}
-          {(chart || view.type === "heatmap" || gauge) && (
+          {(chart || view.type === "heatmap" || pluginViewControls) && (
             <GammaSwitch
               label="Show tooltip legend"
               checked={

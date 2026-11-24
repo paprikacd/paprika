@@ -22,7 +22,7 @@ import ReactGridLayout, {
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, MoreHorizontal, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { sourceWaitMessage, useSourceStatus } from "./source-status";
-import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { capabilitiesOf, getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import { ChartEntranceContext, type ChartEntranceSlot } from "./chart-entrance";
@@ -294,10 +294,7 @@ const Tile = memo(function Tile({
   /** The variable values a selection is compared against, so a mark can show that it is the applied filter. */
   selectionScope?: SelectionScope;
 }) {
-  const recordCellStyles = widget.config?.cellStyles;
-  const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
-    Array.isArray(recordCellStyles) && ["sparkline", "bar-segments", "status-badge"].every(display =>
-      recordCellStyles.some(style => typeof style === "object" && style !== null && "display" in style && style.display === display));
+  const compactRecordDescription = referenceCompact && capabilitiesOf(widget).compactDescription?.(widget.config) === true;
   const element = useRef<HTMLDivElement>(null);
   const library = useSavedQueryLibrary();
   const savedQueryLoading = !!widget.queryRef && !!library.loading;
@@ -905,6 +902,7 @@ export function DashboardCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const minimumHeights = useMemo(() => minimumHeightsOf(dashboard.widgets), [dashboard.widgets, definitions]);
   // Plugin hints (rooms, narrow and reference rows) are read from the registry, so they follow the same dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const layoutHints = useMemo(() => layoutHintsOf(dashboard.widgets), [dashboard.widgets, definitions]);
   const layout = useMemo(
     () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights, layoutHints) : canvasLayout(dashboard.widgets, mode, width, minimumHeights, layoutHints),

@@ -11,6 +11,7 @@ import type { Threshold } from "../schema";
 import { truncationNote } from "../truncation";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+import { CalendarDays, ChartNoAxesCombined } from "lucide-react";
 import { UTC_DAY, uptimeObservations, type ObservationDay } from "./uptime-observations";
 import { occurrenceKeys } from "../tooltip-identity";
 import { useObservationOwner } from "../observation-owner";
@@ -131,6 +132,6 @@ export function registerUptimeViews() {
     { key: "maxDays", label: "Maximum days", kind: "number" as const, min: 7, max: 366, step: 1, help: "Days between recorded samples, grouped in UTC." },
     { key: "maxSeries", label: "Maximum series", kind: "number" as const, min: 1, max: 24, step: 1 },
   ];
-  if (!getWidgetDefinition("plugin", "uptime-calendar")) registerWidgetPlugin({ id: "uptime-calendar", label: "Uptime calendar", description: "Daily recorded observations in a UTC calendar; does not infer uptime", dataKind: "metrics", render: UptimeCalendar, defaultConfig: { maxDays: 90, maxSeries: 1 }, defaultOptions: { thresholds: defaultThresholds }, configFields: fields, parseConfig: config => configSchema.parse(config ?? {}), styleControls: ["unit", "decimals", "legend", "tooltips"], sizing: { mode: "fill", denseRoom: () => "calendar" } });
-  if (!getWidgetDefinition("plugin", "uptime-timeline")) registerWidgetPlugin({ id: "uptime-timeline", label: "Uptime timeline", description: "Daily recorded observations by series; does not infer uptime", dataKind: "metrics", render: UptimeTimeline, defaultConfig: { maxDays: 90, maxSeries: 8 }, defaultOptions: { thresholds: defaultThresholds }, configFields: fields, parseConfig: config => configSchema.parse(config ?? {}), styleControls: ["unit", "decimals", "legend", "tooltips"] });
+  if (!getWidgetDefinition("plugin", "uptime-calendar")) registerWidgetPlugin({ id: "uptime-calendar", label: "Uptime calendar", description: "Daily recorded observations in a UTC calendar; does not infer uptime", dataKind: "metrics", render: UptimeCalendar, defaultConfig: { maxDays: 90, maxSeries: 1 }, defaultOptions: { thresholds: defaultThresholds }, configFields: fields, parseConfig: config => configSchema.parse(config ?? {}), styleControls: ["unit", "decimals", "legend", "tooltips"], sizing: { mode: "fill", denseRoom: () => "calendar" }, icon: CalendarDays, capabilities: { thresholds: true, defaultStatusThresholds: true } });
+  if (!getWidgetDefinition("plugin", "uptime-timeline")) registerWidgetPlugin({ id: "uptime-timeline", label: "Uptime timeline", description: "Daily recorded observations by series; does not infer uptime", dataKind: "metrics", render: UptimeTimeline, defaultConfig: { maxDays: 90, maxSeries: 8 }, defaultOptions: { thresholds: defaultThresholds }, configFields: fields, parseConfig: config => configSchema.parse(config ?? {}), styleControls: ["unit", "decimals", "legend", "tooltips"], icon: ChartNoAxesCombined, capabilities: { thresholds: true, defaultStatusThresholds: true } });
 }

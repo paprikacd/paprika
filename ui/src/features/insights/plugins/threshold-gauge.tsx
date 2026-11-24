@@ -3,7 +3,7 @@
 import { sharedScale, unitSuffix } from "../units";
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { z } from "zod";
-import { ChevronsUp, ChevronsDown } from "lucide-react";
+import { ChevronsUp, ChevronsDown, Gauge } from "lucide-react";
 import { registerRecordWidgetPlugins } from "./records";
 import { registerMetricDistributionPlugins } from "./metric-distributions";
 import { registerRecordChartPlugins } from "./record-charts";
@@ -363,6 +363,8 @@ export function registerDefaultWidgetPlugins() {
     dataKind: "metrics",
     render: ThresholdGauge,
     styleControls: ["unit", "decimals", "color", "legend", "tooltips"],
+    icon: Gauge,
+    capabilities: { thresholds: true, bounds: true, colorFallback: "chart2", tooltipViewControls: ["decimals", "color", "legend"] },
     defaultOptions: {
       min: 0,
       max: 100,

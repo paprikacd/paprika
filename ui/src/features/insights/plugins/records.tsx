@@ -5,6 +5,7 @@ import { ChartTable } from "../chart-table"
 import { GammaButton } from "../gamma/button"
 import { GammaInput } from "../gamma/input"
 import { ArrowRight } from "lucide-react"
+import { recordTableStyleEditor } from "./sub-editors"
 import { hierarchy, treemap } from "d3-hierarchy"
 import { z } from "zod"
 import {
@@ -1027,6 +1028,15 @@ export function registerRecordWidgetPlugins() {
             narrowMinRows: config => Array.isArray(config?.cellStyles) && config.cellStyles.some(style =>
               typeof style === "object" && style !== null && "display" in style && style.display === "sparkline") ? 5 : undefined,
           },
+          capabilities: {
+            thresholds: true,
+            compactDescription: (config) => {
+              const cells = config?.cellStyles;
+              return Array.isArray(cells) && ["sparkline", "bar-segments", "status-badge"].every((display) =>
+                cells.some((style) => typeof style === "object" && style !== null && "display" in style && style.display === display));
+            },
+          },
+          configEditors: [recordTableStyleEditor],
           // The config alone cannot show the widget's own thresholds, so a numeric status is assumed to have some here.
           // The render checks the real set and reports the same reason when it is missing.
           validateInput: (result, config) => {
