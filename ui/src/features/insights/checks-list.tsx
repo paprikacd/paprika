@@ -133,6 +133,31 @@ export function ChecksList({ report, dashboard, onFocusWidget, label, headingLev
 /** Checks a document as a save would send it. The client's validate call has this shape. */
 export type DocumentValidator = (document: Dashboard, signal?: AbortSignal) => Promise<CheckReport>;
 
+/** A check that has not answered within this long is a failed check: Apply stays available. */
+export const CHECK_TIMEOUT_MS = 10_000;
+
+export class CheckTimeout extends Error {}
+
+/** Settles with the check, or rejects with CheckTimeout after the limit, whether or not the check honours its signal. */
+export function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout();
+      reject(new CheckTimeout(`The check did not finish within ${ms / 1000} seconds.`));
+    }, ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** Whether a save would be rejected: any error finding, whichever count carried it. */
 export function hasErrors(report: CheckReport): boolean {
   return report.errorCount > 0 || report.issues.some((finding) => finding.severity === Severity.ERROR);
