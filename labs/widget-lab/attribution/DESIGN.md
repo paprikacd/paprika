@@ -74,4 +74,4 @@ Keep motion brief and functional, using Gamma's standard or exponential decelera
 - Do not expose a style control that does nothing for the selected widget.
 - Do not replace this dashboard with landing-page styling or migrate its control library during a review.
 
-The behavior owners and review evidence are in `docs/design/insights/UX-CONTRACT.md` and `docs/design/insights/receipts/widget-review.md`.
+The behavior owners and review evidence are in `docs/design/insights/UX-CONTRACT.md` and `docs/design/insights/widget-review.md`.
