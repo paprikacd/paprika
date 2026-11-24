@@ -10,8 +10,14 @@ import {
   type Drilldown,
   type DrilldownBinding,
 } from "./schema"
+import {
+  listLiteral,
+  placeholderContext,
+  variableInputSchema,
+  type VariableValue,
+} from "./variable-values"
 
-export type VariableValues = Record<string, string>
+export type VariableValues = Record<string, VariableValue>
 export interface DrilldownContext {
   labels?: Record<string, string>
   value?: number | null
@@ -59,7 +65,7 @@ function checkedValues(input: unknown): VariableValues {
   return Object.fromEntries(
     entries.map(([key, value]) => [
       variableNameSchema.parse(key),
-      variableValueSchema.parse(value),
+      variableInputSchema.parse(value),
     ]),
   )
 }
@@ -79,7 +85,7 @@ export function resolveDashboardVariables(
       const value = Object.hasOwn(values, variable.name)
         ? values[variable.name]
         : variable.defaultValue
-      return value === undefined ? [] : [[variable.name, variableValueSchema.parse(value)]]
+      return value === undefined ? [] : [[variable.name, variableInputSchema.parse(value)]]
     }),
   )
 }
@@ -107,7 +113,25 @@ export function interpolateQueryLiterals(query: string, variables: Record<string
   return interpolateLiterals(query, values)
 }
 
-function interpolateLiterals(query: string, values: Record<string, string | number>): string {
+/**
+ * Interpolates a template whose placeholders have declared kinds. A "strings" placeholder always renders as a
+ * list, so a single string is wrapped as a one-item list first. This mirrors interpolatedLiteral in Go.
+ */
+export function interpolateTypedTemplate(
+  query: string,
+  values: Record<string, string | number | string[]>,
+  kinds: Record<string, "string" | "number" | "strings">,
+): string {
+  const wrapped = Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [
+      name,
+      kinds[name] === "strings" && typeof value === "string" ? [value] : value,
+    ]),
+  )
+  return interpolateLiterals(query, wrapped)
+}
+
+function interpolateLiterals(query: string, values: Record<string, string | number | string[]>): string {
   if (query.length > 8192) throw new Error("Queries must be at most 8192 characters")
   let output = ""
   let quote: '"' | "'" | "`" | null = null
@@ -137,7 +161,10 @@ function interpolateLiterals(query: string, values: Record<string, string | numb
         throw new Error(`Use {{${name}}} as a complete literal value, not part of a token`)
       if (!Object.hasOwn(values, name))
         throw new Error(`Set dashboard variable “${name}” before running this query`)
-      output += JSON.stringify(values[name])
+      const value = values[name]
+      output += Array.isArray(value)
+        ? listLiteral(value, placeholderContext(query, index))
+        : JSON.stringify(value)
       index = end + 1
       continue
     }

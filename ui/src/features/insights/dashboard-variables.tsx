@@ -24,6 +24,7 @@ import {
   type DashboardVariable,
 } from "./schema";
 import { resolveDashboardVariables, type VariableValues } from "./drilldown";
+import { singleValueText } from "./variable-values";
 import styles from "./drilldown.module.css";
 import optionStyles from "./variable-options.module.css";
 import { SearchCombobox, type SearchComboboxOption } from "./gamma/search-combobox";
@@ -419,7 +420,7 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
                 return parent?.label || name;
               }}
               id={fieldId}
-              value={draft[variable.name]}
+              value={singleValueText(draft[variable.name])}
               snapshot={options.snapshot(variable.name)}
               onActivate={() => options.activate(variable.name)}
               onRetry={() => options.retry(variable.name)}
@@ -439,7 +440,7 @@ function VariableBarDraft({ dashboard, values, onApply, loaders, range, layout =
             {variable.options ? <VariableDropdown
               variable={variable}
               id={fieldId}
-              value={draft[variable.name]}
+              value={singleValueText(draft[variable.name])}
               onChange={(value) => choose(variable.name, value)}
             /> : <GammaInput
               id={fieldId}
