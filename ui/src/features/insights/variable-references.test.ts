@@ -79,7 +79,7 @@ describe("renaming references", () => {
       }),
     ], [{ name: "service" }]);
     const next = rewriteVariableReferences(dashboard, { service: "app" });
-    expect(next.widgets[0].drilldowns?.[0].bindings?.[0]).toMatchObject({ variable: "service" });
+    expect((next.widgets[0].drilldowns?.[0] as { bindings?: unknown[] } | undefined)?.bindings?.[0]).toMatchObject({ variable: "service" });
     expect(next.widgets[0].queryRef?.bindings?.[0]).toMatchObject({ source: "constant", value: "prod" });
   });
 
@@ -160,5 +160,13 @@ describe("references to similar names", () => {
     const next = rewriteVariableReferences({ ...sourced, variables: [{ name: "k8s", defaultValue: "c1" }, sourced.variables![1]] }, { cluster: "k8s" });
     expect(next.variables?.[1].source).toMatchObject({ queryRef: { bindings: [{ parameter: "cluster", source: "variable", variable: "k8s" }] } });
     expect(dashboardSchema.safeParse(next).success).toBe(true);
+  });
+
+  it("skips an application link, which has no bindings", () => {
+    const app = { id: "app", title: "Open app", application: { namespace: { source: "label", value: "namespace" }, name: { source: "constant", value: "web" } } };
+    const linked = widget("linked", { query: "{{service}}", drilldowns: [app] as never });
+    const dashboard = dashboardWith([linked], [{ name: "service" }]);
+    expect(variableReferences(dashboard, "service")).toEqual([{ kind: "widget", widgetId: "linked", widgetTitle: "linked" }]);
+    expect(rewriteVariableReferences(dashboard, { service: "app" }).widgets[0].drilldowns).toEqual([app]);
   });
 });
