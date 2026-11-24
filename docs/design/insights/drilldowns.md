@@ -84,9 +84,11 @@ The alternation has no anchors, because PromQL, LogQL label matchers and TraceQL
 WHERE ($1::text[] IS NULL OR service = ANY($1::text[]))
 ```
 
+Lint warns (`variables.multi-sql-all`) when an Include All variable fills a SQL parameters array whose statement never tests that `$n` for NULL, in a widget's own SQL or in a bound records saved query.
+
 Clicking a mark on a multi variable sets the variable to that one value, as a one-item list. Other values are changed in the variable bar. Modifier-click to add a value is not offered yet.
 
-A saved query parameter may also take several values. Declare it with `type: "string"` and `multi: true`, and give its default as a list. Bind it to a variable with several values, or to a single variable or fixed string, which fills it as one item. A variable with several values may not bind a single-value parameter; lint refuses that binding. Lint also refuses a list placed anywhere other than the table above. Saving a saved query checks its placeholders the same way.
+A saved query parameter may also take several values. Declare it with `type: "string"` and `multi: true`, and give its default as a list. Bind it to a variable with several values, or to a single variable or fixed string, which fills it as one item. A variable with several values may not bind a single-value parameter; lint refuses that binding. Lint also refuses a list placed anywhere other than the table above, and a `[` or `,` position outside a SQL `parameters` array, such as a PromQL range or argument, which the runtime would write as a JSON array the provider rejects. Saving a saved query checks its placeholders the same way.
 
 In `query_dashboard`, `variables` values are a string or a list of strings. Arrays come only from variables that declare `multi`. The result reports `multi`, `allowAll` and the list defaults in `variableDefinitions`, so output changes only for dashboards that declare a multi variable. This is a compatible widening: an existing string value still works.
 
