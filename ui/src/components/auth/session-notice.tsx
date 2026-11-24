@@ -19,8 +19,11 @@ function SessionNoticeContent() {
   const [failed, setFailed] = useState(false)
   const theme = useEntryTheme()
   // Public examples run entirely from local data and need no server session.
-  const example = pathname.replace(/\/+$/, "") === "/dashboard/insights" && searchParams.get("example") === "1"
-  if (status !== "unavailable" || example) return null
+  const insights = pathname.replace(/\/+$/, "") === "/dashboard/insights"
+  const example = insights && searchParams.get("example") === "1"
+  // An embedded widget's host page shows this notice for the shared session; the frame stays a plain tile.
+  const embedded = insights && searchParams.has("embed")
+  if (status !== "unavailable" || example || embedded) return null
   async function reconnect() {
     setBusy(true); setFailed(false)
     try { await retry() } catch { setFailed(true) } finally { setBusy(false) }
