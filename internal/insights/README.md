@@ -177,10 +177,13 @@ through Paprika. All service API routes require `Authorization: Bearer <token>`.
 | PUT | `/api/saved-queries/{id}` | SavedQuery and `ETag` |
 | DELETE | `/api/saved-queries/{id}` | 204; `If-Match` required |
 | GET | `/api/dashboards` | `{dashboards:[Dashboard]}` |
+| GET | `/api/application-dashboards?namespace=&name=` | protojson `ApplicationDashboardList`: the dashboards whose `covers` match the application, most specific first, at most 8, with `truncated`. Both parameters are required application names, else 400 |
 | GET | `/api/dashboards/{id}` | Dashboard and `ETag` |
 | PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag`; `?checks=true` adds `checks` (see below) |
 | DELETE | `/api/dashboards/{id}` | 204 |
 | POST | `/api/dashboards/validate` | Dry run: `{document, execute?, variables?}` in. Without `execute`: `{issues,total,truncated,errorCount,warningCount,infoCount}` out, a schema and lint dry run that never writes. With `execute: true`: the same members plus `widgets`, one `WidgetDataState` per widget in document order (`widgetId`, `pointer`, `state`, `seriesReturned`, `errorCode`). Execute runs each distinct widget query once, read-only, over the dashboard default range (or its custom range) with the given variables (at most 20 string values, each at most 1024 UTF-16 units). A document with a schema or error-severity finding is not executed, and each widget reports `DATA_STATE_NOT_RUN`. `variables` without `execute` is a 400. The MCP gateway runs an executing dry run under its orchestration admission, and refuses it with `resource_exhausted` when that admission is unavailable. `state` is one of `OK`, `EMPTY`, `PARTIAL`, `STALE`, `ERROR`, `UNAVAILABLE` (capacity, timeout or cancellation, a retry clears it) or `NOT_RUN`. |
+
+`covers` is an optional dashboard member that says which applications the dashboard is for: `applications` (1 to 16 entries, each with an optional lowercase `namespace` and `name`, where an omitted member matches any value), `variables` (a map from a declared variable to `namespace` or `name`) and `summaryWidget` (a widget id). The application-dashboards lookup scores each matching entry 3 for a namespace and name, 2 for a name, 1 for a namespace and 0 for `{}`, and returns the best score per dashboard. A mapped variable whose value is not in its declared options is left out. Label and project matching are not part of `covers`.
 
 Query request:
 

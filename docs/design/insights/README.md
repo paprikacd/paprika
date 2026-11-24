@@ -49,6 +49,7 @@ widgets:
 | `widgets` | At most 48, with unique identifiers. |
 | `folder` | Optional slash-separated path up to 160 characters, e.g. `Production/Payments`. |
 | `customTimeRange` | Optional `{from,to}` ISO dates with timezones; increasing, at most 31 days; overrides the preset. |
+| `covers` | Optional `{applications,variables?,summaryWidget?}`: the applications (namespace and name, each optional) the dashboard is for, the declared variables that take the namespace or name, and the summary widget id. Application pages list matching dashboards. |
 | widget `type` | `timeseries`, `bar`, `stat`, `table`, `traces`, `heatmap`, or `plugin`. |
 | widget `query` | Nonempty PromQL or TraceQL, at most 8,192 characters. |
 | widget `unit` | Display suffix, at most 24 characters. Values are not converted implicitly. |
