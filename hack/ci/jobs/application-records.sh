@@ -56,7 +56,7 @@ export PAPRIKA_POSTGRES_TEST_DSN="postgres://postgres:paprika-local-test@127.0.0
 go test -race ./internal/observabilitygateway/connector/postgresql -count=1 -timeout=90s
 
 # ci.yml: Verify service queries with Prometheus and enforce live coverage
-node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
+node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs hack/insights-patch/*.test.mjs hack/dashboard-presentation/*.test.mjs
 
 # ci.yml: Verify independent source requirements in the example gallery
 (cd ui && node e2e/run-insights.mjs e2e/insights-source-provenance.e2e.mjs)

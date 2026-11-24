@@ -1,34 +1,238 @@
 {
-  "service-overview": [
-    { "id": "request-rate", "patch": { "color": null } },
-    { "id": "client-errors", "patch": { "color": null } },
-    { "id": "server-errors", "patch": { "color": null } },
-    { "id": "latency-p95", "patch": { "color": null } },
-    { "id": "request-trend", "patch": { "color": null, "options": { "lineWidth": 2.2, "showLegend": true } } },
-    { "id": "response-errors", "patch": { "description": null, "options": { "lineWidth": 2.2, "seriesColors": [
-      { "label": "status_class", "value": "4xx", "role": "client-error" },
-      { "label": "status_class", "value": "5xx", "role": "server-error" }
-    ] } } },
-    { "id": "latency-percentiles", "patch": { "description": null, "options": { "lineWidth": 2.2, "seriesColors": [
-      { "label": "quantile", "value": "p50", "role": "p50" },
-      { "label": "quantile", "value": "p95", "role": "p95" },
-      { "label": "quantile", "value": "p99", "role": "p99" }
-    ] } } }
-  ],
-  "omega-k8s-cluster-overview": [
-    { "id": "cpu-namespace", "patch": { "layout": { "x": 0, "y": 2, "w": 6, "h": 6 }, "config": { "legendPosition": "bottom" } } },
-    { "id": "memory-namespace", "patch": { "layout": { "x": 6, "y": 2, "w": 6, "h": 6 } } },
-    { "id": "node-cpu-percent", "patch": { "layout": { "y": 8 } } },
-    { "id": "node-memory-percent", "patch": { "layout": { "y": 8 } } },
-    { "id": "node-memory-pressure", "patch": { "layout": { "y": 12 } } },
-    { "id": "restarts-pod", "patch": { "layout": { "y": 12 } } }
-  ],
-  "omega-k8s-workload-resources": [
-    { "id": "cpu-pod", "patch": { "layout": { "x": 0, "y": 2, "w": 6, "h": 6 }, "config": { "legendPosition": "bottom" } } },
-    { "id": "memory-pod", "patch": { "layout": { "x": 6, "y": 2, "w": 6, "h": 6 } } },
-    { "id": "cpu-request-percent", "patch": { "layout": { "y": 8 } } },
-    { "id": "memory-request-percent", "patch": { "layout": { "y": 8 } } },
-    { "id": "pod-phase", "patch": { "layout": { "y": 12 } } },
-    { "id": "restarts-pod", "patch": { "layout": { "y": 12 } } }
+  "version": 1,
+  "description": "Reviewed presentation edits for three operational dashboards. Apply after the matching UI release is deployed.",
+  "dashboards": [
+    {
+      "id": "service-overview",
+      "message": "Presentation: trend legends, response and latency series colours",
+      "widget_edits": [
+        {
+          "op": "update",
+          "id": "request-rate",
+          "patch": {
+            "color": null
+          }
+        },
+        {
+          "op": "update",
+          "id": "client-errors",
+          "patch": {
+            "color": null
+          }
+        },
+        {
+          "op": "update",
+          "id": "server-errors",
+          "patch": {
+            "color": null
+          }
+        },
+        {
+          "op": "update",
+          "id": "latency-p95",
+          "patch": {
+            "color": null
+          }
+        },
+        {
+          "op": "update",
+          "id": "request-trend",
+          "patch": {
+            "color": null,
+            "options": {
+              "lineWidth": 2.2,
+              "showLegend": true
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "response-errors",
+          "patch": {
+            "description": null,
+            "options": {
+              "lineWidth": 2.2,
+              "seriesColors": [
+                {
+                  "label": "status_class",
+                  "value": "4xx",
+                  "role": "client-error"
+                },
+                {
+                  "label": "status_class",
+                  "value": "5xx",
+                  "role": "server-error"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "latency-percentiles",
+          "patch": {
+            "description": null,
+            "options": {
+              "lineWidth": 2.2,
+              "seriesColors": [
+                {
+                  "label": "quantile",
+                  "value": "p50",
+                  "role": "p50"
+                },
+                {
+                  "label": "quantile",
+                  "value": "p95",
+                  "role": "p95"
+                },
+                {
+                  "label": "quantile",
+                  "value": "p99",
+                  "role": "p99"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "omega-k8s-cluster-overview",
+      "message": "Presentation: align resource panels and move lower rows",
+      "widget_edits": [
+        {
+          "op": "update",
+          "id": "cpu-namespace",
+          "patch": {
+            "layout": {
+              "x": 0,
+              "y": 2,
+              "w": 6,
+              "h": 6
+            },
+            "config": {
+              "legendPosition": "bottom"
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "memory-namespace",
+          "patch": {
+            "layout": {
+              "x": 6,
+              "y": 2,
+              "w": 6,
+              "h": 6
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "node-cpu-percent",
+          "patch": {
+            "layout": {
+              "y": 8
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "node-memory-percent",
+          "patch": {
+            "layout": {
+              "y": 8
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "node-memory-pressure",
+          "patch": {
+            "layout": {
+              "y": 12
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "restarts-pod",
+          "patch": {
+            "layout": {
+              "y": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "omega-k8s-workload-resources",
+      "message": "Presentation: align resource panels and move lower rows",
+      "widget_edits": [
+        {
+          "op": "update",
+          "id": "cpu-pod",
+          "patch": {
+            "layout": {
+              "x": 0,
+              "y": 2,
+              "w": 6,
+              "h": 6
+            },
+            "config": {
+              "legendPosition": "bottom"
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "memory-pod",
+          "patch": {
+            "layout": {
+              "x": 6,
+              "y": 2,
+              "w": 6,
+              "h": 6
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "cpu-request-percent",
+          "patch": {
+            "layout": {
+              "y": 8
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "memory-request-percent",
+          "patch": {
+            "layout": {
+              "y": 8
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "pod-phase",
+          "patch": {
+            "layout": {
+              "y": 12
+            }
+          }
+        },
+        {
+          "op": "update",
+          "id": "restarts-pod",
+          "patch": {
+            "layout": {
+              "y": 12
+            }
+          }
+        }
+      ]
+    }
   ]
 }

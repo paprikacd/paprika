@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { installRichChartFixtureAPI } from './fixtures/rich-chart-api.mjs';
 
-const edits = JSON.parse(await readFile(new URL('../../hack/dashboard-presentation/patches.json', import.meta.url), 'utf8'));
+import { applyDashboardPatch } from '../src/features/insights/dashboard-patch.ts';
+
+const patchSet = JSON.parse(await readFile(new URL('../../hack/dashboard-presentation/patches.json', import.meta.url), 'utf8'));
+const editsFor = id => patchSet.dashboards.find(item => item.id === id).widget_edits;
 const base = process.env.INSIGHTS_E2E_URL || 'http://127.0.0.1:3015';
 const output = process.env.INSIGHTS_PRESENTATION_OUTPUT || join(tmpdir(), 'paprika-presentation');
 await mkdir(output, { recursive: true });
@@ -14,22 +17,24 @@ const start = Date.UTC(2026, 10, 9), end = start + 3600000;
 const points = value => Array.from({ length: 61 }, (_, i) => ({ timestamp: start + i * 60000, value: value + Math.sin(i / 5) * value / 8 }));
 const widget = (id, type, layout, extra = {}) => ({ id, title: id, type, providerId: 'example-prometheus', query: id, unit: '', layout, ...extra });
 const document = (id, widgets) => ({ schemaVersion: 1, id, title: `${id} · test fixture`, description: 'Synthetic observations for presentation checks.', timeRange: '1h', customTimeRange: { from: new Date(start).toISOString(), to: new Date(end).toISOString() }, refreshInterval: 0, widgets });
-const apply = (dashboard, updates) => ({ ...dashboard, widgets: dashboard.widgets.map(item => {
-  const patch = updates.find(edit => edit.id === item.id)?.patch;
-  return patch ? Object.fromEntries(Object.entries({ ...item, ...patch, ...Object.fromEntries(['options', 'layout', 'config'].filter(key => patch[key]).map(key => [key, { ...item[key], ...patch[key] }])) }).filter(([, value]) => value !== null)) : item;
-}) });
+// The reviewed edits go through the same merge the UI and the repair applier use.
+const apply = (dashboard, id) => {
+  const result = applyDashboardPatch(dashboard, { widget_edits: editsFor(id) });
+  assert.equal(result.error, null, result.error?.message);
+  return result.document;
+};
 const service = apply(document('service-overview', [
   ...['request-rate', 'client-errors', 'server-errors', 'latency-p95'].map((id, i) => widget(id, 'stat', { x: i * 3, y: 0, w: 3, h: 2 }, { unit: i === 3 ? 'ms' : i ? '%' : 'req/s', options: { decimals: 2, showSparkline: true, sparklinePlacement: 'side' } })),
   ...['request-trend', 'response-errors', 'latency-percentiles'].map((id, i) => widget(id, 'timeseries', { x: i * 4, y: 2, w: 4, h: 4 }, { unit: i === 2 ? 'ms' : i ? '%' : 'req/s', options: { decimals: 2, min: 0, showLegend: i > 0 } })),
-]), edits['service-overview']);
+]), 'service-overview');
 const resources = ['omega-k8s-cluster-overview', 'omega-k8s-workload-resources'].map(id => {
-  const [cpu, memory, ...rest] = edits[id].map(edit => edit.id);
+  const [cpu, memory, ...rest] = editsFor(id).map(edit => edit.id);
   const drilldowns = [{ id: 'workload', title: 'Open workload resources', dashboardId: 'omega-k8s-workload-resources', carryTimeRange: true, bindings: [] }];
   return apply(document(id, [
     widget(cpu, 'plugin', { x: 0, y: 2, w: 7, h: 5 }, { drilldowns, description: 'Top eight workloads at range end · fixed selection', dataKind: 'metrics', pluginId: 'stacked-timeseries', unit: 'cores', options: { decimals: 2 }, config: { display: 'area', maxSeries: 12, legendDisplay: 'table', legendPosition: 'right' } }),
-    widget(memory, 'plugin', { x: 7, y: 2, w: 5, h: 5 }, { drilldowns, description: 'Top eight workloads at range end · fixed selection', dataKind: 'metrics', pluginId: 'stacked-timeseries', unit: id.includes('cluster') ? 'GiB' : 'MiB', options: { decimals: 2 }, config: { display: 'area', maxSeries: 12, legendDisplay: 'table', legendPosition: 'bottom' } }),
+    widget(memory, 'plugin', { x: 7, y: 2, w: 5, h: 5 }, { drilldowns, description: 'Top eight workloads at range end · fixed selection', dataKind: 'metrics', pluginId: 'stacked-timeseries', unit: id.includes('cluster') ? 'GiB' : 'MiB', options: { decimals: 2 }, config: { display: 'area', maxSeries: 12, legendDisplay: 'table' } }),
     ...rest.map((name, i) => widget(name, 'stat', { x: i % 2 * 6, y: i < 2 ? 7 : 11, w: 6, h: i < 2 ? 4 : 3 })),
-  ]), edits[id]);
+  ]), id);
 });
 // Deliberately return percentiles out of order; semantic colours must follow labels.
 const percentiles = ['p99', 'p50', 'p95'].map((name, i) => ({ name, labels: { quantile: name }, points: points([312.53, 84.25, 193.71][i]) }));
