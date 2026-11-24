@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, type ReactNode } from "react";
+import { NO_DATA } from "./benign-states";
 import { useDashboardTimeZone } from "./dashboard-time-zone";
 import type { Widget } from "./schema";
 import { seriesName, exactMetric, fullDateTimeOptions, type Point, type Series } from "./chart-data";
@@ -67,7 +68,7 @@ export function MetricDetails({
         <strong
           data-metric-value={value === undefined ? "missing" : String(value)}
         >
-          {value === undefined ? "No data" : formatMetric(value, widget?.options?.tooltipShowUnit === false ? "" : unit, false, widget?.options?.tooltipDecimals ?? decimals ?? widget?.options?.decimals)}
+          {value === undefined ? NO_DATA : formatMetric(value, widget?.options?.tooltipShowUnit === false ? "" : unit, false, widget?.options?.tooltipDecimals ?? decimals ?? widget?.options?.decimals)}
         </strong>
         {children}
       </div>
@@ -80,7 +81,7 @@ export function MetricDetails({
           <summary>Source details</summary>
           <div className={configStyles.tooltipSourceIdentity}>{seriesName(series, index)}</div>
           <dl>
-            <div><dt>Exact value</dt><dd>{value === undefined ? "No data" : exactMetric(value, unit)}</dd></div>
+            <div><dt>Exact value</dt><dd>{value === undefined ? NO_DATA : exactMetric(value, unit)}</dd></div>
             {Object.entries(series.labels).map(([key, label]) => <div key={key}><dt>{key}: </dt><dd>{label}</dd></div>)}
           </dl>
         </details> : <dl>{Object.entries(series.labels).map(([key, label]) => <div key={key}><dt>{key}:</dt><dd>{label}</dd></div>)}</dl>}

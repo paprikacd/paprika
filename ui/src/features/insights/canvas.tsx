@@ -25,7 +25,7 @@ import ReactGridLayout, {
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, MoreHorizontal, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { sourceWaitMessage, useSourceStatus } from "./source-status";
-import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { capabilitiesOf, getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import { ChartEntranceContext, type ChartEntranceSlot } from "./chart-entrance";
@@ -64,6 +64,8 @@ import { prefetchSupported, useIdlePrefetch } from "./idle-prefetch";
 import type { QueryDiagnosticStore } from "./query-diagnostics";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
+import { GRID_COLUMNS, gridOf, rowsToPixels } from "./grid-geometry";
+import { layoutHintsOf } from "./layout-hints";
 import {
   dragSettle,
   gridPlacement,
@@ -81,9 +83,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { GammaButton } from "./gamma/button";
 import { useSavedQueryLibrary } from "./saved-query-context";
-import { GammaSelect } from "./gamma/select";
 import { GammaActionMenu, type GammaActionMenuItem } from "./gamma/action-menu";
-import contextStyles from "./widget-context.module.css";
+import { LinkContextCaption, SeriesLinkPicker } from "./widget-link-context";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
 import { AttentionStoreProvider, SampleAsOfProvider, settledRequestEnd, useAttentionPublisher, useSampleAsOf } from "./attention-store";
@@ -373,10 +374,7 @@ const Tile = memo(function Tile({
   selectionScope?: SelectionScope;
 }) {
   const { start, end } = useStaggeredWindow(widget.id, boardStart, boardEnd, refreshStaggerMs);
-  const recordCellStyles = widget.config?.cellStyles;
-  const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
-    Array.isArray(recordCellStyles) && ["sparkline", "bar-segments", "status-badge"].every(display =>
-      recordCellStyles.some(style => typeof style === "object" && style !== null && "display" in style && style.display === display));
+  const compactRecordDescription = referenceCompact && capabilitiesOf(widget).compactDescription?.(widget.config) === true;
   const element = useRef<HTMLDivElement>(null);
   const library = useSavedQueryLibrary();
   const savedQueryLoading = !!widget.queryRef && !!library.loading;
@@ -761,6 +759,24 @@ const Tile = memo(function Tile({
             </details>
           ) : <p style={{ color: textColor }}>{widget.description}</p>)}
         </div>
+        {showSeriesPicker && (
+          <SeriesLinkPicker
+            title={widget.title}
+            value={context.series === undefined ? "" : contextKey(context)}
+            searchable={contexts.length > 10}
+            options={contexts.map((entry, index) => ({
+              value: contextKey(entry),
+              label: entry.series ?? `Series ${index + 1}`,
+              description: Object.entries(entry.labels ?? {})
+                .map(([key, value]) => `${key}=${value}`)
+                .join(" · "),
+            }))}
+            onValueChange={(key) => {
+              const next = contexts.find((entry) => contextKey(entry) === key);
+              if (next) selectContextOnly(next);
+            }}
+          />
+        )}
         {!!links.length && onDrilldown && (
           <GammaActionMenu
             label={`Open related dashboard from ${widget.title}`}
@@ -810,42 +826,12 @@ const Tile = memo(function Tile({
           />
         )}
       </div>
-      {showSeriesPicker ? (
-        <div className={contextStyles.picker}>
-          <span>Series</span>
-          <GammaSelect
-            aria-label={`Series for ${widget.title}`}
-            size="sm"
-            value={context.series === undefined ? "" : contextKey(context)}
-            placeholder="Choose a series for links"
-            searchable={contexts.length > 10}
-            options={contexts.map((entry, index) => ({
-              value: contextKey(entry),
-              label: entry.series ?? `Series ${index + 1}`,
-              description: Object.entries(entry.labels ?? {})
-                .map(([key, value]) => `${key}=${value}`)
-                .join(" · "),
-            }))}
-            onValueChange={(key) => {
-              const next = contexts.find((entry) => contextKey(entry) === key);
-              if (next) selectContextOnly(next);
-            }}
-          />
-        </div>
-      ) : (
-        !!onDrilldown &&
-        needsContext &&
-        (contexts.length > 1 || widget.type === "plugin") && (
-          <div className={contextStyles.selection} role="status">
-            {context.series
-              ? `Selected: ${context.series}`
-              : "Select a signal to open related dashboards"}
-          </div>
-        )
-      )}
-      {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.sampleSelection} role="status">
-        Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time>
-      </div>}
+      <LinkContextCaption
+        visible={!!onDrilldown && needsContext && (contexts.length > 1 || widget.type === "plugin")}
+        series={context.series}
+        prompt="Select a signal to open related dashboards"
+        sample={widget.type === "timeseries" && context.timestamp !== undefined ? <>Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time></> : undefined}
+      />
       {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
       <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
@@ -1014,9 +1000,12 @@ export function DashboardCanvas({
   // definitions is a deliberate dependency: the heights read the registry, so a registry change must recompute them.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const minimumHeights = useMemo(() => minimumHeightsOf(dashboard.widgets), [dashboard.widgets, definitions]);
+  // Plugin hints (rooms, narrow and reference rows) are read from the registry, so they follow the same dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const layoutHints = useMemo(() => layoutHintsOf(dashboard.widgets), [dashboard.widgets, definitions]);
   const layout = useMemo(
-    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights) : canvasLayout(dashboard.widgets, mode, width, minimumHeights),
-    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights],
+    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights, layoutHints) : canvasLayout(dashboard.widgets, mode, width, minimumHeights, layoutHints),
+    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights, layoutHints],
   );
   // React-grid-layout settles a drag through this compactor, both for the live preview and on drop. The saved
   // positions are read after commit, so a drag always settles against the layout that was on screen when it began.
@@ -1121,22 +1110,24 @@ export function DashboardCanvas({
   const dashboardEventsRetention = useMemo(() => memoryFor(memory, `${dashboard.id}:dashboard-events`).annotationRetention, [memory, dashboard.id]);
   const dashboardEventProvider = useMemo(() => dashboard.widgets.find(widget => supportsAnnotationSource(widget.type, widget.pluginId))?.providerId ?? "", [dashboard.widgets]);
   const dashboardEvents = useRecordedEvents(dashboard.annotationSource, fetcher, dashboardEventProvider, range.start, range.end, active && !!dashboard.annotationSource && !library.loading && !library.error, dashboardEventsRetention);
-  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
+  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, rowsToPixels(canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
-  ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
+  ], mode, width, minimumHeights, layoutHintsOf([focus.widget]))[0].h)) : undefined;
   const previewFootprints: PreviewFootprints | undefined = focus && unfocusedGrid ? (() => {
     // The staged widget replaces its saved copy, so the footprint follows the Layout tab. A new widget is appended.
     const widgets = dashboard.widgets.some(item => item.id === focus.widget.id)
       ? dashboard.widgets.map(item => item.id === focus.widget.id ? focus.widget : item)
       : [...dashboard.widgets, focus.widget];
+    const hints = layoutHintsOf(widgets);
     const footprint = (dense: boolean) => tileFootprint(widgets, focus.widget.id, {
-      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets),
+      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets), hints,
     });
     return { dashboard: footprint(false), compact: footprint(true) };
   })() : undefined;
   const stackedView = mode === "stacked" && !editing;
+  const gridGeometry = gridOf(dense && !editing && mode === "wide");
   const tiles = (focus ? [focus.widget] : orderedWidgets).map((widget, index) => (
-              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
+              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: rowsToPixels(layout[index].h) } : undefined}>
                 <Tile
                   key={`${dashboard.id}:${widget.id}`}
                   widget={widget}
@@ -1217,9 +1208,9 @@ export function DashboardCanvas({
             width={width}
             layout={layout}
             gridConfig={{
-              cols: 12,
-              rowHeight: dense && !editing && mode === "wide" ? 25 : 58,
-              margin: dense && !editing && mode === "wide" ? [8, 4] : [16, 16],
+              cols: GRID_COLUMNS,
+              rowHeight: gridGeometry.rowHeight,
+              margin: [gridGeometry.gapX, gridGeometry.gapY],
               containerPadding: [0, 0],
             }}
             dragConfig={{

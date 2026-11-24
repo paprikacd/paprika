@@ -1,5 +1,6 @@
 "use client";
 
+import { EMPTY_INCOMPLETE, EMPTY_RANGE, NO_DATA, PARTIAL_CHIP, seriesShown, staleChip, staleDetail } from "./benign-states";
 import { useObservationOwner } from "./observation-owner";
 import { ChartTable } from "./chart-table";
 import {
@@ -95,7 +96,7 @@ function criticalStroke(threshold: Threshold | undefined): CSSProperties {
 
 /** The value text a heatmap cell shows. Its width (heatmapValueEm) sizes the value so a long unit or number stays inside its cell. */
 function heatmapValueText(value: number | undefined, unit: Widget["unit"], decimals: number | undefined): string {
-  return value === undefined ? "No data" : formatMetric(value, unit, false, decimals);
+  return value === undefined ? NO_DATA : formatMetric(value, unit, false, decimals);
 }
 
 export const DEFAULT_HEATMAP_THRESHOLDS: Threshold[] = [
@@ -202,8 +203,8 @@ function Stat({
       : colourBand?.color
         ? <StatBandChip color={colourBand.color} text={colourBandText} name={colourBandName} />
         : null}
-    {stale && <StatNoticeChip visible={`Stale · ${sampleAge}`} full={`Last valid sample: ${sampleAge} before range end.`} dataAttribute="data-stale-observation" />}
-    {attention.partial && statTruncation !== "limit" && <StatNoticeChip visible="Partial" full={sourceNotice(statTruncation)} dataAttribute="data-partial-observation" />}
+    {stale && <StatNoticeChip visible={staleChip(sampleAge)} full={staleDetail(sampleAge)} dataAttribute="data-stale-observation" />}
+    {attention.partial && statTruncation !== "limit" && <StatNoticeChip visible={PARTIAL_CHIP} full={sourceNotice(statTruncation)} dataAttribute="data-partial-observation" />}
   </>;
   return (
     // The caption's time is in the missing notice when the latest observation is missing, so the caption is visually
@@ -454,11 +455,11 @@ function MetricTable({
                             Minimum:{" "}
                             {Number.isFinite(min)
                               ? formatMetricDetails(min, widget.unit, widget.options?.decimals)
-                              : "No data"}{" "}
+                              : NO_DATA}{" "}
                             · Maximum:{" "}
                             {Number.isFinite(max)
                               ? formatMetricDetails(max, widget.unit, widget.options?.decimals)
-                              : "No data"}
+                              : NO_DATA}
                           </span>
                         </MetricDetails>
                         {widget.options?.tooltipView && (
@@ -493,7 +494,7 @@ function MetricTable({
       </ChartTable>
       {series.length > MAX_ROWS && (
         <p className={styles.notice}>
-          Showing {MAX_ROWS} of {series.length} series. Narrow the query to see
+          {seriesShown(MAX_ROWS, series.length)}. Narrow the query to see
           others.
         </p>
       )}
@@ -649,7 +650,7 @@ function TraceList({
                             {Number.isFinite(trace.durationMs) &&
                             trace.durationMs >= 0
                               ? formatMetricDetails(trace.durationMs, "ms", widget.options?.decimals)
-                              : "No data"}
+                              : NO_DATA}
                           </strong>
                           {statusReported(trace.status) && (
                             <span className={configStyles.tooltipStatus}>
@@ -771,8 +772,8 @@ export function EmptyState({ partial = false }: { partial?: boolean }) {
   const incomplete = partial || contextualPartial;
   return (
     <div className={styles.state} data-widget-state="empty">
-      <strong>{incomplete ? "No observations returned" : "No data in this time range"}</strong>
-      <p>{partial ? "The provider response may be incomplete. Narrow the query or check the data source." : contextualPartial ? "No observations were included in this incomplete response." : "Try a wider time range or adjust this widget’s query."}</p>
+      <strong>{incomplete ? EMPTY_INCOMPLETE.title : EMPTY_RANGE.title}</strong>
+      <p>{partial ? EMPTY_INCOMPLETE.partialHint : contextualPartial ? EMPTY_INCOMPLETE.contextualHint : EMPTY_RANGE.hint}</p>
     </div>
   );
 }
@@ -1079,7 +1080,7 @@ export function Heatmap({
       )}
       {series.length > MAX_ROWS && (
         <span className={styles.notice}>
-          First {MAX_ROWS} of {series.length} series. Narrow the query to see
+          {seriesShown(MAX_ROWS, series.length)}. Narrow the query to see
           others.
         </span>
       )}

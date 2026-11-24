@@ -39,7 +39,7 @@
 .priorLegend span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .priorLegend i { width: 12px; flex: none; border-top: 2px dashed; }
 .chartFooter { position: relative; display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 2px 12px; min-width: 0; }
-.comparisonActions { display: flex; flex: 0 1 auto; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0 12px; min-width: 0; margin-left: auto; order: 1; }
+.chartFooter > [data-chart-actions] { order: 1; margin-left: auto; }
 .chartFooter > .notices { flex: 1 1 140px; padding-block: 3px; }
 .chartFooter > .notices:empty { display: none; }
 .chartFooter > p { flex-basis: 100%; margin: 3px 0; font-size: 11px; }

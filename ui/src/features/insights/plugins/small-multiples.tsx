@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "../benign-states";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { z } from "zod";
 import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
@@ -15,8 +16,11 @@ import { widgetSeriesColors } from "../series-colors";
 import { useObservationOwner } from "../observation-owner";
 import { useEmbeddedWidget } from "../widget-presentation";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
+import { Grid2X2 } from "lucide-react";
 import type { QueryResult, Widget } from "../schema";
 import styles from "./small-multiples.module.css";
+import { WidgetFooterActions } from "../widget-footer";
+import { seriesShown } from "../benign-states";
 
 const configSchema = z.strictObject({ maxSeries: z.number().int().min(1).max(12).optional(), columns: z.number().int().min(1).max(6).optional(), maxPoints: z.number().int().min(8).max(240).optional() });
 const left = 2, right = 598, top = 8, bottom = 92;
@@ -96,7 +100,7 @@ function SmallMultiple({ entry, index, color, displayName, domain, widget, resul
   // Both extremes share one scale and reading precision, so the pair compares in one unit. Authored decimals stay exact.
   const [topLabel, bottomLabel] = formatSharedScale([domain.max, domain.min], widget.unit, { decimals: widget.options?.decimals });
   return <section className={styles.panel} data-multiple-series={name}>
-    <div className={styles.heading}><span className={styles.name} title={name} aria-label={name}>{displayName}</span><span className={styles.value}>{latest ? formatMetric(latest.value, widget.unit, false, widget.options?.decimals) : "No data"}</span></div>
+    <div className={styles.heading}><span className={styles.name} title={name} aria-label={name}>{displayName}</span><span className={styles.value}>{latest ? formatMetric(latest.value, widget.unit, false, widget.options?.decimals) : NO_DATA}</span></div>
     <div className={styles.plotLayout}><div className={styles.yAxis} aria-hidden="true"><span>{topLabel}</span><span>{bottomLabel}</span></div>
     <svg className={styles.plot} viewBox="0 0 600 100" preserveAspectRatio="none" role="group" aria-label={`${name} trend. Shared scales.${interactive && points.length ? " Arrow keys inspect samples; Enter pins." : ""}`} aria-describedby={detailsEnabled && selected ? id : undefined} tabIndex={interactive && points.length ? 0 : undefined}
       data-domain-start={domain.start} data-domain-end={domain.end} data-domain-min={domain.min} data-domain-max={domain.max}
@@ -155,11 +159,12 @@ export function SmallMultiples({ widget, result, embedded, onContextChange }: Wi
   return <div className={styles.root}><div className={styles.scroll} ref={scroll} role="region" aria-label={`${widget.title} trends`} aria-describedby={overflow ? overflowId : undefined} tabIndex={overflow && !embedded && !parentEmbedded ? 0 : undefined} onKeyDown={scrollKeys}>
     <div className={styles.grid} ref={grid} style={{ "--multiple-columns": config.columns ?? 3 } as CSSProperties}>
       {series.map((entry, index) => <SmallMultiple key={index} entry={entry} index={index} color={colors[index].color} displayName={displayNames[index]} domain={domain} widget={widget} result={result} maxPoints={config.maxPoints ?? 120} interactive={interactive} detailsEnabled={detailsEnabled} onContextChange={onContextChange} />)}
-    </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>Showing {series.length} of {result.series?.length} series</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}</div></div>;
+    </div></div><div className={styles.footer}><span>Shared time and value scales · latest valid readings</span>{overflow && <span id={overflowId}>Scroll to see all series</span>}{(result.series?.length ?? 0) > series.length && <span>{seriesShown(series.length, result.series?.length ?? 0)}</span>}{truncationNote(result) && <span>{truncationNote(result)}</span>}{!embedded && <WidgetFooterActions widget={widget} inspect={series} />}</div></div>;
 }
 export function registerSmallMultiplesPlugin() {
   if (!getWidgetDefinition("plugin", "small-multiples")) registerWidgetPlugin({ id: "small-multiples", label: "Small multiples", description: "Compare metric series using shared time and value scales", dataKind: "metrics", render: SmallMultiples,
     defaultConfig: { maxSeries: 6, columns: 3, maxPoints: 120 }, styleControls: ["unit", "decimals", "grid", "tooltips"],
+    icon: Grid2X2, capabilities: { colorFallback: "series" },
     configFields: [{ key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 }, { key: "columns", label: "Columns", kind: "number", min: 1, max: 6, step: 1 }, { key: "maxPoints", label: "Maximum plotted samples", kind: "number", min: 8, max: 240, step: 1 }],
     parseConfig: config => configSchema.parse(config ?? {}) });
 }

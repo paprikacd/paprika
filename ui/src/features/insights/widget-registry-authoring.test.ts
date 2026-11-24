@@ -8,6 +8,7 @@ import {
   type WidgetPlugin,
 } from "./widget-registry";
 import type { Widget } from "./schema";
+import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge";
 
 const Renderer = () => null;
 const base: Omit<WidgetPlugin, "id"> = { label: "Authoring plugin", description: "Checks style metadata", dataKind: "metrics", render: Renderer };
@@ -59,6 +60,8 @@ describe("style sections", () => {
 });
 
 describe("supportsThresholds", () => {
+  // Plugins declare thresholds in their registrations, so the answer comes from the bundled registry.
+  registerDefaultWidgetPlugins();
   const widget = (type: Widget["type"], pluginId?: string, config?: Record<string, unknown>) =>
     ({ type, pluginId, config }) as Pick<Widget, "type" | "pluginId" | "config">;
 

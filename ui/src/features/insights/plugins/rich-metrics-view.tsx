@@ -11,7 +11,8 @@ import { useSavedQueryLibrary } from "../saved-query-context";
 import { traceQLForRegion, type HeatmapRegion } from "./rich-metrics-data";
 
 import { Pin, X } from "lucide-react";
-import { ChartDataInspector, EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
+import { EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
+import { NO_DATA, seriesShown } from "../benign-states";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { useDashboardTimeZone } from "../dashboard-time-zone";
 import { GammaButton } from "../gamma/button";
@@ -26,7 +27,7 @@ import { validTimestamp } from "../widget-context";
 import { eventsAt, useAnnotationEvents, type RecordedEvent } from "../annotation-events";
 import { EventTicks } from "../event-ticks";
 import { InspectorEvents } from "../inspector-events";
-import { ChartEvents } from "../chart-events";
+import { WidgetFooterActions } from "../widget-footer";
 import { TimeWindowLens } from "../time-window-lens";
 import { useTooltipWidgetData } from "../tooltip-widget-data";
 import { useTooltipDismiss } from "../tooltip-dismiss";
@@ -493,7 +494,7 @@ function DistributionHeatmapPlot(props: WidgetRendererProps & { config: Distribu
   if (!data.rows.length || !data.timestamps.length) return <EmptyState />;
   // Arrow moves change only aria-describedby, which screen readers do not re-announce; this polite line says each keyboard step.
   const keyboardStep = inspection.active?.owner === "keyboard" ? inspection.active.observation : undefined;
-  const keyboardSummary = keyboardStep && [keyboardStep.bucket, new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }).format(new Date(keyboardStep.timestamp)), typeof keyboardStep.value === "number" ? formatMetric(keyboardStep.value, keyboardStep.unit, false, widget.options?.decimals) : "No data"].filter(Boolean).join(", ");
+  const keyboardSummary = keyboardStep && [keyboardStep.bucket, new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }).format(new Date(keyboardStep.timestamp)), typeof keyboardStep.value === "number" ? formatMetric(keyboardStep.value, keyboardStep.unit, false, widget.options?.decimals) : NO_DATA].filter(Boolean).join(", ");
   return <div className={styles.chart} ref={inspectionRoot} onPointerLeave={inspection.leave}>
     <span className={styles.srOnly} aria-live="polite">{keyboardSummary}</span>
     <div className={styles.plot} ref={ref} data-chart-entering={entering || undefined}>
@@ -750,7 +751,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
   const tableLegend = config.legendDisplay === "table";
   const displayLabels = compactSeriesLabels(data.tracks.map(track => track.series));
   const legendRevision = JSON.stringify([widget.unit, widget.options?.decimals, config.legendDisplay, data.tracks.map(track => [track.name, track.cells.at(-1)?.value, track.statistics])]);
-  const formatSummary = (value: number | null) => value === null ? "No data" : formatMetric(value, widget.unit, false, widget.options?.decimals);
+  const formatSummary = (value: number | null) => value === null ? NO_DATA : formatMetric(value, widget.unit, false, widget.options?.decimals);
   // The series beyond maxSeries are never plotted, so the total does not include them. Say so.
   const hiddenSeries = (result.series?.length ?? 0) - fullSeries.length;
   // Pinned bar detail only: the stack total's trend, with gaps where the stack is incomplete. Area mode keeps its inspector.
@@ -814,7 +815,7 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
         <td data-summary="max" data-value={track.statistics.max ?? "unknown"} title={`Maximum of ${track.statistics.finiteSamples} finite samples`}>{formatSummary(track.statistics.max)}</td>
       </tr>)}</tbody>
     </table> : data.tracks.map((track, index) => {
-      const latest = track.cells.at(-1); return <span className={styles.legendItem} key={index}><i style={{ background: color(index) }} /><LegendName name={track.name} display={displayLabels[index]} /><b>{latest?.value == null ? "No data" : formatMetric(latest.value, widget.unit, false, widget.options?.decimals)}</b></span>;
+      const latest = track.cells.at(-1); return <span className={styles.legendItem} key={index}><i style={{ background: color(index) }} /><LegendName name={track.name} display={displayLabels[index]} /><b>{latest?.value == null ? NO_DATA : formatMetric(latest.value, widget.unit, false, widget.options?.decimals)}</b></span>;
     })}</SeriesLegend>}
     </div>
     {zoom && !currentDrawable && previousDrawable && <span role="status">No complete current observations in this window; dashed lines show the previous period.</span>}
@@ -824,17 +825,13 @@ function MetricPlot(props: WidgetRendererProps & { directional: boolean }) {
       {selection?.previous?.truncated && <span>Partial prior result</span>}
     </div>}
     <div className={styles.chartFooter} data-metric-footer>
-    {!props.embedded && !embeddedChart && <ChartEvents events={annotations} />}
-    {!props.embedded && !embeddedChart && <div className={styles.comparisonActions}>
-      <TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />
-      {prior.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={prior.map(entry => entry.original)} buttonText="Inspect prior data" />}
-    </div>}
+    {!props.embedded && !embeddedChart && <WidgetFooterActions widget={widget} events={annotations} compare={<TimeWindowLens title={widget.title} series={fullSeries} unit={widget.unit} decimals={widget.options?.decimals} zoom={zoom} onZoom={window => setSelection({ source: result, window })} onOverlay={(window, previous) => setSelection({ source: result, window, previous })} onReset={() => setSelection(undefined)} canOverlay={canOverlay} overlayUnavailable={directional ? undefined : "A previous stacked boundary requires every displayed series to match uniquely and contain recorded values."} />} inspectPrior={prior.map(entry => entry.original)} inspect={selectedSeries} />}
 
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && !!eventData.omitted && <p>{eventData.omitted} invalid or excess event records omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && inView.length > queried.length && <p>{inView.length - queried.length} additional events in view omitted.</p>}
     {widget.annotationSource && !props.embedded && !embeddedChart && eventData.truncated && <p>Event source response is partial.</p>}
-    <Notices source={result}>{(result.series?.length ?? 0) > fullSeries.length && <span>{(result.series?.length ?? 0) - fullSeries.length} series not shown</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
+    <Notices source={result}>{(result.series?.length ?? 0) > fullSeries.length && <span>{seriesShown(fullSeries.length, result.series?.length ?? 0)}</span>}{data.sampled && <span>Sampled timestamps · gaps retained</span>}{data.invalidValues > 0 && <span>{data.invalidValues} negative traffic observations omitted</span>}{!!previousPlot?.invalidValues && <span>Previous period: {previousPlot.invalidValues} negative traffic {previousPlot.invalidValues === 1 ? "observation" : "observations"} omitted</span>}{data.overflowColumns > 0 && <span>{data.overflowColumns} time {data.overflowColumns === 1 ? "column" : "columns"} omitted: the stack exceeds the finite numeric range. Reduce values in the query.</span>}{!!previousPlot?.overflowColumns && <span>Previous period: {previousPlot.overflowColumns} time {previousPlot.overflowColumns === 1 ? "column" : "columns"} omitted because the stack exceeds the finite numeric range.</span>}{!directional && data.tracks.some(track => track.cells.some(cell => cell.upper === null && !cell.overflow)) && <span>{bars ? "Hatched caps mark series with no value at that time. Series that have not started or have ended are left out of the stack." : "Incomplete timestamps leave gaps in the stack"}</span>}</Notices>
     </div>
   </div>;
 }

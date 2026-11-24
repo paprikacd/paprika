@@ -464,7 +464,7 @@ func supportsReadAnnotation(widget *dashboardReadWidget) bool {
 	if slices.Contains(annotationFamilyTypes, widget.Type) {
 		return true
 	}
-	return widget.Type == "plugin" && slices.Contains(annotationFamilyPlugins, widget.PluginID)
+	return widget.Type == "plugin" && builtInPluginCapabilities[widget.PluginID]["annotations"]
 }
 
 // applyDashboardSourceAnnotation checks the dashboard-level event source's columns against its signal's result.

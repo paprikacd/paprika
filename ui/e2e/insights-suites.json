@@ -96,6 +96,17 @@
       "timeoutSeconds": 600
     },
     {
+      "file": "e2e/insights-header-series-picker.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "ui"
+      ],
+      "server": "dev",
+      "timeoutSeconds": 600
+    },
+    {
       "file": "e2e/insights-compact-stat-compare.e2e.mjs",
       "tags": [
         "smoke"

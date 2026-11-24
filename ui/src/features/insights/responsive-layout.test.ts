@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest"
-import { builderPanelPlan, canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint } from "./responsive-layout"
+import { builderPanelPlan, canvasMode, intrinsicStat, canvasLayout as projectLayout, denseCanvasLayout as projectDense, tileFootprint as projectFootprint, type CanvasMode, type TileFootprintOptions } from "./responsive-layout"
+import { layoutHintsOf } from "./layout-hints"
+import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import { exampleDashboard } from "./example"
 import type { Widget } from "./schema"
+
+registerDefaultWidgetPlugins()
+
+// The canvas resolves plugin hints from the registry before it projects. These wrappers do the same for each call, so
+// the assertions below exercise the pipeline the canvas renders.
+function canvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, minimumHeights?: ReadonlyMap<string, number>) {
+  return projectLayout(widgets, mode, width, minimumHeights, layoutHintsOf(widgets))
+}
+function denseCanvasLayout(widgets: readonly Widget[], mode: CanvasMode, width?: number, referenceCompact = false, minimumHeights?: ReadonlyMap<string, number>) {
+  return projectDense(widgets, mode, width, referenceCompact, minimumHeights, layoutHintsOf(widgets))
+}
+function tileFootprint(widgets: readonly Widget[], id: string, options: Omit<TileFootprintOptions, "hints">) {
+  return projectFootprint(widgets, id, { ...options, hints: layoutHintsOf(widgets) })
+}
 
 describe("responsive canvas projection", () => {
   it("honours registered reading heights in compact projections without editing saved placement", () => {

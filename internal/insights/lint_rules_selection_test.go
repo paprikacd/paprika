@@ -76,21 +76,46 @@ func TestUnfilteredSourceDoesNotSelfFilter(t *testing.T) {
 	requireNoHits(t, findings, "selection.self-filter")
 }
 
-// TestSelectableWidgetsMatchTheUI keeps the Go selectable list equal to the list the canvas uses to offer selection.
+// TestSelectableWidgetsMatchTheUI keeps the Go selectable lists equal to the lists the canvas uses to offer selection:
+// the built-in types in selection-support.ts and the plugins that declare the selection capability in the table.
 func TestSelectableWidgetsMatchTheUI(t *testing.T) {
 	source, err := os.ReadFile("../../ui/src/features/insights/selection-support.ts")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(source)
-	plugins := setLiterals(t, text, `const selectablePlugins = new Set\(\[(.*?)\]\)`)
-	builtins := setLiterals(t, text, `const selectableBuiltins = new Set<[^>]*>\(\[(.*?)\]\)`)
-	if !slices.Equal(sortedKeys(selectablePluginIDs), plugins) {
-		t.Fatalf("selectablePluginIDs = %v, UI selectablePlugins = %v", sortedKeys(selectablePluginIDs), plugins)
-	}
+	builtins := setLiterals(t, string(source), `const selectableBuiltins = new Set<[^>]*>\(\[(.*?)\]\)`)
 	if !slices.Equal(sortedKeys(selectableWidgetTypes), builtins) {
 		t.Fatalf("selectableWidgetTypes = %v, UI selectableBuiltins = %v", sortedKeys(selectableWidgetTypes), builtins)
 	}
+	table, err := os.ReadFile("../../ui/src/features/insights/plugins/plugin-capabilities.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugins := capabilityEntries(t, string(table), "selection")
+	if !slices.Equal(sortedKeys(selectablePluginIDs), plugins) {
+		t.Fatalf("selectablePluginIDs = %v, UI capability table selection = %v", sortedKeys(selectablePluginIDs), plugins)
+	}
+}
+
+var capabilityTable = regexp.MustCompile(`(?s)PLUGIN_DOCUMENT_CAPABILITIES = Object\.freeze\(\{(.*?)\} satisfies`)
+
+var capabilityEntry = regexp.MustCompile(`"([a-z][a-z0-9-]*)": \{([^}]*)\}`)
+
+// capabilityEntries lists the plugin ids in the UI capability table whose entry sets the named capability, sorted.
+func capabilityEntries(t *testing.T, text, capability string) []string {
+	t.Helper()
+	table := capabilityTable.FindStringSubmatch(text)
+	if table == nil {
+		t.Fatal("PLUGIN_DOCUMENT_CAPABILITIES table not found in plugin-capabilities.ts")
+	}
+	var ids []string
+	for _, entry := range capabilityEntry.FindAllStringSubmatch(table[1], -1) {
+		if strings.Contains(entry[2], capability+": true") {
+			ids = append(ids, entry[1])
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)

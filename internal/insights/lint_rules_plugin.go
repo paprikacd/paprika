@@ -140,6 +140,18 @@ func rankStatusSourceProblem(style *wireCellStyle, statusBands bool) string {
 // rule reports as not built in: a warning, not an error.
 var builtInWidgetPlugins = loadBuiltInWidgetPlugins()
 
+// builtInPluginCapabilities maps each built-in plugin to the document capabilities its renderer supports. Like
+// builtInWidgetPlugins it is read from the committed list, which is generated from plugin-capabilities.ts.
+var builtInPluginCapabilities = loadBuiltInPluginCapabilities()
+
+func loadBuiltInPluginCapabilities() map[string]map[string]bool {
+	capabilities, err := insightsschema.BuiltInWidgetPluginCapabilities()
+	if err != nil {
+		panic(err)
+	}
+	return capabilities
+}
+
 func loadBuiltInWidgetPlugins() map[string]bool {
 	ids, err := insightsschema.BuiltInWidgetPlugins()
 	if err != nil {

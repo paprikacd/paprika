@@ -648,6 +648,13 @@
 .tile[data-widget-type] .tileHeader:has(> .actionsChip):has(> .editChip) {
   padding-right: calc(var(--edit-chip-inset) + 2 * var(--edit-chip) + 8px);
 }
+/* On a narrow tile the series picker and Explore would squeeze the title to nothing. The title keeps the first line and
+   the controls wrap below it, right-aligned. */
+@container insight-tile (max-width: 320px) {
+  .tileHeader:has(> [data-gamma-select]) { flex-wrap: wrap; row-gap: 4px; }
+  .tileHeader:has(> [data-gamma-select]) > .tileTitle { flex-basis: 100%; }
+  .tileHeader:has(> [data-gamma-select]) > [data-gamma-select][data-gamma-select] { margin-left: auto; max-width: none; }
+}
 /* A tile under 160px keeps one control: the actions trigger, whose first item is Edit chart. */
 @container insight-tile (max-width: 160px) {
   .tile .tileHeader > .editChip.editChip { display: none; }

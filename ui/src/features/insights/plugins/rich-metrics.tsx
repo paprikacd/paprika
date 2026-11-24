@@ -1,12 +1,21 @@
 import { lazy } from "react"
-import { getWidgetDefinition, registerWidgetPlugin } from "../widget-registry"
+import { ArrowDownUp, Grid2X2, Layers } from "lucide-react"
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetSizing } from "../widget-registry"
 import { directionalConfigSchema, distributionConfigSchema, stackedConfigSchema } from "./rich-metrics-data"
+import { metricAnnotationEditor, seriesColorEditor } from "./sub-editors"
 
 // The metric renderers and their stylesheets load when a widget of their type first renders, so the registry stays light.
 const loadView = () => import("./rich-metrics-view")
 const DistributionHeatmap = lazy(() => loadView().then((module) => ({ default: module.DistributionHeatmap })))
 const StackedTimeseries = lazy(() => loadView().then((module) => ({ default: module.StackedTimeseries })))
 const DirectionalTraffic = lazy(() => loadView().then((module) => ({ default: module.DirectionalTraffic })))
+
+/** Stacked and directional plots: a plot room, with a fifth narrow track when the statistics table sits below the chart. */
+const legendPlotSizing: WidgetSizing = {
+  mode: "fill",
+  denseRoom: () => "plot",
+  narrowMinRows: config => config?.legendDisplay === "table" ? 5 : undefined,
+};
 
 export function registerRichMetricPlugins() {
   if (!getWidgetDefinition("plugin", "distribution-heatmap")) registerWidgetPlugin({
@@ -22,6 +31,8 @@ export function registerRichMetricPlugins() {
       { key: "maxBuckets", label: "Maximum buckets", kind: "number", min: 1, max: 48, step: 1 },
       { key: "maxColumns", label: "Maximum time columns", kind: "number", min: 8, max: 120, step: 1 },
     ], parseConfig: value => distributionConfigSchema.parse(value ?? {}),
+    icon: Grid2X2,
+    capabilities: { inspectorPlacement: true },
   });
   if (!getWidgetDefinition("plugin", "stacked-timeseries")) registerWidgetPlugin({
     id: "stacked-timeseries", label: "Stacked time series", description: "Compare contributions with stacked areas or time bars", dataKind: "metrics", render: StackedTimeseries,
@@ -34,6 +45,10 @@ export function registerRichMetricPlugins() {
       { key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 },
       { key: "maxPoints", label: "Maximum time columns", kind: "number", min: 12, max: 240, step: 1 },
     ], parseConfig: value => stackedConfigSchema.parse(value ?? {}),
+    sizing: legendPlotSizing,
+    icon: Layers,
+    capabilities: { inspectorPlacement: true, colorFallback: "series" },
+    configEditors: [seriesColorEditor, metricAnnotationEditor],
   });
   if (!getWidgetDefinition("plugin", "directional-traffic")) registerWidgetPlugin({
     id: "directional-traffic", label: "Directional traffic", description: "Inbound above zero and outbound below, with original values", dataKind: "metrics", render: DirectionalTraffic,
@@ -48,5 +63,9 @@ export function registerRichMetricPlugins() {
       { key: "maxSeries", label: "Maximum series", kind: "number", min: 1, max: 12, step: 1 },
       { key: "maxPoints", label: "Maximum time columns", kind: "number", min: 12, max: 240, step: 1 },
     ], parseConfig: value => directionalConfigSchema.parse(value ?? {}),
+    sizing: legendPlotSizing,
+    icon: ArrowDownUp,
+    capabilities: { inspectorPlacement: true, colorFallback: "series" },
+    configEditors: [seriesColorEditor],
   });
 }

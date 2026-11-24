@@ -187,15 +187,12 @@ func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
 	if err := json.Unmarshal(widget["pluginId"], &pluginID); err != nil {
 		return false
 	}
-	return slices.Contains(annotationFamilyPlugins, pluginID)
+	return builtInPluginCapabilities[pluginID]["annotations"]
 }
 
-// annotationFamilyTypes and annotationFamilyPlugins are the time-based widgets that accept an event query. They mirror
-// ANNOTATION_FAMILIES in ui/src/features/insights/schema.ts, which the UI validates against.
-var (
-	annotationFamilyTypes   = []string{"timeseries", "stat"}
-	annotationFamilyPlugins = []string{"stacked-timeseries", "directional-traffic", "distribution-heatmap", "small-multiples", "status-history"}
-)
+// annotationFamilyTypes are the built-in widget types that accept an event query. They mirror ANNOTATION_WIDGET_TYPES
+// in ui/src/features/insights/schema.ts. Plugins come from the generated capability list (builtInPluginCapabilities).
+var annotationFamilyTypes = []string{"timeseries", "stat"}
 
 func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.RawMessage) error {
 	if !supportsWidgetAnnotationSource(widget) {

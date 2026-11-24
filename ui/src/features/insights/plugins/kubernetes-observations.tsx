@@ -7,6 +7,7 @@ import { formatMetricDetails, type Point, type Series } from "../chart-data";
 import { useObservationOwner, type ObservationOwner, type TriggerHandlers } from "../observation-owner";
 import { occurrenceKeys } from "../tooltip-identity";
 import type { Widget } from "../schema";
+import { NO_DATA } from "../benign-states";
 
 /** Shared by the Kubernetes renderers: one observation owner per widget, with the same tooltip the other Insights renderers use. */
 
@@ -121,7 +122,7 @@ export function useInlineSize(ref: RefObject<HTMLElement | null>): number | null
   return width;
 }
 
-export const text = (value: number | null, unit: string, decimals?: number) => (value === null ? "No data" : formatMetricDetails(value, unit, decimals));
+export const text = (value: number | null, unit: string, decimals?: number) => (value === null ? NO_DATA : formatMetricDetails(value, unit, decimals));
 
 /** The latest sample time in the result. Requests and limits are read at this instant. */
 export function sampleTime(series: Series[] | undefined): number {

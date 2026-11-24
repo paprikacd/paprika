@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { pluginSupports } from "./plugins/plugin-capabilities"
 import { SERIES_COLOR_MODES, seriesColorRulesSchema } from "./series-colors"
 import { statusLevels } from "./status"
 import { sloSummaryConfigSchema } from "./slo-config"
@@ -572,17 +573,15 @@ export const customTimeRangeSchema = z
   }, "Choose an increasing time range of at most 31 days, after the Unix epoch")
 
 /**
- * The time-based widgets that accept an event query: time series and stat sparklines, and the plugins that draw over time.
- * Gauges, tables, records views and calendars are not time-based here. The Go validator mirrors these lists.
+ * The built-in widget types that accept an event query: time series and stat sparklines. Plugins that draw over time
+ * declare `annotations` in plugins/plugin-capabilities.ts. Gauges, tables, records views and calendars are not
+ * time-based here. The Go validator reads the same capability list (docs/design/insights/widget-plugins.json).
  */
-export const ANNOTATION_FAMILIES = {
-  types: ["timeseries", "stat"],
-  plugins: ["stacked-timeseries", "directional-traffic", "distribution-heatmap", "small-multiples", "status-history"],
-} as const
+export const ANNOTATION_WIDGET_TYPES = ["timeseries", "stat"] as const
 
 export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
-  if ((ANNOTATION_FAMILIES.types as readonly string[]).includes(type)) return true
-  return type === "plugin" && (ANNOTATION_FAMILIES.plugins as readonly string[]).includes(pluginId ?? "")
+  if ((ANNOTATION_WIDGET_TYPES as readonly string[]).includes(type)) return true
+  return type === "plugin" && pluginSupports(pluginId, "annotations")
 }
 
 /** Recorded events from a saved query: where the time, end, label and severity columns are. Widgets and the dashboard share it. */
@@ -846,7 +845,7 @@ export type TooltipQuerySource = Extract<TooltipSource, { type: "query" }>
 export type TooltipBinding = z.infer<typeof tooltipBindingSchema>
 
 export function supportsTooltipView(type: Widget["type"], pluginId?: string): boolean {
-  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginId === "geo-heatmap")
+  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginSupports(pluginId, "tooltipView"))
 }
 export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>

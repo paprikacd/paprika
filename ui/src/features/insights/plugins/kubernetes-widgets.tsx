@@ -12,6 +12,7 @@ import type { WidgetRendererProps } from "../widget-registry";
 import { MAX_THROTTLE_COLUMNS, resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema, type ThrottleColumn } from "./kubernetes-data";
 import { sampleTime, text, useInlineSize, useObservations, useRoving, type Observation, type Observed, type RovingProps } from "./kubernetes-observations";
 import styles from "./kubernetes.module.css";
+import { NO_DATA } from "../benign-states";
 
 /**
  * Renderers for the Kubernetes bars, throttle and trend widgets. Their styles are in kubernetes.module.css, which loads
@@ -93,7 +94,7 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
       </span>
       <div className={styles.track}>
         {usage === null
-          ? <div className={styles.hatch} role="img" aria-label={`${group} ${name} usage: No data`} />
+          ? <div className={styles.hatch} role="img" aria-label={`${group} ${name} usage: ${NO_DATA}`} />
           : <Mark interactive={interactive} label={`${group} ${name} usage ${text(usage, unit, decimals)}`} context={{ series: group, labels: { [model.groupLabel]: group } }}
               observed={observe(`${group}|${name}`)} keys={markKeys(`${group}|${name}`)} onActivate={onActivate} onContextChange={onContextChange}
               className={`${styles.mark} ${styles.fill}`} style={{ width: `${(usage / max) * 100}%`, background: colour }}>{null}</Mark>}
@@ -145,7 +146,7 @@ export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate,
   const when = (c: ThrottleColumn) => (c.samples > 1 ? `${new Date(c.start).toISOString()} to ${new Date(c.end).toISOString()}` : new Date(c.timestamp).toISOString());
   const observations: Observation[] = rows.flatMap(row => row.cells.map((c): Observation => {
     const labels = { [model.groupLabel]: row.name };
-    const reading = c.throttled === null ? "No data" : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals);
+    const reading = c.throttled === null ? NO_DATA : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals);
     const counts = c.throttled !== null && !c.neutral && c.periods !== null
       ? ` · ${formatMetricDetails(c.throttled, "periods", decimals)} throttled of ${formatMetricDetails(c.periods, "periods", decimals)}${c.samples > 1 ? `, mean of ${c.paired} samples` : ""}`
       : "";
@@ -177,7 +178,7 @@ export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate,
           <div key={row.name} className={styles.row}>
             <span className={`${styles.truncate} ${styles.rowName}`}>{row.name}</span>
             {row.cells.map(c => {
-              const label = `${row.name} at ${when(c)}: ${c.throttled === null ? "No data" : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals)}`;
+              const label = `${row.name} at ${when(c)}: ${c.throttled === null ? NO_DATA : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals)}`;
               const observed = observe(`${row.name}|${c.timestamp}`);
               return <Mark key={c.timestamp} interactive={interactive} label={label} context={{ series: row.name, labels: { [model.groupLabel]: row.name } }}
                 observed={observed} keys={observed ? roving(observed.index) : undefined} onActivate={onActivate} onContextChange={onContextChange}
