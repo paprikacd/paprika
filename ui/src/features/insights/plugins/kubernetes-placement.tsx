@@ -10,6 +10,7 @@ import { truncationNote } from "../truncation";
 import type { WidgetRendererProps } from "../widget-registry";
 import { placementConfigSchema, placementModel, type PlacementNode, type PlacementPod } from "./kubernetes-data";
 import type { TriggerEvent } from "../observation-owner";
+import styles from "./kubernetes.module.css";
 import { RESOURCE_UNIT, sampleTime, text, useObservations, useRoving, type Observation, type Observed } from "./kubernetes-observations";
 
 /**
@@ -122,9 +123,10 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
 
   if (!model.nodes.length && !model.pending.length && !model.outside.length) return <EmptyState />;
   const total = root.value ?? 0;
-  if (!total) return <div className="text-xs text-[var(--gamma-muted)]">No requests or allocatable capacity to size the placement treemap.</div>;
+  if (!total) return <div className={`${styles.widget} ${styles.muted}`}>No requests or allocatable capacity to size the placement treemap.</div>;
   const layout = treemap<Tile>().size([width, HEIGHT]).paddingOuter(3).paddingInner(2)
-    .paddingTop(node => (node.children && (node.data.node !== undefined || node.data.zone !== undefined) ? 16 : 0))(root);
+    // Every group below the root (zone, node, Pending, Outside) keeps a 16 px band for its label above its tiles.
+    .paddingTop(node => (node.children && node.depth >= 1 ? 16 : 0))(root);
   const nodeFrames = layout.descendants().filter((node): node is HierarchyRectangularNode<Tile> & { children: NonNullable<Tile["children"]> } => node.depth >= 1 && !!node.children && node.data.node !== undefined);
   // Zone, pending and outside groups carry no node; each is labelled with its name.
   const groupFrames = layout.descendants().filter(node => node.depth >= 1 && !!node.children && node.data.node === undefined);
@@ -159,7 +161,7 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
     const context = { series: data.pod!.pod, labels: podLabels(data.pod!, data.node) };
     const activate = (event: TriggerEvent) => { (onActivate ?? onContextChange)?.(context); trigger?.onClick(event); };
     const keys = roving(index, activate);
-    return <g key={leafKey(data)} role="button" aria-label={label} data-observation={observed?.index}
+    return <g key={leafKey(data)} role="button" aria-label={label} className={styles.svgMark} data-observation={observed?.index}
       tabIndex={keys.tabIndex} data-roving={keys["data-roving"]} onKeyDown={keys.onKeyDown}
       onPointerEnter={trigger?.onPointerEnter} onPointerLeave={trigger?.onPointerLeave}
       onFocus={event => { keys.onFocus(); onContextChange?.(context); trigger?.onFocus(event); }}
@@ -171,9 +173,9 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
 
   const frameStyle: CSSProperties = { fill: "none" };
   return (
-    <div ref={svgRef} className="flex h-full min-h-0 flex-col gap-2 text-xs" data-kubernetes="placement">
-      <div ref={rootRef} className="relative w-full">
-        <svg width={width} height={HEIGHT} viewBox={`0 0 ${width} ${HEIGHT}`} role="group" aria-label={`${widget.title} placement`} className="block max-w-full">
+    <div ref={svgRef} className={styles.widget} data-kubernetes="placement">
+      <div ref={rootRef} className={styles.plot}>
+        <svg width={width} height={HEIGHT} viewBox={`0 0 ${width} ${HEIGHT}`} role="group" aria-label={`${widget.title} placement`}>
           {groupFrames.map(group => (group.x1 - group.x0 >= 60 ? <text key={`group-${group.data.name}`} x={group.x0 + 4} y={group.y0 + 12} fontSize="11" fontWeight={600} fill="var(--gamma-ink)" pointerEvents="none">{clip(group.data.zone ?? group.data.name, group.x1 - group.x0)}</text> : null))}
           {nodeFrames.map(node => {
             const pressure = pressureOf(node.data.node);
@@ -189,7 +191,7 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
           {layout.leaves().map(leaf => tile(leaf))}
         </svg>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[var(--gamma-muted)]">
+      <div className={styles.footer}>
         {model.hiddenNodes > 0 && <span>Showing {model.nodes.length} of {model.totalNodes} nodes</span>}
         <span>{model.pending.length} pending {model.pending.length === 1 ? "pod" : "pods"}</span>
         {notReadyNodes > 0 && <span>{notReadyNodes} {notReadyNodes === 1 ? "node" : "nodes"} not ready</span>}

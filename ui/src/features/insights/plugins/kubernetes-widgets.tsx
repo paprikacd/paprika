@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { DrilldownContext } from "../drilldown";
 import { EmptyState } from "../chart-renderers";
 import { formatMetricDetails } from "../chart-data";
@@ -9,12 +9,13 @@ import { seriesSlot } from "../series-palette";
 import { niceAxis, sharedScale } from "../units";
 import { truncationNote } from "../truncation";
 import type { WidgetRendererProps } from "../widget-registry";
-import { resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema, type ThrottleColumn } from "./kubernetes-data";
-import { sampleTime, text, useObservations, useRoving, type Observation, type Observed, type RovingProps } from "./kubernetes-observations";
+import { MAX_THROTTLE_COLUMNS, resourceBarsConfigSchema, resourceGroups, resourceStrips, resourceTrendConfigSchema, throttleCells, throttleConfigSchema, type ThrottleColumn } from "./kubernetes-data";
+import { sampleTime, text, useInlineSize, useObservations, useRoving, type Observation, type Observed, type RovingProps } from "./kubernetes-observations";
+import styles from "./kubernetes.module.css";
 
 /**
- * Renderers for the Kubernetes bars, throttle and trend widgets. They draw with inline styles that read the design
- * tokens, so they add no CSS module rules to the Insights first view. Every number goes through the shared formatters
+ * Renderers for the Kubernetes bars, throttle and trend widgets. Their styles are in kubernetes.module.css, which loads
+ * with these lazily loaded renderers, not in the Insights first view. Every number goes through the shared formatters
  * and honours `decimals`. Hover, focus and click open the shared observation tooltip. Embedded copies are static images.
  * The placement treemap lives in kubernetes-placement.tsx.
  */
@@ -83,33 +84,37 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
     cpu: maxOf(g => [g.cpuUsage, g.cpuRequest, g.cpuLimit]),
     memory: maxOf(g => [g.memoryUsage, g.memoryRequest, g.memoryLimit]),
   };
+  // One line of text and one 10 px track per cell, so a group row is about 30 px; minHeightFor in kubernetes-plugins.ts uses this.
   const cell = (name: string, group: string, usage: number | null, request: number | null, limit: number | null, max: number, unit: string, colour: string) => (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-[var(--gamma-muted)]">{name}</span>
-      <div className="relative h-3 w-full rounded-sm" style={{ background: "var(--gamma-chart-empty)" }}>
+    <div className={styles.cell}>
+      <span className={styles.cellHead}>
+        <span>{name}</span>
+        {showValues && <span className={styles.truncate}>{text(usage, unit, decimals)}<span className={styles.ofRequest}> of {text(request, unit, decimals)}</span></span>}
+      </span>
+      <div className={styles.track}>
         {usage === null
-          ? <div className="absolute inset-0 rounded-sm" style={HATCH} role="img" aria-label={`${group} ${name} usage: No data`} />
+          ? <div className={styles.hatch} role="img" aria-label={`${group} ${name} usage: No data`} />
           : <Mark interactive={interactive} label={`${group} ${name} usage ${text(usage, unit, decimals)}`} context={{ series: group, labels: { [model.groupLabel]: group } }}
               observed={observe(`${group}|${name}`)} keys={markKeys(`${group}|${name}`)} onActivate={onActivate} onContextChange={onContextChange}
-              className="absolute inset-y-0 left-0 block rounded-sm" style={{ width: `${(usage / max) * 100}%`, background: colour }}>{null}</Mark>}
-        {request !== null && <span aria-hidden className="absolute inset-y-0 w-px" style={{ left: `${(request / max) * 100}%`, background: "var(--gamma-ink)" }} />}
-        {showLimits && limit !== null && <span aria-hidden className="absolute inset-y-0 w-0 border-l border-dashed" style={{ left: `${(limit / max) * 100}%`, borderColor: "var(--gamma-muted)" }} />}
+              className={`${styles.mark} ${styles.fill}`} style={{ width: `${(usage / max) * 100}%`, background: colour }}>{null}</Mark>}
+        {request !== null && <span aria-hidden className={styles.request} style={{ left: `${(request / max) * 100}%` }} />}
+        {showLimits && limit !== null && <span aria-hidden className={styles.limit} style={{ left: `${(limit / max) * 100}%` }} />}
       </div>
-      {showValues && <span className="truncate text-[var(--gamma-muted)]">{text(usage, unit, decimals)} of {text(request, unit, decimals)}</span>}
     </div>
   );
   return (
-    <div ref={root} className="flex h-full min-h-0 flex-col gap-3 text-xs" data-kubernetes="bars">
-      <div className="flex flex-col gap-3">
+    <div ref={root} className={styles.widget} data-kubernetes="bars">
+      <div className={styles.groups}>
         {model.groups.map(group => (
-          <div key={group.name} className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] sm:items-end">
-            <span className="truncate font-medium text-[var(--gamma-ink)]">{group.name}</span>
+          <div key={group.name} className={styles.group}>
+            <span className={`${styles.truncate} ${styles.groupName}`}>{group.name}</span>
             {cell("CPU", group.name, group.cpuUsage, group.cpuRequest, group.cpuLimit, scale.cpu, "cores", seriesSlot(0))}
             {cell("Memory", group.name, group.memoryUsage, group.memoryRequest, group.memoryLimit, scale.memory, "B", seriesSlot(1))}
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 text-[var(--gamma-muted)]">
+      <div className={styles.footer}>
+        {widget.options?.showLegend !== false && <span>Bar: usage · solid tick: request{showLimits ? " · dashed tick: limit sum" : ""}</span>}
         {model.hiddenGroups > 0 && <span>Showing {model.groups.length} of {model.totalGroups}</span>}
         {truncationNote(result) && <span>{truncationNote(result)}</span>}
       </div>
@@ -118,9 +123,19 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
   );
 }
 
+/** The throttle grid: a name column of up to 7rem, a 4.5rem Total column, and time columns of at least 6 px plus a 1 px gap. */
+const THROTTLE_FIXED = 112 + 72 + 2;
+const THROTTLE_CELL = 7;
+const MIN_THROTTLE_COLUMNS = 4;
+
 export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate, onContextChange }: WidgetRendererProps) {
   const config = throttleConfigSchema.parse(widget.config ?? {});
-  const { model } = throttleCells(result, config);
+  const host = useRef<HTMLDivElement>(null);
+  const width = useInlineSize(host);
+  // The time columns that fit beside the name and Total columns at THROTTLE_CELL px each. A narrow tile groups more
+  // samples per column rather than wrapping a row. Before the first measurement it draws the most columns.
+  const fit = width === null ? MAX_THROTTLE_COLUMNS : Math.max(MIN_THROTTLE_COLUMNS, Math.floor((width - THROTTLE_FIXED) / THROTTLE_CELL));
+  const { model } = throttleCells(result, config, fit);
   const [page, setPage] = useState(0);
   const interactive = !embedded;
   const decimals = widget.options?.decimals;
@@ -151,33 +166,34 @@ export function KubernetesThrottleMatrix({ widget, result, embedded, onActivate,
     const index = Math.min(densityPalette.length - 1, Math.round(Math.max(0, Math.min(1, percent / model.ceiling)) * (densityPalette.length - 1)));
     return { background: densityPalette[index] };
   };
-  const columns = `repeat(${model.columns.length}, minmax(3px, 1fr))`;
+  const columns = `repeat(${model.columns.length}, minmax(${THROTTLE_CELL - 1}px, 1fr))`;
   return (
-    <div ref={root} className="flex h-full min-h-0 flex-col gap-2 text-xs" data-kubernetes="throttle">
-      <div className="grid gap-px" style={{ gridTemplateColumns: `minmax(0,7rem) ${columns} 4.5rem` }}>
+    <div ref={root} className={styles.widget} data-kubernetes="throttle">
+      <div ref={host} className={styles.matrix} style={{ gridTemplateColumns: `minmax(3rem,7rem) ${columns} 4.5rem` }}>
         {/* The group heading spans the label and time columns, so Total sits over the totals column. */}
-        <span className="text-[var(--gamma-muted)]" style={{ gridColumn: `1 / span ${model.columns.length + 1}` }}>{model.groupLabel}</span>
-        <span className="text-right text-[var(--gamma-muted)]">Total</span>
+        <span className={`${styles.muted} ${styles.truncate}`} style={{ gridColumn: `1 / span ${model.columns.length + 1}` }}>{model.groupLabel}</span>
+        <span className={`${styles.muted} ${styles.total}`}>Total</span>
         {rows.map(row => (
-          <div key={row.name} className="contents">
-            <span className="truncate pr-2 text-[var(--gamma-ink)]">{row.name}</span>
+          <div key={row.name} className={styles.row}>
+            <span className={`${styles.truncate} ${styles.rowName}`}>{row.name}</span>
             {row.cells.map(c => {
               const label = `${row.name} at ${when(c)}: ${c.throttled === null ? "No data" : c.neutral ? "No CFS periods" : text(c.percent, "%", decimals)}`;
               const observed = observe(`${row.name}|${c.timestamp}`);
               return <Mark key={c.timestamp} interactive={interactive} label={label} context={{ series: row.name, labels: { [model.groupLabel]: row.name } }}
                 observed={observed} keys={observed ? roving(observed.index) : undefined} onActivate={onActivate} onContextChange={onContextChange}
-                className="block h-4 min-w-0" style={colour(c.percent, c.neutral, c.throttled)}>{null}</Mark>;
+                className={`${styles.mark} ${styles.throttleCell}`} style={colour(c.percent, c.neutral, c.throttled)}>{null}</Mark>;
             })}
-            <span className="text-right tabular-nums">{text(row.percent, "%", decimals)}</span>
+            <span className={styles.total}>{text(row.percent, "%", decimals)}</span>
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[var(--gamma-muted)]">
+      <div className={styles.legendRow}>
         <span>Colour ceiling {text(model.ceiling, "%", decimals)} · hatched: no data · grey: no CFS periods</span>
-        {pages > 1 && <div className="flex items-center gap-2">
-          <button type="button" aria-label="Previous rows" disabled={current === 0} onClick={() => setPage(current - 1)} className="disabled:opacity-40">Previous rows</button>
+        {truncationNote(result) && <span>{truncationNote(result)}</span>}
+        {pages > 1 && <div className={styles.pager}>
+          <button type="button" aria-label="Previous rows" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous rows</button>
           <span>{current + 1} / {pages}</span>
-          <button type="button" aria-label="Next rows" disabled={current >= pages - 1} onClick={() => setPage(current + 1)} className="disabled:opacity-40">Next rows</button>
+          <button type="button" aria-label="Next rows" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Next rows</button>
         </div>}
       </div>
       {popover}
@@ -210,7 +226,7 @@ export function KubernetesResourceTrend({ widget, result, embedded }: WidgetRend
     return {
       key: `${strip.id}|${timestamp}`, subject: strip.title, unit: strip.unit, description: `Observed at ${new Date(timestamp).toISOString()}`,
       series: { name: strip.title, labels, points: [{ timestamp, value: headline }] }, point: { timestamp, value: headline },
-      detail: <span className="flex flex-col">{strip.lines.map(([signal]) => <span key={signal}>{signal.replace(/^[a-z]+-/, "")} {text(valueAt(signal, timestamp), strip.unit, decimals)}</span>)}</span>,
+      detail: <span className={styles.detailList}>{strip.lines.map(([signal]) => <span key={signal}>{signal.replace(/^[a-z]+-/, "")} {text(valueAt(signal, timestamp), strip.unit, decimals)}</span>)}</span>,
       context: { series: strip.title, labels, value: headline },
     };
   }));
@@ -221,7 +237,7 @@ export function KubernetesResourceTrend({ widget, result, embedded }: WidgetRend
   const showRequested = config.showRequested !== false, fill = config.fill !== false;
   const spacing = model.timestamps.length > 1 ? STRIP_WIDTH / (model.timestamps.length - 1) : STRIP_WIDTH;
   return (
-    <div ref={root} className="flex h-full min-h-0 flex-col gap-3 text-xs" data-kubernetes="trend">
+    <div ref={root} className={styles.widget} data-kubernetes="trend">
       {strips.map(strip => {
         const values = strip.lines.flatMap(([signal]) => (model.lines[signal] ?? []).map(p => p.value ?? 0));
         const axis = niceAxis([0, Math.max(1, ...values)], 3);
@@ -243,14 +259,14 @@ export function KubernetesResourceTrend({ widget, result, embedded }: WidgetRend
           `${line(run)} L${x(run[run.length - 1].timestamp).toFixed(1)} ${STRIP_HEIGHT} L${x(run[0].timestamp).toFixed(1)} ${STRIP_HEIGHT} Z`;
         const latest = (signal: string) => { const points = model.lines[signal as keyof typeof model.lines] ?? []; for (let i = points.length - 1; i >= 0; i--) if (points[i].value !== null) return points[i].value; return null; };
         return (
-          <div key={strip.id} className="flex flex-col gap-1" data-trend-strip={strip.id}>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="font-medium text-[var(--gamma-ink)]">{strip.title}</span>
-              <span className="flex flex-wrap gap-x-3 text-[var(--gamma-muted)]">
+          <div key={strip.id} className={styles.strip} data-trend-strip={strip.id}>
+            <div className={styles.stripHead}>
+              <span className={styles.stripTitle}>{strip.title}</span>
+              <span className={styles.readings}>
                 {strip.lines.map(([signal]) => <span key={signal}>{signal.replace(/^[a-z]+-/, "")} {text(latest(signal), strip.unit, decimals)}</span>)}
               </span>
             </div>
-            <svg viewBox={`0 0 ${STRIP_WIDTH} ${STRIP_HEIGHT}`} width="100%" height={STRIP_HEIGHT} preserveAspectRatio="none" role={interactive ? "group" : "img"} aria-label={`${strip.title} over time`} className="overflow-visible">
+            <svg viewBox={`0 0 ${STRIP_WIDTH} ${STRIP_HEIGHT}`} width="100%" height={STRIP_HEIGHT} preserveAspectRatio="none" role={interactive ? "group" : "img"} aria-label={`${strip.title} over time`} className={styles.stripPlot}>
               <line x1={0} x2={STRIP_WIDTH} y1={STRIP_HEIGHT} y2={STRIP_HEIGHT} stroke="var(--gamma-chart-grid)" />
               {strip.lines.filter(([, , measured]) => measured || showRequested).map(([signal, colour, measured]) => {
                 const segments = runs(model.lines[signal] ?? []);
@@ -267,17 +283,20 @@ export function KubernetesResourceTrend({ widget, result, embedded }: WidgetRend
                 const trigger = observed.trigger;
                 const keys = roving(observed.index, event => trigger?.onClick(event));
                 const reading = strip.lines.map(([signal]) => `${signal.replace(/^[a-z]+-/, "")} ${text(valueAt(signal, timestamp), strip.unit, decimals)}`).join(", ");
-                return <rect key={timestamp} x={x(timestamp) - spacing / 2} y={0} width={spacing} height={STRIP_HEIGHT} fill="transparent"
-                  role="button" aria-label={`${strip.title} at ${new Date(timestamp).toISOString()}: ${reading}`}
+                // The hit area is centred on the sample and clipped to the plot, so the end columns stay inside the tile.
+                const left = Math.max(0, x(timestamp) - spacing / 2), right = Math.min(STRIP_WIDTH, x(timestamp) + spacing / 2);
+                return <rect key={timestamp} x={left} y={0} width={Math.max(0, right - left)} height={STRIP_HEIGHT} fill="transparent"
+                  className={styles.svgMark} role="button" aria-label={`${strip.title} at ${new Date(timestamp).toISOString()}: ${reading}`}
                   data-observation={observed.index} tabIndex={keys.tabIndex} data-roving={keys["data-roving"]} onKeyDown={keys.onKeyDown}
                   onFocus={event => { keys.onFocus(); trigger?.onFocus(event); }} onBlur={trigger?.onBlur} onClick={trigger?.onClick}
                   onPointerEnter={trigger?.onPointerEnter} onPointerLeave={trigger?.onPointerLeave} />;
               })}
             </svg>
-            <span className="sr-only">{strip.title} ticks: {axis.ticks.map(tick => scale.number(tick)).join(", ")}</span>
+            <span className={styles.srOnly}>{strip.title} ticks: {axis.ticks.map(tick => scale.number(tick)).join(", ")}</span>
           </div>
         );
       })}
+      {truncationNote(result) && <div className={styles.footer}>{truncationNote(result)}</div>}
       {popover}
     </div>
   );

@@ -63,7 +63,7 @@ export function registerKubernetesPlugins() {
         { key: "showLimits", label: "Limit sum markers", kind: "boolean" },
         { key: "showValues", label: "Usage and request values", kind: "boolean" },
       ] satisfies WidgetConfigField[],
-      sizing: { mode: "intrinsic" as const, minWidth: 280, minHeightFor: (config: Widget["config"]) => 80 + 28 * ((config as { maxGroups?: number } | undefined)?.maxGroups ?? 8) },
+      sizing: { mode: "intrinsic" as const, minWidth: 280, minHeightFor: (config: Widget["config"]) => 40 + 37 * ((config as { maxGroups?: number } | undefined)?.maxGroups ?? 8) },
     },
     {
       id: KUBERNETES_PLUGIN_IDS.throttle, label: "CPU throttling matrix", description: "Throttled CFS periods as a share of all periods, per pod over time.",

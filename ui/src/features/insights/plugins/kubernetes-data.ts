@@ -344,7 +344,8 @@ function medianSpacing(times: number[]) {
   return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
 }
 
-export function throttleCells(result: QueryResult, config: Config): { model: ThrottleModel; issues: WidgetInputIssue[] } {
+/** `maxColumns` is how many time columns fit the tile; the renderer measures it, and it never exceeds MAX_THROTTLE_COLUMNS. */
+export function throttleCells(result: QueryResult, config: Config, maxColumns = MAX_THROTTLE_COLUMNS): { model: ThrottleModel; issues: WidgetInputIssue[] } {
   const parsed = throttleConfigSchema.parse(config ?? {});
   const groupLabel = parsed.groupLabel ?? "pod";
   const { entries, issues } = readEntries(result, "throttle");
@@ -371,7 +372,8 @@ export function throttleCells(result: QueryResult, config: Config): { model: Thr
   const spacing = medianSpacing(sorted);
   // A range query returns about 300 samples, more than a tile can draw or a keyboard can step through. Consecutive
   // samples are grouped into at most MAX_THROTTLE_COLUMNS columns of equal sample count.
-  const size = Math.max(1, Math.ceil(sorted.length / MAX_THROTTLE_COLUMNS));
+  const limit = Math.max(1, Math.min(MAX_THROTTLE_COLUMNS, Math.floor(maxColumns)));
+  const size = Math.max(1, Math.ceil(sorted.length / limit));
   const buckets: number[][] = [];
   for (let i = 0; i < sorted.length; i += size) buckets.push(sorted.slice(i, i + size));
   const columns: ThrottleColumn[] = buckets.map((bucket, i) => ({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { DrilldownContext } from "../drilldown";
 import { MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { formatMetricDetails, type Point, type Series } from "../chart-data";
@@ -101,6 +101,24 @@ export function useRoving(root: RefObject<HTMLElement | null>, count: number, co
       root.current?.querySelector<HTMLElement | SVGElement>(`[data-roving="${target}"]`)?.focus();
     },
   });
+}
+
+/** The element's content width in whole pixels, kept current by a ResizeObserver. Null before the first measurement. */
+export function useInlineSize(ref: RefObject<HTMLElement | null>): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const measured = Math.floor(element.getBoundingClientRect().width);
+      if (measured > 0) setWidth(previous => (previous === measured ? previous : measured));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
 }
 
 export const text = (value: number | null, unit: string, decimals?: number) => (value === null ? "No data" : formatMetricDetails(value, unit, decimals));

@@ -149,6 +149,13 @@ describe("Kubernetes renderers in the browser", () => {
     expect(cells[0].getAttribute("aria-label")).toMatch(/ to .*: 10%$/);
   });
 
+  it("keeps the Pending label above the pending tiles instead of under them", () => {
+    const { container } = mount(KUBERNETES_PLUGIN_IDS.placement);
+    const label = [...container.querySelectorAll("text")].find(node => node.textContent === "Pending")!;
+    const tile = container.querySelector('[aria-label^="batch-job-pending"] rect')!;
+    expect(Number(tile.getAttribute("y"))).toBeGreaterThan(Number(label.getAttribute("y")));
+  });
+
   it("names a node that is not ready", () => {
     mount(KUBERNETES_PLUGIN_IDS.placement, "gaps");
     expect(screen.getByText("1 node not ready")).toBeInTheDocument();
