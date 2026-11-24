@@ -62,6 +62,8 @@ type dashboardReadWidget struct {
 		Thresholds        []dashboardReadThreshold `json:"thresholds"`
 		// Compare is a stat's earlier-window comparison. Nil leaves the stat without one.
 		Compare *dashboardReadCompare `json:"compare"`
+		// Baseline is a time series' band. Nil leaves the series without one.
+		Baseline *dashboardReadBaseline `json:"baseline"`
 		// The declared scale and styling the dry-run data rules compare against.
 		// Query output never reads them.
 		Min           *float64        `json:"min"`
@@ -74,6 +76,12 @@ type dashboardReadWidget struct {
 type dashboardReadCompare struct {
 	Window string `json:"window"`
 	Good   string `json:"good,omitempty"`
+}
+
+// dashboardReadBaseline is a time series' baseline: its earlier window (or rolling) and its band.
+type dashboardReadBaseline struct {
+	Window string `json:"window"`
+	Band   string `json:"band,omitempty"`
 }
 
 type dashboardReadThreshold struct {

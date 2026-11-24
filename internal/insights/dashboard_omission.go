@@ -18,7 +18,9 @@ type dashboardOmissionStep struct {
 // counts, band thresholds and signals are never dropped. Breach summaries and latest levels go only
 // with a widget's breach object, in step 3. The series behind a band go with its whole bandSeries
 // object, in step 4. A result whose never-dropped facts alone exceed the cap is refused.
+// baselineSeries goes first: a time series' listed band series are the largest optional detail, and its totals stay.
 var dashboardOmissionSteps = []dashboardOmissionStep{
+	{name: "baselineSeries", drop: dropDashboardBaselineSeries},
 	{name: "breachIntervals", drop: dropDashboardBreachIntervals},
 	{name: "rankingRows", drop: dropDashboardRankingRows},
 	{name: "breaches", drop: dropDashboardWidgetBreaches},

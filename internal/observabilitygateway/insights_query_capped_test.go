@@ -55,18 +55,21 @@ func dashboardCappedGoldenPath(n int) string {
 func TestDashboardCappedOutputValidatesAgainstTheSchema(t *testing.T) {
 	resolved := loadDashboardQuerySchema(t, []byte(dashboardQueryOutputSchema))
 	steps := insights.DashboardOmissionStepNames()
-	for n := 1; n <= len(steps); n++ {
+	for n := 1; n <= cappedGoldenCount(t); n++ {
 		raw, err := os.ReadFile(dashboardCappedGoldenPath(n))
 		require.NoError(t, err)
 		var document map[string]any
 		require.NoError(t, json.Unmarshal(raw, &document))
-		require.Equal(t, toAnySlice(steps[:n]), document["omitted"], "the golden after %d steps names exactly those steps", n)
+		omitted, _ := document["omitted"].([]any)
+		require.Len(t, omitted, n, "the golden after %d steps names %d steps that applied", n, n)
+		require.True(t, orderedSubsequence(omitted, steps), "the golden after %d steps names steps in ladder order: %v", n, omitted)
 		require.NoError(t, resolved.Validate(document), "a result capped after %d steps must validate", n)
 
 		text, err := dashboardQueryText(raw)
 		require.NoError(t, err)
 		require.Contains(t, text, "Omitted from structuredContent to fit the result cap, in this order:")
-		for _, name := range steps[:n] {
+		for _, value := range omitted {
+			name, _ := value.(string)
 			require.Contains(t, text, dashboardOmissionPhrases[name])
 		}
 	}
@@ -80,7 +83,7 @@ func TestDashboardCappedOutputKeepsAttentionCounts(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &uncapped))
 	before, err := json.Marshal(uncapped["attention"])
 	require.NoError(t, err)
-	for n := 2; n <= len(insights.DashboardOmissionStepNames()); n++ {
+	for n := 2; n <= cappedGoldenCount(t); n++ {
 		raw, err := os.ReadFile(dashboardCappedGoldenPath(n))
 		require.NoError(t, err)
 		var capped map[string]any
@@ -91,10 +94,33 @@ func TestDashboardCappedOutputKeepsAttentionCounts(t *testing.T) {
 	}
 }
 
-func toAnySlice(names []string) []any {
-	out := make([]any, 0, len(names))
-	for _, name := range names {
-		out = append(out, name)
+// cappedGoldenCount is how many capped goldens exist. A ladder step with nothing to drop in the fixture applies to none of
+// them, so the goldens are the applied prefixes, not one per step.
+func cappedGoldenCount(t *testing.T) int {
+	t.Helper()
+	n := 0
+	for {
+		if _, err := os.Stat(dashboardCappedGoldenPath(n + 1)); err != nil {
+			break
+		}
+		n++
 	}
-	return out
+	require.NotZero(t, n, "no capped goldens found")
+	return n
+}
+
+// orderedSubsequence reports whether every omitted name is a step, and the names keep the ladder's order.
+func orderedSubsequence(omitted []any, steps []string) bool {
+	next := 0
+	for _, value := range omitted {
+		name, _ := value.(string)
+		for next < len(steps) && steps[next] != name {
+			next++
+		}
+		if next == len(steps) {
+			return false
+		}
+		next++
+	}
+	return true
 }

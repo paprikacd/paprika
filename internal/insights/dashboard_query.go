@@ -59,6 +59,9 @@ type DashboardQueryResult struct {
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
 	comparisons       []dashboardComparisonPlan
 	comparisonQueries []Query
+	// baselines and baselineQueries plan the time series' earlier-window bands the same way. Not part of the wire form.
+	baselines       []dashboardBaselinePlan
+	baselineQueries []Query
 	// VariableDefinitions declares each dashboard variable with its label, default and static options, so an agent
 	// can choose values without a get_dashboard read. Absent when the dashboard declares no variables.
 	VariableDefinitions []DashboardQueryVariable `json:"variableDefinitions,omitempty"`
@@ -123,6 +126,8 @@ type DashboardQueryWidget struct {
 	SLO *DashboardSLO `json:"slo,omitempty"`
 	// Comparison is a stat's change against its earlier window, when the stat declares one. See DashboardComparison.
 	Comparison *DashboardComparison `json:"comparison,omitempty"`
+	// Baseline is a time series' band over its earlier window or its own recent samples, when the series declares one.
+	Baseline *DashboardBaseline `json:"baseline,omitempty"`
 	// seriesCap is how many leading series the visualization draws, for band widgets.
 	seriesCap int
 	// sloConfig is the validated objective of an slo-summary widget, set at planning.
@@ -167,6 +172,8 @@ type DashboardQueryCount struct {
 	Deduplicated int `json:"deduplicated"`
 	// Comparison counts the earlier-window queries of stats that declare a comparison. Absent when none do.
 	Comparison *DashboardComparisonCount `json:"comparison,omitempty"`
+	// Baseline counts the earlier-window queries of time series with a baseline, as Comparison does for stats.
+	Baseline *DashboardComparisonCount `json:"baseline,omitempty"`
 }
 
 type dashboardSavedSnapshot struct {
@@ -279,6 +286,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
 	seenComparisons := make(map[Query]int)
+	seenBaselines := make(map[Query]int)
 	coarsestMinStep := 0.0
 	for i := range selected {
 		widget := &selected[i]
@@ -314,6 +322,7 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 		}
 		if resolutionError == nil {
 			planDashboardComparison(result, len(result.Widgets), widget, &output, &query, seenComparisons)
+			planDashboardBaseline(result, len(result.Widgets), widget, &output, &query, seenBaselines)
 		}
 		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, minStep, validators)
 		result.Widgets = append(result.Widgets, output)
@@ -638,6 +647,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		}
 	}
 	s.executeDashboardComparisons(r, options, result, cache, limits)
+	s.executeDashboardBaselines(r, options, result, cache, limits)
 }
 
 // applyDashboardSignalStep discloses a metrics signal's step only where it differs from the range's, so a
@@ -656,6 +666,7 @@ func applyDashboardSignalStep(result *DashboardQueryResult, query *Query, execut
 func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders, signal *DashboardSignal, executed bool, columns []dataframe.Column, raw *QueryResult) {
 	signal.ID = fmt.Sprintf("q%d", index+1)
 	captureDashboardComparisons(result, signal.ID, raw)
+	captureDashboardBaselines(result, signal.ID, raw)
 	signal.Kind = query.Kind
 	applyDashboardSignalStep(result, query, executed, signal)
 	// Do not disclose a provider selected by a saved query unless this

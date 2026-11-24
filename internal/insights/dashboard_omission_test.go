@@ -135,10 +135,7 @@ func sizeAfterStepsOf(t *testing.T, build func() *DashboardQueryResult, n int) i
 	t.Helper()
 	result := build()
 	result.Dashboard.Title = "t"
-	for _, step := range dashboardOmissionSteps[:n] {
-		require.True(t, step.drop(result), "step %s must remove detail from this dashboard", step.name)
-		result.Omitted = append(result.Omitted, step.name)
-	}
+	result.Omitted = append(result.Omitted, applyFirstSteps(result, n)...)
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
 	return len(encoded)
@@ -159,20 +156,50 @@ func fillerForSteps(t *testing.T, n int) string {
 	return fillerForStepsOf(t, breachDetailDashboard, n)
 }
 
+// applyFirstSteps applies the ladder to result in order, as encodeDashboardQueryResult does, and returns the names of
+// the first n steps that removed something. A step with nothing to remove in this fixture is skipped, so the prefixes
+// count the steps that apply: a fixture with no baseline does not shift the steps behind baselineSeries.
+func applyFirstSteps(result *DashboardQueryResult, n int) []string {
+	var names []string
+	for _, step := range dashboardOmissionSteps {
+		if len(names) == n {
+			break
+		}
+		if step.drop(result) {
+			names = append(names, step.name)
+		}
+	}
+	return names
+}
+
+// applicableSteps is how many ladder steps remove something from a fresh result from build.
+func applicableSteps(build func() *DashboardQueryResult) int {
+	return len(applyFirstSteps(build(), len(dashboardOmissionSteps)))
+}
+
+// stepNamed is the ladder step with the given name.
+func stepNamed(t *testing.T, name string) dashboardOmissionStep {
+	t.Helper()
+	for _, step := range dashboardOmissionSteps {
+		if step.name == name {
+			return step
+		}
+	}
+	require.FailNow(t, "no omission step named "+name)
+	return dashboardOmissionStep{}
+}
+
 // The ladder applies steps in order and stops as soon as the result fits. Each case needs one more
 // step than the previous one, and the omitted list names exactly those steps.
 func TestDashboardOmissionDropsDetailInTheFixedOrder(t *testing.T) {
-	for n := range len(dashboardOmissionSteps) + 1 {
+	for n := range applicableSteps(breachDetailDashboard) + 1 {
 		t.Run(fmt.Sprintf("%d steps", n), func(t *testing.T) {
 			result := breachDetailDashboard()
 			result.Dashboard.Title = fillerForSteps(t, n)
 			encoded, err := encodeDashboardQueryResult(result)
 			require.NoError(t, err)
 			require.Equal(t, DashboardQueryResponseBytes, len(encoded), "the filler lands exactly on the cap, so the cap itself is a fit")
-			want := make([]string, 0, n)
-			for _, step := range dashboardOmissionSteps[:n] {
-				want = append(want, step.name)
-			}
+			want := applyFirstSteps(breachDetailDashboard(), n)
 			if n == 0 {
 				require.Nil(t, result.Omitted, "a result that fits keeps every fact and reports no omission")
 			} else {
@@ -185,7 +212,7 @@ func TestDashboardOmissionDropsDetailInTheFixedOrder(t *testing.T) {
 // Omitted lists exactly what was dropped: each named detail is gone everywhere, and each detail
 // not named is still present on every widget that declared it.
 func TestDashboardOmittedListsExactlyWhatWasDropped(t *testing.T) {
-	for n := 1; n <= len(dashboardOmissionSteps); n++ {
+	for n := 1; n <= applicableSteps(breachDetailDashboard); n++ {
 		result := breachDetailDashboard()
 		result.Dashboard.Title = fillerForSteps(t, n)
 		_, err := encodeDashboardQueryResult(result)
@@ -370,7 +397,7 @@ func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
 	encoded, err := encodeDashboardQueryResult(result)
 	require.NoError(t, err)
 	require.Equal(t, DashboardQueryResponseBytes, len(encoded))
-	require.Equal(t, dashboardOmissionStepNamesThrough(steps), result.Omitted)
+	require.Equal(t, applyFirstSteps(withStatWidgets(), steps), result.Omitted)
 	stats := 0
 	for index := range result.Widgets {
 		widget := &result.Widgets[index]
@@ -390,15 +417,6 @@ func TestDashboardOmissionKeepsEveryStatFreshnessWhenCapped(t *testing.T) {
 	require.Contains(t, raw, "omitted")
 }
 
-// dashboardOmissionStepNamesThrough names the first n steps in ladder order.
-func dashboardOmissionStepNamesThrough(n int) []string {
-	names := make([]string, 0, n)
-	for _, step := range dashboardOmissionSteps[:n] {
-		names = append(names, step.name)
-	}
-	return names
-}
-
 // The sample step drops a stale sample stub entirely when the widget's attention already reads stale, because
 // attention says the same. A stale sample on a widget with a more severe reason keeps its state.
 func TestDashboardOmissionDropsStaleSampleStubWhenAttentionReadsStale(t *testing.T) {
@@ -412,7 +430,7 @@ func TestDashboardOmissionDropsStaleSampleStubWhenAttentionReadsStale(t *testing
 		{ID: "critical", Type: "timeseries", Attention: "critical", Sample: stale()},
 		{ID: "stat-stale", Type: "stat", Attention: "stale", Sample: stale(), Freshness: &DashboardObservationFreshness{ThresholdSeconds: &threshold, State: "stale", LastTimestamp: &last, AgeSeconds: &age}},
 	}}
-	require.True(t, dashboardOmissionSteps[4].drop(result))
+	require.True(t, stepNamed(t, "sample").drop(result))
 	require.Nil(t, result.Widgets[0].Sample, "a stale stub on a widget whose attention reads stale is dropped")
 	require.Nil(t, result.Widgets[0].Freshness)
 	require.NotNil(t, result.Widgets[1].Sample, "a stale stub under a more severe attention is kept")
