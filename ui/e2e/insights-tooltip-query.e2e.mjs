@@ -368,7 +368,7 @@ async function typedAuthoring(width) {
   await openScenario(undefined, width)
   await openDashboardEditor(page)
   await page.getByRole("button", { name: "Add widget", exact: true }).click()
-  await page.getByRole("region", { name: "Widget library", exact: true }).getByRole("button", { name: /^Status heatmap/ }).click()
+  await page.getByRole("region", { name: "Widget library", exact: true }).getByRole("button", { name: /^Status grid/ }).click()
   await panel().getByLabel("Title", { exact: true }).fill("Discoverable tooltip host")
   await panel().getByRole("textbox", { name: /^PromQL query/ }).fill("parent_health")
   await panel().getByRole("tab", { name: "Style", exact: true }).click()
@@ -485,7 +485,7 @@ try {
 
     await check(`Gamma tooltip authoring persists every visualization and query mapping at ${width}px`, async () => {
       await openScenario(undefined, width)
-      const choices = [["timeseries", "Time series"], ["bar", "Bar chart"], ["stat", "Single value"], ["table", "Metrics table"], ["heatmap", "Status heatmap"], ["plugin", "Threshold gauge"], ["traces", "Trace explorer"]]
+      const choices = [["timeseries", "Time series"], ["bar", "Bar chart"], ["stat", "Single value"], ["table", "Metrics table"], ["heatmap", "Status grid"], ["plugin", "Threshold gauge"], ["traces", "Trace explorer"]]
       let controls
       for (const [type, label] of choices) {
         const queryCount = childQueries().length

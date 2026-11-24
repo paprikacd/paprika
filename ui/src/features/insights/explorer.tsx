@@ -670,7 +670,7 @@ export function Explorer({
                     { value: "bar", label: "Bar chart" },
                     { value: "table", label: "Table" },
                     { value: "stat", label: "Single value" },
-                    { value: "heatmap", label: "Status heatmap" },
+                    { value: "heatmap", label: "Status grid" },
                   ]}
                   onValueChange={(value) => setView(value as Widget["type"])}
                 />

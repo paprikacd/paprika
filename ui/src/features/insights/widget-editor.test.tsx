@@ -847,7 +847,7 @@ describe("widget inspector", () => {
   it("validates threshold ordering and retains appearance choices in the document", () => {
     const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
-    choose("Visualization", /^Status heatmap/);
+    choose("Visualization", /^Status grid/);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.change(screen.getByLabelText("Decimal places"), {
       target: { value: "3" },
@@ -1414,7 +1414,7 @@ describe("widget inspector", () => {
     expect(
       screen.queryByRole("switch", { name: "Show values" }),
     ).not.toBeInTheDocument();
-    choose("Visualization", /^Status heatmap/);
+    choose("Visualization", /^Status grid/);
     const labels = screen.getByRole("switch", { name: "Show labels" });
     const values = screen.getByRole("switch", { name: "Show values" });
     expect(labels).toBeChecked();

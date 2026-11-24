@@ -206,7 +206,7 @@ const builtins: readonly TooltipRendererDefinition[] = Object.freeze(
     { id: "stat", label: "Single value", render: EmbeddedRenderer },
     { id: "table", label: "Metrics table", render: EmbeddedRenderer },
     { id: "traces", label: "Trace explorer", render: EmbeddedRenderer },
-    { id: "heatmap", label: "Status heatmap", render: EmbeddedRenderer },
+    { id: "heatmap", label: "Status grid", render: EmbeddedRenderer },
     { id: "plugin", label: "Installed plugin", render: EmbeddedRenderer },
   ].map((definition) => Object.freeze(definition)),
 );

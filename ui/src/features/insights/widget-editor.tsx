@@ -35,6 +35,7 @@ import {
 } from "./schema";
 import { getWidgetDefinition, optionSectionsFor, supportsThresholds, useWidgetDefinitions, type StarterQuery, type StyleSectionId } from "./widget-registry";
 import { StarterQueryChips } from "./starter-query-chips";
+import { suggestVisualizations, visualizationValue } from "./visualization-suggestions";
 import { PluginConfigEditor } from "./plugin-config-editor";
 import { SeriesColorEditor } from "./plugins/series-color-editor";
 import type { InsightsClient } from "./client";
@@ -91,7 +92,7 @@ export const widgetLabels = {
   stat: "Single value",
   table: "Metrics table",
   traces: "Trace explorer",
-  heatmap: "Status heatmap",
+  heatmap: "Status grid",
   plugin: "Plugin",
 };
 
@@ -1216,6 +1217,9 @@ export function WidgetEditor({
     }));
     if ((tab === "tooltips" && !supportsTooltipSettings(next)) || (tab === "options" && next.type !== "plugin")) setTab("style");
   }
+  const suggestedVisualizations = result
+    ? suggestVisualizations(result, definitions, draft.type === "plugin" ? `plugin:${draft.pluginId}` : draft.type, widgetKind(draft))
+    : [];
   const source = preview && !error ? preview : previewRevision.widget;
   const sourceText = sourceFormat === "yaml"
     ? stringifyYaml(source, { lineWidth: 0 })
@@ -1256,18 +1260,17 @@ export function WidgetEditor({
         Visualization
         <GammaSelect
           aria-label="Visualization"
+          searchable
           value={
             draft.type === "plugin" ? `plugin:${draft.pluginId}` : draft.type
           }
           onValueChange={(value) => chooseVisualization(value)}
           options={[
             ...definitions.map((definition) => ({
-              value:
-                definition.type === "plugin"
-                  ? `plugin:${definition.id}`
-                  : definition.type,
+              value: visualizationValue(definition),
               label: definition.label,
               description: definition.description,
+              ...(definition.type === "heatmap" ? { keywords: ["heatmap"] } : {}),
             })),
             // An unlisted plugin is absent from the list but still registered, so it keeps its own label.
             ...(draft.type === "plugin" && !definitions.some((definition) => definition.type === "plugin" && definition.id === draft.pluginId)
@@ -1282,6 +1285,15 @@ export function WidgetEditor({
           ]}
         />
       </label>
+      {suggestedVisualizations.length > 0 && <div role="group" aria-label="Suggested for this data" className={styles.row}>
+        <span className={styles.hint}>Suggested for this data</span>
+        {suggestedVisualizations.map((value) => {
+          const suggestion = definitions.find((definition) => visualizationValue(definition) === value);
+          return suggestion && <GammaButton key={value} type="button" variant="quiet" size="sm" onClick={() => chooseVisualization(value)}>
+            {suggestion.label}
+          </GammaButton>;
+        })}
+      </div>}
       {pendingDefinition && <div className={styles.stack} role="status">
         {pendingQueryLoss && <p className={styles.hint}>{draft.queryRef
           ? "This visualization uses a different data kind. The saved query connection and its mappings will be removed, and the current query will be replaced with a new query."

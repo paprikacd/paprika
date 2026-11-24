@@ -222,7 +222,7 @@ export const widgetDefinitions: readonly WidgetDefinition[] = Object.freeze([
   {
     id: "heatmap",
     type: "heatmap",
-    label: "Status heatmap",
+    label: "Status grid",
     description: "Service health at a glance",
     dataKind: "metrics",
     render: BuiltinWidgetRenderer,
