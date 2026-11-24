@@ -115,7 +115,7 @@ func TestSQLRejectsWriteAndAlternateStatementShapes(t *testing.T) {
 		"SELECT E'\\x'; DELETE FROM x", `SELECT U&"set\005fconfig"('x','y',true)`, "SELECT 1 /* unfinished", "SELECT 'unfinished",
 		"SELECT $$unfinished", "SELECT 1\x00", "SELECT $1::text", "SELECT $0", "SELECT ${name}",
 		`{"sql":""}`, `{"sql":" ","parameters":[]}`, `{"sql":"SELECT $2","parameters":[1]}`, `{"sql":"SELECT 1","parameters":[1]}`, `{"sql":"SELECT $2","parameters":[1,2]}`,
-		`{"sql":"SELECT $1","parameters":[{}]}`, `{"sql":"SELECT $1","parameters":[[]]}`, `{"sql":"SELECT 1","unknown":"private"}`,
+		`{"sql":"SELECT $1","parameters":[{}]}`, `{"sql":"SELECT $1","parameters":[[1]]}`, `{"sql":"SELECT 1","unknown":"private"}`,
 		`{"sql":"SELECT 1","sql":"SELECT 2"}`, `{"sql":"SELECT 1","projection":{"value":"a","value":"b"}}`,
 		`{"sql":"SELECT 1","parameters":[NaN]}`, `{"sql":"SELECT 1"} {}`, strings.Repeat(" ", 65<<10),
 	} {

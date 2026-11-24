@@ -106,7 +106,7 @@ export function TooltipEditor({
   const parentSavedQuery = library.queries.find((query) => query.id === parentQueryRef?.id);
   const parentBindings = parentQueryRef ? [
     ...(parentQueryRef.bindings ?? []),
-    ...(parentSavedQuery?.parameters ?? []).flatMap((parameter) => parameter.defaultValue !== undefined && !parentQueryRef.bindings?.some((binding) => binding.parameter === parameter.name)
+    ...(parentSavedQuery?.parameters ?? []).flatMap((parameter) => (typeof parameter.defaultValue === "string" || typeof parameter.defaultValue === "number") && !parentQueryRef.bindings?.some((binding) => binding.parameter === parameter.name)
       ? [{ parameter: parameter.name, source: "constant" as const, value: parameter.defaultValue }] : []),
   ] : undefined;
 

@@ -1,4 +1,6 @@
 {
+  "title": "Paprika saved query",
+  "description": "A named, typed query owned by one data source, with optional library image, tags and metadata. Parameters are complete unquoted literals.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
@@ -89,11 +91,26 @@
               "number"
             ]
           },
+          "multi": {
+            "type": "boolean"
+          },
           "defaultValue": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 1024
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 1024
+                    }
+                  }
+                ]
               },
               {
                 "type": "number"
@@ -117,7 +134,5 @@
     "kind",
     "query"
   ],
-  "additionalProperties": false,
-  "title": "Paprika saved query",
-  "description": "A named, typed query owned by one data source, with optional library image, tags and metadata. Parameters are complete unquoted literals."
+  "additionalProperties": false
 }

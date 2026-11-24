@@ -10,6 +10,7 @@ import (
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // lintRule is one design rule a dashboard document can break. Schema checks
@@ -56,6 +57,8 @@ var lintRules = slices.Concat(layoutLintRules, widgetLintRules, textLintRules, v
 // linear in the document size.
 type lintDocument struct {
 	variables map[string]bool
+	// multi names each declared variable that takes several values.
+	multi map[string]bool
 	// sourceVariables lists each declared variable with the members the variable rules read.
 	sourceVariables []lintVariable
 	// annotationVariables are the variables the dashboard-level event query reads, with its pointer.
@@ -111,6 +114,10 @@ type lintWidget struct {
 type lintVariableRef struct {
 	pointer  string
 	variable string
+	// queryRefID and parameter name the saved query parameter a variable binding fills, when the reference is a
+	// saved query's. They are empty for other references.
+	queryRefID string
+	parameter  string
 }
 
 // wireDocument mirrors only the members lint reads. Unknown members are ignored
@@ -124,10 +131,12 @@ type wireDocument struct {
 
 // wireVariable mirrors the variable members the variable rules read.
 type wireVariable struct {
-	Name         string         `json:"name"`
-	DefaultValue *string        `json:"defaultValue"`
-	Options      []string       `json:"options"`
-	Source       *wireVarSource `json:"source"`
+	Name         string               `json:"name"`
+	Multi        bool                 `json:"multi"`
+	AllowAll     bool                 `json:"allowAll"`
+	DefaultValue *variablevalue.Value `json:"defaultValue"`
+	Options      []string             `json:"options"`
+	Source       *wireVarSource       `json:"source"`
 }
 
 // wireVarSource mirrors a variable source. Type selects which members apply.
@@ -178,8 +187,9 @@ type wireQueryRef struct {
 }
 
 type wireBinding struct {
-	Source   string `json:"source"`
-	Variable string `json:"variable"`
+	Source    string `json:"source"`
+	Variable  string `json:"variable"`
+	Parameter string `json:"parameter"`
 }
 
 type wireWidgetOption struct {
@@ -287,9 +297,10 @@ func decodeLintDocument(document Dashboard) (*lintDocument, bool) {
 	if json.Unmarshal(document, &wire) != nil {
 		return nil, false
 	}
-	doc := &lintDocument{variables: make(map[string]bool, len(wire.Variables))}
+	doc := &lintDocument{variables: make(map[string]bool, len(wire.Variables)), multi: make(map[string]bool, len(wire.Variables))}
 	for i := range wire.Variables {
 		doc.variables[wire.Variables[i].Name] = true
+		doc.multi[wire.Variables[i].Name] = wire.Variables[i].Multi
 		doc.sourceVariables = append(doc.sourceVariables, lintVariableOf(i, &wire.Variables[i]))
 	}
 	for i := range wire.Widgets {
@@ -442,7 +453,7 @@ func variableRefs(base string, ref *wireQueryRef) []lintVariableRef {
 	var refs []lintVariableRef
 	for k, binding := range ref.Bindings {
 		if binding.Source == "variable" {
-			refs = append(refs, lintVariableRef{pointer: base + "/bindings/" + strconv.Itoa(k) + "/variable", variable: binding.Variable})
+			refs = append(refs, lintVariableRef{pointer: base + "/bindings/" + strconv.Itoa(k) + "/variable", variable: binding.Variable, queryRefID: ref.ID, parameter: binding.Parameter})
 		}
 	}
 	return refs

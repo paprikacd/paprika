@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { Dashboard, DashboardVariable, SavedQueryEntry } from "./schema"
+import type { VariableValue } from "./variable-values"
 
 /**
  * An Explorer opened from a chart: a trace search over a time range (milliseconds), such as a latency region's traces.
@@ -12,7 +13,8 @@ export interface ExplorerSeed { providerId: string; kind: "traces"; query: strin
 export interface SavedQueryLibrary {
   queries: SavedQueryEntry[]
   variables: NonNullable<Dashboard["variables"]>
-  values: Record<string, string>
+  /** Resolved dashboard variables. A variable with several values holds a list; an empty list is All. */
+  values: Record<string, VariableValue>
   loading?: boolean
   error?: string
   /** Opens the Explorer. A seed opens it on a trace search over a range, such as a latency region's traces. */

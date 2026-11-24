@@ -1,6 +1,7 @@
 import { MAX_DASHBOARD_VARIABLES, widgetKind, type Dashboard, type QueryResult, type SavedQueryBinding, type SavedQueryParameter, type TooltipQuerySource, type Widget } from "./schema";
 import type { QueryFetcher } from "./query";
 import { savedQueryParameterValue } from "./saved-queries";
+import { formatVariableValue, type VariableValue } from "./variable-values";
 
 export interface QueryFields {
   seriesCount: number;
@@ -40,7 +41,7 @@ export function queryFields(result: QueryResult): QueryFields {
 }
 export interface ConnectionContext {
   variables?: Dashboard["variables"];
-  values?: Record<string, string>;
+  values?: Record<string, VariableValue>;
   fields?: QueryFields;
   parentBindings?: SavedQueryBinding[];
   allowObservation?: boolean;
@@ -53,20 +54,28 @@ function accepts(parameter: SavedQueryParameter, value: unknown) {
     savedQueryParameterValue(parameter, String(value)); return true;
   } catch { return false; }
 }
+function currentValueReason(value: VariableValue | undefined) {
+  return value === undefined ? "Uses the dashboard’s selected value." : `Current value: ${formatVariableValue(value) || "Empty value"}`;
+}
+/** A multi-value variable binds only a parameter of several values; a single variable may fill either. */
+function variableFits(parameter: SavedQueryParameter, variable: Dashboard["variables"] extends (infer V)[] | undefined ? V | undefined : never) {
+  return !variable?.multi || Boolean(parameter.multi);
+}
 export function suggestParameterConnection(parameter: SavedQueryParameter, context: ConnectionContext): ConnectionSuggestion | undefined {
   const variables = context.variables ?? [];
   const variableValue = (name: string) => context.values?.[name] ?? variables.find((item) => item.name === name)?.defaultValue;
   const inherited = context.parentBindings?.find((item) => item.parameter === parameter.name);
+  const inheritedVariable = inherited?.source === "variable" ? variables.find((item) => item.name === inherited.variable) : undefined;
   if (inherited && ((inherited.source === "constant" && accepts(parameter, inherited.value)) ||
-    (inherited.source === "variable" && variables.some((item) => item.name === inherited.variable) && (parameter.type === "string" || accepts(parameter, variableValue(inherited.variable)))))) {
+    (inheritedVariable && variableFits(parameter, inheritedVariable) && (parameter.type === "string" || accepts(parameter, variableValue(inheritedVariable.name)))))) {
     return { binding: { ...inherited }, label: "Use graph connection", reason: inherited.source === "variable" ? `Dashboard variable: ${inherited.variable}` : `Fixed value: ${JSON.stringify(inherited.source === "constant" ? inherited.value : "")}` };
   }
   const label = context.fields?.labels.find((item) => item.name === parameter.name);
   if (context.allowObservation && label && parameter.type === "string")
     return { binding: { parameter: parameter.name, source: "label", label: label.name }, label: `Use graph label: ${label.name}`, reason: label.samples.map((value) => JSON.stringify(value)).join(", ") };
   const variable = variables.find((item) => item.name === parameter.name);
-  if (variable && (parameter.type === "string" || accepts(parameter, variableValue(variable.name))))
-    return { binding: { parameter: parameter.name, source: "variable", variable: variable.name }, label: `Use dashboard variable: ${variable.name}`, reason: variableValue(variable.name) === undefined ? "Uses the dashboard’s selected value." : `Current value: ${variableValue(variable.name)}` };
+  if (variable && variableFits(parameter, variable) && (parameter.type === "string" || accepts(parameter, variableValue(variable.name))))
+    return { binding: { parameter: parameter.name, source: "variable", variable: variable.name }, label: `Use dashboard variable: ${variable.name}`, reason: currentValueReason(variableValue(variable.name)) };
   if (context.allowObservation && ((parameter.type === "number" && ["value", "timestamp"].includes(parameter.name)) || (parameter.type === "string" && parameter.name === "series")))
     return { binding: { parameter: parameter.name, source: "field", field: parameter.name as "value" | "timestamp" | "series" }, label: `Use observation ${parameter.name}`, reason: parameter.name === "timestamp" ? "Exact observation time in Unix seconds." : "Uses the selected observation, without rounding." };
 }

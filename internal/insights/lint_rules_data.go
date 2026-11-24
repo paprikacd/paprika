@@ -6,8 +6,10 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // dataRule is one check on what a dry run's queries returned. Data rules need
@@ -61,7 +63,7 @@ type dataWidget struct {
 type dataVariable struct {
 	index    int // position in the document's variables array
 	name     string
-	value    string
+	value    variablevalue.Value
 	hasValue bool
 	outcome  variableSourceOutcome
 }
@@ -417,13 +419,55 @@ func checkDataVariableValueNotInSource(variables []dataVariable) []dataHit {
 	for i := range variables {
 		variable := &variables[i]
 		outcome := &variable.outcome
-		if outcome.state != "ready" || outcome.truncated || !variable.hasValue || variable.value == "" || slices.Contains(outcome.values, variable.value) {
+		if outcome.state != "ready" || outcome.truncated || !variable.hasValue {
 			continue
 		}
-		message := "Variable " + strconv.Quote(variable.name) + " value " + strconv.Quote(truncateRunes(variable.value, 64)) + " is not one of the values its source returned"
+		missing := missingVariableValues(outcome.values, variable.value)
+		if len(missing) == 0 {
+			continue
+		}
+		message := "Variable " + strconv.Quote(variable.name) + " value " + strconv.Quote(truncateRunes(missing[0], 64)) + " is not one of the values its source returned"
+		if variable.value.List {
+			message = "Variable " + strconv.Quote(variable.name) + " " + valueWord(len(missing)) + " not among the values its source returned: " + quotedValueList(missing)
+		}
 		hits = append(hits, newVariableDataHit(fmt.Sprintf("/variables/%d", variable.index), message))
 	}
 	return hits
+}
+
+// missingVariableValues names each non-empty current value the complete source list lacks. An empty value and
+// All (an empty list) name nothing.
+func missingVariableValues(values []string, current variablevalue.Value) []string {
+	var missing []string
+	for _, item := range current.Items {
+		if item != "" && !slices.Contains(values, item) {
+			missing = append(missing, item)
+		}
+	}
+	return missing
+}
+
+// maxNamedVariableValues bounds how many missing values one message names; the rest are counted.
+const maxNamedVariableValues = 5
+
+// quotedValueList names up to maxNamedVariableValues values, each cut to 64 runes, and counts any others.
+func quotedValueList(values []string) string {
+	names := make([]string, 0, min(len(values), maxNamedVariableValues))
+	for _, value := range values[:min(len(values), maxNamedVariableValues)] {
+		names = append(names, strconv.Quote(truncateRunes(value, 64)))
+	}
+	text := strings.Join(names, ", ")
+	if extra := len(values) - maxNamedVariableValues; extra > 0 {
+		text += fmt.Sprintf(" and %d more", extra)
+	}
+	return text
+}
+
+func valueWord(count int) string {
+	if count == 1 {
+		return "has a value"
+	}
+	return "has values"
 }
 
 // variableSourcePointer locates a variable's source in the document.

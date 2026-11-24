@@ -24,6 +24,7 @@ import (
 	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 const dashboardQueryFixture = `{"schemaVersion":1,"dashboard":{"id":"service-overview","title":"Service overview","etag":"v1"},"observedAt":"2026-10-26T10:00:00Z","range":{"start":"2026-10-26T09:00:00Z","end":"2026-10-26T10:00:00Z","stepSeconds":12},"variables":{"service":"api"},"widgets":[{"id":"rate","title":"Request rate","type":"stat","unit":"req/s","signalId":"s1"},{"id":"trace","title":"Matching traces","type":"traces","unit":"ms","signalId":"s2"}],"savedQueries":[{"id":"requests","etag":"q1"}],"signals":[{"id":"s1","state":"ok","primarySeries":0,"series":[{"index":0,"samples":300,"valid":299,"missing":1,"last":{"timestamp":1793008800000,"value":1.234567890123}}]},{"id":"s2","state":"partial","traces":{"returned":100,"statusCounts":{"unknown":100},"examples":[],"examplesTruncated":true}}],"queryCount":{"planned":2,"executed":2,"deduplicated":0},"state":"partial","attention":{"basis":"author-declared warning and critical statuses and objectives, query failures and staleness only; not a health verdict","widgets":2,"checked":1,"critical":0,"warning":0,"failed":0,"stale":0}}`
@@ -159,9 +160,9 @@ func TestDashboardThresholdTextIsBounded(t *testing.T) {
 }
 
 func TestDashboardQueryCompactVariableContextIsBoundedAndDeterministic(t *testing.T) {
-	variables := make(map[string]string)
+	variables := make(map[string]variablevalue.Value)
 	for i := range 20 {
-		variables[fmt.Sprintf("variable%02d", i)] = strings.Repeat("🫑\n", 200)
+		variables[fmt.Sprintf("variable%02d", i)] = variablevalue.Single(strings.Repeat("🫑\n", 200))
 	}
 	var first, second strings.Builder
 	appendDashboardVariablesText(&first, variables)

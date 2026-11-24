@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/lib/pq"
+
 	"github.com/benebsworth/paprika/internal/dataframe"
 )
 
@@ -69,9 +71,28 @@ func normalizeParameter(parameter any) (any, error) {
 		return value.String(), nil
 	case map[string]any:
 		return normalizeRangeParameter(value)
+	case []any:
+		return normalizeListParameter(value)
 	default:
-		return nil, errors.New("SQL parameters must be scalar values, null or a range reference")
+		return nil, errors.New("SQL parameters must be scalar values, null, a range reference or a text array")
 	}
+}
+
+// normalizeListParameter binds a JSON array of text as PostgreSQL text[]. Each element is a bounded string, and
+// the array holds at most 100 of them. A null parameter is still NULL, so an "All" list reaches the query as NULL.
+func normalizeListParameter(values []any) (any, error) {
+	if len(values) > 100 {
+		return nil, errors.New("SQL array parameters hold at most 100 values")
+	}
+	items := make(pq.StringArray, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok || len(text) > dataframe.MaxCellBytes || strings.ContainsRune(text, 0) {
+			return nil, errors.New("SQL array parameters must hold text values within the text limit")
+		}
+		items = append(items, text)
+	}
+	return items, nil
 }
 
 func normalizeRangeParameter(value map[string]any) (any, error) {

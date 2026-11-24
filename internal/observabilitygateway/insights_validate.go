@@ -17,6 +17,7 @@ import (
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // insightsValidateDocumentBytes matches the Insights store's dashboard limit, so
@@ -34,15 +35,15 @@ const maxInsightsValidateWidgets = 48
 // insightsValidateDescription is the validate_dashboard tool description.
 const insightsValidateDescription = "Dry-run a dashboard document, or a saved dashboard by id, without saving. Returns schema and lint findings; errors block a save, warnings do not. With execute:true it also runs each distinct widget query once over the dashboard's default time range, with optional variables, and returns data.* warnings and each widget's data state. Read-only."
 
-const insightsValidateSchema = `{"type":"object","properties":{"document":` + dashboardDocumentSchema + `,"id":` + insightsIDSchema + `,"execute":{"type":"boolean","description":"Run each distinct widget query once and report what it returned. Read-only; nothing is saved. Default false."},"variables":{"type":"object","description":"Values for declared dashboard variables. Used only with execute.","maxProperties":20,"additionalProperties":{"type":"string","maxLength":1024}}},"oneOf":[{"required":["document"]},{"required":["id"]}],"additionalProperties":false}`
+const insightsValidateSchema = `{"type":"object","properties":{"document":` + dashboardDocumentSchema + `,"id":` + insightsIDSchema + `,"execute":{"type":"boolean","description":"Run each distinct widget query once and report what it returned. Read-only; nothing is saved. Default false."},"variables":{"type":"object","description":"Values for declared dashboard variables. Used only with execute. A list picks several values for a variable declared with multi; an empty list is All.","maxProperties":20,"additionalProperties":{"anyOf":[{"type":"string","maxLength":1024},{"type":"array","maxItems":100,"uniqueItems":true,"items":{"type":"string","maxLength":1024}}]}}},"oneOf":[{"required":["document"]},{"required":["id"]}],"additionalProperties":false}`
 
 // insightsValidateArgs are the validate_dashboard arguments: the authoring
 // arguments plus the dry-run options, so the tool can take execute and variables
 // without the other authoring tools accepting them.
 type insightsValidateArgs struct {
 	insightsAuthoringArgs
-	Execute   bool              `json:"execute,omitempty"`
-	Variables map[string]string `json:"variables,omitempty"`
+	Execute   bool                           `json:"execute,omitempty"`
+	Variables map[string]variablevalue.Value `json:"variables,omitempty"`
 }
 
 // insightsValidateTool is the read-only dry run. It needs paprika:observe only:

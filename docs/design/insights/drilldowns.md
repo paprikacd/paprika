@@ -25,7 +25,7 @@ Timeseries, bar, table, heatmap and trace widgets, and the record treemap, table
 - A bar: click it, or press Enter on it or on its legend entry.
 - A timeseries: click a legend entry or press Enter or Space on it, or use **Filter dashboard by** in its pinned tooltip. Clicking a plot point only pins its tooltip.
 
-Hover and keyboard focus never filter. On the table and trace rows, heatmap cells and timeseries and bar legends, the mark whose selection the dashboard already shows is marked as applied (`data-filter-active` and `aria-current`). Bars in the plot and selectable plugins do not show that state yet. Re-selecting it adds no history step; clear the filter in the variable bar or with Back. Stat widgets cannot select. A binding kept on a stat or an unlisted plugin is retained but stays inactive, and lint warns about it. A missing field stops the whole update and displays an error. Other current filters and saved defaults are preserved. Existing drilldown links continue to work.
+A selection on a variable with several values sets it to that one value. Hover and keyboard focus never filter. On the table and trace rows, heatmap cells and timeseries and bar legends, the mark whose selection the dashboard already shows is marked as applied (`data-filter-active` and `aria-current`). Bars in the plot and selectable plugins do not show that state yet. Re-selecting it adds no history step; clear the filter in the variable bar or with Back. Stat widgets cannot select. A binding kept on a stat or an unlisted plugin is retained but stays inactive, and lint warns about it. A missing field stops the whole update and displays an error. Other current filters and saved defaults are preserved. Existing drilldown links continue to work.
 
 The document representation uses the same bounded sources as drilldowns:
 
@@ -43,7 +43,7 @@ it. Build filtered panels from an unfiltered overview chart grouped by the same
 label instead, for example a timeseries grouped by `service` with a `service`
 selection binding, driving the other panels that read `{{service}}`.
 
-Dashboards declare up to 20 named string variables. Each variable has a `name`, optional display `label`, optional `defaultValue`, and optional `options` for a dropdown. Names use letters, numbers and underscores, start with a letter or underscore, and are at most 64 characters. Values are at most 1,024 UTF-16 code units. Unset variables remain unset; a query that needs one reports an error before requesting data.
+Dashboards declare up to 20 named variables. Each variable has a `name`, optional display `label`, optional `defaultValue`, and optional `options` for a dropdown. A variable holds one string, or a list of strings when it allows several values (see the next section). Names use letters, numbers and underscores, start with a letter or underscore, and are at most 64 characters. Values are at most 1,024 UTF-16 code units. Unset variables remain unset; a query that needs one reports an error before requesting data.
 
 `options` contains 1–100 unique string choices, using the same value limit. An empty string is a valid choice. These choices guide selection; defaults and incoming dashboard links may still provide a value outside the list. The viewer retains that current value explicitly rather than silently replacing it or changing the saved choices. Omit `options` to keep a text field. Variable declarations and choices are saved with the dashboard; viewer selections stay in the URL.
 
@@ -60,6 +60,35 @@ variables:
 # A widget query:
 query: 'sum(rate(http_requests_total{service={{service}}}[5m]))'
 ```
+
+### Several values and All
+
+A variable may allow several values. Set `multi: true`, with `options` or a `source`. Its value is then a list of strings, and an empty list means **All**. Set `allowAll: true` to offer All; it needs `multi`. The variable's `defaultValue` is a list for a multi variable (`[]` needs `allowAll`), and a string for a single one. A string given for a multi variable, in a URL, an MCP argument or a dry run, is one item. A list given for a single variable is refused.
+
+Each list holds at most 100 unique values. Its values and one separator per gap total at most 1,024 UTF-16 code units, the same budget as one string value.
+
+The template context decides how a list is written into a query. The rule is the same in the console and on the server:
+
+| Text before `{{name}}` | Result for a list | Use |
+|---|---|---|
+| `=~` or `\|~` | Regex alternation: each value is regex-escaped, joined with `\|`, and written as one string. All is `".+"`. | `up{service=~{{service}}}`, `{ resource.service.name =~ {{service}} }`, `{app="x"} \|~ {{text}}` |
+| `!~` | Negated alternation. All is refused, because it would exclude every value. | `up{service!~{{service}}}` |
+| `[` or `,` | A JSON array of strings. All is `null`. Use it only as an element of a SQL `parameters` array. | `"parameters":[{{service}}]` |
+| anything else, such as `=`, `!=`, `(` | Refused. The query is not run. | Use `=~` instead |
+
+The alternation has no anchors, because PromQL, LogQL label matchers and TraceQL `=~` match the whole value already.
+
+**SQL All binds NULL.** A plain `= ANY($1::text[])` returns no rows for an empty list, because the query receives NULL. Every SQL query that takes a multi parameter must guard for All:
+
+```sql
+WHERE ($1::text[] IS NULL OR service = ANY($1::text[]))
+```
+
+Clicking a mark on a multi variable sets the variable to that one value, as a one-item list. Other values are changed in the variable bar. Modifier-click to add a value is not offered yet.
+
+A saved query parameter may also take several values. Declare it with `type: "string"` and `multi: true`, and give its default as a list. Bind it to a variable with several values, or to a single variable or fixed string, which fills it as one item. A variable with several values may not bind a single-value parameter; lint refuses that binding. Lint also refuses a list placed anywhere other than the table above. Saving a saved query checks its placeholders the same way.
+
+In `query_dashboard`, `variables` values are a string or a list of strings. Arrays come only from variables that declare `multi`. The result reports `multi`, `allowAll` and the list defaults in `variableDefinitions`, so output changes only for dashboards that declare a multi variable. This is a compatible widening: an existing string value still works.
 
 The runtime substitutes a JSON-quoted string, escaping quotes, newlines and backslashes. Templates inside single, double or backtick strings, comments, or identifier fragments are rejected. Variables cannot inject raw query syntax; numeric context is passed as a string rather than as an executable query fragment.
 

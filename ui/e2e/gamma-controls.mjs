@@ -47,6 +47,25 @@ export async function selectGammaOption(page, trigger, optionName) {
   assert.equal(await trigger.evaluate((element) => document.activeElement === element), true, "Selection should return focus to the trigger")
 }
 
+/**
+ * Toggle options of a several-value Gamma select. The panel stays open after each toggle and commits once when it
+ * closes, so this clicks each named row and then closes the panel with Escape. Use it for GammaMultiSelect triggers.
+ */
+export async function toggleGammaOptions(page, trigger, optionNames) {
+  assert.equal(await trigger.getAttribute("role"), "combobox")
+  await trigger.click()
+  assert.equal(await trigger.getAttribute("aria-expanded"), "true")
+  const listId = await trigger.getAttribute("aria-controls")
+  assert.ok(listId, "Open Gamma select must reference its option list")
+  assert.equal(await page.locator(`[id=${JSON.stringify(listId)}]`).getAttribute("aria-multiselectable"), "true")
+  const list = page.locator(`[id=${JSON.stringify(listId)}]`)
+  for (const optionName of optionNames)
+    await list.getByRole("option", { name: optionName, exact: true }).click()
+  await trigger.press("Escape")
+  await list.waitFor({ state: "hidden" })
+  assert.equal(await trigger.getAttribute("aria-expanded"), "false")
+}
+
 /** Exercise the visible, app-owned confirmation; do not auto-accept browser dialogs. */
 export async function respondToGammaConfirmation(page, action) {
   const dialog = page.getByRole("alertdialog")

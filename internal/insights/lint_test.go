@@ -91,6 +91,8 @@ func TestLintRegistryIsWellFormed(t *testing.T) {
 		"plugin.record-rank":                     insightsv1.Severity_SEVERITY_ERROR,
 		"selection.inactive-binding":             insightsv1.Severity_SEVERITY_WARNING,
 		"selection.self-filter":                  insightsv1.Severity_SEVERITY_WARNING,
+		"variables.multi-operator":               insightsv1.Severity_SEVERITY_ERROR,
+		"variables.multi-binding":                insightsv1.Severity_SEVERITY_ERROR,
 	}
 	if len(lintRules) != len(want) {
 		t.Fatalf("registry has %d rules, want %d", len(lintRules), len(want))

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 const maxSavedQueryBytes = 32 << 10
@@ -28,10 +30,21 @@ type SavedQuery struct {
 }
 
 type SavedQueryParameter struct {
-	Name         string          `json:"name"`
-	Label        string          `json:"label,omitempty"`
-	Type         string          `json:"type"`
+	Name  string `json:"name"`
+	Label string `json:"label,omitempty"`
+	Type  string `json:"type"`
+	// Multi makes a string parameter take a list of values. Its default is a list, and an empty list is All.
+	Multi        bool            `json:"multi,omitempty"`
 	DefaultValue json.RawMessage `json:"defaultValue,omitempty"`
+}
+
+// templateKind is the kind a parameter's value fills in a query template: "strings" for a list of values,
+// otherwise its type. The template validator and the resolver both key on it.
+func (p *SavedQueryParameter) templateKind() string {
+	if p.Multi {
+		return "strings"
+	}
+	return p.Type
 }
 
 func validateSavedQuery(id string, raw json.RawMessage) (SavedQuery, error) {
@@ -79,7 +92,19 @@ func validSavedQueryImageURL(value string) bool {
 	return validImageURLPort(parsed.Port())
 }
 
+// validateListLiteral checks a default for a parameter of several values: a list of bounded, unique strings.
+func validateListLiteral(raw json.RawMessage) error {
+	var list variablevalue.Value
+	if json.Unmarshal(raw, &list) != nil || !list.List || list.Validate() != nil {
+		return errors.New("query list values must be arrays of up to 100 unique bounded strings")
+	}
+	return nil
+}
+
 func validateQueryLiteral(raw json.RawMessage, kind string) error {
+	if kind == "strings" {
+		return validateListLiteral(raw)
+	}
 	var value any
 	if json.Unmarshal(raw, &value) != nil {
 		return errors.New("query values must be bounded strings or finite numbers")
@@ -131,10 +156,7 @@ func validateSavedQueryTemplate(query string, types map[string]string) error {
 }
 
 func validateTemplatePlaceholder(text []rune, start int, types map[string]string, state queryTemplateState) (int, error) {
-	end := start + 2
-	for end+1 < len(text) && (text[end] != '}' || text[end+1] != '}') {
-		end++
-	}
+	end := placeholderEnd(text, start)
 	if end+1 >= len(text) {
 		return 0, errors.New("finish the query parameter placeholder with }}")
 	}
@@ -148,7 +170,64 @@ func validateTemplatePlaceholder(text []rune, start int, types map[string]string
 	if !validPlaceholderBoundaries(text, start, end, types[name]) {
 		return 0, errors.New("query parameters must be complete literal values, not token fragments")
 	}
+	if err := validateListPlaceholder(text, start, name, types[name]); err != nil {
+		return 0, err
+	}
 	return end, nil
+}
+
+// placeholderEnd returns the index of the first closing brace of the placeholder that opens at start.
+func placeholderEnd(text []rune, start int) int {
+	end := start + 2
+	for end+1 < len(text) && (text[end] != '}' || text[end+1] != '}') {
+		end++
+	}
+	return end
+}
+
+// validateListPlaceholder refuses a list-valued placeholder outside a regex, negated regex or array position.
+func validateListPlaceholder(text []rune, start int, name, kind string) error {
+	if kind != "strings" || placeholderContext(text, start) != contextNone {
+		return nil
+	}
+	return listPlaceholderError(name, string(text[:start]))
+}
+
+// listContext says where a list-valued placeholder sits. A list of values needs a regex or negated-regex
+// operator before it, or an element position in a SQL parameters array. It is not valid anywhere else.
+type listContext int
+
+const (
+	contextNone listContext = iota
+	contextRegex
+	contextNegated
+	contextArray
+)
+
+// listContextBefore classifies the template text that precedes a placeholder. Trailing ASCII whitespace is
+// ignored. The TypeScript interpolator (drilldown.ts placeholderContext) applies the same rules.
+func listContextBefore(before string) listContext {
+	trimmed := strings.TrimRight(before, " \t\n\r\f\v")
+	switch {
+	case strings.HasSuffix(trimmed, "=~"), strings.HasSuffix(trimmed, "|~"):
+		return contextRegex
+	case strings.HasSuffix(trimmed, "!~"):
+		return contextNegated
+	case strings.HasSuffix(trimmed, "["), strings.HasSuffix(trimmed, ","):
+		return contextArray
+	}
+	return contextNone
+}
+
+func placeholderContext(text []rune, start int) listContext {
+	return listContextBefore(string(text[:start]))
+}
+
+func listPlaceholderError(name, before string) error {
+	if strings.HasSuffix(strings.TrimRight(before, " \t\n\r\f\v"), "=") {
+		return fmt.Errorf("variable “%s” holds several values; use =~ or !~ before {{%s}}, not =", name, name)
+	}
+	return fmt.Errorf("use {{%s}} after =~ or !~, or as an element of a SQL parameters array", name)
 }
 
 func validPlaceholderBoundaries(text []rune, start, end int, kind string) bool {
@@ -271,7 +350,7 @@ func savedQueryParameterTypes(fields map[string]json.RawMessage) (map[string]str
 }
 
 func validateSavedQueryParameter(item json.RawMessage, types map[string]string) error {
-	fields, err := requireObjectShape(item, []string{"name", "type"}, []string{"label", "defaultValue"})
+	fields, err := requireObjectShape(item, []string{"name", "type"}, []string{"label", "defaultValue", "multi"})
 	if err != nil {
 		return err
 	}
@@ -279,13 +358,31 @@ func validateSavedQueryParameter(item json.RawMessage, types map[string]string) 
 	if json.Unmarshal(item, &parameter) != nil || !validVariableName(parameter.Name) || types[parameter.Name] != "" || stringUnits(parameter.Label) > 80 || (parameter.Type != "string" && parameter.Type != "number") {
 		return errors.New("saved query parameters require unique valid names, bounded labels, and string or number types")
 	}
-	if value, ok := fields["defaultValue"]; ok {
-		if err := validateQueryLiteral(value, parameter.Type); err != nil {
-			return err
-		}
+	if err := validateSeveralValues(&parameter); err != nil {
+		return err
 	}
-	types[parameter.Name] = parameter.Type
+	if err := validateParameterDefault(fields, &parameter); err != nil {
+		return err
+	}
+	types[parameter.Name] = parameter.templateKind()
 	return nil
+}
+
+// validateSeveralValues allows a several-values flag only on a string parameter.
+func validateSeveralValues(parameter *SavedQueryParameter) error {
+	if parameter.Multi && parameter.Type != "string" {
+		return errors.New("only a string parameter can take several values")
+	}
+	return nil
+}
+
+// validateParameterDefault checks a parameter's default when it has one, in the parameter's template kind.
+func validateParameterDefault(fields map[string]json.RawMessage, parameter *SavedQueryParameter) error {
+	value, ok := fields["defaultValue"]
+	if !ok {
+		return nil
+	}
+	return validateQueryLiteral(value, parameter.templateKind())
 }
 
 func decodeSavedQuery(raw json.RawMessage, id string, query *SavedQuery) error {

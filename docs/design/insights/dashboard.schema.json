@@ -129,9 +129,27 @@
             "type": "string",
             "maxLength": 80
           },
+          "multi": {
+            "type": "boolean"
+          },
+          "allowAll": {
+            "type": "boolean"
+          },
           "defaultValue": {
-            "type": "string",
-            "maxLength": 1024
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            ]
           },
           "options": {
             "minItems": 1,

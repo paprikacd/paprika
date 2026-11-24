@@ -116,7 +116,7 @@ func TestDashboardQuerySavedBindingsDeduplicateAndDoNotWrite(t *testing.T) { //n
 	if result.State != "ok" || result.Widgets[0].SignalID != "q1" || result.Widgets[1].SignalID != "q1" || *result.Widgets[0].Decimals != 2 || result.Signals[0].Series[0].Last == nil || *result.Signals[0].Series[0].Last.Value != 2.3456 || !result.Signals[0].Series[0].TailMissing {
 		t.Fatalf("signal did not preserve widget semantics: %+v", result)
 	}
-	if result.Dashboard.ETag != dashboardETag || len(result.SavedQueries) != 1 || result.SavedQueries[0].ETag != savedETag || result.Variables["service"] != value {
+	if result.Dashboard.ETag != dashboardETag || len(result.SavedQueries) != 1 || result.SavedQueries[0].ETag != savedETag || valueText(result.Variables["service"]) != value {
 		t.Fatalf("snapshot provenance: %+v", result)
 	}
 	if result.Widgets[0].SavedQueryID != "requests" || result.Widgets[1].SavedQueryID != "requests" || result.Signals[0].Kind != "metrics" || result.Signals[0].ProviderID != "prometheus" {
@@ -785,23 +785,23 @@ func TestDashboardQueryReportsVariableDefinitionsAndOptionWarnings(t *testing.T)
 	putReadDashboard(t, s, queryReadWidget("requests", "up"))
 
 	outside := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","variables":{"service":"prod"},`+dashboardQueryWindow+`}`), nil))
-	if len(outside.Warnings) != 1 || outside.Warnings[0] != "service=prod is not one of the declared options" || outside.Variables["service"] != "prod" {
+	if len(outside.Warnings) != 1 || outside.Warnings[0] != "service=prod is not one of the declared options" || valueText(outside.Variables["service"]) != "prod" {
 		t.Fatalf("override outside declared options must warn and still apply: warnings=%v variables=%v", outside.Warnings, outside.Variables)
 	}
 	if len(outside.VariableDefinitions) != 1 {
 		t.Fatalf("variable definitions missing: %+v", outside.VariableDefinitions)
 	}
 	definition := outside.VariableDefinitions[0]
-	if definition.Name != "service" || definition.Label != "Service" || definition.DefaultValue == nil || *definition.DefaultValue != "checkout" || !slices.Equal(definition.Options, []string{"checkout", "api"}) {
+	if definition.Name != "service" || definition.Label != "Service" || definition.DefaultValue == nil || valueText(*definition.DefaultValue) != "checkout" || !slices.Equal(definition.Options, []string{"checkout", "api"}) {
 		t.Fatalf("variable definition: %+v", definition)
 	}
 
 	declared := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview","variables":{"service":"api"},`+dashboardQueryWindow+`}`), nil))
-	if len(declared.Warnings) != 0 || declared.Variables["service"] != "api" {
+	if len(declared.Warnings) != 0 || valueText(declared.Variables["service"]) != "api" {
 		t.Fatalf("declared option must not warn: warnings=%v", declared.Warnings)
 	}
 	defaulted := readDashboardResult(t, request(t, s.Handler(), "POST", "/api/query-dashboard", []byte(`{"id":"overview",`+dashboardQueryWindow+`}`), nil))
-	if len(defaulted.Warnings) != 0 || defaulted.Variables["service"] != "checkout" {
+	if len(defaulted.Warnings) != 0 || valueText(defaulted.Variables["service"]) != "checkout" {
 		t.Fatalf("saved default must not warn: warnings=%v variables=%v", defaulted.Warnings, defaulted.Variables)
 	}
 }

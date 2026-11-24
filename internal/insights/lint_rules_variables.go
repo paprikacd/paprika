@@ -1,9 +1,12 @@
 package insights
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // guidanceVariables is the guidance line the variable and plugin rules map to.
@@ -59,6 +62,133 @@ var variableLintRules = []lintRule{
 		Fix:      "Set a default value for the variable, or leave it unset and choose a value when the dashboard opens.",
 		check:    checkSourceNoDefault,
 	},
+	{
+		ID:       "variables.multi-operator",
+		Severity: errorSeverity,
+		Summary:  guidanceMultiValues,
+		Fix:      "Use =~ or !~ before {{name}}, or bind it in a SQL parameters array with = ANY($n).",
+		check:    checkMultiOperator,
+	},
+	{
+		ID:       "variables.multi-binding",
+		Severity: errorSeverity,
+		Summary:  guidanceMultiValues,
+		Fix:      "Bind the variable to a parameter of several values, or turn off Allow several values on the variable.",
+		check:    checkMultiBinding,
+	},
+}
+
+// guidanceMultiValues is the one composition line both several-values rules share. A list is only valid after a
+// regex operator or in an array, and a list binds only a parameter of several values.
+const guidanceMultiValues = "A variable with several values is used after =~ or !~, or as an element of a SQL parameters array, and binds only a saved query parameter of several values."
+
+// savedQueryParameterKey is the key a saved query parameter's several-values flag takes in the resolved map.
+// Its value is "multi" or "single".
+func savedQueryParameterKey(id, parameter string) string {
+	return "saved-query-parameter:" + id + ":" + parameter
+}
+
+// resolveSavedQueryParameterKinds records, for each stored saved query, whether each parameter takes several values
+// ("multi") or one ("single"), under savedQueryParameterKey. An id that is not stored is left out.
+func (s *Server) resolveSavedQueryParameterKinds(ids []string) map[string]string {
+	var kinds map[string]string
+	for _, id := range ids {
+		document, _, err := s.savedQueries.get(id)
+		if err != nil {
+			continue
+		}
+		var stored struct {
+			Parameters []struct {
+				Name  string `json:"name"`
+				Multi bool   `json:"multi"`
+			} `json:"parameters"`
+		}
+		if json.Unmarshal(document, &stored) != nil {
+			continue
+		}
+		for _, parameter := range stored.Parameters {
+			if kinds == nil {
+				kinds = map[string]string{}
+			}
+			kinds[savedQueryParameterKey(id, parameter.Name)] = "single"
+			if parameter.Multi {
+				kinds[savedQueryParameterKey(id, parameter.Name)] = "multi"
+			}
+		}
+	}
+	return kinds
+}
+
+// checkMultiOperator fires for a placeholder of a variable with several values that is not after =~, !~ or inside
+// an array. Equality and function arguments cannot take a list, so the query would fail at the provider. Widget
+// queries without a saved query and source selectors are checked.
+func checkMultiOperator(doc *lintDocument) []lintHit {
+	return append(multiOperatorWidgetHits(doc), multiOperatorSelectorHits(doc)...)
+}
+
+// multiOperatorWidgetHits checks the raw query placeholders of widgets that have no saved query.
+func multiOperatorWidgetHits(doc *lintDocument) []lintHit {
+	var hits []lintHit
+	for i := range doc.widgets {
+		widget := &doc.widgets[i]
+		if widget.hasQueryRef {
+			continue
+		}
+		for _, match := range placeholder.FindAllStringSubmatchIndex(widget.query, -1) {
+			name := widget.query[match[2]:match[3]]
+			if doc.multi[name] && listContextBefore(widget.query[:match[0]]) == contextNone {
+				hits = append(hits, lintHit{
+					pointer:  widgetBase(widget.index) + "/query",
+					widgetID: widget.id,
+					message:  fmt.Sprintf("%s reads variable %q, which takes several values, outside =~, !~ or an array", widgetLabel(widget), name),
+				})
+			}
+		}
+	}
+	return hits
+}
+
+// multiOperatorSelectorHits checks the placeholders of label-values source selectors.
+func multiOperatorSelectorHits(doc *lintDocument) []lintHit {
+	var hits []lintHit
+	for i := range doc.sourceVariables {
+		variable := &doc.sourceVariables[i]
+		if variable.selector == nil {
+			continue
+		}
+		for _, match := range variableSourceSelectorPlaceholder.FindAllStringSubmatchIndex(*variable.selector, -1) {
+			name := (*variable.selector)[match[2]:match[3]]
+			if doc.multi[name] && listContextBefore((*variable.selector)[:match[0]]) == contextNone {
+				hits = append(hits, lintHit{
+					pointer: variableSourcePointer(variable.index) + "/selector",
+					message: fmt.Sprintf("The source selector reads variable %q, which takes several values, outside =~, !~ or an array", name),
+				})
+			}
+		}
+	}
+	return hits
+}
+
+// checkMultiBinding fires for a saved query parameter of one value that a variable with several values binds. A
+// single value binds a parameter of several values, because it is wrapped as a one-item list; the reverse is not valid.
+func checkMultiBinding(doc *lintDocument) []lintHit {
+	var hits []lintHit
+	for i := range doc.widgets {
+		widget := &doc.widgets[i]
+		for _, ref := range widget.variables {
+			if ref.queryRefID == "" || !doc.multi[ref.variable] {
+				continue
+			}
+			if kind, known := doc.providerTypes[savedQueryParameterKey(ref.queryRefID, ref.parameter)]; known && kind == "single" {
+				hits = append(hits, lintHit{
+					pointer:  ref.pointer,
+					widgetID: widget.id,
+					message:  fmt.Sprintf("%s binds variable %q, which takes several values, to parameter %q, which takes one value", widgetLabel(widget), ref.variable, ref.parameter),
+				})
+			}
+		}
+	}
+	return hits
 }
 
 // placeholder matches a raw {{name}} placeholder in a widget query.
@@ -69,7 +199,7 @@ var placeholder = regexp.MustCompile(`\{\{([A-Za-z_][A-Za-z0-9_]{0,63})\}\}`)
 type lintVariable struct {
 	index        int
 	name         string
-	defaultValue *string
+	defaultValue *variablevalue.Value
 	options      []string
 	sourceType   string
 	providerID   string

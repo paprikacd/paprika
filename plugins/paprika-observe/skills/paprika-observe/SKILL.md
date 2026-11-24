@@ -63,6 +63,7 @@ IDs here are placeholders; run the steps in order.
    `queryRef.bindings` with `"source":"variable"`. Always ship a default: an unset variable fails
    any query that uses it. Example: `"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","api"]}]`,
    with the query `sum(rate(http_requests_total{service={{service}}}[5m]))`. Omit `options` only for a free-text value.
+   For several values, declare `"multi":true`, and pass a list: `"variables":{"cluster":["omega","delta"]}`; `[]` is All. Use the list after `=~` (`up{cluster=~{{cluster}}}`), not after `=`, which refuses it.
    For a service, cluster or other list that lives in the data, prefer a `source` over a typed list:
    `{"type":"labelValues","providerId","label","selector?","limit?"}` reads one label's values from a
    Prometheus or Tempo provider, and `{"type":"savedQuery","queryRef","field"}` reads a records column or a
