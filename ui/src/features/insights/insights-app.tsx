@@ -59,6 +59,8 @@ import {
   type QueryRequest,
   type SavedQuery,
   type SavedQueryEntry,
+  type DashboardVariable,
+  dashboardSchema,
   MAX_DASHBOARD_VARIABLES,
 } from "./schema"
 import {
@@ -1183,6 +1185,20 @@ export default function InsightsApp({
     const variables = Object.fromEntries(Object.entries(currentRoute.variables).filter(([name]) => next.variables?.some(item => item.name === name)))
     applyView({ ...currentRoute, variables }, "prune")
   }
+  // Declares a variable from another editor. It reads the latest document, so a stale closure cannot drop a variable.
+  // Callers see a refusal as a thrown error and keep their own draft.
+  const declareRef = useRef<(variable: DashboardVariable) => void>(() => {})
+  useLayoutEffect(() => {
+    declareRef.current = (variable) => {
+      const next = { ...latestDocument.current, variables: [...(latestDocument.current.variables ?? []), variable] }
+      const checked = dashboardSchema.safeParse(next)
+      if (!checked.success) throw new Error(checked.error.issues[0]?.message ?? "This variable could not be declared.")
+      syncVariableDefinitions(checked.data)
+      update(checked.data)
+      setEditing(true)
+    }
+  })
+  const declareVariable = useCallback((variable: DashboardVariable) => declareRef.current(variable), [])
   function addWidget(definition: WidgetDefinition) {
     if (dashboard.widgets.length >= MAX_WIDGETS) {
       setError("A dashboard supports up to 48 widgets.")
@@ -1750,7 +1766,7 @@ export default function InsightsApp({
     )
 
   return (
-    <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries}>
+    <SavedQueryLibraryProvider queries={savedQueries} variables={dashboard.variables ?? NO_VARIABLES} values={variableValues} loading={queriesLoading} error={queriesError} onOpenExplorer={openQueryExplorer} onRefresh={refreshSavedQueries} onDeclareVariable={declareVariable} dashboardId={dashboard.id}>
     <SourceStatusContext.Provider value={sourceContext}>
     <div ref={layoutRoot} className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme} data-density={dense && !editing ? "compact" : "standard"} data-compact-shell={compactShell || undefined} data-phone-shell={phoneShell || undefined} data-widget-focus={focusedWidget || undefined}>
       <GammaConfirmation request={confirmation.request} onResolve={confirmation.resolve} />

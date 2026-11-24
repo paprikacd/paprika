@@ -1,3 +1,4 @@
+import { lazy, Suspense, useState } from "react";
 import type {
   Dashboard,
   SavedQuery,
@@ -11,6 +12,12 @@ import { GammaButton } from "./gamma/button";
 import styles from "./explorer.module.css";
 import { suggestParameterConnection, type ConnectionContext } from "./query-connections";
 import { GraphLabelPicker, SuggestedConnection } from "./query-connection-controls";
+import { useSavedQueryLibrary } from "./saved-query-context";
+
+// Loaded on demand: the declaration form stays out of the first view.
+const VariableQuickCreate = lazy(() => import("./variable-quick-create"));
+/** The variable option that opens the declaration form instead of choosing a variable. */
+const NEW_VARIABLE = "+new-variable";
 
 export function SavedQueryPicker({
   queries,
@@ -85,6 +92,9 @@ export function SavedQueryBindingEditor({
   fields?: ConnectionContext["fields"];
   parentBindings?: ConnectionContext["parentBindings"];
 }) {
+  const { onDeclareVariable } = useSavedQueryLibrary();
+  // The parameter whose variable is being declared inline.
+  const [declaring, setDeclaring] = useState<string>();
   function update(parameter: string, next?: SavedQueryBinding) {
     const remaining = bindings.filter(
       (binding) => binding.parameter !== parameter,
@@ -156,8 +166,9 @@ export function SavedQueryBindingEditor({
           variableOptions.unshift({
             value: binding.variable,
             label: `${binding.variable || "Choose a variable"} (unavailable)`,
-            description: "Declare this variable in Dashboard settings.",
+            description: "Declare this variable in Manage dashboards.",
           });
+        if (onDeclareVariable) variableOptions.push({ value: NEW_VARIABLE, label: "New variable…", description: "" });
         return (
           <div className={styles.binding} key={parameter.name}>
             <div className={styles.bindingTitle}>
@@ -221,9 +232,10 @@ export function SavedQueryBindingEditor({
                     value={binding.variable}
                     options={variableOptions}
                     disabled={disabled}
-                    onValueChange={(variable) =>
-                      update(parameter.name, { ...binding, variable })
-                    }
+                    onValueChange={(variable) => {
+                      if (variable === NEW_VARIABLE) setDeclaring(parameter.name);
+                      else update(parameter.name, { ...binding, variable });
+                    }}
                     searchable
                   />
                 </label>
@@ -288,11 +300,32 @@ export function SavedQueryBindingEditor({
               !variables.some(
                 (variable) => variable.name === binding.variable,
               ) && (
-                <p className={styles.error}>
-                  This dashboard variable is unavailable. Declare it in
-                  Dashboard settings or choose another value.
-                </p>
+                <>
+                  <p className={styles.error}>
+                    This dashboard variable is unavailable. Declare it in
+                    Manage dashboards or choose another value.
+                  </p>
+                  {onDeclareVariable && declaring !== parameter.name && (
+                    <GammaButton size="sm" disabled={disabled} onClick={() => setDeclaring(parameter.name)}>
+                      {`Declare {{${binding.variable}}}`}
+                    </GammaButton>
+                  )}
+                </>
               )}
+            {declaring === parameter.name && onDeclareVariable && (
+              <Suspense fallback={null}>
+                <VariableQuickCreate
+                  initialName={binding?.source === "variable" && binding.variable ? binding.variable : parameter.name}
+                  existing={variables.map((variable) => variable.name)}
+                  onCreate={(variable) => {
+                    onDeclareVariable(variable);
+                    update(parameter.name, { parameter: parameter.name, source: "variable", variable: variable.name });
+                    setDeclaring(undefined);
+                  }}
+                  onCancel={() => setDeclaring(undefined)}
+                />
+              </Suspense>
+            )}
             {binding?.source === "field" && binding.field === "timestamp" && (
               <p className={styles.hint}>
                 Unix seconds from the selected observation, including fractional
