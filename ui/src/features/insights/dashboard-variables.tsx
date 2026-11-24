@@ -24,6 +24,7 @@ import {
   type DashboardVariable,
 } from "./schema";
 import { resolveDashboardVariables, type VariableValues } from "./drilldown";
+import { rewriteVariableReferences, variableReferences } from "./variable-references";
 import styles from "./drilldown.module.css";
 import optionStyles from "./variable-options.module.css";
 import { SearchCombobox, type SearchComboboxOption } from "./gamma/search-combobox";
@@ -59,6 +60,17 @@ const VALUES_FROM: { value: VariableValuesFrom; label: string }[] = [
   { value: "savedQuery", label: "Saved query column" },
 ];
 
+/**
+ * A card keeps its key across edits, so removing one card leaves the inputs below it in place. `original` is the name
+ * the variable had when it was last applied, so a rename is visible and its references can follow it.
+ */
+interface VariableCard {
+  key: string;
+  original?: string;
+}
+let variableCardSeed = 0;
+const newCard = (original?: string): VariableCard => ({ key: `variable-card-${++variableCardSeed}`, original });
+
 function VariablesEditor({
   dashboard,
   onApply,
@@ -68,33 +80,55 @@ function VariablesEditor({
   const [state, setState] = useState(() => ({
     source,
     draft: dashboard.variables ?? [],
+    cards: (dashboard.variables ?? []).map((variable) => newCard(variable.name)),
   }));
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [renameReferences, setRenameReferences] = useState(true);
+  const [pendingRemoval, setPendingRemoval] = useState<string>();
   const draft = state.draft;
+  const cards = state.cards;
   const serialized = JSON.stringify(draft);
   // Adopt a successfully applied draft once the parent has published it. Other
   // external edits remain explicit, so a refresh cannot erase local typing.
   if (source !== state.source && source === serialized)
-    setState({ source, draft });
+    setState({ source, draft, cards });
   const stale = source !== state.source && source !== serialized;
   const dirty = source !== serialized;
-  function edit(next: DashboardVariable[]) {
-    setState((previous) => ({ ...previous, draft: next }));
+  function edit(next: DashboardVariable[], nextCards?: VariableCard[]) {
+    setState((previous) => ({ ...previous, draft: next, cards: nextCards ?? previous.cards }));
     setError("");
     setSaved(false);
+    setPendingRemoval(undefined);
   }
   function patch(index: number, value: DashboardVariable) {
     edit(
       draft.map((variable, current) => (current === index ? value : variable)),
     );
   }
+  function remove(index: number) {
+    edit(
+      draft.filter((_, current) => current !== index),
+      cards.filter((_, current) => current !== index),
+    );
+  }
+  /** Widgets that read the variable as it was last applied. A variable not yet applied has no readers. */
+  function readers(card: VariableCard | undefined) {
+    if (card?.original === undefined) return [];
+    return variableReferences(dashboard, card.original).flatMap((use) => (use.kind === "widget" ? [use.widgetTitle] : []));
+  }
   function apply() {
     if (stale) return;
+    const renames: Record<string, string> = {};
+    if (renameReferences)
+      cards.forEach((card, index) => {
+        const name = draft[index]?.name;
+        if (card.original !== undefined && name && name !== card.original) renames[card.original] = name;
+      });
     const next = { ...dashboard };
     if (draft.length) next.variables = draft;
     else delete next.variables;
-    const checked = dashboardSchema.safeParse(next);
+    const checked = dashboardSchema.safeParse(rewriteVariableReferences(next, renames));
     if (!checked.success) {
       setError(
         checked.error.issues
@@ -106,6 +140,7 @@ function VariablesEditor({
     onApply(checked.data);
     setError("");
     setSaved(true);
+    setState((previous) => ({ ...previous, cards: previous.cards.map((card, index) => ({ key: card.key, original: draft[index]?.name })) }));
   }
   return (
     <section
@@ -130,8 +165,12 @@ function VariablesEditor({
           filter this dashboard.
         </p>
       )}
-      {draft.map((variable, index) => (
-        <fieldset className={styles.card} key={index}>
+      {draft.map((variable, index) => {
+        const card = cards[index];
+        const readerTitles = readers(card);
+        const renamed = card?.original !== undefined && card.original !== variable.name && readerTitles.length > 0;
+        return (
+        <fieldset className={styles.card} key={card?.key ?? index}>
           <legend>Variable {index + 1}</legend>
           <div className={styles.bindingTop}>
             <label className={styles.field}>
@@ -150,13 +189,36 @@ function VariablesEditor({
               variant="ghost"
               size="sm"
               aria-label={`Remove variable ${index + 1}`}
-              onClick={() =>
-                edit(draft.filter((_, current) => current !== index))
-              }
+              onClick={() => {
+                if (readerTitles.length) setPendingRemoval(card.key);
+                else remove(index);
+              }}
             >
               <Trash2 size={14} aria-hidden="true" />
             </GammaButton>
           </div>
+          <p className={styles.help} role="status">
+            {readerTitles.length === 0
+              ? "Not used yet"
+              : `Used by ${readerTitles.length} ${readerTitles.length === 1 ? "widget" : "widgets"}: ${readerTitles.slice(0, 3).join(", ")}${readerTitles.length > 3 ? ` and ${readerTitles.length - 3} more` : ""}`}
+          </p>
+          {renamed && (
+            <GammaSwitch
+              label="Rename references too"
+              description="Update this dashboard's queries and bindings to the new name."
+              checked={renameReferences}
+              onChange={setRenameReferences}
+            />
+          )}
+          {pendingRemoval === card?.key && (
+            <div className={styles.notice} role="alert">
+              <p>{`Removing ${variable.name || "this variable"} leaves {{${card?.original ?? variable.name}}} in ${readerTitles.length === 1 ? "one widget" : `${readerTitles.length} widgets`}. Remove it anyway?`}</p>
+              <div className={styles.actions}>
+                <GammaButton size="sm" variant="secondary" onClick={() => remove(index)}>Remove variable</GammaButton>
+                <GammaButton size="sm" variant="quiet" onClick={() => setPendingRemoval(undefined)}>Keep</GammaButton>
+              </div>
+            </div>
+          )}
           <label className={styles.field}>
             <span>
               Display label <small>Optional</small>
@@ -263,7 +325,8 @@ function VariablesEditor({
             </label>
           )}
         </fieldset>
-      ))}
+        );
+      })}
       {stale && (
         <div className={styles.notice} role="alert">
           <p>
@@ -273,7 +336,7 @@ function VariablesEditor({
           <GammaButton
             size="sm"
             onClick={() => {
-              setState({ source, draft: dashboard.variables ?? [] });
+              setState({ source, draft: dashboard.variables ?? [], cards: (dashboard.variables ?? []).map((variable) => newCard(variable.name)) });
               setError("");
               setSaved(false);
             }}
@@ -297,7 +360,7 @@ function VariablesEditor({
               draft.some((variable) => variable.name === `variable_${index}`)
             )
               index++;
-            edit([...draft, { name: `variable_${index}` }]);
+            edit([...draft, { name: `variable_${index}` }], [...cards, newCard()]);
           }}
         >
           <Plus size={13} aria-hidden="true" /> Add variable
@@ -318,8 +381,7 @@ function VariablesEditor({
       )}
       <p className={styles.help}>
         Names use letters, numbers and underscores, starting with a letter or
-        underscore. Renaming or removing a variable does not rewrite queries or
-        incoming links.
+        underscore. Renaming updates this dashboard&apos;s queries and bindings. Links from other dashboards keep the old name.
       </p>
     </section>
   );
