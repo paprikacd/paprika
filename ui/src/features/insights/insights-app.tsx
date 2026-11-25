@@ -67,7 +67,7 @@ import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey, type QueryFieldSnapshot } from "./query-connections"
 import "./saved-query-storage"
-import { createBundleImporter, loadBundleImportReview, type BundleImportRequest } from "./bundle-import"
+import { loadBundleImportReview, type BundleImportRequest } from "./bundle-import"
 import { resolveSavedQueryReference } from "./saved-queries"
 import type { DashboardBundle } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
@@ -78,7 +78,7 @@ import type { ExplorerSeed } from "./saved-query-context"
 import "./history"
 import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
-import { sameSyncInputs, useWorkspaceRefresh } from "./use-workspace-refresh"
+import "./use-workspace-refresh"
 import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
 import { EmbedView } from "./embed-view"
 import type { EmbedRequest } from "./embed-request"
@@ -95,8 +95,8 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { checksFromError, loadProviderCatalog, type ProviderCatalog } from "./client"
-import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
+import { checksFromError, loadProviderCatalog } from "./client"
+import { SourceStatusContext, sourceWaitMessage } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
@@ -108,19 +108,21 @@ import { ClampedDescription } from "./dashboard-description"
 import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "./variable-options"
 import type { VariableSourceCatalog } from "./variable-source-editor"
 import { InsightsThemeControl } from "./insights-theme"
-import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type VariableValues } from "./drilldown"
+import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext } from "./drilldown"
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
-import { readDashboardLink, serialiseDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
-import { RepositoryWorkspace, DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, loadRepositoryWorkspace, preloadWidgetEditor, preloadExamples } from "./shell/lazy-panels"
+import { readDashboardLink, serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
+import { RepositoryWorkspace, DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, loadRepositoryWorkspace, preloadExamples } from "./shell/lazy-panels"
 import { placementPhrase, initialNavigation, panelOpenerElement } from "./shell/navigation"
-import { type SourceState, sourceBannerCopy, sourceFailureReason, sharedFailureReason } from "./shell/source-catalog"
+import { sourceBannerCopy, sourceFailureReason } from "./shell/source-catalog"
 import "./shell/media-stores"
 import { MANUAL_REFRESH_BYPASS_MS, NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
 import { useSavedQueryLibrary } from "./shell/use-saved-query-library"
 import { useDashboardSession } from "./shell/use-dashboard-session"
 import { useShellLayout } from "./shell/use-shell-layout"
+import { useSourceCatalog } from "./shell/use-source-catalog"
+import { useLiveSync } from "./shell/use-live-sync"
 
 
 registerDefaultWidgetPlugins()
@@ -301,165 +303,79 @@ function InsightsWorkspace({
     exploring,
     panel,
   )
-  const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
-  // Whether the current end came from an automatic tick. An automatic tick staggers across the tiles; any other change adopts at once.
-  const [autoTick, setAutoTick] = useState(false)
-  // When the user last pressed Refresh. Queries in the bypass window skip the server's result cache.
-  const [refreshedAt, setRefreshedAt] = useState(0)
-  const advanceEnd = useCallback((auto: boolean) => {
-    setEnd(Math.floor(Date.now() / 1000))
-    setAutoTick(auto)
-  }, [])
-  const [retry, setRetry] = useState(0)
-  // The shared source list loads behind a rendered workspace. Only tiles that need it wait.
-  const [sources, setSources] = useState<SourceState>({ status: "ready" })
-  const [sourceRequest, setSourceRequest] = useState<object | null>(null)
-  const sourceNoticeRef = useRef<HTMLDivElement>(null)
-  const bannerRetry = useRef<HTMLButtonElement>(null)
-  // Always rendered in the live workspace, so it is a dependable focus target after a retry.
-  const workspaceRegion = useRef<HTMLElement>(null)
-  // The retry request whose outcome owns focus. Superseding or aborting it releases the claim.
-  const retryFocus = useRef<object | null>(null)
-  // A retry that ends busy again moves focus to the banner's retry control once it renders.
-  const focusBannerRetry = useRef(false)
-  // Callers awaiting the listing (the observe card, the provider manager) settle with the request that loads it.
-  const catalogWaiters = useRef<Array<{ resolve: (catalog: ProviderCatalog) => void; reject: (error: unknown) => void }>>([])
-  // A session change while the banner asks for sign-in reloads the sources.
-  const [seenSessionRevision, setSeenSessionRevision] = useState(sessionRevision)
-  if (sessionRevision !== seenSessionRevision) {
-    setSeenSessionRevision(sessionRevision)
-    if (mode === "live" && sources.status === "unavailable" && sources.reason === "signin") {
-      setSources({ status: "pending" })
-      setSourceRequest({})
-    }
-  }
-  // The sign-in action only exists when the host can start sign-in.
-  const sourceContext: SourceStatus = sources.status === "unavailable"
-    ? (sources.reason === "signin" && client.signIn ? "signin" : "unavailable")
-    : sources.status
-  // Retry leaves the button out of the DOM as the load starts, so focus moves to the
-  // persistent live region, which stays mounted for the whole episode.
-  const retrySources = () => {
-    const request = {}
-    retryFocus.current = request
-    sourceNoticeRef.current?.focus()
-    setSources({ status: "pending" })
-    setSourceRequest(request)
-  }
-  // The one way a listing reaches the workspace: boot, retry, and the provider
-  // manager all share it, so a busy shared catalog is never mistaken for a clean one.
-  const acceptCatalog = useCallback((catalog: ProviderCatalog) => {
-    setProviders(catalog.providers)
-    setUnsupportedProviders(catalog.unsupportedProviders ?? [])
-    const shared = catalog.sharedCatalog
-    setSources(shared
-      ? { status: "unavailable", reason: sharedFailureReason(shared.status), message: shared.message }
-      : { status: "ready" })
-  }, [setProviders, setUnsupportedProviders])
-  // The observe card and the provider manager wait on the request that loads the listing.
-  // That request owns the abort, so closing their panel never strands the sources.
-  const refreshCatalog = useCallback(() => new Promise<ProviderCatalog>((resolve, reject) => {
-    catalogWaiters.current.push({ resolve, reject })
-    setSources({ status: "pending" })
-    setSourceRequest({})
-  }), [])
-  const [queryRevision, setQueryRevision] = useState(0)
-  const etags = useRef(new Map<string, string>())
-  // The inputs of the last workspace reconcile; see sameSyncInputs.
-  const lastSyncInputs = useRef<readonly unknown[] | undefined>(undefined)
-  const openRequest = useRef(0)
-  const bundleImporter = useRef<ReturnType<typeof createBundleImporter> | null>(null)
-  const bundleImportActive = useRef(false)
-  if (!bundleImporter.current) bundleImporter.current = createBundleImporter()
-  useEffect(() => {
-    if (editing) preloadWidgetEditor()
-  }, [editing])
-  const dirty = saved !== documentFingerprint(dashboard)
-  const liveSyncState = useRef({ dashboards, savedQueries, dashboard, saved, dirty, editing, explorerDirty, panel, busy, importingBundle, queriesLoading })
-  useLayoutEffect(() => {
-    liveSyncState.current = { dashboards, savedQueries, dashboard, saved, dirty, editing, explorerDirty, panel, busy, importingBundle, queriesLoading }
-  })
-  const syncError = useWorkspaceRefresh(mode === "live", async signal => {
-    const before = liveSyncState.current
-    if (before.busy || before.importingBundle || before.queriesLoading) return
-    const request = openRequest.current
-    const generation = libraryMutation.current
-    const [documents, entries] = await Promise.all([client.list(signal), client.listSavedQueries(signal)])
-    const listed = documents.find(item => item.id === before.dashboard.id)
-    const active = listed ? await client.get(listed.id, signal) : undefined
-    const current = liveSyncState.current
-    // A list request started before a save/import/navigation must never restore
-    // its older snapshot, even if the write finished while the request ran.
-    if (signal.aborted || request !== openRequest.current || generation !== libraryMutation.current ||
-      current.busy || current.importingBundle || current.queriesLoading ||
-      current.saved !== before.saved || current.dashboards !== before.dashboards || current.savedQueries !== before.savedQueries) return
-    // Every input the reconcile reads. A 304 for the list and the open document hands back the same objects,
-    // so an unchanged workspace is recognised here without fingerprinting it again.
-    const inputs = [documents, entries, active, current.dashboards, current.savedQueries, current.saved, current.dirty, current.editing, current.explorerDirty, current.panel, current.dashboard.id, etags.current.get(current.dashboard.id)]
-    if (sameSyncInputs(lastSyncInputs.current, inputs)) {
-      setQueriesLoaded(true)
-      setQueriesError("")
-      return
-    }
-    lastSyncInputs.current = inputs
-    const nextDocuments = active
-      ? documents.map(item => item.id === active.dashboard.id ? active.dashboard : item)
-      : documents
-    if (documentFingerprint(nextDocuments) !== documentFingerprint(current.dashboards)) setDashboards(nextDocuments)
-    if (documentFingerprint(entries) !== documentFingerprint(current.savedQueries)) updateSavedQueries(entries)
-    setQueriesLoaded(true)
-    setQueriesError("")
-    if (active && (documentFingerprint(active.dashboard) !== current.saved || active.etag !== etags.current.get(active.dashboard.id))) {
-      if (current.dirty || current.editing || current.explorerDirty || current.panel) {
-        setRemoteDashboard({ id: active.dashboard.id, removed: false })
-      } else {
-        if (active.etag) etags.current.set(active.dashboard.id, active.etag)
-        else etags.current.delete(active.dashboard.id)
-        if (documentFingerprint(active.dashboard) !== current.saved) {
-          reset(active.dashboard)
-          setSaved(documentFingerprint(active.dashboard))
-        }
-        setRemoteDashboard(undefined)
-      }
-    } else if (!listed && etags.current.has(current.dashboard.id)) {
-      setRemoteDashboard({ id: current.dashboard.id, removed: true })
-    } else setRemoteDashboard(undefined)
-  })
-  // The view's time range and refresh override the saved defaults for display; the document stays as saved.
-  const viewDashboard = useMemo(() => viewedDashboard(dashboard, currentRoute), [dashboard, currentRoute])
-  const viewDiffers = editing && viewDiffersFromDefaults(dashboard, viewDashboard)
-  const saveButton = useRef<HTMLButtonElement>(null)
-  // The notice's Save now runs the latest save. It works from view mode too, where the header save button is gone.
-  const saveLatest = useRef<() => void>(() => {})
-  useLayoutEffect(() => {
-    saveLatest.current = () => { if (!busy) void save() }
-  })
-  // Edit chosen from the phone menu moves focus to the title field, which also announces the edit state.
-  const titleField = useRef<HTMLInputElement>(null)
-  const focusTitleOnEdit = useRef(false)
-  useLayoutEffect(() => {
-    if (!editing || !focusTitleOnEdit.current) return
-    focusTitleOnEdit.current = false
-    titleField.current?.focus()
-  }, [editing])
-  // Definitions can be removed while editing. Stale view overrides must not
-  // make an otherwise valid document impossible to edit.
-  const variableKey = JSON.stringify(resolveDashboardVariables(dashboard, Object.fromEntries(
-    Object.entries(currentRoute?.variables ?? {}).filter(([name]) => dashboard.variables?.some(item => item.name === name)),
-  )))
-  const variableValues = useMemo(() => JSON.parse(variableKey) as VariableValues, [variableKey])
-  useEffect(() => {
-    if (!currentRoute?.variables) return
-    const entries = Object.entries(currentRoute.variables)
-    const retained = entries.filter(([name]) => dashboard.variables?.some(item => item.name === name))
-    if (retained.length === entries.length) return
-    let active = true
-    queueMicrotask(() => {
-      if (!active) return
-      applyView({ ...currentRoute, variables: Object.fromEntries(retained) }, "prune")
-    })
-    return () => { active = false }
-  }, [currentRoute, dashboard.variables, applyView])
+  const [
+    acceptCatalog,
+    advanceEnd,
+    autoTick,
+    bannerRetry,
+    bundleImportActive,
+    bundleImporter,
+    catalogWaiters,
+    end,
+    etags,
+    focusBannerRetry,
+    lastSyncInputs,
+    openRequest,
+    queryRevision,
+    refreshCatalog,
+    refreshedAt,
+    retry,
+    retryFocus,
+    retrySources,
+    setQueryRevision,
+    setRefreshedAt,
+    setRetry,
+    setSourceRequest,
+    setSources,
+    sourceContext,
+    sourceNoticeRef,
+    sourceRequest,
+    sources,
+    workspaceRegion,
+  ] = useSourceCatalog(
+    client,
+    editing,
+    mode,
+    sessionRevision,
+    setProviders,
+    setUnsupportedProviders,
+  )
+  const [
+    dirty,
+    focusTitleOnEdit,
+    saveButton,
+    syncError,
+    titleField,
+    variableValues,
+    viewDashboard,
+    viewDiffers,
+  ] = useLiveSync(
+    applyView,
+    busy,
+    client,
+    currentRoute,
+    dashboard,
+    dashboards,
+    editing,
+    etags,
+    explorerDirty,
+    importingBundle,
+    lastSyncInputs,
+    libraryMutation,
+    mode,
+    openRequest,
+    panel,
+    queriesLoading,
+    reset,
+    saved,
+    savedQueries,
+    setDashboards,
+    setQueriesError,
+    setQueriesLoaded,
+    setRemoteDashboard,
+    setSaved,
+    updateSavedQueries,
+  )
   const [queryFieldSnapshot, setQueryFieldSnapshot] = useState<QueryFieldSnapshot>();
   const [queryResultSnapshot, setQueryResultSnapshot] = useState<WidgetResultSnapshot>();
   const currentWidget = dashboard.widgets.find(
@@ -575,7 +491,7 @@ function InsightsWorkspace({
     if (tile.hasAttribute("tabindex")) tile.focus()
     else visibleTileControl(tile, "[data-widget-edit], [data-widget-actions]")?.focus()
     return true
-  }, [layoutRoot])
+  }, [layoutRoot, titleField])
   useLayoutEffect(() => {
     const target = pendingTileFocus.current
     const stopWatching = () => {
@@ -716,7 +632,7 @@ function InsightsWorkspace({
     setLinkNotice(describeIgnoredLink(linked.ignored))
     setError(viewError)
     setExampleStarting(false)
-  }, [reset, applyView, showView, exampleGeneration, mounted, setDashboards, setExampleStarting, setMode, setProviders, setUnsupportedProviders, setWorkspace, setWorkspaceFailed, setError, setLinkNotice, setSaved])
+  }, [reset, applyView, showView, exampleGeneration, mounted, setDashboards, setExampleStarting, setMode, setProviders, setUnsupportedProviders, setWorkspace, setWorkspaceFailed, setError, setLinkNotice, setSaved, setSourceRequest, setSources])
 
   useEffect(() => {
     if (initialExample) {
@@ -759,7 +675,7 @@ function InsightsWorkspace({
         }
       })
     return () => controller.abort()
-  }, [client, initialExample, enterExample, reset, retry, applyView, exampleGeneration, setDashboards, setMode, setError, setLinkNotice, setSaved])
+  }, [client, initialExample, enterExample, reset, retry, applyView, exampleGeneration, setDashboards, setMode, setError, setLinkNotice, setSaved, etags, setSourceRequest, setSources])
 
   // One background load, one retry layer: the client replays a busy listing, and a
   // failure that remains is shown with a manual retry. The listing carries the shared
@@ -803,7 +719,7 @@ function InsightsWorkspace({
       // An aborted retry no longer owns focus.
       if (retryFocus.current === sourceRequest) retryFocus.current = null
     }
-  }, [client, mode, sourceRequest, acceptCatalog])
+  }, [client, mode, sourceRequest, acceptCatalog, bannerRetry, catalogWaiters, focusBannerRetry, retryFocus, setSources, sourceNoticeRef, workspaceRegion])
 
   // A retry that ends busy again renders a new retry control, which takes focus.
   useEffect(() => {
@@ -811,7 +727,7 @@ function InsightsWorkspace({
     focusBannerRetry.current = false
     const target = bannerRetry.current ?? sourceNoticeRef.current
     target?.focus()
-  }, [sources])
+  }, [sources, bannerRetry, focusBannerRetry, sourceNoticeRef])
 
 
   useEffect(() => {
@@ -982,7 +898,7 @@ function InsightsWorkspace({
     // The unapplied-chart notice and its action are only true while that chart's editor is open.
     setMessageAction(current => current?.chartEditor ? undefined : current)
     setMessage(current => current === UNAPPLIED_CHART_NOTICE ? "" : current)
-  }, [setMessage, setMessageAction, setPanel, setSelected, setSidebarOverride, setWidgetDraftDirty, setWidgetPreview])
+  }, [setMessage, setMessageAction, setPanel, setSelected, setSidebarOverride, setWidgetDraftDirty, setWidgetPreview, bundleImportActive])
   const selectWidget = useCallback((id: string) => {
     if (bundleImportActive.current) return
     widgetOpener.current = id
@@ -994,7 +910,7 @@ function InsightsWorkspace({
     setSelected(id)
     setPanel("widget")
     setEditing(true)
-  }, [panelOpener, setEditing, setMessage, setMobileSidebar, setPanel, setSelected, setWidgetDraftDirty, setWidgetPreview, widgetOpener])
+  }, [panelOpener, setEditing, setMessage, setMobileSidebar, setPanel, setSelected, setWidgetDraftDirty, setWidgetPreview, widgetOpener, bundleImportActive])
   const askToDiscardChart = confirmation.ask
   const navigateFromChart = useCallback((navigate: () => void) => {
     if (!widgetDraftDirty) {
@@ -1168,6 +1084,11 @@ function InsightsWorkspace({
   async function save() {
     await saveDocument(dashboard)
   }
+  // The notice's Save now runs the latest save. It works from view mode too, where the header save button is gone.
+  const saveLatest = useRef<() => void>(() => {})
+  useLayoutEffect(() => {
+    saveLatest.current = () => { if (!busy) void save() }
+  })
   /**
    * Writes a dashboard document. Apply and save passes the document it has just applied, since this render still
    * holds the one from before the apply, and chartApplied, since this render still holds the chart's dirty flag.

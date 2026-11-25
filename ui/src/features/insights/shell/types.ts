@@ -5,6 +5,8 @@ import type { useWorkspace } from "./use-workspace"
 import type { useSavedQueryLibrary } from "./use-saved-query-library"
 import type { useDashboardSession } from "./use-dashboard-session"
 import type { useShellLayout } from "./use-shell-layout"
+import type { useSourceCatalog } from "./use-source-catalog"
+import type { useLiveSync } from "./use-live-sync"
 
 export type ShellProps = Omit<InsightsAppProps, "embed">
 
@@ -22,4 +24,10 @@ export type AfterDashboardSession = AfterSavedQueryLibrary & Named<DashboardSess
 
 export type ShellLayoutNames = ["canvasMode", "compactNavigationExpanded", "compactShell", "confirmation", "dense", "drawerOpen", "finePointer", "isMobile", "layoutRoot", "mobileSidebar", "navigation", "navigationToggle", "panelHidden", "panelOpener", "phoneViewport", "planRevision", "search", "setCanvasMode", "setCompactNavigationExpanded", "setDense", "setMobileSidebar", "setPanelHidesSidebar", "setSearch", "setSidebar", "setSidebarOverride", "setWidePanel", "sidebar", "sidebarOpenWidth", "sidebarOverride", "sidebarShown", "widePanel"]
 export type AfterShellLayout = AfterDashboardSession & Named<ShellLayoutNames, ReturnType<typeof useShellLayout>>
-export type Shell = AfterShellLayout
+
+export type SourceCatalogNames = ["acceptCatalog", "advanceEnd", "autoTick", "bannerRetry", "bundleImportActive", "bundleImporter", "catalogWaiters", "end", "etags", "focusBannerRetry", "lastSyncInputs", "openRequest", "queryRevision", "refreshCatalog", "refreshedAt", "retry", "retryFocus", "retrySources", "setQueryRevision", "setRefreshedAt", "setRetry", "setSourceRequest", "setSources", "sourceContext", "sourceNoticeRef", "sourceRequest", "sources", "workspaceRegion"]
+export type AfterSourceCatalog = AfterShellLayout & Named<SourceCatalogNames, ReturnType<typeof useSourceCatalog>>
+
+export type LiveSyncNames = ["dirty", "focusTitleOnEdit", "saveButton", "syncError", "titleField", "variableValues", "viewDashboard", "viewDiffers"]
+export type AfterLiveSync = AfterSourceCatalog & Named<LiveSyncNames, ReturnType<typeof useLiveSync>>
+export type Shell = AfterLiveSync
