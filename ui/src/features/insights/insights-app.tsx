@@ -1,17 +1,6 @@
 "use client"
 
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react"
+import { Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
 import {
   Activity,
@@ -78,8 +67,6 @@ import { assertProviderQueryTemplate } from "./provider-query-template"
 import catalogMeta from "./repository-examples/catalog-meta.json"
 import { LazyFailure, LazyPanelBoundary, MountSignal, reloadPage } from "./lazy-panel"
 import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
-import type * as RepositoryWorkspaceModule from "./repository-workspace"
-type RepositoryWorkspace = typeof RepositoryWorkspaceModule
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey, type QueryFieldSnapshot } from "./query-connections"
 import { createExampleSavedQueryClient } from "./saved-query-storage"
@@ -135,6 +122,7 @@ import {
 import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
 
 import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
+import { RepositoryWorkspace, DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, loadRepositoryWorkspace, preloadWidgetEditor, preloadExamples } from "./shell/lazy-panels"
 
 /** The notice phrase for where a copy settled. A copy the compactor lifted out of its row says nothing about its neighbour. */
 function placementPhrase(placement: DuplicatePlacement): string {
@@ -153,41 +141,10 @@ function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
   }
 }
 
-const DashboardHistory = lazy(() => import("./dashboard-history").then(module => ({ default: module.DashboardHistory })))
-const Explorer = lazy(() => import("./explorer").then(module => ({ default: module.Explorer })))
-// The shortcut list opens only on request, so it loads then rather than with the first view.
-const ShortcutList = lazy(() => import("./shortcut-list").then(module => ({ default: module.ShortcutList })))
-// The inspector is opened on demand, so its code stays out of the first view.
-const QueryInspector = lazy(() => import("./query-inspector").then(module => ({ default: module.QueryInspector })))
-// Builder panels and save checks open on request, so their code and styles load then rather than with the first view.
-const DocumentEditor = lazy(() => import("./document-editor").then(module => ({ default: module.DocumentEditor })))
-const ProviderManager = lazy(() => import("./provider-manager").then(module => ({ default: module.ProviderManager })))
-const DashboardManager = lazy(() => import("./dashboard-manager").then(module => ({ default: module.DashboardManager })))
-const ChecksList = lazy(() => import("./checks-list").then(module => ({ default: module.ChecksList })))
 const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
 // Shown after a save that leaves a dirty chart draft out of the dashboard. Closing the chart editor clears it.
 const UNAPPLIED_CHART_NOTICE = "Saved. Chart changes are still unapplied."
 
-const AIBuilder = lazy(() =>
-  import("./ai").then((module) => ({ default: module.AIBuilder })),
-)
-// The same loaders serve React.lazy and the hover/focus preloads. A failed chunk is reported by its panel's boundary.
-const loadWidgetEditor = () => import("./widget-editor")
-const WidgetEditor = lazy(() => loadWidgetEditor().then((module) => ({ default: module.WidgetEditor })))
-const loadRepositoryGallery = () => import("./repository-gallery")
-const RepositoryGallery = lazy(() => loadRepositoryGallery().then((module) => ({ default: module.RepositoryGallery })))
-// The template picker loads only when it is opened, so the empty canvas stays light.
-const loadStarterPicker = () => import("./starter-picker")
-const StarterPicker = lazy(() => loadStarterPicker().then((module) => ({ default: module.StarterPicker })))
-// The example catalog (about 1 MB of JSON) and its query engine load only for example mode or the Examples panel.
-const loadRepositoryWorkspace = (): Promise<RepositoryWorkspace> => import("./repository-workspace")
-function preloadWidgetEditor() {
-  loadWidgetEditor().catch(() => undefined)
-}
-function preloadExamples() {
-  loadRepositoryGallery().catch(() => undefined)
-  loadRepositoryWorkspace().catch(() => undefined)
-}
 registerDefaultWidgetPlugins()
 
 export interface InsightsAppProps {
