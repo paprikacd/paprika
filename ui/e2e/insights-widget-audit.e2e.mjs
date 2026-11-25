@@ -753,7 +753,7 @@ async function chartInspectorAudit(width, height = width < 600 ? 844 : 1050) {
       assert.equal(await dialog.locator("tbody tr").count(), 10)
       assert.equal(await dialog.getByRole("button", { name: "Next observations", exact: true }).isDisabled(), true)
     } else assert.equal(await dialog.locator("tbody tr").count(), 1)
-    assert.equal(await dialog.locator("[data-metric-value]").last().getAttribute("data-metric-value"), String(60.123456789))
+    assert.equal(await dialog.locator("[data-observation-value]").last().getAttribute("data-observation-value"), String(60.123456789))
     assert.equal(await dialog.locator("time").last().getAttribute("datetime"), new Date(stamp).toISOString())
     await withinViewport(page, dialog.getByRole("button", { name: "Next observations", exact: true }))
     const path = resolve(output, `data-${kind}-${width}.png`); await page.screenshot({ path }); screenshots.push(path)
