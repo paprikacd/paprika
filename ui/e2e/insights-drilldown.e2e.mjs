@@ -107,7 +107,9 @@ try {
     return { persisted: true, nativeSelects: await page.locator("select").count() }
   })
   await check("heatmap drilldown carries selected labels and exact time to the real provider", async () => {
-    await page.getByRole("group", { name: "Service health heatmap" }).getByRole("button", { name: /checkout-api.*: 1/ }).click()
+    // The heatmap names a row by its distinguishing label: both series differ in service and instance, so the
+    // checkout-api row reads "pod-a". The drilldown still binds the cell's service label.
+    await page.getByRole("group", { name: "Service health heatmap" }).getByRole("button", { name: /^pod-a: 1\b/ }).click()
     await page.getByRole("button", { name: "Open related dashboard from Service health", exact: true }).click()
     await page.getByRole("menuitem", { name: /^Open service detail/ }).click()
     await page.getByRole("heading", { name: "Service detail", exact: true }).waitFor()
