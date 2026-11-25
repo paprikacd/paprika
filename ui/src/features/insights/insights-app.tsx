@@ -1,30 +1,9 @@
 "use client"
-/* eslint-disable react-hooks/immutability -- the React Compiler lint skipped this component while it was one 2,600-line function; its JSX handlers set refs from the shell hooks, as they did before the split */
 
 import { Suspense } from "react"
 import "react-dom"
-import {
-  Activity,
-  ArrowLeft,
-  Braces,
-  ChevronRight,
-  CircleHelp,
-  Database,
-  FilePlus2,
-  LayoutDashboard,
-  Link2,
-  Loader2,
-  PanelLeftClose,
-  Pencil,
-  Plus,
-  Save,
-  Search,
-  History,
-  Sparkles,
-  Settings2,
-  X,
-} from "lucide-react"
-import { GammaActionMenu } from "./gamma/action-menu"
+import "lucide-react"
+import "./gamma/action-menu"
 import "react-grid-layout"
 import type { InsightsClient } from "./client"
 import "./layout-compaction"
@@ -32,7 +11,7 @@ import "./schema"
 import "./example"
 import "./example-storage"
 import "./provider-query-template"
-import catalogMeta from "./repository-examples/catalog-meta.json"
+import "./repository-examples/catalog-meta.json"
 import "./lazy-panel"
 import "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
@@ -42,11 +21,11 @@ import "./bundle-import"
 import "./saved-queries"
 import "./fingerprint"
 import "./use-mobile-navigation"
-import { dashboardActionItems } from "./dashboard-actions"
+import "./dashboard-actions"
 import "./use-builder-panel-focus"
 import "./history"
 import "./use-insights-shortcuts"
-import { ariaKeyshortcutsFor, hintFor } from "./shortcuts"
+import "./shortcuts"
 import "./use-workspace-refresh"
 import "./canvas"
 import { EmbedView } from "./embed-view"
@@ -57,7 +36,7 @@ import "./tile-controls"
 import "./canvas-density"
 import "./responsive-layout"
 import "./query"
-import { DashboardTree } from "./dashboard-library"
+import "./dashboard-library"
 import "./chart-apply"
 import "./time-range"
 import "./widget-library"
@@ -65,21 +44,21 @@ import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
 import "./client"
 import { SourceStatusContext } from "./source-status"
-import { GammaButton } from "./gamma/button"
-import { GammaInput } from "./gamma/input"
+import "./gamma/button"
+import "./gamma/input"
 import "./gamma/select"
 import { GammaConfirmation } from "./gamma/confirmation"
 import "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
 import "./dashboard-variables"
-import { ClampedDescription } from "./dashboard-description"
+import "./dashboard-description"
 import "./variable-options"
-import { InsightsThemeControl } from "./insights-theme"
+import "./insights-theme"
 import "./drilldown"
 import "./layout-edit"
 
-import { serialiseDashboardView } from "./dashboard-view"
-import { Explorer, ShortcutList, preloadExamples } from "./shell/lazy-panels"
+import "./dashboard-view"
+import { ShortcutList } from "./shell/lazy-panels"
 import "./shell/navigation"
 import "./shell/source-catalog"
 import "./shell/media-stores"
@@ -102,6 +81,9 @@ import { renderLoadingScreen } from "./shell/loading-screen"
 import { renderCanvasArea } from "./shell/canvas-area"
 import { renderWorkspaceNotices } from "./shell/workspace-notices"
 import { renderDashboardToolbar } from "./shell/dashboard-toolbar"
+import { renderDashboardHeader } from "./shell/dashboard-header"
+import { renderDashboardTopbar } from "./shell/dashboard-topbar"
+import { renderInsightsSidebar } from "./shell/insights-sidebar"
 
 
 registerDefaultWidgetPlugins()
@@ -668,281 +650,11 @@ function InsightsWorkspace({
           onClick={() => setMobileSidebar(false)}
         />
       )}
-      {!focusedWidget && (isMobile ? drawerOpen : sidebarShown) && (
-        <aside
-          ref={navigation}
-          id="insights-navigation"
-          className={`${styles.sidebar} ${mobileSidebar ? styles.mobileSidebar : ""} ${compactShell && !compactNavigationExpanded ? styles.compactRail : ""}`}
-          data-navigation-expanded={compactShell ? compactNavigationExpanded : undefined}
-          aria-label="Insights navigation"
-          role={drawerOpen ? "dialog" : undefined}
-          aria-modal={drawerOpen ? true : undefined}
-          tabIndex={drawerOpen ? -1 : undefined}
-        >
-          {drawerOpen && (
-            <GammaButton iconOnly size="sm" variant="quiet"
-              className={styles.iconButton}
-              style={{ position: "absolute", top: 12, right: 12 }}
-              aria-label="Close navigation"
-              onClick={() => setMobileSidebar(false)}
-            >
-              <X size={17} />
-            </GammaButton>
-          )}
-          <GammaButton size="sm" variant="quiet"
-            className={styles.back}
-            title={compactShell ? "Back to Paprika" : undefined}
-            disabled={importingBundle}
-            onClick={async () => {
-              if (bundleImportActive.current) return
-              if (
-                (!dirty && !widgetDraftDirty && !explorerDirty) ||
-                await confirmation.ask({ title: "Discard unsaved changes?", description: "Your unsaved dashboard and explorer query changes will be lost when you leave Insights.", action: "Discard changes" })
-              )
-                onBack?.()
-            }}
-          >
-            <ArrowLeft size={15} /> Back to Paprika
-          </GammaButton>
-          <div className={styles.wordmark}>
-            <span>
-              <Activity size={19} />
-            </span>
-            Insights<span className={styles.previewTag}>preview</span>
-          </div>
-          <div className={styles.sideLabel}>WORKSPACE</div>
-          <GammaButton size="sm" variant="quiet"
-            className={styles.sideLink}
-            title={compactShell ? "Dashboards — expand navigation to choose a dashboard" : undefined}
-            aria-current={!exploring ? "page" : undefined}
-            disabled={importingBundle}
-            onClick={() => {
-              setExploring(false)
-              if (!exploring) close()
-              setMobileSidebar(false)
-            }}
-          >
-            <LayoutDashboard size={16} /> Dashboards{" "}
-            <span>{dashboards.length}</span>
-          </GammaButton>
-          <GammaButton size="sm" variant="quiet"
-            className={styles.sideLink}
-            title={compactShell ? "Explore" : undefined}
-            aria-current={exploring ? "page" : undefined}
-            disabled={importingBundle}
-            onClick={() => openQueryExplorer()}
-          ><Search size={16} /> Explore <span>{savedQueries.length}</span></GammaButton>
-          <GammaButton data-panel-opener="providers" size="sm" variant="quiet"
-            className={styles.sideLink}
-            title={compactShell ? "Data sources" : undefined}
-            disabled={importingBundle}
-            onClick={() => openBuilderPanel("providers")}
-          >
-            <Database size={16} /> Data sources <span>{providers.length}</span>
-          </GammaButton>
-          <GammaButton data-panel-opener="examples" size="sm" variant="quiet" className={styles.sideLink} title={compactShell ? "Examples" : undefined} disabled={importingBundle} onMouseEnter={preloadExamples} onFocus={preloadExamples} onClick={() => openBuilderPanel("examples")}><FilePlus2 size={16} /> Examples <span>{catalogMeta.count}</span></GammaButton>
-          <div className={styles.sideSection}>
-            <span className={styles.sideLabel}>YOUR DASHBOARDS</span>
-            <GammaButton iconOnly size="sm" variant="quiet"
-              className={styles.iconButton}
-              aria-label="New dashboard"
-              disabled={importingBundle}
-              onClick={createDashboard}
-            >
-              <Plus size={15} />
-            </GammaButton>
-          </div>
-          <label className={styles.search}>
-            <Search size={13} />
-            <GammaInput
-              aria-label="Search dashboards"
-              placeholder="Find a dashboard"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-          <div className={styles.dashboardList}>
-            <DashboardTree
-              dashboards={dashboards.map((item) =>
-                item.id === dashboard.id ? dashboard : item,
-              )}
-              activeId={dashboard.id}
-              search={search}
-              onOpen={async (item) => {
-                if (await openDashboard(item)) {
-                  setExploring(false)
-                  setReturnTo(null)
-                }
-              }}
-              onMove={moveDashboard}
-            />
-          </div>
-          <div className={styles.sidebarBottom}>
-            <div className={styles.environment}>
-              <span className={styles.statusDot} />
-              <div>
-                <strong>
-                  {mode === "example"
-                    ? "Example workspace"
-                    : "Connected workspace"}
-                </strong>
-                <span>
-                  {mode === "example"
-                    ? "Sample data · stored locally"
-                    : `${providers.length} configured data sources`}
-                </span>
-              </div>
-            </div>
-            <GammaButton data-panel-opener="source" size="sm" variant="quiet"
-              className={styles.sideLink}
-              disabled={importingBundle}
-              onClick={() => openBuilderPanel("source")}
-            >
-              <Braces size={15} /> Dashboard as code
-            </GammaButton>
-          </div>
-        </aside>
-      )}
+      {renderInsightsSidebar(bundleImportActive, close, compactNavigationExpanded, compactShell, confirmation, createDashboard, dashboard, dashboards, dirty, drawerOpen, explorerDirty, exploring, focusedWidget, importingBundle, isMobile, mobileSidebar, mode, moveDashboard, navigation, onBack, openBuilderPanel, openDashboard, openQueryExplorer, providers, savedQueries, search, setExploring, setMobileSidebar, setReturnTo, setSearch, sidebarShown, widgetDraftDirty)}
       <div className={styles.workspace} data-density={dense && !editing && canvasMode === "wide" ? "compact" : "standard"} inert={drawerOpen || undefined}>
-        <div className={styles.topbar} data-tooltip-obstacle>
-          <div className={styles.breadcrumb}>
-            <GammaButton iconOnly size="sm" variant="quiet"
-              ref={navigationToggle}
-              className={styles.iconButton}
-              aria-label="Toggle sidebar"
-              aria-expanded={isMobile ? drawerOpen : compactShell ? compactNavigationExpanded && sidebarShown : sidebarShown}
-              aria-controls="insights-navigation"
-              onClick={() => {
-                if (isMobile) setMobileSidebar(!mobileSidebar)
-                // Showing the sidebar over an open panel is the user's choice; it stays until they hide it again.
-                else if (panelHidden) {
-                  setPanelHidesSidebar(false)
-                  setSidebarOverride(true)
-                } else if (compactShell) setCompactNavigationExpanded(!compactNavigationExpanded)
-                else setSidebar(!sidebar)
-              }}
-            >
-              <PanelLeftClose size={17} />
-            </GammaButton>
-            <span>Insights</span>
-            <ChevronRight size={12} />
-            <strong>{exploring ? "Explore" : "Dashboards"}</strong>
-          </div>
-          <div className={styles.topbarRight}>
-            <InsightsThemeControl value={theme} onChange={setTheme} className={styles.themeControl} />
-            <GammaButton iconOnly size="sm" variant="quiet" aria-label="Copy dashboard link" onClick={async () => {
-              try {
-                const state = { ...currentRoute, dashboardId: dashboard.id, variables: variableValues }
-                const url = new URL(serialiseDashboardView(state, { example: mode === "example" }), location.origin)
-                await navigator.clipboard.writeText(url.href)
-                setError("")
-                setMessage("Dashboard link copied with the current variables and time settings.")
-              } catch { setError("Could not copy the link. Copy the current address from your browser.") }
-            }}><Link2 size={15} /></GammaButton>
-            <span className={styles.modeBadge}>
-              <span />
-              {mode === "example" ? "Sample data" : "Live providers"}
-            </span>
-            <GammaButton data-panel-opener="providers" iconOnly size="sm" variant="quiet"
-              className={styles.iconButton}
-              aria-label="About data sources"
-              disabled={importingBundle}
-              onClick={() => openBuilderPanel("providers")}
-            >
-              <CircleHelp size={17} />
-            </GammaButton>
-          </div>
-        </div>
-        {explorerOpened && (
-          <section hidden={!exploring} className={styles.explorerArea} aria-label="Data source explorer">
-            {queriesLoading && <p className={styles.loading} role="status">Loading saved queries…</p>}
-            {queriesError && <div role="alert"><p>{queriesError}</p><GammaButton variant="secondary" onClick={() => setLibraryRevision(value => value + 1)}>Reload saved queries</GammaButton></div>}
-            {queriesLoaded && <Suspense fallback={<p className={styles.loading}>Loading explorer…</p>}>
-              <Explorer key={explorerSource.revision} initialProviderId={explorerSource.providerId} initialSeed={explorerSource.seed} client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={useSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
-            </Suspense>}
-          </section>
-        )}
+        {renderDashboardTopbar(compactNavigationExpanded, compactShell, currentRoute, dashboard, drawerOpen, explorerOpened, explorerSource, exploring, importingBundle, isMobile, libraryClient, mobileSidebar, mode, navigationToggle, openBuilderPanel, panelHidden, providers, queriesError, queriesLoaded, queriesLoading, savedQueries, setCompactNavigationExpanded, setError, setExplorerDirty, setExploring, setLibraryRevision, setMessage, setMobileSidebar, setPanelHidesSidebar, setSidebar, setSidebarOverride, setTheme, sidebar, sidebarShown, theme, updateSavedQueries, useSavedQuery, variableValues)}
         <section ref={workspaceRegion} tabIndex={-1} hidden={exploring} aria-label="Dashboard workspace">
-        <div className={styles.pageHeader} data-tooltip-obstacle>
-          <div className={styles.heading}>
-            {editing ? (
-              <GammaInput
-                ref={titleField}
-                className={styles.titleInput}
-                aria-label="Dashboard title"
-                maxLength={120}
-                value={dashboard.title}
-                onBlur={() => endGroup()}
-                onChange={(e) =>
-                  update({ ...dashboard, title: e.target.value }, { group: "dashboard:title" })
-                }
-              />
-            ) : (
-              <h1>{dashboard.title}</h1>
-            )}
-            {dashboard.description && (compactShell
-              ? <details className={styles.compactDescription}><summary>Dashboard context</summary><p>{dashboard.description}</p></details>
-              : isMobile ? <ClampedDescription text={dashboard.description} /> : <p>{dashboard.description}</p>)}
-          </div>
-          <div className={styles.actions} ref={actionsRegion}>
-            {isMobile || compactShell ? <GammaActionMenu
-              label="Dashboard actions"
-              openerName="dashboard-actions"
-              className={styles.iconButton}
-              disabled={importingBundle}
-              items={dashboardActionItems({ phoneShell, refreshInterval: viewDashboard.refreshInterval, customRange: !!viewDashboard.customTimeRange, history: historyAvailable }, {
-                edit: () => { focusTitleOnEdit.current = true; setEditing(true) },
-                togglePanel: name => openBuilderPanel(panel === name ? null : name),
-                inspectQueries: () => setInspectingQueries(value => !value),
-                refresh: changeViewRefresh,
-                shortcuts: () => setShortcutsOpen(true),
-              })}
-            /> : <>
-            {historyAvailable && <GammaButton data-panel-opener="history" size="sm" variant="secondary"
-              className={styles.secondary}
-              disabled={importingBundle}
-              onClick={() => openBuilderPanel(panel === "history" ? null : "history")}
-            >
-              <History size={15} /> History
-            </GammaButton>}
-            <GammaButton data-panel-opener="manage" size="sm" variant="secondary"
-              className={styles.secondary}
-              aria-label="Manage dashboards"
-              disabled={importingBundle}
-              onClick={() => openBuilderPanel(panel === "manage" ? null : "manage")}
-            >
-              <Settings2 size={15} /> Manage
-            </GammaButton>
-            <GammaButton data-panel-opener="ai" size="sm" variant="secondary"
-              className={styles.secondary}
-              disabled={importingBundle}
-              onClick={() => openBuilderPanel(panel === "ai" ? null : "ai")}
-            >
-              <Sparkles size={15} /> Build with AI
-            </GammaButton>
-            </>}
-            {!phoneShell && (editing ? (
-              <GammaButton ref={saveButton} size="sm" variant="primary" className={styles.primary} aria-keyshortcuts={ariaKeyshortcutsFor("save")} title={hintFor("save", applePlatform)} disabled={busy || !widgetDraftValid} aria-describedby={!widgetDraftValid ? invalidWidgetSaveHintId : undefined} onClick={save}>
-                {busy ? (
-                  <Loader2 size={15} className={styles.spin} />
-                ) : (
-                  <Save size={15} />
-                )}{" "}
-                Save dashboard
-              </GammaButton>
-            ) : (
-              <GammaButton size="sm" variant="primary"
-                iconOnly={compactShell}
-                aria-label={compactShell ? "Edit dashboard" : undefined}
-                title={compactShell ? "Edit dashboard" : undefined}
-                className={styles.primary}
-                onClick={() => setEditing(true)}
-              >
-                <Pencil size={14} />{!compactShell && " Edit dashboard"}
-              </GammaButton>
-            ))}
-          </div>
-        </div>
+        {renderDashboardHeader(actionsRegion, applePlatform, busy, changeViewRefresh, compactShell, dashboard, editing, endGroup, focusTitleOnEdit, historyAvailable, importingBundle, invalidWidgetSaveHintId, isMobile, openBuilderPanel, panel, phoneShell, save, saveButton, setEditing, setInspectingQueries, setShortcutsOpen, titleField, update, viewDashboard, widgetDraftValid)}
         {renderDashboardToolbar(advanceEnd, applePlatform, applyDashboardVariables, canRedo, canUndo, canvasMode, changeViewRange, changeViewRefresh, compactShell, dashboard, declareVariable, dense, editing, importingBundle, inspectingQueries, invalidWidgetSaveHintId, openBuilderPanel, panel, phoneShell, range, redo, resetViewRange, setDense, setInspectingQueries, setLibraryRevision, setQueryRevision, setRefreshedAt, setViewAsDefault, undo, variableLoaders, variableValues, viewDashboard, viewDiffers, widgetDraftValid)}
         {renderWorkspaceNotices(bannerRetry, busy, client, dashboard, dashboards, error, importingBundle, inspectingQueries, linkNotice, message, messageAction, mode, openDashboard, reloadRemoteDashboard, remoteDashboard, retrySources, returnTo, saveFindings, scheduledFetcher, selectWidget, setError, setInspectingQueries, setLinkNotice, setMessage, setMessageAction, setReturnTo, sourceNoticeRef, sources, syncError)}
         <div className={styles.workArea}>
