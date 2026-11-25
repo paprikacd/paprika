@@ -3,7 +3,6 @@ import { useCallback } from "react"
 import type { InsightsClient } from "../client"
 import { dashboardAsSent } from "../layout-compaction"
 import { newDashboard, writableDashboard, type Dashboard, type Provider } from "../schema"
-import { createExampleDashboardImportClient, writeExampleWorkspace } from "../example-storage"
 import { loadBundleImportReview, type BundleImportRequest } from "../bundle-import"
 import type { DashboardBundle } from "../workspace-transfer"
 import { documentFingerprint } from "../fingerprint"
@@ -15,6 +14,7 @@ import type { AfterDocumentActions } from "./types"
 export function useViewActions(
   advanceEnd: AfterDocumentActions["advanceEnd"],
   applyView: AfterDocumentActions["applyView"],
+  backend: AfterDocumentActions["backend"],
   bundleImportActive: AfterDocumentActions["bundleImportActive"],
   bundleImporter: AfterDocumentActions["bundleImporter"],
   busy: AfterDocumentActions["busy"],
@@ -33,7 +33,6 @@ export function useViewActions(
   latestDocument: AfterDocumentActions["latestDocument"],
   libraryClient: AfterDocumentActions["libraryClient"],
   libraryMutation: AfterDocumentActions["libraryMutation"],
-  mode: AfterDocumentActions["mode"],
   openRequest: AfterDocumentActions["openRequest"],
   panel: AfterDocumentActions["panel"],
   panelOpener: AfterDocumentActions["panelOpener"],
@@ -196,20 +195,17 @@ export function useViewActions(
     setError("")
     try {
       const remaining = dashboards.filter((item) => item.id !== id)
-      if (mode === "example")
-        writeExampleWorkspace(localStorage, remaining, remaining[0]?.id ?? "")
-      else await client.remove(id, etags.current.get(id))
+      await backend.remove(id, remaining, etags.current.get(id))
       etags.current.delete(id)
       setDashboards((items) => items.filter((item) => item.id !== id))
       if (request !== openRequest.current) return
-      const next =
-        mode === "example" && remaining[0] ? remaining[0] : newDashboard()
+      // An example opens the next stored dashboard; live, the workspace starts a new draft.
+      const stored = backend.afterDelete(remaining)
+      const next = stored ?? newDashboard()
       ++openRequest.current
       resetView(next)
       reset(next)
-      setSaved(
-        mode === "example" && remaining[0] ? documentFingerprint(next) : "",
-      )
+      setSaved(stored ? documentFingerprint(next) : "")
       setEditing(true)
       close()
       setMessage("Dashboard deleted.")
@@ -235,21 +231,10 @@ export function useViewActions(
     setBusy(true)
     setError("")
     try {
-      const loaded =
-        mode === "example"
-          ? { dashboard: existing, etag: undefined }
-          : await client.get(id)
+      const loaded = await backend.load(existing)
       const moved = dashboardAsSent(writableDashboard({ ...loaded.dashboard, folder }))
-      if (mode === "example")
-        writeExampleWorkspace(
-          localStorage,
-          dashboards.map((item) => (item.id === id ? moved : item)),
-          dashboard.id,
-        )
-      else {
-        const etag = await client.save(moved, loaded.etag)
-        if (etag) etags.current.set(id, etag)
-      }
+      const etag = await backend.move(moved, dashboards, dashboard.id, loaded.etag)
+      if (etag) etags.current.set(id, etag)
       setDashboards((items) =>
         items.map((item) => (item.id === id ? moved : item)),
       )
@@ -299,7 +284,7 @@ export function useViewActions(
   }
 
   // Sample data keeps no revisions. A host that predates revision history serves no listing.
-  const historyAvailable = mode !== "example" && !!client.listRevisions
+  const historyAvailable = backend.revisions
   // A restored revision is the saved document now: the canvas, the saved fingerprint and the ETag all move to it.
   function applyRestoredDocument(restored: Dashboard, etag?: string) {
     if (etag) etags.current.set(restored.id, etag)
@@ -311,9 +296,7 @@ export function useViewActions(
     setMessage("Dashboard restored from an earlier revision.")
   }
   function importClient(): InsightsClient {
-    return mode === "example"
-      ? { ...libraryClient, ...createExampleDashboardImportClient(localStorage) }
-      : libraryClient
+    return backend.importClient(libraryClient)
   }
 
   async function reviewBundle(bundle: DashboardBundle) {

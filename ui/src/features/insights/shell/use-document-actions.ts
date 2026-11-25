@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react"
 import { verticalCompactor, type Layout } from "react-grid-layout"
 import { dashboardAsSent } from "../layout-compaction"
 import { customTimeRangeSchema, newWidget, MAX_WIDGETS, type Dashboard, type Widget, isApplicationLink, type WidgetLink, type SavedQuery, type DashboardVariable, dashboardSchema, MAX_DASHBOARD_VARIABLES } from "../schema"
-import { saveExampleWorkspace } from "../example-storage"
 import { documentFingerprint } from "../fingerprint"
 import type { WidgetDefinition } from "../widget-registry"
 import { checksFromError } from "../client"
@@ -12,12 +11,11 @@ import { UNAPPLIED_CHART_NOTICE } from "./constants"
 import type { AfterPanels } from "./types"
 
 export function useDocumentActions(
-  activeExample: AfterPanels["activeExample"],
   advanceEnd: AfterPanels["advanceEnd"],
   applyView: AfterPanels["applyView"],
+  backend: AfterPanels["backend"],
   busy: AfterPanels["busy"],
   chartCommands: AfterPanels["chartCommands"],
-  client: AfterPanels["client"],
   close: AfterPanels["close"],
   confirmation: AfterPanels["confirmation"],
   currentRoute: AfterPanels["currentRoute"],
@@ -27,7 +25,6 @@ export function useDocumentActions(
   etags: AfterPanels["etags"],
   focusAfterSave: AfterPanels["focusAfterSave"],
   latestDocument: AfterPanels["latestDocument"],
-  mode: AfterPanels["mode"],
   navigateFromChart: AfterPanels["navigateFromChart"],
   onOpenApplication: AfterPanels["onOpenApplication"],
   openRequest: AfterPanels["openRequest"],
@@ -188,15 +185,9 @@ export function useDocumentActions(
       // never overwrites edits made while the request was in flight.
       if (documentFingerprint(parsed) !== documentFingerprint(doc))
         update(parsed)
-      if (activeExample) {
-        const persisted = activeExample.readRepositoryExampleWorkspace(localStorage).dashboards.find(item => item.id === parsed.id)
-        if (persisted && documentFingerprint(persisted) !== saved)
-          throw new Error("The saved dashboard changed. Open another dashboard and return to review it before saving, or duplicate your draft to keep these edits.")
-        saveExampleWorkspace(localStorage, dashboards, parsed)
-      } else {
-        const etag = await client.save(parsed, etags.current.get(parsed.id))
-        if (etag) etags.current.set(parsed.id, etag)
-      }
+      // An example refuses a save over a stored copy that changed since this draft was opened.
+      const etag = await backend.save(parsed, { saved, dashboards, etag: etags.current.get(parsed.id) })
+      if (etag) etags.current.set(parsed.id, etag)
       setDashboards((items) => [
         ...items.filter((item) => item.id !== parsed.id),
         parsed,
@@ -211,11 +202,7 @@ export function useDocumentActions(
         setMessageAction({ text, label: "Apply and save", name: "Apply and save chart", run: () => chartCommands.current?.applyAndSave(), chartEditor: true })
         return
       }
-      setMessage(
-        mode === "example"
-          ? "Example saved in this browser."
-          : "Dashboard saved.",
-      )
+      setMessage(backend.copy.saved)
       // Apply and save moves focus to the chart's tile. A plain save moves it to Edit, or to the actions trigger on the phone.
       focusAfterSave.current = { widget: options.focusWidget }
       setSaveRevision((value) => value + 1)
@@ -249,9 +236,7 @@ export function useDocumentActions(
       const active =
         item.id === dashboard.id
           ? { dashboard, etag: undefined }
-          : mode === "example"
-          ? { dashboard: item, etag: undefined }
-          : await client.get(item.id)
+          : await backend.load(item)
       if (request !== openRequest.current) return false
       if (item.id !== dashboard.id && beforeLoad !== documentFingerprint(latestDocument.current))
         throw new Error("Your dashboard changed while the destination was loading. Open the link again when you are ready.")
@@ -261,8 +246,7 @@ export function useDocumentActions(
       serialiseDashboardView(nextState)
       if (active.etag) etags.current.set(item.id, active.etag)
       if (item.id !== dashboard.id) {
-        if (mode === "example")
-          saveExampleWorkspace(localStorage, dashboards, active.dashboard)
+        backend.opened(dashboards, active.dashboard)
         reset(active.dashboard)
         setSaved(documentFingerprint(active.dashboard))
         setEditing(false)
