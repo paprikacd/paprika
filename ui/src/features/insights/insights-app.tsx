@@ -7,37 +7,28 @@ import {
   Activity,
   ArrowLeft,
   Braces,
-  Check,
   ChevronRight,
   CircleHelp,
-  Clock3,
   Database,
   FilePlus2,
   LayoutDashboard,
   Link2,
   Loader2,
   PanelLeftClose,
-  PanelTop,
   Pencil,
   Plus,
-  Redo2,
-  RefreshCw,
   Save,
   Search,
   History,
   Sparkles,
   Settings2,
-  Undo2,
   X,
 } from "lucide-react"
 import { GammaActionMenu } from "./gamma/action-menu"
 import "react-grid-layout"
 import type { InsightsClient } from "./client"
 import "./layout-compaction"
-import {
-  MAX_WIDGETS,
-  type Dashboard,
-} from "./schema"
+import "./schema"
 import "./example"
 import "./example-storage"
 import "./provider-query-template"
@@ -68,7 +59,7 @@ import "./responsive-layout"
 import "./query"
 import { DashboardTree } from "./dashboard-library"
 import "./chart-apply"
-import { TimeRangeControl, savedRangeLabel } from "./time-range"
+import "./time-range"
 import "./widget-library"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
@@ -76,21 +67,21 @@ import "./client"
 import { SourceStatusContext } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
-import { GammaSelect } from "./gamma/select"
+import "./gamma/select"
 import { GammaConfirmation } from "./gamma/confirmation"
 import "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
-import { PhoneVariables, VariableBar } from "./dashboard-variables"
+import "./dashboard-variables"
 import { ClampedDescription } from "./dashboard-description"
 import "./variable-options"
 import { InsightsThemeControl } from "./insights-theme"
 import "./drilldown"
 import "./layout-edit"
 
-import { serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
-import { Explorer, ShortcutList, QueryInspector, ChecksList, preloadExamples } from "./shell/lazy-panels"
+import { serialiseDashboardView } from "./dashboard-view"
+import { Explorer, ShortcutList, preloadExamples } from "./shell/lazy-panels"
 import "./shell/navigation"
-import { sourceBannerCopy } from "./shell/source-catalog"
+import "./shell/source-catalog"
 import "./shell/media-stores"
 import { NO_VARIABLES } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
@@ -109,6 +100,8 @@ import { renderPanelRouter } from "./shell/panel-router"
 import { renderUnavailableScreen } from "./shell/unavailable-screen"
 import { renderLoadingScreen } from "./shell/loading-screen"
 import { renderCanvasArea } from "./shell/canvas-area"
+import { renderWorkspaceNotices } from "./shell/workspace-notices"
+import { renderDashboardToolbar } from "./shell/dashboard-toolbar"
 
 
 registerDefaultWidgetPlugins()
@@ -950,196 +943,8 @@ function InsightsWorkspace({
             ))}
           </div>
         </div>
-        {editing && !widgetDraftValid && <p id={invalidWidgetSaveHintId} className={styles.saveBlockedHint} role="status">Fix the widget settings to save, or close the editor to keep the last valid preview.</p>}
-        <div className={styles.toolbar} data-tooltip-obstacle>
-          {!phoneShell && <div className={styles.toolbarLeft}>
-            <VariableBar dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={applyDashboardVariables} onDeclareVariable={editing ? declareVariable : undefined} />
-            {/* The phone shell holds Code and Queries in the Dashboard actions menu, so the canvas tools row is not shown. */}
-            <div className={styles.canvasTools}>
-            <span className={styles.canvasTab}>
-              <LayoutDashboard size={14} /> Canvas
-            </span>
-            <GammaButton data-panel-opener="source" size="sm" variant="quiet"
-              className={panel === "source" ? styles.activeTool : ""}
-              iconOnly={compactShell} aria-label={compactShell ? "Code" : undefined} title={compactShell ? "Dashboard as code" : undefined}
-              disabled={importingBundle}
-              onClick={() => openBuilderPanel(panel === "source" ? null : "source")}
-            >
-              <Braces size={14} />{!compactShell && " Code"}
-            </GammaButton>
-            <GammaButton size="sm" variant="quiet"
-              className={inspectingQueries ? styles.activeTool : ""}
-              iconOnly={compactShell} aria-label="Query inspector"
-              aria-haspopup="dialog" aria-expanded={inspectingQueries} aria-controls={inspectingQueries ? "insights-query-inspector" : undefined}
-              title="Inspect query timing, reuse and result bounds"
-              onClick={() => setInspectingQueries(value => !value)}>
-              <Clock3 size={14} />{!compactShell && " Queries"}
-            </GammaButton>
-            {canvasMode === "wide" && <>
-            <span className={styles.divider} />
-            <GammaButton size="sm" variant="quiet" iconOnly={compactShell} aria-label={compactShell ? "Compact view" : undefined} aria-pressed={dense} disabled={editing || canvasMode !== "wide"}
-              title={editing ? "Compact view is available when previewing" : canvasMode !== "wide" ? "Compact view is available when the dashboard canvas is wider" : "Icon rail, one-row header and a tighter grid. The saved dashboard is unchanged."}
-              className={dense && !editing ? styles.activeTool : ""} onClick={() => setDense(!dense)}>
-              <PanelTop size={14} />{!compactShell && " Compact view"}
-            </GammaButton>
-            </>}
-            <span className={styles.widgetCount}>
-              {dashboard.widgets.length} widgets
-            </span>
-            {editing && (
-              <>
-                <GammaButton iconOnly size="sm" variant="quiet"
-                  className={styles.iconButton}
-                  aria-label="Undo"
-                  aria-keyshortcuts={ariaKeyshortcutsFor("undo")}
-                  title={hintFor("undo", applePlatform)}
-                  disabled={!canUndo}
-                  onClick={undo}
-                >
-                  <Undo2 size={14} />
-                </GammaButton>
-                <GammaButton iconOnly size="sm" variant="quiet"
-                  className={styles.iconButton}
-                  aria-label="Redo"
-                  aria-keyshortcuts={ariaKeyshortcutsFor("redo")}
-                  title={hintFor("redo", applePlatform)}
-                  disabled={!canRedo}
-                  onClick={redo}
-                >
-                  <Redo2 size={14} />
-                </GammaButton>
-              </>
-            )}
-            </div>
-          </div>}
-          <div className={styles.toolbarRight} role={phoneShell ? "group" : undefined} aria-label={phoneShell ? "Dashboard view" : undefined}>
-            {phoneShell && <PhoneVariables dashboard={dashboard} values={variableValues} loaders={variableLoaders} range={range} onApply={applyDashboardVariables} />}
-            <TimeRangeControl
-              key={dashboard.id}
-              dashboard={viewDashboard}
-              onChange={changeViewRange}
-              onReset={viewTimeDiffers(dashboard, viewDashboard) ? resetViewRange : undefined}
-              resetLabel={savedRangeLabel(dashboard)}
-              customButton={!phoneShell}
-              className={phoneShell ? styles.phoneTime : undefined}
-            />
-            <GammaButton iconOnly size="sm" variant="quiet"
-              className={styles.iconButton}
-              aria-label="Refresh data"
-              onClick={() => {
-                advanceEnd(false)
-                setRefreshedAt(Date.now())
-                setQueryRevision((value) => value + 1)
-                setLibraryRevision((value) => value + 1)
-              }}
-            >
-              <RefreshCw size={14} />
-            </GammaButton>
-            {!phoneShell && <GammaSelect
-              className={styles.refreshSelect}
-              aria-label="Auto refresh"
-              size="sm"
-              value={String(viewDashboard.customTimeRange ? 0 : viewDashboard.refreshInterval)}
-              disabled={!!viewDashboard.customTimeRange}
-              onValueChange={(value) => changeViewRefresh(Number(value) as Dashboard["refreshInterval"])}
-              options={[
-                {value: "0", label: "Auto off"}, {value: "15", label: "15s"},
-                {value: "30", label: "30s"}, {value: "60", label: "1m"},
-              ]}
-            />}
-            {viewDiffers && (
-              <GammaButton size="sm" variant="quiet" onClick={setViewAsDefault}>
-                Set as dashboard default
-              </GammaButton>
-            )}
-            {editing && (
-              <GammaButton data-panel-opener="add" size="sm" variant="quiet"
-                className={styles.addButton}
-                onClick={() => openBuilderPanel(panel === "add" ? null : "add")}
-                disabled={importingBundle || dashboard.widgets.length >= MAX_WIDGETS}
-              >
-                <Plus size={14} /> Add widget
-              </GammaButton>
-            )}
-          </div>
-        </div>
-        {inspectingQueries && <Suspense fallback={<p role="status" className={styles.loading}>Loading query inspector…</p>}><QueryInspector store={scheduledFetcher.diagnostics} synthetic={mode === "example"} onClose={() => setInspectingQueries(false)} /></Suspense>}
-        {returnTo ? (
-          <div className={styles.viewContext}>
-            <GammaButton size="sm" variant="quiet" onClick={async () => {
-              const target = dashboards.find(item => item.id === returnTo.state.dashboardId)
-              if (!target) { setError("The previous dashboard is no longer available."); return }
-              if (await openDashboard(target, returnTo.state)) setReturnTo(null)
-            }}><ArrowLeft size={14} /> Back to {returnTo.title}</GammaButton>
-          </div>
-        ) : null}
-        {remoteDashboard?.id === dashboard.id && (
-          <div className={styles.notice} role="status">
-            <span>{remoteDashboard.removed
-              ? "The saved dashboard was removed elsewhere. This view is preserved; duplicate it to keep a copy."
-              : "The saved dashboard changed elsewhere. Your draft is preserved."}</span>
-            {!remoteDashboard.removed && <GammaButton size="sm" variant="secondary" disabled={busy || importingBundle} onClick={reloadRemoteDashboard}>Load latest dashboard</GammaButton>}
-          </div>
-        )}
-        {syncError && <p className={styles.notice} role="status">Workspace updates paused: {syncError} Retrying automatically.</p>}
-        {/* One persistent live region for the source banner: it exists before its content changes. */}
-        <div ref={sourceNoticeRef} role="status" tabIndex={-1} data-source-state={sources.status === "unavailable" ? sources.reason : sources.status} className={sources.status === "unavailable" ? styles.notice : undefined}>
-          {sources.status === "unavailable" && (
-            <>
-              <span>{sourceBannerCopy(sources)}</span>
-              {sources.reason === "signin" && client.signIn ? (
-                <GammaButton size="sm" variant="secondary" onClick={() => client.signIn?.()}>Sign in again</GammaButton>
-              ) : (
-                <GammaButton ref={bannerRetry} size="sm" variant="secondary" onClick={retrySources}>Retry data sources</GammaButton>
-              )}
-            </>
-          )}
-        </div>
-        {(error || message) && (
-          <div
-            className={`${styles.notice} ${error ? styles.errorNotice : ""}`}
-            role={error ? "alert" : "status"}
-          >
-            {!error && <Check size={14} />}
-            <span>{error || message}</span>
-            {!error && messageAction?.text === message && (
-              <GammaButton size="sm" variant="secondary" aria-label={messageAction.name} onClick={() => {
-                const action = messageAction
-                setMessageAction(undefined)
-                action.run()
-              }}>{messageAction.label}</GammaButton>
-            )}
-            <GammaButton iconOnly size="sm" variant="quiet"
-              className={styles.iconButton}
-              aria-label="Dismiss message"
-              onClick={() => {
-                setError("")
-                setMessage("")
-                setMessageAction(undefined)
-              }}
-            >
-              <X size={14} />
-            </GammaButton>
-          </div>
-        )}
-        {saveFindings && error === saveFindings.message && (
-          <Suspense fallback={null}><ChecksList label="Save checks" report={saveFindings.report} dashboard={dashboard} onFocusWidget={selectWidget} /></Suspense>
-        )}
-        {/* Always mounted, so a notice is announced when its content appears. */}
-        <div role="status" data-link-notice>
-          {linkNotice && (
-            <div className={styles.notice}>
-              <span>{linkNotice}</span>
-              <GammaButton iconOnly size="sm" variant="quiet"
-                className={styles.iconButton}
-                aria-label="Dismiss link notice"
-                onClick={() => setLinkNotice("")}
-              >
-                <X size={14} />
-              </GammaButton>
-            </div>
-          )}
-        </div>
+        {renderDashboardToolbar(advanceEnd, applePlatform, applyDashboardVariables, canRedo, canUndo, canvasMode, changeViewRange, changeViewRefresh, compactShell, dashboard, declareVariable, dense, editing, importingBundle, inspectingQueries, invalidWidgetSaveHintId, openBuilderPanel, panel, phoneShell, range, redo, resetViewRange, setDense, setInspectingQueries, setLibraryRevision, setQueryRevision, setRefreshedAt, setViewAsDefault, undo, variableLoaders, variableValues, viewDashboard, viewDiffers, widgetDraftValid)}
+        {renderWorkspaceNotices(bannerRetry, busy, client, dashboard, dashboards, error, importingBundle, inspectingQueries, linkNotice, message, messageAction, mode, openDashboard, reloadRemoteDashboard, remoteDashboard, retrySources, returnTo, saveFindings, scheduledFetcher, selectWidget, setError, setInspectingQueries, setLinkNotice, setMessage, setMessageAction, setReturnTo, sourceNoticeRef, sources, syncError)}
         <div className={styles.workArea}>
           {renderCanvasArea(alignedEnd, autoTick, builderClient, builderPanel, busy, canvasMode, client, close, compactShell, currentWidget, dashboard, dashboards, dense, dirty, drilldown, duplicateTile, editing, editingWidget, exploring, fetcher, finePointer, focusedWidget, importingBundle, latestDocument, layoutUpdate, leaveWidget, markEditorMounted, mode, noticeWithUndo, openBuilderPanel, panel, phoneViewport, previewWidget, providers, queryFieldSnapshot, queryResultSnapshot, range, registerChartCommands, removeTile, save, saveDocument, saveLatest, scheduledFetcher, selectDashboardContext, selectDashboardTime, selectWidget, selected, setCanvasMode, setEditing, setError, setMessage, setMessageAction, setQueryFieldSnapshot, setQueryResultSnapshot, setShortcutsOpen, setWidgetDraftDirty, setWidgetDraftValid, setWidgetPreview, update, variableValues, viewDashboard, widgetDraftDirty, widgetDraftValid, widgetOpener)}
           {panel && panel !== "widget" && (
