@@ -680,6 +680,23 @@
 .intrinsicStat .stat[data-stat-sparkline-enabled="true"] { padding: 0; }
 .intrinsicStat .stat .statValue { font-size: 28px; white-space: normal; }
 
+/* A short card (a two-row stat) keeps the heading, the reason and Retry inside it: the reason is clamped and its full
+   text stays in the title. */
+@container insight-widget (max-height: 130px) {
+  .state { min-height: 0; padding: 4px 8px; gap: 4px; }
+  .state p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .state .limitFact { display: none; }
+}
+@container insight-widget (max-height: 110px) {
+  .state p { -webkit-line-clamp: 1; }
+}
+/* A one-row stat keeps the heading and Retry; the reason stays in the alert for assistive technology and in the title. */
+@container insight-widget (max-height: 90px) {
+  .state { justify-content: flex-start; }
+  .state > * { flex-shrink: 0; }
+  .state p { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
 /* Empty/error/loading content must start inside a one-track card. The normal
    100px minimum otherwise centers the actual message below its clipped body. */
 @container insight-widget (max-height: 40px) {
