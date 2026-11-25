@@ -1,6 +1,6 @@
 import { lazy } from "react"
 import { CalendarDays, Globe2, Network } from "lucide-react"
-import { getWidgetDefinition, registerWidgetPlugin, type WidgetPlugin } from "../widget-registry"
+import { getWidgetDefinition, registerWidgetPlugin, type WidgetConfigField, type WidgetPlugin } from "../widget-registry"
 import { connectionMapConfig, incidentCalendarConfig, pipelineTopologyConfig } from "./operational-records-data"
 
 // The renderers and their stylesheet load when a widget of their type first renders, so the plugin registry stays light.
@@ -15,6 +15,9 @@ const IncidentCalendar = lazy(() => loadView().then((module) => ({ default: modu
  * configuration (fields, defaults and style controls) identical. Bundled renderers only: persisted configuration maps
  * scalar columns and cannot load code.
  */
+/** Grid and coordinate labels default on for markers and off for compact dots. One function, so every entry list shares it. */
+const markerDefault: WidgetConfigField["defaultFor"] = config => (config as { display?: string } | undefined)?.display !== "density"
+
 export function operationalRecordPluginEntries(): Omit<WidgetPlugin, "dataKind">[] {
   return [
     {id:"connection-map",label:"Connection map",description:"Plot supplied geographic coordinates with exact record inspection",render:ConnectionMap,configSchema: connectionMapConfig,
@@ -23,7 +26,7 @@ export function operationalRecordPluginEntries(): Omit<WidgetPlugin, "dataKind">
       capabilities:{thresholds:true},
       defaultConfig:{latitude:"latitude",longitude:"longitude",label:"label",display:"markers",showLocations:true},
       styleControls:["unit","decimals","legend","tooltips","color"],
-      configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"display",label:"Map display",kind:"select" as const,options:[{value:"markers",label:"Markers"},{value:"density",label:"Compact dots"}],help:"Small dots mark the supplied locations; size follows the absolute value. It does not interpolate between them."},{key:"showGrid",label:"Show coordinate grid",kind:"boolean" as const,defaultFor:config=>config?.display!=="density"},{key:"showCoordinates",label:"Show coordinate labels",kind:"boolean" as const,defaultFor:config=>config?.display!=="density"},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
+      configFields:[{key:"latitude",label:"Latitude field",kind:"text" as const},{key:"longitude",label:"Longitude field",kind:"text" as const},{key:"label",label:"Location label field",kind:"text" as const},{key:"value",label:"Value field",kind:"text" as const,help:"Optional numeric field; marker size represents its absolute value."},{key:"status",label:"Status field",kind:"text" as const},{key:"display",label:"Map display",kind:"select" as const,options:[{value:"markers",label:"Markers"},{value:"density",label:"Compact dots"}],help:"Small dots mark the supplied locations; size follows the absolute value. It does not interpolate between them."},{key:"showGrid",label:"Show coordinate grid",kind:"boolean" as const,defaultFor:markerDefault},{key:"showCoordinates",label:"Show coordinate labels",kind:"boolean" as const,defaultFor:markerDefault},{key:"showLocations",label:"Show location list",kind:"boolean" as const,help:"Hide the list to give the map more room. Points still expose exact observations."},{key:"maxPoints",label:"Maximum locations",kind:"number" as const,min:1,max:500}]},
     {id:"pipeline-topology",label:"Pipeline topology",description:"Follow recorded directed connections, including cycles and missing values",render:PipelineTopology,configSchema: pipelineTopologyConfig,
       icon:Network,
       defaultConfig:{source:"source",target:"target"},
