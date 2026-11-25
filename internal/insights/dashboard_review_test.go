@@ -224,7 +224,7 @@ func TestPluginSeriesCapsMatchTheUI(t *testing.T) {
 	require.Equal(t, uiGaugeDefaultMaxSeries, capOf(gauge, `config\.maxSeries \?\? (\d+)`))
 	require.Equal(t, uiStatusHistoryDefaultMaxSeries, capOf(read("plugins/metric-distributions.tsx"), `config\.maxSeries \?\? (\d+)`))
 	require.Equal(t, uiStatusGridDefaultMaxSeries, capOf(read("plugins/status-grid.tsx"), `config\.maxSeries \?\? (\d+)`))
-	require.Equal(t, uiHeatmapMaxRows, capOf(read("chart-renderers.tsx"), `const MAX_ROWS = (\d+);`))
+	require.Equal(t, uiHeatmapMaxRows, capOf(read("renderers/shared.ts"), `export const MAX_ROWS = (\d+);`))
 }
 
 func intPtr(value int) *int { return &value }

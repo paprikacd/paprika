@@ -74,7 +74,7 @@ var mcpDashboardComposition = []string{
 	"Set staleAfterSeconds only when the scrape or evaluation interval is known, at least twice it, on stat and time-series widgets.",
 	"Keep provenance out of titles and descriptions; write a description only when the viewer needs it. Show a unit once, as the widget unit.",
 	"Place widgets without overlaps and fill each row. Avoid widget-internal scrolling, and do not force max to 100 on rate charts.",
-	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id and a config its plugin accepts.",
+	"Declare every variable a query placeholder or binding uses, and give each plugin widget a built-in plugin id and a valid config.",
 	"On a stat, set min and max only with showStatBar, which requires both; keep bounds a stat already has.",
 }
 
