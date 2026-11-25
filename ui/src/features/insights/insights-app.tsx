@@ -1,7 +1,7 @@
 "use client"
 
-import { Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { flushSync } from "react-dom"
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import "react-dom"
 import {
   Activity,
   ArrowLeft,
@@ -53,9 +53,7 @@ import {
   dashboardSchema,
   MAX_DASHBOARD_VARIABLES,
 } from "./schema"
-import {
-  exampleDashboard,
-} from "./example"
+import "./example"
 import {
   createExampleDashboardImportClient,
   EXAMPLE_STORAGE_KEY,
@@ -73,7 +71,7 @@ import { createBundleImporter, loadBundleImportReview, type BundleImportRequest 
 import { resolveSavedQueryReference } from "./saved-queries"
 import type { DashboardBundle } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
-import { useMobileNavigation, usePhoneShell } from "./use-mobile-navigation"
+import "./use-mobile-navigation"
 import { dashboardActionItems } from "./dashboard-actions"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import type { ExplorerSeed } from "./saved-query-context"
@@ -87,10 +85,9 @@ import type { EmbedRequest } from "./embed-request"
 import { refreshStaggerSpread } from "./refresh-stagger"
 
 import { visibleTileControl } from "./tile-controls"
-import { useCanvasDensity } from "./canvas-density"
-import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
+import "./canvas-density"
+import { builderPanelPlan } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
-import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
 import { TimeRangeControl, alignedDashboardEnd, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
@@ -103,7 +100,7 @@ import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./sou
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
-import { GammaConfirmation, useConfirmation } from "./gamma/confirmation"
+import { GammaConfirmation } from "./gamma/confirmation"
 import { lockBodyScroll } from "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
 import { PhoneVariables, VariableBar } from "./dashboard-variables"
@@ -114,14 +111,16 @@ import { InsightsThemeControl } from "./insights-theme"
 import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type VariableValues } from "./drilldown"
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
-import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
+import { readDashboardLink, serialiseDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
 import { RepositoryWorkspace, DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, loadRepositoryWorkspace, preloadWidgetEditor, preloadExamples } from "./shell/lazy-panels"
 import { placementPhrase, initialNavigation, panelOpenerElement } from "./shell/navigation"
 import { type SourceState, sourceBannerCopy, sourceFailureReason, sharedFailureReason } from "./shell/source-catalog"
-import { subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot, subscribeFinePointer, finePointerSnapshot } from "./shell/media-stores"
+import "./shell/media-stores"
 import { MANUAL_REFRESH_BYPASS_MS, NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
 import { useSavedQueryLibrary } from "./shell/use-saved-query-library"
+import { useDashboardSession } from "./shell/use-dashboard-session"
+import { useShellLayout } from "./shell/use-shell-layout"
 
 
 registerDefaultWidgetPlugins()
@@ -220,85 +219,88 @@ function InsightsWorkspace({
     latestDocument,
     mode,
   )
-  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id, mode === "example")
-  const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
-  const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
-  const [editing, setEditing] = useState(false)
-  const [widgetDraftValid, setWidgetDraftValid] = useState(true)
-  const [widgetPreview, setWidgetPreview] = useState<Widget>()
-  const [widgetDraftDirty, setWidgetDraftDirty] = useState(false)
-  const widgetOpener = useRef<string | undefined>(undefined)
-  const invalidWidgetSaveHintId = useId()
-  const [panel, setPanel] = useState<
-    "add" | "source" | "ai" | "providers" | "widget" | "manage" | "examples" | "starters" | "history" | null
-  >(null)
-  const [selected, setSelected] = useState<string>()
-  const [message, setMessage] = useState("")
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  // An action on the notice, such as Undo after a removal. It shows only while its text is the message on screen.
-  // chartEditor marks an action that only works while the chart editor is open, so closing the editor removes it.
-  const [messageAction, setMessageAction] = useState<{ text: string; label: string; name: string; run: () => void; document?: Dashboard; chartEditor?: boolean }>()
-  // The removal notice describes one document. Once any change moves the dashboard away from it (Undo from the toolbar or
-  // the keyboard, or a later edit), the notice and its Undo action are out of date, so both go. This adjusts state while
-  // rendering, when the dashboard changes, rather than in an effect.
-  const [noticeDashboard, setNoticeDashboard] = useState(dashboard)
-  if (noticeDashboard !== dashboard) {
-    setNoticeDashboard(dashboard)
-    const after = messageAction?.document
-    if (after && dashboard !== after && JSON.stringify(dashboard) !== JSON.stringify(after)) {
-      if (message === messageAction.text) setMessage("")
-      setMessageAction(undefined)
-    }
-  }
-  const [error, setError] = useState("")
-  // Findings a rejected save carried. They show only while their error message is the one on screen.
-  const [saveFindings, setSaveFindings] = useState<{ message: string; report: CheckReport }>()
-  // Link variables this dashboard could not apply. Dismissible; it never blocks the view.
-  const [linkNotice, setLinkNotice] = useState("")
-  const [remoteDashboard, setRemoteDashboard] = useState<{ id: string; removed: boolean }>()
-  const [busy, setBusy] = useState(false)
-  const [importingBundle, setImportingBundle] = useState(false)
-  const confirmation = useConfirmation()
-  const [search, setSearch] = useState("")
-  const { dense, setDense } = useCanvasDensity()
-  const [canvasMode, setCanvasMode] = useState<CanvasMode>("wide")
-  // The user's sidebar preference. A builder panel may hide it for as long as the panel is open, so the canvas keeps the
-  // wide grid; the preference returns when the panel closes. Device-local: it is never written to the URL or document.
-  const [sidebar, setSidebar] = useState(true)
-  const [panelHidesSidebar, setPanelHidesSidebar] = useState(false)
-  // The user showed the sidebar over an open panel. It stays until they hide it, so the plan never collapses it again.
-  const [sidebarOverride, setSidebarOverride] = useState(false)
-  const [widePanel, setWidePanel] = useState(false)
-  const [planRevision, setPlanRevision] = useState(0)
-  const layoutRoot = useRef<HTMLDivElement>(null)
-  const sidebarOpenWidth = useRef(192)
-  // The control that opened the current panel, by its data-panel-opener name. Its element may leave the DOM while the
-  // sidebar yields, so focus returns to the same name once the sidebar is back.
-  const panelOpener = useRef<string | undefined>(undefined)
-  const [compactNavigationExpanded, setCompactNavigationExpanded] = useState(false)
-  const compactDesktop = useSyncExternalStore(subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot)
-  const finePointer = useSyncExternalStore(subscribeFinePointer, finePointerSnapshot, compactDesktopServerSnapshot)
-  const compactShell = dense && !editing && compactDesktop
-  const [mobileSidebar, setMobileSidebar] = useState(false)
-  const isMobile = useMobileNavigation()
-  const phoneViewport = usePhoneShell()
-  const drawerOpen = isMobile && mobileSidebar
-  const navigation = useRef<HTMLElement>(null)
-  // A panel lives in the workspace section, which Explore hides. The sidebar carries Explore and Dashboards, so it
-  // is never hidden by a panel that is not on screen.
-  const panelHidden = panelHidesSidebar && !!panel && !exploring
-  const sidebarShown = (compactShell || sidebar) && !panelHidden
-  useLayoutEffect(() => {
-    if (navigation.current) sidebarOpenWidth.current = navigation.current.offsetWidth
-  }, [sidebarShown, isMobile, compactShell])
-  useEffect(() => {
-    // A resize event runs before the canvas observes its new width. Committing the plan synchronously here means the
-    // canvas sees the final room, so the hysteresis is not fed the width from before the sidebar yielded or returned.
-    const replan = () => flushSync(() => setPlanRevision(value => value + 1))
-    window.addEventListener("resize", replan)
-    return () => window.removeEventListener("resize", replan)
-  }, [])
-  const navigationToggle = useRef<HTMLButtonElement>(null)
+  const [
+    applyView,
+    busy,
+    currentRoute,
+    editing,
+    error,
+    importingBundle,
+    invalidWidgetSaveHintId,
+    linkNotice,
+    message,
+    messageAction,
+    panel,
+    reflectView,
+    remoteDashboard,
+    returnTo,
+    saveFindings,
+    saved,
+    selected,
+    setBusy,
+    setEditing,
+    setError,
+    setImportingBundle,
+    setLinkNotice,
+    setMessage,
+    setMessageAction,
+    setPanel,
+    setRemoteDashboard,
+    setReturnTo,
+    setSaveFindings,
+    setSaved,
+    setSelected,
+    setShortcutsOpen,
+    setWidgetDraftDirty,
+    setWidgetDraftValid,
+    setWidgetPreview,
+    shortcutsOpen,
+    showView,
+    widgetDraftDirty,
+    widgetDraftValid,
+    widgetOpener,
+    widgetPreview,
+  ] = useDashboardSession(
+    dashboard,
+    mode,
+  )
+  const [
+    canvasMode,
+    compactNavigationExpanded,
+    compactShell,
+    confirmation,
+    dense,
+    drawerOpen,
+    finePointer,
+    isMobile,
+    layoutRoot,
+    mobileSidebar,
+    navigation,
+    navigationToggle,
+    panelHidden,
+    panelOpener,
+    phoneViewport,
+    planRevision,
+    search,
+    setCanvasMode,
+    setCompactNavigationExpanded,
+    setDense,
+    setMobileSidebar,
+    setPanelHidesSidebar,
+    setSearch,
+    setSidebar,
+    setSidebarOverride,
+    setWidePanel,
+    sidebar,
+    sidebarOpenWidth,
+    sidebarOverride,
+    sidebarShown,
+    widePanel,
+  ] = useShellLayout(
+    editing,
+    exploring,
+    panel,
+  )
   const [end, setEnd] = useState(() => Math.floor(Date.now() / 1000))
   // Whether the current end came from an automatic tick. An automatic tick staggers across the tiles; any other change adopts at once.
   const [autoTick, setAutoTick] = useState(false)
@@ -503,7 +505,7 @@ function InsightsWorkspace({
         }).then(accepted => { if (accepted) undoNow() })
       },
     })
-  }, [undo, askConfirmation, latestDocument])
+  }, [undo, askConfirmation, latestDocument, setError, setMessage, setMessageAction])
   const removeTile = useCallback((widgetId: string) => {
     const index = dashboard.widgets.findIndex((widget) => widget.id === widgetId)
     if (index < 0) return
@@ -521,7 +523,7 @@ function InsightsWorkspace({
       focus: removed.id,
       restored: `Restored ${removed.title}.`,
     })
-  }, [dashboard, update, noticeWithUndo])
+  }, [dashboard, update, noticeWithUndo, widgetOpener])
   // Copies a saved tile from its actions menu: one undo step, the copy beside the tile or below it, and focus on the copy.
   // The copy is the saved widget, so unapplied editor changes are not included (the editor's Duplicate chart does include them).
   const duplicateTile = useCallback((widgetId: string) => {
@@ -554,7 +556,7 @@ function InsightsWorkspace({
       focus: source.id,
       restored: "Removed the copy.",
     })
-  }, [dashboard, update, noticeWithUndo])
+  }, [dashboard, update, noticeWithUndo, setError])
   // Focus moves to the pending tile once it is in the DOM. A copy can mount a commit after the change that made it, so until
   // then a MutationObserver on the canvas retries, and the target is dropped only when the dashboard no longer has that tile.
   const tileFocusWatch = useRef<MutationObserver | null>(null)
@@ -573,7 +575,7 @@ function InsightsWorkspace({
     if (tile.hasAttribute("tabindex")) tile.focus()
     else visibleTileControl(tile, "[data-widget-edit], [data-widget-actions]")?.focus()
     return true
-  }, [])
+  }, [layoutRoot])
   useLayoutEffect(() => {
     const target = pendingTileFocus.current
     const stopWatching = () => {
@@ -641,7 +643,7 @@ function InsightsWorkspace({
       ? buttons[0]
       : buttons.find((button) => (button.getAttribute("aria-label") ?? button.textContent?.trim()) === "Edit dashboard")
     target?.focus()
-  }, [editing, dashboard, saveRevision, phoneShell])
+  }, [editing, dashboard, saveRevision, phoneShell, layoutRoot])
   const previewWidget = widgetPreview?.id === currentWidget?.id ? widgetPreview : currentWidget
   const builderPanel = useBuilderPanelFocus(
     panel && !exploring
@@ -714,7 +716,7 @@ function InsightsWorkspace({
     setLinkNotice(describeIgnoredLink(linked.ignored))
     setError(viewError)
     setExampleStarting(false)
-  }, [reset, applyView, showView, exampleGeneration, mounted, setDashboards, setExampleStarting, setMode, setProviders, setUnsupportedProviders, setWorkspace, setWorkspaceFailed])
+  }, [reset, applyView, showView, exampleGeneration, mounted, setDashboards, setExampleStarting, setMode, setProviders, setUnsupportedProviders, setWorkspace, setWorkspaceFailed, setError, setLinkNotice, setSaved])
 
   useEffect(() => {
     if (initialExample) {
@@ -757,7 +759,7 @@ function InsightsWorkspace({
         }
       })
     return () => controller.abort()
-  }, [client, initialExample, enterExample, reset, retry, applyView, exampleGeneration, setDashboards, setMode])
+  }, [client, initialExample, enterExample, reset, retry, applyView, exampleGeneration, setDashboards, setMode, setError, setLinkNotice, setSaved])
 
   // One background load, one retry layer: the client replays a busy listing, and a
   // failure that remains is shown with a manual retry. The listing carries the shared
@@ -876,7 +878,7 @@ function InsightsWorkspace({
       unlock()
       if (previous?.isConnected) previous.focus()
     }
-  }, [drawerOpen])
+  }, [drawerOpen, navigation, navigationToggle, setMobileSidebar])
 
   useEffect(() => {
     // A fixed window pauses auto refresh; a relative window keeps refreshing at the view's interval.
@@ -980,7 +982,7 @@ function InsightsWorkspace({
     // The unapplied-chart notice and its action are only true while that chart's editor is open.
     setMessageAction(current => current?.chartEditor ? undefined : current)
     setMessage(current => current === UNAPPLIED_CHART_NOTICE ? "" : current)
-  }, [])
+  }, [setMessage, setMessageAction, setPanel, setSelected, setSidebarOverride, setWidgetDraftDirty, setWidgetPreview])
   const selectWidget = useCallback((id: string) => {
     if (bundleImportActive.current) return
     widgetOpener.current = id
@@ -992,7 +994,7 @@ function InsightsWorkspace({
     setSelected(id)
     setPanel("widget")
     setEditing(true)
-  }, [])
+  }, [panelOpener, setEditing, setMessage, setMobileSidebar, setPanel, setSelected, setWidgetDraftDirty, setWidgetPreview, widgetOpener])
   const askToDiscardChart = confirmation.ask
   const navigateFromChart = useCallback((navigate: () => void) => {
     if (!widgetDraftDirty) {
@@ -1030,7 +1032,6 @@ function InsightsWorkspace({
   // while Explore or a focused widget hides it.
   useLayoutEffect(() => {
     // The plan is a function of the DOM as it is laid out, so it is written here, before paint, rather than during render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!panel || panel === "widget") { setPanelHidesSidebar(false); return }
     const wide = panel === "source" || panel === "examples"
     if (isMobile) { setPanelHidesSidebar(false); setWidePanel(wide); return }
@@ -1047,7 +1048,7 @@ function InsightsWorkspace({
     }, { wide, sidebarCollapsible: !sidebarOverride, sidebarPreferred: compactShell || sidebar })
     setPanelHidesSidebar(plan.collapsed)
     setWidePanel(plan.widePanel)
-  }, [panel, exploring, isMobile, compactShell, editing, sidebar, sidebarOverride, planRevision])
+  }, [panel, exploring, isMobile, compactShell, editing, sidebar, sidebarOverride, planRevision, layoutRoot, navigation, setPanelHidesSidebar, setWidePanel, sidebarOpenWidth])
   useEffect(() => {
     if (!focusedWidget) return
     const keydown = (event: KeyboardEvent) => {
@@ -1594,7 +1595,7 @@ function InsightsWorkspace({
       description: "Your unsaved query changes will be lost. Saved queries will remain unchanged.",
       action: "Discard changes",
     }).then(confirmed => { if (confirmed) { setExplorerDirty(false); open() } })
-  }, [confirmation, explorerDirty, setExplorerDirty, setExplorerOpened, setExplorerSource, setExploring, setLibraryRevision])
+  }, [confirmation, explorerDirty, setExplorerDirty, setExplorerOpened, setExplorerSource, setExploring, setLibraryRevision, setMobileSidebar])
 
   async function exploreProvider(provider: Provider) {
     if (explorerDirty && !await confirmation.ask({

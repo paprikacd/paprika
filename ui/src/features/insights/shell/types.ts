@@ -3,6 +3,8 @@
 import type { InsightsAppProps } from "../insights-app"
 import type { useWorkspace } from "./use-workspace"
 import type { useSavedQueryLibrary } from "./use-saved-query-library"
+import type { useDashboardSession } from "./use-dashboard-session"
+import type { useShellLayout } from "./use-shell-layout"
 
 export type ShellProps = Omit<InsightsAppProps, "embed">
 
@@ -14,4 +16,10 @@ export type AfterWorkspace = ShellProps & Named<WorkspaceNames, ReturnType<typeo
 
 export type SavedQueryLibraryNames = ["dashboards", "explorerDirty", "explorerOpened", "explorerSource", "exploring", "inspectingQueries", "libraryClient", "libraryMutation", "queriesError", "queriesLoaded", "queriesLoading", "savedQueries", "setDashboards", "setExplorerDirty", "setExplorerOpened", "setExplorerSource", "setExploring", "setInspectingQueries", "setLibraryRevision", "setQueriesError", "setQueriesLoaded", "updateSavedQueries"]
 export type AfterSavedQueryLibrary = AfterWorkspace & Named<SavedQueryLibraryNames, ReturnType<typeof useSavedQueryLibrary>>
-export type Shell = AfterSavedQueryLibrary
+
+export type DashboardSessionNames = ["applyView", "busy", "currentRoute", "editing", "error", "importingBundle", "invalidWidgetSaveHintId", "linkNotice", "message", "messageAction", "panel", "reflectView", "remoteDashboard", "returnTo", "saveFindings", "saved", "selected", "setBusy", "setEditing", "setError", "setImportingBundle", "setLinkNotice", "setMessage", "setMessageAction", "setPanel", "setRemoteDashboard", "setReturnTo", "setSaveFindings", "setSaved", "setSelected", "setShortcutsOpen", "setWidgetDraftDirty", "setWidgetDraftValid", "setWidgetPreview", "shortcutsOpen", "showView", "widgetDraftDirty", "widgetDraftValid", "widgetOpener", "widgetPreview"]
+export type AfterDashboardSession = AfterSavedQueryLibrary & Named<DashboardSessionNames, ReturnType<typeof useDashboardSession>>
+
+export type ShellLayoutNames = ["canvasMode", "compactNavigationExpanded", "compactShell", "confirmation", "dense", "drawerOpen", "finePointer", "isMobile", "layoutRoot", "mobileSidebar", "navigation", "navigationToggle", "panelHidden", "panelOpener", "phoneViewport", "planRevision", "search", "setCanvasMode", "setCompactNavigationExpanded", "setDense", "setMobileSidebar", "setPanelHidesSidebar", "setSearch", "setSidebar", "setSidebarOverride", "setWidePanel", "sidebar", "sidebarOpenWidth", "sidebarOverride", "sidebarShown", "widePanel"]
+export type AfterShellLayout = AfterDashboardSession & Named<ShellLayoutNames, ReturnType<typeof useShellLayout>>
+export type Shell = AfterShellLayout
