@@ -1,5 +1,5 @@
 "use client"
-/* eslint-disable react-hooks/immutability, react-hooks/refs -- the React Compiler lint skipped this component while it was one 2,600-line function. Its JSX handlers set refs from the shell hooks, as they did before the split, and it hands refs to the shell render functions, which only attach them as ref props */
+/* eslint-disable react-hooks/immutability -- the React Compiler lint skipped this component while it was one 2,600-line function; its JSX handlers set refs from the shell hooks, as they did before the split */
 
 import { Suspense } from "react"
 import "react-dom"
@@ -14,7 +14,6 @@ import {
   Database,
   FilePlus2,
   LayoutDashboard,
-  LayoutTemplate,
   Link2,
   Loader2,
   PanelLeftClose,
@@ -34,7 +33,7 @@ import {
 import { GammaActionMenu } from "./gamma/action-menu"
 import "react-grid-layout"
 import type { InsightsClient } from "./client"
-import { dashboardAsSent } from "./layout-compaction"
+import "./layout-compaction"
 import {
   MAX_WIDGETS,
   type Dashboard,
@@ -43,10 +42,10 @@ import "./example"
 import "./example-storage"
 import "./provider-query-template"
 import catalogMeta from "./repository-examples/catalog-meta.json"
-import { LazyPanelBoundary, MountSignal } from "./lazy-panel"
-import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
+import "./lazy-panel"
+import "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
-import { queryConnectionKey } from "./query-connections"
+import "./query-connections"
 import "./saved-query-storage"
 import "./bundle-import"
 import "./saved-queries"
@@ -58,17 +57,17 @@ import "./history"
 import "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor } from "./shortcuts"
 import "./use-workspace-refresh"
-import { DashboardCanvas } from "./canvas"
+import "./canvas"
 import { EmbedView } from "./embed-view"
 import type { EmbedRequest } from "./embed-request"
-import { refreshStaggerSpread } from "./refresh-stagger"
+import "./refresh-stagger"
 
 import "./tile-controls"
 import "./canvas-density"
 import "./responsive-layout"
 import "./query"
 import { DashboardTree } from "./dashboard-library"
-import { applyChartToDashboard } from "./chart-apply"
+import "./chart-apply"
 import { TimeRangeControl, savedRangeLabel } from "./time-range"
 import "./widget-library"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
@@ -86,11 +85,11 @@ import { ClampedDescription } from "./dashboard-description"
 import "./variable-options"
 import { InsightsThemeControl } from "./insights-theme"
 import "./drilldown"
-import { duplicateLayout, savedLayout } from "./layout-edit"
+import "./layout-edit"
 
 import { serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
-import { Explorer, ShortcutList, QueryInspector, ChecksList, WidgetEditor, preloadExamples } from "./shell/lazy-panels"
-import { placementPhrase } from "./shell/navigation"
+import { Explorer, ShortcutList, QueryInspector, ChecksList, preloadExamples } from "./shell/lazy-panels"
+import "./shell/navigation"
 import { sourceBannerCopy } from "./shell/source-catalog"
 import "./shell/media-stores"
 import { NO_VARIABLES } from "./shell/constants"
@@ -109,6 +108,7 @@ import { useViewActions } from "./shell/use-view-actions"
 import { renderPanelRouter } from "./shell/panel-router"
 import { renderUnavailableScreen } from "./shell/unavailable-screen"
 import { renderLoadingScreen } from "./shell/loading-screen"
+import { renderCanvasArea } from "./shell/canvas-area"
 
 
 registerDefaultWidgetPlugins()
@@ -1141,208 +1141,7 @@ function InsightsWorkspace({
           )}
         </div>
         <div className={styles.workArea}>
-          <div className={styles.canvasArea}>
-            {editing && !focusedWidget && (
-              <div className={styles.editHint}>
-                <span className={styles.statusDot} /> Editing canvas{" "}
-                <span className={styles.wideEditHint}>
-                  Drag a handle to move. Pull an edge or corner to resize.
-                </span>
-                <span className={styles.compactEditHint}>
-                  {"Use a widget's ⋯ menu to move, resize or duplicate it."}
-                </span>
-                {/* Phone-width layouts and touch-only devices have no use for the list, so it stays hidden there. */}
-                {!phoneViewport && (
-                  <GammaButton size="sm" variant="quiet" className={styles.shortcutsButton} onClick={() => setShortcutsOpen(true)}>
-                    Keyboard shortcuts
-                  </GammaButton>
-                )}
-                <GammaButton size="sm" variant="quiet"
-                  disabled={importingBundle}
-                  onClick={() => {
-                    setEditing(false)
-                    close()
-                  }}
-                >
-                  Preview
-                </GammaButton>
-              </div>
-            )}
-            {dashboard.widgets.length ? (
-              <DashboardCanvas
-                dashboard={viewDashboard}
-                sidePanelOpen={!!panel && panel !== "widget"}
-                focus={editingWidget && currentWidget && previewWidget ? {
-                  widget: previewWidget,
-                  render: (preview, previewFootprints) => <section ref={builderPanel} tabIndex={-1}>
-                <LazyPanelBoundary label="Widget editor" unsaved={dirty || widgetDraftDirty} onClose={leaveWidget}>
-                <Suspense fallback={<WidgetEditorSkeleton preview={preview} onClose={leaveWidget} />}>
-                    <WidgetEditor
-                      key={currentWidget.id}
-                      widget={currentWidget}
-                      workspace={{ preview, previewFootprints, canvasMode, dashboardTitle: dashboard.title, dashboardDirty: dirty, saveBusy: busy || !widgetDraftValid, onSaveDashboard: save, onDiscard: close, widgets: dashboard.widgets }}
-                      onPreview={setWidgetPreview}
-                      onDirtyChange={setWidgetDraftDirty}
-                      dashboards={dashboards.map(item => item.id === dashboard.id ? dashboard : item)}
-                      providers={providers}
-                      client={builderClient}
-                      range={range}
-                      queryFetcher={fetcher}
-                      queryFields={currentWidget.id === queryFieldSnapshot?.widgetId && queryFieldSnapshot.fetcher === fetcher && queryFieldSnapshot.key === queryConnectionKey(previewWidget ?? currentWidget, range) ? queryFieldSnapshot.fields : undefined}
-                      result={currentWidget.id === queryResultSnapshot?.widgetId && queryResultSnapshot.fetcher === fetcher ? queryResultSnapshot.result : undefined}
-                      onClose={leaveWidget}
-                      onCommands={registerChartCommands}
-                      onDraftValidityChange={setWidgetDraftValid}
-                      onApply={(next, layout, options) => {
-                        const applied = applyChartToDashboard(latestDocument.current, next, layout)
-                        if (options?.save && !busy) {
-                          // Normalizing the form values joins the apply in one undo step: the document is written as it
-                          // is applied, so the save below has nothing left to normalize. A document that will not
-                          // parse is left as it is, and the save reports the error.
-                          let sent = applied
-                          try { sent = dashboardAsSent(applied) } catch { /* reported by saveDocument */ }
-                          update(sent)
-                          close()
-                          void saveDocument(sent, { chartApplied: true, focusWidget: next.id })
-                          return
-                        }
-                        update(applied)
-                        close()
-                        // The notice offers the save as its action, so the user need not find the header button.
-                        const text = "Chart changes applied. Save the dashboard to keep them."
-                        setMessage(text)
-                        // Named "Save now", not "Save dashboard": the header button keeps that name, and e2e suites find it by name.
-                        setMessageAction({ text, label: "Save now", name: "Save now", run: () => saveLatest.current() })
-                      }}
-                      onDelete={() => {
-                        removeTile(currentWidget.id)
-                        close()
-                      }}
-                      onDuplicate={() => {
-                        if (dashboard.widgets.length >= MAX_WIDGETS) {
-                          setError("A dashboard supports up to 48 widgets.")
-                          return
-                        }
-                        // The copy holds the chart as it is in the editor, unapplied changes included. Its footprint is the
-                        // draft's, and it is placed beside the saved tile or below it. The original is never resized.
-                        const draft = previewWidget ?? currentWidget
-                        const copyId = `widget-${crypto.randomUUID()}`
-                        const edit = duplicateLayout(savedLayout(dashboard.widgets), currentWidget.id, copyId, { w: draft.layout.w, h: draft.layout.h })
-                        if ("blocked" in edit) {
-                          setError(edit.blocked)
-                          return
-                        }
-                        const placed = new Map(edit.layout.map((item) => [item.i, item]))
-                        const moved = dashboard.widgets.map((item) => {
-                          const at = placed.get(item.id)
-                          return at ? { ...item, layout: { ...item.layout, x: at.x, y: at.y } } : item
-                        })
-                        const at = placed.get(copyId)!
-                        const copy = {
-                          ...draft,
-                          id: copyId,
-                          title: `${draft.title.slice(0, 113)} (copy)`,
-                          layout: { ...draft.layout, x: at.x, y: at.y, w: at.w, h: at.h },
-                        }
-                        const next = { ...dashboard, widgets: [...moved, copy] }
-                        update(next)
-                        selectWidget(copy.id)
-                        const where = placementPhrase(edit.placement)
-                        noticeWithUndo({
-                          // A clean draft has no unapplied changes to call out, so the copy is described like a tile copy.
-                          text: widgetDraftDirty
-                            ? "Duplicated with your unapplied changes; the original is unchanged."
-                            : `Duplicated ${draft.title}${where}.`,
-                          name: `Undo duplicate ${draft.title}`,
-                          document: next,
-                          focus: currentWidget.id,
-                          restored: "Removed the copy.",
-                          // The editor's opener was the copy, which Undo removes. The original takes its place as the opener.
-                          leave: () => {
-                            widgetOpener.current = currentWidget.id
-                            close()
-                          },
-                        })
-                      }}
-                    />
-                  <MountSignal onMount={markEditorMounted} />
-                </Suspense>
-                </LazyPanelBoundary>
-                  </section>,
-                } : undefined}
-                active={!exploring}
-                onDrilldown={drilldown}
-                onSelection={selectDashboardContext}
-                variables={variableValues}
-                onTimeRange={selectDashboardTime}
-                providers={providers}
-                fetcher={fetcher}
-                tooltipFetcher={scheduledFetcher}
-                end={alignedEnd}
-                refreshStaggerMs={autoTick && !editing ? refreshStaggerSpread(viewDashboard.refreshInterval ?? 0) : 0}
-                editing={editing}
-                dense={dense}
-                referenceCompact={compactShell && finePointer}
-                onModeChange={setCanvasMode}
-                selected={selected}
-                onSelect={selectWidget}
-                onLayout={layoutUpdate}
-                onDuplicate={duplicateTile}
-                onRemove={removeTile}
-                duplicateBlocked={dashboard.widgets.length >= MAX_WIDGETS ? "A dashboard supports up to 48 widgets." : undefined}
-                onQueryFields={setQueryFieldSnapshot}
-                onQueryResult={setQueryResultSnapshot}
-              />
-            ) : (
-              <div className={styles.emptyCanvas}>
-                <LayoutDashboard size={38} strokeWidth={1} />
-                <h2>Start with a signal.</h2>
-                <p>
-                  Add a widget, bring a dashboard document, or let your AI
-                  assistant help shape your view.
-                </p>
-                <div className={styles.actions}>
-                  <GammaButton data-panel-opener="add" size="sm" variant="primary"
-                    className={styles.primary}
-                    disabled={importingBundle}
-                    onClick={() => {
-                      setEditing(true)
-                      openBuilderPanel("add")
-                    }}
-                  >
-                    <Plus size={15} /> Add your first widget
-                  </GammaButton>
-                  <GammaButton data-panel-opener="source" size="sm" variant="secondary"
-                    className={styles.secondary}
-                    disabled={importingBundle}
-                    onClick={() => openBuilderPanel("source")}
-                  >
-                    <FilePlus2 size={15} /> Import dashboard
-                  </GammaButton>
-                  {client.listStarters && client.getStarter && (
-                    <GammaButton data-panel-opener="starters" size="sm" variant="secondary"
-                      className={styles.secondary}
-                      disabled={importingBundle}
-                      onClick={() => openBuilderPanel("starters")}
-                    >
-                      <LayoutTemplate size={15} /> Start from a template
-                    </GammaButton>
-                  )}
-                </div>
-              </div>
-            )}
-            {!focusedWidget && <footer className={styles.canvasFooter}>
-              <span>
-                {mode === "example"
-                  ? "Generated sample data"
-                  : "Provider queries run server-side"}
-              </span>
-              <span>
-                {dirty ? "Unsaved changes" : "All changes saved"}
-                <span className={dirty ? styles.unsavedDot : styles.savedDot} />
-              </span>
-            </footer>}
-          </div>
+          {renderCanvasArea(alignedEnd, autoTick, builderClient, builderPanel, busy, canvasMode, client, close, compactShell, currentWidget, dashboard, dashboards, dense, dirty, drilldown, duplicateTile, editing, editingWidget, exploring, fetcher, finePointer, focusedWidget, importingBundle, latestDocument, layoutUpdate, leaveWidget, markEditorMounted, mode, noticeWithUndo, openBuilderPanel, panel, phoneViewport, previewWidget, providers, queryFieldSnapshot, queryResultSnapshot, range, registerChartCommands, removeTile, save, saveDocument, saveLatest, scheduledFetcher, selectDashboardContext, selectDashboardTime, selectWidget, selected, setCanvasMode, setEditing, setError, setMessage, setMessageAction, setQueryFieldSnapshot, setQueryResultSnapshot, setShortcutsOpen, setWidgetDraftDirty, setWidgetDraftValid, setWidgetPreview, update, variableValues, viewDashboard, widgetDraftDirty, widgetDraftValid, widgetOpener)}
           {panel && panel !== "widget" && (
             renderPanelRouter(acceptCatalog, addWidget, applyDocument, applyRestoredDocument, builderPanel, busy, client, close, dashboard, dashboards, deleteDashboard, dirty, duplicateDashboard, endGroup, exploreProvider, importBundle, importingBundle, markGalleryMounted, markManageMounted, markProvidersMounted, markSourceMounted, mode, openBuilderPanel, panel, providers, refreshCatalog, refreshSavedQueries, reviewBundle, saved, savedQueries, selectWidget, setEditing, setLibraryRevision, setQueryRevision, setSourceRequest, syncVariableDefinitions, unsupportedProviders, update, variableCatalog, widePanel, widgetDraftDirty, workspace, workspaceFailed)
           )}
