@@ -55,6 +55,12 @@ const eslintConfig = defineConfig([
       "no-restricted-syntax": ["error", observationTimerRule, hexListRule],
     },
   },
+  // The Insights shell, renderers and chart kit were split out of 2,600- and 1,100-line files; keep each module small.
+  {
+    files: ["src/features/insights/shell/**/*.{ts,tsx}", "src/features/insights/renderers/**/*.{ts,tsx}", "src/features/insights/chart-kit/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: { "max-lines": ["error", 500] },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
