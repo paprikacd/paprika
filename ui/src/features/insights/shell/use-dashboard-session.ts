@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react"
+import { useCallback, useId, useRef, useState } from "react"
 import { type Dashboard, type Widget } from "../schema"
 import { exampleDashboard } from "../example"
 import { documentFingerprint } from "../fingerprint"
@@ -15,6 +15,9 @@ export function useDashboardSession(
   const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)
+  // Edit mode has one way in and one way out, so every caller states which transition it makes.
+  const enterEdit = useCallback(() => setEditing(true), [])
+  const exitEdit = useCallback(() => setEditing(false), [])
   const [widgetDraftValid, setWidgetDraftValid] = useState(true)
   const [widgetPreview, setWidgetPreview] = useState<Widget>()
   const [widgetDraftDirty, setWidgetDraftDirty] = useState(false)
@@ -54,7 +57,9 @@ export function useDashboardSession(
     busy,
     currentRoute,
     editing,
+    enterEdit,
     error,
+    exitEdit,
     importingBundle,
     invalidWidgetSaveHintId,
     linkNotice,
@@ -68,7 +73,6 @@ export function useDashboardSession(
     saved,
     selected,
     setBusy,
-    setEditing,
     setError,
     setImportingBundle,
     setLinkNotice,

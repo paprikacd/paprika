@@ -27,7 +27,9 @@ export function useViewActions(
   dashboards: AfterDocumentActions["dashboards"],
   dirty: AfterDocumentActions["dirty"],
   editing: AfterDocumentActions["editing"],
+  enterEdit: AfterDocumentActions["enterEdit"],
   etags: AfterDocumentActions["etags"],
+  exitEdit: AfterDocumentActions["exitEdit"],
   explorerDirty: AfterDocumentActions["explorerDirty"],
   importingBundle: AfterDocumentActions["importingBundle"],
   latestDocument: AfterDocumentActions["latestDocument"],
@@ -41,7 +43,6 @@ export function useViewActions(
   saveButton: AfterDocumentActions["saveButton"],
   setBusy: AfterDocumentActions["setBusy"],
   setDashboards: AfterDocumentActions["setDashboards"],
-  setEditing: AfterDocumentActions["setEditing"],
   setError: AfterDocumentActions["setError"],
   setExplorerDirty: AfterDocumentActions["setExplorerDirty"],
   setExplorerOpened: AfterDocumentActions["setExplorerOpened"],
@@ -139,7 +140,7 @@ export function useViewActions(
       reset(active.dashboard)
       setSaved(documentFingerprint(active.dashboard))
       setDashboards(items => [...items.filter(item => item.id !== id), active.dashboard])
-      setEditing(false)
+      exitEdit()
       setRemoteDashboard(undefined)
       close()
       setMessage("Loaded the latest saved dashboard.")
@@ -158,7 +159,7 @@ export function useViewActions(
     resetView(next)
     reset(next)
     setSaved("")
-    setEditing(true)
+    enterEdit()
     close()
     panelOpener.current = undefined
     showPanel("add")
@@ -177,7 +178,7 @@ export function useViewActions(
     resetView(copy)
     reset(copy)
     setSaved("")
-    setEditing(true)
+    enterEdit()
     close()
     setMessage("Dashboard duplicated. Save it to add the copy to your library.")
   }
@@ -206,7 +207,7 @@ export function useViewActions(
       resetView(next)
       reset(next)
       setSaved(stored ? documentFingerprint(next) : "")
-      setEditing(true)
+      enterEdit()
       close()
       setMessage("Dashboard deleted.")
     } catch (error) {
@@ -222,7 +223,7 @@ export function useViewActions(
     if (busy) return
     if (id === dashboard.id) {
       update({ ...dashboard, folder })
-      setEditing(true)
+      enterEdit()
       setMessage("Dashboard moved. Save to keep its new location.")
       return
     }

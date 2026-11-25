@@ -22,7 +22,9 @@ export function useDocumentActions(
   dashboard: AfterPanels["dashboard"],
   dashboards: AfterPanels["dashboards"],
   dirty: AfterPanels["dirty"],
+  enterEdit: AfterPanels["enterEdit"],
   etags: AfterPanels["etags"],
+  exitEdit: AfterPanels["exitEdit"],
   focusAfterSave: AfterPanels["focusAfterSave"],
   latestDocument: AfterPanels["latestDocument"],
   navigateFromChart: AfterPanels["navigateFromChart"],
@@ -36,7 +38,6 @@ export function useDocumentActions(
   selectWidget: AfterPanels["selectWidget"],
   setBusy: AfterPanels["setBusy"],
   setDashboards: AfterPanels["setDashboards"],
-  setEditing: AfterPanels["setEditing"],
   setError: AfterPanels["setError"],
   setExploring: AfterPanels["setExploring"],
   setLinkNotice: AfterPanels["setLinkNotice"],
@@ -93,7 +94,7 @@ export function useDocumentActions(
         }
       }),
     })
-    setEditing(true)
+    enterEdit()
     close()
     setMessage(message)
   }
@@ -112,7 +113,7 @@ export function useDocumentActions(
       if (!checked.success) throw new Error(checked.error.issues[0]?.message ?? "This variable could not be declared.")
       syncVariableDefinitions(checked.data)
       update(checked.data)
-      setEditing(true)
+      enterEdit()
     }
   })
   const declareVariable = useCallback((variable: DashboardVariable) => declareRef.current(variable), [])
@@ -131,7 +132,7 @@ export function useDocumentActions(
     update({ ...dashboard, widgets: [...dashboard.widgets, widget] })
     selectWidget(widget.id)
   }
-  function useSavedQuery(query: SavedQuery) {
+  function linkSavedQuery(query: SavedQuery) {
     if (dashboard.widgets.length >= MAX_WIDGETS) throw new Error("A dashboard supports up to 48 widgets.")
     const variables = [...(dashboard.variables ?? [])]
     for (const parameter of query.parameters ?? []) {
@@ -152,7 +153,7 @@ export function useDocumentActions(
     navigateFromChart(() => {
       update({ ...dashboard, variables, widgets: [...dashboard.widgets, widget] })
       setExploring(false)
-      setEditing(true)
+      enterEdit()
       selectWidget(widget.id)
       setMessage("Saved query linked. Parameters use dashboard variables; review their values, then save the dashboard.")
     })
@@ -206,7 +207,7 @@ export function useDocumentActions(
       // Apply and save moves focus to the chart's tile. A plain save moves it to Edit, or to the actions trigger on the phone.
       focusAfterSave.current = { widget: options.focusWidget }
       setSaveRevision((value) => value + 1)
-      setEditing(false)
+      exitEdit()
       close()
     } catch (error) {
       if (request === openRequest.current) {
@@ -249,7 +250,7 @@ export function useDocumentActions(
         backend.opened(dashboards, active.dashboard)
         reset(active.dashboard)
         setSaved(documentFingerprint(active.dashboard))
-        setEditing(false)
+        exitEdit()
       }
       applyView(nextState, action)
       advanceEnd(false)
@@ -371,6 +372,6 @@ export function useDocumentActions(
     selectDashboardContext,
     selectDashboardTime,
     syncVariableDefinitions,
-    useSavedQuery,
+    linkSavedQuery,
   ] as const
 }

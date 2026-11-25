@@ -35,6 +35,8 @@ export function renderCanvasArea(
   duplicateTile: Shell["duplicateTile"],
   editing: Shell["editing"],
   editingWidget: Shell["editingWidget"],
+  enterEdit: Shell["enterEdit"],
+  exitEdit: Shell["exitEdit"],
   exploring: Shell["exploring"],
   fetcher: Shell["fetcher"],
   finePointer: Shell["finePointer"],
@@ -64,7 +66,6 @@ export function renderCanvasArea(
   selectWidget: Shell["selectWidget"],
   selected: Shell["selected"],
   setCanvasMode: Shell["setCanvasMode"],
-  setEditing: Shell["setEditing"],
   setError: Shell["setError"],
   setMessage: Shell["setMessage"],
   setMessageAction: Shell["setMessageAction"],
@@ -101,7 +102,7 @@ export function renderCanvasArea(
           <GammaButton size="sm" variant="quiet"
             disabled={importingBundle}
             onClick={() => {
-              setEditing(false)
+              exitEdit()
               close()
             }}
           >
@@ -247,7 +248,7 @@ export function renderCanvasArea(
               className={styles.primary}
               disabled={importingBundle}
               onClick={() => {
-                setEditing(true)
+                enterEdit()
                 openBuilderPanel("add")
               }}
             >

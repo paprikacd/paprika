@@ -22,6 +22,7 @@ export function renderPanelRouter(
   dirty: Shell["dirty"],
   duplicateDashboard: Shell["duplicateDashboard"],
   endGroup: Shell["endGroup"],
+  enterEdit: Shell["enterEdit"],
   exploreProvider: Shell["exploreProvider"],
   importBundle: Shell["importBundle"],
   importingBundle: Shell["importingBundle"],
@@ -38,7 +39,6 @@ export function renderPanelRouter(
   saved: Shell["saved"],
   savedQueries: Shell["savedQueries"],
   selectWidget: Shell["selectWidget"],
-  setEditing: Shell["setEditing"],
   setLibraryRevision: Shell["setLibraryRevision"],
   setQueryRevision: Shell["setQueryRevision"],
   setSourceRequest: Shell["setSourceRequest"],
@@ -182,11 +182,11 @@ export function renderPanelRouter(
               onApply={(next) => {
                 syncVariableDefinitions(next)
                 update(next)
-                setEditing(true)
+                enterEdit()
               }}
               onDetailsChange={(next, group) => {
                 update(next, { group })
-                setEditing(true)
+                enterEdit()
               }}
               onDetailsEnd={endGroup}
               onDuplicate={duplicateDashboard}

@@ -44,7 +44,7 @@ export function renderDashboardTopbar(
   sidebarShown: Shell["sidebarShown"],
   theme: Shell["theme"],
   updateSavedQueries: Shell["updateSavedQueries"],
-  useSavedQuery: Shell["useSavedQuery"],
+  linkSavedQuery: Shell["linkSavedQuery"],
   variableValues: Shell["variableValues"],
 ) {
   return (
@@ -103,7 +103,7 @@ export function renderDashboardTopbar(
           {queriesLoading && <p className={styles.loading} role="status">Loading saved queries…</p>}
           {queriesError && <div role="alert"><p>{queriesError}</p><GammaButton variant="secondary" onClick={() => setLibraryRevision(value => value + 1)}>Reload saved queries</GammaButton></div>}
           {queriesLoaded && <Suspense fallback={<p className={styles.loading}>Loading explorer…</p>}>
-            <Explorer key={explorerSource.revision} initialProviderId={explorerSource.providerId} initialSeed={explorerSource.seed} client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={useSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
+            <Explorer key={explorerSource.revision} initialProviderId={explorerSource.providerId} initialSeed={explorerSource.seed} client={libraryClient} providers={providers} queries={savedQueries} onQueriesChange={updateSavedQueries} onDirtyChange={setExplorerDirty} onUse={linkSavedQuery} onClose={() => setExploring(false)} active={exploring && !queriesLoading && !queriesError} />
           </Suspense>}
         </section>
       )}

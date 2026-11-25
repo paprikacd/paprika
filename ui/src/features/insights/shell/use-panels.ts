@@ -10,6 +10,7 @@ export function usePanels(
   compactShell: AfterDashboardData["compactShell"],
   confirmation: AfterDashboardData["confirmation"],
   editing: AfterDashboardData["editing"],
+  enterEdit: AfterDashboardData["enterEdit"],
   exploring: AfterDashboardData["exploring"],
   focusedWidget: AfterDashboardData["focusedWidget"],
   isMobile: AfterDashboardData["isMobile"],
@@ -18,7 +19,6 @@ export function usePanels(
   panel: AfterDashboardData["panel"],
   panelOpener: AfterDashboardData["panelOpener"],
   planRevision: AfterDashboardData["planRevision"],
-  setEditing: AfterDashboardData["setEditing"],
   setExploring: AfterDashboardData["setExploring"],
   setMessage: AfterDashboardData["setMessage"],
   setMessageAction: AfterDashboardData["setMessageAction"],
@@ -57,8 +57,8 @@ export function usePanels(
     setMobileSidebar(false)
     setSelected(id)
     setPanel("widget")
-    setEditing(true)
-  }, [panelOpener, setEditing, setMessage, setMobileSidebar, setPanel, setSelected, setWidgetDraftDirty, setWidgetPreview, widgetOpener, bundleImportActive])
+    enterEdit()
+  }, [panelOpener, enterEdit, setMessage, setMobileSidebar, setPanel, setSelected, setWidgetDraftDirty, setWidgetPreview, widgetOpener, bundleImportActive])
   const askToDiscardChart = confirmation.ask
   const navigateFromChart = useCallback((navigate: () => void) => {
     if (!widgetDraftDirty) {
@@ -88,7 +88,7 @@ export function usePanels(
       setExploring(false)
       showPanel(next)
       setMobileSidebar(false)
-      if (next === "ai") setEditing(true)
+      if (next === "ai") enterEdit()
     })
   }
   // Keeps the room for the open panel planned: the canvas, the panel and the sidebar as rendered now. The room does not

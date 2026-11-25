@@ -17,6 +17,7 @@ export function renderDashboardHeader(
   dashboard: Shell["dashboard"],
   editing: Shell["editing"],
   endGroup: Shell["endGroup"],
+  enterEdit: Shell["enterEdit"],
   focusTitleOnEdit: Shell["focusTitleOnEdit"],
   historyAvailable: Shell["historyAvailable"],
   importingBundle: Shell["importingBundle"],
@@ -27,7 +28,6 @@ export function renderDashboardHeader(
   phoneShell: Shell["phoneShell"],
   save: Shell["save"],
   saveButton: Shell["saveButton"],
-  setEditing: Shell["setEditing"],
   setInspectingQueries: Shell["setInspectingQueries"],
   setShortcutsOpen: Shell["setShortcutsOpen"],
   titleField: Shell["titleField"],
@@ -64,7 +64,7 @@ export function renderDashboardHeader(
           className={styles.iconButton}
           disabled={importingBundle}
           items={dashboardActionItems({ phoneShell, refreshInterval: viewDashboard.refreshInterval, customRange: !!viewDashboard.customTimeRange, history: historyAvailable }, {
-            edit: () => { focusTitleOnEdit.current = true; setEditing(true) },
+            edit: () => { focusTitleOnEdit.current = true; enterEdit() },
             togglePanel: name => openBuilderPanel(panel === name ? null : name),
             inspectQueries: () => setInspectingQueries(value => !value),
             refresh: changeViewRefresh,
@@ -109,7 +109,7 @@ export function renderDashboardHeader(
             aria-label={compactShell ? "Edit dashboard" : undefined}
             title={compactShell ? "Edit dashboard" : undefined}
             className={styles.primary}
-            onClick={() => setEditing(true)}
+            onClick={() => enterEdit()}
           >
             <Pencil size={14} />{!compactShell && " Edit dashboard"}
           </GammaButton>

@@ -187,7 +187,9 @@ function InsightsWorkspace({
     busy,
     currentRoute,
     editing,
+    enterEdit,
     error,
+    exitEdit,
     importingBundle,
     invalidWidgetSaveHintId,
     linkNotice,
@@ -201,7 +203,6 @@ function InsightsWorkspace({
     saved,
     selected,
     setBusy,
-    setEditing,
     setError,
     setImportingBundle,
     setLinkNotice,
@@ -471,6 +472,7 @@ function InsightsWorkspace({
     compactShell,
     confirmation,
     editing,
+    enterEdit,
     exploring,
     focusedWidget,
     isMobile,
@@ -479,7 +481,6 @@ function InsightsWorkspace({
     panel,
     panelOpener,
     planRevision,
-    setEditing,
     setExploring,
     setMessage,
     setMessageAction,
@@ -511,7 +512,7 @@ function InsightsWorkspace({
     selectDashboardContext,
     selectDashboardTime,
     syncVariableDefinitions,
-    useSavedQuery,
+    linkSavedQuery,
   ] = useDocumentActions(
     advanceEnd,
     applyView,
@@ -524,7 +525,9 @@ function InsightsWorkspace({
     dashboard,
     dashboards,
     dirty,
+    enterEdit,
     etags,
+    exitEdit,
     focusAfterSave,
     latestDocument,
     navigateFromChart,
@@ -538,7 +541,6 @@ function InsightsWorkspace({
     selectWidget,
     setBusy,
     setDashboards,
-    setEditing,
     setError,
     setExploring,
     setLinkNotice,
@@ -589,7 +591,9 @@ function InsightsWorkspace({
     dashboards,
     dirty,
     editing,
+    enterEdit,
     etags,
+    exitEdit,
     explorerDirty,
     importingBundle,
     latestDocument,
@@ -603,7 +607,6 @@ function InsightsWorkspace({
     saveButton,
     setBusy,
     setDashboards,
-    setEditing,
     setError,
     setExplorerDirty,
     setExplorerOpened,
@@ -649,15 +652,15 @@ function InsightsWorkspace({
       )}
       {renderInsightsSidebar(backend, bundleImportActive, close, compactNavigationExpanded, compactShell, confirmation, createDashboard, dashboard, dashboards, dirty, drawerOpen, explorerDirty, exploring, focusedWidget, importingBundle, isMobile, mobileSidebar, moveDashboard, navigation, onBack, openBuilderPanel, openDashboard, openQueryExplorer, providers, savedQueries, search, setExploring, setMobileSidebar, setReturnTo, setSearch, sidebarShown, widgetDraftDirty)}
       <div className={styles.workspace} data-density={dense && !editing && canvasMode === "wide" ? "compact" : "standard"} inert={drawerOpen || undefined}>
-        {renderDashboardTopbar(backend, compactNavigationExpanded, compactShell, currentRoute, dashboard, drawerOpen, explorerOpened, explorerSource, exploring, importingBundle, isMobile, libraryClient, mobileSidebar, navigationToggle, openBuilderPanel, panelHidden, providers, queriesError, queriesLoaded, queriesLoading, savedQueries, setCompactNavigationExpanded, setError, setExplorerDirty, setExploring, setLibraryRevision, setMessage, setMobileSidebar, setPanelHidesSidebar, setSidebar, setSidebarOverride, setTheme, sidebar, sidebarShown, theme, updateSavedQueries, useSavedQuery, variableValues)}
+        {renderDashboardTopbar(backend, compactNavigationExpanded, compactShell, currentRoute, dashboard, drawerOpen, explorerOpened, explorerSource, exploring, importingBundle, isMobile, libraryClient, mobileSidebar, navigationToggle, openBuilderPanel, panelHidden, providers, queriesError, queriesLoaded, queriesLoading, savedQueries, setCompactNavigationExpanded, setError, setExplorerDirty, setExploring, setLibraryRevision, setMessage, setMobileSidebar, setPanelHidesSidebar, setSidebar, setSidebarOverride, setTheme, sidebar, sidebarShown, theme, updateSavedQueries, linkSavedQuery, variableValues)}
         <section ref={workspaceRegion} tabIndex={-1} hidden={exploring} aria-label="Dashboard workspace">
-        {renderDashboardHeader(actionsRegion, applePlatform, busy, changeViewRefresh, compactShell, dashboard, editing, endGroup, focusTitleOnEdit, historyAvailable, importingBundle, invalidWidgetSaveHintId, isMobile, openBuilderPanel, panel, phoneShell, save, saveButton, setEditing, setInspectingQueries, setShortcutsOpen, titleField, update, viewDashboard, widgetDraftValid)}
+        {renderDashboardHeader(actionsRegion, applePlatform, busy, changeViewRefresh, compactShell, dashboard, editing, endGroup, enterEdit, focusTitleOnEdit, historyAvailable, importingBundle, invalidWidgetSaveHintId, isMobile, openBuilderPanel, panel, phoneShell, save, saveButton, setInspectingQueries, setShortcutsOpen, titleField, update, viewDashboard, widgetDraftValid)}
         {renderDashboardToolbar(advanceEnd, applePlatform, applyDashboardVariables, canRedo, canUndo, canvasMode, changeViewRange, changeViewRefresh, compactShell, dashboard, declareVariable, dense, editing, importingBundle, inspectingQueries, invalidWidgetSaveHintId, openBuilderPanel, panel, phoneShell, range, redo, resetViewRange, setDense, setInspectingQueries, setLibraryRevision, setQueryRevision, setRefreshedAt, setViewAsDefault, undo, variableLoaders, variableValues, viewDashboard, viewDiffers, widgetDraftValid)}
         {renderWorkspaceNotices(backend, bannerRetry, busy, client, dashboard, dashboards, error, importingBundle, inspectingQueries, linkNotice, message, messageAction, openDashboard, reloadRemoteDashboard, remoteDashboard, retrySources, returnTo, saveFindings, scheduledFetcher, selectWidget, setError, setInspectingQueries, setLinkNotice, setMessage, setMessageAction, setReturnTo, sourceNoticeRef, sources, syncError)}
         <div className={styles.workArea}>
-          {renderCanvasArea(alignedEnd, autoTick, backend, builderClient, builderPanel, busy, canvasMode, client, close, compactShell, currentWidget, dashboard, dashboards, dense, dirty, drilldown, duplicateTile, editing, editingWidget, exploring, fetcher, finePointer, focusedWidget, importingBundle, latestDocument, layoutUpdate, leaveWidget, markEditorMounted, noticeWithUndo, openBuilderPanel, panel, phoneViewport, previewWidget, providers, queryFieldSnapshot, queryResultSnapshot, range, registerChartCommands, removeTile, save, saveDocument, saveLatest, scheduledFetcher, selectDashboardContext, selectDashboardTime, selectWidget, selected, setCanvasMode, setEditing, setError, setMessage, setMessageAction, setQueryFieldSnapshot, setQueryResultSnapshot, setShortcutsOpen, setWidgetDraftDirty, setWidgetDraftValid, setWidgetPreview, update, variableValues, viewDashboard, widgetDraftDirty, widgetDraftValid, widgetOpener)}
+          {renderCanvasArea(alignedEnd, autoTick, backend, builderClient, builderPanel, busy, canvasMode, client, close, compactShell, currentWidget, dashboard, dashboards, dense, dirty, drilldown, duplicateTile, editing, editingWidget, enterEdit, exitEdit, exploring, fetcher, finePointer, focusedWidget, importingBundle, latestDocument, layoutUpdate, leaveWidget, markEditorMounted, noticeWithUndo, openBuilderPanel, panel, phoneViewport, previewWidget, providers, queryFieldSnapshot, queryResultSnapshot, range, registerChartCommands, removeTile, save, saveDocument, saveLatest, scheduledFetcher, selectDashboardContext, selectDashboardTime, selectWidget, selected, setCanvasMode, setError, setMessage, setMessageAction, setQueryFieldSnapshot, setQueryResultSnapshot, setShortcutsOpen, setWidgetDraftDirty, setWidgetDraftValid, setWidgetPreview, update, variableValues, viewDashboard, widgetDraftDirty, widgetDraftValid, widgetOpener)}
           {panel && panel !== "widget" && (
-            renderPanelRouter(acceptCatalog, addWidget, applyDocument, applyRestoredDocument, backend, builderPanel, busy, client, close, dashboard, dashboards, deleteDashboard, dirty, duplicateDashboard, endGroup, exploreProvider, importBundle, importingBundle, markGalleryMounted, markManageMounted, markProvidersMounted, markSourceMounted, openBuilderPanel, panel, providers, refreshCatalog, refreshSavedQueries, reviewBundle, saved, savedQueries, selectWidget, setEditing, setLibraryRevision, setQueryRevision, setSourceRequest, syncVariableDefinitions, unsupportedProviders, update, variableCatalog, widePanel, widgetDraftDirty, workspace, workspaceFailed)
+            renderPanelRouter(acceptCatalog, addWidget, applyDocument, applyRestoredDocument, backend, builderPanel, busy, client, close, dashboard, dashboards, deleteDashboard, dirty, duplicateDashboard, endGroup, enterEdit, exploreProvider, importBundle, importingBundle, markGalleryMounted, markManageMounted, markProvidersMounted, markSourceMounted, openBuilderPanel, panel, providers, refreshCatalog, refreshSavedQueries, reviewBundle, saved, savedQueries, selectWidget, setLibraryRevision, setQueryRevision, setSourceRequest, syncVariableDefinitions, unsupportedProviders, update, variableCatalog, widePanel, widgetDraftDirty, workspace, workspaceFailed)
           )}
         </div>
         </section>
