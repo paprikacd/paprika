@@ -138,7 +138,8 @@ limits, result interpretation and live validation.</p>
 Use <code>get_insights_schema</code> with <code>kind: dashboard</code>, <code>widget</code>, or <code>saved_query</code>
 for the deployed schema, examples and semantic constraints.
 Read existing documents with <code>list_saved_queries</code>, <code>get_saved_query</code>,
-<code>list_dashboards</code>, and <code>get_dashboard</code>. Create saved queries before dashboards
+<code>list_dashboards</code>, and <code>get_dashboard</code>. <code>list_saved_queries</code> takes <code>q</code> to find a
+query by its words (all must match). Create saved queries before dashboards
 that reference them, using <code>create_saved_query</code> and <code>create_dashboard</code>.
 Targeted edits use <code>patch_saved_query</code> and <code>patch_dashboard</code>: nested objects
 merge, <code>null</code> removes a field, and arrays replace. Dashboard <code>widget_edits</code>

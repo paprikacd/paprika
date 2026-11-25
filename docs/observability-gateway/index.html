@@ -218,6 +218,15 @@ startup.</p>
 </tr>
 </tbody>
 </table></div>
+<p><strong>Which limit refused a 429.</strong> Every gateway 429 carries <code>X-Paprika-Limit-Scope</code>:
+<code>edge</code> (HTTP admission pools), <code>budget</code> (the gateway-wide execution slots),
+<code>provider</code> (one provider's bulkhead), <code>queue</code> (the admission queue that bounds
+both), <code>principal</code> (the per-caller request rate that <code>/mcp</code> and the REST routes
+share) or <code>unknown</code> (a <code>resource_exhausted</code> that names no limit). Insights holds
+only the widgets of a provider when the scope is <code>provider</code>, and every widget on
+the board otherwise, including when the header is missing (an older gateway) or
+names a value it does not know. A 429 from Insights' own query pool names no scope
+and also holds the board.</p>
 <p><strong>What each hop's wait costs.</strong></p>
 <ul>
 <li><strong>Edge bounds (E1 and E2).</strong> The <code>/observe</code> route allows 50 s. That is above
@@ -657,7 +666,7 @@ not become historical series unless the source supplies timestamps. See the
 <tr>
 <td><code>list_saved_queries</code>, <code>get_saved_query</code></td>
 <td><code>paprika:observe</code></td>
-<td>Read saved queries and their ETags</td>
+<td>Read saved queries and their ETags. <code>list_saved_queries</code> takes <code>q</code>, which every word must match in a query's name, description, ID, tags, metadata, parameter names or query text</td>
 </tr>
 <tr>
 <td><code>list_dashboards</code>, <code>get_dashboard</code></td>

@@ -41,7 +41,7 @@
 <div class="shell article-breadcrumbs"><nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="../../">Paprika</a><span aria-hidden="true">/</span></li><li><a data-analytics-event="docs_open" href="../../docs/">Docs</a><span aria-hidden="true">/</span></li><li><span aria-current="page">Monitor Paprika metrics and alerts</span></li></ol></nav></div>
 <div class="article-layout shell">
 <aside class="docs-sidebar"><nav aria-label="Documentation"><section><h2>Start</h2><ul><li><a data-analytics-event="get_started" href="../../docs/getting-started/">Install Paprika and deploy your first Application</a></li><li><a data-analytics-event="docs_open" href="../../docs/concepts/">Paprika concepts and feature guide</a></li><li><a data-analytics-event="docs_open" href="../../docs/cli/">Paprika CLI reference</a></li></ul></section><section><h2>Deliver</h2><ul><li><a data-analytics-event="docs_open" href="../../docs/pipelines/">Run Kubernetes delivery pipelines</a></li><li><a data-analytics-event="docs_open" href="../../docs/environment-promotion/">Promote releases through dev, staging and production</a></li><li><a data-analytics-event="docs_open" href="../../docs/canary/">Configure canary deployments</a></li><li><a data-analytics-event="docs_open" href="../../docs/drift-and-prune/">Inspect Kubernetes drift and pruning</a></li><li><a data-analytics-event="docs_open" href="../../docs/multi-cluster/">Manage delivery across Kubernetes clusters</a></li></ul></section><section><h2>Observe</h2><ul><li><a data-analytics-event="docs_open" href="../../docs/observability-gateway/">Connect the observability gateway</a></li><li><a data-analytics-event="docs_open" href="../../docs/dashboards/">Use dashboard examples with real data</a></li><li><a data-analytics-event="docs_open" href="../../docs/metrics/" aria-current="page">Monitor Paprika metrics and alerts</a></li><li><a data-analytics-event="docs_open" href="../../docs/observe-browser-renderer/">Render dashboards for visual verification</a></li></ul></section><section><h2>Integrate</h2><ul><li><a data-analytics-event="docs_open" href="../../docs/mcp-client-setup/">Connect an MCP client to Paprika</a></li><li><a data-analytics-event="docs_open" href="../../docs/mcp-plugin/">Use the Paprika fleet plugin</a></li><li><a data-analytics-event="docs_open" href="../../docs/observe-plugin/">Install and use Paprika Observe</a></li><li><a data-analytics-event="docs_open" href="../../docs/api/">Paprika API reference</a></li></ul></section></nav></aside>
-<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#accessing-metrics">Accessing Metrics</a></li><li class="toc-level-3"><a href="#local-http-example">Local HTTP example</a></li><li class="toc-level-2"><a href="#metric-reference">Metric Reference</a></li><li class="toc-level-3"><a href="#application-lifecycle">Application Lifecycle</a></li><li class="toc-level-3"><a href="#drift-and-sync">Drift and Sync</a></li><li class="toc-level-3"><a href="#reconciliation">Reconciliation</a></li><li class="toc-level-3"><a href="#sync-operations">Sync Operations</a></li><li class="toc-level-3"><a href="#control-plane-health">Control-Plane Health</a></li><li class="toc-level-3"><a href="#otel-instruments">OTel Instruments</a></li><li class="toc-level-3"><a href="#satellite-reporting">Satellite Reporting</a></li><li class="toc-level-3"><a href="#kubernetes-gauges">Kubernetes Gauges</a></li><li class="toc-level-3"><a href="#kubernetes-client-rest_client_">Kubernetes Client (rest_client_*)</a></li><li class="toc-level-2"><a href="#alerting-rules">Alerting Rules</a></li><li class="toc-level-3"><a href="#critical-alerts">Critical Alerts</a></li><li class="toc-level-3"><a href="#warning-alerts">Warning Alerts</a></li><li class="toc-level-3"><a href="#info-alerts">Info Alerts</a></li><li class="toc-level-2"><a href="#grafana-dashboards">Grafana Dashboards</a></li><li class="toc-level-3"><a href="#application-health-panel">Application Health Panel</a></li><li class="toc-level-3"><a href="#prune-activity-panel">Prune Activity Panel</a></li><li class="toc-level-3"><a href="#phase-transition-timeline">Phase Transition Timeline</a></li><li class="toc-level-2"><a href="#debugging-with-metrics">Debugging with Metrics</a></li><li class="toc-level-3"><a href="#is-my-app-drifting">&quot;Is my app drifting?&quot;</a></li><li class="toc-level-3"><a href="#is-prune-working">&quot;Is prune working?&quot;</a></li><li class="toc-level-3"><a href="#why-is-my-app-stuck">&quot;Why is my app stuck?&quot;</a></li><li class="toc-level-3"><a href="#how-long-do-syncs-take">&quot;How long do syncs take?&quot;</a></li></ol></nav></details></aside>
+<aside class="article-toc"><details><summary>On this page</summary><nav aria-label="On this page"><ol><li class="toc-level-2"><a href="#accessing-metrics">Accessing Metrics</a></li><li class="toc-level-3"><a href="#local-http-example">Local HTTP example</a></li><li class="toc-level-2"><a href="#metric-reference">Metric Reference</a></li><li class="toc-level-3"><a href="#application-lifecycle">Application Lifecycle</a></li><li class="toc-level-3"><a href="#drift-and-sync">Drift and Sync</a></li><li class="toc-level-3"><a href="#reconciliation">Reconciliation</a></li><li class="toc-level-3"><a href="#sync-operations">Sync Operations</a></li><li class="toc-level-3"><a href="#control-plane-health">Control-Plane Health</a></li><li class="toc-level-3"><a href="#otel-instruments">OTel Instruments</a></li><li class="toc-level-3"><a href="#insights">Insights</a></li><li class="toc-level-3"><a href="#satellite-reporting">Satellite Reporting</a></li><li class="toc-level-3"><a href="#kubernetes-gauges">Kubernetes Gauges</a></li><li class="toc-level-3"><a href="#kubernetes-client-rest_client_">Kubernetes Client (rest_client_*)</a></li><li class="toc-level-2"><a href="#alerting-rules">Alerting Rules</a></li><li class="toc-level-3"><a href="#critical-alerts">Critical Alerts</a></li><li class="toc-level-3"><a href="#warning-alerts">Warning Alerts</a></li><li class="toc-level-3"><a href="#info-alerts">Info Alerts</a></li><li class="toc-level-2"><a href="#grafana-dashboards">Grafana Dashboards</a></li><li class="toc-level-3"><a href="#application-health-panel">Application Health Panel</a></li><li class="toc-level-3"><a href="#prune-activity-panel">Prune Activity Panel</a></li><li class="toc-level-3"><a href="#phase-transition-timeline">Phase Transition Timeline</a></li><li class="toc-level-2"><a href="#debugging-with-metrics">Debugging with Metrics</a></li><li class="toc-level-3"><a href="#is-my-app-drifting">&quot;Is my app drifting?&quot;</a></li><li class="toc-level-3"><a href="#is-prune-working">&quot;Is prune working?&quot;</a></li><li class="toc-level-3"><a href="#why-is-my-app-stuck">&quot;Why is my app stuck?&quot;</a></li><li class="toc-level-3"><a href="#how-long-do-syncs-take">&quot;How long do syncs take?&quot;</a></li></ol></nav></details></aside>
 <main id="main-content" class="article-main" tabindex="-1"><article>
 <header class="article-header"><div class="editorial-eyebrow"><img src="../../paprika-mark.png" alt="" width="24" height="24"/><span>Paprika / Guides</span></div><h1 id="metrics-and-alerting">Monitor Paprika metrics and alerts</h1><p class="article-description">Read controller, drift, prune and delivery metrics, configure Prometheus scraping, and adapt alert rules to your installation.</p><div class="article-meta"><span>Maintained by <a rel="author" href="https://github.com/paprikacd/paprika">Paprika maintainers</a></span><span class="article-section">Observe</span><a href="https://github.com/paprikacd/paprika/blob/master/docs/guides/metrics.md">View source on GitHub <span aria-hidden="true">↗</span></a></div></header>
 
@@ -292,7 +292,9 @@ paprika_releases_stuck &gt; 0
 </code></pre></div>
 <p>A ready-made Insights dashboard charts these gauges with the same <code>max()</code>
 semantics as the alert rules: the <code>paprika-control-plane</code> starter in
-<code>internal/insights/starters/</code>.</p>
+<code>internal/insights/starters/</code>. Its container bars tile reads cAdvisor and
+kube-state-metrics for the control-plane containers; the signal names and
+assumptions are in <code>docs/design/insights/kubernetes-widgets.md</code>.</p>
 <p><code>workqueue_*</code> and <code>controller_runtime_reconcile_*</code> are supplied by
 controller-runtime; the Paprika-specific gauges above add the per-application
 lag and release-liveness view that those generic metrics cannot express.</p>
@@ -365,11 +367,57 @@ lag and release-liveness view that those generic metrics cannot express.</p>
 </tr>
 </tbody>
 </table></div>
+<h3 id="insights">Insights</h3>
+<p>Insights and the observability gateway serve <code>/metrics</code>. With <code>prometheus.enable</code>,
+the chart renders a ServiceMonitor for each: Insights on its metrics-only listener
+(<code>metrics</code>, 8080, plain HTTP, started with <code>--metrics-listen</code>), and the gateway on its
+<code>metrics</code> port when <code>metrics.bindAddress</code> enables it. Insights' query series are the OTel instruments
+below. The gateway emits no metrics of its own; its refusals show up here as
+<code>paprika_insights_query_capacity_rejections_total{pool=&quot;gateway&quot;,scope=...}</code>.</p>
+<div class="table-scroll" role="region" aria-label="Table 8, scroll horizontally if needed" tabindex="0"><table>
+<thead>
+<tr>
+<th>OTel instrument</th>
+<th>Type</th>
+<th>Attributes</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paprika_insights_queries</code></td>
+<td>Counter</td>
+<td><code>provider</code>, <code>kind</code>, <code>outcome</code></td>
+<td>Provider queries by outcome. <code>catalog_busy</code> counts a shared listing refused by the catalog pool</td>
+</tr>
+<tr>
+<td><code>paprika_insights_query_duration_seconds</code></td>
+<td>Histogram (seconds)</td>
+<td><code>provider</code>, <code>kind</code>, <code>outcome</code></td>
+<td>Provider query duration. Buckets are 5 ms to 60 s, shared with the other duration histograms</td>
+</tr>
+<tr>
+<td><code>paprika_insights_query_capacity_rejections</code></td>
+<td>Counter</td>
+<td><code>pool</code>, <code>scope</code></td>
+<td>Query requests refused for capacity. <code>pool=&quot;query&quot;</code> is Insights' own execution pool; <code>pool=&quot;gateway&quot;</code> is a gateway 429, and <code>scope</code> names the limit (<code>edge</code>, <code>budget</code>, <code>provider</code>, <code>queue</code>, <code>principal</code>, or <code>unknown</code>); <code>pool=&quot;provider&quot;</code> is a direct provider's own 429. Only <code>pool=&quot;gateway&quot;</code> has <code>scope</code></td>
+</tr>
+<tr>
+<td><code>paprika_insights_dashboard_upload_refusals</code></td>
+<td>Counter</td>
+<td><code>route</code></td>
+<td>Dashboard saves and dry runs refused because the request-body budget was full</td>
+</tr>
+</tbody>
+</table></div>
+<p>Prometheus appends <code>_total</code> to the counters and <code>_bucket</code>, <code>_sum</code> and <code>_count</code> to the
+histogram. The <code>paprika-control-plane</code> starter charts query rate, error ratio, p95
+latency and capacity refusals.</p>
 <h3 id="satellite-reporting">Satellite Reporting</h3>
 <p>The central API records these OTel instruments for outbound satellite reports.
 Prometheus translates the dotted names to underscores and adds its standard
 counter and unit suffixes.</p>
-<div class="table-scroll" role="region" aria-label="Table 8, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 9, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>OTel instrument</th>
@@ -455,7 +503,7 @@ gauges with unit <code>1</code> end in <code>_ratio</code>. See the
 <a data-analytics-event="docs_open" href="../../docs/multi-cluster/">multi-cluster guide</a> for heartbeat and timeout settings.</p>
 <h3 id="kubernetes-gauges">Kubernetes Gauges</h3>
 <p>These are observable gauges populated from the K8s API on each scrape:</p>
-<div class="table-scroll" role="region" aria-label="Table 9, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 10, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>Metric</th>
@@ -491,7 +539,7 @@ dimensionless (unit &quot;1&quot;) observable gauges. Not a bug.</p>
 <h3 id="kubernetes-client-rest_client_">Kubernetes Client (<code>rest_client_*</code>)</h3>
 <p>Client-go REST metrics are exposed on every component's <code>/metrics</code> endpoint,
 filtered to the <code>rest_client_</code> prefix from the component-base legacy registry:</p>
-<div class="table-scroll" role="region" aria-label="Table 10, scroll horizontally if needed" tabindex="0"><table>
+<div class="table-scroll" role="region" aria-label="Table 11, scroll horizontally if needed" tabindex="0"><table>
 <thead>
 <tr>
 <th>Metric</th>
