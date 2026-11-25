@@ -770,6 +770,15 @@ say "a second run for a later commit reuses the job worktree at the same path, a
 logs_tree12=$(git -C "$runner" rev-parse 'HEAD^{tree}' | cut -c1-12)
 logs_dir="$runner/artifacts/ci/$logs_tree12"
 echo "marker from the earlier run" >>"$logs_dir/terraform.log"
+mkdir -p "$logs_dir/terraform"
+printf 'earlier diagnostic\n' >"$logs_dir/terraform/sentinel"
+before_archives=$(find "$logs_dir" -type f | sort)
+run_cmd fail "invalid retention preserves earlier evidence" bash -c "cd '$runner' && PAPRIKA_CI_KEEP_PREVIOUS_RUNS=invalid bash hack/ci/run.sh --jobs terraform"
+expect_output "PAPRIKA_CI_KEEP_PREVIOUS_RUNS must be a whole number"
+expect_no_output "previous logs for the rerun jobs moved to"
+[ "$(find "$logs_dir" -type f | sort)" = "$before_archives" ] || die "invalid retention changed the prior evidence paths"
+grep -Fq "marker from the earlier run" "$logs_dir/terraform.log" || die "invalid retention changed the earlier job log"
+grep -Fq "earlier diagnostic" "$logs_dir/terraform/sentinel" || die "invalid retention changed the earlier diagnostic"
 run_cmd ok "rerun keeps the previous log" bash -c "cd '$runner' && bash hack/ci/run.sh --jobs terraform"
 expect_output "previous logs for the rerun jobs moved to"
 grep -Fq "marker from the earlier run" "$logs_dir/terraform.log" && die "the rerun log still holds the earlier run's content"
