@@ -9,6 +9,8 @@ import type { useSourceCatalog } from "./use-source-catalog"
 import type { useLiveSync } from "./use-live-sync"
 import type { useTileActions } from "./use-tile-actions"
 import type { useWorkspaceBoot } from "./use-workspace-boot"
+import type { useDashboardData } from "./use-dashboard-data"
+import type { usePanels } from "./use-panels"
 
 export type ShellProps = Omit<InsightsAppProps, "embed">
 
@@ -38,4 +40,10 @@ export type AfterTileActions = AfterLiveSync & Named<TileActionsNames, ReturnTyp
 
 export type WorkspaceBootNames = ["enterExample"]
 export type AfterWorkspaceBoot = AfterTileActions & Named<WorkspaceBootNames, ReturnType<typeof useWorkspaceBoot>>
-export type Shell = AfterWorkspaceBoot
+
+export type DashboardDataNames = ["alignedEnd", "builderClient", "fetcher", "range", "scheduledFetcher", "variableCatalog", "variableLoaders"]
+export type AfterDashboardData = AfterWorkspaceBoot & Named<DashboardDataNames, ReturnType<typeof useDashboardData>>
+
+export type PanelsNames = ["close", "leaveWidget", "navigateFromChart", "openBuilderPanel", "selectWidget", "showPanel"]
+export type AfterPanels = AfterDashboardData & Named<PanelsNames, ReturnType<typeof usePanels>>
+export type Shell = AfterPanels

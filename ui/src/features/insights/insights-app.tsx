@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef } from "react"
 import "react-dom"
 import {
   Activity,
@@ -47,7 +47,6 @@ import {
   type Provider,
   isApplicationLink,
   type WidgetLink,
-  type QueryRequest,
   type SavedQuery,
   type DashboardVariable,
   dashboardSchema,
@@ -59,7 +58,7 @@ import {
   saveExampleWorkspace,
   writeExampleWorkspace,
 } from "./example-storage"
-import { assertProviderQueryTemplate } from "./provider-query-template"
+import "./provider-query-template"
 import catalogMeta from "./repository-examples/catalog-meta.json"
 import { LazyFailure, LazyPanelBoundary, MountSignal, reloadPage } from "./lazy-panel"
 import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
@@ -67,7 +66,7 @@ import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey } from "./query-connections"
 import "./saved-query-storage"
 import { loadBundleImportReview, type BundleImportRequest } from "./bundle-import"
-import { resolveSavedQueryReference } from "./saved-queries"
+import "./saved-queries"
 import type { DashboardBundle } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
 import "./use-mobile-navigation"
@@ -76,7 +75,7 @@ import "./use-builder-panel-focus"
 import type { ExplorerSeed } from "./saved-query-context"
 import "./history"
 import "./use-insights-shortcuts"
-import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
+import { ariaKeyshortcutsFor, hintFor } from "./shortcuts"
 import "./use-workspace-refresh"
 import { DashboardCanvas } from "./canvas"
 import { EmbedView } from "./embed-view"
@@ -85,17 +84,17 @@ import { refreshStaggerSpread } from "./refresh-stagger"
 
 import "./tile-controls"
 import "./canvas-density"
-import { builderPanelPlan } from "./responsive-layout"
-import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
+import "./responsive-layout"
+import "./query"
 import { DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
-import { TimeRangeControl, alignedDashboardEnd, dashboardRange, savedRangeLabel, type TimeRangeChoice } from "./time-range"
+import { TimeRangeControl, savedRangeLabel, type TimeRangeChoice } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
 import { checksFromError } from "./client"
-import { SourceStatusContext, sourceWaitMessage } from "./source-status"
+import { SourceStatusContext } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
@@ -104,10 +103,9 @@ import "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
 import { PhoneVariables, VariableBar } from "./dashboard-variables"
 import { ClampedDescription } from "./dashboard-description"
-import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "./variable-options"
-import type { VariableSourceCatalog } from "./variable-source-editor"
+import "./variable-options"
 import { InsightsThemeControl } from "./insights-theme"
-import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext } from "./drilldown"
+import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, type DashboardNavigation, type DrilldownContext } from "./drilldown"
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
 import { readDashboardLink, serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
@@ -115,7 +113,7 @@ import { DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEdito
 import { placementPhrase } from "./shell/navigation"
 import { sourceBannerCopy } from "./shell/source-catalog"
 import "./shell/media-stores"
-import { MANUAL_REFRESH_BYPASS_MS, NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
+import { NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
 import { useSavedQueryLibrary } from "./shell/use-saved-query-library"
 import { useDashboardSession } from "./shell/use-dashboard-session"
@@ -124,6 +122,8 @@ import { useSourceCatalog } from "./shell/use-source-catalog"
 import { useLiveSync } from "./shell/use-live-sync"
 import { useTileActions } from "./shell/use-tile-actions"
 import { useWorkspaceBoot } from "./shell/use-workspace-boot"
+import { useDashboardData } from "./shell/use-dashboard-data"
+import { usePanels } from "./shell/use-panels"
 
 
 registerDefaultWidgetPlugins()
@@ -477,170 +477,67 @@ function InsightsWorkspace({
     workspaceRegion,
   )
 
-  const scheduledFetcher = useMemo(() => {
-    // A refresh or provider edit invalidates cached fixed-range observations too.
-    void queryRevision
-    // The scheduler owns the capacity backoff, so its slot is free while a refused query waits.
-    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false, refresh: Date.now() - refreshedAt < MANUAL_REFRESH_BYPASS_MS })
-    return createQueryScheduler(query)
-  }, [client, activeExample, queryRevision, refreshedAt])
-  // Resolve each authoring scope once, before sharing the bounded scheduler.
-  // Tooltip label values may themselves contain {{text}}; never interpolate
-  // those resolved query literals again as dashboard variables.
-  // A saved query whose source is loaded runs even when the shared catalog failed.
-  const fetcher = useMemo(() => createResolvedQueryFetcher(scheduledFetcher, (request: QueryRequest) => {
-    const { queryRef, ...resolved } = request
-    if (queryRef) {
-      if (queriesLoading) throw new Error("Loading the saved-query library…")
-      if (queriesError) throw new Error(queriesError)
-      const authored = savedQueries.find(query => query.id === queryRef.id)
-      if (authored) assertProviderQueryTemplate(providers.find(provider => provider.id === authored.providerId)?.type, authored.query)
-      const definition = resolveSavedQueryReference(queryRef, savedQueries, variableValues, request.kind)
-      if (!providers.some(provider => provider.id === definition.providerId)) {
-        if (sourceContext !== "ready") throw new Error(sourceWaitMessage(sourceContext))
-        throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
-      }
-      if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
-        throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
-      return { ...resolved, ...definition }
-    }
-    assertProviderQueryTemplate(providers.find(provider => provider.id === request.providerId)?.type, request.query)
-    return { ...resolved, query: interpolateQuery(request.query, variableValues) }
-  }), [scheduledFetcher, variableValues, savedQueries, queriesLoading, queriesError, providers, sourceContext])
-  // The view reads its window to the shared grain, so viewers and query_dashboard ask for the same window.
-  const alignedEnd = alignedDashboardEnd(viewDashboard, end)
-  const range = dashboardRange(viewDashboard, alignedEnd)
-  // Values for variable sources come from the same metadata and query paths the widgets use.
-  const variableLoaders = useMemo<VariableValueLoaders>(() => ({
-    // The principal is the scope, so values loaded under one sign-in never serve another; a token renewal keeps them.
-    scope: variableValueScope(!!activeExample, principal),
-    metadata: async (request, signal) => {
-      // Example workspaces read a fixed fixture that has no selectors, so a selector is refused rather than ignored.
-      if (activeExample && request.selector !== undefined) throw new Error("Selector-filtered values are not available in examples")
-      const metadata = activeExample ? activeExample.repositoryWorkspaceMetadata : client.metadata
-      const response = await metadata(request.providerId, { kind: "values", label: request.label, selector: request.selector, start: request.start, end: request.end }, signal)
-      return { values: response.values, truncated: response.truncated }
-    },
-    query: (request, signal) => {
-      // Resolve with the values the plan was keyed on, not the route's current values, so the result matches its key.
-      if (queriesLoading) throw new Error("Loading the saved-query library…")
-      if (queriesError) throw new Error(queriesError)
-      const saved = savedQueries.find(query => query.id === request.queryRef.id)
-      if (!saved) throw new Error(`Saved query “${request.queryRef.id}” is unavailable.`)
-      assertProviderQueryTemplate(providers.find(provider => provider.id === saved.providerId)?.type, saved.query)
-      const definition = resolveSavedQueryReference(request.queryRef, savedQueries, request.variables, saved.kind)
-      if (!providers.some(provider => provider.id === definition.providerId && provider.capabilities.includes(definition.kind)))
-        throw new Error("The saved query’s data source is unavailable. Choose a connected source in Explore.")
-      const minStepSeconds = providers.find(provider => provider.id === definition.providerId)?.minStepSeconds
-      return scheduledFetcher({ ...definition, start: request.start, end: request.end, step: sourceQueryStep(request.start, request.end, minStepSeconds) }, signal)
-    },
-  }), [client, activeExample, scheduledFetcher, savedQueries, queriesLoading, queriesError, providers, principal])
-  // The variable editor reads providers, label names and saved queries; its preview runs the same loaders as the bar.
-  const variableCatalog = useMemo<VariableSourceCatalog>(() => ({
-    loaders: variableLoaders,
+  const [
+    alignedEnd,
+    builderClient,
+    fetcher,
+    range,
+    scheduledFetcher,
+    variableCatalog,
+    variableLoaders,
+  ] = useDashboardData(
+    activeExample,
+    client,
+    end,
+    principal,
     providers,
+    queriesError,
+    queriesLoading,
+    queryRevision,
+    refreshedAt,
     savedQueries,
-    range: { start: range.start, end: range.end },
-    labels: async (providerId, signal) => {
-      const metadata = activeExample ? activeExample.repositoryWorkspaceMetadata : client.metadata
-      return (await metadata(providerId, { kind: "labels" }, signal)).values
-    },
-  }), [variableLoaders, providers, savedQueries, client, activeExample, range.start, range.end])
-  const builderClient = useMemo(
-    () =>
-      activeExample
-        ? { ...client, metadata: activeExample.repositoryWorkspaceMetadata, query: activeExample.repositoryWorkspaceQuery }
-        : client,
-    [client, activeExample],
+    sourceContext,
+    variableValues,
+    viewDashboard,
   )
-  const close = useCallback(() => {
-    if (bundleImportActive.current) return
-    setPanel(null)
-    setSidebarOverride(false)
-    setSelected(undefined)
-    setWidgetPreview(undefined)
-    setWidgetDraftDirty(false)
-    // The unapplied-chart notice and its action are only true while that chart's editor is open.
-    setMessageAction(current => current?.chartEditor ? undefined : current)
-    setMessage(current => current === UNAPPLIED_CHART_NOTICE ? "" : current)
-  }, [setMessage, setMessageAction, setPanel, setSelected, setSidebarOverride, setWidgetDraftDirty, setWidgetPreview, bundleImportActive])
-  const selectWidget = useCallback((id: string) => {
-    if (bundleImportActive.current) return
-    widgetOpener.current = id
-    panelOpener.current = undefined
-    setMessage("")
-    setWidgetPreview(undefined)
-    setWidgetDraftDirty(false)
-    setMobileSidebar(false)
-    setSelected(id)
-    setPanel("widget")
-    setEditing(true)
-  }, [panelOpener, setEditing, setMessage, setMobileSidebar, setPanel, setSelected, setWidgetDraftDirty, setWidgetPreview, widgetOpener, bundleImportActive])
-  const askToDiscardChart = confirmation.ask
-  const navigateFromChart = useCallback((navigate: () => void) => {
-    if (!widgetDraftDirty) {
-      navigate()
-      return
-    }
-    void askToDiscardChart({
-      title: "Discard chart changes?",
-      description: "These chart settings have not been applied to the dashboard.",
-      action: "Discard changes",
-    }).then(accepted => { if (accepted) navigate() })
-  }, [widgetDraftDirty, askToDiscardChart])
-  const leaveWidget = useCallback(() => navigateFromChart(close), [navigateFromChart, close])
-  // Opens a builder panel. The width and sidebar are planned by the layout effect below, before paint.
-  function showPanel(next: typeof panel) {
-    setSidebarOverride(false)
-    setPanel(next)
-  }
-  function openBuilderPanel(next: typeof panel) {
-    // Record the control before any state changes move or remove it. Lookups stay lazy so a deferred confirm still works.
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>("[data-panel-opener]") : null
-    panelOpener.current = opener?.dataset.panelOpener
-    // Explore keeps the focused chart mounted. Any other panel replaces it,
-    // so wait for its unapplied draft to be resolved before changing views.
-    navigateFromChart(() => {
-      close()
-      setExploring(false)
-      showPanel(next)
-      setMobileSidebar(false)
-      if (next === "ai") setEditing(true)
-    })
-  }
-  // Keeps the room for the open panel planned: the canvas, the panel and the sidebar as rendered now. The room does not
-  // depend on the plan's choice, so re-running after any change converges. It runs before paint, and skips the canvas
-  // while Explore or a focused widget hides it.
-  useLayoutEffect(() => {
-    // The plan is a function of the DOM as it is laid out, so it is written here, before paint, rather than during render.
-    if (!panel || panel === "widget") { setPanelHidesSidebar(false); return }
-    const wide = panel === "source" || panel === "examples"
-    if (isMobile) { setPanelHidesSidebar(false); setWidePanel(wide); return }
-    const root = layoutRoot.current
-    const canvas = root?.querySelector<HTMLElement>('[data-testid="dashboard-canvas"]')
-    if (exploring || !canvas || canvas.clientWidth === 0) return
-    const sidebarWidth = navigation.current?.offsetWidth ?? 0
-    if (sidebarWidth) sidebarOpenWidth.current = sidebarWidth
-    const plan = builderPanelPlan({
-      canvasWidth: canvas.clientWidth,
-      panelWidth: root?.querySelector<HTMLElement>('[aria-label="Builder panel"]')?.offsetWidth ?? 0,
-      sidebarWidth,
-      openSidebarWidth: sidebarOpenWidth.current,
-    }, { wide, sidebarCollapsible: !sidebarOverride, sidebarPreferred: compactShell || sidebar })
-    setPanelHidesSidebar(plan.collapsed)
-    setWidePanel(plan.widePanel)
-  }, [panel, exploring, isMobile, compactShell, editing, sidebar, sidebarOverride, planRevision, layoutRoot, navigation, setPanelHidesSidebar, setWidePanel, sidebarOpenWidth])
-  useEffect(() => {
-    if (!focusedWidget) return
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented ||
-        document.querySelector(OVERLAY_SELECTOR)) return
-      event.preventDefault()
-      void leaveWidget()
-    }
-    window.addEventListener("keydown", keydown)
-    return () => window.removeEventListener("keydown", keydown)
-  }, [focusedWidget, leaveWidget])
+  const [
+    close,
+    leaveWidget,
+    navigateFromChart,
+    openBuilderPanel,
+    selectWidget,
+    showPanel,
+  ] = usePanels(
+    bundleImportActive,
+    compactShell,
+    confirmation,
+    editing,
+    exploring,
+    focusedWidget,
+    isMobile,
+    layoutRoot,
+    navigation,
+    panel,
+    panelOpener,
+    planRevision,
+    setEditing,
+    setExploring,
+    setMessage,
+    setMessageAction,
+    setMobileSidebar,
+    setPanel,
+    setPanelHidesSidebar,
+    setSelected,
+    setSidebarOverride,
+    setWidePanel,
+    setWidgetDraftDirty,
+    setWidgetPreview,
+    sidebar,
+    sidebarOpenWidth,
+    sidebarOverride,
+    widgetDraftDirty,
+    widgetOpener,
+  )
   const layoutUpdate = useCallback(
     (layout: Layout) =>
       update((current) => ({
