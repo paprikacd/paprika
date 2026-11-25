@@ -7,6 +7,7 @@ import { sourceBannerCopy } from "./source-catalog"
 import type { Shell } from "./types"
 
 export function renderWorkspaceNotices(
+  backend: Shell["backend"],
   bannerRetry: Shell["bannerRetry"],
   busy: Shell["busy"],
   client: Shell["client"],
@@ -18,7 +19,6 @@ export function renderWorkspaceNotices(
   linkNotice: Shell["linkNotice"],
   message: Shell["message"],
   messageAction: Shell["messageAction"],
-  mode: Shell["mode"],
   openDashboard: Shell["openDashboard"],
   reloadRemoteDashboard: Shell["reloadRemoteDashboard"],
   remoteDashboard: Shell["remoteDashboard"],
@@ -39,7 +39,7 @@ export function renderWorkspaceNotices(
 ) {
   return (
     <>
-      {inspectingQueries && <Suspense fallback={<p role="status" className={styles.loading}>Loading query inspector…</p>}><QueryInspector store={scheduledFetcher.diagnostics} synthetic={mode === "example"} onClose={() => setInspectingQueries(false)} /></Suspense>}
+      {inspectingQueries && <Suspense fallback={<p role="status" className={styles.loading}>Loading query inspector…</p>}><QueryInspector store={scheduledFetcher.diagnostics} synthetic={backend.example} onClose={() => setInspectingQueries(false)} /></Suspense>}
       {returnTo ? (
         <div className={styles.viewContext}>
           <GammaButton size="sm" variant="quiet" onClick={async () => {

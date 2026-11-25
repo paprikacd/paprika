@@ -18,6 +18,7 @@ import type { Shell } from "./types"
 export function renderCanvasArea(
   alignedEnd: Shell["alignedEnd"],
   autoTick: Shell["autoTick"],
+  backend: Shell["backend"],
   builderClient: Shell["builderClient"],
   builderPanel: Shell["builderPanel"],
   busy: Shell["busy"],
@@ -43,7 +44,6 @@ export function renderCanvasArea(
   layoutUpdate: Shell["layoutUpdate"],
   leaveWidget: Shell["leaveWidget"],
   markEditorMounted: Shell["markEditorMounted"],
-  mode: Shell["mode"],
   noticeWithUndo: Shell["noticeWithUndo"],
   openBuilderPanel: Shell["openBuilderPanel"],
   panel: Shell["panel"],
@@ -274,9 +274,7 @@ export function renderCanvasArea(
       )}
       {!focusedWidget && <footer className={styles.canvasFooter}>
         <span>
-          {mode === "example"
-            ? "Generated sample data"
-            : "Provider queries run server-side"}
+          {backend.copy.footer}
         </span>
         <span>
           {dirty ? "Unsaved changes" : "All changes saved"}

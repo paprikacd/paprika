@@ -11,6 +11,7 @@ export function renderPanelRouter(
   addWidget: Shell["addWidget"],
   applyDocument: Shell["applyDocument"],
   applyRestoredDocument: Shell["applyRestoredDocument"],
+  backend: Shell["backend"],
   builderPanel: Shell["builderPanel"],
   busy: Shell["busy"],
   client: Shell["client"],
@@ -28,7 +29,6 @@ export function renderPanelRouter(
   markManageMounted: Shell["markManageMounted"],
   markProvidersMounted: Shell["markProvidersMounted"],
   markSourceMounted: Shell["markSourceMounted"],
-  mode: Shell["mode"],
   openBuilderPanel: Shell["openBuilderPanel"],
   panel: Shell["panel"],
   providers: Shell["providers"],
@@ -63,7 +63,7 @@ export function renderPanelRouter(
       ) : workspace ? (
         <LazyPanelBoundary label="Dashboard examples" unsaved={dirty || widgetDraftDirty} onClose={close}>
           <Suspense fallback={<p className={styles.loading} role="status">Loading examples…</p>}>
-            <RepositoryGallery entries={workspace.repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} validateDocument={client.validate} onRefreshQueries={refreshSavedQueries} onClose={close} />
+            <RepositoryGallery entries={workspace.repositoryExamples} mode={backend.kind} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} validateDocument={client.validate} onRefreshQueries={refreshSavedQueries} onClose={close} />
             <MountSignal onMount={markGalleryMounted} />
           </Suspense>
         </LazyPanelBoundary>
@@ -136,7 +136,7 @@ export function renderPanelRouter(
               client={client}
               providers={providers}
               unsupportedProviders={unsupportedProviders}
-              example={mode === "example"}
+              example={backend.example}
               onClose={close}
               onExplore={exploreProvider}
               loadCatalog={refreshCatalog}

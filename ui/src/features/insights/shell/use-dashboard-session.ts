@@ -8,10 +8,10 @@ import { useDashboardView } from "../dashboard-view"
 import type { AfterSavedQueryLibrary } from "./types"
 
 export function useDashboardSession(
+  backend: AfterSavedQueryLibrary["backend"],
   dashboard: AfterSavedQueryLibrary["dashboard"],
-  mode: AfterSavedQueryLibrary["mode"],
 ) {
-  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id, mode === "example")
+  const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id, backend.example)
   const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
   const [editing, setEditing] = useState(false)

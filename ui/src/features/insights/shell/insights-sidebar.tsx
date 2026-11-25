@@ -8,6 +8,7 @@ import { preloadExamples } from "./lazy-panels"
 import type { Shell } from "./types"
 
 export function renderInsightsSidebar(
+  backend: Shell["backend"],
   bundleImportActive: Shell["bundleImportActive"],
   close: Shell["close"],
   compactNavigationExpanded: Shell["compactNavigationExpanded"],
@@ -24,7 +25,6 @@ export function renderInsightsSidebar(
   importingBundle: Shell["importingBundle"],
   isMobile: Shell["isMobile"],
   mobileSidebar: Shell["mobileSidebar"],
-  mode: Shell["mode"],
   moveDashboard: Shell["moveDashboard"],
   navigation: Shell["navigation"],
   onBack: Shell["onBack"],
@@ -156,14 +156,10 @@ export function renderInsightsSidebar(
             <span className={styles.statusDot} />
             <div>
               <strong>
-                {mode === "example"
-                  ? "Example workspace"
-                  : "Connected workspace"}
+                {backend.copy.environment}
               </strong>
               <span>
-                {mode === "example"
-                  ? "Sample data · stored locally"
-                  : `${providers.length} configured data sources`}
+                {backend.copy.environmentDetail(providers.length)}
               </span>
             </div>
           </div>

@@ -8,6 +8,7 @@ import { Explorer } from "./lazy-panels"
 import type { Shell } from "./types"
 
 export function renderDashboardTopbar(
+  backend: Shell["backend"],
   compactNavigationExpanded: Shell["compactNavigationExpanded"],
   compactShell: Shell["compactShell"],
   currentRoute: Shell["currentRoute"],
@@ -20,7 +21,6 @@ export function renderDashboardTopbar(
   isMobile: Shell["isMobile"],
   libraryClient: Shell["libraryClient"],
   mobileSidebar: Shell["mobileSidebar"],
-  mode: Shell["mode"],
   navigationToggle: Shell["navigationToggle"],
   openBuilderPanel: Shell["openBuilderPanel"],
   panelHidden: Shell["panelHidden"],
@@ -78,7 +78,7 @@ export function renderDashboardTopbar(
           <GammaButton iconOnly size="sm" variant="quiet" aria-label="Copy dashboard link" onClick={async () => {
             try {
               const state = { ...currentRoute, dashboardId: dashboard.id, variables: variableValues }
-              const url = new URL(serialiseDashboardView(state, { example: mode === "example" }), location.origin)
+              const url = new URL(serialiseDashboardView(state, { example: backend.example }), location.origin)
               await navigator.clipboard.writeText(url.href)
               setError("")
               setMessage("Dashboard link copied with the current variables and time settings.")
@@ -86,7 +86,7 @@ export function renderDashboardTopbar(
           }}><Link2 size={15} /></GammaButton>
           <span className={styles.modeBadge}>
             <span />
-            {mode === "example" ? "Sample data" : "Live providers"}
+            {backend.copy.badge}
           </span>
           <GammaButton data-panel-opener="providers" iconOnly size="sm" variant="quiet"
             className={styles.iconButton}
