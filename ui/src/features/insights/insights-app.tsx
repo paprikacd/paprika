@@ -87,8 +87,6 @@ import { EmbedView } from "./embed-view"
 import type { EmbedRequest } from "./embed-request"
 import { refreshStaggerSpread } from "./refresh-stagger"
 
-/** After a manual refresh, queries ask the server for a fresh execution for this long, so the refreshed window is not served from the cache. */
-const MANUAL_REFRESH_BYPASS_MS = 5_000
 import { visibleTileControl } from "./tile-controls"
 import { useCanvasDensity } from "./canvas-density"
 import { builderPanelPlan, type CanvasMode } from "./responsive-layout"
@@ -101,7 +99,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { checksFromError, classifySourceFailure, InsightsHTTPError, loadProviderCatalog, type ProviderCatalog, type SharedCatalogStatus, type UnsupportedProvider } from "./client"
+import { checksFromError, loadProviderCatalog, type ProviderCatalog, type UnsupportedProvider } from "./client"
 import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -114,36 +112,16 @@ import { ClampedDescription } from "./dashboard-description"
 import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "./variable-options"
 import type { VariableSourceCatalog } from "./variable-source-editor"
 import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
-import {
-  describeIgnoredLink,
-  resolveDashboardVariables,
-  resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type RejectedLinkPart, type VariableValues,
-} from "./drilldown"
-import { duplicateLayout, savedLayout, type DuplicatePlacement } from "./layout-edit"
+import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type VariableValues } from "./drilldown"
+import { duplicateLayout, savedLayout } from "./layout-edit"
 
 import { readDashboardLink, serialiseDashboardView, useDashboardView, viewDiffersFromDefaults, viewTimeDiffers, viewedDashboard } from "./dashboard-view"
 import { RepositoryWorkspace, DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, loadRepositoryWorkspace, preloadWidgetEditor, preloadExamples } from "./shell/lazy-panels"
+import { placementPhrase, initialNavigation, panelOpenerElement } from "./shell/navigation"
+import { type SourceState, sourceBannerCopy, sourceFailureReason, sharedFailureReason } from "./shell/source-catalog"
+import { subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot, subscribeFinePointer, finePointerSnapshot } from "./shell/media-stores"
+import { MANUAL_REFRESH_BYPASS_MS, NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
 
-/** The notice phrase for where a copy settled. A copy the compactor lifted out of its row says nothing about its neighbour. */
-function placementPhrase(placement: DuplicatePlacement): string {
-  return placement === "beside" ? " beside it" : placement === "below" ? " below it" : ""
-}
-
-function initialNavigation(documents: Dashboard[], fallback: Dashboard) {
-  try {
-    const link = readDashboardLink()
-    if (!link.navigation) return { document: fallback, link: { dashboardId: fallback.id }, rejected: [] as RejectedLinkPart[], error: "" }
-    const document = documents.find(item => item.id === link.navigation!.dashboardId)
-    if (!document) throw new Error("The linked dashboard is unavailable. Choose a dashboard from the library.")
-    return { document, link: link.navigation, rejected: link.rejected, error: "" }
-  } catch (error) {
-    return { document: fallback, link: { dashboardId: fallback.id }, rejected: [] as RejectedLinkPart[], error: error instanceof Error ? error.message : "Invalid dashboard link" }
-  }
-}
-
-const NO_VARIABLES: NonNullable<Dashboard["variables"]> = []
-// Shown after a save that leaves a dirty chart draft out of the dashboard. Closing the chart editor clears it.
-const UNAPPLIED_CHART_NOTICE = "Saved. Chart changes are still unapplied."
 
 registerDefaultWidgetPlugins()
 
@@ -161,59 +139,6 @@ export interface InsightsAppProps {
   embed?: EmbedRequest | null
 }
 
-// Desktop compact chrome is a view preference, independent of measured canvas
-// width so expanding navigation cannot repeatedly toggle the rail.
-const compactDesktopQuery = "(min-width: 1024px)";
-function subscribeCompactDesktop(listener: () => void) {
-  const media = window.matchMedia(compactDesktopQuery);
-  media.addEventListener("change", listener);
-  return () => media.removeEventListener("change", listener);
-}
-const compactDesktopSnapshot = () => window.matchMedia(compactDesktopQuery).matches;
-const compactDesktopServerSnapshot = () => false;
-function subscribeFinePointer(listener: () => void) {
-  const media = window.matchMedia("(pointer: fine)");
-  media.addEventListener("change", listener);
-  return () => media.removeEventListener("change", listener);
-}
-const finePointerSnapshot = () => window.matchMedia("(pointer: fine)").matches;
-
-type SourceState =
-  | { status: "pending" }
-  | { status: "ready" }
-  | { status: "unavailable"; reason: SourceFailureReason; message: string }
-
-/** Why a shared source list is unavailable; each reason has its own banner copy and action. */
-type SourceFailureReason = "busy" | "signin" | "access" | "failed"
-
-function sourceBannerCopy(sources: Extract<SourceState, { status: "unavailable" }>): string {
-  switch (sources.reason) {
-    case "busy": return "Data sources are busy."
-    case "signin": return "Your session has expired. Sign in again to load data sources."
-    case "access": return "Your account cannot load data sources. Check its Observability permissions."
-    case "failed": return `Data sources did not load: ${sources.message}`
-  }
-}
-
-function sourceFailureReason(error: unknown): SourceFailureReason {
-  const failure = classifySourceFailure(error)
-  if (failure === "busy") return "busy"
-  if (failure === "access") return error instanceof InsightsHTTPError && error.status === 401 ? "signin" : "access"
-  return "failed"
-}
-
-function sharedFailureReason(status: SharedCatalogStatus["status"]): SourceFailureReason {
-  if (status === "busy") return "busy"
-  return status === "forbidden" ? "access" : "failed"
-}
-
-/** The first visible control that opens the builder panel with this name, if one is on screen. */
-function panelOpenerElement(name: string): HTMLElement | null {
-  for (const element of document.querySelectorAll<HTMLElement>(`[data-panel-opener="${CSS.escape(name)}"]`)) {
-    if (element.isConnected && !element.closest("[inert], [hidden]") && !element.matches(":disabled")) return element
-  }
-  return null
-}
 
 export default function InsightsApp({ embed, ...props }: InsightsAppProps) {
   // Embed mode is decided before the workspace mounts, so a frame runs none of the workspace's loads or effects.
