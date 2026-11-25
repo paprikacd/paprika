@@ -295,6 +295,8 @@
   flex-basis: auto;
 }
 .variableSheet .variableBar[data-layout="sheet"] .barField {
+  /* The sheet stacks fields in a column, where the phone bar's 130 px basis would be each field's height. */
+  flex: 0 0 auto;
   max-width: none;
   flex-wrap: wrap;
   gap: 5px 8px;

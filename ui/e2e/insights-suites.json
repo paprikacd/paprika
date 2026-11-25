@@ -1563,6 +1563,18 @@
       ],
       "server": "export",
       "timeoutSeconds": 600
+    },
+    {
+      "file": "e2e/insights-review-rest-responsive.e2e.mjs",
+      "tags": [
+        "full"
+      ],
+      "needs": [
+        "go",
+        "ui"
+      ],
+      "server": "export",
+      "timeoutSeconds": 1800
     }
   ]
 }

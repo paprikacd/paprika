@@ -141,6 +141,12 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
     const max = maxChars(size);
     return value.length > max && max > 1 ? `${value.slice(0, max - 1)}…` : value;
   };
+  // A narrow node frame shortens the node name and keeps its request pressure whole. The node's tooltip has the full name.
+  const nodeLabel = (name: string, suffix: string, size: number) => {
+    const full = `${name}${suffix}`, room = maxChars(size) - suffix.length;
+    const shown = full.length <= maxChars(size) ? full : room >= 3 ? `${name.slice(0, room - 1)}…${suffix}` : clip(full, size);
+    return shown;
+  };
 
   const tile = (leaf: HierarchyRectangularNode<Tile>) => {
     const data = leaf.data, x = leaf.x0, y = leaf.y0, w = leaf.x1 - leaf.x0, h = leaf.y1 - leaf.y0;
@@ -185,7 +191,7 @@ export function KubernetesPlacement({ widget, result, embedded, onActivate, onCo
             return <g key={`node-${node.data.node}`}>
               <rect x={node.x0} y={node.y0} width={node.x1 - node.x0} height={node.y1 - node.y0} style={frameStyle} stroke={toneOf(pressure)} strokeWidth={pressure !== null && pressure >= model.pressureThreshold ? 1.5 : 1} strokeDasharray={notReady ? "4 2" : undefined} rx={2} pointerEvents="none" />
               {w >= 60 && <text x={node.x0 + 4} y={node.y0 + 12} fontSize="11" fill="var(--gamma-ink)" pointerEvents="none">
-                {clip(`${node.data.node}${pressure === null ? "" : ` · ${formatMetricDetails(pressure * 100, "%", decimals)}`}${notReady ? " · not ready" : ""}`, w)}
+                {nodeLabel(node.data.node ?? "", `${pressure === null ? "" : ` · ${formatMetricDetails(pressure * 100, "%", decimals)}`}${notReady ? " · not ready" : ""}`, w)}
               </text>}
             </g>;
           })}

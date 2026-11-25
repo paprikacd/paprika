@@ -107,6 +107,8 @@ export function GammaMultiSelect({
     panelRef,
     onDismiss: finish,
     revision: query,
+    // Wider than a narrow trigger, so typical values fit on their one row.
+    minWidth: 240,
   });
   useLayoutEffect(() => {
     if (open && searchable) searchRef.current?.focus({ preventScroll: true });
@@ -264,7 +266,8 @@ export function GammaMultiSelect({
                   >
                     <span className={styles.optionIdentity}>
                       <span className={styles.optionCopy}>
-                        <span>{text}</span>
+                        {/* One row per value: a long value ends in an ellipsis and keeps its full text as a title. */}
+                        <span className={styles.optionLine} title={text}>{text}</span>
                         {!isAll && option?.description && (
                           <span className={styles.optionDetails}>
                             <small>{option.description}</small>

@@ -334,6 +334,7 @@ export function TimeSeriesChart({
       }),
     [visibleSeries, seriesColors],
   );
+  const outsideBaseline = baselines.filter(entry => entry.runs.length > 0 && !!data[entry.index]);
   const legendRoving = useRovingLegend(data.length);
   const isApplied = useAppliedFilter();
   // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
@@ -742,7 +743,19 @@ export function TimeSeriesChart({
       {baselineOn && baseline?.state === "unavailable" && <span role="status" className={styles.notice}>Baseline unavailable: no earlier period for this range</span>}
       {baselineOn && baseline?.state === "error" && <span role="status" className={styles.notice}>Baseline unavailable: the earlier period did not load</span>}
       {baselineOn && baseline?.partial && <span className={styles.notice}>Partial earlier result</span>}
-      {baselineOn && baselines.map(entry => entry.runs.length && data[entry.index] ? <span key={`runs-${entry.index}`} className={styles.notice} data-baseline-runs={entry.index}>{`Outside the ${baselineLabel} range${data.length > 1 ? ` for ${data[entry.index].name}` : ""} ${baselineRunsText(entry.runs, at => runClock.format(new Date(at)))}`}</span> : null)}
+      {baselineOn && outsideBaseline.length === 1 && <span className={styles.notice} data-baseline-runs={outsideBaseline[0].index}>{`Outside the ${baselineLabel} range${data.length > 1 ? ` for ${data[outsideBaseline[0].index].name}` : ""} ${baselineRunsText(outsideBaseline[0].runs, at => runClock.format(new Date(at)))}`}</span>}
+      {/* Several series outside their band would be a paragraph per series; they fold into one line that opens a list. */}
+      {baselineOn && outsideBaseline.length > 1 && <details className={styles.gapDetails} data-baseline-outside onKeyDown={(event) => {
+        if (event.key !== "Escape" || !event.currentTarget.open) return;
+        event.stopPropagation();
+        event.currentTarget.open = false;
+        event.currentTarget.querySelector("summary")?.focus();
+      }}>
+        <summary>Outside the {baselineLabel} range in {outsideBaseline.length} series</summary>
+        <ul tabIndex={0} aria-label={`Outside the ${baselineLabel} range`} data-gap-list>
+          {outsideBaseline.map(entry => <li key={`runs-${entry.index}`} data-baseline-runs={entry.index}>{`${data[entry.index].name}: ${baselineRunsText(entry.runs, at => runClock.format(new Date(at)))}`}</li>)}
+        </ul>
+      </details>}
       {reservesBreachLine && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 && !legendActivates ? 0 : undefined}>

@@ -25,5 +25,6 @@ describe('lab renderer registration', () => {
     expect(registry.getWidgetDefinition('plugin', 'threshold-gauge')?.render).toBe(ThresholdGauge);
     expect(registry.getWidgetDefinition('plugin', 'record-table')).toBeDefined();
     expect(registry.getWidgetPlugins().filter(plugin => plugin.id === 'connection-map')).toHaveLength(1);
-  });
+    // A fresh module graph transforms the production registry and every plugin it registers, which takes several seconds cold.
+  }, 60_000);
 });

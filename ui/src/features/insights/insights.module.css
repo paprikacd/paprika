@@ -1096,6 +1096,8 @@
   color: var(--gamma-ink);
   margin: 20px 0 8px;
 }
+/* The three first-widget actions wrap and centre on a phone instead of running off the page. */
+.emptyCanvas .actions { max-width: 100%; justify-content: center; }
 .emptyCanvas p {
   color: var(--gamma-muted);
   font-size: 12px;
@@ -1597,6 +1599,8 @@
   flex-shrink: 0;
   flex-wrap: nowrap;
 }
+/* The header's actions stay on one row; the empty canvas's three actions wrap. */
+.root[data-phone-shell] .emptyCanvas .actions { flex-wrap: wrap; }
 
 /* Phone shell: one control row under the header (variables chip, time range, refresh) instead of the toolbar. */
 .root[data-phone-shell] .toolbar {
