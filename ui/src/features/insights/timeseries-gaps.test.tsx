@@ -127,8 +127,8 @@ describe("time-series gaps", () => {
     act(() => chart.blur());
     fireEvent.click(screen.getByRole("button", { name: "Inspect chart data for Requests" }));
     const dialog = screen.getByRole("dialog", { name: "Requests data" });
-    expect(within(dialog).getByText(new Date(7000).toISOString())).toBeInTheDocument();
-    expect(within(dialog).queryByText(new Date(5000).toISOString())).toBeNull();
+    expect(dialog.querySelector(`time[datetime="${new Date(7000).toISOString()}"]`)).toBeInTheDocument();
+    expect(dialog.querySelector(`time[datetime="${new Date(5000).toISOString()}"]`)).toBeNull();
   });
 
   it("keeps the broken line but draws no bands inside embedded widgets", () => {
@@ -227,7 +227,7 @@ describe("time-series gaps", () => {
     const others = Array.from({ length: 11 }, (_, index) => line(`steady-${index}`, [[1, 1]]));
     const covering = line("cover", Array.from({ length: 8 }, (_, index) => [index + 1, 1] as [number, number]));
     const { container } = render(<WidgetVisualization widget={widget} result={plot(line("api", [[1, 5], [2, 6], [3, 7], [7, 8], [8, 9]]), ...others, covering)} />);
-    expect(screen.getByText(/First 12 of 13 series/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing 12 of 13 series/)).toBeInTheDocument();
     expect(container.querySelectorAll("[data-no-sample-band]")).toHaveLength(0);
   });
 

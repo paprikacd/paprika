@@ -315,5 +315,67 @@
       "minStepSeconds": 0,
       "step": 120
     }
+  ],
+  "alignCases": [
+    {
+      "name": "15m preset, grain 2 s",
+      "rangeSeconds": 900,
+      "nowSeconds": 1700000007,
+      "end": 1700000006
+    },
+    {
+      "name": "30m preset, grain 5 s",
+      "rangeSeconds": 1800,
+      "nowSeconds": 1700000007,
+      "end": 1700000005
+    },
+    {
+      "name": "1h preset, grain 10 s",
+      "rangeSeconds": 3600,
+      "nowSeconds": 1700000007,
+      "end": 1700000000
+    },
+    {
+      "name": "6h preset, grain capped at 15 s",
+      "rangeSeconds": 21600,
+      "nowSeconds": 1700000007,
+      "end": 1699999995
+    },
+    {
+      "name": "24h preset, grain capped at 15 s",
+      "rangeSeconds": 86400,
+      "nowSeconds": 1700000007,
+      "end": 1699999995
+    },
+    {
+      "name": "7d preset, grain capped at 15 s",
+      "rangeSeconds": 604800,
+      "nowSeconds": 1700000007,
+      "end": 1699999995
+    },
+    {
+      "name": "30d preset, grain capped at 15 s",
+      "rangeSeconds": 2592000,
+      "nowSeconds": 1700000007,
+      "end": 1699999995
+    },
+    {
+      "name": "15m preset on a grain boundary",
+      "rangeSeconds": 900,
+      "nowSeconds": 1700000008,
+      "end": 1700000008
+    },
+    {
+      "name": "6h preset on a grain boundary",
+      "rangeSeconds": 21600,
+      "nowSeconds": 1700000010,
+      "end": 1700000010
+    },
+    {
+      "name": "1h preset on a grain boundary",
+      "rangeSeconds": 3600,
+      "nowSeconds": 1700000010,
+      "end": 1700000010
+    }
   ]
 }

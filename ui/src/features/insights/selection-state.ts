@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { Dashboard, DrilldownBinding } from "./schema";
 import { resolveDrilldown, type DrilldownContext, type VariableValues } from "./drilldown";
+import { sameVariableValue } from "./variable-values";
 
 /** Whether a mark's context is the selection the dashboard already shows. */
 export type AppliedFilter = (context: DrilldownContext) => boolean;
@@ -38,7 +39,11 @@ export function selectionApplied(
       // resolveDrilldown reads only the target's id and variables.
       scope.dashboard as Dashboard,
     ).variables ?? {};
-    return bindings.every(({ variable }) => selected[variable] !== undefined && scope.variables[variable] === selected[variable]);
+    // A multi-value variable's selection is a one-item list, so applied means the current list is exactly that list.
+    return bindings.every(({ variable }) => {
+      const current = scope.variables[variable];
+      return selected[variable] !== undefined && current !== undefined && sameVariableValue(current, selected[variable]);
+    });
   } catch {
     return false;
   }

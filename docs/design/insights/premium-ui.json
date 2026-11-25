@@ -7,10 +7,10 @@
   "ownership": {"Select/Listbox": "authored", "Date": "native"},
   "requiredCommands": ["unit", "e2e", "typecheck", "build"],
   "commands": {
-    "unit": "rtk proxy npm --prefix ui test",
-    "e2e": "rtk proxy env INSIGHTS_E2E_URL=http://127.0.0.1:3015 node ui/e2e/run-insights.mjs",
-    "typecheck": "rtk proxy npm --prefix ui exec -- tsc --project ui/tsconfig.json --noEmit --pretty false",
-    "build": "rtk proxy npm --prefix ui run build"
+    "unit": "npm --prefix ui test",
+    "e2e": "env INSIGHTS_E2E_URL=http://127.0.0.1:3015 node ui/e2e/run-insights.mjs",
+    "typecheck": "npm --prefix ui exec -- tsc --project ui/tsconfig.json --noEmit --pretty false",
+    "build": "npm --prefix ui run build"
   },
   "evidence": {
     "crudFullFlow": "ui/e2e/insights.e2e.mjs",

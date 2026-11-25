@@ -3,6 +3,7 @@ package insights
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -25,6 +26,8 @@ import (
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/capacityhint"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 type Config struct {
@@ -37,6 +40,10 @@ type Config struct {
 	// to browsers. InsecureDev is exclusively for a loopback development server.
 	Token       string `json:"-"`
 	InsecureDev bool   `json:"-"`
+	// ResultCacheMiB is the byte budget of the shared result cache. Zero disables it;
+	// the largest accepted budget is MaxResultCacheMiB. It is int32 so Config stays under
+	// the size gocritic reports, and it sits after the bool to share its word.
+	ResultCacheMiB int32 `json:"resultCacheMiB,omitempty"`
 }
 
 type Server struct {
@@ -101,6 +108,16 @@ type Server struct {
 	// uploadRefusals counts saves and dry runs refused because the body budget was
 	// full, by route.
 	uploadRefusals metric.Int64Counter
+	// capacityRejections counts query requests refused for capacity, by pool:
+	// "query" is this service's execution pool, "gateway" is an observability
+	// gateway 429, labelled with the limit scope it named, and "provider" is a
+	// direct provider's own 429.
+	capacityRejections metric.Int64Counter
+	// bootTag is random for each process, so a collection tag from before a restart never matches a list served after it.
+	bootTag string
+	// results is the shared result cache, nil when it is disabled. resultMetrics records its evictions and size.
+	results       *resultCache
+	resultMetrics *otelResultCacheMetrics
 }
 
 // defaultQueryBudget bounds one /api/query end to end.
@@ -137,9 +154,11 @@ func NewServer(config Config, store *Store) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{capacity: capacity, store: store, providers: registry, savedQueries: savedQueries, observe: observe, tokenHash: sha256.Sum256([]byte(config.Token)), insecureDev: config.InsecureDev, queries: make(chan struct{}, capacity.QueryConcurrency), queryWaiting: make(chan struct{}, capacity.QueryQueue), queryWaitTimeout: capacity.QueryWait, dashboardParallelism: capacity.DashboardQueryParallelism, dashboardExtra: newDashboardSlotPool(capacity.DashboardQueryParallelism - 1), catalogPhases: make(chan struct{}, capacity.CatalogConcurrency), catalogWaiting: make(chan struct{}, capacity.CatalogQueue), catalogWaitTimeout: capacity.CatalogWait, queryBudget: defaultQueryBudget, checkSlots: make(chan struct{}, maxActiveDashboardChecks), dryRunSlots: make(chan struct{}, maxActiveDryRunQueries), documentBytes: newByteBudget(documentBodyBudget), documentWaiting: make(chan struct{}, 16), documentWaitTimeout: 2 * time.Second}
+	s.bootTag = rand.Text()
 	if err := s.createInstruments(); err != nil {
 		return nil, err
 	}
+	s.results = newResultCache(int(config.ResultCacheMiB)<<20, s.resultMetrics, time.Now)
 	// Only a startup that has succeeded may move documents out of the stores, so the instruments come first.
 	if err := commitStartupQuarantine(store, savedQueries); err != nil {
 		return nil, err
@@ -157,13 +176,23 @@ func (s *Server) createInstruments() error {
 	if err != nil {
 		return fmt.Errorf("create query counter: %w", err)
 	}
-	s.queryDuration, err = meter.Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"))
+	// The bounds are seconds. Without them OTel's millisecond defaults put every query under 5 s in one bucket.
+	s.queryDuration, err = meter.Float64Histogram("paprika_insights_query_duration_seconds", metric.WithUnit("s"), metric.WithDescription("Provider query duration"),
+		metric.WithExplicitBucketBoundaries(metrics.SecondsBuckets()...))
 	if err != nil {
 		return fmt.Errorf("create query duration histogram: %w", err)
+	}
+	s.capacityRejections, err = meter.Int64Counter("paprika_insights_query_capacity_rejections", metric.WithDescription("Query requests refused for capacity, by pool (query, gateway or provider) and, for the gateway, the limit scope it named (edge, budget, provider, queue, principal, or unknown)"))
+	if err != nil {
+		return fmt.Errorf("create capacity rejection counter: %w", err)
 	}
 	s.uploadRefusals, err = newUploadRefusalCounter(meter)
 	if err != nil {
 		return err
+	}
+	s.resultMetrics, err = newResultCacheMetrics(meter)
+	if err != nil {
+		return fmt.Errorf("create result cache metrics: %w", err)
 	}
 	return registerRevisionFailureCounter(meter, s.store)
 }
@@ -180,6 +209,14 @@ func commitStartupQuarantine(store *Store, savedQueries *savedQueryStore) error 
 	}
 	logQuarantineSummary(store.dir, dashboardsQuarantined, savedQueriesQuarantined)
 	return nil
+}
+
+// MetricsHandler serves only GET /metrics, for a listener that a scraper may reach
+// without reaching the service API. Every other path is 404.
+func (s *Server) MetricsHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))
+	return mux
 }
 
 func (s *Server) Handler() http.Handler {
@@ -205,10 +242,12 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/starters", s.listStarters)
 	api.HandleFunc("GET /api/starters/{id}", s.getStarter)
 	api.HandleFunc("GET /api/dashboards", s.listDashboards)
+	api.HandleFunc("GET /api/application-dashboards", s.listApplicationDashboards)
 	api.HandleFunc("GET /api/dashboards/{id}", s.getDashboard)
 	api.HandleFunc("POST /api/dashboards/validate", s.checkDashboard)
 	api.HandleFunc("PUT /api/dashboards/{id}", s.putDashboard)
 	api.HandleFunc("DELETE /api/dashboards/{id}", s.deleteDashboard)
+	api.HandleFunc("POST /api/dashboards/{id}/variable-options", s.dashboardVariableOptions)
 	api.HandleFunc("GET /api/dashboards/{id}/revisions", s.listDashboardRevisions)
 	api.HandleFunc("GET /api/dashboards/{id}/revisions/{revision}", s.getDashboardRevision)
 	api.HandleFunc("POST /api/dashboards/{id}/revisions/{revision}/restore", s.restoreDashboardRevision)
@@ -255,26 +294,26 @@ func (s *Server) query(w http.ResponseWriter, r *http.Request) {
 	receipt := newQueryReceipt(&q, wantsQueryReceipt(r))
 	ctx = withQueryReceipt(ctx, receipt)
 	r = r.WithContext(ctx)
+	adm := &admission{s: s}
 	var (
-		p       *providerClient
-		release func()
-		ok      bool
+		p  *providerClient
+		ok bool
 	)
 	if s.observe != nil && strings.HasPrefix(q.ProviderID, observeProviderPrefix) {
-		p, release, ok = s.admitAndResolveShared(w, r, &q)
+		// The catalog listing runs under a slot that stays held until the cache decides whether this request executes.
+		p, adm.held, ok = s.admitAndResolveShared(w, r, &q)
 	} else {
-		// Local providers come from the registry, so they resolve before admission:
-		// they never wait on the shared catalog, and an unknown id is a 404 even
-		// while Insights is saturated.
-		if p, ok = s.resolveLocalQuery(w, r, &q); ok {
-			release, ok = s.admitQueryRequest(w, r)
-		}
+		// Local providers come from the registry, so they resolve before any execution slot is taken:
+		// they never wait on the shared catalog, and an unknown id is a 404 even while Insights is saturated.
+		p, ok = s.resolveLocalQuery(w, r, &q)
 	}
 	if !ok {
 		return
 	}
-	defer release()
-	result, err := s.executeProviderQuery(ctx, p, &q)
+	defer adm.share()
+	result, err := s.throughResultCache(ctx, p, &q, wantsResultRefresh(r), adm, func(ctx context.Context) (QueryResult, error) {
+		return s.executeProviderQuery(ctx, p, &q)
+	})
 	if err != nil {
 		writeQueryFailure(w, err, receipt.response())
 		return
@@ -449,7 +488,7 @@ func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	case s.queryWaiting <- struct{}{}:
 		defer func() { <-s.queryWaiting }()
 	default:
-		return nil, s.queryCapacityRefusal()
+		return nil, s.queryCapacityRefusal(ctx)
 	}
 	timer := time.NewTimer(s.queryWaitTimeout)
 	defer timer.Stop()
@@ -459,7 +498,7 @@ func (s *Server) acquireQuery(ctx context.Context) (func(), error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("query admission context: %w", ctx.Err())
 	case <-timer.C:
-		return nil, s.queryCapacityRefusal()
+		return nil, s.queryCapacityRefusal(ctx)
 	}
 }
 
@@ -477,9 +516,31 @@ func (s *Server) acquiredQuery(ctx context.Context) (func(), error) {
 	}, nil
 }
 
+// countProviderRefusal counts a provider query refused for capacity downstream of
+// Insights. A gateway 429 is pool "gateway" with the scope it named (unknown when
+// none); a direct provider's own 429 is pool "provider". Every label value comes
+// from a closed set, never from the caller or the provider.
+func (s *Server) countProviderRefusal(ctx context.Context, err error) {
+	failure := classifyQueryFailure(err)
+	if failure.Code != "rate_limited" {
+		return
+	}
+	var remote *observeError
+	if !errors.As(err, &remote) {
+		s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "provider")))
+		return
+	}
+	scope := failure.LimitScope
+	if scope == "" {
+		scope = "unknown"
+	}
+	s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "gateway"), attribute.String("scope", scope)))
+}
+
 // queryCapacityRefusal is the refusal for a query that could not get an execution
 // slot. Its Retry-After is the wait the query pool's observed hold time implies.
-func (s *Server) queryCapacityRefusal() error {
+func (s *Server) queryCapacityRefusal(ctx context.Context) error {
+	s.capacityRejections.Add(ctx, 1, metric.WithAttributes(attribute.String("pool", "query")))
 	return &capacityRefusal{err: errQueryCapacity, retryAfter: s.queryHold.Seconds(len(s.queryWaiting), cap(s.queries))}
 }
 
@@ -498,25 +559,20 @@ func (e *capacityRefusal) Error() string { return e.err.Error() }
 
 func (e *capacityRefusal) Unwrap() error { return e.err }
 
-// runProviderQuery admits, then executes an already resolved provider. Callers
-// that resolve providers first (dashboards) keep their existing ordering. The
-// boolean records admission (see below), not provider I/O.
+// runProviderQuery answers an already resolved provider's query through the result cache,
+// and executes under an execution slot when it must run. Callers that resolve providers
+// first (dashboards) keep their existing ordering. The boolean records whether this request
+// took an execution slot for its own execution: a cache hit or a join takes none, and neither
+// does an admission refusal.
 func (s *Server) runProviderQuery(ctx context.Context, p *providerClient, q *Query) (QueryResult, bool, error) {
 	receipt := newQueryReceipt(q, false)
 	receipt.bind(p)
 	ctx = withQueryReceipt(ctx, receipt)
-	release, err := s.acquireQuery(ctx)
-	receipt.mark("admission")
-	if err != nil {
-		receipt.fail(err)
-		return QueryResult{Diagnostics: receipt.diagnostics()}, false, err
-	}
-	defer release()
-	result, err := s.executeProviderQuery(ctx, p, q)
-	// The boolean is admission, as on master: queryCount.executed keeps counting
-	// admitted queries, including those that fail before dispatch. The receipt's
-	// dispatched flag records whether provider I/O actually began.
-	return result, true, err
+	adm := &admission{s: s}
+	result, err := s.throughResultCache(ctx, p, q, false, adm, func(ctx context.Context) (QueryResult, error) {
+		return s.executeProviderQuery(ctx, p, q)
+	})
+	return result, adm.admitted, err
 }
 
 // executeProviderQuery runs the query under an admission slot the caller holds.
@@ -539,6 +595,9 @@ func (s *Server) executeProviderQuery(ctx context.Context, p *providerClient, q 
 	attributes := metric.WithAttributes(attribute.String("provider", q.ProviderID), attribute.String("kind", q.Kind), attribute.String("outcome", outcome))
 	s.queryCount.Add(ctx, 1, attributes)
 	s.queryDuration.Record(ctx, time.Since(started).Seconds(), attributes)
+	if err != nil {
+		s.countProviderRefusal(ctx, err)
+	}
 	return result, err
 }
 
@@ -726,9 +785,9 @@ const maxCheckRequestBytes = maxDocumentBytes + checkwire.DryRunEnvelopeBytes
 // once each, read-only, with the dashboard's default time range, and reports what
 // they returned. Variables apply only with execute.
 type checkRequest struct {
-	Document  json.RawMessage   `json:"document"`
-	Execute   bool              `json:"execute"`
-	Variables map[string]string `json:"variables"`
+	Document  json.RawMessage                `json:"document"`
+	Execute   bool                           `json:"execute"`
+	Variables map[string]variablevalue.Value `json:"variables"`
 }
 
 // checkDashboard is the dry run: it reports what a save would reject and never
@@ -926,6 +985,9 @@ func validateServerConfig(config *Config, store *Store) error {
 	}
 	if !config.InsecureDev && len(config.Token) < 32 {
 		return errors.New("PAPRIKA_INSIGHTS_TOKEN must contain at least 32 characters")
+	}
+	if config.ResultCacheMiB < 0 || int(config.ResultCacheMiB) > MaxResultCacheMiB {
+		return fmt.Errorf("result cache budget must be between 0 and %d MiB", MaxResultCacheMiB)
 	}
 	if len(config.Providers) > 32 {
 		return errors.New("at most 32 providers may be configured")

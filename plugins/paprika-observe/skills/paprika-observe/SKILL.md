@@ -51,7 +51,7 @@ IDs here are placeholders; run the steps in order.
    the authored objective, not service health. Do not write a `queryRef` or `options.thresholds`; both are lint errors or warnings.
 
 3. **Reuse saved queries.** Check `list_saved_queries` and `get_saved_query` before inventing
-   PromQL or SQL. Create new ones with `create_saved_query` before `create_dashboard`
+   PromQL or SQL. Pass `q` to `list_saved_queries` to find a query by metric, service or tag. Create new ones with `create_saved_query` before `create_dashboard`
    references them. Paprika's `paprika_*` metrics are listed in [paprika-signals.md](https://github.com/paprikacd/paprika/blob/master/.agents/skills/paprika-dashboard-design/references/paprika-signals.md).
 
 4. **Compose.** Follow the composition rules in the server instructions and
@@ -63,13 +63,14 @@ IDs here are placeholders; run the steps in order.
    `queryRef.bindings` with `"source":"variable"`. Always ship a default: an unset variable fails
    any query that uses it. Example: `"variables":[{"name":"service","label":"Service","defaultValue":"checkout","options":["checkout","api"]}]`,
    with the query `sum(rate(http_requests_total{service={{service}}}[5m]))`. Omit `options` only for a free-text value.
+   For several values, declare `"multi":true`, and pass a list: `"variables":{"cluster":["omega","delta"]}`; `[]` is All. Use the list after `=~` (`up{cluster=~{{cluster}}}`), not after `=`, which refuses it.
    For a service, cluster or other list that lives in the data, prefer a `source` over a typed list:
    `{"type":"labelValues","providerId","label","selector?","limit?"}` reads one label's values from a
-   Prometheus or Tempo provider, and `{"type":"savedQuery","queryRef","field"}` reads a records column or a
-   series label. The console resolves the source and shows its values; `options` then is only the fallback
-   shown when the source fails. `query_dashboard` does not resolve sources yet, so when you query with a
-   sourced variable, pass an explicit `variables` value. `variableDefinitions` reports the source as
-   `sourceSummary` and the static list as `fallbackOptions`, and an empty override is named in `warnings`.
+   Prometheus or Tempo provider, and `{"type":"savedQuery","queryRef","field","limit?"}` reads a records column or a
+   series label. The console resolves the source and shows its values, and `query_dashboard` resolves it too:
+   a sourced variable's `sourceOptions` lists the values its source returned for the call, with `state` and
+   `currentValue`. `options` is only the fallback shown when the source fails. An override outside the
+   returned values still applies and is named in `warnings`, and an empty override is named there too.
    Do not work around a source by binding a constant where a variable would do.
 
 5. **Validate.** `validate_dashboard` takes `document` or `id` and returns schema and lint
@@ -100,7 +101,7 @@ IDs here are placeholders; run the steps in order.
    when the whole source must be ranked.
    Optional: `variables`, `widget_ids`, `start` and `end` (at most 31 days), `history_points`,
    `max_series`, `max_traces`. `variableDefinitions` gives each variable's label, default and
-   options (a sourced variable's are `fallbackOptions`), so read them there rather than calling `get_dashboard`; `optionsOmitted` counts options
+   options (a sourced variable's values are in `sourceOptions`, and its `fallbackOptions` are only its fallback), so read them there rather than calling `get_dashboard`; `optionsOmitted` counts options
    past a 4 KiB per-result budget; `get_dashboard` returns the full list. An override outside the options still applies and is named in
    `warnings`, so check it before you report the signals. Treat `structuredContent` as authoritative; the text is a
    synopsis. `attention` counts widgets with an author-declared warning or critical band, a
@@ -188,6 +189,15 @@ Never interpolate values into SQL. PostgreSQL providers require verify-full TLS 
 Provider creation is outside this skill.
 
 `Forbidden` means the backend refused the supplied credentials, a permissions answer, not a connectivity one. Empty successful results, unavailable providers and sanitized errors do not prove health.
+
+## Latency tail: heatmap brush → traces
+
+To find which traces make up a slow tail on a distribution heatmap:
+
+1. Group the histogram by a label, for example `sum by (le, route)`, so the heatmap can compare groups. A single `sum by (le)` has nothing to compare.
+2. Set `config.traces` to the trace provider and, optionally, a TraceQL `filter` such as `resource.service.name = "checkout"`.
+3. In the UI, drag across the slow cells. The region panel shows its share of the window, the label comparison, and "Traces in this range", which opens Explorer on that duration window. The panel never sets the dashboard range unless you choose "Use this time range for all charts".
+4. Agents can reproduce the search with `query_traces` over the same window, using `{ <filter> && duration >= Lms && duration < Ums }`, where the bounds are the region's bucket edges. Only second and millisecond bucket units convert; other units have no trace search.
 
 ## Rate limits and capacity
 

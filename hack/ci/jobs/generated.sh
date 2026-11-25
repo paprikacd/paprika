@@ -41,6 +41,9 @@ rm -rf -- internal/api/paprika ui/src/gen
 # ci.yml: Regenerate protobuf clients
 make generate-proto
 
+# ci.yml: Regenerate Insights contract artifacts (the schemas, the plugin bundle and contract-reference.md)
+(cd ui && npm run schema:generate)
+
 # ci.yml: Check generated code
 git diff --exit-code
 git status --porcelain --untracked-files=all

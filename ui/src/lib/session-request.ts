@@ -6,6 +6,9 @@ export function redirectToLogin() {
   // The initiating tab must finish clearing the HttpOnly cookie before a hard
   // navigation can cancel its logout request or its wait for the refresh lock.
   if (getSessionSnapshot().logoutPending) return
+  // A framed page (an Insights widget on an application page) leaves sign-in to the page that frames it, which shares
+  // the session. Navigating the frame would show the login page inside the tile and resume to the bare widget.
+  if (window.self !== window.top) return
   const destination = safeAuthReturnTo(window.location.pathname + window.location.search + window.location.hash)
   writeAuthReturnTo(destination)
   if (window.location.pathname !== "/login/") window.location.href = "/login/"

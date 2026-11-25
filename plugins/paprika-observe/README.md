@@ -121,7 +121,8 @@ Discover `list_insights_providers` for the actual provider IDs used by the UI.
 Use `get_insights_schema` with `kind: dashboard`, `widget`, or `saved_query`
 for the deployed schema, examples and semantic constraints.
 Read existing documents with `list_saved_queries`, `get_saved_query`,
-`list_dashboards`, and `get_dashboard`. Create saved queries before dashboards
+`list_dashboards`, and `get_dashboard`. `list_saved_queries` takes `q` to find a
+query by its words (all must match). Create saved queries before dashboards
 that reference them, using `create_saved_query` and `create_dashboard`.
 Targeted edits use `patch_saved_query` and `patch_dashboard`: nested objects
 merge, `null` removes a field, and arrays replace. Dashboard `widget_edits`

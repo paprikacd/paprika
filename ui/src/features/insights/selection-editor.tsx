@@ -1,14 +1,20 @@
 "use client"
 
-import { useId } from "react"
+import { lazy, Suspense, useId, useState } from "react"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
 import { useSavedQueryLibrary } from "./saved-query-context"
-import type { DrilldownBinding, Widget } from "./schema"
+import type { DashboardVariable, DrilldownBinding, Widget } from "./schema"
 import styles from "./drilldown.module.css"
 import { supportsDashboardSelection } from "./selection-support"
 import type { QueryFields } from "./query-connections"
+
+// Loaded on demand: the declaration form stays out of the first view.
+const VariableQuickCreate = lazy(() => import("./variable-quick-create"))
+
+/** The option that opens the declaration form instead of choosing a variable. */
+const NEW_VARIABLE = "+new-variable"
 
 /** Explicitly map a selected record/series to this dashboard's runtime filters. */
 
@@ -23,7 +29,9 @@ function selectionHelp(type: Widget["type"]) {
 
 export function SelectionEditor({ widget, onChange, queryFields }: { widget: Widget; onChange: (next: Widget) => void; queryFields?: QueryFields }) {
   const listId = useId()
-  const { variables } = useSavedQueryLibrary()
+  const { variables, onDeclareVariable } = useSavedQueryLibrary()
+  // The binding being declared for (its index), or "new" for a binding to add.
+  const [declaring, setDeclaring] = useState<number | "new">()
   const bindings = widget.selectionBindings ?? []
   const recordColumns = queryFields?.recordColumns
   const fieldNames = recordColumns ? recordColumns.map(column => column.name) : queryFields?.labels.map(label => label.name) ?? []
@@ -34,6 +42,13 @@ export function SelectionEditor({ widget, onChange, queryFields }: { widget: Wid
     else delete copy.selectionBindings
     onChange(copy)
   }
+  // A declared variable is bound to its own name, from the field or label of the same name.
+  const declare = (target: number | "new", variable: DashboardVariable) => {
+    onDeclareVariable?.(variable)
+    const binding: DrilldownBinding = { variable: variable.name, source: "label", value: variable.name }
+    update(target === "new" ? [...bindings, binding] : bindings.map((item, index) => index === target ? binding : item))
+    setDeclaring(undefined)
+  }
   if (!supportsDashboardSelection(widget)) {
     if (!bindings.length) return null
     return <section className={styles.card} aria-label="Dashboard selection filters">
@@ -43,6 +58,7 @@ export function SelectionEditor({ widget, onChange, queryFields }: { widget: Wid
     </section>
   }
   const available = variables.filter(v => !bindings.some(b => b.variable === v.name))
+  const canDeclare = !!onDeclareVariable
   return <section className={styles.card} aria-label="Dashboard selection filters">
     <strong>Filter this dashboard on selection</strong>
     <p className={styles.help}>{selectionHelp(widget.type)} Saved defaults remain unchanged.</p>
@@ -55,7 +71,13 @@ export function SelectionEditor({ widget, onChange, queryFields }: { widget: Wid
       return <fieldset className={styles.binding} key={index}>
       <legend>Selection binding {index + 1}</legend>
       <div className={styles.field}><span>Dashboard variable</span>
-        <GammaSelect aria-label={`Selection ${index + 1} variable`} value={binding.variable} options={variables.map(v => ({ value: v.name, label: v.label || v.name, disabled: bindings.some((b, i) => i !== index && b.variable === v.name) }))} onValueChange={variable => update(bindings.map((b, i) => i === index ? { ...b, variable } : b))} />
+        <GammaSelect aria-label={`Selection ${index + 1} variable`} value={binding.variable} options={[
+          ...variables.map(v => ({ value: v.name, label: v.label || v.name, disabled: bindings.some((b, i) => i !== index && b.variable === v.name) })),
+          ...(canDeclare ? [{ value: NEW_VARIABLE, label: "New variable…" }] : []),
+        ]} onValueChange={variable => {
+          if (variable === NEW_VARIABLE) return setDeclaring(index)
+          update(bindings.map((b, i) => i === index ? { ...b, variable } : b))
+        }} />
       </div>
       <div className={styles.field}><span>Value source</span>
         <GammaSelect aria-label={`Selection ${index + 1} source`} value={binding.source} options={[{value:"label",label:"Record field / label"},{value:"series",label:"Series name"},{value:"value",label:"Numeric value"},{value:"constant",label:"Constant"}]} onValueChange={source => update(bindings.map((b, i) => i !== index ? b : source === "label" ? { variable: b.variable, source, value: b.variable } : source === "constant" ? { variable: b.variable, source, value: "" } : { variable: b.variable, source: source as "series" | "value" }))} />
@@ -65,9 +87,17 @@ export function SelectionEditor({ widget, onChange, queryFields }: { widget: Wid
         {someSeries && <span id={feedbackId} className={styles.help}>{someSeries}</span>}
       </label>}
       <GammaButton size="sm" variant="quiet" onClick={() => update(bindings.filter((_, i) => i !== index))}>Remove selection binding</GammaButton>
+      {declaring === index && <Suspense fallback={null}>
+        <VariableQuickCreate existing={variables.map(v => v.name)} onCreate={(variable) => declare(index, variable)} onCancel={() => setDeclaring(undefined)} />
+      </Suspense>}
     </fieldset>})}
     {hasFieldSnapshot && <><datalist id={`${listId}-fields`}>{fieldNames.map(name => <option key={name} value={name}>{recordColumns?.find(column => column.name === name)?.type}</option>)}</datalist><p className={styles.help}>Available result {recordColumns ? "fields" : "labels"}: {fieldNames.length ? fieldNames.slice(0, 6).join(", ") : "none"}{fieldNames.length > 6 ? ` · ${fieldNames.length - 6} more in suggestions` : ""}{queryFields?.partial ? " · limited result" : ""}. Availability depends on the selected observation.</p></>}
-    <GammaButton size="sm" variant="quiet" disabled={!available.length} onClick={() => available[0] && update([...bindings, { variable: available[0].name, source: "label", value: available[0].name }])}>Add selection binding</GammaButton>
-    {!variables.length && <p className={styles.help}>Add a dashboard variable to connect a selection.</p>}
+    {!variables.length && canDeclare
+      ? <GammaButton size="sm" variant="quiet" onClick={() => setDeclaring("new")}>New variable…</GammaButton>
+      : <GammaButton size="sm" variant="quiet" disabled={!available.length} onClick={() => available[0] && update([...bindings, { variable: available[0].name, source: "label", value: available[0].name }])}>Add selection binding</GammaButton>}
+    {declaring === "new" && <Suspense fallback={null}>
+      <VariableQuickCreate existing={variables.map(v => v.name)} onCreate={(variable) => declare("new", variable)} onCancel={() => setDeclaring(undefined)} />
+    </Suspense>}
+    {!variables.length && <p className={styles.help}>{canDeclare ? "Declare a variable to connect a selection." : "Add a variable in Manage dashboards to connect a selection."}</p>}
   </section>
 }

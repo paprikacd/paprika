@@ -1,0 +1,32 @@
+{{- /* With prometheus.enable, Insights serves /metrics on a metrics-only listener (port
+  "metrics", 8080) that is not the metrics bind address, so this monitor is gated on
+  Insights and Prometheus alone. */}}
+{{- if and .Values.insights.enabled .Values.prometheus.enable }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: insights
+  name: {{ include "paprika.resourceName" (dict "suffix" "insights-metrics-monitor" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpoints:
+  - {{- with .Values.metrics.serviceMonitor.interval }}
+    interval: {{ . }}
+    {{- end }}
+    {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
+    scrapeTimeout: {{ . }}
+    {{- end }}
+    path: /metrics
+    port: metrics
+    scheme: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: insights
+{{- end }}

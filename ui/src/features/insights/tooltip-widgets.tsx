@@ -1,5 +1,6 @@
 "use client";
 
+import { NO_DATA } from "./benign-states";
 import {
   Component,
   createContext,
@@ -38,6 +39,7 @@ import {
 import { validTimestamp } from "./widget-context";
 import { SERIES_ROLES, seriesSlot } from "./series-palette";
 import styles from "./tooltip-widgets.module.css";
+import { seriesShown } from "./benign-states";
 
 export const MAX_TOOLTIP_POINTS = 240;
 export const MAX_TOOLTIP_SERIES = 12;
@@ -206,7 +208,7 @@ const builtins: readonly TooltipRendererDefinition[] = Object.freeze(
     { id: "stat", label: "Single value", render: EmbeddedRenderer },
     { id: "table", label: "Metrics table", render: EmbeddedRenderer },
     { id: "traces", label: "Trace explorer", render: EmbeddedRenderer },
-    { id: "heatmap", label: "Status heatmap", render: EmbeddedRenderer },
+    { id: "heatmap", label: "Status grid", render: EmbeddedRenderer },
     { id: "plugin", label: "Installed plugin", render: EmbeddedRenderer },
   ].map((definition) => Object.freeze(definition)),
 );
@@ -398,8 +400,8 @@ export const TooltipSubWidget = memo(function TooltipSubWidget({
             )}
           {context.totalSeries > MAX_TOOLTIP_SERIES && (
             <p className={styles.note} role="status">
-              Showing {MAX_TOOLTIP_SERIES} of {context.totalSeries} series in
-              this tooltip. Narrow the query to see others.
+              {seriesShown(MAX_TOOLTIP_SERIES, context.totalSeries)} in this
+              tooltip. Narrow the query to see others.
             </p>
           )}
           {context.totalTraces > MAX_TOOLTIP_TRACES && (
@@ -427,7 +429,7 @@ function EmbeddedRenderer({ context }: TooltipRendererProps) {
             .map(([key, value]) => `${key}: ${value}`)
             .join(", ");
           const latest = last
-            ? `${last.value === null ? "No data" : formatMetricDetails(last.value, context.unit, view.decimals)} at ${new Date(last.timestamp).toISOString()}`
+            ? `${last.value === null ? NO_DATA : formatMetricDetails(last.value, context.unit, view.decimals)} at ${new Date(last.timestamp).toISOString()}`
             : "No observations";
           const valid =
             view.type === "bar" && latestValid

@@ -1,0 +1,18 @@
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: paprika
+              app.kubernetes.io/component: api-server
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: paprika
+              app.kubernetes.io/component: observability-gateway
+      ports:
+        - { protocol: TCP, port: 8090 }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: paprika-system
+      ports:
+        - { protocol: TCP, port: 8080 }

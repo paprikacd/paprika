@@ -16,6 +16,17 @@ var dashboardSchema []byte
 //go:embed saved-query.schema.json
 var savedQuerySchema []byte
 
+// pluginConfigSchemaBundle holds one configuration schema per built-in plugin id, under $defs.
+//
+//go:embed widget-plugin-configs.schema.json
+var pluginConfigSchemaBundle []byte
+
+// PluginConfigSchemas returns the published built-in plugin configuration bundle. Each plugin's schema is at
+// $defs/<plugin id>, and every bundled plugin declares its data kind in x-dataKind. The caller gets its own copy.
+func PluginConfigSchemas() json.RawMessage {
+	return append(json.RawMessage(nil), pluginConfigSchemaBundle...)
+}
+
 // widgetPluginList is the committed list of plugin ids the UI registers by
 // default. The UI test widget-plugin-list.test.ts regenerates and checks it.
 //
@@ -26,20 +37,43 @@ var widgetPluginList []byte
 // default, sorted. Hosts may register further plugins, so a plugin id outside this
 // list is not an error by itself.
 func BuiltInWidgetPlugins() ([]string, error) {
-	var list struct {
-		SchemaVersion int      `json:"schemaVersion"`
-		PluginIDs     []string `json:"pluginIds"`
-	}
-	if err := json.Unmarshal(widgetPluginList, &list); err != nil {
-		return nil, fmt.Errorf("decode embedded widget plugin list: %w", err)
-	}
-	if list.SchemaVersion != 1 || len(list.PluginIDs) == 0 {
-		return nil, errors.New("embedded widget plugin list has no plugin ids")
+	list, err := decodeWidgetPluginList()
+	if err != nil {
+		return nil, err
 	}
 	return list.PluginIDs, nil
 }
 
-var ErrUnknownKind = errors.New("schema kind must be dashboard, widget, or saved_query")
+// BuiltInWidgetPluginCapabilities returns the document capabilities of the built-in
+// plugins, keyed by plugin id and then by capability name ("annotations",
+// "tooltipView", "selection"). Only supported capabilities appear. It is generated
+// from ui/src/features/insights/plugins/plugin-capabilities.ts.
+func BuiltInWidgetPluginCapabilities() (map[string]map[string]bool, error) {
+	list, err := decodeWidgetPluginList()
+	if err != nil {
+		return nil, err
+	}
+	return list.Capabilities, nil
+}
+
+type widgetPluginListDocument struct {
+	SchemaVersion int                        `json:"schemaVersion"`
+	PluginIDs     []string                   `json:"pluginIds"`
+	Capabilities  map[string]map[string]bool `json:"capabilities"`
+}
+
+func decodeWidgetPluginList() (widgetPluginListDocument, error) {
+	var list widgetPluginListDocument
+	if err := json.Unmarshal(widgetPluginList, &list); err != nil {
+		return list, fmt.Errorf("decode embedded widget plugin list: %w", err)
+	}
+	if list.SchemaVersion != 1 || len(list.PluginIDs) == 0 {
+		return list, errors.New("embedded widget plugin list has no plugin ids")
+	}
+	return list, nil
+}
+
+var ErrUnknownKind = errors.New("schema kind must be dashboard, widget, saved_query, or plugin")
 
 // Document returns an independent, compact schema. Widget extraction retains
 // the root definitions because recursive plugin configuration refers to them.
@@ -50,6 +84,8 @@ func Document(kind string) (json.RawMessage, error) {
 		source = dashboardSchema
 	case "saved_query":
 		source = savedQuerySchema
+	case "plugin":
+		source = pluginConfigSchemaBundle
 	case "widget":
 		return widgetDocument()
 	default:

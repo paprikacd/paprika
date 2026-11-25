@@ -12,8 +12,20 @@ ci_job_init ui
 # ci.yml: Install dependencies
 ci_npm_ci ui
 
+# ci.yml: Install widget lab dependencies
+ci_npm_ci labs/widget-lab
+
 # ci.yml: Test
 (cd ui && npm test)
+
+# ci.yml: Widget lab tests
+(cd labs/widget-lab && npm test -- --maxWorkers=2)
+
+# ci.yml: Build widget lab gallery
+(cd labs/widget-lab && npm run build)
+
+# ci.yml: Check gallery size budget
+node hack/verify-landing-charts.mjs --gallery labs/widget-lab/dist
 
 # ci.yml: Browser-render worker and visual probe tests
 (cd ui && node --test render-worker.test.mjs dashboard-probe.test.mjs e2e/fixtures/visual-matrix-diff.test.mjs)

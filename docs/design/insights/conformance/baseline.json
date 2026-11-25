@@ -1,0 +1,1259 @@
+{
+  "description": "Shared time-series baseline cases. Each case gives the window, band, the current series and optional prior series (epoch milliseconds, value null for a missing sample). The offset and step are the top-level offsetMs and stepMs. Each expectation gives, per current series, the evaluated and outside sample counts, the runs of two or more consecutive outside samples, and the reason when a series cannot be evaluated. The ui baseline.test.ts and the Go baseline port must both produce exactly these results.",
+  "offsetMs": 3600000,
+  "stepMs": 60000,
+  "cases": [
+    {
+      "name": "flat series keeps the band and flags nothing",
+      "window": "previous",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3480000,
+              "value": 10
+            },
+            {
+              "timestamp": 3540000,
+              "value": 10
+            },
+            {
+              "timestamp": 3600000,
+              "value": 10
+            },
+            {
+              "timestamp": 3660000,
+              "value": 10
+            },
+            {
+              "timestamp": 3720000,
+              "value": 10
+            },
+            {
+              "timestamp": 3780000,
+              "value": 10
+            },
+            {
+              "timestamp": 3840000,
+              "value": 10
+            },
+            {
+              "timestamp": 3900000,
+              "value": 10
+            },
+            {
+              "timestamp": 3960000,
+              "value": 10
+            },
+            {
+              "timestamp": 4020000,
+              "value": 10
+            },
+            {
+              "timestamp": 4080000,
+              "value": 10
+            },
+            {
+              "timestamp": 4140000,
+              "value": 10
+            },
+            {
+              "timestamp": 4200000,
+              "value": 10
+            },
+            {
+              "timestamp": 4260000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 10,
+          "outside": 0,
+          "runs": []
+        }
+      ]
+    },
+    {
+      "name": "a regime change forms one run of five",
+      "window": "previous",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 50
+            },
+            {
+              "timestamp": 7560000,
+              "value": 50
+            },
+            {
+              "timestamp": 7620000,
+              "value": 50
+            },
+            {
+              "timestamp": 7680000,
+              "value": 50
+            },
+            {
+              "timestamp": 7740000,
+              "value": 50
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3480000,
+              "value": 10
+            },
+            {
+              "timestamp": 3540000,
+              "value": 10
+            },
+            {
+              "timestamp": 3600000,
+              "value": 10
+            },
+            {
+              "timestamp": 3660000,
+              "value": 10
+            },
+            {
+              "timestamp": 3720000,
+              "value": 10
+            },
+            {
+              "timestamp": 3780000,
+              "value": 10
+            },
+            {
+              "timestamp": 3840000,
+              "value": 10
+            },
+            {
+              "timestamp": 3900000,
+              "value": 10
+            },
+            {
+              "timestamp": 3960000,
+              "value": 10
+            },
+            {
+              "timestamp": 4020000,
+              "value": 10
+            },
+            {
+              "timestamp": 4080000,
+              "value": 10
+            },
+            {
+              "timestamp": 4140000,
+              "value": 10
+            },
+            {
+              "timestamp": 4200000,
+              "value": 10
+            },
+            {
+              "timestamp": 4260000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 10,
+          "outside": 5,
+          "runs": [
+            {
+              "start": 7500000,
+              "end": 7740000,
+              "samples": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a single blip is counted but never a run",
+      "window": "previous",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 50
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3480000,
+              "value": 10
+            },
+            {
+              "timestamp": 3540000,
+              "value": 10
+            },
+            {
+              "timestamp": 3600000,
+              "value": 10
+            },
+            {
+              "timestamp": 3660000,
+              "value": 10
+            },
+            {
+              "timestamp": 3720000,
+              "value": 10
+            },
+            {
+              "timestamp": 3780000,
+              "value": 10
+            },
+            {
+              "timestamp": 3840000,
+              "value": 10
+            },
+            {
+              "timestamp": 3900000,
+              "value": 10
+            },
+            {
+              "timestamp": 3960000,
+              "value": 10
+            },
+            {
+              "timestamp": 4020000,
+              "value": 10
+            },
+            {
+              "timestamp": 4080000,
+              "value": 10
+            },
+            {
+              "timestamp": 4140000,
+              "value": 10
+            },
+            {
+              "timestamp": 4200000,
+              "value": 10
+            },
+            {
+              "timestamp": 4260000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 10,
+          "outside": 1,
+          "runs": []
+        }
+      ]
+    },
+    {
+      "name": "a series key repeated in the current result is ambiguous",
+      "window": "previous",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3480000,
+              "value": 10
+            },
+            {
+              "timestamp": 3540000,
+              "value": 10
+            },
+            {
+              "timestamp": 3600000,
+              "value": 10
+            },
+            {
+              "timestamp": 3660000,
+              "value": 10
+            },
+            {
+              "timestamp": 3720000,
+              "value": 10
+            },
+            {
+              "timestamp": 3780000,
+              "value": 10
+            },
+            {
+              "timestamp": 3840000,
+              "value": 10
+            },
+            {
+              "timestamp": 3900000,
+              "value": 10
+            },
+            {
+              "timestamp": 3960000,
+              "value": 10
+            },
+            {
+              "timestamp": 4020000,
+              "value": 10
+            },
+            {
+              "timestamp": 4080000,
+              "value": 10
+            },
+            {
+              "timestamp": 4140000,
+              "value": 10
+            },
+            {
+              "timestamp": 4200000,
+              "value": 10
+            },
+            {
+              "timestamp": 4260000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 0,
+          "outside": 0,
+          "runs": [],
+          "reason": "ambiguous_series"
+        },
+        {
+          "index": 1,
+          "evaluated": 0,
+          "outside": 0,
+          "runs": [],
+          "reason": "ambiguous_series"
+        }
+      ]
+    },
+    {
+      "name": "a p10p90 band needs five neighbours",
+      "window": "previous",
+      "band": "p10p90",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3600000,
+              "value": 10
+            },
+            {
+              "timestamp": 3900000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 0,
+          "outside": 0,
+          "runs": [],
+          "reason": "no_prior_sample"
+        }
+      ]
+    },
+    {
+      "name": "a range band accepts one neighbour",
+      "window": "previous",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3600000,
+              "value": 10
+            },
+            {
+              "timestamp": 3900000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 8,
+          "outside": 0,
+          "runs": []
+        }
+      ]
+    },
+    {
+      "name": "the robust sigma floor keeps small moves quiet",
+      "window": "previous",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 100
+            },
+            {
+              "timestamp": 7260000,
+              "value": 100
+            },
+            {
+              "timestamp": 7320000,
+              "value": 100
+            },
+            {
+              "timestamp": 7380000,
+              "value": 102
+            },
+            {
+              "timestamp": 7440000,
+              "value": 102
+            },
+            {
+              "timestamp": 7500000,
+              "value": 104
+            },
+            {
+              "timestamp": 7560000,
+              "value": 104
+            }
+          ]
+        }
+      ],
+      "prior": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 3480000,
+              "value": 100
+            },
+            {
+              "timestamp": 3540000,
+              "value": 100
+            },
+            {
+              "timestamp": 3600000,
+              "value": 100
+            },
+            {
+              "timestamp": 3660000,
+              "value": 100
+            },
+            {
+              "timestamp": 3720000,
+              "value": 100
+            },
+            {
+              "timestamp": 3780000,
+              "value": 100
+            },
+            {
+              "timestamp": 3840000,
+              "value": 100
+            },
+            {
+              "timestamp": 3900000,
+              "value": 100
+            },
+            {
+              "timestamp": 3960000,
+              "value": 100
+            },
+            {
+              "timestamp": 4020000,
+              "value": 100
+            },
+            {
+              "timestamp": 4080000,
+              "value": 100
+            },
+            {
+              "timestamp": 4140000,
+              "value": 100
+            },
+            {
+              "timestamp": 4200000,
+              "value": 100
+            },
+            {
+              "timestamp": 4260000,
+              "value": 100
+            }
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 7,
+          "outside": 2,
+          "runs": [
+            {
+              "start": 7500000,
+              "end": 7560000,
+              "samples": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a rolling baseline needs twelve earlier samples: six in its window and the six of the gap",
+      "window": "rolling",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": null,
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 0,
+          "outside": 0,
+          "runs": []
+        }
+      ]
+    },
+    {
+      "name": "a lasting step change forms a run before the lagged rolling band takes it in",
+      "window": "rolling",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            },
+            {
+              "timestamp": 7920000,
+              "value": 10
+            },
+            {
+              "timestamp": 7980000,
+              "value": 10
+            },
+            {
+              "timestamp": 8040000,
+              "value": 10
+            },
+            {
+              "timestamp": 8100000,
+              "value": 10
+            },
+            {
+              "timestamp": 8160000,
+              "value": 50
+            },
+            {
+              "timestamp": 8220000,
+              "value": 50
+            },
+            {
+              "timestamp": 8280000,
+              "value": 50
+            },
+            {
+              "timestamp": 8340000,
+              "value": 50
+            },
+            {
+              "timestamp": 8400000,
+              "value": 50
+            },
+            {
+              "timestamp": 8460000,
+              "value": 50
+            },
+            {
+              "timestamp": 8520000,
+              "value": 50
+            },
+            {
+              "timestamp": 8580000,
+              "value": 50
+            }
+          ]
+        }
+      ],
+      "prior": null,
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 12,
+          "outside": 7,
+          "runs": [
+            {
+              "start": 8160000,
+              "end": 8520000,
+              "samples": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a single rolling blip is counted but never a run",
+      "window": "rolling",
+      "band": "range",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            },
+            {
+              "timestamp": 7920000,
+              "value": 10
+            },
+            {
+              "timestamp": 7980000,
+              "value": 10
+            },
+            {
+              "timestamp": 8040000,
+              "value": 10
+            },
+            {
+              "timestamp": 8100000,
+              "value": 50
+            },
+            {
+              "timestamp": 8160000,
+              "value": 10
+            },
+            {
+              "timestamp": 8220000,
+              "value": 10
+            },
+            {
+              "timestamp": 8280000,
+              "value": 10
+            },
+            {
+              "timestamp": 8340000,
+              "value": 10
+            }
+          ]
+        }
+      ],
+      "prior": null,
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 8,
+          "outside": 1,
+          "runs": []
+        }
+      ]
+    },
+    {
+      "name": "a p10p90 rolling band holds a step change one sample longer",
+      "window": "rolling",
+      "band": "p10p90",
+      "current": [
+        {
+          "name": "latency",
+          "labels": {
+            "route": "/a"
+          },
+          "points": [
+            {
+              "timestamp": 7200000,
+              "value": 10
+            },
+            {
+              "timestamp": 7260000,
+              "value": 10
+            },
+            {
+              "timestamp": 7320000,
+              "value": 10
+            },
+            {
+              "timestamp": 7380000,
+              "value": 10
+            },
+            {
+              "timestamp": 7440000,
+              "value": 10
+            },
+            {
+              "timestamp": 7500000,
+              "value": 10
+            },
+            {
+              "timestamp": 7560000,
+              "value": 10
+            },
+            {
+              "timestamp": 7620000,
+              "value": 10
+            },
+            {
+              "timestamp": 7680000,
+              "value": 10
+            },
+            {
+              "timestamp": 7740000,
+              "value": 10
+            },
+            {
+              "timestamp": 7800000,
+              "value": 10
+            },
+            {
+              "timestamp": 7860000,
+              "value": 10
+            },
+            {
+              "timestamp": 7920000,
+              "value": 10
+            },
+            {
+              "timestamp": 7980000,
+              "value": 10
+            },
+            {
+              "timestamp": 8040000,
+              "value": 10
+            },
+            {
+              "timestamp": 8100000,
+              "value": 10
+            },
+            {
+              "timestamp": 8160000,
+              "value": 50
+            },
+            {
+              "timestamp": 8220000,
+              "value": 50
+            },
+            {
+              "timestamp": 8280000,
+              "value": 50
+            },
+            {
+              "timestamp": 8340000,
+              "value": 50
+            },
+            {
+              "timestamp": 8400000,
+              "value": 50
+            },
+            {
+              "timestamp": 8460000,
+              "value": 50
+            },
+            {
+              "timestamp": 8520000,
+              "value": 50
+            },
+            {
+              "timestamp": 8580000,
+              "value": 50
+            }
+          ]
+        }
+      ],
+      "prior": null,
+      "expect": [
+        {
+          "index": 0,
+          "evaluated": 12,
+          "outside": 8,
+          "runs": [
+            {
+              "start": 8160000,
+              "end": 8580000,
+              "samples": 8
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

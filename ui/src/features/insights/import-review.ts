@@ -1,4 +1,5 @@
 import { documentFingerprint } from "./fingerprint";
+import { diffJSON, type FieldChange, type JSONDiff, type JSONValue } from "./dashboard-diff";
 import {
   MAX_DOCUMENT_BYTES,
   widgetKind,
@@ -28,24 +29,9 @@ export interface ImportSnapshot<T> {
   document: T;
   etag?: string;
 }
-export type ImportJSONValue =
-  | null
-  | boolean
-  | number
-  | string
-  | ImportJSONValue[]
-  | { [key: string]: ImportJSONValue };
-export interface ImportFieldChange {
-  path: string;
-  kind: "add" | "remove" | "change" | "reorder";
-  before?: ImportJSONValue;
-  after?: ImportJSONValue;
-}
-export interface ImportDiff {
-  changes: ImportFieldChange[];
-  totalChanges: number;
-  truncated: boolean;
-}
+export type ImportJSONValue = JSONValue;
+export type ImportFieldChange = FieldChange;
+export type ImportDiff = JSONDiff;
 export interface ImportReview {
   status: "new" | "identical" | "conflict";
   baseline?: ImportBaseline;
@@ -53,7 +39,7 @@ export interface ImportReview {
   canReplace: boolean;
   replaceBlockedReason?: string;
 }
-export const MAX_IMPORT_DIFF_CHANGES = 200;
+export { diffJSON as diffImportDocuments, MAX_DIFF_CHANGES as MAX_IMPORT_DIFF_CHANGES } from "./dashboard-diff";
 
 function canonicalDashboard(input: Dashboard): Dashboard {
   // A save writes the layout as the canvas draws it, so a stored dashboard holds those positions. Canonicalize
@@ -67,130 +53,6 @@ function canonicalDashboard(input: Dashboard): Dashboard {
 }
 function canonicalQuery(input: SavedQuery): SavedQuery {
   return JSON.parse(savedQueryFingerprint(input)) as SavedQuery;
-}
-function isObject(value: ImportJSONValue | undefined): value is {
-  [key: string]: ImportJSONValue;
-} {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function propertyPath(path: string, key: string): string {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)
-    ? path
-      ? `${path}.${key}`
-      : key
-    : `${path}[${JSON.stringify(key)}]`;
-}
-function collectionKey(
-  name: string,
-  before: ImportJSONValue[],
-  after: ImportJSONValue[],
-): string | undefined {
-  const candidates =
-    name === "widgets" || name === "drilldowns"
-      ? ["id"]
-      : name === "parameters" || name === "variables"
-        ? ["name"]
-        : name === "bindings"
-          ? ["parameter", "variable"]
-          : [];
-  return candidates.find((key) => {
-    if (!before.length && !after.length) return false;
-    return [before, after].every((items) => {
-      const seen = new Set<string>();
-      return items.every((item) => {
-        if (
-          !isObject(item) ||
-          typeof item[key] !== "string" ||
-          seen.has(item[key])
-        )
-          return false;
-        seen.add(item[key]);
-        return true;
-      });
-    });
-  });
-}
-
-/** Typed field changes with stable collection identities and bounded display output. */
-export function diffImportDocuments(
-  before: ImportJSONValue | undefined,
-  after: ImportJSONValue | undefined,
-): ImportDiff {
-  const changes: ImportFieldChange[] = [];
-  let totalChanges = 0;
-  const record = (change: ImportFieldChange) => {
-    totalChanges++;
-    if (changes.length < MAX_IMPORT_DIFF_CHANGES) changes.push(change);
-  };
-  const walk = (
-    previous: ImportJSONValue | undefined,
-    next: ImportJSONValue | undefined,
-    path: string,
-    name: string,
-  ) => {
-    if (previous === next) return;
-    if (previous === undefined) {
-      record({ path: path || "$", kind: "add", after: next });
-      return;
-    }
-    if (next === undefined) {
-      record({ path: path || "$", kind: "remove", before: previous });
-      return;
-    }
-    if (Array.isArray(previous) && Array.isArray(next)) {
-      const key = collectionKey(name, previous, next);
-      if (key) {
-        const entries = (items: ImportJSONValue[]) =>
-          new Map(
-            items.map((item) => [
-              (item as Record<string, ImportJSONValue>)[key] as string,
-              item,
-            ]),
-          );
-        const oldItems = entries(previous),
-          newItems = entries(next);
-        const oldOrder = [...oldItems.keys()].filter((id) => newItems.has(id));
-        const newOrder = [...newItems.keys()].filter((id) => oldItems.has(id));
-        if (oldOrder.some((id, index) => id !== newOrder[index]))
-          record({
-            path,
-            kind: "reorder",
-            before: [...oldItems.keys()],
-            after: [...newItems.keys()],
-          });
-        for (const id of new Set([...oldItems.keys(), ...newItems.keys()]))
-          walk(oldItems.get(id), newItems.get(id), `${path}[${key}=${id}]`, "");
-      } else {
-        for (
-          let index = 0;
-          index < Math.max(previous.length, next.length);
-          index++
-        )
-          walk(previous[index], next[index], `${path}[${index}]`, "");
-      }
-      return;
-    }
-    if (isObject(previous) && isObject(next)) {
-      for (const key of [
-        ...new Set([...Object.keys(previous), ...Object.keys(next)]),
-      ].sort())
-        walk(
-          Object.hasOwn(previous, key) ? previous[key] : undefined,
-          Object.hasOwn(next, key) ? next[key] : undefined,
-          propertyPath(path, key),
-          key,
-        );
-      return;
-    }
-    record({
-      path: path || "$",
-      kind: "change",
-      before: previous,
-      after: next,
-    });
-  };
-  walk(before, after, "", "");
-  return { changes, totalChanges, truncated: totalChanges > changes.length };
 }
 function review(
   incoming: Dashboard | SavedQuery,
@@ -221,7 +83,7 @@ function review(
         ? "identical"
         : "conflict",
     ...(baseline ? { baseline } : {}),
-    diff: diffImportDocuments(
+    diff: diffJSON(
       (existing?.document ?? {}) as ImportJSONValue,
       incoming as ImportJSONValue,
     ),
@@ -287,6 +149,9 @@ function queryUses(
   // Persisted documents are validated when loaded; a host may also include an
   // unsaved draft. Unrelated draft fields must not block a safe query edit.
   for (const dashboard of dashboards) {
+    // The dashboard-level event source is not a widget, so it names no widget.
+    if (dashboard.annotationSource?.queryRef.id === id)
+      uses.push({ dashboard, widgetId: "", location: "annotations", reference: dashboard.annotationSource.queryRef, kind: "records" });
     for (const widget of dashboard.widgets) {
       if (widget.queryRef?.id === id)
         uses.push({

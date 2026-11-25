@@ -119,12 +119,17 @@ func TestStarterMetricsMatchTheSignalsReference(t *testing.T) {
 			}
 			var allowed []string
 			for _, name := range names {
-				signal, ok := signals[name]
+				// A histogram's _bucket series is the reference row of its base name.
+				signal, ok := signals[strings.TrimSuffix(name, "_bucket")]
 				if !ok {
 					t.Errorf("%s/%s: %s is not in the metric reference", starter.ID, widget.ID, name)
 					continue
 				}
 				allowed = append(allowed, signal.labels...)
+				// Every histogram bucket series carries le, which the reference does not list.
+				if signal.kind == "Histogram" {
+					allowed = append(allowed, "le")
+				}
 				if signal.kind == "Counter" && !regexp.MustCompile(`(?:rate|increase)\(\s*`+regexp.QuoteMeta(name)+`[\[{]`).MatchString(widget.Query) {
 					t.Errorf("%s/%s: counter %s must be read through rate() or increase()", starter.ID, widget.ID, name)
 				}
@@ -219,5 +224,31 @@ func TestStarterQueriesInterpolateWithTheirDefaults(t *testing.T) {
 				t.Errorf("%s/%s: the query does not resolve with its defaults: %v", starter.ID, widget.ID, err)
 			}
 		}
+	}
+}
+
+// TestStarterCoverageIsLimitedToNamespaceCapacity checks which starters claim applications. Only
+// namespace-capacity covers every application, through its namespace variable: its metrics carry the namespace label and
+// nothing else. The other starters assume the application name is a service label, which is not general, so they
+// declare no covers and do not appear on application pages.
+func TestStarterCoverageIsLimitedToNamespaceCapacity(t *testing.T) {
+	var covering []string
+	for _, starter := range readStarters(t) {
+		var head struct {
+			Covers json.RawMessage `json:"covers"`
+		}
+		if err := json.Unmarshal(starter.Document, &head); err != nil {
+			t.Fatalf("%s: %v", starter.ID, err)
+		}
+		if len(head.Covers) == 0 {
+			continue
+		}
+		covering = append(covering, starter.ID)
+		if starter.ID != "namespace-capacity" {
+			t.Errorf("%s declares covers; only namespace-capacity may, because its labels do not assume an application name", starter.ID)
+		}
+	}
+	if !slices.Equal(covering, []string{"namespace-capacity"}) {
+		t.Fatalf("covering starters = %v, want [namespace-capacity]", covering)
 	}
 }

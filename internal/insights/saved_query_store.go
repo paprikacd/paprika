@@ -22,6 +22,8 @@ type savedQueryStore struct {
 	documents map[string]json.RawMessage
 	// quarantine holds the invalid saved queries openSavedQueryStore found. They move only in commitQuarantine.
 	quarantine []pendingQuarantine
+	// generation counts the puts and removals applied under mu. A collection tag built from it changes with the list.
+	generation uint64
 }
 
 func openSavedQueryStore(dataDir string) (*savedQueryStore, error) {
@@ -82,6 +84,13 @@ func readStoredSavedQuery(dir, name, id string) (document json.RawMessage, inval
 }
 
 func (s *savedQueryStore) list(providerID string) []json.RawMessage {
+	queries, _ := s.listVersioned(providerID)
+	return queries
+}
+
+// listVersioned lists the saved queries of a provider, or all of them when providerID is empty, and the
+// generation they were read at.
+func (s *savedQueryStore) listVersioned(providerID string) (queries []json.RawMessage, generation uint64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ids := make([]string, 0, len(s.documents))
@@ -102,7 +111,14 @@ func (s *savedQueryStore) list(providerID string) []json.RawMessage {
 		view, _ := json.Marshal(fields)                         //nolint:errcheck // All RawMessages originate from validated JSON or the encoded string above.
 		result = append(result, view)
 	}
-	return result
+	return result, s.generation
+}
+
+// Generation returns the number of puts and removals the store has applied since it opened.
+func (s *savedQueryStore) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
 }
 
 func (s *savedQueryStore) get(id string) (document json.RawMessage, tag string, err error) {
@@ -139,6 +155,7 @@ func (s *savedQueryStore) put(id string, document json.RawMessage, ifMatch, ifNo
 		return "", err
 	}
 	s.documents[id] = bytes.Clone(document)
+	s.generation++
 	return etag(document), nil
 }
 
@@ -156,6 +173,7 @@ func (s *savedQueryStore) remove(id, ifMatch string) error {
 		return fmt.Errorf("delete saved query: %w", err)
 	}
 	delete(s.documents, id)
+	s.generation++
 	return syncDirectory(s.dir)
 }
 
@@ -182,6 +200,9 @@ func (s *Store) usesSavedQuery(id string) bool {
 					QueryRef struct{ ID string } `json:"queryRef"`
 				} `json:"source"`
 			}
+			AnnotationSource struct {
+				QueryRef struct{ ID string } `json:"queryRef"`
+			} `json:"annotationSource"`
 			Widgets []struct {
 				QueryRef         struct{ ID string } `json:"queryRef"`
 				AnnotationSource struct {
@@ -202,6 +223,9 @@ func (s *Store) usesSavedQuery(id string) bool {
 			if variable.Source.QueryRef.ID == id {
 				return true
 			}
+		}
+		if dashboard.AnnotationSource.QueryRef.ID == id {
+			return true
 		}
 		for _, widget := range dashboard.Widgets {
 			if widget.QueryRef.ID == id || widget.AnnotationSource.QueryRef.ID == id || (widget.Options.TooltipView.Source.Type == "saved" && widget.Options.TooltipView.Source.Ref.ID == id) {

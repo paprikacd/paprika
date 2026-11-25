@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, FileUp, Braces, X } from "lucide-react";
 import {
   parseDashboard,
@@ -27,6 +27,11 @@ import {
   hasErrors,
   type DocumentValidator,
 } from "./checks-list";
+// The field-level review, and the diff it computes, are on demand and stay out of the first-view chunk
+// (see scripts/check-insights-budget.mjs).
+const DraftChangeReview = lazy(() =>
+  import("./change-review").then((module) => ({ default: module.DraftChangeReview })),
+);
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb";
 import styles from "./insights.module.css";
 import { GammaButton } from "./gamma/button";
@@ -343,7 +348,8 @@ export function DocumentEditor({
       ? { text: "Checking dashboard…", tone: "muted" }
       : checkState.status === "failed"
         ? {
-            text: `Could not check this dashboard: ${checkState.message}. Applying to the canvas does not depend on the check.`,
+            // A reason that ends in a full stop (a timeout does) keeps one.
+            text: `Could not check this dashboard: ${checkState.message.replace(/\.+$/, "")}. Applying to the canvas does not depend on the check.`,
             tone: "error",
           }
         : checkState.status === "done" && hasErrors(checkState.report)
@@ -520,6 +526,11 @@ export function DocumentEditor({
         <p className={styles.muted} data-document-change="">
           Against the canvas: {documentChangeText(documentChangeSummary(dashboard, pending))}
         </p>
+      )}
+      {pending && (
+        <Suspense fallback={null}>
+          <DraftChangeReview before={dashboard} after={pending} onFocusWidget={onFocusWidget} />
+        </Suspense>
       )}
       <div className={styles.panelFooter}>
         <GammaButton

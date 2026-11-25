@@ -1,9 +1,10 @@
 # Operational dashboard presentation
 
-`patches.json` contains reviewed widget edits for three existing dashboards.
-It is input for Paprika Observe's `patch_dashboard`, not a seed document or an
-automatic startup migration. The [presentation browser suite](../../ui/e2e/insights-presentation.e2e.mjs)
-exercises these same settings with explicitly synthetic observations.
+`patches.json` is a patch set for the [insights-patch applier](../insights-patch/README.md).
+It holds reviewed widget edits for three existing dashboards. It is not a seed
+document or a startup migration. The [presentation browser suite](../../ui/e2e/insights-presentation.e2e.mjs)
+applies the same set to synthetic fixtures through the shared merge, so the
+suite and a live apply cannot drift.
 
 The on-call reading task is to compare CPU and memory over the same time range,
 then distinguish request volume, response classes and latency percentiles.
@@ -17,19 +18,28 @@ refresh cadence and missing-data policies are unchanged.
 The three Service overview trends share a latest-value legend row. Two redundant
 series descriptions are removed so their plotting edges align.
 
+The memory panels deliberately omit `legendPosition`. The plugin default is
+`"bottom"`, so they match the table legend without an explicit value. The CPU
+panels set `legendPosition` in their patches.
+
 Apply only after the matching UI release is deployed:
 
-1. Discover providers and the canonical dashboard/widget schemas. Read each
-   current dashboard, inspect its layout and query bindings, and capture its
-   existing rendering. Review these edits against any intervening changes.
-2. Call `patch_dashboard` with that document's exact current `etag` and the
-   corresponding edits as `widget_edits` (each edit uses `op: "update"`). Never
-   retry a conflict without rereading and reviewing the new document.
-3. Read back and compare the entire document to the expected targeted merge.
-   Query each dashboard sequentially with bounded results, then inspect actual
-   renders at 1512, 768 and 390px in both themes, including a pinned inspector.
-   Record freshness and partial results separately from visual quality.
+1. Plan. Run the CLI without `--apply`. It reads each dashboard, checks its ETag,
+   merges the edits, lints the merged result and prints each widget's changed
+   fields. Review these against any intervening changes.
+
+   ```sh
+   PAPRIKA_OBSERVE_URL=… PAPRIKA_OBSERVE_TOKEN=… node hack/insights-patch/cli.mjs hack/dashboard-presentation/patches.json
+   ```
+
+2. Apply. Add `--apply --receipt <file>`. Each write uses the exact ETag from the
+   plan, is read back and compared with the planned document, and stops the run on
+   the first conflict. Never retry a conflict without rereading and reviewing the
+   new document.
+3. Verify. Query each dashboard sequentially with bounded results, then inspect
+   actual renders at 1512, 768 and 390px in both themes, including a pinned
+   inspector. Record freshness and partial results separately from visual quality.
 
 The resource panels gain one grid row; subsequent rows move down by one to avoid
-overlap. No other layout or presentation field is replaced. If reverting, use
-the recorded before values and a fresh ETag, preserving concurrent edits.
+overlap. No other layout or presentation field is replaced. To revert, use the
+receipt's recorded `before` values with a fresh ETag, preserving concurrent edits.

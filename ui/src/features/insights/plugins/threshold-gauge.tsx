@@ -1,9 +1,10 @@
 "use client";
 
+import { NO_DATA } from "../benign-states";
 import { sharedScale, unitSuffix } from "../units";
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { z } from "zod";
-import { ChevronsUp, ChevronsDown } from "lucide-react";
+import { ChevronsUp, ChevronsDown, Gauge } from "lucide-react";
 import { registerRecordWidgetPlugins } from "./records";
 import { registerMetricDistributionPlugins } from "./metric-distributions";
 import { registerRecordChartPlugins } from "./record-charts";
@@ -14,6 +15,7 @@ import { registerStatusGridPlugin } from "./status-grid";
 import { registerSloSummaryPlugin } from "./slo-summary";
 import { registerUptimeViews } from "./uptime-views";
 import { registerSmallMultiplesPlugin } from "./small-multiples";
+import { registerKubernetesPlugins } from "./kubernetes-plugins";
 import {
   registerWidgetPlugin,
   getWidgetDefinition,
@@ -30,7 +32,8 @@ import {
 } from "../chart-renderers";
 import { formatMetricDetails } from "../chart-data";
 import styles from "../chart-styles.module.css";
-import { metricContext, validTimestamp } from "../widget-context";
+import { metricContext } from "../widget-context";
+import { latestRaw } from "../chart-kit/latest";
 import { widgetTextColor } from "../appearance";
 import { thresholdPaint, thresholdText } from "../status";
 import { STATUS_WORDS, StatusChip, bandReading } from "../status-chip";
@@ -38,6 +41,7 @@ import { useEmbeddedWidget } from "../widget-presentation";
 import { compactSeriesLabels } from "../series-display";
 import { truncationNote } from "../truncation";
 import meterStyles from "./capacity-meter.module.css";
+import { seriesShown } from "../benign-states";
 
 export const gaugeConfigSchema = z.strictObject({
   label: z.string().max(100).optional(),
@@ -54,8 +58,7 @@ type GaugeConfig = z.infer<typeof gaugeConfigSchema>;
 type GaugeSeries = NonNullable<WidgetRendererProps["result"]["series"]>[number];
 
 function latestGaugePoint(series: GaugeSeries) {
-  return series.points.reduce<(typeof series.points)[number] | undefined>((latest, point) =>
-    validTimestamp(point.timestamp) && (!latest || point.timestamp >= latest.timestamp) ? point : latest, undefined);
+  return latestRaw(series.points);
 }
 
 function gaugeBounds(widget: WidgetRendererProps["widget"]) {
@@ -277,7 +280,7 @@ function GaugeBank(props: WidgetRendererProps & { config: GaugeConfig; series: G
     {overflow && <p ref={hintElement} className={meterStyles.bankHint} id={hint} data-gauge-overflow-hint>Scroll to see all gauges <span aria-hidden="true">↕</span></p>}
     <GaugeLegend widget={props.widget} config={config} compactRows={compactRows} />
     {(omitted > 0 || props.result.truncated) && <p className={meterStyles.bankNotice} role="status">
-      {omitted > 0 && <span>Showing {selected.length} of {series.length} series</span>}
+      {omitted > 0 && <span>{seriesShown(selected.length, series.length)}</span>}
       {truncationNote(props.result) && <span>{truncationNote(props.result)}</span>}
     </p>}
   </div>;
@@ -304,9 +307,9 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
     threshold && thresholdIndex > 0 ? `≥ ${boundLabel(threshold.value)}${nextThreshold ? ` and < ${boundLabel(nextThreshold.value)}` : ""}` : undefined;
   const scaleNotice = outsideScale ? `${outsideScale === "above" ? "Above scale maximum" : "Below scale minimum"}: ${boundLabel(outsideScale === "above" ? max : min)}` : undefined;
   const rangeCue = outsideScale && <span className={meterStyles.rangeCue} data-gauge-outside-scale={outsideScale} role="img" aria-label={scaleNotice} title={scaleNotice}>{outsideScale === "above" ? <ChevronsUp aria-hidden="true" size={13} /> : <ChevronsDown aria-hidden="true" size={13} />}</span>;
-  const exact = value === undefined ? "No data" : exactMetric(value, widget.unit);
+  const exact = value === undefined ? NO_DATA : exactMetric(value, widget.unit);
   // The button name reads at the widget's decimal places; the exact row below keeps the full value.
-  const shownReading = value === undefined ? "No data" : formatMetricDetails(value, widget.unit, widget.options?.decimals);
+  const shownReading = value === undefined ? NO_DATA : formatMetricDetails(value, widget.unit, widget.options?.decimals);
   const label = bank && config.label ? `${config.label} · ${name}` : config.label ?? name;
   const visualLabel = bank && config.label ? `${config.label} · ${displayLabel ?? name}` : config.label ?? displayLabel ?? name;
   const labelContent = visualLabel === label ? label : <><span aria-hidden="true">{visualLabel}</span><span className={meterStyles.srOnly}>{label}</span></>;
@@ -328,7 +331,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
       data-gauge-value={value === undefined ? "unknown" : value} title={interactive && options.showTooltip !== false ? undefined : exact}
       style={{ color: widgetTextColor(options) ?? (bank ? undefined : thresholdText(threshold) ?? widget.color), ...(bank && threshold ? { "--gauge-status-color": thresholdPaint(threshold) } : {}) } as CSSProperties}>
       {display !== "radial" && rangeCue}
-      <span data-gauge-number>{value === undefined ? "No data" : gaugeScale(widget, scaleReading).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, scaleReading).unit}</small>}
+      <span data-gauge-number>{value === undefined ? NO_DATA : gaugeScale(widget, scaleReading).number(value)}</span>{value !== undefined && widget.unit && <small data-gauge-unit>{gaugeScale(widget, scaleReading).unit}</small>}
     </span>
   </ObservationDetails>;
   const track = <GaugeTrack widget={widget} config={config} value={value} scaleReading={scaleReading} title={title} />;
@@ -346,6 +349,7 @@ function GaugeItem({ widget, result, onContextChange, embedded, series, index, c
 /** Example of a bundled, trusted extension. Hosts can register others in the same way. */
 export function registerDefaultWidgetPlugins() {
   registerSmallMultiplesPlugin();
+  registerKubernetesPlugins();
   registerStatusGridPlugin();
   registerUptimeViews();
   registerRecordWidgetPlugins();
@@ -363,6 +367,8 @@ export function registerDefaultWidgetPlugins() {
     dataKind: "metrics",
     render: ThresholdGauge,
     styleControls: ["unit", "decimals", "color", "legend", "tooltips"],
+    icon: Gauge,
+    capabilities: { thresholds: true, bounds: true, colorFallback: "chart2", tooltipViewControls: ["decimals", "color", "legend"] },
     defaultOptions: {
       min: 0,
       max: 100,
@@ -385,6 +391,6 @@ export function registerDefaultWidgetPlugins() {
       { key: "showStatus", label: "Show status beside each horizontal gauge", kind: "boolean", help: "Shows the matching threshold label or Unknown for each gauge in a horizontal series bank." },
       { key: "label", label: "Meter label", kind: "text", placeholder: "Series name" },
     ],
-    parseConfig: (config) => gaugeConfigSchema.parse(config ?? {}),
+    configSchema: gaugeConfigSchema,
   });
 }

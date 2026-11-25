@@ -2,7 +2,7 @@ import { checksFromError, type InsightsClient } from "./client"
 import type { CheckReport } from "@/gen/paprika/insights/v1/checks_pb"
 import { documentFingerprint } from "./fingerprint"
 import { compactDashboardLayout } from "./layout-compaction"
-import { dashboardSchema, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
+import { dashboardSchema, isApplicationLink, type Dashboard, type Provider, type SavedQuery, type SavedQueryEntry } from "./schema"
 import {
   buildDashboardBundle, parseDashboardBundle, queryImportStatus,
   remapBundleQueryReferences, savedQueryFingerprint, selectBundleDashboards,
@@ -69,11 +69,14 @@ interface ImportSession {
 }
 function message(error: unknown) { return error instanceof Error ? error.message : "Import failed." }
 function referencedQueries(dashboard: Dashboard): Set<string> {
-  return new Set(dashboard.widgets.flatMap(widget => [
-    ...(widget.queryRef ? [widget.queryRef.id] : []),
-    ...(widget.annotationSource ? [widget.annotationSource.queryRef.id] : []),
-    ...(widget.options?.tooltipView?.source?.type === "saved" ? [widget.options.tooltipView.source.ref.id] : []),
-  ]))
+  return new Set([
+    ...(dashboard.annotationSource ? [dashboard.annotationSource.queryRef.id] : []),
+    ...dashboard.widgets.flatMap(widget => [
+      ...(widget.queryRef ? [widget.queryRef.id] : []),
+      ...(widget.annotationSource ? [widget.annotationSource.queryRef.id] : []),
+      ...(widget.options?.tooltipView?.source?.type === "saved" ? [widget.options.tooltipView.source.ref.id] : []),
+    ]),
+  ])
 }
 function checkBaseline(name: string, fingerprint: string, etag: string | undefined, baseline: ImportBaseline | undefined, replacing = false) {
   if (!baseline || baseline.fingerprint !== fingerprint || (baseline.etag !== undefined && baseline.etag !== etag))
@@ -241,7 +244,7 @@ export function createBundleImporter() {
             const target = compactDashboardLayout(dashboardSchema.parse({
               ...resolved, id: session.dashboardIds.get(document.id)!,
               widgets: resolved.widgets.map(widget => ({ ...widget, ...(widget.drilldowns ? {
-                drilldowns: widget.drilldowns.map(link => ({ ...link, dashboardId: session!.dashboardIds.get(link.dashboardId) ?? link.dashboardId })),
+                drilldowns: widget.drilldowns.map(link => isApplicationLink(link) ? link : ({ ...link, dashboardId: session!.dashboardIds.get(link.dashboardId) ?? link.dashboardId })),
               } : {}) })),
             }))
             const fingerprint = documentFingerprint(target)

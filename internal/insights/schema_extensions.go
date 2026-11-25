@@ -26,12 +26,18 @@ func validateDashboardExtensions(root map[string]json.RawMessage) error {
 		field    string
 		validate func(json.RawMessage) error
 	}{
-		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange}, {"timeZone", validateDashboardTimeZone},
+		{"variables", validateDashboardVariables}, {"folder", validateDashboardFolder}, {"customTimeRange", validateDashboardTimeRange}, {"timeZone", validateDashboardTimeZone}, {"annotationSource", validateDashboardAnnotationSource},
 	} {
 		if raw, ok := root[check.field]; ok {
 			if err := check.validate(raw); err != nil {
 				return in(check.field, err)
 			}
+		}
+	}
+	// covers runs last: its variable and widget checks read the declared variables and widgets.
+	if raw, ok := root["covers"]; ok {
+		if err := validateDashboardCovers(raw, root); err != nil {
+			return in("covers", err)
 		}
 	}
 	return nil
@@ -43,7 +49,7 @@ func validateDashboardFolder(raw json.RawMessage) error {
 		return errors.New("folder must be a string")
 	}
 	folder = trimJS(folder)
-	if folder == "" || stringUnits(folder) > 160 || folderUnsafe.MatchString(folder) {
+	if folder == "" || textLength(folder) > 160 || folderUnsafe.MatchString(folder) {
 		return errors.New("folder must be a path of at most 160 characters")
 	}
 	for _, segment := range strings.Split(folder, "/") {
@@ -128,6 +134,9 @@ func validateWidgetExtensions(widget map[string]json.RawMessage) error {
 	if err := validateWidgetCompareType(widget); err != nil {
 		return err
 	}
+	if err := validateWidgetBaselineType(widget); err != nil {
+		return err
+	}
 	return validateWidgetPluginFields(widget)
 }
 
@@ -147,12 +156,28 @@ func validateWidgetCompareType(widget map[string]json.RawMessage) error {
 	return nil
 }
 
+// validateWidgetBaselineType reports a baseline on a widget that is not a time series, at the options member that carries it.
+func validateWidgetBaselineType(widget map[string]json.RawMessage) error {
+	var options map[string]json.RawMessage
+	if raw, ok := widget["options"]; !ok || json.Unmarshal(raw, &options) != nil {
+		return nil
+	}
+	if _, ok := options["baseline"]; !ok {
+		return nil
+	}
+	var kind string
+	if json.Unmarshal(widget["type"], &kind) != nil || kind != "timeseries" {
+		return in("options", in("baseline", errors.New("baselines are only available on time-series widgets")))
+	}
+	return nil
+}
+
 func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
 	var kind string
 	if err := json.Unmarshal(widget["type"], &kind); err != nil {
 		return false
 	}
-	if kind == "timeseries" {
+	if slices.Contains(annotationFamilyTypes, kind) {
 		return true
 	}
 	if kind != "plugin" {
@@ -162,14 +187,28 @@ func supportsWidgetAnnotationSource(widget map[string]json.RawMessage) bool {
 	if err := json.Unmarshal(widget["pluginId"], &pluginID); err != nil {
 		return false
 	}
-	return pluginID == "stacked-timeseries" || pluginID == "directional-traffic"
+	return builtInPluginCapabilities[pluginID]["annotations"]
 }
+
+// annotationFamilyTypes are the built-in widget types that accept an event query. They mirror ANNOTATION_WIDGET_TYPES
+// in ui/src/features/insights/schema.ts. Plugins come from the generated capability list (builtInPluginCapabilities).
+var annotationFamilyTypes = []string{"timeseries", "stat"}
 
 func validateWidgetAnnotationSource(widget map[string]json.RawMessage, raw json.RawMessage) error {
 	if !supportsWidgetAnnotationSource(widget) {
-		return errors.New("event queries require a time-series or directional-traffic widget")
+		return errors.New("event queries require a time-based widget")
 	}
-	fields, err := requireObjectShape(raw, []string{"queryRef", "timestampColumn", "labelColumn"}, []string{"severityColumn", "endColumn"})
+	return validateAnnotationSourceShape(raw)
+}
+
+// validateDashboardAnnotationSource checks the dashboard-level event source, which widgets without their own inherit.
+func validateDashboardAnnotationSource(raw json.RawMessage) error {
+	return validateAnnotationSourceShape(raw)
+}
+
+// validateAnnotationSourceShape checks an event query's saved-query reference and its columns. The widget and the dashboard share it.
+func validateAnnotationSourceShape(raw json.RawMessage) error {
+	fields, err := requireObjectShape(raw, annotationSourceRequiredFields, annotationSourceOptionalFields)
 	if err != nil {
 		return err
 	}
@@ -186,7 +225,7 @@ func validateWidgetAnnotationColumns(fields map[string]json.RawMessage) error {
 			continue
 		}
 		var column string
-		if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || stringUnits(column) > 128 {
+		if json.Unmarshal(value, &column) != nil || trimJS(column) == "" || trimJS(column) != column || textLength(column) > 128 {
 			return fieldErr(name, "event query column names must contain 1–128 characters")
 		}
 	}
@@ -244,7 +283,7 @@ func validateSLOSummaryWidget(widget map[string]json.RawMessage) error {
 }
 
 func validateWidgetOptions(raw json.RawMessage) error {
-	options, err := requireObjectShape(raw, nil, []string{"display", "xAxisLabel", "yAxisLabel", "showLegend", "showLabels", "showValues", "showTooltip", "tooltipTitle", "tooltipValueLabel", "tooltipShowUnit", "tooltipDecimals", "tooltipPlacement", "tooltipOffset", "tooltipMaxWidth", "tooltipMaxHeight", "tooltipView", "showGrid", "showSparkline", "showStatBar", "sparklinePlacement", "statIcon", "decimals", "staleAfterSeconds", "compare", "min", "max", "lineWidth", "fillOpacity", "curve", "background", "textColor", "thresholds", "seriesColors", "seriesColorMode", "gridX", "timeAxis", "axisUnit", "referenceLines", "showZeroLine", "plotInsetLeft", "plotInsetRight"})
+	options, err := requireObjectShape(raw, nil, optionFields)
 	if err != nil {
 		return err
 	}
@@ -256,6 +295,11 @@ func validateWidgetOptions(raw json.RawMessage) error {
 	if value, ok := options["compare"]; ok {
 		if err := validateStatCompare(value); err != nil {
 			return in("compare", err)
+		}
+	}
+	if value, ok := options["baseline"]; ok {
+		if err := validateTimeSeriesBaseline(value); err != nil {
+			return in("baseline", err)
 		}
 	}
 	for _, check := range []func(map[string]json.RawMessage) error{validateWidgetAxisLabels, validateWidgetTooltipPresentation, validateWidgetTooltipPlacement, validateWidgetFlags, validateWidgetAppearance, validateWidgetRenderingOptions, validateWidgetNumbers, validateWidgetThresholds, validateWidgetSeriesColors} {
@@ -279,8 +323,20 @@ func validateStatCompare(raw json.RawMessage) error {
 	return validateWidgetEnum(fields, "good", []string{"up", "down"}, "compare good must be up or down")
 }
 
+// validateTimeSeriesBaseline checks a time series' baseline. The window is required and closed; band is optional.
+func validateTimeSeriesBaseline(raw json.RawMessage) error {
+	fields, err := requireObjectShape(raw, []string{"window"}, []string{"band"})
+	if err != nil {
+		return err
+	}
+	if err := validateWidgetEnum(fields, "window", []string{"previous", "1d", "7d", "rolling"}, "baseline window must be previous, 1d, 7d or rolling"); err != nil {
+		return err
+	}
+	return validateWidgetEnum(fields, "band", []string{"range", "p10p90"}, "baseline band must be range or p10p90")
+}
+
 func validateTooltipView(raw json.RawMessage) error {
-	view, err := requireObjectShape(raw, []string{"type"}, []string{"height", "showGrid", "showAxis", "showLegend", "showSparkline", "title", "unit", "color", "decimals", "pluginId", "dataKind", "config", "source"})
+	view, err := requireObjectShape(raw, tooltipViewRequiredFields, tooltipViewOptionalFields)
 	if err != nil {
 		return err
 	}
@@ -411,7 +467,7 @@ func validateTooltipQuerySource(raw json.RawMessage, providerID, query string) e
 	if !validID.MatchString(providerID) {
 		return fieldErr("providerId", "tooltip query source requires a valid provider ID and query up to 8192 characters")
 	}
-	if trimJS(query) == "" || stringUnits(trimJS(query)) > 8192 {
+	if trimJS(query) == "" || textLength(trimJS(query)) > 8192 {
 		return fieldErr("query", "tooltip query source requires a valid provider ID and query up to 8192 characters")
 	}
 	if rawBindings, ok := fields["bindings"]; ok {
@@ -463,7 +519,7 @@ func validateWidgetAxisLabels(options map[string]json.RawMessage) error {
 	for _, field := range []string{"xAxisLabel", "yAxisLabel"} {
 		if value, ok := options[field]; ok {
 			var text string
-			if json.Unmarshal(value, &text) != nil || stringUnits(text) > 80 {
+			if json.Unmarshal(value, &text) != nil || textLength(text) > 80 {
 				return fieldErr(field, "axis labels must be strings of at most 80 characters")
 			}
 		}
@@ -481,7 +537,7 @@ func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error
 		field, limit := bound.field, bound.limit
 		if value, ok := options[field]; ok {
 			var text string
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || stringUnits(text) > limit {
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &text) != nil || textLength(text) > limit {
 				return fieldErr(field, fmt.Sprintf("%s must be a string of at most %d characters", field, limit))
 			}
 		}
@@ -490,7 +546,7 @@ func validateWidgetTooltipPresentation(options map[string]json.RawMessage) error
 }
 
 func validateWidgetFlags(options map[string]json.RawMessage) error {
-	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar", "gridX", "showZeroLine"} {
+	for _, field := range []string{"showLegend", "showLabels", "showValues", "showTooltip", "tooltipShowUnit", "showGrid", "showSparkline", "showStatBar", "gridX", "showZeroLine", "showEvents"} {
 		if value, ok := options[field]; ok {
 			var flag bool
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &flag) != nil {
@@ -579,7 +635,7 @@ func validateWidgetReferenceLines(options map[string]json.RawMessage) error {
 }
 
 func validateWidgetReferenceLine(raw json.RawMessage) error {
-	fields, err := requireObjectShape(raw, []string{"value"}, []string{"label", "color"})
+	fields, err := requireObjectShape(raw, referenceLineRequiredFields, referenceLineOptionalFields)
 	if err != nil {
 		return err
 	}
@@ -612,7 +668,7 @@ func validateWidgetReferenceLine(raw json.RawMessage) error {
 
 func validateReferenceLineLabel(raw json.RawMessage) error {
 	var text string
-	if json.Unmarshal(raw, &text) != nil || stringUnits(text) < 1 || stringUnits(text) > 80 {
+	if json.Unmarshal(raw, &text) != nil || textLength(text) < 1 || textLength(text) > 80 {
 		return errors.New("reference line labels must be 1 to 80 characters")
 	}
 	return nil
@@ -720,7 +776,7 @@ func validateWidgetSeriesColors(options map[string]json.RawMessage) error {
 var seriesColorRoles = []string{"traffic", "success", "client-error", "server-error", "p50", "p95", "p99"}
 
 func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
-	members, err := requireObjectShape(entry, []string{"label", "value"}, []string{"color", "role"})
+	members, err := requireObjectShape(entry, seriesRuleRequiredFields, seriesRuleOptionalFields)
 	if err != nil {
 		return [2]string{}, err
 	}
@@ -739,7 +795,7 @@ func validateWidgetSeriesColorRule(entry json.RawMessage) ([2]string, error) {
 	if !validPromLabel.MatchString(rule.Label) || len(rule.Label) > 100 {
 		return [2]string{}, fieldErr("label", "series colors require a valid metric label, nonempty value, and six-digit hex color")
 	}
-	if stringUnits(rule.Value) < 1 || stringUnits(rule.Value) > 256 {
+	if textLength(rule.Value) < 1 || textLength(rule.Value) > 256 {
 		return [2]string{}, fieldErr("value", "series colors require a valid metric label, nonempty value, and six-digit hex color")
 	}
 	if err := validateSeriesColorChoice(rule.Color, rule.Role); err != nil {
@@ -800,7 +856,7 @@ var statusLevels = []string{"ok", "info", "warning", "critical", "unknown"}
 // validateWidgetThreshold mirrors thresholdSchema in schema.ts: value is required; status (a semantic level) and
 // color (a hue override) are optional but at least one must be named; label is optional and may be empty.
 func validateWidgetThreshold(raw json.RawMessage, previous float64) (float64, error) {
-	fields, err := requireObjectShape(raw, []string{"value"}, []string{"status", "color", "label"})
+	fields, err := requireObjectShape(raw, thresholdRequiredFields, thresholdOptionalFields)
 	if err != nil {
 		return 0, err
 	}
@@ -917,7 +973,7 @@ func validateTooltipText(view map[string]json.RawMessage) error {
 				return fieldErr(field, "tooltip title must not be empty")
 			}
 		}
-		if stringUnits(text) > maximum {
+		if textLength(text) > maximum {
 			return fieldErr(field, "tooltip title and unit must be bounded strings")
 		}
 	}
@@ -970,7 +1026,7 @@ func validateTooltipBinding(rawBinding json.RawMessage, seen map[string]bool) er
 }
 
 func validTooltipLabelKey(label string) bool {
-	return label != "" && stringUnits(label) <= 128
+	return label != "" && textLength(label) <= 128
 }
 
 func reservedObjectKey(key string) bool {

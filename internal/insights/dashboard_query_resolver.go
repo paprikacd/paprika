@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 type dashboardReadDocument struct {
@@ -16,7 +19,9 @@ type dashboardReadDocument struct {
 	TimeRange       string                  `json:"timeRange"`
 	CustomTimeRange *dashboardReadTimeRange `json:"customTimeRange"`
 	Variables       []dashboardReadVariable `json:"variables"`
-	Widgets         []dashboardReadWidget   `json:"widgets"`
+	// AnnotationSource is the dashboard-level event source that time-based widgets without their own inherit.
+	AnnotationSource *dashboardReadAnnotation `json:"annotationSource"`
+	Widgets          []dashboardReadWidget    `json:"widgets"`
 }
 
 type dashboardReadTimeRange struct {
@@ -27,13 +32,33 @@ type dashboardReadTimeRange struct {
 type dashboardReadVariable struct {
 	Name         string                       `json:"name"`
 	Label        string                       `json:"label"`
-	DefaultValue *string                      `json:"defaultValue"`
+	Multi        bool                         `json:"multi"`
+	AllowAll     bool                         `json:"allowAll"`
+	DefaultValue *variablevalue.Value         `json:"defaultValue"`
 	Options      []string                     `json:"options"`
 	Source       *dashboardReadVariableSource `json:"source"`
 }
 
-// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. It does not resolve
-// the source: the values come from the console, so the rest of the source only describes it.
+// dashboardVariableType is the template kind a declared variable's value fills: a list for a variable with
+// several values, otherwise a string.
+func dashboardVariableType(definition *dashboardReadVariable) string {
+	if definition.Multi {
+		return "strings"
+	}
+	return "string"
+}
+
+// dashboardValueText is a variable value as the interpolator takes it: a []string for a list, else a string.
+func dashboardValueText(value variablevalue.Value) any {
+	if value.List {
+		return value.Items
+	}
+	text, _ := value.Text()
+	return text
+}
+
+// dashboardReadVariableSource reads the fields query_dashboard reports in variableDefinitions. The values are
+// resolved per call and reported as sourceOptions; the rest of the source describes it.
 type dashboardReadVariableSource struct {
 	Type       string                  `json:"type"`
 	ProviderID string                  `json:"providerId"`
@@ -41,6 +66,7 @@ type dashboardReadVariableSource struct {
 	Selector   *string                 `json:"selector"`
 	Field      string                  `json:"field"`
 	QueryRef   *dashboardReadReference `json:"queryRef"`
+	Limit      *int                    `json:"limit"`
 }
 
 type dashboardReadWidget struct {
@@ -62,6 +88,10 @@ type dashboardReadWidget struct {
 		Thresholds        []dashboardReadThreshold `json:"thresholds"`
 		// Compare is a stat's earlier-window comparison. Nil leaves the stat without one.
 		Compare *dashboardReadCompare `json:"compare"`
+		// Baseline is a time series' band. Nil leaves the series without one.
+		Baseline *dashboardReadBaseline `json:"baseline"`
+		// ShowEvents set to false hides the dashboard's event source on this widget. Nil shows it.
+		ShowEvents *bool `json:"showEvents"`
 		// The declared scale and styling the dry-run data rules compare against.
 		// Query output never reads them.
 		Min           *float64        `json:"min"`
@@ -74,6 +104,12 @@ type dashboardReadWidget struct {
 type dashboardReadCompare struct {
 	Window string `json:"window"`
 	Good   string `json:"good,omitempty"`
+}
+
+// dashboardReadBaseline is a time series' baseline: its earlier window (or rolling) and its band.
+type dashboardReadBaseline struct {
+	Window string `json:"window"`
+	Band   string `json:"band,omitempty"`
 }
 
 type dashboardReadThreshold struct {
@@ -103,20 +139,31 @@ type dashboardReadBinding struct {
 	Value     json.RawMessage `json:"value"`
 }
 
-func dashboardVariableValues(definitions []dashboardReadVariable, overrides map[string]string) (map[string]string, error) {
-	values := make(map[string]string, len(definitions))
-	known := make(map[string]bool, len(definitions))
+// dashboardVariableValues applies each declaration to the defaults and overrides. A string given for a
+// variable with several values is one item; a list given for a single-value variable is refused.
+func dashboardVariableValues(definitions []dashboardReadVariable, overrides map[string]variablevalue.Value) (map[string]variablevalue.Value, error) {
+	values := make(map[string]variablevalue.Value, len(definitions))
+	declared := make(map[string]dashboardReadVariable, len(definitions))
 	for _, definition := range definitions {
-		known[definition.Name] = true
+		declared[definition.Name] = definition
 		if definition.DefaultValue != nil {
-			values[definition.Name] = *definition.DefaultValue
+			value, err := definition.DefaultValue.Normalize(definition.Multi, definition.AllowAll)
+			if err != nil {
+				return nil, fmt.Errorf("default of dashboard variable %s: %w", definition.Name, err)
+			}
+			values[definition.Name] = value
 		}
 	}
 	for name, value := range overrides {
-		if !known[name] || !validVariableName(name) || stringUnits(value) > 1024 {
-			return nil, errors.New("variables must name declared dashboard variables with string values up to 1024 characters")
+		definition, ok := declared[name]
+		if !ok || !validVariableName(name) {
+			return nil, errors.New("variables must name declared dashboard variables with values that fit their declaration")
 		}
-		values[name] = value
+		normalized, err := value.Normalize(definition.Multi, definition.AllowAll)
+		if err != nil {
+			return nil, fmt.Errorf("variable %s: %w", name, err)
+		}
+		values[name] = normalized
 	}
 	return values, nil
 }
@@ -134,20 +181,43 @@ const dashboardVariableWarningValueBytes = 64
 // DashboardQueryVariable is a declared dashboard variable as query-dashboard reports it. Its value for this call
 // is the result's variables map, which holds the saved default unless an override replaced it.
 type DashboardQueryVariable struct {
-	Name         string   `json:"name"`
-	Label        string   `json:"label,omitempty"`
-	DefaultValue *string  `json:"defaultValue,omitempty"`
-	Options      []string `json:"options,omitempty"`
+	Name  string `json:"name"`
+	Label string `json:"label,omitempty"`
+	// Multi and AllowAll report the declaration. A multi variable's value is a list, and an empty list is All.
+	Multi        bool                 `json:"multi,omitempty"`
+	AllowAll     bool                 `json:"allowAll,omitempty"`
+	DefaultValue *variablevalue.Value `json:"defaultValue,omitempty"`
+	Options      []string             `json:"options,omitempty"`
 	// Source names a query-backed source (labelValues or savedQuery). A sourced variable reports its static
 	// options as FallbackOptions instead of Options: they are shown only when the source fails, not as choices.
 	// The type is a short fixed word, outside the detail budget.
 	Source        string                        `json:"source,omitempty"`
 	SourceSummary *DashboardQueryVariableSource `json:"sourceSummary,omitempty"`
-	// FallbackOptions are a sourced variable's static options. query_dashboard does not resolve the source, so
-	// these are not the variable's choices.
+	// FallbackOptions are a sourced variable's static options. They are shown only when its source fails, so they
+	// are not the variable's choices; SourceOptions holds those.
 	FallbackOptions []string `json:"fallbackOptions,omitempty"`
-	OptionsOmitted  int      `json:"optionsOmitted,omitempty"`
-	DetailOmitted   bool     `json:"detailOmitted,omitempty"`
+	// SourceOptions is the value list the variable's source returned for this call. See DashboardVariableSourceOptions.
+	SourceOptions  *DashboardVariableSourceOptions `json:"sourceOptions,omitempty"`
+	OptionsOmitted int                             `json:"optionsOmitted,omitempty"`
+	DetailOmitted  bool                            `json:"detailOmitted,omitempty"`
+}
+
+// DashboardVariableSourceOptions is the resolved source of one variable for this call. State is ready, empty,
+// failed, needs_variable or not_run. Values is the list in the source's order, within the call's value budget;
+// ValuesOmitted counts the values past that budget or dropped by the omission ladder. CurrentValue says whether
+// the variable's current value is among the values: in_values, not_in_values or unknown (a truncated list
+// without it). It is absent with no current value, or when the state is not ready or empty.
+type DashboardVariableSourceOptions struct {
+	State         string   `json:"state"`
+	Values        []string `json:"values,omitempty"`
+	ValuesOmitted int      `json:"valuesOmitted,omitempty"`
+	Truncated     bool     `json:"truncated,omitempty"`
+	CurrentValue  string   `json:"currentValue,omitempty"`
+	// MissingValues names each current value of a multi-value variable that the list lacks. Set only with
+	// the not_in_values state, so a truncated list never reports a value as missing.
+	MissingValues []string             `json:"missingValues,omitempty"`
+	NeedsVariable string               `json:"needsVariable,omitempty"`
+	Error         *DashboardQueryError `json:"error,omitempty"`
 }
 
 // DashboardQueryVariableSource describes where a sourced variable's values come from, without the values. Only
@@ -194,7 +264,7 @@ func dashboardQueryVariables(definitions []dashboardReadVariable) []DashboardQue
 	out := make([]DashboardQueryVariable, 0, len(definitions))
 	budget := dashboardVariableDetailBytes
 	for _, definition := range definitions {
-		variable := DashboardQueryVariable{Name: definition.Name}
+		variable := DashboardQueryVariable{Name: definition.Name, Multi: definition.Multi, AllowAll: definition.AllowAll}
 		if definition.Source != nil {
 			variable.Source = definition.Source.Type
 			variable.SourceSummary = dashboardQuerySourceSummary(definition.Source)
@@ -204,7 +274,7 @@ func dashboardQueryVariables(definitions []dashboardReadVariable) []DashboardQue
 			detail += encodedStringBytes(definition.Label)
 		}
 		if definition.DefaultValue != nil {
-			detail += encodedStringBytes(*definition.DefaultValue)
+			detail += encodedValueBytes(*definition.DefaultValue)
 		}
 		if detail <= budget {
 			budget -= detail
@@ -240,11 +310,20 @@ func encodedStringBytes(s string) int {
 	return len(encoded)
 }
 
+// encodedValueBytes is the length of a variable value as the result encoder writes it.
+func encodedValueBytes(value variablevalue.Value) int {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return 6 * (1 + variablevalue.MaxUnits) // Unreachable for a bounded value; the worst case keeps the budget safe.
+	}
+	return len(encoded)
+}
+
 // dashboardVariableWarnings names each override that is outside a variable's declared options. A variable
 // without options accepts any string, and an override outside the list still applies, as it does in the UI.
 // A sourced variable's options are its fallback, not its choices, so an override of a sourced variable is never
 // checked against them. Only an empty or over-long override is named for it.
-func dashboardVariableWarnings(definitions []dashboardReadVariable, overrides map[string]string) []string {
+func dashboardVariableWarnings(definitions []dashboardReadVariable, overrides map[string]variablevalue.Value) []string {
 	var warnings []string
 	for _, definition := range definitions {
 		value, overridden := overrides[definition.Name]
@@ -252,18 +331,19 @@ func dashboardVariableWarnings(definitions []dashboardReadVariable, overrides ma
 			continue
 		}
 		if definition.Source != nil {
-			switch {
-			case value == "":
-				warnings = append(warnings, definition.Name+"= is empty; query_dashboard does not resolve the variable source, so pass an explicit value")
-			case stringUnits(value) > 1024:
-				warnings = append(warnings, definition.Name+" is longer than 1024 characters")
+			if text, single := value.Text(); single && text == "" {
+				warnings = append(warnings, definition.Name+"= is empty; pass one of its source values")
 			}
 			continue
 		}
-		if len(definition.Options) == 0 || slices.Contains(definition.Options, value) {
+		if len(definition.Options) == 0 {
 			continue
 		}
-		warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the declared options", definition.Name, warningValue(value)))
+		for _, item := range value.Items {
+			if !slices.Contains(definition.Options, item) {
+				warnings = append(warnings, fmt.Sprintf("%s=%s is not one of the declared options", definition.Name, warningValue(item)))
+			}
+		}
 	}
 	return warnings
 }
@@ -290,7 +370,7 @@ func dashboardWidgetKind(widget *dashboardReadWidget) string {
 	return "metrics"
 }
 
-func resolveDashboardWidget(widget *dashboardReadWidget, saved map[string]dashboardSavedSnapshot, variables map[string]string, definitions []dashboardReadVariable) (Query, *DashboardQueryError) {
+func resolveDashboardWidget(widget *dashboardReadWidget, saved map[string]dashboardSavedSnapshot, variables map[string]variablevalue.Value, definitions []dashboardReadVariable) (Query, *DashboardQueryError) {
 	query := Query{ProviderID: widget.ProviderID, Query: widget.Query, Kind: dashboardWidgetKind(widget)}
 	if isSLOSummaryWidget(widget) {
 		compiled, failure := resolveSLOSummaryQuery(widget)
@@ -317,10 +397,10 @@ func resolveDashboardWidget(widget *dashboardReadWidget, saved map[string]dashbo
 	types := make(map[string]string, len(definitions))
 	values := make(map[string]any, len(variables))
 	for _, definition := range definitions {
-		types[definition.Name] = "string"
+		types[definition.Name] = dashboardVariableType(&definition)
 	}
 	for name, value := range variables {
-		values[name] = value
+		values[name] = dashboardValueText(value)
 	}
 	expression, err := interpolateDashboardLiterals(query.Query, types, values)
 	if err != nil {
@@ -347,12 +427,12 @@ func resolveSLOSummaryQuery(widget *dashboardReadWidget) (string, *DashboardQuer
 	return compiled, nil
 }
 
-func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadReference, variables map[string]string) (string, error) {
+func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadReference, variables map[string]variablevalue.Value) (string, error) {
 	parameters := queryParameters(saved)
 	values := make(map[string]any, len(parameters))
 	types := make(map[string]string, len(parameters))
 	for _, parameter := range saved.Parameters {
-		types[parameter.Name] = parameter.Type
+		types[parameter.Name] = parameter.templateKind()
 		if len(parameter.DefaultValue) > 0 {
 			var value any
 			if err := json.Unmarshal(parameter.DefaultValue, &value); err != nil {
@@ -370,7 +450,7 @@ func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadRefere
 		if err != nil {
 			return "", err
 		}
-		checked, err := dashboardParameterValue(parameter.Type, value)
+		checked, err := dashboardParameterValue(parameter.templateKind(), value)
 		if err != nil {
 			return "", err
 		}
@@ -378,7 +458,7 @@ func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadRefere
 	}
 	for name, parameter := range parameters {
 		value := values[name] // An absent required default fails the same typed-value validation.
-		checked, err := dashboardParameterValue(parameter.Type, value)
+		checked, err := dashboardParameterValue(parameter.templateKind(), value)
 		if err != nil {
 			return "", err
 		}
@@ -387,7 +467,7 @@ func resolveDashboardSavedQuery(saved *SavedQuery, reference dashboardReadRefere
 	return interpolateDashboardLiterals(saved.Query, types, values)
 }
 
-func dashboardBindingValue(binding dashboardReadBinding, variables map[string]string) (any, error) {
+func dashboardBindingValue(binding dashboardReadBinding, variables map[string]variablevalue.Value) (any, error) {
 	switch binding.Source {
 	case "constant":
 		var value any
@@ -396,11 +476,11 @@ func dashboardBindingValue(binding dashboardReadBinding, variables map[string]st
 		}
 		return value, nil
 	case "variable":
-		text, present := variables[binding.Variable]
+		value, present := variables[binding.Variable]
 		if !present {
 			return nil, errors.New("missing dashboard variable")
 		}
-		return text, nil
+		return dashboardValueText(value), nil
 	default:
 		return nil, errors.New("observation bindings cannot execute without a hovered observation")
 	}
@@ -413,10 +493,41 @@ func dashboardParameterValue(kind string, value any) (any, error) {
 		}
 		return nil, errors.New("saved query value must be bounded text")
 	}
+	if kind == "strings" {
+		return dashboardListParameterValue(value)
+	}
 	if kind != "number" {
 		return nil, errors.New("unsupported saved query parameter type")
 	}
 	return dashboardNumericParameterValue(value)
+}
+
+// dashboardListParameterValue checks a value for a parameter of several values. A single string is one item, so a
+// single-value variable or a fixed string fills a list parameter. The list is bounded like a variable list, and an
+// empty list is All, which binds as NULL in a SQL array.
+func dashboardListParameterValue(value any) (any, error) {
+	var items []string
+	switch typed := value.(type) {
+	case string:
+		items = []string{typed}
+	case []string:
+		items = typed
+	case []any:
+		items = make([]string, 0, len(typed))
+		for _, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				return nil, errors.New("saved query list values must be strings")
+			}
+			items = append(items, text)
+		}
+	default:
+		return nil, errors.New("saved query value must be a list of bounded text")
+	}
+	if err := variablevalue.List(items).Validate(); err != nil {
+		return nil, errors.New("saved query list value is out of bounds")
+	}
+	return items, nil
 }
 
 func dashboardNumericParameterValue(value any) (any, error) {
@@ -446,6 +557,7 @@ func interpolateDashboardLiterals(template string, types map[string]string, valu
 		return "", err
 	}
 	var output strings.Builder
+	consumed := 0 // Bytes of template already handled; remaining starts there.
 	for remaining := template; remaining != ""; {
 		start := strings.Index(remaining, "{{")
 		if start < 0 {
@@ -458,18 +570,83 @@ func interpolateDashboardLiterals(template string, types map[string]string, valu
 		if !exists {
 			return "", errors.New("query parameter has no value")
 		}
-		literal, err := dashboardLiteral(value)
+		literal, err := interpolatedLiteral(value, types[name], listContextBefore(template[:consumed+start]))
 		if err != nil {
 			return "", err
 		}
 		output.WriteString(remaining[:start])
 		output.WriteString(literal)
+		consumed += end + 2
 		remaining = remaining[end+2:]
 	}
 	if stringUnits(output.String()) > 8192 {
 		return "", errors.New("query exceeds the expanded limit")
 	}
 	return output.String(), nil
+}
+
+// interpolatedLiteral renders one placeholder. A "strings" parameter always renders as a list, so a single
+// string is wrapped as a one-item list. The context comes from the template text before the placeholder.
+func interpolatedLiteral(value any, kind string, context listContext) (string, error) {
+	if items, ok := dashboardListItems(value); ok {
+		return dashboardListLiteral(items, context)
+	}
+	if text, ok := value.(string); ok && kind == "strings" {
+		return dashboardListLiteral([]string{text}, context)
+	}
+	return dashboardLiteral(value)
+}
+
+func dashboardListItems(value any) ([]string, bool) {
+	switch items := value.(type) {
+	case []string:
+		return items, true
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			text, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, text)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// dashboardListLiteral renders a list of values for a regex, negated regex or SQL array position. Regex items
+// are escaped like Go's regexp.QuoteMeta (the TypeScript interpolator escapes the same characters), joined with
+// "|" and written as one string literal. All is ".+" after =~ and "null" as a SQL array element. Negated All is
+// refused, because it would exclude every value. No anchors are added: the providers match the alternation as
+// they match any regex.
+func dashboardListLiteral(items []string, context listContext) (string, error) {
+	switch context {
+	case contextRegex, contextNegated:
+		if len(items) == 0 {
+			if context == contextNegated {
+				return "", errors.New("an All value cannot follow !~; it would exclude every value")
+			}
+			return dashboardStringLiteral(".+"), nil
+		}
+		escaped := make([]string, len(items))
+		for index, item := range items {
+			escaped[index] = regexp.QuoteMeta(item)
+		}
+		return dashboardStringLiteral(strings.Join(escaped, "|")), nil
+	case contextArray:
+		if len(items) == 0 {
+			return "null", nil
+		}
+		quoted := make([]string, len(items))
+		for index, item := range items {
+			quoted[index] = dashboardStringLiteral(item)
+		}
+		return "[" + strings.Join(quoted, ",") + "]", nil
+	case contextNone:
+		return "", errors.New("query list values need =~, !~ or a SQL parameters array")
+	}
+	return "", errors.New("query list values need =~, !~ or a SQL parameters array")
 }
 
 func dashboardLiteral(value any) (string, error) {

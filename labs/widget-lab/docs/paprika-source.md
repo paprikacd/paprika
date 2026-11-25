@@ -64,7 +64,7 @@ There is no separate canonical segmented-control component. Use `GammaTabs` for 
 
 ## Minimal example
 
-This complete example is relative to a file directly under `src/`. The hosting app must supply normal page layout and the dependencies above. `WidgetVisualization` and the rich-metric registration come from the holding copies because those files are patched; the theme, cursor and schema types come from production through `@insights/…` imports.
+This complete example is relative to a file directly under `src/`. The hosting app must supply normal page layout and the dependencies above. Every import is production code through `@insights/…`; the lab keeps no copy of `WidgetVisualization`, the registrations or the theme.
 
 ```tsx
 import { WidgetVisualization } from '@insights/charts';

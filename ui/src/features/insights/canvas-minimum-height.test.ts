@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { minimumHeightsOf } from "./canvas";
 import { canvasLayout } from "./responsive-layout";
+import { layoutHintsOf } from "./layout-hints";
 import { registerSloSummaryPlugin, sloMinHeight } from "./plugins/slo-summary";
 import type { Widget } from "./schema";
 
@@ -22,7 +23,7 @@ describe("canvas minimum heights", () => {
       id: "slo", type: "plugin", pluginId: "slo-summary", title: "SLO", dataKind: "metrics", providerId: "p",
       query: "q", layout: { x: 0, y: 0, w: 6, h: 5 },
     } as unknown as Widget;
-    const layout = canvasLayout([widget], "stacked", 390, minimumHeightsOf([widget]));
+    const layout = canvasLayout([widget], "stacked", 390, minimumHeightsOf([widget]), layoutHintsOf([widget]));
     // The grid track is 74px with a 16px allowance, so a 360px minimum needs at least six tracks.
     expect(layout.find(item => item.i === "slo")?.h).toBeGreaterThanOrEqual(6);
   });
@@ -58,7 +59,7 @@ describe("services card minimum height", () => {
   it("fits six two-line rows and the truncation note in a 12-wide five-row card at phone width", () => {
     registerSloSummaryPlugin();
     const widget = services(6);
-    const layout = canvasLayout([widget], "stacked", 390, minimumHeightsOf([widget]));
+    const layout = canvasLayout([widget], "stacked", 390, minimumHeightsOf([widget]), layoutHintsOf([widget]));
     const h = layout.find(item => item.i === "slo")?.h ?? 0;
     expect(pixels(h)).toBeGreaterThanOrEqual(130 + 6 * 48);
   });

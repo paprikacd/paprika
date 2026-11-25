@@ -36,6 +36,9 @@ type observeProvider struct {
 	gateway   *observeGateway
 	token     string
 	reference string
+	// scope is the gateway's authorization digest for the caller that listed this provider.
+	// It is empty when the gateway reported none, and then results must not be shared.
+	scope string
 }
 
 type observeError struct {
@@ -44,6 +47,9 @@ type observeError struct {
 	// retryAfter is the gateway's Retry-After in seconds for a 429, or zero when
 	// the gateway gave none.
 	retryAfter int
+	// scope is the gateway's X-Paprika-Limit-Scope for a 429 (see observeLimitScope),
+	// or empty when it named none.
+	scope string
 }
 
 func (e *observeError) Error() string { return e.message }
@@ -96,7 +102,7 @@ func observeProviderID(reference string) string {
 func delegatedObserveToken(r *http.Request) (string, error) {
 	token := r.Header.Get(observeTokenHeader)
 	if token == "" || len(token) > 32<<10 || strings.TrimSpace(token) != token || strings.ContainsAny(token, "\r\n") {
-		return "", &observeError{http.StatusForbidden, "caller authorization is required for shared observability providers", 0}
+		return "", &observeError{http.StatusForbidden, "caller authorization is required for shared observability providers", 0, ""}
 	}
 	return token, nil
 }
@@ -159,15 +165,32 @@ func (g *observeGateway) idleConnsPerHost(n int) {
 // observeHTTPErrorFor maps a gateway HTTP status and its Retry-After header.
 // Only a whole-second delay between 1 and capacityhint.MaxSeconds is kept, so a
 // forwarded hint stays inside the browser's replay cap. Anything else is ignored.
-func observeHTTPErrorFor(status int, retryAfter string) error {
+func observeHTTPErrorFor(status int, retryAfter, limitScope string) error {
 	err := observeHTTPError(status)
 	var remote *observeError
 	if errors.As(err, &remote) && status == http.StatusTooManyRequests {
 		if seconds, parseErr := strconv.Atoi(strings.TrimSpace(retryAfter)); parseErr == nil && seconds >= capacityhint.MinSeconds && seconds <= capacityhint.MaxSeconds {
 			remote.retryAfter = seconds
 		}
+		remote.scope = observeLimitScope(limitScope)
 	}
 	return err
+}
+
+// observeLimitScopeHeader is the header on which the gateway names the limit that
+// refused a 429.
+const observeLimitScopeHeader = "X-Paprika-Limit-Scope"
+
+// observeLimitScope returns the gateway's limit scope when it is one of the names
+// the gateway sends, and empty otherwise. The value is never echoed raw. Empty (no
+// header, an older gateway, or "unknown") reads as gateway-wide, as every scope but
+// provider does, so a missing or unrecognised name never narrows a hold.
+func observeLimitScope(value string) string {
+	switch value {
+	case "edge", "budget", "provider", "queue", "principal":
+		return value
+	}
+	return ""
 }
 
 // listProviders always returns the local providers. A shared-catalog failure
@@ -226,7 +249,7 @@ func (s *Server) resolveProvider(r *http.Request, id string) (*providerClient, e
 			// A request-local client keeps its metadata cache scoped to this exact
 			// authorization check. Never retain delegated tokens in a registry.
 			return &providerClient{public: *provider, metadataCache: make(map[string]metadataCacheEntry), remote: &observeProvider{
-				gateway: s.observe, token: token, reference: provider.ProviderRef,
+				gateway: s.observe, token: token, reference: provider.ProviderRef, scope: listing.scope,
 			}}, nil
 		}
 	}
@@ -320,17 +343,17 @@ func decodeObserveCatalog(body []byte, failed bool) ([]observeCatalogProvider, e
 func observeHTTPError(status int) error {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return &observeError{http.StatusForbidden, "shared observability provider access denied", 0}
+		return &observeError{http.StatusForbidden, "shared observability provider access denied", 0, ""}
 	case http.StatusNotFound:
 		return ErrNotFound
 	case http.StatusBadRequest:
-		return &observeError{http.StatusBadRequest, "observability gateway rejected the provider request", 0}
+		return &observeError{http.StatusBadRequest, "observability gateway rejected the provider request", 0, ""}
 	case http.StatusTooManyRequests:
-		return &observeError{http.StatusTooManyRequests, "too many active observability requests; retry shortly", 0}
+		return &observeError{http.StatusTooManyRequests, "too many active observability requests; retry shortly", 0, ""}
 	case http.StatusGatewayTimeout:
-		return &observeError{http.StatusGatewayTimeout, "observability gateway request timed out", 0}
+		return &observeError{http.StatusGatewayTimeout, "observability gateway request timed out", 0, ""}
 	default:
-		return &observeError{http.StatusBadGateway, "observability gateway is unavailable", 0}
+		return &observeError{http.StatusBadGateway, "observability gateway is unavailable", 0, ""}
 	}
 }
 
@@ -356,11 +379,11 @@ func decodeObserveData(body []byte, failed bool, limit int64) ([]byte, error) {
 		}
 		return response.Data, nil
 	case "Forbidden":
-		return nil, &observeError{http.StatusForbidden, "observability provider refused the configured credentials", 0}
+		return nil, &observeError{http.StatusForbidden, "observability provider refused the configured credentials", 0, ""}
 	case "NotConfigured":
-		return nil, &observeError{http.StatusServiceUnavailable, "observability provider is not configured", 0}
+		return nil, &observeError{http.StatusServiceUnavailable, "observability provider is not configured", 0, ""}
 	case "NotAvailable":
-		return nil, &observeError{http.StatusServiceUnavailable, "observability provider does not support this request", 0}
+		return nil, &observeError{http.StatusServiceUnavailable, "observability provider does not support this request", 0, ""}
 	default:
 		return nil, errUpstream
 	}

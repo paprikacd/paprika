@@ -41,6 +41,15 @@ describe("authenticated requests", () => {
     expect(window.location.href).toBe("")
     expect(sessionStorage.getItem("paprika_return_to")).toBeNull()
   })
+  it("leaves sign-in to the host page when it runs in a frame", () => {
+    const top = vi.spyOn(window, "top", "get").mockReturnValue({} as Window)
+    redirectToLogin()
+    expect(window.location.href).toBe("")
+    expect(sessionStorage.getItem("paprika_return_to")).toBeNull()
+    top.mockRestore()
+    redirectToLogin()
+    expect(window.location.href).toBe("/login/")
+  })
   it("waits for session bootstrap before requesting protected data", async () => {
     let resolve!: (token: string) => void
     session.ensure.mockReturnValue(new Promise<string>(done => { resolve = done }))

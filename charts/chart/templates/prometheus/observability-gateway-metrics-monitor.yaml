@@ -1,0 +1,31 @@
+{{- /* The gateway's metrics server runs only when metrics.bindAddress enables it (as in
+  its Deployment), and its Service exposes it on the "metrics" port. */}}
+{{- $metricsBindAddress := toString .Values.metrics.bindAddress }}
+{{- if and .Values.observabilityGateway.enabled .Values.prometheus.enable (ne $metricsBindAddress "") (ne $metricsBindAddress "0") (ne $metricsBindAddress ":0") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: observability-gateway
+  name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway-metrics-monitor" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpoints:
+  - {{- with .Values.metrics.serviceMonitor.interval }}
+    interval: {{ . }}
+    {{- end }}
+    {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
+    scrapeTimeout: {{ . }}
+    {{- end }}
+    path: /metrics
+    port: metrics
+    scheme: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/component: observability-gateway
+{{- end }}

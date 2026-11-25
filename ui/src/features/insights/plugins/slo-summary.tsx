@@ -1,8 +1,9 @@
 "use client";
 
+import { NO_DATA, PARTIAL_CHIP } from "../benign-states";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { ChevronsDown } from "lucide-react";
-import { DEFAULT_MAX_ROWS, evaluateSlo, evaluationTimestamp, validateSloConfig, type SloBurn, type SloConfig, type SloGroup, type SloOverallState, type SloReason } from "../slo";
+import { ChevronsDown, Gauge } from "lucide-react";
+import { DEFAULT_MAX_ROWS, SLO_DEFAULT_CONFIG, evaluateSlo, evaluationTimestamp, validateSloConfig, type SloBurn, type SloConfig, type SloGroup, type SloOverallState, type SloReason } from "../slo";
 import { formatBounds, formatReading } from "../units";
 import { StatusChip } from "../status-chip";
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry";
@@ -10,14 +11,8 @@ import { ObservationDetails } from "../observation-tooltip";
 import { TooltipDetail, TooltipFact } from "../tooltip-content";
 import styles from "./slo-summary.module.css";
 
-/** The authored default: a 30 day availability objective on the conventional request counter. It validates as saved. */
-export const SLO_DEFAULT_CONFIG: SloConfig = {
-  objective: 99.9,
-  period: "30d",
-  total: "http_requests_total",
-  bad: 'http_requests_total{code=~"5.."}',
-  burnAlerts: "multiwindow",
-};
+// The default lives with the SLO model, so editors read it without loading this renderer and its stylesheet.
+export { SLO_DEFAULT_CONFIG };
 
 const EXACT = new Intl.NumberFormat("en", { maximumFractionDigits: 4 });
 
@@ -125,7 +120,7 @@ export function sloMinHeight(config: unknown): number {
 }
 
 /**
- * Chip status and words per objective state. "No data" covers no traffic, no data and an incomplete result. "Partial" is the
+ * Chip status and words per objective state. No data covers no traffic, no data and an incomplete result. "Partial" is the
  * overall state when no evaluated group is worse than meeting but some group is unknown or a truncated result may hide groups.
  * It is never "Meeting".
  */
@@ -133,8 +128,8 @@ const STATE_CHIP: Record<SloOverallState, { status: "ok" | "warning" | "critical
   meeting: { status: "ok", label: "Meeting" },
   at_risk: { status: "warning", label: "At risk" },
   breaching: { status: "critical", label: "Breaching" },
-  unknown: { status: "unknown", label: "No data" },
-  partial: { status: "unknown", label: "Partial" },
+  unknown: { status: "unknown", label: NO_DATA },
+  partial: { status: "unknown", label: PARTIAL_CHIP },
 };
 
 const COUNT = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
@@ -197,7 +192,7 @@ function sloConfigOf(config: unknown): SloConfig | undefined {
 function unknownText(group: SloGroup, period: string): string {
   if (group.reasons.includes("incomplete")) return "Result truncated; objective not proven";
   if (group.reasons.includes("no_traffic")) return `No requests in ${period}`;
-  if (group.total === null) return "No data";
+  if (group.total === null) return NO_DATA;
   return "Error series missing";
 }
 
@@ -377,7 +372,7 @@ export function SloSummary({ widget, result }: WidgetRendererProps) {
         <p className={styles.muted}>Result truncated: the series may be incomplete.</p>
       )}
       {!group || group.availability === null ? (
-        <p className={styles.reading}>{group ? unknownText(group, config.period) : "No data"}</p>
+        <p className={styles.reading}>{group ? unknownText(group, config.period) : NO_DATA}</p>
       ) : (
         <>
           <p className={styles.reading}>
@@ -412,5 +407,6 @@ export function registerSloSummaryPlugin() {
     // phone width. A services card grows with its row cap (sloMinHeight). The minimum grows the narrow projection's track
     // (responsive-layout.ts), so a short saved card is not clipped.
     sizing: { mode: "intrinsic", minHeight: SINGLE_MIN_HEIGHT, minHeightFor: sloMinHeight },
+    icon: Gauge,
   });
 }

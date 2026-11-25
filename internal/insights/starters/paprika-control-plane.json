@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "paprika-control-plane",
   "title": "Paprika control plane",
-  "description": "Whether Paprika itself is keeping up: applications behind their spec, exhausted release retries, stuck releases, fleet index health, controller liveness, reconcile lag, and how applications and releases sit across phases. Exhausted release retries turn critical above zero; stale applications, stuck releases and a degraded fleet index turn warning above zero.",
+  "description": "Whether Paprika is keeping up: apps behind spec, exhausted retries, stuck releases, fleet index health, controller liveness, reconcile lag, phase counts, Insights query health, and container CPU and memory (container_cpu_usage_seconds_total, container_memory_working_set_bytes, kube_pod_container_resource_requests, kube_pod_container_resource_limits). Exhausted retries turn critical above zero; stale apps, stuck releases and a degraded fleet index turn warning.",
   "timeRange": "6h",
   "refreshInterval": 30,
   "widgets": [
@@ -96,10 +96,20 @@
       "title": "Reconcile lag by application",
       "type": "table",
       "providerId": "metrics-provider-id",
-      "query": "topk(5, max by (application) (paprika_application_reconcile_lag))",
+      "query": "topk(5, max by (namespace, application) (paprika_application_reconcile_lag))",
       "unit": "",
       "description": "The five applications furthest behind their latest spec, across namespaces. Zero means the application has reconciled.",
       "options": { "decimals": 0 },
+      "drilldowns": [
+        {
+          "id": "open-application",
+          "title": "Open application",
+          "application": {
+            "namespace": { "source": "label", "value": "namespace" },
+            "name": { "source": "label", "value": "application" }
+          }
+        }
+      ],
       "layout": { "x": 8, "y": 2, "w": 4, "h": 5 }
     },
     {
@@ -152,6 +162,68 @@
         ]
       },
       "layout": { "x": 6, "y": 11, "w": 6, "h": 4 }
+    },
+    {
+      "id": "insights-query-rate",
+      "title": "Insights queries per second",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "sum by (provider) (rate(paprika_insights_queries_total[5m]))",
+      "unit": "/s",
+      "description": "Provider queries Insights runs per second, by provider, across all outcomes.",
+      "options": { "min": 0 },
+      "layout": { "x": 0, "y": 15, "w": 3, "h": 4 }
+    },
+    {
+      "id": "insights-error-ratio",
+      "title": "Insights query error ratio",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "100 * sum(rate(paprika_insights_queries_total{outcome=\"error\"}[5m])) / sum(rate(paprika_insights_queries_total[5m]))",
+      "unit": "%",
+      "description": "Share of Insights provider queries that ended in an error. Above one percent the line enters the warning band.",
+      "options": {
+        "min": 0,
+        "thresholds": [
+          { "value": 0, "status": "ok" },
+          { "value": 1, "status": "warning" }
+        ]
+      },
+      "layout": { "x": 3, "y": 15, "w": 3, "h": 4 }
+    },
+    {
+      "id": "insights-p95-latency",
+      "title": "Insights query p95 latency",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "histogram_quantile(0.95, sum by (le) (rate(paprika_insights_query_duration_seconds_bucket[5m])))",
+      "unit": "s",
+      "description": "95th percentile duration of Insights provider queries over the last five minutes.",
+      "options": { "min": 0 },
+      "layout": { "x": 6, "y": 15, "w": 3, "h": 4 }
+    },
+    {
+      "id": "insights-capacity-refusals",
+      "title": "Insights capacity refusals per second",
+      "type": "timeseries",
+      "providerId": "metrics-provider-id",
+      "query": "sum by (pool, scope) (rate(paprika_insights_query_capacity_rejections_total[5m]))",
+      "unit": "/s",
+      "description": "Queries refused with HTTP 429, split by pool. A gateway refusal names the limit that refused it: edge, budget, provider, queue, principal or unknown.",
+      "options": { "min": 0 },
+      "layout": { "x": 9, "y": 15, "w": 3, "h": 4 }
+    },
+    {
+      "id": "container-resources",
+      "title": "Control-plane container resources",
+      "type": "plugin",
+      "pluginId": "kubernetes-resource-bars",
+      "dataKind": "metrics",
+      "providerId": "metrics-provider-id",
+      "query": "label_replace(sum by (container) (rate(container_cpu_usage_seconds_total{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\"}[5m])), \"signal\", \"cpu-usage\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_requests{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-request\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_limits{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"cpu\",unit=\"core\"}), \"signal\", \"cpu-limit\", \"\", \"\") or label_replace(sum by (container) (container_memory_working_set_bytes{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\"}), \"signal\", \"memory-usage\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_requests{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-request\", \"\", \"\") or label_replace(sum by (container) (kube_pod_container_resource_limits{pod=~\".*paprika.*\",container=~\"manager|api-server|repo-server|webhook-receiver|observability-gateway|dashboard-renderer|insights|agent|redis\",resource=\"memory\",unit=\"byte\"}), \"signal\", \"memory-limit\", \"\", \"\")",
+      "unit": "",
+      "config": { "groupLabel": "container", "maxGroups": 9 },
+      "layout": { "x": 0, "y": 19, "w": 12, "h": 6 }
     }
   ]
 }

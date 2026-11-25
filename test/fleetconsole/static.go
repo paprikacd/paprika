@@ -53,7 +53,7 @@ func newStaticHandler(assetsDir string) (http.Handler, error) {
 }
 
 func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	setStaticSecurityHeaders(w.Header())
+	setStaticSecurityHeaders(w.Header(), r.URL.Path)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -156,8 +156,14 @@ func serveStaticAsset(w http.ResponseWriter, r *http.Request, assets fs.FS, name
 	http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(contents))
 }
 
-func setStaticSecurityHeaders(header http.Header) {
+// setStaticSecurityHeaders matches the production UI handler: the Insights page alone may be framed, by the same
+// origin, because application pages embed one of its widgets.
+func setStaticSecurityHeaders(header http.Header, requestPath string) {
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
+	if p := strings.Trim(requestPath, "/"); p == "dashboard/insights" || p == "dashboard/insights/index.html" {
+		header.Set("X-Frame-Options", "SAMEORIGIN")
+		header.Set("Content-Security-Policy", "frame-ancestors 'self'")
+	}
 	header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 }

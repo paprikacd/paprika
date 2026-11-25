@@ -13,6 +13,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { buildGoBinary } from "./insights-go-build.mjs"
 import { parse as parseYaml } from "yaml"
 
 
@@ -87,11 +88,6 @@ async function until(predicate, message, timeout = 10_000) {
   while (Date.now() < end) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 25)) }
   throw new Error(message)
 }
-async function run(command, args) {
-  const child = spawn(command, args, { cwd: repository, stdio: ["ignore", "pipe", "pipe"] })
-  let logs = ""; child.stdout.on("data", data => { logs += data }); child.stderr.on("data", data => { logs += data })
-  const [code] = await once(child, "exit"); assert.equal(code, 0, logs)
-}
 async function stopService() {
   if (!service || service.exitCode !== null || service.signalCode !== null) return
   const ended = once(service, "exit"); service.kill("SIGTERM")
@@ -149,7 +145,7 @@ try {
   const upstreamPort = await listen(upstream), reservation = createServer()
   servicePort = await listen(reservation); await new Promise(resolve => reservation.close(resolve)); serviceURL = `http://127.0.0.1:${servicePort}`
   await writeFile(join(temporary, "providers.json"), JSON.stringify({ providers: [{ id: "metrics", name: "Library metrics", type: "prometheus", url: `http://127.0.0.1:${upstreamPort}/prometheus` }] }))
-  await run("rtk", ["proxy", "go", "build", "-o", binary, "./cmd/paprika-insights"])
+  await buildGoBinary(repository, "./cmd/paprika-insights", binary)
   await startService(); gatewayURL = `http://127.0.0.1:${await listen(gateway)}`
   browser = await chromium.launch({ headless: true })
 
@@ -253,7 +249,7 @@ try {
     const tagged = { schemaVersion: 1, id: `tagged-${width}`, name: `Tagged requests ${width}`, providerId: "metrics", kind: "metrics", query: "up", description: "Production request health", tags: ["production", "critical", "request-volume", "platform"], metadata: { team: "observability" } }
     await api(`saved-queries/${tagged.id}`, "PUT", tagged, { "If-None-Match": "*" })
     await openScenario(width); await edit()
-    await selectGammaOption(page, panel().getByRole("combobox", { name: "Visualization", exact: true }), /^Status heatmap/)
+    await selectGammaOption(page, panel().getByRole("combobox", { name: "Visualization", exact: true }), /^Status grid/)
     const tabs = panel().getByRole("tablist", { name: "Widget settings", exact: true })
     // The editor is lazy-loaded; wait for all tabs before reading their geometry.
     await tabs.getByRole("tab").nth(3).waitFor()

@@ -35,10 +35,10 @@ The build writes `labs/widget-lab/dist/`, which is ignored by Git. All displayed
 | Guided configuration, fields and JSON editing | [`src/editor`](../../labs/widget-lab/src/editor/) |
 | Domain widgets and authoring verification | [Iteration 10 report](../../labs/widget-lab/docs/iteration-10-authoring-and-domain-widgets.md) |
 | Responsive Edge Watch and Reliability Room, viewport evidence and 575-test verification | [Iteration 11 report](../../labs/widget-lab/docs/iteration-11-responsive-reference-dashboards.md), [browser measurements](../../labs/widget-lab/docs/qa/iteration-11-browser-evidence.json) |
-| Design and interaction contracts | [`DESIGN.md`](../../labs/widget-lab/DESIGN.md), [`UX-CONTRACT.md`](../../labs/widget-lab/UX-CONTRACT.md) |
+| Lab design and interaction notes (lab-only; production rules are the root [`DESIGN.md`](../../DESIGN.md)) | [`DESIGN.md`](../../labs/widget-lab/DESIGN.md), [`UX-CONTRACT.md`](../../labs/widget-lab/UX-CONTRACT.md) |
 | Attribution and renderer ownership | [`attribution/`](../../labs/widget-lab/attribution/) (upstream license and Gamma attribution at `bb52aed8`), [lab-only wrappers and the production gap each covers](../../labs/widget-lab/src/renderer-extensions/README.md) |
 
-The export includes source assets and historical screenshots so the design decisions and verification reports remain reviewable. Site-specific hosting metadata, installed dependencies and build output are excluded. [`labs/widget-lab-export.json`](../../labs/widget-lab-export.json) records the source commit and the SHA-256, byte length and Git mode of every exported file.
+Import provenance: the initial import is source commit `29b22f4c919e7f821f18d64b96baa71b0966ca42`. The retired per-file manifest and regenerated patch are at commit `af11b6c3` (git history). The lab keeps no export manifest or sync script; Git tracks the current files.
 
 ## Canonical integration boundary
 
@@ -46,26 +46,12 @@ The evaluation app renders through Paprika's `WidgetVisualization`, `Widget` / `
 
 The lab's remaining extensions are wrappers over production APIs, and one renderer production does not bundle: the zoomable connection map. Promoting one of them means adding the missing option or owner to `ui/`, then removing the wrapper. The zoomable map needs a product decision first, because production's connection map has no zoom or pan. Exact UTC start and end entry for lab window controls needs a series adapter for production's Compare window, which the lab does not yet supply.
 
-To promote these capabilities into the production console:
+Promotion is decided family by family; the decision below records the current answer.
 
-1. Relocate the reusable owners into `ui/src/features/insights/` and resolve their imports against canonical modules. Retain their semantic tests and exact missing-value behavior.
-2. Extend the canonical strict schemas and registry together, register the new families on the normal editor/explorer paths, and connect field binding to the actual loaded source schema.
-3. Connect saved widget configuration through the existing authenticated document and provider contracts. Keep synthetic fixtures confined to evaluation or tests.
-4. Verify the existing UI test suite, the relevant production host routes and browser behavior before merging that integration.
+## Boundary
 
-The branch does not change a deployed cluster or merge into `master`. The self-contained lab and reproducible owner delta make the complete work available for review and subsequent production integration.
+The lab renders production's `ui/src/features/insights` through `@insights/*`. The wrappers that remain are listed, with the production gap each covers, in [`labs/widget-lab/src/renderer-extensions/README.md`](../../labs/widget-lab/src/renderer-extensions/README.md). The lab keeps no copy of the renderer.
 
-## Refresh the export
+## Decision (2026-11-24)
 
-The initial `labs/widget-lab-export.json` is an import snapshot of source commit `29b22f4c919e7f821f18d64b96baa71b0966ca42`. Further extensions to this PR are maintained directly in `labs/widget-lab` and tracked by Git. That snapshot remains historical provenance; it is not a current-file integrity manifest after downstream edits. The exporter intentionally refuses to overwrite those independent edits. The Paprika renderer is no longer copied: the lab imports production, and the wrappers that remain are listed in `labs/widget-lab/src/renderer-extensions/README.md`. The former per-file manifest and regenerated patch were retired with the vendored tree; they remain in git history at commit `af11b6c3`.
-
-After committing the separate Widget Lab source, run from the Paprika repository root:
-
-```sh
-python3 hack/sync-widget-lab.py --source /absolute/path/to/paprika-widget-lab
-python3 hack/sync-widget-lab.py --source /absolute/path/to/paprika-widget-lab --check
-```
-
-Current status: this manifest is stale relative to later in-repo edits. It records only the initial import from `29b22f4c`. Edited files such as `src/App.tsx` no longer match their recorded hashes, and files added since then, such as `src/components/lab/WidgetLoading.tsx`, are not listed. The separate checkout that produced `29b22f4c` is not in this repository, so the manifest cannot be regenerated here, and `--check` cannot pass against the current manifest. Use Git history at `af11b6c3` for the retired per-file manifest, and the renderer-extensions README for the current wrappers.
-
-The exporter copies Git-tracked files, retains executable modes, records content hashes and refuses to overwrite independent edits in the exported copy. A dirty source is rejected by default. `--allow-dirty` is available for an explicitly uncommitted preparation checkpoint; the final branch should record `source_dirty: false`.
+The four Kubernetes families (placement, resource bars, CPU throttle and resource trend) are promoted to product metrics plugins in `ui/src/features/insights/plugins/`. Every other lab family is a concept study: the chart library marks it "Concept" and it is not in the product. The Insights maintainer owns both. This replaces the four-step promotion path that used to be listed here.

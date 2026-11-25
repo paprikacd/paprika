@@ -73,7 +73,7 @@ func sloWidgets(doc *lintDocument) []*lintWidget {
 // does not fire on. Only slo-summary widgets are resolved, so other documents cost nothing here.
 func (s *Server) providerTypesOf(r *http.Request, document Dashboard) map[string]string {
 	// A document without an slo-summary widget or a label-values variable source has no provider to resolve, so it is not decoded.
-	if !bytes.Contains(document, []byte(sloSummaryPluginID)) && !bytes.Contains(document, []byte(`"labelValues"`)) && !bytes.Contains(document, []byte(`"savedQuery"`)) {
+	if !bytes.Contains(document, []byte(sloSummaryPluginID)) && !bytes.Contains(document, []byte(`"labelValues"`)) && !bytes.Contains(document, []byte(`"savedQuery"`)) && !bytes.Contains(document, []byte(`"queryRef"`)) {
 		return nil
 	}
 	doc, ok := decodeLintDocument(document)
@@ -86,6 +86,12 @@ func (s *Server) providerTypesOf(r *http.Request, document Dashboard) map[string
 			types = map[string]string{}
 		}
 		types[savedQueryKindKey(id)] = kind
+	}
+	for key, flag := range s.resolveSavedQueryParameterKinds(lintBoundSavedQueryIDs(doc)) {
+		if types == nil {
+			types = map[string]string{}
+		}
+		types[key] = flag
 	}
 	return types
 }

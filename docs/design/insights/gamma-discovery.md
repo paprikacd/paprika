@@ -4,7 +4,7 @@ Insights uses maintained Gamma components as its UI source. Discover their behav
 
 ## Local setup
 
-The local source checkout is `/Users/benebsworth/projects/gamma` at commit `1860ed792a6ce0dbcbb9c6469ace28085c0df035`. Its `plugins/gamma/skills/explore-gamma` skill was copied without overwriting an existing skill to `/Users/benebsworth/.codex/skills/explore-gamma`. A local copy was appropriate because this source is already available locally; the GitHub-oriented skill installer was unnecessary. Source and installed `SKILL.md` have the same SHA-256: `9ac6a7dea02f7ca5d33f3a7eb8c299501cd25596cc976f5d6357580540724e5a`.
+The source is a local checkout of the Gamma repository at commit `1860ed792a6ce0dbcbb9c6469ace28085c0df035`. Its `plugins/gamma/skills/explore-gamma` skill was copied, without overwriting an existing skill, into the user's local skills directory. A local copy was appropriate because this source is already available locally; the GitHub-oriented skill installer was unnecessary. Source and installed `SKILL.md` have the same SHA-256: `9ac6a7dea02f7ca5d33f3a7eb8c299501cd25596cc976f5d6357580540724e5a`.
 
 Gamma was added through the supported Codex command, preserving the other five configured MCP servers:
 

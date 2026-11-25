@@ -25,10 +25,32 @@ type QueryDiagnostics struct {
 	Phases      []QueryDiagnosticPhase `json:"phases"`
 	TotalMs     float64                `json:"totalMs"`
 	Counts      *QueryResultCounts     `json:"counts,omitempty"`
-	Truncated   bool                   `json:"truncated"`
+	// LimitScope is the gateway limit that refused the query (edge, budget,
+	// provider or queue), set when the outcome is capacity and the gateway named one.
+	LimitScope string `json:"limitScope,omitempty"`
+	Truncated  bool   `json:"truncated"`
 	// TruncationReason is the QueryTruncation.Reason of a truncated result. It
 	// is absent when the result is complete.
 	TruncationReason string `json:"truncationReason,omitempty"`
+	// Cache says how the shared result cache answered. It is absent when the cache is disabled.
+	Cache *QueryDiagnosticCache `json:"cache,omitempty"`
+}
+
+// QueryDiagnosticCache says how the result cache answered a query. Status is hit,
+// joined, miss or bypass. A hit or a join made no provider request: its source is the
+// execution that produced the result, and its age is how long ago that result was stored.
+// Reason names why a query bypassed the cache, or why a miss was not kept.
+type QueryDiagnosticCache struct {
+	Status            string   `json:"status"`
+	SourceExecutionID string   `json:"sourceExecutionId,omitempty"`
+	AgeMs             *float64 `json:"ageMs,omitempty"`
+	Reason            string   `json:"reason,omitempty"`
+}
+
+// servedFromCache reports whether the receipt answers from the cache without a
+// provider request: a hit or a join.
+func (d *QueryDiagnostics) servedFromCache() bool {
+	return d != nil && d.Cache != nil && (d.Cache.Status == "hit" || d.Cache.Status == "joined")
 }
 
 // QueryDiagnosticSource exposes only the authorized public source identity.
@@ -273,6 +295,7 @@ func (d *QueryDiagnostics) complete(result *QueryResult, err error) {
 			d.Outcome = "timeout"
 		case "rate_limited":
 			d.Outcome = "capacity"
+			d.LimitScope = classifyQueryFailure(err).LimitScope
 		default:
 			d.Outcome = "error"
 		}
@@ -317,16 +340,22 @@ func writeQueryFailure(w http.ResponseWriter, err error, diagnostics *QueryDiagn
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 	}
-	code := classifyQueryFailure(err).Code
+	failure := classifyQueryFailure(err)
 	if diagnostics == nil {
-		writeJSON(w, status, map[string]string{"error": message, "code": code})
+		writeJSON(w, status, queryFailureBody{Error: message, Code: failure.Code, LimitScope: failure.LimitScope})
 		return
 	}
-	writeJSON(w, status, struct {
-		Error       string            `json:"error"`
-		Code        string            `json:"code"`
-		Diagnostics *QueryDiagnostics `json:"diagnostics"`
-	}{Error: message, Code: code, Diagnostics: diagnostics})
+	writeJSON(w, status, queryFailureBody{Error: message, Code: failure.Code, LimitScope: failure.LimitScope, Diagnostics: diagnostics})
+}
+
+// queryFailureBody is the JSON of a failed query. LimitScope is set only on a
+// rate-limited refusal whose gateway named its limit, so a board can hold just
+// the widgets that limit affects. Diagnostics is absent without a receipt.
+type queryFailureBody struct {
+	Error       string            `json:"error"`
+	Code        string            `json:"code"`
+	LimitScope  string            `json:"limitScope,omitempty"`
+	Diagnostics *QueryDiagnostics `json:"diagnostics,omitempty"`
 }
 
 // queryErrorResponse maps a failed query phase to its status and message. The

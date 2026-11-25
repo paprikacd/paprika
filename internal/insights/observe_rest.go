@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptrace"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -148,11 +149,11 @@ func readRESTResponse(ctx, opCtx context.Context, response *http.Response, limit
 // canceled request and a provider that is not fully configured. The MCP domain
 // codes and the REST envelope both map to them.
 func observeCanceledError() error {
-	return &observeError{http.StatusRequestTimeout, "observability request was canceled", 0}
+	return &observeError{http.StatusRequestTimeout, "observability request was canceled", 0, ""}
 }
 
 func observeNotConfiguredError() error {
-	return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured", 0}
+	return &observeError{http.StatusServiceUnavailable, "observability provider is not fully configured", 0, ""}
 }
 
 // observeEnvelopeMaxBytes bounds the gateway's error envelope when a 408 or 503
@@ -166,10 +167,15 @@ const observeEnvelopeMaxBytes = 4 << 10
 // gateway failure. Other statuses map as the MCP transport maps them.
 func observeRESTStatusError(response *http.Response) error {
 	status := response.StatusCode
-	if status != http.StatusRequestTimeout && status != http.StatusServiceUnavailable {
-		return observeHTTPErrorFor(status, response.Header.Get("Retry-After"))
+	if status == http.StatusBadGateway && gatewayEnvelopeError(response) == "server_error" {
+		// The gateway answered and says the provider request failed: a provider fault,
+		// not an unreachable gateway. A bare 502 (a proxy, a draining pod) stays the gateway's.
+		return errUpstream
 	}
-	if !gatewayUnavailableEnvelope(response) {
+	if status != http.StatusRequestTimeout && status != http.StatusServiceUnavailable {
+		return observeHTTPErrorFor(status, response.Header.Get("Retry-After"), response.Header.Get(observeLimitScopeHeader))
+	}
+	if gatewayEnvelopeError(response) != "temporarily_unavailable" {
 		return observeHTTPError(http.StatusBadGateway)
 	}
 	if status == http.StatusRequestTimeout {
@@ -178,24 +184,28 @@ func observeRESTStatusError(response *http.Response) error {
 	return observeNotConfiguredError()
 }
 
-// gatewayUnavailableEnvelope reports whether the response is the gateway's own
-// temporarily_unavailable JSON envelope. It reads at most observeEnvelopeMaxBytes.
-func gatewayUnavailableEnvelope(response *http.Response) bool {
+// gatewayEnvelopeError returns the error code of the gateway's own JSON envelope,
+// or empty for any other body. It reads at most observeEnvelopeMaxBytes, and only
+// the code, never the description, is used.
+func gatewayEnvelopeError(response *http.Response) string {
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		return false
+		return ""
 	}
 	if response.ContentLength > observeEnvelopeMaxBytes {
-		return false
+		return ""
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, observeEnvelopeMaxBytes+1))
 	if err != nil || len(body) > observeEnvelopeMaxBytes {
-		return false
+		return ""
 	}
 	var envelope struct {
 		Error string `json:"error"`
 	}
-	return json.Unmarshal(body, &envelope) == nil && envelope.Error == "temporarily_unavailable"
+	if json.Unmarshal(body, &envelope) != nil {
+		return ""
+	}
+	return envelope.Error
 }
 
 // observeRESTQuery is the gateway's DashboardQueryRequest. Field names and
@@ -224,15 +234,22 @@ type observeRESTExplore struct {
 
 // observeRESTProvidersResponse is the gateway's DashboardProvidersResponse.
 type observeRESTProvidersResponse struct {
-	Providers []observeCatalogProvider `json:"providers"`
+	Providers          []observeCatalogProvider `json:"providers"`
+	AuthorizationScope string                   `json:"authorizationScope,omitempty"`
 }
 
 // sharedListing is one decoded shared catalog: the providers Insights can query,
-// and the providers it lists but cannot query, each with a reason.
+// and the providers it lists but cannot query, each with a reason. The scope is the
+// gateway's authorization digest for this caller. It is empty when the gateway
+// reported none, and then the caller's results must not be shared.
 type sharedListing struct {
 	providers   []Provider
 	unsupported []UnsupportedProvider
+	scope       string
 }
+
+// authorizationScopePattern matches a gateway scope: a lowercase hex SHA-256.
+var authorizationScopePattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // listShared fetches the caller's shared catalog over REST.
 func (g *observeGateway) listShared(ctx context.Context, token string) (sharedListing, error) {
@@ -244,7 +261,15 @@ func (g *observeGateway) listShared(ctx context.Context, token string) (sharedLi
 	if json.Unmarshal(body, &response) != nil || response.Providers == nil {
 		return sharedListing{}, errUpstream
 	}
-	return sharedProvidersFromCatalog(response.Providers)
+	listing, err := sharedProvidersFromCatalog(response.Providers)
+	if err != nil {
+		return sharedListing{}, err
+	}
+	// A malformed scope is dropped rather than failing the listing: the caller then gets no sharing.
+	if authorizationScopePattern.MatchString(response.AuthorizationScope) {
+		listing.scope = response.AuthorizationScope
+	}
+	return listing, nil
 }
 
 // sharedProvidersFromCatalog splits the catalog into the entries Insights can

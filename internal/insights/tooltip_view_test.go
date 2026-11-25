@@ -128,8 +128,8 @@ func TestTooltipViewBoundsAndPersistenceAfterRestart(t *testing.T) {
 		t.Fatalf("settings changed after restart: %v", err)
 	}
 	for name, mutate := range map[string]func(map[string]any){
-		"title": func(v map[string]any) { v["title"] = strings.Repeat("😀", 61) },
-		"unit":  func(v map[string]any) { v["unit"] = strings.Repeat("😀", 13) },
+		"title": func(v map[string]any) { v["title"] = strings.Repeat("😀", 121) },
+		"unit":  func(v map[string]any) { v["unit"] = strings.Repeat("😀", 25) },
 		"query": func(v map[string]any) {
 			testFixtureValue[map[string]any](t, v["source"])["query"] = strings.Repeat("x", 8193)
 		},
@@ -137,7 +137,7 @@ func TestTooltipViewBoundsAndPersistenceAfterRestart(t *testing.T) {
 			testFixtureValue[map[string]any](t, v["source"])["bindings"] = append(bindings, map[string]string{"variable": "extra", "label": "service"})
 		},
 		"label length": func(v map[string]any) {
-			testFixtureValue[map[string]any](t, v["source"])["bindings"] = []map[string]string{{"variable": "service", "label": strings.Repeat("😀", 65)}}
+			testFixtureValue[map[string]any](t, v["source"])["bindings"] = []map[string]string{{"variable": "service", "label": strings.Repeat("😀", 129)}}
 		},
 		"variable length": func(v map[string]any) {
 			testFixtureValue[map[string]any](t, v["source"])["bindings"] = []map[string]string{{"variable": strings.Repeat("x", 65), "label": "service"}}

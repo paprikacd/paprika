@@ -71,6 +71,9 @@ func classifyQueryFailure(err error) *DashboardQueryError {
 	var remote *observeError
 	if errors.As(err, &remote) {
 		if failure := classifyObserveStatus(remote.status); failure != nil {
+			if failure.Code == "rate_limited" {
+				failure.LimitScope = remote.scope
+			}
 			return failure
 		}
 	}
@@ -116,8 +119,16 @@ func classifyObserveStatus(status int) *DashboardQueryError {
 		// serve the request. Both are permanent until the provider changes, so they
 		// name the unavailable source rather than a transient failure.
 		return providerNotFoundFailure()
+	case http.StatusBadGateway:
+		// The gateway itself failed: it could not be reached, or it answered with a
+		// server error. That is not a provider fault, and a retry can clear it.
+		return gatewayUnavailableFailure()
 	}
 	return nil
+}
+
+func gatewayUnavailableFailure() *DashboardQueryError {
+	return &DashboardQueryError{Code: "gateway_unavailable", Message: "The observability gateway could not complete the query. Retry shortly.", transient: true}
 }
 
 // classifyProviderFailure maps a direct provider's answer by status and bounded

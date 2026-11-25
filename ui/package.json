@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "schema:generate": "UPDATE_INSIGHTS_CONTRACT=1 vitest run src/features/insights/schema-artifacts.test.ts src/features/insights/widget-plugin-configs.test.ts src/features/insights/contract-differential.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:session": "node e2e/console-session.e2e.mjs",
     "test:watch": "vitest",

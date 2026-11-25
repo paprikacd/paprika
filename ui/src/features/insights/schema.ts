@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { pluginSupports } from "./plugins/plugin-capabilities"
 import { SERIES_COLOR_MODES, seriesColorRulesSchema } from "./series-colors"
 import { statusLevels } from "./status"
 import { sloSummaryConfigSchema } from "./slo-config"
@@ -55,10 +56,31 @@ export const variableValueSchema = z.string().max(MAX_VARIABLE_VALUE_LENGTH).ref
   (value) => value.length <= MAX_VARIABLE_VALUE_LENGTH,
   "Use a variable value of at most 1024 UTF-16 code units",
 )
+/** The most items a multi-value variable's list holds. */
+export const MAX_VARIABLE_LIST_ITEMS = 100
+/** Items plus one separator per gap, in UTF-16 units: the budget one string value has. */
+export const MAX_VARIABLE_LIST_UNITS = MAX_VARIABLE_VALUE_LENGTH
+const VARIABLE_LIST_ERROR = "Use a list of at most 100 unique values, up to 1024 characters in total"
+export const variableListSchema = z
+  .array(variableValueSchema)
+  .max(MAX_VARIABLE_LIST_ITEMS, VARIABLE_LIST_ERROR)
+  .superRefine((items, context) => {
+    if (new Set(items).size !== items.length)
+      context.addIssue({ code: "custom", message: "A list must not repeat a value" })
+    const units = items.reduce((total, item) => total + item.length, 0) + Math.max(0, items.length - 1)
+    if (units > MAX_VARIABLE_LIST_UNITS) context.addIssue({ code: "custom", message: VARIABLE_LIST_ERROR })
+  })
+/** A variable value: one string, or a list for a variable with several values. */
+export const variableInputSchema = z.union([variableValueSchema, variableListSchema])
+
 export const dashboardVariableSchema = z.strictObject({
   name: variableNameSchema,
   label: z.string().max(80).optional(),
-  defaultValue: variableValueSchema.optional(),
+  /** Several values can be picked; the value is then a list. */
+  multi: z.boolean().optional(),
+  /** Adds All to a multi-value variable. All is an empty list. */
+  allowAll: z.boolean().optional(),
+  defaultValue: variableInputSchema.optional(),
   options: z.array(variableValueSchema).min(1).max(MAX_VARIABLE_OPTIONS).optional(),
   // Declared later in this file: a lazy reference avoids a use before definition.
   source: z.lazy(() => variableSourceSchema).optional(),
@@ -68,15 +90,38 @@ export const dashboardVariableSchema = z.strictObject({
     if (seen.has(option)) context.addIssue({ code: "custom", path: ["options", index], message: "Variable options must be unique" })
     seen.add(option)
   })
+  if (variable.allowAll && !variable.multi)
+    context.addIssue({ code: "custom", path: ["allowAll"], message: "Include All needs several values turned on" })
+  if (variable.multi && !variable.options && !variable.source)
+    context.addIssue({ code: "custom", path: ["multi"], message: "A variable with several values needs options or a source" })
+  const fallback = variable.defaultValue
+  if (fallback === undefined) return
+  if (variable.multi && typeof fallback === "string")
+    context.addIssue({ code: "custom", path: ["defaultValue"], message: "Use a list default for a variable with several values" })
+  else if (variable.multi && fallback.length === 0 && !variable.allowAll)
+    context.addIssue({ code: "custom", path: ["defaultValue"], message: "An empty default means All; turn on Include All" })
+  else if (!variable.multi && typeof fallback !== "string")
+    context.addIssue({ code: "custom", path: ["defaultValue"], message: "A single-value variable takes a text default" })
 })
 
 export const savedQueryParameterSchema = z.strictObject({
   name: variableNameSchema,
   label: z.string().max(80).optional(),
   type: z.enum(["string", "number"]),
-  defaultValue: z.union([variableValueSchema, z.number().finite()]).optional(),
+  /** A string parameter that takes a list of values. Its default is a list, and an empty list is All. */
+  multi: z.boolean().optional(),
+  defaultValue: z.union([variableInputSchema, z.number().finite()]).optional(),
 }).superRefine((parameter, context) => {
-  if (parameter.defaultValue !== undefined && typeof parameter.defaultValue !== parameter.type)
+  if (parameter.multi && parameter.type !== "string")
+    context.addIssue({ code: "custom", path: ["multi"], message: "Only a string parameter can take several values" })
+  const fallback = parameter.defaultValue
+  if (fallback === undefined) return
+  if (parameter.multi) {
+    if (!Array.isArray(fallback))
+      context.addIssue({ code: "custom", path: ["defaultValue"], message: "Use a list default for a parameter with several values" })
+    return
+  }
+  if (typeof fallback !== parameter.type)
     context.addIssue({ code: "custom", path: ["defaultValue"], message: `Use a ${parameter.type} default value` })
 })
 export const MAX_SAVED_QUERY_TAGS = 12
@@ -336,6 +381,22 @@ export const drilldownSchema = z
       names.add(binding.variable)
     })
   })
+/** One namespace or name of an application link: a label of the signal, or a fixed value. */
+export const applicationValueSchema = z.strictObject({
+  source: z.enum(["label", "constant"]),
+  value: z.string().min(1).max(253),
+})
+/** A link that opens the Paprika application page for the namespace and name the signal supplies. */
+export const applicationLinkSchema = z.strictObject({
+  id: identifier,
+  title: z.string().trim().min(1).max(120),
+  application: z.strictObject({
+    namespace: applicationValueSchema,
+    name: applicationValueSchema,
+  }),
+})
+/** A widget link: a dashboard drilldown or an application link. */
+export const widgetLinkSchema = z.union([drilldownSchema, applicationLinkSchema])
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color")
 /** A threshold names a semantic status, a hex hue override, or both. Mirrored by the Go validator and dashboard.schema.json. */
@@ -470,6 +531,12 @@ export const statCompareSchema = z.strictObject({
   good: z.enum(["up", "down"]).optional(),
 });
 
+/** A time series' baseline: an earlier window (or the last samples) that bands the current values. `band` defaults to the observed range. */
+export const baselineSchema = z.strictObject({
+  window: z.enum(["previous", "1d", "7d", "rolling"]),
+  band: z.enum(["range", "p10p90"]).optional(),
+});
+
 export const widgetOptionsSchema = z
   .strictObject({
     display: z.enum(["line", "area"]).optional(),
@@ -497,6 +564,9 @@ export const widgetOptionsSchema = z
     decimals: z.number().int().min(0).max(8).optional(),
     staleAfterSeconds: z.number().int().min(1).max(2678400).optional(),
     compare: statCompareSchema.optional(),
+    baseline: baselineSchema.optional(),
+    /** false hides the dashboard's recorded events on this widget. A widget's own source always shows. */
+    showEvents: z.boolean().optional(),
     min: z.number().optional(),
     max: z.number().optional(),
     lineWidth: z.number().min(0.5).max(8).optional(),
@@ -546,10 +616,26 @@ export const customTimeRangeSchema = z
     return Date.parse(range.from) > 0 && duration > 0 && duration <= 31 * 24 * 60 * 60 * 1000
   }, "Choose an increasing time range of at most 31 days, after the Unix epoch")
 
-/** Event markers are supported on time-based line and traffic charts. */
+/**
+ * The built-in widget types that accept an event query: time series and stat sparklines. Plugins that draw over time
+ * declare `annotations` in plugins/plugin-capabilities.ts. Gauges, tables, records views and calendars are not
+ * time-based here. The Go validator reads the same capability list (docs/design/insights/widget-plugins.json).
+ */
+export const ANNOTATION_WIDGET_TYPES = ["timeseries", "stat"] as const
+
 export function supportsAnnotationSource(type: string, pluginId?: string): boolean {
-  return type === "timeseries" || (type === "plugin" && (pluginId === "stacked-timeseries" || pluginId === "directional-traffic"))
+  if ((ANNOTATION_WIDGET_TYPES as readonly string[]).includes(type)) return true
+  return type === "plugin" && pluginSupports(pluginId, "annotations")
 }
+
+/** Recorded events from a saved query: where the time, end, label and severity columns are. Widgets and the dashboard share it. */
+export const annotationSourceSchema = z.strictObject({
+  queryRef: dashboardQueryReferenceSchema,
+  timestampColumn: z.string().trim().min(1).max(128),
+  endColumn: z.string().trim().min(1).max(128).optional(),
+  labelColumn: z.string().trim().min(1).max(128),
+  severityColumn: z.string().trim().min(1).max(128).optional(),
+});
 
 export const widgetSchema = z
   .strictObject({
@@ -560,20 +646,14 @@ export const widgetSchema = z
     query: z.string().trim().min(1).max(8192),
     unit: z.string().max(24),
     queryRef: dashboardQueryReferenceSchema.optional(),
-    annotationSource: z.strictObject({
-      queryRef: dashboardQueryReferenceSchema,
-      timestampColumn: z.string().trim().min(1).max(128),
-      endColumn: z.string().trim().min(1).max(128).optional(),
-      labelColumn: z.string().trim().min(1).max(128),
-      severityColumn: z.string().trim().min(1).max(128).optional(),
-    }).optional(),
+    annotationSource: annotationSourceSchema.optional(),
     description: z.string().max(500).optional(),
     color: hexColor.optional(),
     options: widgetOptionsSchema.optional(),
     pluginId: identifier.optional(),
     dataKind: z.enum(["metrics", "traces", "records"]).optional(),
     config: pluginConfigSchema.optional(),
-    drilldowns: z.array(drilldownSchema).max(8).optional(),
+    drilldowns: z.array(widgetLinkSchema).max(8).optional(),
     selectionBindings: z.array(drilldownBindingSchema).max(MAX_DASHBOARD_VARIABLES).optional(),
     layout: z
       .strictObject({
@@ -587,10 +667,12 @@ export const widgetSchema = z
   .superRefine((widget, context) => {
     if (widget.options?.compare && widget.type !== "stat")
       context.addIssue({ code: "custom", path: ["options", "compare"], message: "Comparisons are only available on stat widgets" })
+    if (widget.options?.baseline && widget.type !== "timeseries")
+      context.addIssue({ code: "custom", path: ["options", "baseline"], message: "Baselines are only available on time-series widgets" })
     if (widget.type !== "stat" && widget.layout.h < 2)
       context.addIssue({ code: "custom", path: ["layout", "h"], message: "Only single-value widgets can use one row" })
     if (widget.annotationSource && !supportsAnnotationSource(widget.type, widget.pluginId))
-      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-series or directional-traffic widget" })
+      context.addIssue({ code: "custom", path: ["annotationSource"], message: "Event queries require a time-based widget" })
     const boundVariables = new Set<string>()
     widget.selectionBindings?.forEach((binding, index) => {
       if (boundVariables.has(binding.variable))
@@ -676,6 +758,43 @@ export const timeZoneSchema = z
  */
 const storedTimeZoneSchema = z.string().max(64).optional().catch(undefined)
 
+const coverageNamePattern = /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/
+export const coverageNamespaceSchema = z
+  .string()
+  .min(1)
+  .max(63)
+  .regex(coverageNamePattern, "Use lowercase letters, digits, dots or hyphens, starting and ending with a letter or digit")
+  .describe("A Kubernetes namespace name: lowercase letters, digits and hyphens, at most 63 characters.")
+export const coverageNameSchema = z
+  .string()
+  .min(1)
+  .max(253)
+  .regex(coverageNamePattern, "Use lowercase letters, digits, dots or hyphens, starting and ending with a letter or digit")
+  .describe("An application name: lowercase letters, digits, dots and hyphens, at most 253 characters.")
+export const coverageMatchSchema = z
+  .strictObject({
+    namespace: coverageNamespaceSchema.optional(),
+    name: coverageNameSchema.optional(),
+  })
+  .describe("One application. An omitted namespace or name matches any value, so an empty object matches every application.")
+export const coverageSchema = z
+  .strictObject({
+    applications: z
+      .array(coverageMatchSchema)
+      .min(1)
+      .max(16)
+      .describe("The applications this dashboard covers. The dashboard is listed for an application that matches any entry."),
+    variables: z
+      .record(variableNameSchema, z.enum(["namespace", "name"]))
+      .optional()
+      .describe("Maps a declared dashboard variable to the application namespace or name it takes."),
+    summaryWidget: identifier
+      .optional()
+      .describe("The id of the widget shown as the summary on an application page."),
+  })
+  .describe("The applications this dashboard is for. Application pages list the dashboards whose coverage matches.")
+export type DashboardCoverage = z.infer<typeof coverageSchema>
+
 export const dashboardSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -705,6 +824,9 @@ export const dashboardSchema = z
     customTimeRange: customTimeRangeSchema.optional(),
     /** The zone of the calendar axis, observation inspector and window labels. Omitted, they use the viewer's zone. */
     timeZone: timeZoneSchema.optional(),
+    covers: coverageSchema.optional(),
+    /** Recorded events for every time-based widget that does not declare its own source (see showEvents). */
+    annotationSource: annotationSourceSchema.optional(),
     variables: z.array(dashboardVariableSchema).max(MAX_DASHBOARD_VARIABLES).optional().superRefine(checkVariableSourceGraph),
     timeRange: z.enum(["15m", "30m", "1h", "6h", "24h", "7d", "30d"]),
     refreshInterval: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60)]),
@@ -731,6 +853,15 @@ export const dashboardSchema = z
         })
       ids.add(widget.id)
     })
+    if (value.covers) {
+      const declared = new Set(value.variables?.map((variable) => variable.name))
+      for (const key of Object.keys(value.covers.variables ?? {}))
+        if (!declared.has(key))
+          context.addIssue({ code: "custom", path: ["covers", "variables", key], message: "Map only declared dashboard variables" })
+      const summary = value.covers.summaryWidget
+      if (summary !== undefined && !value.widgets.some((widget) => widget.id === summary))
+        context.addIssue({ code: "custom", path: ["covers", "summaryWidget"], message: "Name a widget on this dashboard" })
+    }
   })
 
 /**
@@ -758,10 +889,17 @@ export type TooltipQuerySource = Extract<TooltipSource, { type: "query" }>
 export type TooltipBinding = z.infer<typeof tooltipBindingSchema>
 
 export function supportsTooltipView(type: Widget["type"], pluginId?: string): boolean {
-  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginId === "geo-heatmap")
+  return type === "heatmap" || type === "timeseries" || type === "bar" || type === "table" || (type === "plugin" && pluginSupports(pluginId, "tooltipView"))
 }
 export type Threshold = z.infer<typeof thresholdSchema>
 export type DashboardVariable = z.infer<typeof dashboardVariableSchema>
+export type ApplicationLink = z.infer<typeof applicationLinkSchema>
+export type ApplicationValue = z.infer<typeof applicationValueSchema>
+export type WidgetLink = z.infer<typeof widgetLinkSchema>
+/** Whether a widget link opens an application page rather than a dashboard. */
+export function isApplicationLink(link: WidgetLink): link is ApplicationLink {
+  return "application" in link
+}
 export type Drilldown = z.infer<typeof drilldownSchema>
 export type DrilldownBinding = z.infer<typeof drilldownBindingSchema>
 export type DataKind = "metrics" | "traces" | "records"
@@ -840,7 +978,7 @@ export const queryDiagnosticsSchema = z.object({
     scope: z.enum(["provider", "gateway"]),
   }),
   phases: z.array(z.object({
-    name: z.enum(["admission", "catalog", "upstream", "normalization", "provider"]),
+    name: z.enum(["admission", "catalog", "cache", "upstream", "normalization", "provider"]),
     owner: z.enum(["insights", "provider"]),
     clock: z.enum(["server-monotonic", "unavailable"]),
     durationMs: queryTimingSchema.nullable(),
@@ -857,10 +995,28 @@ export const queryDiagnosticsSchema = z.object({
   }).optional(),
   truncated: z.boolean(),
   truncationReason: z.enum(["row_limit", "partial", "provider_warning"]).optional().catch(undefined),
+  // The gateway limit that refused a capacity outcome. Unknown names are dropped, not failed.
+  limitScope: z.enum(["edge", "budget", "provider", "queue", "principal"]).optional().catch(undefined),
+  /** How the server's result cache answered. Absent when the cache is disabled. A malformed cache object is dropped. */
+  cache: z.object({
+    status: z.enum(["hit", "joined", "miss", "bypass"]),
+    sourceExecutionId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.-]+$/).optional(),
+    ageMs: queryTimingSchema.optional(),
+    reason: z.enum(["refresh", "unscoped", "live_edge", "uncacheable"]).optional().catch(undefined),
+  }).optional().catch(undefined),
 }).superRefine((receipt, context) => {
   if (!receipt.effective.dispatched && (receipt.effective.rangeApplied ||
     receipt.effective.start !== undefined || receipt.effective.end !== undefined || receipt.effective.step !== undefined)) {
     context.addIssue({ code: "custom", path: ["effective"], message: "An undispatched query has no applied bounds" })
+  }
+  if (receipt.cache && (receipt.cache.status === "hit" || receipt.cache.status === "joined")) {
+    // A delivery from the cache made no provider request, so it has no dispatch and no upstream phase.
+    if (receipt.effective.dispatched) {
+      context.addIssue({ code: "custom", path: ["effective"], message: "A cached delivery made no provider request" })
+    }
+    if (receipt.phases.some(phase => phase.name === "upstream" || phase.name === "provider")) {
+      context.addIssue({ code: "custom", path: ["phases"], message: "A cached delivery has no upstream phase" })
+    }
   }
   const seen = new Set<string>()
   let exclusiveMs = 0
@@ -970,6 +1126,26 @@ export function preferredProvider(
   return best;
 }
 
+/** The title a new widget of this type starts with. An author-renamed title never matches, so it is kept. */
+export function defaultWidgetTitle(type: Widget["type"], pluginLabel?: string): string {
+  return {
+    timeseries: "Time series",
+    bar: "Bar chart",
+    stat: "Single value",
+    table: "Metrics table",
+    traces: "Trace explorer",
+    heatmap: "Service heatmap",
+    plugin: pluginLabel ?? "Plugin widget",
+  }[type]
+}
+
+/** A starter query as newWidget reads it. The registry's StarterQuery type has the same shape. */
+export interface StarterChoice {
+  providerTypes: readonly string[]
+  query: string
+  default?: boolean
+}
+
 export function newWidget(
   type: Widget["type"],
   providers: Provider[],
@@ -981,25 +1157,20 @@ export function newWidget(
     defaultOptions?: WidgetOptions
     defaultConfig?: Widget["config"]
   },
+  starters?: readonly StarterChoice[],
 ): Widget {
   if (type === "plugin" && !plugin)
     throw new Error("Choose a registered plugin before adding its widget")
   const kind = type === "plugin" ? plugin!.dataKind : type === "traces" ? "traces" : "metrics"
   const provider = preferredProvider(providers, (p) => p.capabilities.includes(kind))
+  // The default starter for the chosen provider's type. Without one, the widget keeps the built-in query.
+  const starter = provider ? starters?.find((entry) => entry.default && entry.providerTypes.includes(provider.type)) : undefined
   return {
     id: `widget-${crypto.randomUUID()}`,
-    title: {
-      timeseries: "Time series",
-      bar: "Bar chart",
-      stat: "Single value",
-      table: "Metrics table",
-      traces: "Trace explorer",
-      heatmap: "Service heatmap",
-      plugin: plugin?.label ?? "Plugin widget",
-    }[type],
+    title: defaultWidgetTitle(type, plugin?.label),
     type,
     providerId: provider?.id ?? "unconfigured",
-    query: kind === "traces" ? "{}" : "up",
+    query: starter?.query ?? (kind === "traces" ? "{}" : "up"),
     unit: "",
     ...(type === "stat" ? { options: { sparklinePlacement: "side" as const } } : {}),
     ...(type === "heatmap"

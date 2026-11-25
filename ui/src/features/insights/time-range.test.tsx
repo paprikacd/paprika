@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TimeRangeControl, customRangeLabels } from "./time-range";
+import { TimeRangeControl, alignedDashboardEnd, customRangeLabels } from "./time-range";
 import { resolveDashboardTimeZone } from "./dashboard-time-zone";
 import type { Dashboard } from "./schema";
 
@@ -107,5 +107,19 @@ describe("reset to the saved window", () => {
   it("falls back to a plain name when no saved label is given", () => {
     render(<TimeRangeControl dashboard={dashboard} onChange={vi.fn()} onReset={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Reset time range" })).toHaveTextContent("Reset");
+  });
+});
+
+describe("alignedDashboardEnd", () => {
+  const base = { timeRange: "1h", timeZone: "UTC" } as Dashboard;
+
+  it("aligns a relative window to its grain so viewers share one end", () => {
+    expect(alignedDashboardEnd({ ...base, timeRange: "1h" }, 1700000007)).toBe(1700000000);
+    expect(alignedDashboardEnd({ ...base, timeRange: "7d" }, 1700000007)).toBe(1699999995);
+  });
+
+  it("keeps a fixed window's end as it is", () => {
+    const fixed = { ...base, customTimeRange: { from: "2026-10-26T00:00:00Z", to: "2026-10-26T01:00:00Z" } } as Dashboard;
+    expect(alignedDashboardEnd(fixed, 1700000007)).toBe(1700000007);
   });
 });

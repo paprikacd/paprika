@@ -23,6 +23,9 @@ type DashboardSummaryOptions struct {
 type DashboardQueryError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// LimitScope names the gateway limit that refused a rate_limited query: edge,
+	// budget, provider or queue. It is absent when the refusal named none.
+	LimitScope string `json:"limitScope,omitempty"`
 	// transient marks a failure a retry can clear, under a code that does not
 	// say so. It is not part of the wire form.
 	transient bool
@@ -39,6 +42,9 @@ type DashboardSignal struct {
 	// admission to the gateway's answer. It includes the admission wait and gateway
 	// queueing. It is absent when the query was not admitted.
 	LatencyMs *int64 `json:"latencyMs,omitempty"`
+	// Cached is set when the result cache answered the signal without a provider request. Such a signal is
+	// not counted as executed; its latency is still the receipt's total.
+	Cached bool `json:"cached,omitempty"`
 	// StepSeconds is the step a metrics query ran at, after its provider minimum, when that differs from the
 	// range's step. Absent otherwise, including for records and traces.
 	StepSeconds       *float64                 `json:"stepSeconds,omitempty"`

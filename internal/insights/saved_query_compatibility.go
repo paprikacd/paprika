@@ -64,7 +64,7 @@ func queryReferenceIssues(query *SavedQuery, reference persistedQueryReference) 
 			issues["missing:"+binding.Parameter] = fmt.Sprintf("bound parameter %q no longer exists", binding.Parameter)
 			continue
 		}
-		addBindingTypeIssue(issues, binding, parameter)
+		addBindingTypeIssue(issues, binding, &parameter)
 	}
 	for _, parameter := range query.Parameters {
 		if len(parameter.DefaultValue) == 0 && !bound[parameter.Name] {
@@ -100,7 +100,7 @@ func (s *Store) validateSavedQueryReplacement(previous, incoming *SavedQuery) er
 	return nil
 }
 
-func addBindingTypeIssue(issues map[string]string, binding persistedQueryBinding, parameter SavedQueryParameter) {
+func addBindingTypeIssue(issues map[string]string, binding persistedQueryBinding, parameter *SavedQueryParameter) {
 	switch binding.Source {
 	case "constant":
 		if !compatibleBindingLiteral(binding.Value, parameter.Type) {
@@ -117,9 +117,13 @@ func addBindingTypeIssue(issues map[string]string, binding persistedQueryBinding
 	}
 }
 
+//nolint:cyclop // Each stored reference family (variable, event source, widget, tooltip) has its own short check.
 func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQueryReference, string, string, string) error) error {
 	var dashboard struct {
-		Title     string
+		Title            string
+		AnnotationSource struct {
+			QueryRef persistedQueryReference `json:"queryRef"`
+		} `json:"annotationSource"`
 		Variables []struct {
 			Name   string
 			Source struct {
@@ -154,6 +158,9 @@ func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQuer
 			return err
 		}
 	}
+	if err := checkDashboardEventReference(dashboard.AnnotationSource.QueryRef, dashboard.Title, check); err != nil {
+		return err
+	}
 	for i := range dashboard.Widgets {
 		widget := &dashboard.Widgets[i]
 		if err := check(widget.QueryRef, dashboard.Title, widget.Title, "query"); err != nil {
@@ -169,6 +176,15 @@ func checkDashboardQueryReferences(raw json.RawMessage, check func(persistedQuer
 		}
 	}
 	return nil
+}
+
+// checkDashboardEventReference checks the dashboard-level event source, which names no widget, so its check reads the
+// dashboard's own title.
+func checkDashboardEventReference(ref persistedQueryReference, title string, check func(persistedQueryReference, string, string, string) error) error {
+	if ref.ID == "" {
+		return nil
+	}
+	return check(ref, title, "dashboard events", "annotations")
 }
 
 func savedQueryReplacementIssue(previous, incoming *SavedQuery, reference persistedQueryReference) string {

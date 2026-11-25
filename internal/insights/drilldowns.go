@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 var variableIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
@@ -153,7 +155,7 @@ func validateLabelValuesSource(raw json.RawMessage) ([]string, error) {
 	if !validID.MatchString(source.ProviderID) {
 		return nil, fieldErr("providerId", message)
 	}
-	if source.Label == "" || stringUnits(source.Label) > 128 {
+	if source.Label == "" || textLength(source.Label) > 128 {
 		return nil, fieldErr("label", message)
 	}
 	if err := validateVariableSourceLimit(source.Limit); err != nil {
@@ -167,7 +169,7 @@ func validateLabelValuesSource(raw json.RawMessage) ([]string, error) {
 
 // validateVariableSourceSelector checks a selector template and returns its placeholder variables.
 func validateVariableSourceSelector(selector *string, message string) ([]string, error) {
-	if selector == nil || *selector == "" || stringUnits(*selector) > 1024 {
+	if selector == nil || *selector == "" || textLength(*selector) > 1024 {
 		return nil, fieldErr("selector", message)
 	}
 	var refs []string
@@ -204,7 +206,7 @@ func validateSavedQueryVariableSource(raw json.RawMessage) ([]string, error) {
 	if err := decodeMember(raw, &source, message); err != nil {
 		return nil, err
 	}
-	if source.Field == "" || stringUnits(source.Field) > 128 {
+	if source.Field == "" || textLength(source.Field) > 128 {
 		return nil, fieldErr("field", message)
 	}
 	if err := validateVariableSourceLimit(source.Limit); err != nil {
@@ -258,14 +260,15 @@ func validateDrilldownBindings(raw json.RawMessage) error {
 }
 
 func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error {
-	fields, err := requireObjectShape(item, []string{"name"}, []string{"label", "defaultValue", "options", "source"})
+	fields, err := requireObjectShape(item, []string{"name"}, []string{"label", "multi", "allowAll", "defaultValue", "options", "source"})
 	if err != nil {
 		return err
 	}
 	var variable struct {
-		Name         string `json:"name"`
-		Label        string `json:"label"`
-		DefaultValue string `json:"defaultValue"`
+		Name     string `json:"name"`
+		Label    string `json:"label"`
+		Multi    bool   `json:"multi"`
+		AllowAll bool   `json:"allowAll"`
 	}
 	const message = "dashboard variables require unique identifier names up to 64 characters, labels up to 80, and string values up to 1024"
 	// A decode failure names no member: the element is the thing that is wrong.
@@ -275,15 +278,58 @@ func validateDashboardVariable(item json.RawMessage, seen map[string]bool) error
 	if !validVariableName(variable.Name) || seen[variable.Name] {
 		return fieldErr("name", message)
 	}
-	if stringUnits(variable.Label) > 80 {
+	if textLength(variable.Label) > 80 {
 		return fieldErr("label", message)
 	}
-	if stringUnits(variable.DefaultValue) > 1024 {
-		return fieldErr("defaultValue", message)
+	if err := validateDashboardVariableSeveral(fields, variable.Multi, variable.AllowAll); err != nil {
+		return err
 	}
 	seen[variable.Name] = true
 	if options, ok := fields["options"]; ok {
 		return in("options", validateDashboardVariableOptions(options))
+	}
+	return nil
+}
+
+// validateDashboardVariableSeveral applies the rules for several values and All: Include All needs a multi-value
+// variable, a multi-value variable needs options or a source, and its default is a list (empty means All).
+func validateDashboardVariableSeveral(fields map[string]json.RawMessage, multi, allowAll bool) error {
+	if allowAll && !multi {
+		return fieldErr("allowAll", "Include All needs several values turned on")
+	}
+	_, hasOptions := fields["options"]
+	_, hasSource := fields["source"]
+	if multi && !hasOptions && !hasSource {
+		return fieldErr("multi", "A variable with several values needs options or a source")
+	}
+	raw, ok := fields["defaultValue"]
+	if !ok {
+		return nil
+	}
+	if err := validateDashboardVariableDefault(raw, multi, allowAll); err != nil {
+		return fieldErr("defaultValue", err.Error())
+	}
+	return nil
+}
+
+// validateDashboardVariableDefault applies the document rules to a default. A variable with several values takes
+// a list, and an empty list is All, which needs allowAll. A single-value variable takes a string.
+func validateDashboardVariableDefault(raw json.RawMessage, multi, allowAll bool) error {
+	var value variablevalue.Value
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return errors.New("a default must be a string, or a list of strings for a variable with several values")
+	}
+	if value.List != multi {
+		if multi {
+			return errors.New("use a list default for a variable with several values")
+		}
+		return errors.New("a single-value variable takes a text default")
+	}
+	if multi && len(value.Items) == 0 && !allowAll {
+		return errors.New("an empty default means All; turn on Include All")
+	}
+	if err := value.Validate(); err != nil {
+		return fmt.Errorf("default: %w", err)
 	}
 	return nil
 }
@@ -304,7 +350,25 @@ func validateDashboardVariableOptions(options json.RawMessage) error {
 	return nil
 }
 
+// hasApplicationMember reports whether a link object names an application, which selects the application link shape.
+func hasApplicationMember(item json.RawMessage) bool {
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(item, &probe) != nil {
+		return false
+	}
+	_, ok := probe["application"]
+	return ok
+}
+
 func validateDrilldown(item json.RawMessage, seen map[string]bool) error {
+	if hasApplicationMember(item) {
+		return validateApplicationLink(item, seen)
+	}
+	return validateDashboardLink(item, seen)
+}
+
+// validateDashboardLink checks a link that opens another dashboard.
+func validateDashboardLink(item json.RawMessage, seen map[string]bool) error {
 	fields, err := requireObjectShape(item, []string{"id", "title", "dashboardId"}, []string{"carryTimeRange", "bindings"})
 	if err != nil {
 		return err
@@ -325,7 +389,7 @@ func validateDrilldown(item json.RawMessage, seen map[string]bool) error {
 	if !validID.MatchString(link.DashboardID) {
 		return fieldErr("dashboardId", message)
 	}
-	if trimJS(link.Title) == "" || stringUnits(trimJS(link.Title)) > 120 {
+	if trimJS(link.Title) == "" || textLength(trimJS(link.Title)) > 120 {
 		return fieldErr("title", message)
 	}
 	seen[link.ID] = true
@@ -360,6 +424,66 @@ func validateDrilldownBinding(item json.RawMessage, seen map[string]bool) error 
 	seen[binding.Variable] = true
 	_, hasValue := fields["value"]
 	return validateDrilldownBindingSource(binding.Source, binding.Value, hasValue)
+}
+
+// validateApplicationLink checks a link that opens an application page. Its
+// namespace and name each come from a label of the signal or a constant.
+func validateApplicationLink(item json.RawMessage, seen map[string]bool) error {
+	fields, err := requireObjectShape(item, []string{"id", "title", "application"}, nil)
+	if err != nil {
+		return err
+	}
+	var link struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	const message = "application links require unique IDs, titles up to 120 characters, and a namespace and name each from a label or a constant"
+	if err := decodeMember(item, &link, message); err != nil {
+		return err
+	}
+	if !validID.MatchString(link.ID) || seen[link.ID] {
+		return fieldErr("id", message)
+	}
+	if trimJS(link.Title) == "" || textLength(trimJS(link.Title)) > 120 {
+		return fieldErr("title", message)
+	}
+	seen[link.ID] = true
+	return in("application", validateApplicationRef(fields["application"], message))
+}
+
+// validateApplicationRef checks the namespace and name of an application link.
+func validateApplicationRef(raw json.RawMessage, message string) error {
+	fields, err := requireObjectShape(raw, []string{"namespace", "name"}, nil)
+	if err != nil {
+		return err
+	}
+	for _, part := range []string{"namespace", "name"} {
+		if err := validateApplicationValue(fields[part], message); err != nil {
+			return in(part, err)
+		}
+	}
+	return nil
+}
+
+// validateApplicationValue checks one application part: a label or constant source with a value of 1 to 253 units.
+func validateApplicationValue(raw json.RawMessage, message string) error {
+	if _, err := requireObjectShape(raw, []string{"source", "value"}, nil); err != nil {
+		return err
+	}
+	var value struct {
+		Source string `json:"source"`
+		Value  string `json:"value"`
+	}
+	if err := decodeMember(raw, &value, message); err != nil {
+		return err
+	}
+	if value.Source != "label" && value.Source != "constant" {
+		return fieldErr("source", message)
+	}
+	if value.Value == "" || textLength(value.Value) > 253 {
+		return fieldErr("value", message)
+	}
+	return nil
 }
 
 // validateDrilldownBindingSource reports a source that does not fit its value.

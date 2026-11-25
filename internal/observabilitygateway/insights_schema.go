@@ -18,8 +18,8 @@ import (
 
 const insightsSchemaResponseBytes = 64 << 10
 
-const insightsSchemaInputSchema = `{"type":"object","required":["kind"],"additionalProperties":false,"properties":{"kind":{"type":"string","enum":["dashboard","widget","saved_query"],"description":"Canonical document contract to inspect before authoring or editing."}}}`
-const insightsSchemaOutputSchema = `{"type":"object","required":["schemaVersion","kind","schema","examples","notes"],"properties":{"schemaVersion":{"const":1},"kind":{"enum":["dashboard","widget","saved_query"]},"schema":{"type":"object"},"examples":{"type":"array","items":{"type":"object"}},"notes":{"type":"array","items":{"type":"string"}}}}`
+const insightsSchemaInputSchema = `{"type":"object","required":["kind"],"additionalProperties":false,"properties":{"kind":{"type":"string","enum":["dashboard","widget","saved_query","plugin"],"description":"Canonical document contract to inspect before authoring or editing. plugin gives the configuration of each built-in widget plugin."}}}`
+const insightsSchemaOutputSchema = `{"type":"object","required":["schemaVersion","kind","schema","examples","notes"],"properties":{"schemaVersion":{"const":1},"kind":{"enum":["dashboard","widget","saved_query","plugin"]},"schema":{"type":"object"},"examples":{"type":"array","items":{"type":"object"}},"notes":{"type":"array","items":{"type":"string"}}}}`
 
 func insightsSchemaTool(c *InsightsAuthoringClient) mcp.Tool {
 	return mcp.Tool{
@@ -47,7 +47,7 @@ func insightsSchemaTool(c *InsightsAuthoringClient) mcp.Tool {
 func decodeInsightsSchemaKind(raw json.RawMessage) (string, error) {
 	var kind string
 	if len(raw) > 1024 {
-		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("expected one kind argument: dashboard, widget, or saved_query"))
+		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("expected one kind argument: dashboard, widget, saved_query, or plugin"))
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	opening, openErr := decoder.Token()
@@ -56,13 +56,13 @@ func decodeInsightsSchemaKind(raw json.RawMessage) (string, error) {
 	closing, closeErr := decoder.Token()
 	_, trailingErr := decoder.Token()
 	if errors.Join(openErr, keyErr, valueErr, closeErr) != nil || opening != json.Delim('{') || key != "kind" || closing != json.Delim('}') || !errors.Is(trailingErr, io.EOF) {
-		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("expected one kind argument: dashboard, widget, or saved_query"))
+		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("expected one kind argument: dashboard, widget, saved_query, or plugin"))
 	}
 	switch kind {
-	case "dashboard", "widget", "saved_query":
+	case "dashboard", "widget", "saved_query", "plugin":
 		return kind, nil
 	default:
-		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("schema kind must be dashboard, widget, or saved_query"))
+		return "", connect.NewError(connect.CodeInvalidArgument, errors.New("schema kind must be dashboard, widget, saved_query, or plugin"))
 	}
 }
 

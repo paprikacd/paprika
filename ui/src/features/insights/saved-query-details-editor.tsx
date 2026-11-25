@@ -13,6 +13,7 @@ import {
   savedQueryTagSchema,
   type SavedQuery,
 } from "./schema";
+import "./lazy-style-boundary.css?saved-query-details-editor";
 import styles from "./saved-query-details-editor.module.css";
 
 /** Optional library presentation. These fields never change the executed query. */

@@ -224,11 +224,6 @@
   font-size: 11px;
   color: var(--gamma-muted);
 }
-.tooltipKeyHint {
-  color: var(--gamma-muted, #626e65);
-  font-size: 11px;
-  line-height: 1.4;
-}
 .tooltipReading {
   padding: 8px var(--tooltip-gutter, 14px) 12px;
   display: flex;
@@ -477,27 +472,11 @@
   letter-spacing: 0;
   font-weight: 400;
 }
-.gaugeTrack {
-  height: 9px;
-  width: 100%;
-  background: var(--gamma-surface-2, #f1f2ed);
-  overflow: hidden;
-  border-radius: 5px;
-}
-.gaugeFill {
-  height: 100%;
-  border-radius: inherit;
-}
 .gaugeBounds {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
   color: var(--widget-text, var(--gamma-muted, #626e65));
-}
-.gaugeLabel {
-  font-size: 11px;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
-  overflow-wrap: anywhere;
 }
 @media (prefers-reduced-motion: reduce) {
   .cell {
@@ -517,14 +496,6 @@
   margin: -8px;
   text-align: left;
   white-space: normal;
-}
-.gaugeHint {
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--widget-text, var(--gamma-muted, #626e65));
-}
-.gaugeTrack {
-  flex-shrink: 0;
 }
 .gaugeBounds {
   gap: 8px;
@@ -548,12 +519,6 @@
   .cell[aria-pressed="true"] {
     outline-color: Highlight;
     box-shadow: none;
-  }
-  .gaugeTrack {
-    border: 1px solid CanvasText;
-  }
-  .gaugeFill {
-    background: Highlight !important;
   }
   .heatmapTooltip {
     border-color: CanvasText;
@@ -630,6 +595,8 @@
   color: var(--gamma-muted);
   font-size: 12px;
 }
+.inspectorFooter button { white-space: nowrap; }
+@media (max-width: 480px) { .pagerNoun { display: none; } }
 .inspectorFooter > div {
   display: flex;
   align-items: center;
@@ -681,6 +648,41 @@
   height: auto;
   max-height: 50dvh;
 }
+/* Observation table: fixed right-aligned tabular value column; the region scrolls only when a cell cannot fit. */
+.dataDialog table { width: 100%; border-collapse: collapse; }
+.dataDialog th,
+.dataDialog td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--gamma-border, #dfe4db);
+}
+.dataDialog th {
+  color: var(--gamma-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dataDialog td:last-child,
+.dataDialog th:last-child {
+  min-width: 8em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Exact values are long ("296,303,060,975,000 bytes"): they may break before the unit at a space, never mid-number. */
+.dataDialog td.exactValue {
+  white-space: normal;
+  overflow-wrap: normal;
+}
+/* Scroll shadows: they show the table continues past either edge, and fade out when it does not. */
+.dataDialog > [role="region"] {
+  background:
+    linear-gradient(to right, var(--gamma-bg, #ffffff) 40%, transparent) left / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--gamma-bg, #ffffff) 40%, transparent) right / 24px 100% no-repeat local,
+    linear-gradient(to right, rgb(0 0 0 / 14%), transparent) left / 8px 100% no-repeat scroll,
+    linear-gradient(to left, rgb(0 0 0 / 14%), transparent) right / 8px 100% no-repeat scroll,
+    var(--gamma-bg, #ffffff);
+}
 .inspectorLabels {
   display: grid;
   gap: 6px;
@@ -709,6 +711,10 @@
   }
   .dataDialog[open] {
     gap: 12px;
+  }
+  .dataDialog th,
+  .dataDialog td {
+    padding-inline: 6px;
   }
   .inspectorFooter > span {
     width: 100%;

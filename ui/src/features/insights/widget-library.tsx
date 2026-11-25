@@ -12,13 +12,6 @@ import {
   Sparkles,
   Table2,
   X,
-  CalendarDays,
-  Gauge,
-  Globe2,
-  Network,
-  ChartNoAxesCombined,
-  Layers,
-  ArrowDownUp,
 } from "lucide-react"
 import { useWidgetDefinitions, type WidgetDefinition } from "./widget-registry"
 import styles from "./insights.module.css"
@@ -34,22 +27,6 @@ const icons = {
   traces: ListTree,
   heatmap: Grid2X2,
   plugin: Puzzle,
-}
-const pluginIcons = {
-  "distribution-heatmap": Grid2X2,
-  "stacked-timeseries": Layers,
-  "directional-traffic": ArrowDownUp,
-  "connection-map": Globe2,
-  "geo-heatmap": Globe2,
-  "pipeline-topology": Network,
-  "incident-calendar": CalendarDays,
-  "threshold-gauge": Gauge,
-  "status-history": ChartNoAxesCombined,
-  "status-grid": Grid2X2,
-  "uptime-calendar": CalendarDays,
-  "uptime-timeline": ChartNoAxesCombined,
-  "small-multiples": Grid2X2,
-  "slo-summary": Gauge,
 }
 
 export function WidgetLibrary({
@@ -103,7 +80,7 @@ export function WidgetLibrary({
       </div>
       <div className={styles.widgetLibrary}>
         {visible.map((definition) => {
-          const Icon = pluginIcons[definition.id as keyof typeof pluginIcons] ?? icons[definition.type]
+          const Icon = definition.icon ?? icons[definition.type]
           return (
             <GammaButton size="sm" variant="quiet" key={definition.id} disabled={disabled} onClick={() => onAdd(definition)}>
               <Icon size={23} strokeWidth={1.5} />

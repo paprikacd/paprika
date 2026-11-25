@@ -1,5 +1,6 @@
 "use client"
 
+import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { z } from "zod"
 import { formatMetric, EmptyState, ObservationTooltip } from "../chart-renderers"
@@ -11,10 +12,12 @@ import { formatTimeTick } from "../chart-data"
 import { displaySeriesNames, fallbackIdentityTitle } from "../series-display"
 import { truncationNote } from "../truncation"
 import { TimeWindowLens } from "../time-window-lens"
+import { WidgetFooterActions } from "../widget-footer"
 import { assignSeriesColors } from "../series-colors"
 import { seriesSlot } from "../series-palette"
 import type { ObservationWindow } from "../time-window"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
+import { seriesShown } from "../benign-states"
 import { useObservationOwner } from "../observation-owner"
 import { isRestoringTooltipFocus } from "../tooltip-focus"
 import styles from "./records.module.css"
@@ -213,13 +216,13 @@ function RecordChart({widget,result,onContextChange,bar=false}:WidgetRendererPro
     })}</g>
   </svg>{current&&<ObservationTooltip id={tooltipId} anchor={current.anchor} anchorRect={anchorRect} preferSide avoidWidget pinned={current.pinned} onDismiss={()=>owner.dismiss()} onEnter={()=>owner.panelEnter()} onLeave={()=>owner.panelLeave()}>
     <div data-record-observation={current.point.x}><div className={tooltipStyles.plotTooltipTime}><span>Selected observation</span><span>{xText(current.point.x,true)}</span></div><div className={tooltipStyles.plotTooltipValues}><ul><li className={tooltipStyles.plotTooltipSelected}><i aria-hidden="true" style={{background:colorOf(current.seriesIndex)}}/><span>{series[current.seriesIndex].name}</span><strong>{formatMetric(current.point.value!,series[current.seriesIndex].unit==="percent"?"%":series[current.seriesIndex].unit||widget.unit,false,widget.options?.decimals)}</strong></li></ul></div>
-      {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?"No data":contextText(value).length>128?`${contextText(value).slice(0,128)}…`:contextText(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
+      {contextFields.length>0&&<div className={tooltipStyles.tooltipLabels}><dl>{contextFields.slice(0,8).map(({column,value})=><div key={column.key}><dt>{column.label??column.key}: </dt><dd>{value===null?NO_DATA:contextText(value).length>128?`${contextText(value).slice(0,128)}…`:contextText(value)}</dd></div>)}</dl>{contextFields.length>8&&<small>Additional fields are available in the record.</small>}</div>}
       </div>
-  </ObservationTooltip>}<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colorOf(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}
-  {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{truncationNote(result)&&<span>{truncationNote(result)}</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>Showing first 24 of {data.series.length} series</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
+  </ObservationTooltip>}{widget.options?.showLegend!==false&&!identityTitle&&<div className={styles.legend} role="list" aria-label="Plotted series">{series.map((entry,index)=>{const label=legendNames[index];return <span key={index} role="listitem" title={label===entry.name?undefined:entry.name}><i style={{background:colorOf(index)}}/>{label===entry.name?label:<><span aria-hidden="true">{label}</span><span className={styles.srOnly}>{entry.name}</span></>}{entry.right?" (right axis)":""}</span>})}</div>}<WidgetFooterActions widget={widget} compare={<DashboardWindowProvider value={{}}><TimeWindowLens title={widget.title} series={lensSeries} unit={widget.unit} seriesUnits={data.series.slice(0,24).map(entry=>entry.unit==="percent"?"%":entry.unit||widget.unit)} maxSeries={24} decimals={widget.options?.decimals} zoom={zoom} onZoom={window=>setSelected({source:data,window})} onReset={()=>setSelected(undefined)} /></DashboardWindowProvider>} inspect={lensSeries} />
+  {(frame.truncated||data.omitted>0||data.series.length>24||(bar&&series.some(s=>s.points.length>100)))&&<div className={styles.note}>{truncationNote(result)&&<span>{truncationNote(result)}</span>}{data.omitted>0&&<span>{data.omitted} observations have no x coordinate</span>}{data.series.length>24&&<span>{seriesShown(24, data.series.length)}</span>}{bar&&series.some(s=>s.points.length>100)&&<span>Showing first 100 points per series</span>}</div>}</div>
 }
 export const RecordLine=(props:WidgetRendererProps)=><RecordChart {...props}/>
 export const RecordBar=(props:WidgetRendererProps)=><RecordChart {...props} bar/>
 export function registerRecordChartPlugins(){
-  for(const entry of [{id:"records-line",label:"Record line chart",render:RecordLine},{id:"records-bar",label:"Record bar chart",render:RecordBar}])if(!getWidgetDefinition("plugin",entry.id))registerWidgetPlugin({...entry,dataKind:"records",description:"Plot exact application records and authored historical datasets",parseConfig:config=>configSchema.parse(config??{}),styleControls:["decimals"]})
+  for(const entry of [{id:"records-line",label:"Record line chart",render:RecordLine},{id:"records-bar",label:"Record bar chart",render:RecordBar}])if(!getWidgetDefinition("plugin",entry.id))registerWidgetPlugin({...entry,dataKind:"records",capabilities:{colorFallback:"series"},description:"Plot exact application records and authored historical datasets",configSchema,styleControls:["decimals"]})
 }

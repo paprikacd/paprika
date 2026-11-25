@@ -509,7 +509,7 @@ describe("widget visualizations", () => {
         />,
       );
       expect(screen.getByRole("status")).toHaveTextContent(
-        "First 12 of 13 series",
+        "Showing 12 of 13 series",
       );
     },
   );
@@ -820,7 +820,7 @@ describe("widget visualizations", () => {
     );
     expect(screen.getAllByRole("button")).toHaveLength(100);
     expect(screen.getByText("All values")).toBeInTheDocument();
-    expect(screen.getByText(/First 100 of 150/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing 100 of 150/)).toBeInTheDocument();
   });
 
   it.each([
@@ -1112,14 +1112,20 @@ describe("accessible observation inspection", () => {
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog", { name: "API latency data" });
     expect(dialog).toHaveTextContent("api-full-label");
+    // Auto follows the widget's decimals; full precision is an explicit toggle.
+    // 0.123456789 ms scales to microseconds first, then takes the decimals: "123.46 us".
+    expect(within(dialog).getByText("123.46 us")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Exact values" }));
     expect(within(dialog).getByText("0.123456789 ms")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Exact values" }));
+    expect(within(dialog).getByText("123.46 us")).toBeInTheDocument();
     expect(within(dialog).getByText("No data")).toBeInTheDocument();
     expect(within(dialog).getAllByRole("row")).toHaveLength(26);
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Next observations" }),
     );
     expect(within(dialog).getAllByRole("row")).toHaveLength(3);
-    expect(dialog).toHaveTextContent("26.123456789 ms");
+    expect(dialog).toHaveTextContent("26.12 ms");
     expect(selected).not.toHaveBeenCalled();
     rerender(
       <WidgetVisualization
@@ -1140,7 +1146,7 @@ describe("accessible observation inspection", () => {
     expect(
       within(dialog).getByRole("combobox", { name: "Data series" }),
     ).toHaveTextContent("api");
-    expect(dialog).toHaveTextContent("26.123456789 ms");
+    expect(dialog).toHaveTextContent("26.12 ms");
     expect(dialog).not.toHaveTextContent("999 ms");
     rerender(
       <WidgetVisualization
@@ -1158,8 +1164,8 @@ describe("accessible observation inspection", () => {
       />,
     );
     expect(dialog).toHaveTextContent("api-fresh-label");
-    expect(dialog).toHaveTextContent("99.123456789 ms");
-    expect(dialog).not.toHaveTextContent("26.123456789 ms");
+    expect(dialog).toHaveTextContent("99.12 ms");
+    expect(dialog).not.toHaveTextContent("26.12 ms");
     fireEvent.click(within(dialog).getByRole("button", { name: "Close data" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(opener).toHaveFocus();

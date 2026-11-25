@@ -11,6 +11,7 @@ import {
 } from "./workspace-transfer";
 import { GammaButton } from "./gamma/button";
 import shared from "./insights.module.css";
+import "./lazy-style-boundary.css?starter-picker";
 import styles from "./starter-picker.module.css";
 
 export interface StarterPickerProps extends PortableImportProps {

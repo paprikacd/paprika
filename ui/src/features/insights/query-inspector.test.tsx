@@ -299,3 +299,29 @@ describe("passive query inspector", () => {
     expect(screen.queryByRole("button", { name: /Inspect q1,/ })).not.toBeInTheDocument();
   });
 });
+
+describe("server result cache in the inspector", () => {
+  const serverHit: QueryDiagnostics = {
+    version: 1,
+    executionId: "service-hit",
+    outcome: "success",
+    source: { providerId: "prometheus", providerType: "prometheus", transport: "direct" },
+    requested: { start: 1000, end: 2000, step: 15 },
+    effective: { dispatched: false, rangeApplied: false, scope: "provider" },
+    phases: [{ name: "cache", owner: "insights", clock: "server-monotonic", durationMs: 1.2, relationship: "exclusive" }],
+    totalMs: 1.2,
+    counts: { series: 1, points: 2, traces: 0, spans: 0, rows: 0 },
+    truncated: false,
+    cache: { status: "hit", sourceExecutionId: "service-q7", ageMs: 2400 },
+  };
+
+  it("says when the server reused an earlier execution and that no provider request was made", async () => {
+    const fetcher = vi.fn(async () => ({ ...result, diagnostics: serverHit }));
+    const scheduler = createQueryScheduler(fetcher);
+    await scheduler(request, signal());
+    render(<QueryInspector store={scheduler.diagnostics} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Inspect q1,/ }));
+    expect(details()).toHaveTextContent("Insights reused execution service-q7 (2.4 s old). No provider request was made.");
+    expect(details()).toHaveTextContent("Server cache");
+  });
+});

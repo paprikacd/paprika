@@ -10,14 +10,23 @@ import (
 // Both selection rules share one line: the inactive-binding and self-filter rules teach the same selection model.
 const guidanceSelection = "selectionBindings activate only on a timeseries, bar, table, heatmap or traces widget, or a selectable plugin; on any other widget they are retained but inactive. Do not let a selecting widget read the variable it sets; drive filtered panels from an unfiltered overview chart grouped by that label."
 
-// selectableWidgetTypes and selectablePluginIDs are the widgets whose renderers can activate a selection. They mirror
-// selectableBuiltins and selectablePlugins in ui/src/features/insights/selection-support.ts, and
-// TestSelectableWidgetsMatchTheUI reads that file so the two lists cannot drift.
+// selectableWidgetTypes and selectablePluginIDs are the widgets whose renderers can activate a selection. The built-in
+// types mirror selectableBuiltins in ui/src/features/insights/selection-support.ts. The plugins come from the
+// generated capability list, which mirrors PLUGIN_DOCUMENT_CAPABILITIES. TestSelectableWidgetsMatchTheUI reads both
+// UI sources so neither list can drift.
 var selectableWidgetTypes = map[string]bool{"timeseries": true, "bar": true, "table": true, "heatmap": true, "traces": true}
 
-var selectablePluginIDs = map[string]bool{
-	"record-treemap": true, "record-table": true, "record-list": true, "record-matrix": true,
-	"records-line": true, "records-bar": true, "pie": true, "status-history": true, "geo-heatmap": true, "connection-map": true,
+var selectablePluginIDs = pluginsWithCapability("selection")
+
+// pluginsWithCapability lists the built-in plugins whose renderers support the named document capability.
+func pluginsWithCapability(capability string) map[string]bool {
+	set := make(map[string]bool)
+	for id, capabilities := range builtInPluginCapabilities {
+		if capabilities[capability] {
+			set[id] = true
+		}
+	}
+	return set
 }
 
 var selectionLintRules = []lintRule{

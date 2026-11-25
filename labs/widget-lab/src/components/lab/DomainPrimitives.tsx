@@ -31,8 +31,8 @@ export function usePlotWidth(ref: RefObject<HTMLElement | null>, fallback = 640)
   return width;
 }
 
-export function DomainHeader({ title, eyebrow = 'PAPRIKA', children }: { title: string; eyebrow?: string; children?: ReactNode }) {
-  return <header className="domain-heading"><div className="domain-heading-title"><p>{eyebrow}</p><h1>{title}</h1><span>Concept · synthetic data</span></div><div className="domain-controls">{children}</div></header>;
+export function DomainHeader({ title, eyebrow = 'PAPRIKA', label = 'Concept · synthetic data', children }: { title: string; eyebrow?: string; label?: string; children?: ReactNode }) {
+  return <header className="domain-heading"><div className="domain-heading-title"><p>{eyebrow}</p><h1>{title}</h1><span>{label}</span></div><div className="domain-controls">{children}</div></header>;
 }
 
 export function MetricStrip({ items }: { items: { label: string; value: ReactNode; detail?: ReactNode; tone?: 'cyan' | 'violet' | 'green' | 'amber' | 'red' }[] }) {

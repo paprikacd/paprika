@@ -32,17 +32,19 @@ the text content is a short synopsis, not a second copy of the JSON. The version
 | `dashboard` | Saved dashboard ID, title and exact ETag |
 | `observedAt` | When this execution snapshot started |
 | `range` | Resolved RFC3339 start/end and `stepSeconds` |
-| `variables` | Saved defaults with this call's declared overrides applied |
-| `variableDefinitions` | Each declared variable's label, saved default and static options, in declaration order. Label, default and option text share a 4 KiB encoded budget per result: `optionsOmitted` counts options past it, and `detailOmitted` marks a label and default left out of it. A variable with a query-backed `source` reports `source` (`labelValues` or `savedQuery`) and a `sourceSummary` (kind, provider or saved-query ID, label or field, and whether it depends on another variable). Its static list is reported as `fallbackOptions`, not `options`. query_dashboard does not resolve the source yet: an override of a sourced variable is not checked against the fallback, and only an empty or over-long override is named in `warnings`. `get_dashboard` returns them all. The text synopsis names them in one bounded `Declared variables` line. Omitted when the dashboard declares no variables |
+| `variables` | Saved defaults with this call's declared overrides applied. A value is a string, or a list of strings for a variable declared with `multi`; an empty list is All. A string given for a multi variable is one item. |
+| `variableDefinitions` | Each declared variable's label, saved default and static options, in declaration order. Label, default and option text share a 4 KiB encoded budget per result: `optionsOmitted` counts options past it, and `detailOmitted` marks a label and default left out of it. A variable with a query-backed `source` reports `source` (`labelValues` or `savedQuery`) and a `sourceSummary` (kind, provider or saved-query ID, label or field, and whether it depends on another variable). Its static list is reported as `fallbackOptions`, not `options`. query_dashboard resolves the source for the call and reports `sourceOptions`: `state` (`ready`, `empty`, `failed`, `needs_variable` or `not_run`), `values` in the source's order within a 16 KiB encoded budget shared by all sourced variables (`valuesOmitted` counts values past it or dropped by the `variableOptions` step), `truncated`, `currentValue` (`in_values`, `not_in_values`, or `unknown` for a truncated list without the value; a multi variable is `in_values` only when every item is, and All reports none), `missingValues` (a multi variable's items the list lacks, with `not_in_values`), `needsVariable` and `error`. An override outside a complete source list still applies and is named in `warnings`, and so is an empty override. `get_dashboard` returns them all. The text synopsis names them in one bounded `Declared variables` line. Omitted when the dashboard declares no variables |
 | `warnings` | Inputs the call accepted but that may be wrong. An override outside a variable's declared options still applies and is named here. Omitted when there are none; a warning never fails the call |
 | `widgets` | ID, title, type, unit, optional decimals, the declared band (`threshold`, with `bandSeries` for multi-series bands), the latest sample's age and limit (`sample`), the `freshness` object where an explicit option judges it (a stat's is the first contract's), breach intervals (`breaches`), the widget's `attention` reason when it needs one, and its signal reference or resolution error; under the result cap the listed breach intervals, each widget's whole `breaches` object, each multi-series `bandSeries` object, and `sample` may be omitted (see `omitted`). Only a time series' `freshness` can be dropped; a stat's `freshness` is never dropped; saved-query and annotation references identify the captured query revisions; plugin widgets include their registered `pluginId` and `dataKind` |
 | `savedQueries` | Referenced saved-query IDs and exact ETags captured with the dashboard |
 | `signals` | Deduplicated query results, indexed by `q1`, `q2`, …; each identifies the query kind and, when provider lookup is authorized, its resolved provider ID |
-| `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided |
+| `queryCount` | Unique planned queries, provider calls begun and duplicate widget queries avoided. `variableOptions` counts the variable source fetches planned and admitted (absent when no variable declares a source). `baseline` counts the earlier-window queries of time series that declare `options.baseline` (absent when none does) |
 | `state` | `ok`, `empty` or `partial`; availability, not service health |
 | `attention` | Dashboard-level count of widgets that need attention, with `checked` and the `basis` it counts; see below. Not a health verdict. Optional on the wire, so an older client's schema still accepts the result |
 | `slo` | Optional, on an `slo-summary` widget only. The authored objective's evaluation: `basis`, `objective`, `period`, `evaluatedAt`, `state` (`meeting`, `at_risk`, `breaching`, `unknown` or `partial`), `reasons`, `counts`, up to `max_series` `groups` with availability, error ratio, budget remaining and burn pairs, and `groupsOmitted`. See SLO objectives below |
-| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 130 KiB: `breachIntervals`, `breaches`, `bandSeries`, `sample`, `sloBurn` (the per-group burn pairs, which keep `state`, `reasons` and `counts`). Absent when nothing was dropped. The step definitions are under Omitted detail below. Facts that no step drops are listed there too; a result whose never-dropped facts alone exceed 130 KiB is refused with 413, and `omitted` is never present on a refusal |
+| `baseline` | Optional, on a time series that declares `options.baseline` only. Its band: `state` (`ok`, `partial`, `unavailable`, `error` or `not_run`), `window`, `band`, `offsetSeconds` for an earlier window, `evaluated` and `outside` sample counts with their `fraction`, and `series` (the first 12 series, each with at most its three latest runs of two or more outside samples). A rolling window reads, for each sample, the 12 samples that end 6 samples before it. It describes the chart's own history, never an alert or health, and it never changes `attention` |
+| `annotations` | Optional, top level. The dashboard-level event source, present when a selected time-based widget without its own source inherits it: its saved query, signal, columns or error, and the `widgetIds` that inherit it |
+| `omitted` | Optional. Names, in the order applied, the optional detail dropped so the result fits 130 KiB: `variableOptions`, `baselineSeries`, `breachIntervals`, `breaches`, `bandSeries`, `sample`, `sloBurn` (the per-group burn pairs, which keep `state`, `reasons` and `counts`). Absent when nothing was dropped. The step definitions are under Omitted detail below. Facts that no step drops are listed there too; a result whose never-dropped facts alone exceed 130 KiB is refused with 413, and `omitted` is never present on a refusal |
 
 ### Compatibility
 
@@ -217,7 +219,12 @@ warning or critical status reports no `breaches`.
 
 Omitted detail. The structured result is budgeted against its encoded size. When it
 would exceed 130 KiB, optional detail is dropped in this fixed order, and each step
-runs only if the result still does not fit: (1) `breachIntervals`, the listed breach
+runs only if the result still does not fit. The first step is `variableOptions`: it
+removes every sourced variable's listed values from `variableDefinitions`, and their
+count moves into `valuesOmitted`, while the state, `currentValue`, `truncated` and
+`error` stay. It goes first because it is the only dropped detail that does not
+describe signal data. Next, `baselineSeries` removes each time series' listed baseline `series` and their runs,
+counting them in `seriesOmitted`, while the band's totals stay. The numbered steps below follow it: (1) `breachIntervals`, the listed breach
 intervals and their series names, with their count moved into `intervalsOmitted`;
 (2) `breaches`, each widget's whole breach object, which includes its window
 `summary` and `latestLevel`; (3) `bandSeries`, each multi-series band's whole
@@ -235,7 +242,7 @@ The text synopsis states what was omitted and that `widget_ids` narrows the quer
 recover it.
 
 Never dropped, under any step: the top-level `schemaVersion`, `dashboard`,
-`observedAt`, `range`, `variables`, `variableDefinitions`, `warnings`, `savedQueries`, `signals` (every signal, its
+`observedAt`, `range`, `variables`, `variableDefinitions` (its listed source values are the first step), `warnings`, `savedQueries`, `signals` (every signal, its
 series summaries and their labels), `queryCount`, `state`, `attention` (the counts
 and the basis) and `omitted`; and for each widget its identity fields (`id`, `title`,
 `type`, `unit`, `decimals`, `pluginId`, `dataKind`), its saved-query, annotation and
@@ -316,6 +323,26 @@ Insights admission to the gateway's answer. It includes the admission wait and g
 queueing, so a slow value can be provider time, queueing, waiting for admission or any mix. It is absent when
 the query was never admitted, for example when admission was refused or the request
 was cancelled first. It is structured content only; the text synopsis does not show it.
+
+## Variable options endpoint
+
+`POST /api/dashboards/{id}/variable-options` resolves the choices of a dashboard's sourced variables for
+API clients. It needs the read permission the query-dashboard route needs. The body is at most 32 KiB and
+has only these optional fields: `variables` (overrides of declared variables), `names` (at most 20 sourced
+variables; without it every sourced variable resolves), and `start` and `end` (RFC 3339; without them the
+dashboard's own range applies). A name that is not a declared sourced variable is refused with 400. The
+range has each end rounded down to the minute, so reads a few seconds apart share one resolution.
+
+The response is a protobuf message, `VariableOptionsResponse` (`proto/paprika/insights/v1/variable_options.proto`),
+written as protojson: the dashboard's `dashboardEtag`, the bucketed `rangeStart` and `rangeEnd`, and for each
+resolved variable its `name`, `state`, `values`, `truncated`, `currentValue`, `needsVariable` and `errorCode`, and for a multi variable `currentValues` and `missingValues`.
+The values are not budgeted, because at most 20 variables of 100 values each can be named. The sources share a
+6 second budget of their own, after the read's widgets have run. A source the budget ends before it starts is
+`not_run`.
+
+The console keeps its own client path, so this endpoint serves agents and other API clients. A dashboard draft
+is covered by the dry run, not by this endpoint. There is no MCP tool for it: `query_dashboard` with a parent's
+override returns the dependent variable's values.
 
 ## Targeted drilldown
 
@@ -464,74 +491,5 @@ documented by the service-overview browser test. It reads existing documents,
 executes their queries over a shared fixed range and verifies document ETags are
 unchanged. No telemetry is mocked and no saved documents are written.
 
-### Omega acceptance — 26 October 2026
-
-Deployed and verified at 22:40 Melbourne time (11:40 UTC):
-
-- Source: `d4b6f354f2126cc0bfa46400bad7e92907e1a9b2`.
-- [Linux amd64 build](https://github.com/paprikacd/paprika/actions/runs/40314288403)
-  succeeded; immutable image
-  `ghcr.io/paprikacd/paprika@sha256:ecf761f8411d36346887d273951a28c7043bacbe1540412cd4772fb7a6034f88`.
-- Helm revision 50 is deployed. Helm 3.21.2 lint, render and server-side dry run
-  passed. All 65 managed objects and six hooks were reviewed; only API, Insights
-  and Observe deployment images changed. Controller placement, both MCP client
-  registries and the original Bound Insights PVC were preserved.
-- All six running components are ready with zero restarts. System-health warnings
-  are unchanged from the pre-deployment baseline: one degraded application and
-  three applications with exhausted retries. Reconcile generations are current.
-
-The real [Service overview](https://paprika.benebsworth.com/dashboard/insights/?dashboard=service-overview)
-returned eight widgets from seven unique provider executions, avoiding the
-duplicate stat/chart query. Four live machine checks and seven live browser
-checks passed, including light/dark layouts at 1512px and 390px, rapid service
-switching, sparklines, exact observations and persisted-document integrity.
-The machine comparison used `2026-10-26T10:36:00Z`–`11:36:00Z`, step 12 seconds.
-
-| Service | Raw normalized provider results | Complete MCP result | Reduction |
-|---|---:|---:|---:|
-| `uptime-api` | 150,006 bytes | 6,393 bytes | 96% |
-| `brandbrain-api` | 16,842 bytes | 3,364 bytes | 80% |
-
-These are measured JSON byte counts, not tokenizer estimates. The compact size
-includes both structured content and the text synopsis. Uptime's metric readings,
-timestamps, extrema and sample counts match the provider responses exactly.
-Brandbrain's six metric signals correctly remain empty. Both services return a
-100-trace provider sample with three compact examples, explicit truncation and
-100 unknown statuses; none is interpreted as healthy. A one-widget drilldown
-returned 12 history points. All eight dashboard/saved-query documents retained
-their exact content and ETags. The browser recorded no page errors or document
-writes.
-
-Local validation also passed required Go build/vet and engine/pipeline tests,
-full Insights/gateway/API/MCP/cmd tests, race/admission tests, pre-commit lint,
-seven machine-query browser scenarios, and 15 existing authoring scenarios.
-The reusable live validator additionally runs against populated and empty local
-provider fixtures to cover omitted empty result arrays.
-
-Receipts and screenshots are in the git-ignored
-`artifacts/insights/dashboard-query-live-20261026/`; local fixture evidence is in
-`artifacts/insights/dashboard-query/`. Temporary read-only validation tokens were
-removed after acceptance. The test used scoped machine credentials, not an
-interactive OAuth sign-in test.
-
-### Rollout recheck — 27 October 2026
-
-On 27 October Melbourne time, the API, Insights and Observe gateway were still ready
-on the deployed `d4b6f354` image above. No replacement rollout was needed.
-The public Observe endpoint advertised `query_dashboard` and passed all four
-live machine checks again. The Service overview still resolves eight widgets
-into seven unique queries, with all eight saved documents unchanged.
-
-For `uptime-api`, the complete MCP response measured 6,335 bytes against 149,673
-bytes of full normalized provider results (96% smaller). For `brandbrain-api`,
-it measured 3,363 against 16,825 bytes (80% smaller), correctly preserving empty
-HTTP metric signals and a bounded trace sample. All seven real-provider browser
-checks also passed, including light/dark desktop/mobile rendering, service
-switching and sparklines. Existing unrelated fleet-health warnings are unchanged.
-
-The Observe README and both bundled skills now direct clients to
-`list_dashboards` → `query_dashboard` for an existing dashboard instead of
-fetching and executing each saved query separately. Package contract tests pass.
-Fresh results and a readable bundle presentation are available under
-`artifacts/insights/dashboard-bundle-rollout-20261027/` (git-ignored). Temporary
-read-only validation tokens were removed after this recheck.
+Dated deployment receipts (the 26 October 2026 Omega acceptance and the 27 October rollout recheck) are in
+[receipts/dashboard-query-acceptance-2026-10.md](receipts/dashboard-query-acceptance-2026-10.md).

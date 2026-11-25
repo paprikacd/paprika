@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { DashboardCanvas } from "./canvas";
+import { createQueryScheduler } from "./query";
 import type { Dashboard, QueryResult } from "./schema";
 
 vi.mock("react-grid-layout", () => ({
@@ -30,6 +31,25 @@ describe("deferred widget queries", () => {
     expect(await screen.findByRole("img", { name: "Requests" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+  it("warms an offscreen tile once when the scheduler is idle, and does not query it again", async () => {
+    // An observer that never reports the tile on screen: only idle prefetch can start its query.
+    vi.stubGlobal("IntersectionObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    const inner = vi.fn(async () => ({ series: [{ name: "requests", labels: {}, points: [{ timestamp: 2000000, value: 7 }] }] }) as QueryResult);
+    const fetcher = createQueryScheduler(inner);
+    const { rerender } = render(<DashboardCanvas dashboard={dashboard} active providers={providers} fetcher={fetcher} end={3600} editing={false} onSelect={vi.fn()} onLayout={vi.fn()} />);
+    await waitFor(() => expect(inner).toHaveBeenCalledTimes(1), { timeout: 2_000 });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 600));
+    });
+    expect(inner).toHaveBeenCalledTimes(1);
+    rerender(<DashboardCanvas dashboard={dashboard} active providers={providers} fetcher={fetcher} end={3600} editing={false} onSelect={vi.fn()} onLayout={vi.fn()} />);
+    expect(inner).toHaveBeenCalledTimes(1);
+  });
+
   it("does not offer a retry for an unconfigured provider", async () => {
     const fetcher = vi.fn();
     render(<DashboardCanvas dashboard={dashboard} active providers={[]} fetcher={fetcher} end={3600} editing={false} onSelect={vi.fn()} onLayout={vi.fn()} />);

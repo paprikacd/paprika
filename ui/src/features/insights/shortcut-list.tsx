@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import { GammaButton } from "./gamma/button"
 import { lockBodyScroll } from "./gamma/scroll-lock"
 import { labelFor, type ShortcutId } from "./shortcuts"
+import "./lazy-style-boundary.css?shortcut-list"
 import styles from "./shortcut-list.module.css"
 
 export type ShortcutGroup = { title: string; rows: { label: string; keys: string }[] }

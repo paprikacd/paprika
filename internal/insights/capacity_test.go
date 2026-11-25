@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -83,7 +84,7 @@ func TestQueryCapacityRefusalRetryAfterFollowsItsPool(t *testing.T) {
 	s := singleSlotService(t)
 	s.queryHold.Observe(6 * time.Second)
 	recorder := httptest.NewRecorder()
-	writeQueryFailure(recorder, s.queryCapacityRefusal(), nil)
+	writeQueryFailure(recorder, s.queryCapacityRefusal(context.Background()), nil)
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
 	assert.Equal(t, "6", recorder.Header().Get("Retry-After"))
 
@@ -91,7 +92,7 @@ func TestQueryCapacityRefusalRetryAfterFollowsItsPool(t *testing.T) {
 	wide, _ := testService(t)
 	wide.queryHold.Observe(6 * time.Second)
 	recorder = httptest.NewRecorder()
-	writeQueryFailure(recorder, wide.queryCapacityRefusal(), nil)
+	writeQueryFailure(recorder, wide.queryCapacityRefusal(context.Background()), nil)
 	assert.Equal(t, "1", recorder.Header().Get("Retry-After"), "one request ahead over sixteen slots takes less than one average")
 }
 

@@ -1,11 +1,16 @@
 package insights
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
 	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
 )
+
+// pluginConfigRuleID is the rule that checks a built-in plugin's configuration against its published schema.
+const pluginConfigRuleID = "plugin.config"
 
 // guidanceRecordRank is the composition line the record-rank rule maps to.
 const guidanceRecordRank = "A record-table rank needs a status source: a status-badge column with a status mapping, or a numeric column whose thresholds name a status."
@@ -25,6 +30,54 @@ var pluginLintRules = []lintRule{
 		Fix:      "Set rank.status to a status-badge column with a status mapping, or to a numeric column whose cellStyles thresholds or widget options.thresholds name a status; order by a different column.",
 		check:    checkRecordRank,
 	},
+	{
+		ID:       pluginConfigRuleID,
+		Severity: errorSeverity,
+		Summary:  guidanceVariables,
+		Fix:      "Change config to the keys and bounds the plugin's published config schema accepts.",
+		check:    checkPluginConfig,
+	},
+}
+
+// checkPluginConfig fires for each built-in plugin widget whose config its published schema refuses. The schema is
+// the one the UI parses with, so a save and an open agree. The pointer names the member inside the widget's config.
+// A host plugin, or slo-summary, which has its own document rule, is not checked here.
+func checkPluginConfig(doc *lintDocument) []lintHit {
+	var hits []lintHit
+	for i := range doc.widgets {
+		widget := &doc.widgets[i]
+		if widget.widgetType != "plugin" || !builtInWidgetPlugins[widget.pluginID] {
+			continue
+		}
+		config := compactPluginConfig(widget.config)
+		pointer, message, refused := pluginConfigProblem(widget.pluginID, config)
+		if !refused {
+			continue
+		}
+		hits = append(hits, lintHit{
+			pointer:     widgetBase(widget.index) + "/config" + pointer,
+			widgetID:    widget.id,
+			message:     widgetLabel(widget) + ": " + message,
+			grandfather: pluginConfigKey(widget.id, widget.pluginID, config),
+		})
+	}
+	return hits
+}
+
+// pluginConfigKey identifies one widget's configuration for grandfathering: a stored widget with the same id, the same
+// plugin and the same compact configuration keeps its warning. A configuration moved to another widget, or kept under
+// another plugin, is new. The NUL separators cannot occur in a widget or plugin id, which the schema has checked.
+func pluginConfigKey(widgetID, pluginID string, compact json.RawMessage) string {
+	return widgetID + "\x00" + pluginID + "\x00" + string(compact)
+}
+
+// compactPluginConfig returns the configuration in compact form, with {} standing for a missing or null one.
+func compactPluginConfig(config json.RawMessage) json.RawMessage {
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, configOrEmpty(config)); err != nil {
+		return json.RawMessage("{}")
+	}
+	return buf.Bytes()
 }
 
 // numericRankDisplays are the record-table displays whose column is a number, so its thresholds can name a status.
@@ -139,6 +192,18 @@ func rankStatusSourceProblem(style *wireCellStyle, statusBands bool) string {
 // cannot drift from the registry. A host may register its own plugins, which the
 // rule reports as not built in: a warning, not an error.
 var builtInWidgetPlugins = loadBuiltInWidgetPlugins()
+
+// builtInPluginCapabilities maps each built-in plugin to the document capabilities its renderer supports. Like
+// builtInWidgetPlugins it is read from the committed list, which is generated from plugin-capabilities.ts.
+var builtInPluginCapabilities = loadBuiltInPluginCapabilities()
+
+func loadBuiltInPluginCapabilities() map[string]map[string]bool {
+	capabilities, err := insightsschema.BuiltInWidgetPluginCapabilities()
+	if err != nil {
+		panic(err)
+	}
+	return capabilities
+}
 
 func loadBuiltInWidgetPlugins() map[string]bool {
 	ids, err := insightsschema.BuiltInWidgetPlugins()

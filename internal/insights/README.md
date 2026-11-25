@@ -177,10 +177,13 @@ through Paprika. All service API routes require `Authorization: Bearer <token>`.
 | PUT | `/api/saved-queries/{id}` | SavedQuery and `ETag` |
 | DELETE | `/api/saved-queries/{id}` | 204; `If-Match` required |
 | GET | `/api/dashboards` | `{dashboards:[Dashboard]}` |
+| GET | `/api/application-dashboards?namespace=&name=` | protojson `ApplicationDashboardList`: the dashboards whose `covers` match the application, most specific first, at most 8, with `truncated`. Both parameters are required application names, else 400 |
 | GET | `/api/dashboards/{id}` | Dashboard and `ETag` |
 | PUT | `/api/dashboards/{id}` | Saved Dashboard and `ETag`; `?checks=true` adds `checks` (see below) |
 | DELETE | `/api/dashboards/{id}` | 204 |
 | POST | `/api/dashboards/validate` | Dry run: `{document, execute?, variables?}` in. Without `execute`: `{issues,total,truncated,errorCount,warningCount,infoCount}` out, a schema and lint dry run that never writes. With `execute: true`: the same members plus `widgets`, one `WidgetDataState` per widget in document order (`widgetId`, `pointer`, `state`, `seriesReturned`, `errorCode`). Execute runs each distinct widget query once, read-only, over the dashboard default range (or its custom range) with the given variables (at most 20 string values, each at most 1024 UTF-16 units). A document with a schema or error-severity finding is not executed, and each widget reports `DATA_STATE_NOT_RUN`. `variables` without `execute` is a 400. The MCP gateway runs an executing dry run under its orchestration admission, and refuses it with `resource_exhausted` when that admission is unavailable. `state` is one of `OK`, `EMPTY`, `PARTIAL`, `STALE`, `ERROR`, `UNAVAILABLE` (capacity, timeout or cancellation, a retry clears it) or `NOT_RUN`. |
+
+`covers` says which applications a dashboard is for. Its fields, the lookup's ranking and embed mode are specified once in [dashboard coverage](../../docs/design/insights/coverage.md).
 
 Query request:
 
@@ -367,13 +370,11 @@ request whose read cannot reserve waits up to 2 seconds for bytes to free, with 
 requests queued. Past that it gets `429` with `Retry-After: 1` and "too many active dashboard
 uploads". Each such refusal is counted in `paprika_insights_dashboard_upload_refusals_total`,
 labelled `route="save"` or `route="dry_run"`. The counter appears on Insights' own `/metrics`
-endpoint, or over OTLP when telemetry is configured. The chart as it stands does not
-scrape Insights. When `insights.enabled` is set and either `insights.networkPolicy.enabled`
-or `networkPolicy.enabled` is set (both default to `false`), the Insights NetworkPolicy
-admits port 8090 from the API server and the observability gateway, and from the
-controller-manager in monolith mode (see "Network policy"). The chart has no
-value for an extra ingress rule, so a scrape needs a chart change as well as an operator's
-scrape job. The same is true of `paprika_insights_queries_total`.
+endpoint, or over OTLP when telemetry is configured. With `prometheus.enable`, the chart
+starts Insights with `--metrics-listen=:8080`, a second listener that serves only `/metrics`,
+and renders a ServiceMonitor for that `metrics` port. The Insights NetworkPolicy then admits
+the release namespace on 8080 only; `/api` on 8090 stays limited to its peers (see
+"Network policy"). The same is true of `paprika_insights_queries_total`.
 
 A principal can fill the budget with stalled uploads. The budget's worth of stalled bytes
 (8 MiB) refuses every save and dry run for up to the server's 10-second `ReadTimeout`, the
@@ -503,6 +504,13 @@ because a save executes nothing. Each rule's default severity is in brackets.
   `options.seriesColors` rules.
 - `data.constant-sparkline` [info]: a stat with a sparkline whose primary series
   holds at least two valid samples, all equal.
+- `data.variable-source-error` [warning]: a variable's source failed with a code
+  a retry does not clear. Its pointer is `/variables/{i}/source`.
+- `data.variable-source-empty` [info]: a variable's source ran and returned no
+  values. Its pointer is `/variables/{i}/source`.
+- `data.variable-value-not-in-source` [info]: a variable's current value is absent
+  from a complete list its source returned. A truncated list is not checked. Its
+  pointer is `/variables/{i}`.
 
 A widget whose event query failed reports `PARTIAL`, and keeps its finding.
 
@@ -588,10 +596,10 @@ across all forms. Trace views require a query, saved query, or compatible widget
 result source. Plugin ID, data kind, and JSON configuration follow the
 same rules as parent widgets; nested tooltip definitions are not accepted.
 Provider references remain portable when saving: the query endpoint checks the
-currently configured provider and its metrics/traces capability before forwarding
+currently configured provider and its metrics, traces or records capability before forwarding
 anything upstream. See [tooltip sub-widgets](../../docs/design/insights/tooltip-widgets.md)
 for presentation bounds and host-owned query execution.
-Plugin widgets require `pluginId` and `dataKind` (`metrics` or `traces`), with an
+Plugin widgets require `pluginId` and `dataKind` (`metrics`, `traces` or `records`), with an
 optional JSON-object `config` bounded to 16 KiB and depth eight. Built-in widgets
 reject plugin-only fields. All objects use strict field validation shared with
 the frontend; arbitrary code and prototype-sensitive configuration keys are
@@ -658,6 +666,9 @@ below.
   `deploymentMode` is `monolith`. In monolith mode the manager serves the console, which
   reaches Insights through this peer. In split mode the API server serves the console, so the
   manager peer is left out.
+- Ingress on TCP 8080 from the release namespace, only when `prometheus.enable` is set. That
+  port is the metrics-only listener (`--metrics-listen`), which answers `/metrics` and nothing
+  else, as the other components admit their metrics ports.
 - Egress on UDP and TCP 53 to kube-system (DNS).
 - Egress on TCP 8090 to the observability-gateway, when `observabilityGateway.enabled`.
 - The `insights.networkPolicy.egress` extras. The defaults are TCP 80, 443, 9090 and 3200,
@@ -679,9 +690,9 @@ What it does not cover:
   does not block them. Calico admits host-to-pod traffic by default, so the probes pass.
   Under another CNI, or with host endpoint policies, check the Insights pod's READY state
   after rollout.
-- Metrics. `/metrics` is served on 8090, but the chart does not scrape it: it has no
-  ServiceMonitor for Insights. A scraper needs a new ingress rule, which the chart does not
-  expose yet.
+- Metrics from outside the release namespace. The 8080 rule admits only the release
+  namespace, as for the other components, so a Prometheus in another namespace needs its own
+  rule. `/metrics` is also still served on 8090 to the admitted peers.
 - Floods from admitted peers. The admitted peers (the api-server, the gateway and, in monolith
   mode, the controller-manager) can still send the load described in "Known limit" above.
 - Providers and telemetry on other ports. A managed provider added through
@@ -928,3 +939,33 @@ per-provider limit of 2 running queries is the constraint these numbers protect.
 upstream the gateway's per-provider bulkhead refuses the excess first: 26 of 36
 first attempts got a 429 with Retry-After, with or without the per-widget change.
 Repeat the burst against your real provider before raising any capacity value.
+
+## Result cache and collection tags
+
+Insights keeps a short-lived, in-process result cache, so viewers that read the same
+window in the same grain share one provider request. It is bounded to
+`--result-cache-mib` (default 16, 0 disables it, at most 128), 1024 entries and 1 MiB
+per entry, with least-recently-used eviction. An entry lives 15 seconds. Identical
+queries that arrive together join one execution: the first caller runs it and the
+others wait for its result. A waiting caller whose leader was canceled claims again,
+and after two canceled leaders it runs the query itself, so another caller's
+cancellation never fails it. A leader that panics still wakes its waiters with an
+error. A result whose execution began before its provider's configuration changed is
+not stored.
+
+The cache key holds the caller's authorization scope and the resolved query. A local
+provider's scope is `local`, because the proxy's global read check is its only check.
+A shared provider's scope is the gateway's digest of the caller's permissions, and a
+gateway that reports none disables sharing for that provider. A window that still
+reaches the present, a truncated result other than a row limit, and an error are not
+kept. A manual Refresh sends `X-Insights-Cache: refresh`, which skips the lookup and
+stores the new result. A provider configuration change drops that provider's entries.
+
+Freshness: a window moves in grains of 2 to 15 seconds, so a board's relative window can
+lag the wall clock by up to 15 seconds, and a cached result can be up to 15 seconds old.
+A revoked grant can therefore still be served for up to 15 seconds. A hit or a join
+reports `cache` in its receipt, with no provider request and no upstream phase.
+
+Dashboard collections are tagged with the store's generation, which moves on every
+write and delete, and with the process's boot. A conditional read whose tag matches
+returns 304 without listing the store, and a restart never matches an earlier tag.

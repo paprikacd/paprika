@@ -1,0 +1,85 @@
+/* The dashboard manager panel. It loads with the panel, not with the first view. */
+.manager label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 11px;
+  margin: 14px 0;
+}
+.manager label > input,
+.manager label > textarea,
+.manager label > select,
+.manager label > button[role="combobox"] {
+  width: 100%;
+  min-width: 0;
+}
+.manager {
+  padding: 25px 21px;
+  background: var(--gamma-surface);
+  color: var(--gamma-ink);
+}
+.manager fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.manager fieldset:disabled {
+  opacity: 0.5;
+}
+.manager section + section {
+  border-top: 1px solid var(--gamma-border);
+  margin-top: 24px;
+  padding-top: 22px;
+}
+.manager h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.manager p {
+  font-size: 11px;
+  color: var(--gamma-muted);
+  line-height: 1.7;
+}
+.manager textarea {
+  --gamma-field-min-height: 160px;
+  --gamma-field-font: var(--gamma-font-code);
+  --gamma-field-font-size: 12px;
+  min-height: 160px;
+  resize: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.manager .description {
+  --gamma-field-min-height: 80px;
+  --gamma-field-font: var(--gamma-font-ui);
+  min-height: 65px;
+  font-family: inherit;
+  font-size: 12px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.row button {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--gamma-radius-control);
+  border: 1px solid var(--gamma-border);
+  color: var(--gamma-danger);
+  font-size: 11px;
+}
+@media (max-width: 700px) {
+  .manager {
+    padding: 22px 17px;
+  }
+}

@@ -31,6 +31,20 @@ func registerCapacityFlags(fs *flag.FlagSet) *capacityFlags {
 	}
 }
 
+// resultCacheBudget converts the flag to the configuration field. A value outside 0 to
+// MaxResultCacheMiB becomes -1, which NewServer refuses, so the flag cannot wrap into range.
+func resultCacheBudget(mib int) int32 {
+	if mib < 0 || mib > insights.MaxResultCacheMiB {
+		return -1
+	}
+	return int32(mib)
+}
+
+// registerResultCacheFlag registers the shared result cache budget. Zero disables the cache.
+func registerResultCacheFlag(fs *flag.FlagSet) *int {
+	return fs.Int("result-cache-mib", insights.DefaultResultCacheMiB, "Shared result cache budget in MiB, 0 to 128 (0 disables it)")
+}
+
 func (f *capacityFlags) capacity() insights.Capacity {
 	return insights.Capacity{
 		QueryConcurrency:          *f.queryConcurrency,

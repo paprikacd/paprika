@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import type {
   ChartPoint,
@@ -81,6 +82,8 @@ export function usePlotTooltip(
   displayLabels?: readonly string[],
   // A deliberate filter of the dashboard by the pinned series. Only the pinned tooltip's action calls it.
   onActivate?: (context: DrilldownContext) => void,
+  // Extra lines for the pinned observation, such as its baseline band. Rendered after the value.
+  describe?: (seriesIndex: number, timestamp: number) => ReactNode,
 ) {
   const id = useId();
   useEffect(() => enabled ? installTooltipPointerTracking() : undefined, [enabled]);
@@ -307,6 +310,7 @@ export function usePlotTooltip(
             data-observation-series={entry.name}
           >
             <MetricDetails widget={widget} series={entry} index={current.point.datum.seriesIndex} point={point} unit={widget.unit} decimals={widget.options?.decimals} description={selectedSeriesLabel ? `Selected series · ${selectedSeriesLabel}` : "Selected observation"} timestampFirst />
+            {describe?.(current.point.datum.seriesIndex, current.point.datum.timestamp)}
             {widget.type === "timeseries" && peersAtTime.length > 0 && <div className={styles.plotTooltipValues}>
               <span className={styles.plotTooltipCaption}>Other plotted series at this time</span>
               <ul>{(showAllPeers ? peersAtTime : peersAtTime.slice(0, 5)).map(candidate => {

@@ -1,7 +1,13 @@
 # Recorded chart events
 
-Time-series, stacked time-series and directional-traffic widgets can overlay
-recorded events from a saved records query. In the widget's Query tab, choose **Add event query**, select a records
+Time-based widgets can overlay recorded events from a saved records query: time
+series, stat sparklines, and plugins that declare the `annotations` capability in
+`ui/src/features/insights/plugins/plugin-capabilities.ts` (for example stacked
+time series, directional traffic, the distribution heatmap, small multiples and
+status history). The document field is `annotationSource`: `queryRef`,
+`timestampColumn`, `labelColumn`, and optional `endColumn` (for an interval) and
+`severityColumn`. A dashboard-level `annotationSource` applies to every
+time-based widget that does not declare its own. In the widget's Query tab, choose **Add event query**, select a records
 saved query, bind its parameters to dashboard variables or constants, and name
 the returned timestamp and label columns. A severity column is optional.
 

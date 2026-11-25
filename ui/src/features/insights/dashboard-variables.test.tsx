@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DashboardVariablesEditor, VariableBar } from "./dashboard-variables";
+import { VariableBar } from "./dashboard-variables";
+import { DashboardVariablesEditor } from "./dashboard-variables-editor";
 import type { Dashboard } from "./schema";
 import { sessionVariableValueCache } from "./variable-options";
 
@@ -163,7 +164,8 @@ describe("dashboard variable declarations", () => {
       />,
     );
     expect(screen.getByLabelText("Variable 1 name")).toHaveValue("service");
-    expect(screen.getAllByRole("switch")).toHaveLength(2);
+    // The editor's switches for the declared variables, including Allow several values.
+    expect(screen.getAllByRole("switch")).toHaveLength(4);
   });
 });
 

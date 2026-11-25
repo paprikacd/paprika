@@ -492,17 +492,17 @@ describe("widget inspector", () => {
     const callbacks = editorProps();
     const eventSource = { queryRef: { id: "events" }, timestampColumn: "date", labelColumn: "label" };
     render(<WidgetEditor {...callbacks} widget={{ ...widget, annotationSource: eventSource }} />);
-    choose("Visualization", /^Single value/);
+    choose("Visualization", /^Bar chart/);
     expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Time series");
     expect(screen.getByText(/event query.*removed from this draft/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Keep current visualization" }));
     expect(screen.queryByRole("button", { name: "Remove event query and switch" })).not.toBeInTheDocument();
     expect(callbacks.onApply).not.toHaveBeenCalled();
-    choose("Visualization", /^Single value/);
+    choose("Visualization", /^Bar chart/);
     fireEvent.click(screen.getByRole("button", { name: "Remove event query and switch" }));
-    expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Single value");
+    expect(screen.getByRole("combobox", { name: "Visualization" })).toHaveTextContent("Bar chart");
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
-    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "stat" }));
+    expect(callbacks.onApply).toHaveBeenLastCalledWith(expect.objectContaining({ type: "bar" }));
     expect(callbacks.onApply.mock.calls.at(-1)![0].annotationSource).toBeUndefined();
   });
 
@@ -847,7 +847,7 @@ describe("widget inspector", () => {
   it("validates threshold ordering and retains appearance choices in the document", () => {
     const callbacks = editorProps();
     render(<WidgetEditor {...callbacks} />);
-    choose("Visualization", /^Status heatmap/);
+    choose("Visualization", /^Status grid/);
     fireEvent.click(screen.getByRole("tab", { name: "Style" }));
     fireEvent.change(screen.getByLabelText("Decimal places"), {
       target: { value: "3" },
@@ -1414,7 +1414,7 @@ describe("widget inspector", () => {
     expect(
       screen.queryByRole("switch", { name: "Show values" }),
     ).not.toBeInTheDocument();
-    choose("Visualization", /^Status heatmap/);
+    choose("Visualization", /^Status grid/);
     const labels = screen.getByRole("switch", { name: "Show labels" });
     const values = screen.getByRole("switch", { name: "Show values" });
     expect(labels).toBeChecked();

@@ -41,10 +41,14 @@ const (
 	MaxDryRunVariableUnits = 1024
 	// MaxDryRunNameUnits caps a variable name in UTF-16 code units.
 	MaxDryRunNameUnits = 64
+	// MaxDryRunListItems caps the items of one list value. A list's items and their
+	// separators share the same unit budget as a single value, so the list adds only its
+	// quotes and commas, at most three bytes per item.
+	MaxDryRunListItems = 100
 	// DryRunEnvelopeBytes is the room a dry-run request needs beyond its document:
 	// every variable at the worst escaped size, the member syntax around each one,
-	// and a fixed allowance for the envelope itself.
-	DryRunEnvelopeBytes = MaxDryRunVariables*(6*(MaxDryRunVariableUnits+MaxDryRunNameUnits)+40) + 4<<10
+	// the quotes and commas of a list value, and a fixed allowance for the envelope itself.
+	DryRunEnvelopeBytes = MaxDryRunVariables*(6*(MaxDryRunVariableUnits+MaxDryRunNameUnits)+40+3*MaxDryRunListItems) + 4<<10
 )
 
 var options = protojson.MarshalOptions{EmitUnpopulated: true}

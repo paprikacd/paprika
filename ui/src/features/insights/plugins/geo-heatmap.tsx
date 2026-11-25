@@ -4,6 +4,7 @@ import { EmptyState, ObservationDetails, formatMetric } from "../chart-renderers
 import { TooltipSubWidget } from "../tooltip-widgets"
 import { TooltipDetail, TooltipFact } from "../tooltip-content"
 import { getWidgetDefinition, registerWidgetPlugin, type WidgetRendererProps } from "../widget-registry"
+import { Globe2 } from "lucide-react"
 import { GeographicPlot } from "../geographic-plot"
 import { densityPalette as colors } from "../density-palette"
 import { truncationNote } from "../truncation"
@@ -87,7 +88,9 @@ export function registerGeoHeatmapPlugin() {
   if (!getWidgetDefinition("plugin", "geo-heatmap")) registerWidgetPlugin({
     id: "geo-heatmap", label: "Hex heatmap", description: "Inspect values as geographic bins or a honeycomb of records", dataKind: "records", render: GeoHeatmap,
     sizing: { mode: "fill", minHeight: 320 },
-    parseConfig: config => geoHeatmapConfig.parse(config ?? {}), defaultConfig: { mode: "map", latitude: "latitude", longitude: "longitude", label: "label", aggregation: "count" },
+    icon: Globe2,
+    capabilities: { tooltipIntro: "Inspect a hex to see its recorded values and shared labels." },
+    configSchema: geoHeatmapConfig, defaultConfig: { mode: "map", latitude: "latitude", longitude: "longitude", label: "label", aggregation: "count" },
     styleControls: ["unit", "decimals", "legend", "grid", "tooltips"],
     configFields: [
       { key: "mode", label: "Layout", kind: "select", options: [{ value: "map", label: "Geographic hex bins" }, { value: "grid", label: "Record honeycomb" }] },

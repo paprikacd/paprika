@@ -98,14 +98,14 @@ Each host groups its complete parent value, labels and timestamp before the chil
 | --- | --- |
 | Persisted contract | `schema.ts`, generated JSON Schema, `internal/insights/schema_extensions.go` |
 | Builder | `tooltip-editor.tsx`, mounted by `widget-editor.tsx`; existing Gamma adapters |
-| Safe binding, lifecycle | `tooltip-context.ts`, `tooltip-query.tsx`; host context in `canvas.tsx` and shared scheduler in `insights-app.tsx` |
+| Safe binding, lifecycle | `tooltip-context.ts`, `tooltip-query.tsx`; host context in `canvas.tsx` and shared scheduler in `shell/use-dashboard-data.ts` |
 | Bounded rendering | `tooltip-widgets.tsx`, `widget-presentation.tsx`, existing widget registry/renderers |
-| Hover, pin, focus and viewport | `chart-renderers.tsx`, `plot-tooltip.tsx`; public TanStack focus/select/tooltip extension APIs |
+| Hover, pin, focus and viewport | `renderers/` (stat, metric table, trace list, heatmap), `plot-tooltip.tsx`; public TanStack focus/select/tooltip extension APIs |
 | AI and portability | `openui.ts`, `workspace-transfer.ts` |
 
 ## Verification
 
-Focused contract, editor, query and renderer tests cover round trips, invalid definitions, safe substitution, stale/aborted requests, bounded data, plugins and failure isolation. `insights-builder.e2e.mjs` retains history-only behavior checks. `insights-tooltip-query.e2e.mjs` exercises the production frontend against the actual Go service and deterministic Prometheus/Tempo fixtures, including exact historical/row context in upstream query text, cancellation, persistence, first-time heatmap setup and desktop/mobile Gamma controls. See [validation](validation.md) for the latest completed results and their limits.
+Focused contract, editor, query and renderer tests cover round trips, invalid definitions, safe substitution, stale/aborted requests, bounded data, plugins and failure isolation. `insights-builder.e2e.mjs` retains history-only behavior checks. `insights-tooltip-query.e2e.mjs` exercises the production frontend against the actual Go service and deterministic Prometheus/Tempo fixtures, including exact historical/row context in upstream query text, cancellation, persistence, first-time heatmap setup and desktop/mobile Gamma controls. See [validation](receipts/validation-history.md) for the latest completed results and their limits.
 
 ## Saved query example
 
@@ -127,4 +127,4 @@ tooltipView:
           label: service
 ```
 
-JSON, YAML and OpenUI preserve the reference and sparkline flag. Portable bundles include the referenced definition. See [the explorer contract](explorer.md) for the complete binding shapes and exact-context semantics, and [the saved-tooltip review](tooltip-saved-review.md) for this authoring change's verification evidence.
+JSON, YAML and OpenUI preserve the reference and sparkline flag. Portable bundles include the referenced definition. See [the explorer contract](explorer.md) for the complete binding shapes and exact-context semantics, and [the saved-tooltip review](receipts/tooltip-saved-review.md) for this authoring change's verification evidence.

@@ -15,6 +15,7 @@ import (
 
 	insightsv1 "github.com/benebsworth/paprika/internal/api/paprika/insights/v1"
 	"github.com/benebsworth/paprika/internal/insights/checkwire"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 )
 
 // maxFindingMessageRunes bounds the message the service writes for a finding.
@@ -39,10 +40,7 @@ const (
 )
 
 var dashboardRequiredFields = []string{"schemaVersion", "id", "title", "timeRange", "refreshInterval", "widgets"}
-var dashboardOptionalFields = []string{"description", "folder", "customTimeRange", "timeZone", "variables"}
-
-// dashboardExtensionFields is the order validateDashboardExtensions checks them in.
-var dashboardExtensionFields = []string{"variables", "folder", "customTimeRange", "timeZone"}
+var dashboardOptionalFields = []string{"description", "folder", "customTimeRange", "timeZone", "variables", "covers", "annotationSource"}
 
 // checkFixes gives agents the allowed values for the most common rule
 // violations. Rules without an entry have a message that already says enough.
@@ -296,8 +294,8 @@ func unanchoredSchemaInto(set *findingSet, id string, document Dashboard) {
 	}
 	shapeOK := widgetShapeInto(set, widgets)
 	var header dashboardHeader
-	if json.Unmarshal(document, &header) != nil {
-		set.add(findingAt("", errAt("", "dashboard must be a valid JSON object"), ""))
+	if err := json.Unmarshal(document, &header); err != nil {
+		set.add(findingAt("", structDecodeError(err), ""))
 		return
 	}
 	for _, finding := range identityFindings(id, &header) {
@@ -350,14 +348,8 @@ func boundedArray(raw json.RawMessage, keep int) (elements []json.RawMessage, to
 // extensionFinding runs the document-level extension checks, in their fixed
 // order, and returns the first failure, or nil.
 func extensionFinding(root map[string]json.RawMessage) *insightsv1.CheckFinding {
-	for _, field := range dashboardExtensionFields {
-		raw, ok := root[field]
-		if !ok {
-			continue
-		}
-		if err := validateDashboardExtensions(map[string]json.RawMessage{field: raw}); err != nil {
-			return findingAt("", err, "")
-		}
+	if err := validateDashboardExtensions(root); err != nil {
+		return findingAt("", err, "")
 	}
 	return nil
 }
@@ -396,8 +388,8 @@ func widgetContentInto(set *findingSet, widgets []json.RawMessage, shapeOK []boo
 			continue
 		}
 		var widget dashboardWidget
-		if json.Unmarshal(raw, &widget) != nil {
-			set.add(findingAt(widgetBase(i), errAt("", "dashboard must be a valid JSON object"), widgetIDOf(raw)))
+		if err := json.Unmarshal(raw, &widget); err != nil {
+			set.add(findingAt(widgetBase(i), structDecodeError(err), widgetIDOf(raw)))
 			continue
 		}
 		if err := validateDashboardWidget(&widget, seen); err != nil {
@@ -434,7 +426,7 @@ func ruleFor(pointer string) string {
 		return ruleDocumentTimeRange
 	case "refreshInterval":
 		return ruleDocumentRefresh
-	case "variables", "folder", "customTimeRange", "timeZone":
+	case "variables", "folder", "customTimeRange", "timeZone", "covers", "annotationSource":
 		return "schema.document." + segments[0]
 	case "widgets":
 		if len(segments) == 1 {
@@ -555,6 +547,19 @@ func decodeMember(raw []byte, v any, message string) error {
 		return errAt(fieldPointer(typeErr.Field), message)
 	}
 	return errors.New(message)
+}
+
+// structDecodeError is the finding for a document or widget that does not decode into its Go struct. Its integer
+// members (schemaVersion, refreshInterval, layout) refuse an integral number spelled 2.0 or 2e0. JavaScript reads that
+// spelling as 2, so the editor never sends it, but an API client can; the finding names the member and the spelling
+// instead of calling a valid JSON object invalid. Stored documents keep their bytes and every Go reader decodes these
+// members as integers, so accepting the spelling here would only move the failure to a later read.
+func structDecodeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) && typeErr.Field != "" && strings.HasPrefix(typeErr.Value, "number") {
+		return errAt(fieldPointer(typeErr.Field), typeErr.Field+" must be a whole number written without a decimal point or exponent, such as 2")
+	}
+	return errAt("", "dashboard must be a valid JSON object")
 }
 
 // fieldPointer turns the dotted member path encoding/json reports into a JSON Pointer.
@@ -695,7 +700,7 @@ func (s *Server) executeDryRun(w http.ResponseWriter, r *http.Request, request *
 // dryRunData plans the document's widgets and runs their queries with the shared
 // dashboard path, then reports what each returned. It reads the document and
 // the query providers only; it never writes.
-func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[string]string) (dryRunOutcome, error) {
+func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[string]variablevalue.Value) (dryRunOutcome, error) {
 	var doc dashboardReadDocument
 	if err := json.Unmarshal(document, &doc); err != nil {
 		return dryRunOutcome{}, fmt.Errorf("decode dry-run document: %w", err)
@@ -712,7 +717,7 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 	if err != nil {
 		return dryRunOutcome{}, &dryRunInputError{message: err.Error()}
 	}
-	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets)
+	saved, err := s.dashboardSavedQuerySnapshot(doc.Widgets, doc.Variables)
 	if err != nil {
 		return dryRunOutcome{}, err
 	}
@@ -721,7 +726,7 @@ func (s *Server) dryRunData(r *http.Request, document Dashboard, variables map[s
 		ObservedAt: now.Format(time.RFC3339Nano), Range: queryRange, Variables: values,
 		Widgets: make([]DashboardQueryWidget, 0, len(doc.Widgets)), SavedQueries: []DashboardQueryDocument{}, Signals: []DashboardSignal{}, State: "empty",
 	}
-	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, start, end, dryRunSummaryOptions)
+	s.runDashboardPlan(r, &result, doc.Widgets, saved, doc.Variables, doc.AnnotationSource, start, end, dryRunSummaryOptions)
 	return dryRunWidgets(&doc, &result, saved), nil
 }
 
@@ -752,7 +757,23 @@ func dryRunWidgets(doc *dashboardReadDocument, result *DashboardQueryResult, sav
 	for i := range widgets {
 		states = append(states, widgetDataState(&widgets[i]))
 	}
-	return dryRunOutcome{findings: dataFindings(widgets), widgets: states}
+	return dryRunOutcome{findings: dataFindings(widgets, dryRunVariables(doc, result)), widgets: states}
+}
+
+// dryRunVariables pairs each declared variable with the value the run used and the resolution of its source.
+// Index i is the variable at /variables/i of the document.
+func dryRunVariables(doc *dashboardReadDocument, result *DashboardQueryResult) []dataVariable {
+	variables := make([]dataVariable, 0, len(doc.Variables))
+	for i := range doc.Variables {
+		name := doc.Variables[i].Name
+		value, hasValue := result.Variables[name]
+		variable := dataVariable{index: i, name: name, value: value, hasValue: hasValue}
+		if i < len(result.variableSources) {
+			variable.outcome = result.variableSources[i]
+		}
+		variables = append(variables, variable)
+	}
+	return variables
 }
 
 // dryRunWidgetSample is the sample a widget's data state and data.stale read: the query

@@ -17,7 +17,7 @@ Keep data identity, scale/domain, position, selection, and visibility separate. 
 
 Choose one owner per animated property: the rendering engine, a React animation component, CSS/WAAPI, or a D3-owned subtree. Do not have React, D3 transitions and CSS simultaneously write a mark's geometry. Cancel or retarget active work when a result is superseded or a widget unmounts.
 
-Check the actual installed definition, renderer API, and strict configuration schema before specifying an effect. Extend the canonical owner and its supported configuration when a capability is absent; never add an inert option or a CSS patch that detaches the effect from scales and clipping. For a published lab with pinned source, preserve base provenance and its exact patch as described in [reference fidelity](reference-fidelity.md).
+Check the actual installed definition, renderer API, and strict configuration schema before specifying an effect. Extend the canonical owner and its supported configuration when a capability is absent; never add an inert option or a CSS patch that detaches the effect from scales and clipping. For a published lab with pinned source, preserve base provenance and its exact patch as described in [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md).
 
 Use Paprika's existing motion tokens and decelerating easing first. The timing ranges below are **proposed fallbacks**, not source measurements or mandatory constants. Never add elastic overshoot to measured magnitude or a status threshold. Motion should settle comfortably before the next refresh and remain optional for the analytical task.
 
@@ -44,7 +44,7 @@ For reduced motion, jump to the final coherent state; keep static focus, selecti
 
 ## Simulated cadence and focus lifecycle
 
-If a lab needs replay, label it **simulated**, expose pause/resume, and advance actual deterministic fixture snapshots. Do not pulse a “Live” badge or animate a trace to suggest an attached provider. Preserve same-timestamp observations and conserved totals under the cadence policy in [reference fidelity](reference-fidelity.md). A one-shot freshness cue may mark a real newly accepted sample; keep settled historical marks static.
+If a lab needs replay, label it **simulated**, expose pause/resume, and advance actual deterministic fixture snapshots. Do not pulse a “Live” badge or animate a trace to suggest an attached provider. Preserve same-timestamp observations and conserved totals under the cadence policy in [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md). A one-shot freshness cue may mark a real newly accepted sample; keep settled historical marks static.
 
 Let result values become exact immediately, even when a view transition continues. Treat replay clocks, animation frames, delayed effects, and tooltip listeners as owned resources: stop or suspend relevant work when paused, hidden, superseded, or unmounted. Test rapid replay/pause, result replacement, and reduced motion; do not claim those behaviors from source declarations alone.
 

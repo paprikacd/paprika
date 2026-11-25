@@ -103,6 +103,16 @@ startup.
 | 7 | Gateway execution budget (`DefaultBudgetConfig`, `executionBudget.begin`, `internal/observabilitygateway/budget.go`) | 4 executing across providers, 2 per provider. Queued: 32 across providers, 8 per provider. The admission cap is 36 (concurrency + queue). Per provider, the budget holds 2 running and 8 waiting, so 36 is reachable only across at least four providers (see below). A waiter holds its place for at most 5 s. Each execution has a 30 s budget that starts when it is admitted | `--observability-query-*` flags; chart `observabilityGateway.capacity.query*` | A full queue and a queue wait that expired while the caller still had budget are both `resource_exhausted` with a `RetryInfo` delay computed from the observed hold time, 1 to 10 s (`internal/capacityhint`, one estimate per budget and per provider, the one-second floor until a sample exists). On REST (`/observe/api/query`) either is **429** `temporarily_unavailable` with that delay as `Retry-After` (`writeDashboardError`). On MCP either is an error result with code `resource_exhausted`, text from `operationalToolErrorText`, and `retryAfterSeconds` carrying the same delay. Insights forwards a gateway `Retry-After` of 1 to 10 seconds as its own **429**, which the browser scheduler replays. Only the caller's own deadline ending the wait, or the 30 s budget used up, is `deadline_exceeded`: **504** on REST, "tool execution timed out" on MCP | 429: yes, after Retry-After. 504: yes, with backoff, since the earlier attempt may have used provider time |
 | 8 | Backend connector (`internal/observabilitygateway/connector/…`) | Per-connector client timeouts: Shorted `queryTimeout` 10 s (`connector/shorted`), Uptime `queryTimeout` 20 s (`connector/uptime`), PostgreSQL connect 5 s (`connector/postgresql`). The 30 s budget applies to all of them | Code only | A provider failure is a sanitized error state in the result, or **502** `server_error` on REST. Insights passes a gateway 504 through as 504 without Retry-After (`observeHTTPError`) | Yes, with backoff |
 
+**Which limit refused a 429.** Every gateway 429 carries `X-Paprika-Limit-Scope`:
+`edge` (HTTP admission pools), `budget` (the gateway-wide execution slots),
+`provider` (one provider's bulkhead), `queue` (the admission queue that bounds
+both), `principal` (the per-caller request rate that `/mcp` and the REST routes
+share) or `unknown` (a `resource_exhausted` that names no limit). Insights holds
+only the widgets of a provider when the scope is `provider`, and every widget on
+the board otherwise, including when the header is missing (an older gateway) or
+names a value it does not know. A 429 from Insights' own query pool names no scope
+and also holds the board.
+
 **What each hop's wait costs.**
 
 - **Edge bounds (E1 and E2).** The `/observe` route allows 50 s. That is above
@@ -430,7 +440,7 @@ When Insights is configured, the same MCP endpoint additionally exposes:
 |---|---|---|
 | `list_insights_providers` | `paprika:observe` | Discover provider IDs used in saved UI documents |
 | `get_insights_schema` | `paprika:observe` | Discover canonical dashboard, widget or saved-query JSON Schema and examples |
-| `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags |
+| `list_saved_queries`, `get_saved_query` | `paprika:observe` | Read saved queries and their ETags. `list_saved_queries` takes `q`, which every word must match in a query's name, description, ID, tags, metadata, parameter names or query text |
 | `list_dashboards`, `get_dashboard` | `paprika:observe` | Read shared dashboards and their ETags |
 | `query_dashboard` | `paprika:observe` | Execute a saved dashboard and read compact, versioned live signals with optional variable overrides |
 | `create_saved_query`, `create_dashboard` | `paprika:observe` + `paprika:insights:write` | Create a new shared document without replacing an existing ID |

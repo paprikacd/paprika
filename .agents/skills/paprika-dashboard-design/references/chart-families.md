@@ -24,7 +24,7 @@ Record each selected family's support honestly:
 
 Add separate evidence columns for static inspection, numerical/config tests, browser behavior and production integration. A family can be registered while its touch interaction or high-cardinality performance remains unverified. Do not collapse these into a single “supported” badge.
 
-Use [Paprika integration](paprika-integration.md) to refresh the runtime. The starting owners below were inspected at upstream `bb52aed8ded8beb08534f6b190a3e7f37c1b19d8`; the widget lab may vendor and extend them. These paths and IDs are navigation aids, not a claim about a newer deployed build.
+Use [Paprika integration](paprika-integration.md) to locate the runtime owners. The owners below are navigation aids; confirm each in the current tree and the plugin list in `docs/design/insights/widget-plugins.json` before relying on it.
 
 ## Map the visual families
 

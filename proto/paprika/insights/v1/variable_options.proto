@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package paprika.insights.v1;
+
+option go_package = "github.com/benebsworth/paprika/internal/api/paprika/insights/v1;insightsv1";
+
+// Wire form: every JSON encoding of these messages is protojson with the
+// standard names. Enum values appear as their proto names and fields as
+// lowerCamelCase (currentValue). Lowercase words appear only in prose.
+
+// VariableOptionsState reports how a sourced variable's values were resolved.
+enum VariableOptionsState {
+  VARIABLE_OPTIONS_STATE_UNSPECIFIED = 0;
+  VARIABLE_OPTIONS_STATE_READY = 1;
+  VARIABLE_OPTIONS_STATE_EMPTY = 2;
+  VARIABLE_OPTIONS_STATE_FAILED = 3;
+  VARIABLE_OPTIONS_STATE_NEEDS_VARIABLE = 4;
+  VARIABLE_OPTIONS_STATE_NOT_RUN = 5;
+}
+
+// CurrentValue says whether the variable's current value is among its values.
+enum CurrentValue {
+  CURRENT_VALUE_UNSPECIFIED = 0;
+  CURRENT_VALUE_IN_VALUES = 1;
+  CURRENT_VALUE_NOT_IN_VALUES = 2;
+  CURRENT_VALUE_UNKNOWN = 3;
+  CURRENT_VALUE_NONE = 4;
+}
+
+// VariableOptions is the resolved choice list of one sourced variable.
+message VariableOptions {
+  string name = 1;
+  VariableOptionsState state = 2;
+  repeated string values = 3;
+  bool truncated = 4;
+  CurrentValue current_value = 5;
+  string needs_variable = 6;
+  string error_code = 7;
+  // current_values is a multi-value variable's current list, in its order. Empty for a single value and for All.
+  repeated string current_values = 8;
+  // missing_values names each current value the resolved list lacks. It is set only when current_value is
+  // NOT_IN_VALUES, so a truncated list never reports a value as missing.
+  repeated string missing_values = 9;
+}
+
+// VariableOptionsResponse lists the sourced variables that were requested.
+message VariableOptionsResponse {
+  string dashboard_etag = 1;
+  // range_start and range_end are the bucketed RFC 3339 times the values were resolved for.
+  string range_start = 2;
+  string range_end = 3;
+  repeated VariableOptions variables = 4;
+}

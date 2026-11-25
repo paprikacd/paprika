@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -63,9 +66,19 @@ type RBACRule struct {
 	Projects []string `json:"projects,omitempty"`
 }
 
+// ScopeDigester is implemented by an authorizer whose decisions for a principal
+// depend on that principal only through a digest. Two principals with equal
+// digests receive the same answer from every Authorize call, so a cache may
+// share one entry between them. An authorizer that does not implement it must
+// be treated as per-principal.
+type ScopeDigester interface {
+	ScopeDigest(p *Principal) string
+}
+
 // RBACAuthorizer implements a simple RBAC authorizer.
 type RBACAuthorizer struct {
-	rules []RBACRule
+	rules       []RBACRule
+	rulesDigest [sha256.Size]byte
 }
 
 // NewRBACAuthorizer creates a new RBAC authorizer from rules.
@@ -73,7 +86,26 @@ func NewRBACAuthorizer(rules []RBACRule) *RBACAuthorizer {
 	if rules == nil {
 		rules = []RBACRule{}
 	}
-	return &RBACAuthorizer{rules: rules}
+	// %#v of a slice of structs of strings is deterministic, so it names the rules exactly.
+	return &RBACAuthorizer{rules: rules, rulesDigest: sha256.Sum256([]byte(fmt.Sprintf("%#v", rules)))}
+}
+
+// ScopeDigest returns the hex SHA-256 of the rules and of the indices of the
+// rules whose subjects match p. Authorize reads the principal only through
+// matchesSubjects, so the digest fixes every decision for p: the same rules
+// with the same matched indices give the same answer for every resource.
+func (r *RBACAuthorizer) ScopeDigest(p *Principal) string {
+	h := sha256.New()
+	h.Write(r.rulesDigest[:])
+	var index [4]byte
+	for i := range r.rules {
+		if !r.matchesSubjects(&r.rules[i], p) {
+			continue
+		}
+		binary.BigEndian.PutUint32(index[:], uint32(i))
+		h.Write(index[:])
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // AllowAllAuthorizer allows all authenticated requests.

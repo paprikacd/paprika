@@ -4,6 +4,7 @@ import type { CheckFinding, CheckReport } from "@/gen/paprika/insights/v1/checks
 import { Severity } from "@/gen/paprika/insights/v1/checks_pb";
 import type { Dashboard } from "./schema";
 import { GammaButton } from "./gamma/button";
+import "./lazy-style-boundary.css?checks-list";
 import styles from "./checks-list.module.css";
 
 export interface ChecksListProps {

@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PluginConfigEditor } from "../plugin-config-editor";
 import { getWidgetDefinition } from "../widget-registry";
-import { StackedTimeseries, registerRichMetricPlugins } from "./rich-metrics";
+import { registerRichMetricPlugins } from "./rich-metrics";
+import { StackedTimeseries } from "./rich-metrics-view";
 import { stackedConfigSchema } from "./rich-metrics-data";
 import type { QueryResult, Widget } from "../schema";
 import { AnnotationEventsProvider } from "../annotation-events";
@@ -60,11 +61,11 @@ describe("metric event annotations", () => {
     }
   });
 
-  it("offers guided event editing while preserving other chart configuration", () => {
+  it("offers guided event editing while preserving other chart configuration", async () => {
     registerRichMetricPlugins();
     const change = vi.fn();
     render(<PluginConfigEditor definition={getWidgetDefinition("plugin", "stacked-timeseries")} value={'{"display":"area","annotations":[{"timestamp":"1970-01-01T00:00:01.500Z","label":"Deploy","severity":"info"}]}'} onChange={change} />);
-    fireEvent.change(screen.getByLabelText("Event 1 label"), { target: { value: "Release" } });
+    fireEvent.change(await screen.findByLabelText("Event 1 label"), { target: { value: "Release" } });
     expect(JSON.parse(change.mock.lastCall![0])).toEqual({ display: "area", annotations: [{ timestamp: "1970-01-01T00:00:01.500Z", label: "Release", severity: "info" }] });
     fireEvent.click(screen.getByRole("button", { name: "Remove event 1" }));
     expect(JSON.parse(change.mock.lastCall![0])).toEqual({ display: "area" });

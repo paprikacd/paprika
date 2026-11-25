@@ -5,6 +5,7 @@ import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { SavedQueryBindingEditor, SavedQueryPicker } from "./saved-query-controls"
 import { useSavedQueryLibrary } from "./saved-query-context"
+import "./lazy-style-boundary.css?editor"
 import styles from "./editor.module.css"
 
 /** Event data is a second saved-query reference, not executable plugin code. */

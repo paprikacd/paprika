@@ -10,7 +10,7 @@ import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { scaleTime } from 'd3-scale';
 import { calendarTick, horizontalPlotBounds, signedAreaGradient, temporalPosition, timeAxisValue } from '@insights/chart-presentation';
 import { widgetOptionsSchema, widgetSchema } from '@insights/schema';
-import { DistributionHeatmap } from '@insights/plugins/rich-metrics';
+import { DistributionHeatmap } from '@insights/plugins/rich-metrics-view';
 import { DashboardTimeZoneProvider } from '@insights/dashboard-time-zone';
 
 describe('reference presentation owner extensions', () => {

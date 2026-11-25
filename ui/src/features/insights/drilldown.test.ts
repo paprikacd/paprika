@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+import { linkBindings, resolveApplicationLink } from "./drilldown"
+import { widgetLinkSchema, type ApplicationLink } from "./schema"
 import {
   buildDashboardURL,
   describeIgnoredLink,
@@ -440,5 +442,40 @@ describe("link resolution against the document it opens", () => {
       .toBe("Ignored link time range “2h”: use 15m, 30m, 1h, 6h, 24h, 7d or 30d.")
     expect(describeIgnoredLink([{ kind: "setting", name: "refresh", value: "5" }]))
       .toBe("Ignored link refresh “5”: use 0, 15, 30 or 60 seconds.")
+  })
+})
+
+describe("application links", () => {
+  const link: ApplicationLink = {
+    id: "open-application",
+    title: "Open application",
+    application: {
+      namespace: { source: "label", value: "namespace" },
+      name: { source: "constant", value: "checkout" },
+    },
+  }
+
+  it("reads one label binding for a label namespace and nothing for a constant name", () => {
+    expect(linkBindings(link)).toEqual([{ variable: "namespace", source: "label", value: "namespace" }])
+  })
+
+  it("resolves the namespace from the signal and the name from the constant", () => {
+    expect(resolveApplicationLink(link, { labels: { namespace: "payments" } }))
+      .toEqual({ namespace: "payments", name: "checkout" })
+  })
+
+  it("names the missing label the same way a dashboard link does", () => {
+    expect(() => resolveApplicationLink(link, { labels: { service: "checkout" } }))
+      .toThrow("This signal has no label “namespace” for variable “namespace”")
+  })
+
+  it("parses an application link, and refuses one that also names a dashboard", () => {
+    expect(widgetLinkSchema.safeParse(link).success).toBe(true)
+    expect(widgetLinkSchema.safeParse({ ...link, dashboardId: "ops" }).success).toBe(false)
+  })
+
+  it("reads a dashboard link's own bindings", () => {
+    const dashboard = { id: "ops", title: "Ops", dashboardId: "ops", bindings: [{ variable: "env", source: "constant" as const, value: "prod" }] }
+    expect(linkBindings(dashboard)).toBe(dashboard.bindings)
   })
 })

@@ -3,6 +3,7 @@
 import {
   Component,
   memo,
+  Suspense,
   useMemo,
   type CSSProperties,
   type ReactNode,
@@ -113,20 +114,24 @@ function RegisteredRenderer({
     [definition, widget.config],
   );
   const Renderer = definition.render;
+  // Plugin renderers may load on first use; the tile's busy frame holds the same size while they load.
   return (
-    <Renderer
-      widget={config === widget.config ? widget : { ...widget, config }}
-      result={result}
-      embedded={embedded}
-      onContextChange={embedded ? undefined : onContextChange}
-      onActivate={embedded ? undefined : onActivate}
-    />
+    <Suspense fallback={<WidgetStateFrame busy>{null}</WidgetStateFrame>}>
+      <Renderer
+        widget={config === widget.config ? widget : { ...widget, config }}
+        result={result}
+        embedded={embedded}
+        onContextChange={embedded ? undefined : onContextChange}
+        onActivate={embedded ? undefined : onActivate}
+      />
+    </Suspense>
   );
 }
 
 // State renderers need the same measured container as populated charts.
-function WidgetStateFrame({ children, busy = false }: { children: ReactNode; busy?: boolean }) {
-  return <div className={`${styles.visualization}${busy ? ` ${styles.loadingFrame}` : ""}`} data-widget-state-frame="" aria-busy={busy || undefined}>{children}</div>;
+/** `natural`: the tile's height follows its content (a phone-stacked stat), so the state sizes itself rather than the tile. */
+function WidgetStateFrame({ children, busy = false, natural = false }: { children: ReactNode; busy?: boolean; natural?: boolean }) {
+  return <div className={`${styles.visualization}${natural ? ` ${styles.intrinsicStat}` : ""}${busy ? ` ${styles.loadingFrame}` : ""}`} data-widget-state-frame="" aria-busy={busy || undefined}>{children}</div>;
 }
 
 export const WidgetVisualization = memo(function WidgetVisualization({
@@ -154,7 +159,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   );
   if (!definition)
     return (
-      <WidgetStateFrame><div className={`${styles.state} ${styles.error}`} role="alert">
+      <WidgetStateFrame natural={naturalHeight}><div className={`${styles.state} ${styles.error}`} role="alert">
         <strong>Widget plugin unavailable</strong>
         <p>
           Install the trusted “{widget.pluginId}” plugin in this Paprika host.
@@ -164,9 +169,9 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   // A failed widget that reloads keeps its error in place and marks the frame busy, so the alert is not re-inserted on each refresh.
   if (error)
     return (
-      <WidgetStateFrame busy={loading}><div className={`${styles.state} ${styles.error}`} role="alert" data-query-failure={errorCode}>
+      <WidgetStateFrame natural={naturalHeight} busy={loading}><div className={`${styles.state} ${styles.error}`} role="alert" data-query-failure={errorCode}>
         <strong>Query failed</strong>
-        <p>{error}</p>
+        <p title={error}>{error}</p>
         {providerName && errorCode && SOURCE_FAILURES.has(errorCode) && <p className={styles.limitFact}>Source: {providerName}</p>}
         {onRetry && <GammaButton size="sm" onClick={onRetry} aria-label={`Retry query for ${widget.title}`}>Retry</GammaButton>}
         {onEditQuery && errorCode && EDITABLE_FAILURES.has(errorCode) && <GammaButton size="sm" onClick={onEditQuery} aria-label={`Edit query for ${widget.title}`}>Edit query</GammaButton>}
@@ -175,7 +180,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   if (sourceState && !result) {
     const pending = sourceState.status === "pending";
     return (
-      <WidgetStateFrame busy={pending}>
+      <WidgetStateFrame natural={naturalHeight} busy={pending}>
         <div className={styles.state} data-widget-state={pending ? "waiting-for-sources" : "source-unavailable"} aria-busy={pending || undefined}>
           <span>{sourceState.label}</span>
         </div>
@@ -184,14 +189,14 @@ export const WidgetVisualization = memo(function WidgetVisualization({
   }
   if (deferred && !result)
     return (
-      <WidgetStateFrame><div className={styles.state} role="status" aria-label="Widget waiting to load">
+      <WidgetStateFrame natural={naturalHeight}><div className={styles.state} role="status" aria-label="Widget waiting to load">
         <span>Waiting to load…</span>
       </div></WidgetStateFrame>
     );
   // The initial load alone shows placeholders. A refresh keeps the last result visible and never announces itself.
   if (loading && !result)
     return (
-      <WidgetStateFrame busy>
+      <WidgetStateFrame natural={naturalHeight} busy>
         <WidgetInitialLoading widget={widget} />
       </WidgetStateFrame>
     );
@@ -207,7 +212,7 @@ export const WidgetVisualization = memo(function WidgetVisualization({
           ? !series.length
           : !series.some((entry) => latestPoint(entry))))
   )
-    return <WidgetStateFrame><EmptyState partial={!!(result?.truncated || result?.records?.truncated)} /></WidgetStateFrame>;
+    return <WidgetStateFrame natural={naturalHeight}><EmptyState partial={!!(result?.truncated || result?.records?.truncated)} /></WidgetStateFrame>;
   return (
     <div
       className={`${styles.visualization} ${naturalHeight ? styles.intrinsicStat : ""} ${configStyles.visualization} ${textColor ? configStyles.customText : ""} ${loading && loadingPresentation ? styles.refreshHost : ""}`}

@@ -44,6 +44,10 @@ type DashboardQueryResponse = queryToolResult
 type DashboardProvidersResponse struct {
 	Providers  []ProviderInfo `json:"providers"`
 	ObservedAt string         `json:"observedAt"`
+	// AuthorizationScope is a digest of the caller's provider permissions (auth.ScopeDigester).
+	// Callers may share query results between requests only when two catalogs carry the same
+	// non-empty scope. It is omitted when the authorizer cannot report one.
+	AuthorizationScope string `json:"authorizationScope,omitempty"`
 }
 
 // DashboardExploreRequest selects a bounded slice of provider schema.
@@ -82,7 +86,15 @@ func DashboardProvidersHandler(backend Backend, usage *UsageTracker) http.Handle
 		if providers == nil {
 			providers = []ProviderInfo{}
 		}
-		return writeDashboardJSON(w, DashboardProvidersResponse{Providers: providers, ObservedAt: observedAt()})
+		scope := ""
+		if scoped, ok := backend.(interface {
+			AuthorizationScope(context.Context) (string, error)
+		}); ok {
+			if scope, err = scoped.AuthorizationScope(ctx); err != nil {
+				return fmt.Errorf("authorization scope: %w", err)
+			}
+		}
+		return writeDashboardJSON(w, DashboardProvidersResponse{Providers: providers, ObservedAt: observedAt(), AuthorizationScope: scope})
 	})
 }
 
@@ -328,6 +340,7 @@ func writeDashboardError(w http.ResponseWriter, err error) {
 	case connect.CodeResourceExhausted:
 		status, code, description = http.StatusTooManyRequests, "temporarily_unavailable", "observability gateway is at its request limit; retry later"
 		w.Header().Set("Retry-After", strconv.Itoa(connectRetryAfterSeconds(err, defaultRetryAfterSeconds)))
+		w.Header().Set(LimitScopeHeader, limitScopeHeaderValue(err))
 	case connect.CodeDeadlineExceeded:
 		status, code, description = http.StatusGatewayTimeout, "temporarily_unavailable", "observability request exceeded its time budget"
 	case connect.CodeCanceled:

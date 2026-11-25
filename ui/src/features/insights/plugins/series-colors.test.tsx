@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { useState } from "react";
 import { stackedConfigSchema, directionalConfigSchema } from "./rich-metrics-data";
-import { DirectionalTraffic, StackedTimeseries } from "./rich-metrics";
+import { DirectionalTraffic, StackedTimeseries } from "./rich-metrics-view";
 import { SeriesColorEditor } from "./series-color-editor";
 import type { QueryResult, Widget } from "../schema";
 

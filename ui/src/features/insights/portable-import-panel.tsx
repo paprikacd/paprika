@@ -36,6 +36,7 @@ import { GammaDisclosure } from "./gamma/disclosure";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
 import { ProviderIcon } from "./source-identity";
+import "./lazy-style-boundary.css?portable-import-panel";
 import styles from "./portable-import-panel.module.css";
 
 export interface PortableImportProps {

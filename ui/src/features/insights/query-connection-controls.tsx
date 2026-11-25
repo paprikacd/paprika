@@ -4,6 +4,7 @@ import { GammaDisclosure } from "./gamma/disclosure";
 import { GammaButton } from "./gamma/button";
 import { SearchCombobox } from "./gamma/search-combobox";
 import type { ConnectionSuggestion, QueryFields } from "./query-connections";
+import "./lazy-style-boundary.css?query-connection-controls";
 import styles from "./query-connection-controls.module.css";
 
 export function GraphDataFields({ fields }: { fields?: QueryFields }) {

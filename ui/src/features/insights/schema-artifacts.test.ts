@@ -1,86 +1,32 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
-import { dashboardSchema, savedQuerySchema, widgetSchema, parseDashboard } from "./schema"
+import { widgetSchema, parseDashboard } from "./schema"
+import { dashboardJSONSchema, savedQueryJSONSchema, stableJSON, WIDGET_ALL_OF } from "./contract-artifacts"
 
-// Zod's JSON Schema exporter cannot emit a threshold's status-or-colour refinement either.
-// Check the published anyOf explicitly, then compare the generated remainder.
-function assertAndRemoveThresholdConstraint(widget: Record<string, unknown>) {
-  const options = (widget.properties as Record<string, Record<string, unknown>>).options
-  const thresholds = (options.properties as Record<string, Record<string, unknown>>).thresholds
-  const items = thresholds.items as Record<string, unknown>
-  expect(items.anyOf).toEqual([{ required: ["status"] }, { required: ["color"] }])
-  delete items.anyOf
-}
+const dashboardPath = new URL("../../../../docs/design/insights/dashboard.schema.json", import.meta.url)
+const savedQueryPath = new URL("../../../../docs/design/insights/saved-query.schema.json", import.meta.url)
 
-// Zod's JSON Schema exporter cannot emit the exactly-one color-or-role refinement on a series colour rule.
-// Check the published oneOf explicitly, then compare the generated remainder.
-function assertAndRemoveSeriesRuleConstraint(widget: Record<string, unknown>) {
-  const options = (widget.properties as Record<string, Record<string, unknown>>).options
-  const items = (options.properties as Record<string, Record<string, unknown>>).seriesColors.items as Record<string, unknown>
-  expect(items.oneOf).toEqual([{ required: ["color"] }, { required: ["role"] }])
-  delete items.oneOf
-}
-
-// Zod's JSON Schema exporter cannot emit superRefine's cross-field rule.
-// Check the published rule explicitly before comparing the generated remainder.
-function assertAndRemoveStatHeightConstraint(widget: Record<string, unknown>) {
-  // The widget's allOf holds the stat height rule and the slo-summary config rule. Zod cannot emit either.
-  expect(widget.allOf).toEqual([{
-    if: { properties: { type: { const: "stat" } }, required: ["type"] },
-    else: { properties: { layout: { properties: { h: { minimum: 2 } } } } },
-  }, {
-    if: { properties: { pluginId: { const: "slo-summary" } }, required: ["pluginId"] },
-    then: {
-      required: ["config"],
-      properties: {
-        config: {
-          type: "object",
-          properties: {
-            objective: { type: "number", minimum: 50, maximum: 99.9999 },
-            period: { type: "string", enum: ["1d", "7d", "28d", "30d"] },
-            total: { type: "string", minLength: 1 },
-            bad: { type: "string", minLength: 1 },
-            good: { type: "string", minLength: 1 },
-            burnAlerts: { type: "string", enum: ["multiwindow", "page", "none"] },
-            groupBy: { type: "string", minLength: 1, pattern: "^[A-Za-z_][A-Za-z0-9_]*$" },
-            maxRows: { type: "integer", minimum: 1, maximum: 12 },
-          },
-          required: ["objective", "period", "total"],
-          oneOf: [{ required: ["bad"] }, { required: ["good"] }],
-          additionalProperties: false,
-        },
-      },
-    },
-  }, {
-    if: { required: ["options"], properties: { options: { required: ["compare"] } } },
-    then: { properties: { type: { const: "stat" } } },
-  }])
-  delete widget.allOf
-  const options = (widget.properties as Record<string, Record<string, unknown>>).options
-  expect(options.allOf).toEqual([{
-    if: { properties: { showStatBar: { const: true } }, required: ["showStatBar"] },
-    then: { required: ["min", "max"] },
-  }])
-  delete options.allOf
+// `npm run schema:generate` sets UPDATE_INSIGHTS_CONTRACT=1 and writes the committed files from the builders.
+// Otherwise each file must equal the builder output byte for byte.
+function checkOrWrite(path: URL, expected: string) {
+  if (process.env.UPDATE_INSIGHTS_CONTRACT === "1") {
+    mkdirSync(new URL(".", path), { recursive: true })
+    writeFileSync(path, expected)
+    return
+  }
+  expect(readFileSync(path, "utf8")).toBe(expected)
 }
 
 describe("published dashboard authoring artifacts", () => {
   it("keeps the machine-readable JSON Schema aligned with the runtime contract", () => {
-    const schema = JSON.parse(
-      readFileSync(
-        new URL("../../../../docs/design/insights/dashboard.schema.json", import.meta.url),
-        "utf8",
-      ),
-    )
-    delete schema.title
-    delete schema.description
-    delete schema.$comment
-    assertAndRemoveStatHeightConstraint(schema.properties.widgets.items)
-    assertAndRemoveThresholdConstraint(schema.properties.widgets.items)
-    assertAndRemoveSeriesRuleConstraint(schema.properties.widgets.items)
-    expect(schema).toEqual(z.toJSONSchema(dashboardSchema))
+    checkOrWrite(dashboardPath, stableJSON(dashboardJSONSchema()))
+  })
+
+  it("keeps the published widget rules that Zod cannot emit", () => {
+    const schema = JSON.parse(readFileSync(dashboardPath, "utf8"))
+    expect(schema.properties.widgets.items.allOf).toEqual(WIDGET_ALL_OF)
   })
 
   it("publishes the series colour mode, which old documents may omit", () => {
@@ -91,10 +37,7 @@ describe("published dashboard authoring artifacts", () => {
   })
 
   it("publishes the saved-query contract", () => {
-    const schema = JSON.parse(readFileSync(new URL("../../../../docs/design/insights/saved-query.schema.json", import.meta.url), "utf8"))
-    delete schema.title
-    delete schema.description
-    expect(schema).toEqual(z.toJSONSchema(savedQuerySchema))
+    checkOrWrite(savedQueryPath, stableJSON(savedQueryJSONSchema()))
   })
 
   it("can expose the full standalone widget contract without losing recursive definitions", () => {
@@ -104,10 +47,14 @@ describe("published dashboard authoring artifacts", () => {
       $schema: dashboard.$schema,
       $defs: dashboard.$defs,
     }
-    assertAndRemoveStatHeightConstraint(widget)
-    assertAndRemoveThresholdConstraint(widget)
-    assertAndRemoveSeriesRuleConstraint(widget)
-    expect(widget).toEqual(z.toJSONSchema(widgetSchema))
+    // Drop the four published refinements Zod cannot emit, then compare the generated remainder.
+    const published = structuredClone(widget) as Record<string, unknown>
+    const at = (...keys: string[]) => keys.reduce<unknown>((node, key) => (node as Record<string, unknown>)[key], published) as Record<string, unknown>
+    delete published.allOf
+    delete at("properties", "options").allOf
+    delete at("properties", "options", "properties", "thresholds", "items").anyOf
+    delete at("properties", "options", "properties", "seriesColors", "items").oneOf
+    expect(published).toEqual(z.toJSONSchema(widgetSchema))
   })
 
   it("publishes the annotation interval end column and validates its bounds", () => {

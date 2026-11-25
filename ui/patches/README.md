@@ -14,7 +14,8 @@ inspection and text selection are restored on drop.
 The patch applies with `npm ci`/`npm install` and fails installation on a mismatch.
 Keep the grid version pinned. On upgrade, prefer an upstream option if available;
 otherwise review and regenerate the patch against the new source. Do not silently
-drop it. `insights-edit-performance.e2e.mjs` exercises actual drag and resize
+drop it. The exit plan (upstream option, fallbacks and their cost) is in
+`docs/design/insights/grid-library-exit.md`. `insights-edit-performance.e2e.mjs` exercises actual drag and resize
 handles, rejects the global selection stylesheet/class, checks no queries are
 issued, inspects a chart after release, and saves/reloads the changed layout.
 

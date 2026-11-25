@@ -12,7 +12,6 @@ import {
   MAX_CONVERTED_RECORD_ROWS, validateEditorWidget, visualizationCandidate,
 } from '../src/editor/editor-model';
 import { kubernetesFixtures } from '../src/lenses/kubernetes/fixtures';
-import { registerKubernetesCharts } from '../src/charts/kubernetes/register';
 import { registerLabCharts } from '../src/charts/register-lab-charts';
 import { makeCatalogFixture } from '../src/catalog/chart-fixtures';
 
@@ -22,7 +21,6 @@ vi.mock('@insights/charts', () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 registerLabCharts();
-registerKubernetesCharts();
 
 describe('fail-safe visualization switching', () => {
   let root: Root | undefined;
@@ -33,17 +31,12 @@ describe('fail-safe visualization switching', () => {
     root = undefined; host = undefined;
   });
 
-  it('does not offer a giant table as a conversion from Kubernetes workload placement', () => {
+  it('does not offer a record table as a conversion from Kubernetes workload placement', () => {
     const { placement } = kubernetesFixtures();
     const { widget, result } = placement;
-    const records = result.records!;
-    expect(records.rows.length).toBeGreaterThan(MAX_CONVERTED_RECORD_ROWS);
-    expect(records.columns.length).toBeGreaterThan(MAX_CONVERTED_RECORD_COLUMNS);
-    const table = getWidgetDefinition('plugin', 'record-table')!;
-    // Schema alone accepts the table: capability/geometry gating must go beyond schema validation.
-    const candidate = visualizationCandidate(widget, table);
-    expect(validateEditorWidget(candidate, widgetKind(widget), result).errors).toEqual([]);
-    expect(isSafeVisualizationTransition(widget, result, table)).toBe(false);
+    // The production placement reads metric series, so there are no records to convert into a table.
+    expect(result.records).toBeUndefined();
+    expect(result.series!.length).toBeGreaterThan(0);
     const choices = editorVisualizations(widget, result, [...widgetDefinitions, ...getWidgetPlugins()]);
     expect(choices.some(option => option.id === 'record-table')).toBe(false);
     expect(choices.some(option => option.id === 'kubernetes-placement')).toBe(true);
@@ -64,10 +57,6 @@ describe('fail-safe visualization switching', () => {
     expect(converted.query).toBe(widget.query);
     expect(converted.layout).toEqual(widget.layout);
     expect(converted.config).not.toEqual(widget.config);
-    // Existing records tables remain editable even when their source has many rows.
-    const { placement } = kubernetesFixtures();
-    const wideTable = visualizationCandidate(placement.widget, table);
-    expect(isSafeVisualizationTransition(wideTable, placement.result, table)).toBe(true);
   });
 
   it('keeps the chart editor intact and disables the unsafe selector for the wide fixture', async () => {
@@ -92,8 +81,31 @@ describe('fail-safe visualization switching', () => {
     expect(document.querySelector('[data-widget-preview-error]')).toBeNull();
   });
 
+  // The Kubernetes placement used to supply the large, wide records result; it now reads metrics. A widened copy of the
+  // connection-map records keeps the table gate and the finite preview covered.
+  const wideRecords = () => {
+    const { widget, result } = makeCatalogFixture('connection-map');
+    const records = result.records!;
+    const extra = Array.from({ length: MAX_CONVERTED_RECORD_COLUMNS + 1 - records.columns.length }, (_, i) => ({ key: `extra_${i}`, type: 'number' as const }));
+    const columns = [...records.columns, ...extra];
+    const rows = Array.from({ length: MAX_CONVERTED_RECORD_ROWS + 1 }, (_, i) => [...records.rows[i % records.rows.length], ...extra.map(() => i)]);
+    return { widget, result: { ...result, records: { ...records, columns, rows } } };
+  };
+
+  it('does not offer a large, wide records result as a table conversion, but keeps an existing table editable', () => {
+    const { widget, result } = wideRecords();
+    expect(result.records.rows.length).toBeGreaterThan(MAX_CONVERTED_RECORD_ROWS);
+    expect(result.records.columns.length).toBeGreaterThan(MAX_CONVERTED_RECORD_COLUMNS);
+    const table = getWidgetDefinition('plugin', 'record-table')!;
+    // Schema alone accepts the table: the geometry gate must go beyond schema validation.
+    const candidate = visualizationCandidate(widget, table);
+    expect(validateEditorWidget(candidate, widgetKind(widget), result).errors).toEqual([]);
+    expect(isSafeVisualizationTransition(widget, result, table)).toBe(false);
+    expect(isSafeVisualizationTransition(candidate, result, table)).toBe(true);
+  });
+
   it('confines a large existing records table to a finite chart preview instead of natural height', async () => {
-    const { widget, result } = kubernetesFixtures().placement;
+    const { widget, result } = wideRecords();
     const table = visualizationCandidate(widget, getWidgetDefinition('plugin', 'record-table')!);
     host = document.createElement('div');
     document.body.appendChild(host);

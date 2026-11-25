@@ -63,7 +63,7 @@ Retain current compact radius tokens (snapshot: controls 5px, panels 6px, small 
 
 Treat the panel as title/context, plotting region, and optional legend/detail. Reserve a consistent plot region while loading or failing. Place units where users can see them without querying a tooltip.
 
-For the supplied Edge Watch and Reliability Room direction, follow [reference fidelity](reference-fidelity.md): inspect the images, budget row heights at comparable width, and reduce redundant chrome before reducing typography. Relocate optional explanations to reachable details while retaining consequential scope, aggregation, coverage, and stale state. Keep lab commentary outside the product canvas.
+For the supplied Edge Watch and Reliability Room direction, follow [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md): inspect the images, budget row heights at comparable width, and reduce redundant chrome before reducing typography. Relocate optional explanations to reachable details while retaining consequential scope, aggregation, coverage, and stale state. Keep lab commentary outside the product canvas.
 
 For related panels, align actual plot rectangles, not just outer cards. Account for y-axis label width, titles, legends, and footers. Shared time is useful only if the same instant appears at the same horizontal position in comparable tracks.
 
@@ -88,13 +88,13 @@ Use the selected moment to organize detail. A well-positioned observation card, 
 
 Give the inspector a stable relationship to the selected track while allowing collision handling. Keep selected and latest samples separately labelled. Retain the selected series color in its history and respect authored overrides. Do not fabricate a delta or combine incompatible units to resemble a reference image.
 
-Use the compact inspector content profile in [reference fidelity](reference-fidelity.md) when matching those studies. Keep an initially concise surface with full exact data available through accessible details. Verify nested history precision and missingness independently from the parent widget's settings.
+Use the compact inspector content profile in [reference fidelity](../../../../labs/widget-lab/docs/references/reference-fidelity.md) when matching those studies. Keep an initially concise surface with full exact data available through accessible details. Verify nested history precision and missingness independently from the parent widget's settings.
 
 Treat deployments, incidents, and configuration changes as contextual events. Use understated markers with accessible names and selected states. Cluster dense events visibly; do not silently discard them. Show exact event time and drilldown when available. An event marker is not evidence that the event caused an anomaly.
 
 Use motion for state changes, focus, and navigation. Prefer the product easing and reduced-motion behavior. Avoid animating data from zero on every refresh, continuous shimmer over usable results, elastic meters, or ambient activity that competes with an incident.
 
-For concrete treatments, read [motion and effects](motion-and-effects.md): series focus, comparison cards, interval selection, controlled gradients, rounded bar ends, range marks, and scoped SVG resources. The [Mebius study](mebius-patterns.md) records specific observed/reference techniques and how to translate them into the established Paprika identity. Do not equate a rendering-library change with a visual upgrade; select capabilities through [frameworks and rendering](frameworks-and-rendering.md).
+For concrete treatments, read [motion and effects](motion-and-effects.md): series focus, comparison cards, interval selection, controlled gradients, rounded bar ends, range marks, and scoped SVG resources. The [Mebius study](../../../../labs/widget-lab/docs/references/mebius-patterns.md) records specific observed/reference techniques and how to translate them into the established Paprika identity. Do not equate a rendering-library change with a visual upgrade; select capabilities through [frameworks and rendering](frameworks-and-rendering.md).
 
 ## Concrete critique
 

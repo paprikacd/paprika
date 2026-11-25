@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -476,7 +477,26 @@ func (c *InsightsAuthoringClient) auditAction(ctx context.Context, collection, i
 	c.auditor.Record(ctx, audit.Event{Principal: subject, Action: action, Resource: collection, Name: id, Success: err == nil, Error: outcome, Extra: map[string]string{"surface": "observe_mcp"}})
 }
 
-func (c *InsightsAuthoringClient) list(ctx context.Context, collection, providerID string) (json.RawMessage, error) {
+// insightsListArgs are the arguments of a list tool. Q filters saved queries only.
+type insightsListArgs struct {
+	ProviderID string `json:"provider_id,omitempty"` //nolint:tagliatelle // MCP arguments use snake_case.
+	Q          string `json:"q,omitempty"`
+}
+
+func decodeInsightsListArgs(raw json.RawMessage) (insightsListArgs, error) {
+	var args insightsListArgs
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&args); err != nil {
+		return args, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid Insights tool arguments"))
+	}
+	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return args, connect.NewError(connect.CodeInvalidArgument, errors.New("expected one argument object"))
+	}
+	return args, nil
+}
+
+func (c *InsightsAuthoringClient) list(ctx context.Context, collection, providerID, q string) (json.RawMessage, error) {
 	path := collection
 	if collection != "providers" {
 		path += "?summary=true"
@@ -486,6 +506,15 @@ func (c *InsightsAuthoringClient) list(ctx context.Context, collection, provider
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid provider ID"))
 		}
 		path += "&providerId=" + url.QueryEscape(providerID)
+	}
+	if q != "" {
+		if collection != "saved-queries" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("q filters saved queries only"))
+		}
+		if utf8.RuneCountInString(q) > 256 {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("q must be at most 256 characters"))
+		}
+		path += "&q=" + url.QueryEscape(q)
 	}
 	body, _, err := c.request(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
@@ -517,7 +546,7 @@ func (c *InsightsAuthoringClient) listProviders(ctx context.Context, providerID 
 	if providerID != "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid provider ID"))
 	}
-	body, err := c.list(ctx, "providers", "")
+	body, err := c.list(ctx, "providers", "", "")
 	if err != nil {
 		return nil, err
 	}

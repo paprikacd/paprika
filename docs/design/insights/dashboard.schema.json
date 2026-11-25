@@ -1,5 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Paprika Insights dashboard",
+  "description": "Version 1 of the portable Paprika Insights dashboard document.",
+  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, timeZone names from the canonical IANA list (exact and case-sensitive, so offsets, Local, Factory and posixrules are refused), safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names.",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -52,6 +55,180 @@
       "maxLength": 64,
       "description": "IANA time zone name from the canonical list, spelled exactly (for example Europe/London or UTC). It sets the zone of chart axes, metric tooltips, observation inspectors, comparison windows, status history and range labels. Omitted, these displays use the viewer's zone. UTC-based calendar aggregation and raw ISO timestamps are unchanged."
     },
+    "covers": {
+      "type": "object",
+      "properties": {
+        "applications": {
+          "minItems": 1,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+                "description": "A Kubernetes namespace name: lowercase letters, digits and hyphens, at most 63 characters."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+                "description": "An application name: lowercase letters, digits, dots and hyphens, at most 253 characters."
+              }
+            },
+            "additionalProperties": false,
+            "description": "One application. An omitted namespace or name matches any value, so an empty object matches every application."
+          },
+          "description": "The applications this dashboard covers. The dashboard is listed for an application that matches any entry."
+        },
+        "variables": {
+          "description": "Maps a declared dashboard variable to the application namespace or name it takes.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "namespace",
+              "name"
+            ]
+          }
+        },
+        "summaryWidget": {
+          "description": "The id of the widget shown as the summary on an application page.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+        }
+      },
+      "required": [
+        "applications"
+      ],
+      "additionalProperties": false,
+      "description": "The applications this dashboard is for. Application pages list the dashboards whose coverage matches."
+    },
+    "annotationSource": {
+      "type": "object",
+      "properties": {
+        "queryRef": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+            },
+            "bindings": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "parameter": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "source": {
+                        "type": "string",
+                        "const": "variable"
+                      },
+                      "variable": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "required": [
+                      "parameter",
+                      "source",
+                      "variable"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "parameter": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "source": {
+                        "type": "string",
+                        "const": "constant"
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 1024
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "parameter",
+                      "source",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "timestampColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "endColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "labelColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "severityColumn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "queryRef",
+        "timestampColumn",
+        "labelColumn"
+      ],
+      "additionalProperties": false
+    },
     "variables": {
       "maxItems": 20,
       "type": "array",
@@ -68,9 +245,27 @@
             "type": "string",
             "maxLength": 80
           },
+          "multi": {
+            "type": "boolean"
+          },
+          "allowAll": {
+            "type": "boolean"
+          },
           "defaultValue": {
-            "type": "string",
-            "maxLength": 1024
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            ]
           },
           "options": {
             "minItems": 1,
@@ -1005,6 +1200,34 @@
                 ],
                 "additionalProperties": false
               },
+              "baseline": {
+                "type": "object",
+                "properties": {
+                  "window": {
+                    "type": "string",
+                    "enum": [
+                      "previous",
+                      "1d",
+                      "7d",
+                      "rolling"
+                    ]
+                  },
+                  "band": {
+                    "type": "string",
+                    "enum": [
+                      "range",
+                      "p10p90"
+                    ]
+                  }
+                },
+                "required": [
+                  "window"
+                ],
+                "additionalProperties": false
+              },
+              "showEvents": {
+                "type": "boolean"
+              },
               "min": {
                 "type": "number"
               },
@@ -1015,6 +1238,65 @@
                 "type": "number",
                 "minimum": 0.5,
                 "maximum": 8
+              },
+              "seriesColors": {
+                "maxItems": 24,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "maxLength": 100,
+                      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "traffic",
+                        "success",
+                        "client-error",
+                        "server-error",
+                        "p50",
+                        "p95",
+                        "p99"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "required": [
+                        "color"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "role"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "seriesColorMode": {
+                "type": "string",
+                "enum": [
+                  "name",
+                  "index"
+                ]
               },
               "fillOpacity": {
                 "type": "number",
@@ -1083,65 +1365,6 @@
                   ]
                 }
               },
-              "seriesColors": {
-                "maxItems": 24,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "label": {
-                      "type": "string",
-                      "maxLength": 100,
-                      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
-                    },
-                    "value": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    },
-                    "color": {
-                      "type": "string",
-                      "pattern": "^#[0-9a-fA-F]{6}$"
-                    },
-                    "role": {
-                      "type": "string",
-                      "enum": [
-                        "traffic",
-                        "success",
-                        "client-error",
-                        "server-error",
-                        "p50",
-                        "p95",
-                        "p99"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "label",
-                    "value"
-                  ],
-                  "oneOf": [
-                    {
-                      "required": [
-                        "color"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "role"
-                      ]
-                    }
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "seriesColorMode": {
-                "type": "string",
-                "enum": [
-                  "name",
-                  "index"
-                ]
-              },
               "gridX": {
                 "type": "boolean"
               },
@@ -1199,6 +1422,7 @@
                 "maximum": 120
               }
             },
+            "additionalProperties": false,
             "allOf": [
               {
                 "if": {
@@ -1218,8 +1442,7 @@
                   ]
                 }
               }
-            ],
-            "additionalProperties": false
+            ]
           },
           "pluginId": {
             "type": "string",
@@ -1248,68 +1471,148 @@
             "maxItems": 8,
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
-                },
-                "title": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120
-                },
-                "dashboardId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 80,
-                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
-                },
-                "carryTimeRange": {
-                  "type": "boolean"
-                },
-                "bindings": {
-                  "maxItems": 20,
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "variable": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 64,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                      },
-                      "source": {
-                        "type": "string",
-                        "enum": [
-                          "label",
-                          "value",
-                          "series",
-                          "constant"
-                        ]
-                      },
-                      "value": {
-                        "type": "string",
-                        "maxLength": 1024
-                      }
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
                     },
-                    "required": [
-                      "variable",
-                      "source"
-                    ],
-                    "additionalProperties": false
-                  }
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "dashboardId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                    },
+                    "carryTimeRange": {
+                      "type": "boolean"
+                    },
+                    "bindings": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "variable": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "label",
+                              "value",
+                              "series",
+                              "constant"
+                            ]
+                          },
+                          "value": {
+                            "type": "string",
+                            "maxLength": 1024
+                          }
+                        },
+                        "required": [
+                          "variable",
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "dashboardId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "application": {
+                      "type": "object",
+                      "properties": {
+                        "namespace": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "label",
+                                "constant"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "name": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "label",
+                                "constant"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 253
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "namespace",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "application"
+                  ],
+                  "additionalProperties": false
                 }
-              },
-              "required": [
-                "id",
-                "title",
-                "dashboardId"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "selectionBindings": {
@@ -1387,6 +1690,7 @@
           "unit",
           "layout"
         ],
+        "additionalProperties": false,
         "allOf": [
           {
             "if": {
@@ -1517,9 +1821,29 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "required": [
+                "options"
+              ],
+              "properties": {
+                "options": {
+                  "required": [
+                    "baseline"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "type": {
+                  "const": "timeseries"
+                }
+              }
+            }
           }
-        ],
-        "additionalProperties": false
+        ]
       }
     }
   },
@@ -1564,8 +1888,5 @@
         }
       ]
     }
-  },
-  "title": "Paprika Insights dashboard",
-  "description": "Version 1 of the portable Paprika Insights dashboard document.",
-  "$comment": "Runtime validation additionally enforces unique widget, variable and drilldown IDs, x+w<=12, sorted thresholds, increasing bounds and custom ranges of at most 31 days, timeZone names from the canonical IANA list (exact and case-sensitive, so offsets, Local, Factory and posixrules are refused), safe folder paths, plugin metadata, JSON configuration limits (16 KiB, depth 8, no reserved keys), unique dropdown options and binding targets, source-specific binding fields, and reserved variable names."
+  }
 }

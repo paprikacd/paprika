@@ -1,12 +1,14 @@
 "use client";
 
+import { NO_DATA } from "./benign-states";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { exactMetric, latestPoint, seriesName } from "./chart-data";
+import { exactMetric, formatMetricDetails, latestPoint, seriesName } from "./chart-data";
 import configStyles from "./chart-styles.module.css";
 import styles from "./charts.module.css";
 import { GammaButton } from "./gamma/button";
 import { lockBodyScroll } from "./gamma/scroll-lock";
 import { GammaSelect } from "./gamma/select";
+import { useDashboardTimeZone } from "./dashboard-time-zone";
 import type { Widget } from "./schema";
 import { contextKey, metricContext, validTimestamp } from "./widget-context";
 import type { Series } from "./chart-renderer-shared";
@@ -65,6 +67,23 @@ function ChartDataDialog({
   );
   const [selected, setSelected] = useState(() => choices[0]?.value ?? "");
   const [page, setPage] = useState(0);
+  const [exact, setExact] = useState(false);
+  const timeZone = useDashboardTimeZone();
+  // Compact local-style stamp in the dashboard zone: fits a 390 px table without the ISO string and its fraction.
+  const timestampFormat = useMemo(
+    () =>
+      new Intl.DateTimeFormat("en", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZone,
+      }),
+    [timeZone],
+  );
   const chosen =
     choices.find((choice) => choice.value === selected) ?? choices[0];
   if (chosen && chosen.value !== selected) {
@@ -121,8 +140,9 @@ function ChartDataDialog({
       </div>
       <p id={`${id}-description`}>
         {widget.type === "bar"
-          ? "Latest valid sample per series. Values are shown without rounding."
-          : "Exact query observations before visual downsampling. Missing samples remain empty. This view does not change dashboard link selection."}
+          ? "Latest valid sample per series."
+          : "Query observations before visual downsampling. Missing samples remain empty. This view does not change dashboard link selection."}{" "}
+        Values follow the widget&apos;s decimal setting. Times are in {timeZone}.
       </p>
       <div className={configStyles.inspectorToolbar}>
         <GammaSelect
@@ -135,6 +155,14 @@ function ChartDataDialog({
             setPage(0);
           }}
         />
+        <GammaButton
+          variant="ghost"
+          size="sm"
+          aria-pressed={exact}
+          onClick={() => setExact((value) => !value)}
+        >
+          Exact values
+        </GammaButton>
       </div>
       {entry && (
         <dl className={configStyles.inspectorLabels}>
@@ -156,7 +184,7 @@ function ChartDataDialog({
           <thead>
             <tr>
               <th scope="col">Timestamp</th>
-              <th scope="col">Value{widget.unit ? ` (${widget.unit})` : ""}</th>
+              <th scope="col">Value</th>
             </tr>
           </thead>
           <tbody>
@@ -166,21 +194,32 @@ function ChartDataDialog({
                 <tr key={`${point.timestamp}-${index}`}>
                   <td>
                     <time dateTime={new Date(point.timestamp).toISOString()}>
-                      {new Date(point.timestamp).toISOString()}
+                      {timestampFormat.format(new Date(point.timestamp))}
                     </time>
                   </td>
                   <td
-                    data-metric-value={
+                    className={
+                      exact
+                        ? `${styles.numeric} ${configStyles.exactValue}`
+                        : styles.numeric
+                    }
+                    data-observation-value={
                       typeof point.value === "number" &&
                       Number.isFinite(point.value)
-                        ? String(point.value)
+                        ? point.value
                         : undefined
                     }
                   >
                     {typeof point.value === "number" &&
                     Number.isFinite(point.value)
-                      ? exactMetric(point.value, widget.unit)
-                      : "No data"}
+                      ? exact
+                        ? exactMetric(point.value, widget.unit)
+                        : formatMetricDetails(
+                            point.value,
+                            widget.unit,
+                            widget.options?.decimals,
+                          )
+                      : NO_DATA}
                   </td>
                 </tr>
               ))}
@@ -192,18 +231,23 @@ function ChartDataDialog({
         <span role="status">
           {points.length} observations · Page {currentPage + 1} of {pages}
         </span>
-        <GammaButton
-          disabled={currentPage === 0}
-          onClick={() => setPage(currentPage - 1)}
-        >
-          Previous observations
-        </GammaButton>
-        <GammaButton
-          disabled={currentPage + 1 >= pages}
-          onClick={() => setPage(currentPage + 1)}
-        >
-          Next observations
-        </GammaButton>
+        {/* The pager stays one row: on a phone the buttons read Previous and Next, and keep their full names. */}
+        <div>
+          <GammaButton
+            disabled={currentPage === 0}
+            aria-label="Previous observations"
+            onClick={() => setPage(currentPage - 1)}
+          >
+            <span>Previous<span className={configStyles.pagerNoun}> observations</span></span>
+          </GammaButton>
+          <GammaButton
+            disabled={currentPage + 1 >= pages}
+            aria-label="Next observations"
+            onClick={() => setPage(currentPage + 1)}
+          >
+            <span>Next<span className={configStyles.pagerNoun}> observations</span></span>
+          </GammaButton>
+        </div>
       </div>
     </dialog>
   );

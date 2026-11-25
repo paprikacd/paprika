@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
-import type { Dashboard, Drilldown } from "./schema"
+import type { Dashboard, WidgetLink } from "./schema"
 import type { DrilldownContext } from "./drilldown"
 import type { QueryFetcher } from "./query"
 import { parseDashboardURL } from "./drilldown"
@@ -10,7 +10,7 @@ import { parseDashboardURL } from "./drilldown"
 vi.mock("./canvas", () => ({
   DashboardCanvas: ({ dashboard, fetcher, tooltipFetcher, onDrilldown }: {
     dashboard: Dashboard; fetcher: QueryFetcher; tooltipFetcher: QueryFetcher;
-    onDrilldown: (link: Drilldown, context: DrilldownContext) => void;
+    onDrilldown: (link: WidgetLink, context: DrilldownContext) => void;
   }) => <div>
     <output data-testid="view-range">{JSON.stringify(dashboard.customTimeRange)}</output>
     <button onClick={() => onDrilldown(dashboard.widgets[0].drilldowns![0], {
@@ -58,7 +58,7 @@ describe("dashboard navigation", () => {
     fireEvent.click(screen.getByText("Run resolved tooltip query"))
     await waitFor(() => expect(api.query).toHaveBeenCalledWith(expect.objectContaining({
       query: `up{service=${JSON.stringify('checkout"\\{{literal}}')}}`,
-    }), expect.any(AbortSignal), { replayCapacity: false }))
+    }), expect.any(AbortSignal), expect.objectContaining({ replayCapacity: false })))
   })
   it("carries signal context and fixed time, safely interpolates queries, and preserves the saved target", async () => {
     const api = client()
@@ -70,7 +70,7 @@ describe("dashboard navigation", () => {
     expect(screen.getByTestId("view-range")).toHaveTextContent(JSON.stringify(range))
     expect(screen.getByText("All changes saved")).toBeInTheDocument()
     fireEvent.click(screen.getByText("Run query"))
-    await waitFor(() => expect(api.query).toHaveBeenCalledWith(expect.objectContaining({ query: 'up{service="checkout\\"api"}' }), expect.any(AbortSignal), { replayCapacity: false }))
+    await waitFor(() => expect(api.query).toHaveBeenCalledWith(expect.objectContaining({ query: 'up{service="checkout\\"api"}' }), expect.any(AbortSignal), expect.objectContaining({ replayCapacity: false })))
     fireEvent.click(screen.getByRole("button", { name: "Edit dashboard" }))
     fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Target saved" } })
     fireEvent.click(screen.getByRole("button", { name: "Save dashboard" }))
@@ -137,7 +137,7 @@ describe("dashboard navigation", () => {
     render(<InsightsApp client={api} />)
     await screen.findByRole("heading", { name: "Source" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("combobox", { name: "Library import format" }))
+    fireEvent.click(await screen.findByRole("combobox", { name: "Library import format" }))
     fireEvent.click(screen.getByRole("option", { name: "JSON" }))
     const importedSource: Dashboard = { ...source, widgets: [{ ...source.widgets[0], options: {
       tooltipView: { type: "stat", source: { type: "query", providerId: "metrics", query: "up" } },
@@ -153,7 +153,7 @@ describe("dashboard navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import 1 as new" }))
     await waitFor(() => expect(imports).toHaveLength(2))
     expect(imports[0].id).not.toBe("target")
-    expect(imports[1].widgets[0].drilldowns![0].dashboardId).toBe(imports[0].id)
+    expect(imports[1].widgets[0].drilldowns![0]).toMatchObject({ dashboardId: imports[0].id })
     expect(imports[1].widgets[0].providerId).toBe("corrected")
     expect(imports[1].widgets[0].options?.tooltipView?.source).toMatchObject({ providerId: "corrected" })
     expect(vi.mocked(api.save).mock.calls[1][0].id).toBe(imports[1].id)
@@ -192,13 +192,15 @@ describe("dashboard navigation", () => {
     render(<InsightsApp client={client()} />)
     await screen.findByRole("heading", { name: "Source" })
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("button", { name: "Add variable" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }, { timeout: 5000 }))
     fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     fireEvent.change(screen.getByLabelText("variable_1"), { target: { value: "active value" } })
     fireEvent.click(screen.getByRole("button", { name: "Update view" }))
     expect(parseDashboardURL(location.search)?.variables).toEqual({ variable_1: "active value" })
     fireEvent.click(screen.getByRole("button", { name: "Undo" }))
     await waitFor(() => expect(parseDashboardURL(location.search)?.variables).toBeUndefined())
-    expect(screen.queryByRole("form", { name: "Dashboard variables" })).not.toBeInTheDocument()
+    // Editing keeps the bar for its Filter action, but no variable fields or Update view remain.
+    expect(screen.queryByLabelText("variable_1")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Update view" })).not.toBeInTheDocument()
   })
 })

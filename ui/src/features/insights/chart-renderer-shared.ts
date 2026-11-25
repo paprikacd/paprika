@@ -1,12 +1,11 @@
 // Shared by the time-series and bar renderers and by chart-renderers.tsx. It is a separate module so that
 // neither renderer imports the other.
-import { useLayoutEffect, useRef, useState } from "react";
 import { portal } from "@tanstack/charts/tooltip/portal";
 import { widgetTextColor } from "./appearance";
 import { SERIES_PALETTE } from "./series-palette";
 import { autoAxisDomain, axisScale } from "./units";
 import { inheritGammaTheme } from "./gamma/inherit-theme";
-import type { QueryResult, Threshold, WidgetOptions } from "./schema";
+import type { QueryResult, WidgetOptions } from "./schema";
 import { validTimestamp } from "./widget-context";
 
 export type Series = NonNullable<QueryResult["series"]>[number];
@@ -36,19 +35,7 @@ const chartTheme = {
 
 export const EMPTY_OPTIONS: WidgetOptions = Object.freeze({});
 
-export function thresholdForValue(
-  value: number,
-  thresholds?: readonly Threshold[],
-) {
-  if (!Number.isFinite(value) || !thresholds?.length) return undefined;
-  let match = thresholds[0];
-  for (const threshold of thresholds) {
-    if (threshold.value > value) break;
-    match = threshold;
-  }
-  return match;
-}
-
+export { thresholdForValue } from "./chart-kit/threshold";
 export function resolveChartDomain(
   series: Series[],
   options: WidgetOptions,
@@ -83,44 +70,7 @@ export function configuredTheme(options: WidgetOptions) {
   };
 }
 
-export function usePlotSize() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 500, height: 180 });
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    let frame = 0;
-    const measure = () => {
-      const bounds = element.getBoundingClientRect();
-      if (bounds.width <= 0 || bounds.height <= 0) return;
-      const width = Math.round(bounds.width);
-      const height = Math.max(48, Math.round(bounds.height));
-      setSize((previous) =>
-        previous.width === width && previous.height === height
-          ? previous
-          : { width, height },
-      );
-    };
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
-    };
-    measure();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(measure);
-    observer?.observe(element);
-    window.addEventListener("resize", schedule);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", schedule);
-      cancelAnimationFrame(frame);
-    };
-  }, []);
-  return { ref, ...size };
-}
-
+export { usePlotSize } from "./chart-kit/measure";
 export function responsiveChartTicks(width: number, height: number) {
   return {
     x: Math.max(2, Math.min(6, Math.floor((width - 60) / 80))),

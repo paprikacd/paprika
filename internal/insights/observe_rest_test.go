@@ -57,8 +57,10 @@ func observeRESTTestGateway(t *testing.T, handler http.Handler) *httptest.Server
 		fixture.ContentLength = int64(len(body))
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, fixture)
-		if retryAfter := recorder.Header().Get("Retry-After"); retryAfter != "" {
-			w.Header().Set("Retry-After", retryAfter)
+		for _, name := range []string{"Retry-After", observeLimitScopeHeader} {
+			if value := recorder.Header().Get(name); value != "" {
+				w.Header().Set(name, value)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(recorder.Code)
@@ -125,6 +127,34 @@ func TestObserveRESTRequestsCarryDelegationAndExactFields(t *testing.T) {
 
 // Redirects are never followed: the gateway's own authorization cannot be sent
 // to another origin, and a redirect is an upstream failure.
+// The gateway's authorization scope is kept only when it is a lowercase SHA-256 hex digest.
+// A malformed one is dropped, so the caller's results are never shared under it.
+func TestObserveRESTKeepsOnlyWellFormedAuthorizationScopes(t *testing.T) {
+	valid := strings.Repeat("ab", 32)
+	for _, test := range []struct {
+		name  string
+		scope string
+		want  string
+	}{
+		{"well formed digest is kept", valid, valid},
+		{"empty scope is none", "", ""},
+		{"upper case hex is dropped", strings.ToUpper(valid), ""},
+		{"short digest is dropped", valid[:63], ""},
+		{"non hex digest is dropped", strings.Repeat("z", 64), ""},
+		{"digest with trailing text is dropped", valid + "x", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, 200, map[string]any{"providers": []observeCatalogProvider{}, "authorizationScope": test.scope})
+			}))
+			defer gateway.Close()
+			listing, err := mustObserveGateway(t, gateway.URL).listShared(t.Context(), "alice")
+			require.NoError(t, err)
+			assert.Equal(t, test.want, listing.scope)
+		})
+	}
+}
+
 func TestObserveRESTRefusesRedirectsAndForeignPaths(t *testing.T) {
 	var elsewhere atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -265,7 +295,7 @@ func TestObserveForwardedRetryAfterIsCappedAtTheReplayCap(t *testing.T) {
 	}{{"1", 1}, {"10", 10}, {"11", 0}, {"60", 0}, {"0", 0}, {"soon", 0}} {
 		t.Run(tc.header, func(t *testing.T) {
 			var remote *observeError
-			require.ErrorAs(t, observeHTTPErrorFor(http.StatusTooManyRequests, tc.header), &remote)
+			require.ErrorAs(t, observeHTTPErrorFor(http.StatusTooManyRequests, tc.header, ""), &remote)
 			assert.Equal(t, tc.want, remote.retryAfter)
 		})
 	}

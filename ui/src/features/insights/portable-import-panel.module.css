@@ -101,10 +101,6 @@
 .query label {
   margin-bottom: 0;
 }
-.panel .copyNote {
-  color: var(--gamma-ink);
-  margin-bottom: 0;
-}
 .panel .error {
   color: var(--gamma-danger);
   white-space: pre-wrap;

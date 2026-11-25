@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { InsightsClient } from "./client";
+import type { ExplorerSeed } from "./saved-query-context";
 import {
   savedQuerySchema,
   type Dashboard,
@@ -49,12 +50,14 @@ import { providerOption, QuerySourceIcon } from "./source-identity";
 import { savedQueryOption } from "./saved-query-presentation";
 import { SavedQueryDetailsEditor } from "./saved-query-details-editor";
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
+import "./lazy-style-boundary.css?explorer";
 import styles from "./explorer.module.css";
 
 interface ParameterDraft {
   name: string;
   label: string;
-  type: "string" | "number";
+  /** "list" is a text parameter that takes several values. */
+  type: "string" | "number" | "list";
   hasDefault: boolean;
   defaultText: string;
 }
@@ -68,28 +71,35 @@ function fromQuery(query: SavedQuery): Draft {
     parameters: (query.parameters ?? []).map((parameter) => ({
       name: parameter.name,
       label: parameter.label ?? "",
-      type: parameter.type,
+      type: parameter.multi ? "list" : parameter.type,
       hasDefault: parameter.defaultValue !== undefined,
       defaultText:
         parameter.defaultValue === undefined
           ? ""
-          : String(parameter.defaultValue),
+          : Array.isArray(parameter.defaultValue)
+            ? parameter.defaultValue.join(", ")
+            : String(parameter.defaultValue),
     })),
   };
 }
 function readDraft(draft: Draft): SavedQuery {
   const parameters = draft.parameters.map((parameter) => {
+    const list = parameter.type === "list";
     const base: SavedQueryParameter = {
       name: parameter.name,
       ...(parameter.label ? { label: parameter.label } : {}),
-      type: parameter.type,
+      type: parameter.type === "number" ? "number" : "string",
+      ...(list ? { multi: true } : {}),
     };
-    return parameter.hasDefault
-      ? {
-          ...base,
-          defaultValue: savedQueryParameterValue(base, parameter.defaultText),
-        }
-      : base;
+    if (!parameter.hasDefault) return base;
+    // A list default is comma-separated; an empty one is All.
+    const fallback = list
+      ? parameter.defaultText.split(",").map((item) => item.trim()).filter((item) => item !== "")
+      : parameter.defaultText;
+    return {
+      ...base,
+      defaultValue: savedQueryParameterValue(base, fallback),
+    };
   });
   const query = savedQuerySchema.parse({ ...draft.query, parameters });
   validateSavedQueryTemplate(query);
@@ -155,6 +165,7 @@ function resultWidget(query: SavedQuery, type: string, config?: Widget["config"]
   };
 }
 
+
 export function Explorer({
   client,
   providers,
@@ -163,6 +174,7 @@ export function Explorer({
   onUse,
   onClose,
   initialProviderId,
+  initialSeed,
   active = true,
   onDirtyChange,
 }: {
@@ -173,29 +185,31 @@ export function Explorer({
   onUse: (query: SavedQuery) => void;
   onClose: () => void;
   initialProviderId?: string;
+  initialSeed?: ExplorerSeed;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [draft, setDraft] = useState<Draft>(() =>
-    fromQuery(
-      newQuery(
-        providers.find((provider) => provider.id === initialProviderId) ??
-          preferredProvider(providers, () => true),
-      ),
-    ),
-  );
+  const [draft, setDraft] = useState<Draft>(() => {
+    const base = newQuery(
+      providers.find((provider) => provider.id === (initialSeed?.providerId ?? initialProviderId)) ??
+        preferredProvider(providers, () => true),
+    );
+    return fromQuery(initialSeed ? { ...base, kind: initialSeed.kind, query: initialSeed.query } : base);
+  });
   const [baseline, setBaseline] = useState(() => fingerprint(draft));
   const [persisted, setPersisted] = useState<SavedQueryEntry>();
   const [detailsTab, setDetailsTab] = useState("overview");
   const [testValues, setTestValues] = useState<Record<string, string>>({});
-  const [time, setTime] = useState<Dashboard>({
+  const [time, setTime] = useState<Dashboard>(() => ({
     schemaVersion: 1,
     id: "explore",
     title: "Explore",
     timeRange: "1h",
     refreshInterval: 0,
     widgets: [],
-  });
+    // A seeded search covers the chart's brushed range, so its traces are the ones the chart region names.
+    ...(initialSeed ? { customTimeRange: { from: new Date(initialSeed.start).toISOString(), to: new Date(initialSeed.end).toISOString() } } : {}),
+  }));
   const [view, setView] = useState<string>("timeseries");
   const [queryValid, setQueryValid] = useState(true);
   const [recordMappings, setRecordMappings] = useState<Record<string, Record<string, string>>>({});
@@ -670,7 +684,7 @@ export function Explorer({
                     { value: "bar", label: "Bar chart" },
                     { value: "table", label: "Table" },
                     { value: "stat", label: "Single value" },
-                    { value: "heatmap", label: "Status heatmap" },
+                    { value: "heatmap", label: "Status grid" },
                   ]}
                   onValueChange={(value) => setView(value as Widget["type"])}
                 />
@@ -949,6 +963,7 @@ export function Explorer({
                                   disabled={busy}
                                   options={[
                                     { value: "string", label: "Text" },
+                                    { value: "list", label: "Text list" },
                                     { value: "number", label: "Number" },
                                   ]}
                                   onValueChange={(type) =>

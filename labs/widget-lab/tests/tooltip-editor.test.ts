@@ -29,21 +29,21 @@ describe('shared tooltip configuration', () => {
     const { widget, result } = makeCatalogFixture('kubernetes-placement');
     const source = JSON.stringify({ widget, result });
     const original = createEditorDraft(widget, result);
-    const changed = reviseEditorDraft(original, updateWidgetOption(original.draft, 'tooltipPlacement', 'left'), 'records', result);
-    const invalid = reviseEditorDraft(changed, updateWidgetOption(changed.draft, 'tooltipMaxWidth', 100), 'records', result);
+    const changed = reviseEditorDraft(original, updateWidgetOption(original.draft, 'tooltipPlacement', 'left'), 'metrics', result);
+    const invalid = reviseEditorDraft(changed, updateWidgetOption(changed.draft, 'tooltipMaxWidth', 100), 'metrics', result);
     expect(invalid.draft.options?.tooltipMaxWidth).toBe(100);
     expect(invalid.errors.some(error => error.startsWith('options.tooltipMaxWidth:'))).toBe(true);
     expect(invalid.preview).toBe(changed.preview);
-    expect(validateEditorWidget(invalid.draft, 'records', result).widget).toBeNull();
+    expect(validateEditorWidget(invalid.draft, 'metrics', result).widget).toBeNull();
 
-    const corrected = reviseEditorDraft(invalid, updateWidgetOption(invalid.draft, 'tooltipMaxWidth', 420), 'records', result);
+    const corrected = reviseEditorDraft(invalid, updateWidgetOption(invalid.draft, 'tooltipMaxWidth', 420), 'metrics', result);
     expect(corrected.errors).toEqual([]);
     expect(corrected.preview.options).toMatchObject({ tooltipPlacement: 'left', tooltipMaxWidth: 420 });
-    const undone = travelEditorDraft(corrected, 'undo', 'records', result);
+    const undone = travelEditorDraft(corrected, 'undo', 'metrics', result);
     expect(undone.draft.options?.tooltipMaxWidth).toBe(100);
     expect(undone.preview).toBe(corrected.preview);
     expect(undone.errors.length).toBeGreaterThan(0);
-    const redone = travelEditorDraft(undone, 'redo', 'records', result);
+    const redone = travelEditorDraft(undone, 'redo', 'metrics', result);
     expect(redone.errors).toEqual([]);
     expect(redone.preview.options?.tooltipMaxWidth).toBe(420);
     expect(JSON.stringify({ widget, result })).toBe(source);
@@ -65,23 +65,24 @@ describe('shared tooltip configuration', () => {
   it('revalidates refreshed source data without losing tooltip edits or adding history entries', () => {
     const { widget, result } = makeCatalogFixture('kubernetes-placement');
     const initial = createEditorDraft(widget, result);
-    const edited = reviseEditorDraft(initial, updateWidgetOption(initial.draft, 'tooltipOffset', 22), 'records', result);
-    const changedSource = { ...result, records: { ...result.records!, columns: result.records!.columns.slice(1), rows: result.records!.rows.map(row => row.slice(1)) } };
+    const edited = reviseEditorDraft(initial, updateWidgetOption(initial.draft, 'tooltipOffset', 22), 'metrics', result);
+    // A refreshed source with a signal the widget does not read must be reported, not silently accepted.
+    const changedSource = { ...result, series: [...(result.series ?? []), { name: 'bogus', labels: { signal: 'bogus' }, points: [] }] };
     const snapshot = JSON.stringify(changedSource);
-    const refreshed = revalidateEditorDraft(edited, 'records', changedSource);
+    const refreshed = revalidateEditorDraft(edited, 'metrics', changedSource);
     expect(refreshed.errors.length).toBeGreaterThan(0);
     expect(refreshed.draft).toBe(edited.draft);
     expect(refreshed.preview).toBe(edited.preview);
     expect(refreshed.draft.options?.tooltipOffset).toBe(22);
     expect(refreshed.past).toBe(edited.past);
     expect(refreshed.future).toBe(edited.future);
-    expect(validateEditorWidget(refreshed.draft, 'records', changedSource).widget).toBeNull();
-    const recovered = revalidateEditorDraft(refreshed, 'records', result);
+    expect(validateEditorWidget(refreshed.draft, 'metrics', changedSource).widget).toBeNull();
+    const recovered = revalidateEditorDraft(refreshed, 'metrics', result);
     expect(recovered.errors).toEqual([]);
     expect(recovered.preview.options?.tooltipOffset).toBe(22);
     expect(recovered.past).toBe(edited.past);
     expect(JSON.stringify(changedSource)).toBe(snapshot);
-    expect(travelEditorDraft(recovered, 'undo', 'records', result).draft.options?.tooltipOffset).toBe(widget.options?.tooltipOffset);
+    expect(travelEditorDraft(recovered, 'undo', 'metrics', result).draft.options?.tooltipOffset).toBe(widget.options?.tooltipOffset);
   });
 
   it('preserves common tooltip settings across compatible renderers and restores remembered renderer drafts', () => {

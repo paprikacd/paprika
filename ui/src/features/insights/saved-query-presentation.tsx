@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { SavedQuery } from "./schema";
 import type { GammaSelectOption } from "./gamma/select";
 import { QuerySourceIcon } from "./source-identity";
+import "./lazy-style-boundary.css?saved-query-presentation";
 import styles from "./saved-query-presentation.module.css";
 
 export function SavedQueryArtwork({ query }: { query: SavedQuery }) {
@@ -43,7 +44,8 @@ export function SavedQueryDetails({ query }: { query: SavedQuery }) {
 
 export function savedQuerySearchText(query: SavedQuery): string {
   return [query.name, query.description, query.id, query.providerId, query.query,
-    ...(query.tags ?? []), ...Object.entries(query.metadata ?? {}).flat()].filter(Boolean).join(" ");
+    ...(query.tags ?? []), ...Object.entries(query.metadata ?? {}).flat(),
+    ...(query.parameters ?? []).map((parameter) => parameter.name)].filter(Boolean).join(" ");
 }
 
 export function savedQueryOption(query: SavedQuery): GammaSelectOption {

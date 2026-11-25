@@ -13,6 +13,7 @@ import {
 } from "./workspace-transfer"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
+import "./lazy-style-boundary.css?repository-gallery"
 import styles from "./repository-gallery.module.css"
 import shared from "./insights.module.css"
 

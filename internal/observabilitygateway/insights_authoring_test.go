@@ -231,7 +231,8 @@ func TestInsightsAuthoringListsAreCompactAndToolsDoNotExposeDeletion(t *testing.
 	queries, err := h.call(t, p, "list_saved_queries", map[string]any{})
 	require.NoError(t, err)
 	require.Contains(t, string(queries["queries"]), `"etag"`)
-	require.NotContains(t, string(queries["queries"]), `"query":`)
+	// Summaries carry a bounded query text (R56); the document-only field is the guard.
+	require.NotContains(t, string(queries["queries"]), `"schemaVersion"`)
 	_, err = h.call(t, p, "create_dashboard", map[string]any{"document": authoringDocument(t, "dashboard", "Dashboard")})
 	require.NoError(t, err)
 	dashboards, err := h.call(t, p, "list_dashboards", map[string]any{})
@@ -243,6 +244,47 @@ func TestInsightsAuthoringListsAreCompactAndToolsDoNotExposeDeletion(t *testing.
 		require.False(t, strings.HasPrefix(tool.Name, "delete_"))
 		require.True(t, json.Valid(tool.InputSchema))
 	}
+}
+
+func TestInsightsAuthoringListSavedQueriesFiltersByQ(t *testing.T) {
+	h := newAuthoringHarness(t)
+	p := authoringPrincipal([]string{"editors"}, true)
+	requests := authoringDocument(t, "saved_query", "Requests by service")
+	requests["id"] = "requests"
+	_, err := h.call(t, p, "create_saved_query", map[string]any{"document": requests})
+	require.NoError(t, err)
+	latency := authoringDocument(t, "saved_query", "Latency p95")
+	latency["id"] = "latency"
+	latency["description"] = "p95 latency"
+	latency["tags"] = []string{"api"}
+	_, err = h.call(t, p, "create_saved_query", map[string]any{"document": latency})
+	require.NoError(t, err)
+
+	ids := func(args map[string]any) []string {
+		t.Helper()
+		result, listErr := h.call(t, p, "list_saved_queries", args)
+		require.NoError(t, listErr)
+		var queries []struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(result["queries"], &queries))
+		found := make([]string, 0, len(queries))
+		for _, query := range queries {
+			found = append(found, query.ID)
+		}
+		return found
+	}
+	require.ElementsMatch(t, []string{"requests"}, ids(map[string]any{"q": "REQUESTS mcp"}))
+	require.ElementsMatch(t, []string{"latency"}, ids(map[string]any{"q": "api"}))
+	require.ElementsMatch(t, []string{"requests"}, ids(map[string]any{"q": "private", "provider_id": "prometheus"}))
+	require.Empty(t, ids(map[string]any{"q": "private", "provider_id": "other"}))
+	require.Empty(t, ids(map[string]any{"q": "absent-term"}))
+
+	_, err = h.call(t, p, "list_dashboards", map[string]any{"q": "requests"})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+	require.ErrorContains(t, err, "q filters saved queries only")
+	_, err = h.call(t, p, "list_saved_queries", map[string]any{"q": strings.Repeat("a", 257)})
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
 
 func TestInsightsAuthoringRejectedSaveNamesWidgetPointers(t *testing.T) {

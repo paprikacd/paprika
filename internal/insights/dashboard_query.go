@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/benebsworth/paprika/internal/dataframe"
+	"github.com/benebsworth/paprika/internal/insights/variablevalue"
 	"github.com/benebsworth/paprika/internal/querystep"
 )
 
@@ -32,33 +34,40 @@ func dashboardResultCapText() string {
 
 //nolint:tagliatelle // Observe MCP tool arguments use snake_case consistently.
 type dashboardQueryRequest struct {
-	ID            string            `json:"id"`
-	Variables     map[string]string `json:"variables,omitempty"`
-	WidgetIDs     []string          `json:"widget_ids,omitempty"`
-	Start         string            `json:"start,omitempty"`
-	End           string            `json:"end,omitempty"`
-	HistoryPoints *int              `json:"history_points,omitempty"`
-	MaxSeries     *int              `json:"max_series,omitempty"`
-	MaxTraces     *int              `json:"max_traces,omitempty"`
+	ID            string                         `json:"id"`
+	Variables     map[string]variablevalue.Value `json:"variables,omitempty"`
+	WidgetIDs     []string                       `json:"widget_ids,omitempty"`
+	Start         string                         `json:"start,omitempty"`
+	End           string                         `json:"end,omitempty"`
+	HistoryPoints *int                           `json:"history_points,omitempty"`
+	MaxSeries     *int                           `json:"max_series,omitempty"`
+	MaxTraces     *int                           `json:"max_traces,omitempty"`
 }
 
 // DashboardQueryResult executes persisted main and event annotation queries.
 // Tooltip queries need a hovered observation and remain outside this scope.
 type DashboardQueryResult struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Dashboard     DashboardQueryDocument   `json:"dashboard"`
-	ObservedAt    string                   `json:"observedAt"`
-	Range         DashboardQueryRange      `json:"range"`
-	Variables     map[string]string        `json:"variables"`
-	Widgets       []DashboardQueryWidget   `json:"widgets"`
-	SavedQueries  []DashboardQueryDocument `json:"savedQueries"`
-	Signals       []DashboardSignal        `json:"signals"`
-	QueryCount    DashboardQueryCount      `json:"queryCount"`
-	State         string                   `json:"state"`
-	Attention     DashboardAttention       `json:"attention"`
+	SchemaVersion int                            `json:"schemaVersion"`
+	Dashboard     DashboardQueryDocument         `json:"dashboard"`
+	ObservedAt    string                         `json:"observedAt"`
+	Range         DashboardQueryRange            `json:"range"`
+	Variables     map[string]variablevalue.Value `json:"variables"`
+	Widgets       []DashboardQueryWidget         `json:"widgets"`
+	SavedQueries  []DashboardQueryDocument       `json:"savedQueries"`
+	Signals       []DashboardSignal              `json:"signals"`
+	QueryCount    DashboardQueryCount            `json:"queryCount"`
+	State         string                         `json:"state"`
+	Attention     DashboardAttention             `json:"attention"`
+	// Annotations is the dashboard-level event source, when a selected time-based widget inherits it. See DashboardQueryAnnotations.
+	Annotations *DashboardQueryAnnotations `json:"annotations,omitempty"`
 	// comparisons and comparisonQueries plan the stats' earlier-window queries. They are not part of the wire form.
 	comparisons       []dashboardComparisonPlan
 	comparisonQueries []Query
+	// variableSources is each declared variable's resolved source, index-aligned with the document's variables.
+	variableSources []variableSourceOutcome
+	// baselines and baselineQueries plan the time series' earlier-window bands the same way. Not part of the wire form.
+	baselines       []dashboardBaselinePlan
+	baselineQueries []Query
 	// VariableDefinitions declares each dashboard variable with its label, default and static options, so an agent
 	// can choose values without a get_dashboard read. Absent when the dashboard declares no variables.
 	VariableDefinitions []DashboardQueryVariable `json:"variableDefinitions,omitempty"`
@@ -123,6 +132,8 @@ type DashboardQueryWidget struct {
 	SLO *DashboardSLO `json:"slo,omitempty"`
 	// Comparison is a stat's change against its earlier window, when the stat declares one. See DashboardComparison.
 	Comparison *DashboardComparison `json:"comparison,omitempty"`
+	// Baseline is a time series' band over its earlier window or its own recent samples, when the series declares one.
+	Baseline *DashboardBaseline `json:"baseline,omitempty"`
 	// seriesCap is how many leading series the visualization draws, for band widgets.
 	seriesCap int
 	// sloConfig is the validated objective of an slo-summary widget, set at planning.
@@ -165,8 +176,15 @@ type DashboardQueryCount struct {
 	Planned      int `json:"planned"`
 	Executed     int `json:"executed"`
 	Deduplicated int `json:"deduplicated"`
+	// Cached counts the queries answered from the result cache without a provider request. They are not in Executed. Absent when none were.
+	Cached int `json:"cached,omitempty"`
 	// Comparison counts the earlier-window queries of stats that declare a comparison. Absent when none do.
 	Comparison *DashboardComparisonCount `json:"comparison,omitempty"`
+	// VariableOptions counts the variable source fetches: distinct fetches planned, and those executed. Absent when no
+	// variable declares a source.
+	VariableOptions *DashboardComparisonCount `json:"variableOptions,omitempty"`
+	// Baseline counts the earlier-window queries of time series with a baseline, as Comparison does for stats.
+	Baseline *DashboardComparisonCount `json:"baseline,omitempty"`
 }
 
 type dashboardSavedSnapshot struct {
@@ -210,7 +228,9 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	result.VariableDefinitions = dashboardQueryVariables(document.Variables)
 	result.Warnings = dashboardVariableWarnings(document.Variables, input.Variables)
-	s.runDashboardPlan(r, &result, selected, saved, document.Variables, start, end, options)
+	s.runDashboardPlan(r, &result, selected, saved, document.Variables, document.AnnotationSource, start, end, options)
+	applyVariableSourceOptions(&result)
+	result.Warnings = append(result.Warnings, dashboardSourceValueWarnings(document.Variables, input.Variables, result.variableSources)...)
 	writeDashboardQueryResult(w, &result)
 }
 
@@ -219,7 +239,7 @@ func (s *Server) queryDashboard(w http.ResponseWriter, r *http.Request) {
 // queryDashboard and the dry run of the validate endpoint both call it, so they
 // share planning, provider resolution, admission and the caller's deadline;
 // neither has its own path.
-func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, options DashboardSummaryOptions) {
+func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, source *dashboardReadAnnotation, start, end float64, options DashboardSummaryOptions) {
 	cache := dashboardQueryProviders{clients: make(map[string]*providerClient), errors: make(map[string]error)}
 	minStep := func(providerID string) float64 {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
@@ -228,7 +248,7 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		}
 		return provider.public.MinStepSeconds
 	}
-	queries := planDashboardQueries(result, selected, saved, definitions, start, end, minStep, func(providerID, template string, slo bool) *DashboardQueryError {
+	queries := planDashboardQueries(result, selected, saved, definitions, source, start, end, minStep, func(providerID, template string, slo bool) *DashboardQueryError {
 		provider, err := s.dashboardQueryProvider(r, providerID, &cache)
 		if err != nil {
 			return nil // Execution reports the cached provider failure as a signal.
@@ -245,6 +265,9 @@ func (s *Server) runDashboardPlan(r *http.Request, result *DashboardQueryResult,
 		dropDashboardComparisons(result)
 	}
 	s.executeDashboardQueries(r, queries, options, result, &cache)
+	outcomes, count := s.resolveVariableSources(r, dashboardVariableSourceBudget, definitions, result.Variables, saved, start, end, &cache, nil)
+	result.variableSources, result.QueryCount.VariableOptions = outcomes, count
+	appendVariableSavedQueries(result, definitions, saved)
 	budgetDashboardBreaches(result)
 	result.Attention = applyDashboardAttention(result)
 }
@@ -274,11 +297,12 @@ func dashboardWidgetStep(widget *dashboardReadWidget, start, end, providerMinSte
 	return policyStepSeconds(end-start, providerMinStep)
 }
 
-func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators ...dashboardQueryValidator) []Query {
+func planDashboardQueries(result *DashboardQueryResult, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, definitions []dashboardReadVariable, source *dashboardReadAnnotation, start, end float64, minStep dashboardMinStep, validators ...dashboardQueryValidator) []Query {
 	seenSaved := make(map[string]bool)
 	queries := make([]Query, 0, len(selected))
 	seenQueries := make(map[Query]string)
 	seenComparisons := make(map[Query]int)
+	seenBaselines := make(map[Query]int)
 	coarsestMinStep := 0.0
 	for i := range selected {
 		widget := &selected[i]
@@ -314,10 +338,12 @@ func planDashboardQueries(result *DashboardQueryResult, selected []dashboardRead
 		}
 		if resolutionError == nil {
 			planDashboardComparison(result, len(result.Widgets), widget, &output, &query, seenComparisons)
+			planDashboardBaseline(result, len(result.Widgets), widget, &output, &query, seenBaselines)
 		}
 		planDashboardAnnotation(widget, &output, result, saved, seenSaved, seenQueries, &queries, definitions, start, end, minStep, validators)
 		result.Widgets = append(result.Widgets, output)
 	}
+	planDashboardSourceAnnotation(result, source, selected, saved, seenSaved, seenQueries, &queries, definitions, start, end, minStep, validators)
 	result.QueryCount.Planned = len(queries)
 	result.Range.StepSeconds = policyStepSeconds(end-start, coarsestMinStep)
 	return queries
@@ -349,13 +375,20 @@ func dashboardQueryWidgetOutput(widget *dashboardReadWidget) DashboardQueryWidge
 	return output
 }
 
-func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
-	source := widget.AnnotationSource
-	if source == nil {
-		return
-	}
-	output.AnnotationSavedQueryID = source.QueryRef.ID
-	output.AnnotationColumns = &dashboardReadAnnotationColumns{Timestamp: source.TimestampColumn, End: source.EndColumn, Label: source.LabelColumn, Severity: source.SeverityColumn}
+// DashboardQueryAnnotations is the dashboard-level event source: its saved query and signal, and the time-based widgets that
+// inherit it. It is planned only when at least one selected widget inherits it, and a failure never changes a widget's data.
+type DashboardQueryAnnotations struct {
+	SavedQueryID string                          `json:"savedQueryId"`
+	SignalID     string                          `json:"signalId,omitempty"`
+	Error        *DashboardQueryError            `json:"error,omitempty"`
+	Columns      *dashboardReadAnnotationColumns `json:"columns,omitempty"`
+	WidgetIDs    []string                        `json:"widgetIds"`
+}
+
+// planAnnotationSource plans one event query: its saved query, its signal and its column mapping. The caller records the
+// failure and the signal on whichever result owns the source. An identical event query shares its signal.
+func planAnnotationSource(source *dashboardReadAnnotation, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) (signalID string, columns *dashboardReadAnnotationColumns, failure *DashboardQueryError) {
+	columns = &dashboardReadAnnotationColumns{Timestamp: source.TimestampColumn, End: source.EndColumn, Label: source.LabelColumn, Severity: source.SeverityColumn}
 	if !seenSaved[source.QueryRef.ID] {
 		if snapshot, found := saved[source.QueryRef.ID]; found {
 			result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: source.QueryRef.ID, ETag: snapshot.ETag})
@@ -370,15 +403,84 @@ func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQuery
 		eventError = validatePlannedDashboardQuery(eventWidget, &eventQuery, saved, validators)
 	}
 	if eventError != nil {
-		output.AnnotationError = eventError
-		result.State = "partial"
-	} else if signalID, found := seenQueries[eventQuery]; found {
-		output.AnnotationSignalID = signalID
+		return "", columns, eventError
+	}
+	if signal, found := seenQueries[eventQuery]; found {
 		result.QueryCount.Deduplicated++
-	} else {
-		output.AnnotationSignalID = fmt.Sprintf("q%d", len(*queries)+1)
-		seenQueries[eventQuery] = output.AnnotationSignalID
-		*queries = append(*queries, eventQuery)
+		return signal, columns, nil
+	}
+	signal := fmt.Sprintf("q%d", len(*queries)+1)
+	seenQueries[eventQuery] = signal
+	*queries = append(*queries, eventQuery)
+	return signal, columns, nil
+}
+
+func planDashboardAnnotation(widget *dashboardReadWidget, output *DashboardQueryWidget, result *DashboardQueryResult, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
+	source := widget.AnnotationSource
+	if source == nil {
+		return
+	}
+	output.AnnotationSavedQueryID = source.QueryRef.ID
+	signalID, columns, failure := planAnnotationSource(source, result, saved, seenSaved, seenQueries, queries, definitions, start, end, minStep, validators)
+	output.AnnotationColumns = columns
+	if failure != nil {
+		output.AnnotationError = failure
+		result.State = "partial"
+		return
+	}
+	output.AnnotationSignalID = signalID
+}
+
+// inheritsDashboardEvents reports whether a time-based widget shows the dashboard's event source: it has none of its own,
+// it is a widget type that takes events, and it has not opted out.
+func inheritsDashboardEvents(widget *dashboardReadWidget) bool {
+	return widget.AnnotationSource == nil && (widget.Options.ShowEvents == nil || *widget.Options.ShowEvents)
+}
+
+// planDashboardSourceAnnotation plans the dashboard-level event source once, when a selected widget inherits it.
+func planDashboardSourceAnnotation(result *DashboardQueryResult, source *dashboardReadAnnotation, selected []dashboardReadWidget, saved map[string]dashboardSavedSnapshot, seenSaved map[string]bool, seenQueries map[Query]string, queries *[]Query, definitions []dashboardReadVariable, start, end float64, minStep dashboardMinStep, validators []dashboardQueryValidator) {
+	if source == nil {
+		return
+	}
+	var inheriting []string
+	for index := range selected {
+		widget := &selected[index]
+		if inheritsDashboardEvents(widget) && supportsReadAnnotation(widget) {
+			inheriting = append(inheriting, widget.ID)
+		}
+	}
+	if len(inheriting) == 0 {
+		return
+	}
+	signalID, columns, failure := planAnnotationSource(source, result, saved, seenSaved, seenQueries, queries, definitions, start, end, minStep, validators)
+	result.Annotations = &DashboardQueryAnnotations{SavedQueryID: source.QueryRef.ID, SignalID: signalID, Columns: columns, WidgetIDs: inheriting}
+	if failure != nil {
+		result.Annotations.Error = failure
+		result.State = "partial"
+	}
+}
+
+// supportsReadAnnotation reports whether a widget type takes event queries. It mirrors the schema's annotation families.
+func supportsReadAnnotation(widget *dashboardReadWidget) bool {
+	if slices.Contains(annotationFamilyTypes, widget.Type) {
+		return true
+	}
+	return widget.Type == "plugin" && builtInPluginCapabilities[widget.PluginID]["annotations"]
+}
+
+// applyDashboardSourceAnnotation checks the dashboard-level event source's columns against its signal's result.
+func applyDashboardSourceAnnotation(result *DashboardQueryResult, signal *DashboardSignal, columns []dataframe.Column) {
+	annotations := result.Annotations
+	if annotations == nil || annotations.SignalID != signal.ID || annotations.Columns == nil {
+		return
+	}
+	failure := signal.Error
+	if failure == nil {
+		failure = validateAnnotationColumns(columns, annotations.Columns)
+	}
+	if failure != nil {
+		annotations.Error = failure
+		result.State = "partial"
 	}
 }
 
@@ -488,9 +590,15 @@ func validateDashboardQueryVariables(variables json.RawMessage) error {
 	if json.Unmarshal(variables, &values) != nil || len(values) > 20 {
 		return errors.New("variables must contain at most 20 string values")
 	}
+	// A value is a string, or a list of strings for a variable with several values. The declaration decides which
+	// shape fits when the variables are resolved.
 	for _, value := range values {
-		if len(value) == 0 || value[0] != '"' {
-			return errors.New("dashboard variable values must be strings")
+		var decoded variablevalue.Value
+		if json.Unmarshal(value, &decoded) != nil {
+			return errors.New("dashboard variable values must be strings or lists of strings")
+		}
+		if err := decoded.Validate(); err != nil {
+			return fmt.Errorf("dashboard variable values: %w", err)
 		}
 	}
 	return nil
@@ -515,7 +623,7 @@ func (s *Server) dashboardQuerySnapshot(input *dashboardQueryRequest) (snapshot 
 	if err != nil {
 		return document, "", nil, nil, err
 	}
-	saved, err := s.dashboardSavedQuerySnapshot(selected)
+	saved, err := s.dashboardSavedQuerySnapshot(selected, document.Variables)
 	return document, etag, saved, selected, err
 }
 
@@ -538,36 +646,66 @@ func selectDashboardQueryWidgets(widgets []dashboardReadWidget, widgetIDs []stri
 	return selected, nil
 }
 
-func (s *Server) dashboardSavedQuerySnapshot(selected []dashboardReadWidget) (map[string]dashboardSavedSnapshot, error) {
+// dashboardSavedQuerySnapshot loads the saved queries the selected widgets, their annotations and the
+// variable sources of the document refer to. A missing saved query is left out, so its use reports it.
+func (s *Server) dashboardSavedQuerySnapshot(selected []dashboardReadWidget, variables []dashboardReadVariable) (map[string]dashboardSavedSnapshot, error) {
 	saved := make(map[string]dashboardSavedSnapshot)
+	for _, ref := range dashboardSavedQueryRefs(selected, variables) {
+		if ref == nil {
+			continue
+		}
+		if _, exists := saved[ref.ID]; exists {
+			continue
+		}
+		raw, version, err := s.savedQueries.get(ref.ID)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		query, err := validateSavedQuery(ref.ID, raw)
+		if err != nil {
+			return nil, err
+		}
+		saved[query.ID] = dashboardSavedSnapshot{Query: query, ETag: version}
+	}
+	return saved, nil
+}
+
+// dashboardSavedQueryRefs lists the references of the selected widgets, their annotations and the variable sources.
+// A nil reference is a widget without one.
+func dashboardSavedQueryRefs(selected []dashboardReadWidget, variables []dashboardReadVariable) []*dashboardReadReference {
+	var refs []*dashboardReadReference
 	for i := range selected {
 		widget := &selected[i]
-		refs := []*dashboardReadReference{widget.QueryRef}
+		refs = append(refs, widget.QueryRef)
 		if widget.AnnotationSource != nil {
 			refs = append(refs, &widget.AnnotationSource.QueryRef)
 		}
-		for _, ref := range refs {
-			if ref == nil {
-				continue
-			}
-			if _, exists := saved[ref.ID]; exists {
-				continue
-			}
-			raw, version, err := s.savedQueries.get(ref.ID)
-			if errors.Is(err, ErrNotFound) {
-				continue
-			}
-			if err != nil {
-				return nil, err
-			}
-			query, err := validateSavedQuery(ref.ID, raw)
-			if err != nil {
-				return nil, err
-			}
-			saved[query.ID] = dashboardSavedSnapshot{Query: query, ETag: version}
+	}
+	for i := range variables {
+		if source := variables[i].Source; source != nil {
+			refs = append(refs, source.QueryRef)
 		}
 	}
-	return saved, nil
+	return refs
+}
+
+// appendVariableSavedQueries lists the saved query of each variable source once, after the widgets' queries,
+// so a caller can pin the versions a result read.
+func appendVariableSavedQueries(result *DashboardQueryResult, definitions []dashboardReadVariable, saved map[string]dashboardSavedSnapshot) {
+	for i := range definitions {
+		source := definitions[i].Source
+		if source == nil || source.QueryRef == nil {
+			continue
+		}
+		snapshot, ok := saved[source.QueryRef.ID]
+		if !ok || slices.ContainsFunc(result.SavedQueries, func(listed DashboardQueryDocument) bool { return listed.ID == source.QueryRef.ID }) {
+			continue
+		}
+		result.SavedQueries = append(result.SavedQueries, DashboardQueryDocument{ID: source.QueryRef.ID, ETag: snapshot.ETag})
+	}
 }
 
 func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardReadDocument, now time.Time) (window DashboardQueryRange, fromSeconds, toSeconds float64, rangeErr error) {
@@ -588,7 +726,9 @@ func dashboardQueryTimeRange(input *dashboardQueryRequest, document *dashboardRe
 		if !exists {
 			err = errors.New("invalid saved dashboard range")
 		}
-		end = now.Truncate(time.Second)
+		// The end is aligned to the grain of this range, so every viewer and query tool that reads the
+		// same dashboard in the same grain asks for the same window.
+		end = querystep.AlignEnd(now, duration)
 		start = end.Add(-duration)
 	}
 	start, end = start.UTC().Truncate(time.Millisecond), end.UTC().Truncate(time.Millisecond)
@@ -638,6 +778,7 @@ func (s *Server) executeDashboardQueries(r *http.Request, queries []Query, optio
 		}
 	}
 	s.executeDashboardComparisons(r, options, result, cache, limits)
+	s.executeDashboardBaselines(r, options, result, cache, limits)
 }
 
 // applyDashboardSignalStep discloses a metrics signal's step only where it differs from the range's, so a
@@ -656,6 +797,7 @@ func applyDashboardSignalStep(result *DashboardQueryResult, query *Query, execut
 func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *Query, options DashboardSummaryOptions, cache *dashboardQueryProviders, signal *DashboardSignal, executed bool, columns []dataframe.Column, raw *QueryResult) {
 	signal.ID = fmt.Sprintf("q%d", index+1)
 	captureDashboardComparisons(result, signal.ID, raw)
+	captureDashboardBaselines(result, signal.ID, raw)
 	signal.Kind = query.Kind
 	applyDashboardSignalStep(result, query, executed, signal)
 	// Do not disclose a provider selected by a saved query unless this
@@ -669,8 +811,12 @@ func applyDashboardQueryOutcome(result *DashboardQueryResult, index int, query *
 		applyDashboardSignal(widget, signal, raw, query.End, options.MaxSeries)
 		applyDashboardAnnotation(widget, signal, columns, result)
 	}
+	applyDashboardSourceAnnotation(result, signal, columns)
 	if executed {
 		result.QueryCount.Executed++
+	}
+	if signal.Cached {
+		result.QueryCount.Cached++
 	}
 	if signal.Error != nil || signal.State == "partial" {
 		result.State = "partial"
@@ -791,14 +937,16 @@ func (s *Server) executeDashboardQuery(r *http.Request, query *Query, options Da
 	}
 	signal := summarizeDashboardResult(&raw, options)
 	signal.LatencyMs = latency
+	signal.Cached = raw.Diagnostics.servedFromCache()
 	return signal, executed, columns, &raw
 }
 
 // dashboardSignalLatency is the receipt's total: the time from asking for Insights admission to the gateway's
 // answer. It includes the admission wait and gateway queueing. It is nil when the query was not admitted,
-// because no gateway work then happened.
+// because no gateway work then happened. A cache hit or join was not admitted either, but its receipt still
+// records how long the answer took to come back, so its latency is kept.
 func dashboardSignalLatency(admitted bool, diagnostics *QueryDiagnostics) *int64 {
-	if !admitted || diagnostics == nil {
+	if diagnostics == nil || (!admitted && !diagnostics.servedFromCache()) {
 		return nil
 	}
 	latency := max(int64(math.Round(diagnostics.TotalMs)), 0)

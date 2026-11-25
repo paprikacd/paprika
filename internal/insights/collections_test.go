@@ -17,7 +17,8 @@ func TestCollectionETagsRefreshAfterWritesAndStillRequireAuthentication(t *testi
 		secretField string
 	}{
 		{"dashboards", dashboard("demo", "Original"), `"widgets"`},
-		{"saved-queries", []byte(`{"schemaVersion":1,"id":"demo","name":"Original","providerId":"prometheus","kind":"metrics","query":"up"}`), `"query":`},
+		// Saved-query summaries carry a bounded query text (R56), so the document-only field is the guard.
+		{"saved-queries", []byte(`{"schemaVersion":1,"id":"demo","name":"Original","providerId":"prometheus","kind":"metrics","query":"up"}`), `"schemaVersion"`},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			empty := request(t, h, http.MethodGet, "/api/"+tc.path, nil, nil)
@@ -86,4 +87,86 @@ func TestDocumentVersionsRemainStrongWhenReadETagsAreWeakened(t *testing.T) {
 			require.Equal(t, http.StatusNotModified, cachedList.Code)
 		})
 	}
+}
+
+// Every write and delete moves the collection tag, so a conditional read never answers with a list that predates it.
+func TestCollectionTagsMoveOnEveryWriteAndDelete(t *testing.T) {
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Metrics", Type: "prometheus", URL: "https://metrics.example.test"})
+	h := s.Handler()
+	tagOf := func(path string) string {
+		t.Helper()
+		w := request(t, h, http.MethodGet, path, nil, nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		return w.Header().Get("ETag")
+	}
+	savedQuery := []byte(`{"schemaVersion":1,"id":"demo","name":"Original","providerId":"prometheus","kind":"metrics","query":"up"}`)
+	for _, tc := range []struct {
+		path     string
+		document []byte
+	}{
+		{"dashboards", dashboard("demo", "Original")},
+		{"saved-queries", savedQuery},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			before := tagOf("/api/" + tc.path)
+			created := request(t, h, http.MethodPut, "/api/"+tc.path+"/demo", tc.document, map[string]string{"If-None-Match": "*"})
+			require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+			afterPut := tagOf("/api/" + tc.path)
+			require.NotEqual(t, before, afterPut, "a create moves the tag")
+			deleted := request(t, h, http.MethodDelete, "/api/"+tc.path+"/demo", nil, map[string]string{"If-Match": created.Header().Get("ETag")})
+			require.Contains(t, []int{http.StatusOK, http.StatusNoContent}, deleted.Code, deleted.Body.String())
+			require.NotEqual(t, afterPut, tagOf("/api/"+tc.path), "a delete moves the tag")
+		})
+	}
+}
+
+// Summary and full listings are different bodies, so they carry different tags, and a tag from
+// before a restart never matches the list a restarted process serves.
+func TestCollectionTagsSeparateVariantsAndRestarts(t *testing.T) {
+	s, store := testService(t)
+	h := s.Handler()
+	created := request(t, h, http.MethodPut, "/api/dashboards/demo", dashboard("demo", "Original"), map[string]string{"If-None-Match": "*"})
+	require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	full := request(t, h, http.MethodGet, "/api/dashboards", nil, nil).Header().Get("ETag")
+	summary := request(t, h, http.MethodGet, "/api/dashboards?summary=true", nil, nil).Header().Get("ETag")
+	require.NotEqual(t, full, summary)
+	require.Equal(t, http.StatusNotModified, request(t, h, http.MethodGet, "/api/dashboards?summary=true", nil, map[string]string{"If-None-Match": summary}).Code)
+	require.Equal(t, http.StatusOK, request(t, h, http.MethodGet, "/api/dashboards?summary=true", nil, map[string]string{"If-None-Match": full}).Code, "the summary does not match the full tag")
+
+	restarted, err := NewServer(Config{Token: testToken}, store)
+	require.NoError(t, err)
+	stale := request(t, restarted.Handler(), http.MethodGet, "/api/dashboards", nil, map[string]string{"If-None-Match": full})
+	require.Equal(t, http.StatusOK, stale.Code, "a tag from before the restart does not match")
+	require.NotEqual(t, full, stale.Header().Get("ETag"))
+}
+
+// A saved-query search is its own listing: its tag differs from the unfiltered list and from another
+// search, so a tag from one never answers the other with 304. Arbitrary search text never reaches the tag.
+func TestSavedQuerySearchesCarryTheirOwnCollectionTags(t *testing.T) {
+	s, _ := testService(t, ProviderConfig{ID: "prometheus", Name: "Metrics", Type: "prometheus", URL: "https://metrics.example.test"})
+	h := s.Handler()
+	for _, id := range []string{"requests", "errors"} {
+		document := []byte(`{"schemaVersion":1,"id":"` + id + `","name":"` + id + `","providerId":"prometheus","kind":"metrics","query":"up"}`)
+		created := request(t, h, http.MethodPut, "/api/saved-queries/"+id, document, map[string]string{"If-None-Match": "*"})
+		require.Equal(t, http.StatusOK, created.Code, created.Body.String())
+	}
+	tagOf := func(path string) string {
+		t.Helper()
+		w := request(t, h, http.MethodGet, path, nil, nil)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		return w.Header().Get("ETag")
+	}
+	all := tagOf("/api/saved-queries")
+	requests := tagOf("/api/saved-queries?q=requests")
+	errorsTag := tagOf("/api/saved-queries?q=errors")
+	require.NotEqual(t, all, requests)
+	require.NotEqual(t, requests, errorsTag)
+	require.Equal(t, requests, tagOf("/api/saved-queries?q=%20REQUESTS%20"), "the same terms name the same listing")
+	require.NotContains(t, tagOf(`/api/saved-queries?q=%22%0Aquote`), `quote`, "search text is hashed")
+
+	stale := request(t, h, http.MethodGet, "/api/saved-queries?q=errors", nil, map[string]string{"If-None-Match": requests})
+	require.Equal(t, http.StatusOK, stale.Code, "another search's tag does not match")
+	require.Contains(t, stale.Body.String(), `"errors"`)
+	require.NotContains(t, stale.Body.String(), `"requests"`)
+	require.Equal(t, http.StatusNotModified, request(t, h, http.MethodGet, "/api/saved-queries?q=errors", nil, map[string]string{"If-None-Match": errorsTag}).Code)
 }

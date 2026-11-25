@@ -132,6 +132,37 @@ def control_plane_families(timestamps):
     ]
 
 
+def kubernetes_families(timestamps):
+    """Synthetic cAdvisor and kube-state-metrics series for the four control-plane containers that the
+    control-plane starter's container bars read. Pods are paprika-<container>-0 in paprika-system; every value is invented."""
+    usage, working_set, requests, limits = [], [], [], []
+    for i, container in enumerate(["manager", "api-server", "repo-server", "insights"]):
+        tags = {"namespace": "paprika-system", "pod": f"paprika-{container}-0", "container": container}
+        cpu_request = .25 + .25 * i
+        memory_request = (256 + 128 * i) * 1024 ** 2
+        total = 0.0
+        points = []
+        for n, stamp in enumerate(timestamps):
+            # A cumulative counter in CPU seconds: each minute adds the average core use for that minute.
+            total += 60 * cpu_request * (.45 + .3 * math.sin(n / 23 + i))
+            points.append((stamp, total))
+        usage.append(("container_cpu_usage_seconds_total", tags, points))
+        working_set.append(("container_memory_working_set_bytes", tags,
+                            [(stamp, memory_request * (.55 + .25 * math.sin(n / 29 + i))) for n, stamp in enumerate(timestamps)]))
+        requests.append(("kube_pod_container_resource_requests", {**tags, "resource": "cpu", "unit": "core"}, [(stamp, cpu_request) for stamp in timestamps]))
+        requests.append(("kube_pod_container_resource_requests", {**tags, "resource": "memory", "unit": "byte"}, [(stamp, memory_request) for stamp in timestamps]))
+        # Two of the four containers declare a memory limit, so the limit sums cover only declaring containers.
+        limits.append(("kube_pod_container_resource_limits", {**tags, "resource": "cpu", "unit": "core"}, [(stamp, cpu_request * 2) for stamp in timestamps]))
+        if i % 2 == 0:
+            limits.append(("kube_pod_container_resource_limits", {**tags, "resource": "memory", "unit": "byte"}, [(stamp, memory_request * 2) for stamp in timestamps]))
+    return [
+        ("container_cpu_usage_seconds_total", "counter", usage),
+        ("container_memory_working_set_bytes", "gauge", working_set),
+        ("kube_pod_container_resource_requests", "gauge", requests),
+        ("kube_pod_container_resource_limits", "gauge", limits),
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, required=True)
@@ -226,6 +257,8 @@ def main():
         metric("paprika_demo_service_up", "gauge", status)
         metric("paprika_demo_probe_up", "gauge", probes)
         metric("paprika_demo_monitor_up", "gauge", monitors)
+        for name, kind, series in kubernetes_families(timestamps):
+            metric(name, kind, series)
         sources, pipelines, rejected, burns, network, edge_requests, connections, component_up, destinations, job_states = [], [], [], [], [], [], [], [], [], []
         for c, cluster in enumerate(clusters):
             for i, source in enumerate(["prometheus", "tempo", "shorted-api", "brandbrain", "market-sync"]):

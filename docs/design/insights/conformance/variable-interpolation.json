@@ -1,0 +1,1239 @@
+{
+  "description": "Dashboard variable interpolation. The Go resolver (dashboard_query_resolver.go) and the console (drilldown.ts) must give the same query text, or both must refuse. Each case is a raw query template, the placeholder types and the values. expected is the query text; error true means both must refuse. resolve applies overrides to declared variables (defaults, list rules and bounds); expected is the resolved map, and error true means both must refuse.",
+  "interpolate": [
+    {
+      "name": "single value",
+      "template": "up{c={{c}}}",
+      "types": {
+        "c": "string"
+      },
+      "values": {
+        "c": "omega"
+      },
+      "expected": "up{c=\"omega\"}"
+    },
+    {
+      "name": "list alternation",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "omega",
+          "delta"
+        ]
+      },
+      "expected": "up{c=~\"omega|delta\"}"
+    },
+    {
+      "name": "list items are regex-escaped",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a.b",
+          "c|d",
+          "e\"f",
+          "g\\h"
+        ]
+      },
+      "expected": "up{c=~\"a\\\\.b|c\\\\|d|e\\\"f|g\\\\\\\\h\"}"
+    },
+    {
+      "name": "one item",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "omega"
+        ]
+      },
+      "expected": "up{c=~\"omega\"}"
+    },
+    {
+      "name": "empty item stays an empty alternative",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "",
+          "a"
+        ]
+      },
+      "expected": "up{c=~\"|a\"}"
+    },
+    {
+      "name": "All after =~ is .+",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": []
+      },
+      "expected": "up{c=~\".+\"}"
+    },
+    {
+      "name": "negated list",
+      "template": "up{c!~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "up{c!~\"a|b\"}"
+    },
+    {
+      "name": "negated All is refused",
+      "template": "up{c!~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": []
+      },
+      "error": true
+    },
+    {
+      "name": "TraceQL regex list",
+      "template": "{ resource.service.name =~ {{s}} }",
+      "types": {
+        "s": "strings"
+      },
+      "values": {
+        "s": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "{ resource.service.name =~ \"a|b\" }"
+    },
+    {
+      "name": "LogQL line filter list",
+      "template": "{app=\"x\"} |~ {{q}}",
+      "types": {
+        "q": "strings"
+      },
+      "values": {
+        "q": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "{app=\"x\"} |~ \"a|b\""
+    },
+    {
+      "name": "list after equality is refused",
+      "template": "up{c={{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "list after not-equal is refused",
+      "template": "up{c!={{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "list as a function argument is refused",
+      "template": "topk({{c}}, up)",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "SQL array parameter",
+      "template": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[{{s}}]}",
+      "types": {
+        "s": "strings"
+      },
+      "values": {
+        "s": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[[\"a\",\"b\"]]}"
+    },
+    {
+      "name": "SQL All binds null",
+      "template": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[{{s}}]}",
+      "types": {
+        "s": "strings"
+      },
+      "values": {
+        "s": []
+      },
+      "expected": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[null]}"
+    },
+    {
+      "name": "SQL second parameter",
+      "template": "{\"sql\":\"SELECT 1 WHERE n = $1 AND s = ANY($2::text[])\",\"parameters\":[{{n}}, {{s}}]}",
+      "types": {
+        "n": "string",
+        "s": "strings"
+      },
+      "values": {
+        "n": "x",
+        "s": [
+          "a"
+        ]
+      },
+      "expected": "{\"sql\":\"SELECT 1 WHERE n = $1 AND s = ANY($2::text[])\",\"parameters\":[\"x\", [\"a\"]]}"
+    },
+    {
+      "name": "single string for a multi parameter is wrapped",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": "omega"
+      },
+      "expected": "up{c=~\"omega\"}"
+    },
+    {
+      "name": "number",
+      "template": "x > {{n}}",
+      "types": {
+        "n": "number"
+      },
+      "values": {
+        "n": 5
+      },
+      "expected": "x > 5"
+    },
+    {
+      "name": "every regex metacharacter is escaped",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "+*?",
+          "()",
+          "[]",
+          "{}",
+          "^$"
+        ]
+      },
+      "expected": "up{c=~\"\\\\+\\\\*\\\\?|\\\\(\\\\)|\\\\[\\\\]|\\\\{\\\\}|\\\\^\\\\$\"}"
+    },
+    {
+      "name": "unicode items pass through unescaped",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "café",
+          "日本",
+          "🙂"
+        ]
+      },
+      "expected": "up{c=~\"café|日本|🙂\"}"
+    },
+    {
+      "name": "control characters use JSON escapes",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a\nb",
+          "tab\there"
+        ]
+      },
+      "expected": "up{c=~\"a\\nb|tab\\there\"}"
+    },
+    {
+      "name": "line and paragraph separators stay raw",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a b",
+          "c d"
+        ]
+      },
+      "expected": "up{c=~\"a b|c d\"}"
+    },
+    {
+      "name": "a backslash before a quote",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a\\\"b"
+        ]
+      },
+      "expected": "up{c=~\"a\\\\\\\\\\\"b\"}"
+    },
+    {
+      "name": "a single empty item",
+      "template": "up{c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          ""
+        ]
+      },
+      "expected": "up{c=~\"\"}"
+    },
+    {
+      "name": "spaces and a tab after =~",
+      "template": "up{c =~ \t{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "up{c =~ \t\"a|b\"}"
+    },
+    {
+      "name": "a newline after =~",
+      "template": "up{c=~\n{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "expected": "up{c=~\n\"a\"}"
+    },
+    {
+      "name": "=~ after a quoted matcher",
+      "template": "up{job=\"api\",c=~{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "up{job=\"api\",c=~\"a|b\"}"
+    },
+    {
+      "name": "LogQL |~ without spaces",
+      "template": "{app=\"x\"}|~{{c}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "{app=\"x\"}|~\"a|b\""
+    },
+    {
+      "name": "LogQL negated line filter",
+      "template": "{app=\"x\"} !~ {{c}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a",
+          "b"
+        ]
+      },
+      "expected": "{app=\"x\"} !~ \"a|b\""
+    },
+    {
+      "name": "LogQL All line filter is .+",
+      "template": "{app=\"x\"} |~ {{c}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": []
+      },
+      "expected": "{app=\"x\"} |~ \".+\""
+    },
+    {
+      "name": "LogQL negated All is refused",
+      "template": "{app=\"x\"} !~ {{c}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": []
+      },
+      "error": true
+    },
+    {
+      "name": "a no-break space is not whitespace",
+      "template": "up{c=~ {{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "list after a comparison is refused",
+      "template": "x < {{c}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "list after LogQL |= is refused",
+      "template": "{app=\"x\"} |= {{c}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "list inside a quoted string is refused",
+      "template": "up{c=~\"{{c}}\"}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "list glued to a token is refused",
+      "template": "up{c=~x{{c}}}",
+      "types": {
+        "c": "strings"
+      },
+      "values": {
+        "c": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "a number beside a list",
+      "template": "topk({{n}}, up{c=~{{c}}})",
+      "types": {
+        "n": "number",
+        "c": "strings"
+      },
+      "values": {
+        "n": 5,
+        "c": [
+          "a"
+        ]
+      },
+      "expected": "topk(5, up{c=~\"a\"})"
+    },
+    {
+      "name": "SQL All beside a list",
+      "template": "{\"sql\":\"SELECT 1 WHERE ($1::text[] IS NULL OR s = ANY($1::text[])) AND t = ANY($2::text[])\",\"parameters\":[{{s}},{{t}}]}",
+      "types": {
+        "s": "strings",
+        "t": "strings"
+      },
+      "values": {
+        "s": [],
+        "t": [
+          "a"
+        ]
+      },
+      "expected": "{\"sql\":\"SELECT 1 WHERE ($1::text[] IS NULL OR s = ANY($1::text[])) AND t = ANY($2::text[])\",\"parameters\":[null,[\"a\"]]}"
+    },
+    {
+      "name": "SQL array items are JSON strings, never syntax",
+      "template": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[{{s}}]}",
+      "types": {
+        "s": "strings"
+      },
+      "values": {
+        "s": [
+          "x'); DROP TABLE t; --",
+          "\"],1,[\""
+        ]
+      },
+      "expected": "{\"sql\":\"SELECT 1 WHERE s = ANY($1::text[])\",\"parameters\":[[\"x'); DROP TABLE t; --\",\"\\\"],1,[\\\"\"]]}"
+    }
+  ],
+  "resolve": [
+    {
+      "name": "a string override of a multi variable is one item",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": "a"
+      },
+      "expected": {
+        "c": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "a list default applies",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ],
+          "defaultValue": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {},
+      "expected": {
+        "c": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "an All default applies with allowAll",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ],
+          "allowAll": true,
+          "defaultValue": []
+        }
+      ],
+      "overrides": {},
+      "expected": {
+        "c": []
+      }
+    },
+    {
+      "name": "an All override with allowAll",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ],
+          "allowAll": true,
+          "defaultValue": [
+            "a"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": []
+      },
+      "expected": {
+        "c": []
+      }
+    },
+    {
+      "name": "an override replaces a list default and keeps its order",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ],
+          "defaultValue": [
+            "a"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "b",
+          "a"
+        ]
+      },
+      "expected": {
+        "c": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "an unset multi variable stays absent",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {},
+      "expected": {}
+    },
+    {
+      "name": "a single variable keeps its string",
+      "variables": [
+        {
+          "name": "s",
+          "defaultValue": "x"
+        }
+      ],
+      "overrides": {},
+      "expected": {
+        "s": "x"
+      }
+    },
+    {
+      "name": "100 items fit",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50",
+          "51",
+          "52",
+          "53",
+          "54",
+          "55",
+          "56",
+          "57",
+          "58",
+          "59",
+          "60",
+          "61",
+          "62",
+          "63",
+          "64",
+          "65",
+          "66",
+          "67",
+          "68",
+          "69",
+          "70",
+          "71",
+          "72",
+          "73",
+          "74",
+          "75",
+          "76",
+          "77",
+          "78",
+          "79",
+          "80",
+          "81",
+          "82",
+          "83",
+          "84",
+          "85",
+          "86",
+          "87",
+          "88",
+          "89",
+          "90",
+          "91",
+          "92",
+          "93",
+          "94",
+          "95",
+          "96",
+          "97",
+          "98",
+          "99"
+        ]
+      },
+      "expected": {
+        "c": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50",
+          "51",
+          "52",
+          "53",
+          "54",
+          "55",
+          "56",
+          "57",
+          "58",
+          "59",
+          "60",
+          "61",
+          "62",
+          "63",
+          "64",
+          "65",
+          "66",
+          "67",
+          "68",
+          "69",
+          "70",
+          "71",
+          "72",
+          "73",
+          "74",
+          "75",
+          "76",
+          "77",
+          "78",
+          "79",
+          "80",
+          "81",
+          "82",
+          "83",
+          "84",
+          "85",
+          "86",
+          "87",
+          "88",
+          "89",
+          "90",
+          "91",
+          "92",
+          "93",
+          "94",
+          "95",
+          "96",
+          "97",
+          "98",
+          "99"
+        ]
+      }
+    },
+    {
+      "name": "a list at exactly 1024 units fits",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "expected": {
+        "c": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    },
+    {
+      "name": "astral characters count two units each",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "expected": {
+        "c": [
+          "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    },
+    {
+      "name": "All without allowAll is refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": []
+      },
+      "error": true
+    },
+    {
+      "name": "an All default without allowAll is refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ],
+          "defaultValue": []
+        }
+      ],
+      "overrides": {},
+      "error": true
+    },
+    {
+      "name": "a list for a single variable is refused",
+      "variables": [
+        {
+          "name": "s"
+        }
+      ],
+      "overrides": {
+        "s": [
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "repeated items are refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "a",
+          "a"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "101 items are refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50",
+          "51",
+          "52",
+          "53",
+          "54",
+          "55",
+          "56",
+          "57",
+          "58",
+          "59",
+          "60",
+          "61",
+          "62",
+          "63",
+          "64",
+          "65",
+          "66",
+          "67",
+          "68",
+          "69",
+          "70",
+          "71",
+          "72",
+          "73",
+          "74",
+          "75",
+          "76",
+          "77",
+          "78",
+          "79",
+          "80",
+          "81",
+          "82",
+          "83",
+          "84",
+          "85",
+          "86",
+          "87",
+          "88",
+          "89",
+          "90",
+          "91",
+          "92",
+          "93",
+          "94",
+          "95",
+          "96",
+          "97",
+          "98",
+          "99",
+          "100"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "1025 units with the separator are refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "astral characters past the budget are refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "a number item is refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          "a",
+          1
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "a null item is refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": [
+          null
+        ]
+      },
+      "error": true
+    },
+    {
+      "name": "a null value is refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "c": null
+      },
+      "error": true
+    },
+    {
+      "name": "an undeclared override is refused",
+      "variables": [
+        {
+          "name": "c",
+          "multi": true,
+          "options": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "overrides": {
+        "d": "a"
+      },
+      "error": true
+    }
+  ]
+}

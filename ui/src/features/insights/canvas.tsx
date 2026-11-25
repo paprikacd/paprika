@@ -1,7 +1,10 @@
 import { supportsDashboardSelection } from "./selection-support";
+import { supportsAnnotationSource } from "./schema";
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -22,7 +25,7 @@ import ReactGridLayout, {
 import { Activity, ArrowDown, ArrowUp, ArrowUpRight, Grip, MoreHorizontal, Network, PieChart, Settings2, Shield, Target } from "lucide-react";
 import { WidgetVisualization } from "./charts";
 import { sourceWaitMessage, useSourceStatus } from "./source-status";
-import { getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
+import { capabilitiesOf, getWidgetDefinition, useWidgetDefinitions } from "./widget-registry";
 import { WidgetDrilldownProvider } from "./widget-drilldown";
 import { useWidgetQuery, type QueryRetention, type RetainedQuery } from "./query";
 import { ChartEntranceContext, type ChartEntranceSlot } from "./chart-entrance";
@@ -31,20 +34,22 @@ import { ChartCursorProvider } from "./chart-cursor";
 import { DashboardWindowProvider } from "./dashboard-window";
 import { DashboardTimeZoneProvider, useDashboardTimeZone } from "./dashboard-time-zone";
 import { fullDateTimeOptions, latestPoint } from "./chart-data";
-import { priorWindowQuery, refineWindowQuery, statComparison, type ObservationWindow, type StatComparison } from "./time-window";
+import { comparisonOffset, priorWindowQuery, refineWindowQuery, statComparison, type ComparisonWindow, type ObservationWindow, type StatComparison } from "./time-window";
 import { StatComparisonContext, type StatComparisonState } from "./stat-comparison";
+import { BaselineContext, type BaselineState } from "./baseline-context";
 import { truncationOf } from "./truncation";
 import { TraceFetcherProvider } from "./trace-waterfall";
 import { AnnotationEventsProvider, useRecordedEvents, type AnnotationEventsRetention, type RetainedAnnotationEvents } from "./annotation-events";
-import type {
-  Dashboard,
-  Drilldown,
-  Provider,
-  QueryRequest,
-  QueryResult,
-  Widget,
+import {
+  isApplicationLink,
+  type Dashboard,
+  type Provider,
+  type QueryRequest,
+  type QueryResult,
+  type Widget,
+  type WidgetLink,
 } from "./schema";
-import type { DrilldownContext, VariableValues } from "./drilldown";
+import { linkBindings, type DrilldownContext, type VariableValues } from "./drilldown";
 import { AppliedFilterProvider, appliedFilterFor, type SelectionScope } from "./selection-state";
 import {
   contextKey,
@@ -54,8 +59,13 @@ import {
 } from "./widget-context";
 import { dashboardRange } from "./time-range";
 import { DEFAULT_TARGET_POINTS, queryStep } from "./query-step";
+import { useStaggeredWindow } from "./refresh-stagger";
+import { prefetchSupported, useIdlePrefetch } from "./idle-prefetch";
+import type { QueryDiagnosticStore } from "./query-diagnostics";
 import { widgetTextColor } from "./appearance";
 import { canvasLayout, canvasMode, denseCanvasLayout, intrinsicStat, tileFootprint, type CanvasMode, type TileFootprint } from "./responsive-layout";
+import { GRID_COLUMNS, gridOf, rowsToPixels } from "./grid-geometry";
+import { layoutHintsOf } from "./layout-hints";
 import {
   dragSettle,
   gridPlacement,
@@ -73,9 +83,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { GammaButton } from "./gamma/button";
 import { useSavedQueryLibrary } from "./saved-query-context";
-import { GammaSelect } from "./gamma/select";
 import { GammaActionMenu, type GammaActionMenuItem } from "./gamma/action-menu";
-import contextStyles from "./widget-context.module.css";
+import { LinkContextCaption, SeriesLinkPicker } from "./widget-link-context";
 import recordStyles from "./plugins/records.module.css";
 import { queryConnectionKey, queryFields, type QueryFieldSnapshot } from "./query-connections";
 import { AttentionStoreProvider, SampleAsOfProvider, settledRequestEnd, useAttentionPublisher, useSampleAsOf } from "./attention-store";
@@ -98,6 +107,11 @@ type Fetcher = (
   query: QueryRequest,
   signal: AbortSignal,
 ) => Promise<QueryResult>;
+
+/** The scheduler's receipts, when the fetcher reports them. Idle prefetch reads them to see whether the scheduler is busy. */
+function fetcherDiagnostics(fetcher: Fetcher): QueryDiagnosticStore | undefined {
+  return (fetcher as { diagnostics?: QueryDiagnosticStore }).diagnostics;
+}
 /** The selected widget's latest result, reported with the fetcher it came from. */
 export interface WidgetResultSnapshot {
   widgetId: string;
@@ -108,9 +122,12 @@ export interface WidgetResultSnapshot {
  * What a canvas keeps for one widget between remounts: the last outcome it showed and whether its draw-in has played.
  * It lives with the canvas, so it ends with the page session and never reaches another user's session.
  */
-interface WidgetMemory { retained?: RetainedQuery; priorRetained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
+interface WidgetMemory { retained?: RetainedQuery; priorRetained?: RetainedQuery; baselineRetained?: RetainedQuery; annotation?: RetainedAnnotationEvents; entered: boolean }
+/** The dashboard's own recorded events, shared with every time-based widget that has no event source of its own. */
+const DashboardEventsContext = createContext<ReturnType<typeof useRecordedEvents> | undefined>(undefined);
+
 /** The query and draw-in records for one widget, backed by that widget's entry in the canvas memory. */
-function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; priorRetention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
+function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention: QueryRetention; priorRetention: QueryRetention; baselineRetention: QueryRetention; annotationRetention: AnnotationEventsRetention; entrance: ChartEntranceSlot } {
   return {
     retention: {
       read: () => memory.get(key)?.retained,
@@ -119,6 +136,10 @@ function memoryFor(memory: Map<string, WidgetMemory>, key: string): { retention:
     priorRetention: {
       read: () => memory.get(key)?.priorRetained,
       write: (priorRetained) => { memory.set(key, { ...memory.get(key), priorRetained, entered: memory.get(key)?.entered ?? false }); },
+    },
+    baselineRetention: {
+      read: () => memory.get(key)?.baselineRetained,
+      write: (baselineRetained) => { memory.set(key, { ...memory.get(key), baselineRetained, entered: memory.get(key)?.entered ?? false }); },
     },
     annotationRetention: {
       read: () => memory.get(key)?.annotation,
@@ -219,6 +240,60 @@ function StatComparisonScope({ widget, compare, fetcher, start, end, minStepSeco
   return <StatComparisonContext.Provider value={state}>{children}</StatComparisonContext.Provider>;
 }
 
+/**
+ * A time series with a baseline fetches its earlier window once the displayed result has a sample, as a stat's comparison does.
+ * A rolling baseline reads the chart's own samples and runs no query. The band waits for a settled earlier result of this range,
+ * so a new range never bands against the previous range's earlier window.
+ */
+function BaselineScope({ widget, baseline, fetcher, start, end, minStepSeconds, enabled, debounceMs, retention, primary, children }: {
+  widget: Widget;
+  baseline: NonNullable<NonNullable<Widget["options"]>["baseline"]>;
+  fetcher: Fetcher;
+  start: number;
+  end: number;
+  /** The provider's finest step; the earlier window keeps the primary query's step rule. */
+  minStepSeconds?: number;
+  enabled: boolean;
+  debounceMs: number;
+  retention: QueryRetention;
+  /** The result on screen, or undefined when there is none or it failed. */
+  primary?: QueryResult;
+  children: ReactNode;
+}) {
+  const rangeMs = useMemo(() => ({ start: start * 1000, end: end * 1000 }), [start, end]);
+  const span = rangeMs.end - rangeMs.start;
+  const rolling = baseline.window === "rolling";
+  const earlier = baseline.window === "rolling" ? undefined : priorWindowQuery(rangeMs, baseline.window, minStepSeconds);
+  const earlierRange = earlier && !("unavailable" in earlier) ? earlier : undefined;
+  const hasSample = !!primary?.series?.some(entry => latestPoint(entry));
+  const earlierQuery = useWidgetQuery(widget, {
+    fetcher,
+    start: earlierRange ? earlierRange.start : start,
+    end: earlierRange ? earlierRange.end : end,
+    step: earlierRange ? earlierRange.step : queryStep(span / 1000, DEFAULT_TARGET_POINTS, minStepSeconds),
+    enabled: enabled && !!earlierRange && hasSample,
+    debounceMs,
+    retention,
+  });
+  const offsetMs = rolling ? 0 : comparisonOffset(rangeMs, baseline.window as ComparisonWindow);
+  const stepMs = (earlierRange?.step ?? queryStep(span / 1000, DEFAULT_TARGET_POINTS, minStepSeconds)) * 1000;
+  const band = baseline.band ?? "range";
+  const unavailable = !rolling && !earlierRange;
+  const settled = earlierQuery.settled;
+  const priorData = earlierQuery.data;
+  const priorError = earlierQuery.error;
+  const priorKind = priorData ? truncationOf(priorData) : "none";
+  const state = useMemo<BaselineState>(() => {
+    const base = { window: baseline.window, band, offsetMs, stepMs, span };
+    if (rolling || !hasSample) return { ...base, state: "ready" };
+    if (unavailable) return { ...base, state: "unavailable" };
+    if (!settled) return { ...base, state: "loading" };
+    if (!priorData) return priorError ? { ...base, state: "error", error: priorError } : { ...base, state: "loading" };
+    return { ...base, state: "ready", prior: priorData, partial: priorKind !== "none" && priorKind !== "limit" };
+  }, [band, baseline.window, hasSample, offsetMs, priorData, priorError, priorKind, rolling, settled, span, stepMs, unavailable]);
+  return <BaselineContext.Provider value={state}>{children}</BaselineContext.Provider>;
+}
+
 // The layout edit a key or menu step asks for, or undefined when the key is not a step. Shared by the step and its blocked check.
 function layoutStepEdit(widgets: readonly Widget[], layout: Layout, draggable: boolean, id: string, key: string, resize: boolean):
   { resizing?: readonly [number, number]; direction?: LayoutMove; edit: LayoutEdit } | undefined {
@@ -235,8 +310,10 @@ const Tile = memo(function Tile({
   active,
   provider,
   fetcher,
-  start,
-  end,
+  boardStart,
+  boardEnd,
+  refreshStaggerMs = 0,
+  prefetch = false,
   editing,
   draggable,
   naturalHeight = false,
@@ -263,8 +340,12 @@ const Tile = memo(function Tile({
   active: boolean;
   provider?: Provider;
   fetcher: Fetcher;
-  start: number;
-  end: number;
+  /** The board's window. A tick may reach the tile a moment later, so the tile staggers its adoption by refreshStaggerMs. */
+  boardStart: number;
+  boardEnd: number;
+  refreshStaggerMs?: number;
+  /** The scheduler is idle enough to warm this tile before it is in view. */
+  prefetch?: boolean;
   editing: boolean;
   draggable: boolean;
   naturalHeight?: boolean;
@@ -272,7 +353,7 @@ const Tile = memo(function Tile({
   focused?: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
-  onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
+  onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
@@ -292,10 +373,8 @@ const Tile = memo(function Tile({
   /** The variable values a selection is compared against, so a mark can show that it is the applied filter. */
   selectionScope?: SelectionScope;
 }) {
-  const recordCellStyles = widget.config?.cellStyles;
-  const compactRecordDescription = referenceCompact && widget.type === "plugin" && widget.pluginId === "record-table" &&
-    Array.isArray(recordCellStyles) && ["sparkline", "bar-segments", "status-badge"].every(display =>
-      recordCellStyles.some(style => typeof style === "object" && style !== null && "display" in style && style.display === display));
+  const { start, end } = useStaggeredWindow(widget.id, boardStart, boardEnd, refreshStaggerMs);
+  const compactRecordDescription = referenceCompact && capabilitiesOf(widget).compactDescription?.(widget.config) === true;
   const element = useRef<HTMLDivElement>(null);
   const library = useSavedQueryLibrary();
   const savedQueryLoading = !!widget.queryRef && !!library.loading;
@@ -312,7 +391,8 @@ const Tile = memo(function Tile({
         if (entry) setVisible(entry.isIntersecting);
       },
       {
-        rootMargin: "200px",
+        // A tile starts loading one viewport before it scrolls into view, so a scroll rarely waits on a query.
+        rootMargin: "100% 0px",
       },
     );
     observer.observe(element.current);
@@ -320,6 +400,9 @@ const Tile = memo(function Tile({
   }, []);
   // A focused editor stays engaged while its author scrolls down to query controls.
   const engaged = visible || focused;
+  // A prefetching tile queries once, before it is in view. Once it has an answer it waits for the viewport again.
+  const [prefetchedOnce, setPrefetchedOnce] = useState(false);
+  const prefetching = prefetch && !engaged && !prefetchedOnce;
   const memoryOf = useMemo(() => memoryFor(memory, memoryKey), [memory, memoryKey]);
   // A tile whose source is not in the loaded list waits while the list is pending or
   // unavailable. A loaded source queries even when the shared catalog failed, so local
@@ -334,16 +417,22 @@ const Tile = memo(function Tile({
     start,
     end,
     step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds),
-    enabled: active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
+    enabled: active && (engaged || prefetching) && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider),
     debounceMs: editing && selected ? 350 : 0,
     retention: memoryOf.retention,
   });
+  if (prefetching && settled && !prefetchedOnce) setPrefetchedOnce(true);
   // A paused, never-queried tile has no result yet; it is not an empty query
   // response. Keep that distinction through the observer-to-effect handoff.
   const canQuery = !!widget.queryRef || (!!provider && !!widget.providerId && !!widget.query.trim());
   const awaitingFirstResult = active && canQuery && !data && !error;
   const annotationData = useRecordedEvents(widget.annotationSource, fetcher, widget.providerId, start, end, active && engaged && !library.loading && !library.error, memoryOf.annotationRetention);
-  const annotationState = widget.annotationSource && library.error ? { events: [], error: library.error } : annotationData;
+  // A widget's own event source always wins. Otherwise a time-based widget shows the dashboard's events unless it opts out.
+  const inheritedEvents = useContext(DashboardEventsContext);
+  const inheritsEvents = !widget.annotationSource && supportsAnnotationSource(widget.type, widget.pluginId) && widget.options?.showEvents !== false;
+  const annotationState = widget.annotationSource
+    ? (library.error ? { events: [], error: library.error } : annotationData)
+    : inheritsEvents && inheritedEvents ? inheritedEvents : annotationData;
   const fetchTrace = useCallback((traceId: string, signal: AbortSignal) => fetcher({
     providerId: widget.providerId, query: widget.query, kind: "traces", start, end,
     step: queryStep(end - start, DEFAULT_TARGET_POINTS, provider?.minStepSeconds), traceId,
@@ -370,6 +459,7 @@ const Tile = memo(function Tile({
   const refinable = provider?.minStepSeconds !== undefined;
   const windowActions = useMemo(() => ({ apply: editing ? undefined : onTimeRange, previous, refine: refinable ? refine : undefined, minStepSeconds: provider?.minStepSeconds, rangeEnd: end * 1000 }), [editing, onTimeRange, previous, refine, refinable, provider?.minStepSeconds, end]);
   const compare = widget.type === "stat" ? widget.options?.compare : undefined;
+  const baseline = widget.type === "timeseries" ? widget.options?.baseline : undefined;
   const connectionKey = queryConnectionKey(widget, { start, end });
   useEffect(() => {
     if (selected && onQueryFields) onQueryFields({ widgetId: widget.id, key: connectionKey, fetcher, fields: data && !error ? queryFields(data) : undefined });
@@ -453,7 +543,7 @@ const Tile = memo(function Tile({
   const timeZone = useDashboardTimeZone();
   const sampleTimeFormat = useMemo(() => new Intl.DateTimeFormat("en", { ...fullDateTimeOptions, timeZone }), [timeZone]);
   const needsContext = links.some((link) =>
-    link.bindings?.some((binding) => binding.source !== "constant"),
+    linkBindings(link).some((binding) => binding.source !== "constant"),
   );
   const showSeriesPicker =
     !!onDrilldown &&
@@ -669,19 +759,39 @@ const Tile = memo(function Tile({
             </details>
           ) : <p style={{ color: textColor }}>{widget.description}</p>)}
         </div>
+        {showSeriesPicker && (
+          <SeriesLinkPicker
+            title={widget.title}
+            value={context.series === undefined ? "" : contextKey(context)}
+            searchable={contexts.length > 10}
+            options={contexts.map((entry, index) => ({
+              value: contextKey(entry),
+              label: entry.series ?? `Series ${index + 1}`,
+              description: Object.entries(entry.labels ?? {})
+                .map(([key, value]) => `${key}=${value}`)
+                .join(" · "),
+            }))}
+            onValueChange={(key) => {
+              const next = contexts.find((entry) => contextKey(entry) === key);
+              if (next) selectContextOnly(next);
+            }}
+          />
+        )}
         {!!links.length && onDrilldown && (
           <GammaActionMenu
             label={`Open related dashboard from ${widget.title}`}
             iconOnly={false}
             trigger={<>Explore <ArrowUpRight size={14} aria-hidden="true" /></>}
             items={links.map((link) => {
-              const reason = drilldownContextReason(link, context);
+              const reason = drilldownContextReason({ bindings: linkBindings(link) }, context);
               return {
                 id: link.id,
                 label: link.title,
                 description:
                   reason ??
-                  `${link.carryTimeRange === false ? "Destination time range" : "Current time range"}${context.series ? ` · From ${context.series}` : ""}`,
+                  (isApplicationLink(link)
+                    ? "Opens the application page"
+                    : `${link.carryTimeRange === false ? "Destination time range" : "Current time range"}${context.series ? ` · From ${context.series}` : ""}`),
                 disabled: !!reason,
                 onSelect: () => onDrilldown(link, context),
               };
@@ -716,42 +826,12 @@ const Tile = memo(function Tile({
           />
         )}
       </div>
-      {showSeriesPicker ? (
-        <div className={contextStyles.picker}>
-          <span>Series</span>
-          <GammaSelect
-            aria-label={`Series for ${widget.title}`}
-            size="sm"
-            value={context.series === undefined ? "" : contextKey(context)}
-            placeholder="Choose a series for links"
-            searchable={contexts.length > 10}
-            options={contexts.map((entry, index) => ({
-              value: contextKey(entry),
-              label: entry.series ?? `Series ${index + 1}`,
-              description: Object.entries(entry.labels ?? {})
-                .map(([key, value]) => `${key}=${value}`)
-                .join(" · "),
-            }))}
-            onValueChange={(key) => {
-              const next = contexts.find((entry) => contextKey(entry) === key);
-              if (next) selectContextOnly(next);
-            }}
-          />
-        </div>
-      ) : (
-        !!onDrilldown &&
-        needsContext &&
-        (contexts.length > 1 || widget.type === "plugin") && (
-          <div className={contextStyles.selection} role="status">
-            {context.series
-              ? `Selected: ${context.series}`
-              : "Select a signal to open related dashboards"}
-          </div>
-        )
-      )}
-      {widget.type === "timeseries" && context.timestamp !== undefined && <div className={contextStyles.sampleSelection} role="status">
-        Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time>
-      </div>}
+      <LinkContextCaption
+        visible={!!onDrilldown && needsContext && (contexts.length > 1 || widget.type === "plugin")}
+        series={context.series}
+        prompt="Select a signal to open related dashboards"
+        sample={widget.type === "timeseries" && context.timestamp !== undefined ? <>Links use selected sample at <time dateTime={new Date(context.timestamp).toISOString()}>{sampleTimeFormat.format(new Date(context.timestamp))}</time></> : undefined}
+      />
       {/* A tile waiting on its source is busy even when it still shows an earlier result. */}
       <div className={styles.visualization} aria-busy={busyOnSources || undefined} data-widget-state={waitingOn ? (waitingOn === "pending" ? "waiting-for-sources" : "source-unavailable") : undefined}>
         {active && (
@@ -771,6 +851,21 @@ const Tile = memo(function Tile({
             >
               {visualization}
             </StatComparisonScope>
+          ) : baseline ? (
+            <BaselineScope
+              widget={widget}
+              baseline={baseline}
+              fetcher={fetcher}
+              start={start}
+              end={end}
+              minStepSeconds={provider?.minStepSeconds}
+              enabled={active && engaged && !savedQueryLoading && !awaitingSources && (!!widget.queryRef || !!provider) && !error}
+              debounceMs={editing && selected ? 350 : 0}
+              retention={memoryOf.baselineRetention}
+              primary={savedQueryLoading || error ? undefined : data}
+            >
+              {visualization}
+            </BaselineScope>
           ) : visualization}</WidgetAttentionContext.Provider></ChartEntranceContext.Provider></WidgetDrilldownProvider></TraceFetcherProvider></DashboardWindowProvider></AnnotationEventsProvider>
         )}
       </div>
@@ -817,6 +912,7 @@ export function DashboardCanvas({
   fetcher,
   tooltipFetcher = fetcher,
   end,
+  refreshStaggerMs = 0,
   editing,
   dense = false,
   referenceCompact = false,
@@ -842,13 +938,15 @@ export function DashboardCanvas({
   fetcher: Fetcher;
   tooltipFetcher?: Fetcher;
   end: number;
+  /** Spreads automatic refresh across the tiles. Zero adopts the new window at once, as a manual refresh does. */
+  refreshStaggerMs?: number;
   editing: boolean;
   dense?: boolean;
   referenceCompact?: boolean;
   selected?: string;
   onSelect: (id: string) => void;
   onLayout: (layout: Layout) => void;
-  onDrilldown?: (link: Drilldown, context: DrilldownContext) => void;
+  onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void;
   onSelection?: (widget: Widget, context: DrilldownContext) => void;
   onQueryFields?: (snapshot: QueryFieldSnapshot) => void;
   onQueryResult?: (snapshot: WidgetResultSnapshot) => void;
@@ -877,7 +975,7 @@ export function DashboardCanvas({
   const [memory] = useState(() => new Map<string, WidgetMemory>());
   useEffect(() => {
     // Forget widgets that were removed from this dashboard. Other dashboards keep theirs for a return visit.
-    const live = new Set(dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`));
+    const live = new Set([...dashboard.widgets.map((widget) => `${dashboard.id}:${widget.id}`), `${dashboard.id}:dashboard-events`]);
     for (const key of memory.keys()) if (key.startsWith(`${dashboard.id}:`) && !live.has(key)) memory.delete(key);
   }, [dashboard.id, dashboard.widgets, memory]);
   const { width, containerRef, mounted } = useContainerWidth({
@@ -902,9 +1000,12 @@ export function DashboardCanvas({
   // definitions is a deliberate dependency: the heights read the registry, so a registry change must recompute them.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const minimumHeights = useMemo(() => minimumHeightsOf(dashboard.widgets), [dashboard.widgets, definitions]);
+  // Plugin hints (rooms, narrow and reference rows) are read from the registry, so they follow the same dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const layoutHints = useMemo(() => layoutHintsOf(dashboard.widgets), [dashboard.widgets, definitions]);
   const layout = useMemo(
-    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights) : canvasLayout(dashboard.widgets, mode, width, minimumHeights),
-    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights],
+    () => dense && !editing ? denseCanvasLayout(dashboard.widgets, mode, width, referenceCompact, minimumHeights, layoutHints) : canvasLayout(dashboard.widgets, mode, width, minimumHeights, layoutHints),
+    [dashboard.widgets, mode, width, dense, editing, referenceCompact, minimumHeights, layoutHints],
   );
   // React-grid-layout settles a drag through this compactor, both for the live preview and on drop. The saved
   // positions are read after commit, so a drag always settles against the layout that was on screen when it began.
@@ -936,7 +1037,7 @@ export function DashboardCanvas({
   useLayoutEffect(() => {
     interaction.current = { widgets: dashboard.widgets, layout, onLayout, onDrilldown, onSelection, onTimeRange, onDuplicate, onRemove, draggable };
   });
-  const openRelated = useCallback((link: Drilldown, context: DrilldownContext) => interaction.current.onDrilldown?.(link, context), []);
+  const openRelated = useCallback((link: WidgetLink, context: DrilldownContext) => interaction.current.onDrilldown?.(link, context), []);
   const selectObservation = useCallback((widget: Widget, context: DrilldownContext) => interaction.current.onSelection?.(widget, context), []);
   const selectTime = useCallback((window: ObservationWindow) => interaction.current.onTimeRange?.(window), []);
   const duplicateWidget = useCallback((id: string) => interaction.current.onDuplicate?.(id), []);
@@ -997,23 +1098,36 @@ export function DashboardCanvas({
   }, [dashboard.id, dashboard.widgets, layout, draggable, editingOrder]);
   // Chips step through widgets in the order they are now laid out, so a drag in edit mode changes the order they follow.
   const attentionOrder = useMemo(() => [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => ({ id: item.i })), [layout]);
+  // Idle prefetch warms the next tiles in reading order, only when the board is read (not edited or focused),
+  // the scheduler reports diagnostics to measure its idleness, and Save-Data is off.
+  const prefetchIds = attentionOrder.map((item) => item.id);
+  const connection = typeof navigator === "undefined" ? undefined : (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  const diagnostics = fetcherDiagnostics(fetcher);
+  const prefetched = useIdlePrefetch(prefetchIds, diagnostics, active && !editing && !focus && !!diagnostics && prefetchSupported(prefetchIds.length, connection));
   const range = dashboardRange(dashboard, end);
-  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, canvasLayout([
+  // The dashboard's own event source is queried once for the canvas, and its events are shared with every time-based widget
+  // that has no source of its own. Its provider is the first time-based widget's, the same one a widget's own source uses.
+  const dashboardEventsRetention = useMemo(() => memoryFor(memory, `${dashboard.id}:dashboard-events`).annotationRetention, [memory, dashboard.id]);
+  const dashboardEventProvider = useMemo(() => dashboard.widgets.find(widget => supportsAnnotationSource(widget.type, widget.pluginId))?.providerId ?? "", [dashboard.widgets]);
+  const dashboardEvents = useRecordedEvents(dashboard.annotationSource, fetcher, dashboardEventProvider, range.start, range.end, active && !!dashboard.annotationSource && !library.loading && !library.error, dashboardEventsRetention);
+  const focusMinimum = focus ? Math.max(focus.widget.type === "stat" ? 180 : 360, rowsToPixels(canvasLayout([
     { ...focus.widget, layout: { ...focus.widget.layout, h: 2 } },
-  ], mode, width, minimumHeights)[0].h * 74 - 16) : undefined;
+  ], mode, width, minimumHeights, layoutHintsOf([focus.widget]))[0].h)) : undefined;
   const previewFootprints: PreviewFootprints | undefined = focus && unfocusedGrid ? (() => {
     // The staged widget replaces its saved copy, so the footprint follows the Layout tab. A new widget is appended.
     const widgets = dashboard.widgets.some(item => item.id === focus.widget.id)
       ? dashboard.widgets.map(item => item.id === focus.widget.id ? focus.widget : item)
       : [...dashboard.widgets, focus.widget];
+    const hints = layoutHintsOf(widgets);
     const footprint = (dense: boolean) => tileFootprint(widgets, focus.widget.id, {
-      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets),
+      mode: unfocusedGrid.mode, width: unfocusedGrid.width, dense, referenceCompact, minimumHeights: minimumHeightsOf(widgets), hints,
     });
     return { dashboard: footprint(false), compact: footprint(true) };
   })() : undefined;
   const stackedView = mode === "stacked" && !editing;
+  const gridGeometry = gridOf(dense && !editing && mode === "wide");
   const tiles = (focus ? [focus.widget] : orderedWidgets).map((widget, index) => (
-              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: layout[index].h * 74 - 16 } : undefined}>
+              <div key={widget.id} className={focus ? styles.focusedTile : undefined} style={!focus && stackedView && !intrinsicStat(widget) ? { height: rowsToPixels(layout[index].h) } : undefined}>
                 <Tile
                   key={`${dashboard.id}:${widget.id}`}
                   widget={widget}
@@ -1028,8 +1142,10 @@ export function DashboardCanvas({
                         : widget.providerId),
                   )}
                   fetcher={fetcher}
-                  start={range.start}
-                  end={range.end}
+                  boardStart={range.start}
+                  boardEnd={range.end}
+                  refreshStaggerMs={refreshStaggerMs}
+                  prefetch={prefetched.has(widget.id)}
                   naturalHeight={!focus && stackedView && intrinsicStat(widget)}
                   referenceCompact={referenceCompact && !editing}
                   editing={editing}
@@ -1058,6 +1174,7 @@ export function DashboardCanvas({
     ? { mode: "fixed" }
     : dashboard.refreshInterval ? { mode: "every", seconds: dashboard.refreshInterval } : { mode: "off" };
   return (
+    <DashboardEventsContext.Provider value={dashboardEvents}>
     <DashboardTimeZoneProvider timeZone={dashboard.timeZone}>
     <AttentionStoreProvider>
     <SampleAsOfProvider>
@@ -1091,9 +1208,9 @@ export function DashboardCanvas({
             width={width}
             layout={layout}
             gridConfig={{
-              cols: 12,
-              rowHeight: dense && !editing && mode === "wide" ? 25 : 58,
-              margin: dense && !editing && mode === "wide" ? [8, 4] : [16, 16],
+              cols: GRID_COLUMNS,
+              rowHeight: gridGeometry.rowHeight,
+              margin: [gridGeometry.gapX, gridGeometry.gapY],
               containerPadding: [0, 0],
             }}
             dragConfig={{
@@ -1133,5 +1250,6 @@ export function DashboardCanvas({
     </SampleAsOfProvider>
     </AttentionStoreProvider>
     </DashboardTimeZoneProvider>
+    </DashboardEventsContext.Provider>
   );
 }

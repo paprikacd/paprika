@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { lazy, Suspense, useId, type ComponentType, type LazyExoticComponent } from "react";
 import { GammaInput, GammaTextarea } from "./gamma/input";
 import { GammaSelect } from "./gamma/select";
 import { GammaSwitch } from "./gamma/switch";
@@ -13,10 +13,9 @@ import {
   type WidgetRecordType,
 } from "./widget-registry";
 import type { QueryResult, Widget } from "./schema";
+import "./lazy-style-boundary.css?editor";
 import styles from "./editor.module.css";
-import { RecordTableStyleEditor } from "./plugins/record-table-style-editor";
-import { MetricAnnotationEditor } from "./plugins/metric-annotation-editor";
-import { SeriesColorEditor } from "./plugins/series-color-editor";
+import type { WidgetConfigEditorLoader } from "./widget-registry";
 import type { QueryFields } from "./query-connections";
 
 /** A result column as the editor sees it. Units exist only when the loaded result itself is available. */
@@ -82,6 +81,33 @@ function rendererIssues(definition: WidgetDefinition | undefined, result: QueryR
 }
 
 /** Keep raw JSON and guided fields on the same draft; invalid JSON stays editable. */
+// Each loader is wrapped in lazy once, so re-rendering the editor keeps the same component and does not remount it.
+const lazyEditors = new WeakMap<WidgetConfigEditorLoader, LazyExoticComponent<ComponentType<{ config: Record<string, unknown>; onChange(next: Record<string, unknown>): void }>>>();
+
+function lazyEditor(load: WidgetConfigEditorLoader) {
+  let editor = lazyEditors.get(load);
+  if (!editor) {
+    editor = lazy(load);
+    lazyEditors.set(load, editor);
+  }
+  return editor;
+}
+
+function PluginSubEditors({ loaders, config, onChange }: {
+  loaders: readonly WidgetConfigEditorLoader[];
+  config: Record<string, unknown>;
+  onChange(next: Record<string, unknown>): void;
+}) {
+  return (
+    <Suspense fallback={null}>
+      {loaders.map((load, index) => {
+        const Editor = lazyEditor(load);
+        return <Editor key={index} config={config} onChange={onChange} />;
+      })}
+    </Suspense>
+  );
+}
+
 export function PluginConfigEditor({ definition, value, onChange, queryFields, result }: {
   definition?: WidgetDefinition;
   value: string;
@@ -118,9 +144,7 @@ export function PluginConfigEditor({ definition, value, onChange, queryFields, r
       {fields.map(field => {
         // Legacy maps display their grid and labels; the compact dot view
         // hides them unless explicitly enabled. Reflect the renderer default.
-        const fallback = definition?.id === "connection-map" && (field.key === "showGrid" || field.key === "showCoordinates")
-          ? config?.display !== "density"
-          : definition?.defaultConfig?.[field.key];
+        const fallback = field.defaultFor ? field.defaultFor(config as Widget["config"]) : definition?.defaultConfig?.[field.key];
         const current = config?.[field.key] ?? (field.kind === "select" || field.kind === "boolean" ? fallback : undefined);
         if (field.kind === "boolean") return <fieldset disabled={!config} key={field.key} className={styles.pluginToggle}>
           <GammaSwitch label={field.label} description={field.help} checked={current === true} onChange={next => update(field.key, next)} />
@@ -160,9 +184,7 @@ export function PluginConfigEditor({ definition, value, onChange, queryFields, r
         {issues.map((issue, index) => <li key={`${index}:${issue.message}`}>{issue.message}</li>)}
       </ul>
     </div>}
-    {definition?.id === "record-table" && config && <RecordTableStyleEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
-    {(definition?.id === "stacked-timeseries" || definition?.id === "directional-traffic") && config && <SeriesColorEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
-    {definition?.id === "stacked-timeseries" && config && <MetricAnnotationEditor config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
+    {config && definition?.configEditors && <PluginSubEditors loaders={definition.configEditors} config={config} onChange={next => onChange(JSON.stringify(next, null, 2))} />}
     <details open={fields.length === 0}>
       <summary>Advanced configuration</summary>
       <label className={styles.field}>

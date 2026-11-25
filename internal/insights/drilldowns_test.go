@@ -134,6 +134,26 @@ func TestDashboardDrilldownValidation(t *testing.T) {
 	}
 }
 
+func TestApplicationLinkValidation(t *testing.T) {
+	const valid = `{"id":"open-application","title":"Open application","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"constant","value":"checkout"}}}`
+	if err := validateDrilldowns([]byte("[" + valid + "]")); err != nil {
+		t.Fatalf("valid application link rejected: %v", err)
+	}
+	for name, links := range map[string]string{
+		"invalid source":    `[{"id":"a","title":"A","application":{"namespace":{"source":"value","value":"ns"},"name":{"source":"label","value":"name"}}}]`,
+		"missing name":      `[{"id":"a","title":"A","application":{"namespace":{"source":"label","value":"namespace"}}}]`,
+		"empty name value":  `[{"id":"a","title":"A","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"label","value":""}}}]`,
+		"long name value":   `[{"id":"a","title":"A","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"constant","value":"` + strings.Repeat("x", 254) + `"}}}]`,
+		"duplicate id":      `[` + valid + `,` + valid + `]`,
+		"dashboard and app": `[{"id":"a","title":"A","dashboardId":"service-details","application":{"namespace":{"source":"label","value":"namespace"},"name":{"source":"label","value":"name"}}}]`,
+		"unknown member":    `[{"id":"a","title":"A","application":{"namespace":{"source":"label","value":"namespace","x":1},"name":{"source":"label","value":"name"}}}]`,
+	} {
+		if err := validateDrilldowns([]byte(links)); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+}
+
 func TestDashboardDrilldownBindingValidation(t *testing.T) {
 	for name, bindings := range map[string]string{
 		"missing label key":     `[{"variable":"service","source":"label"}]`,

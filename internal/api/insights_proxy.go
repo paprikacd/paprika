@@ -99,7 +99,7 @@ func insightsRequestPermission(r *http.Request) (auth.Action, auth.Resource) {
 // insightsReadPost lists the POST routes that read or probe without writing.
 // The dry run validates a document and stores nothing, so it takes the read permission.
 func insightsReadPost(path string) bool {
-	return path == InsightsPrefix+"/query" || path == InsightsPrefix+"/query-dashboard" || path == InsightsPrefix+"/dashboards/validate" || (strings.HasPrefix(path, InsightsPrefix+"/providers/") && strings.HasSuffix(path, "/test"))
+	return path == InsightsPrefix+"/query" || path == InsightsPrefix+"/query-dashboard" || path == InsightsPrefix+"/dashboards/validate" || (strings.HasPrefix(path, InsightsPrefix+"/providers/") && strings.HasSuffix(path, "/test")) || (strings.HasPrefix(path, InsightsPrefix+"/dashboards/") && strings.HasSuffix(path, "/variable-options"))
 }
 
 // The API proxy bounds a whole Insights request, and its response-header wait is
@@ -126,7 +126,7 @@ func insightsReverseProxy(u *url.URL, token string) (*httputil.ReverseProxy, err
 			pr.Out.URL.RawPath = ""
 			// Allow only API data, concurrency and receipt-opt-in headers, never end-user secrets.
 			pr.Out.Header = make(http.Header)
-			for _, name := range []string{"Content-Type", "If-Match", "If-None-Match", "X-Insights-Diagnostics", "X-Insights-Revision-Message"} {
+			for _, name := range []string{"Content-Type", "If-Match", "If-None-Match", "X-Insights-Diagnostics", "X-Insights-Cache", "X-Insights-Revision-Message"} {
 				if v := pr.In.Header.Get(name); v != "" {
 					pr.Out.Header.Set(name, v)
 				}

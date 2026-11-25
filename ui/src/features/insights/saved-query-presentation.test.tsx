@@ -40,6 +40,11 @@ describe("saved query presentation", () => {
     expect(screen.queryByText("production", { exact: true })).not.toBeInTheDocument();
   });
 
+  it("matches a parameter name in the search text", () => {
+    const option = savedQueryOption({ ...query, parameters: [{ name: "region", type: "string" }] });
+    expect(option.keywords?.[0]).toContain("region");
+  });
+
   it("uses the query data kind instead of guessing a provider language", () => {
     const withoutDescription = { ...query, description: undefined, tags: undefined, metadata: undefined };
     expect(savedQueryOption({ ...withoutDescription, kind: "metrics", providerId: "postgresql" }).description).toBe("Metrics · 0 parameters");

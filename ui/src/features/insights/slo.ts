@@ -39,6 +39,15 @@ export type SloConfig = {
   maxRows?: number;
 };
 
+/** The authored default: a 30 day availability objective on the conventional request counter. It validates as saved. */
+export const SLO_DEFAULT_CONFIG: SloConfig = {
+  objective: 99.9,
+  period: "30d",
+  total: "http_requests_total",
+  bad: 'http_requests_total{code=~"5.."}',
+  burnAlerts: "multiwindow",
+};
+
 export type SloBurn = {
   long: string;
   short: string;

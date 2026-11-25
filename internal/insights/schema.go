@@ -3,6 +3,7 @@ package insights
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	insightsschema "github.com/benebsworth/paprika/docs/design/insights"
@@ -59,6 +60,22 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "authoring schema is unavailable")
 		return
 	}
+	encoded, err := authoringSchemaBody(kind, schema)
+	if err != nil || len(encoded) > maxSchemaResponseBytes {
+		writeError(w, http.StatusInternalServerError, "authoring schema exceeds its response limit")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	// #nosec G705 -- json.Marshal escapes HTML and the content type is application/json; kind is one of four fixed names.
+	if _, err := w.Write(encoded); err != nil {
+		return // A disconnected client cannot receive a replacement response.
+	}
+}
+
+// authoringSchemaBody is the encoded response for one schema kind, whatever its size. The handler refuses a body over
+// maxSchemaResponseBytes, which is also the get_insights_schema read cap in the MCP gateway; a test measures each kind.
+func authoringSchemaBody(kind string, schema json.RawMessage) ([]byte, error) {
 	response := authoringSchemaResponse{
 		SchemaVersion: 1, Kind: kind, Schema: schema,
 		Examples: authoringSchemaExamples(kind),
@@ -72,7 +89,7 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 			"Time-series rendering options: options.gridX?:boolean draws vertical gridlines at the x ticks (default false; showGrid false turns off every gridline). options.timeAxis?:linear|calendar (default linear) places ticks on the dashboard time zone's local days, weeks and months when calendar; each tick is placed at its true time, so a daylight-saving change shows as a jump in the labels. options.axisUnit?:auto|ticks|caption (default auto, which captions units longer than three characters). options.referenceLines?:[{value:number,label?:string(1..80),color?:six-digit hex}] draws up to 8 labelled horizontal rules, and each value joins the y range. options.showZeroLine?:boolean draws a zero rule, which also joins the range. options.plotInsetLeft?:8..240 and options.plotInsetRight?:8..120 set the plot's horizontal insets in pixels, shared by the cursor, no-sample bands and events. Explicit options.min and options.max still win, so a rule or threshold outside them is hidden.",
 			"Observation inspector placement: options.tooltipPlacement?:auto|top|right|bottom|left, options.tooltipOffset?:0..40 px, options.tooltipMaxWidth?:220..640 px and options.tooltipMaxHeight?:160..800 px. Unset values keep the renderer's defaults. Out-of-range values are refused, and the viewport still limits the inspector.",
 			"Use get_dashboard or get_saved_query before editing. Preserve unchanged fields and supply the exact current ETag when updating.",
-			"Records examples require a records-capable provider from list_insights_providers and a dashboard service variable. A variable may declare `source` (labelValues or savedQuery) to load its choices in the console; query_dashboard does not resolve sources yet, so pass an explicit value for a sourced variable and read its `fallbackOptions` only as a fallback. The SQL example needs a PostgreSQL provider with reader access to your reporting view; replace the illustrative table and columns. Bind SQL values with $1 and an unquoted {{service}} in the JSON parameters array, never inside the SQL body.",
+			"Records examples require a records-capable provider from list_insights_providers and a dashboard service variable. A variable may declare `source` (labelValues or savedQuery) to load its choices in the console; query_dashboard resolves them for each call too: read a sourced variable's `sourceOptions` for its values, and its `fallbackOptions` only as the fallback. The SQL example needs a PostgreSQL provider with reader access to your reporting view; replace the illustrative table and columns. Bind SQL values with $1 and an unquoted {{service}} in the JSON parameters array, never inside the SQL body.",
 			"PostgreSQL does not automatically filter SQL by the selected dashboard range. To use it, include {\"range\":\"start\"} and/or {\"range\":\"end\"} as values in the SQL envelope's parameters array and reference their positional $n placeholders in the SQL. They bind the requested boundaries as UTC timestamps, not interpolated SQL text. SQL comparison operators determine endpoint inclusivity; a missing referenced boundary or reversed range is an error. The service-history saved-query example shows inclusive boundaries with a service parameter.",
 			"record-table config.showRowNumbers is an optional boolean, default false. It numbers loaded rows in their displayed filtered, sorted and paginated order; the numbers are not source-wide ranks. With rank set, the numbers are ranks among the loaded rows instead, and the header reads Rank.",
 			"Built-in records plugins use type=plugin and dataKind=records: record-table config {columns?:string[1..64],pageSize?:5..100,density?:compact|comfortable,showSearch?:boolean,rank?:{status:string,value?:string,order?:descending|ascending,limit?:1..100,rail?:boolean},timeSelection?:{start:string,duration:string,durationUnit:milliseconds|seconds|minutes,paddingSeconds?:0..86400},cellStyles?:[{column:string,display:bar|bar-segments|color-text|color-background|sparkline|status-badge,min?:number,max?:number,unit?:string,segments?:4..60,thresholds?:[{value:number,status?:ok|info|warning|critical|unknown,color?:#RRGGBB,label?:string(0..80)}] (1..12, values strictly ascending)}]}; defaults are 20 rows, comfortable density and search shown. A column's own cellStyles thresholds replace options.thresholds for that column only; they apply to bar, bar-segments, color-text and color-background, and to a sparkline with thresholdColumn, never to status-badge. Compact rows preserve sorting and selection. Time selection requires a timestamp column and positive duration, and changes only the runtime dashboard range on explicit activation. Up to 16 unique result columns may have cell styles; bar and color styles require numbers, while sparkline requires a string. Bar cells require explicit finite min<max; signed scales anchor at zero, filtering never rescales bars, and out-of-scale values retain their exact reading. Color modes use the column's own thresholds, or else the widget options.thresholds, or widget.color; backgrounds choose readable text. Nulls remain unknown. Bar and segmented bar styles require min/max; segmented bars optionally accept 4..60 segments. Unit may be set for numeric and sparkline styles. A sparkline string contains an ordered JSON array of up to 240 objects {timestamp:ISO-8601,value:number|null}; missing values remain gaps, timestamps must be unique and ordered, and its visible value is the latest observation including null. It uses only the returned row, never another query. Other records plugins: record-list {title:string,body?:string,subtitle?:string,url?:string,status?:string}; record-treemap {label:string,value:string,group?:string}; record-matrix {x:string,y:string,value:string,min?:number,max?:number}. Config strings name result columns, not expressions.",
@@ -95,24 +112,24 @@ func (s *Server) getAuthoringSchema(w http.ResponseWriter, r *http.Request) {
 			"incident-calendar uses dataKind=records with config {date?:string,value?:string,label?:string,status?:string,aggregation?:count|sum|max,colorMode?:intensity|thresholds,months?:1..6,endDate?:YYYY-MM-DD}; defaults are date, count, intensity colors and 3 months ending at the latest returned date. Dates use UTC and must be valid calendar dates or ISO timestamps; numeric dates are Unix milliseconds. Sum/max require a numeric value field, while count counts observed rows. In thresholds colorMode, options.thresholds color the aggregated daily value; unmapped values remain neutral. Days without observations stay unknown rather than becoming zero. Explicit endDate controls the visible UTC month window.",
 		},
 	}
+	if kind == "plugin" {
+		// The plugin kind answers only with plugin configuration, so the document notes above do not apply to it.
+		response.Notes = pluginSchemaNotes()
+	}
 	if kind == "dashboard" {
 		response.Notes = append(response.Notes, schemaStarterNote, schemaRevisionNote)
 	}
 	if kind == "dashboard" || kind == "widget" {
-		response.Notes = append(response.Notes, "Stat examples (widget and dashboard kinds): request-rate is the compact stat (layout h<=2, title, value, decimals and at most one sparkline, no bar). error-budget-remaining is the bounded-scale stat: showStatBar with explicit min and max, thresholds at the budget bands (critical below 25, warning from 25, ok from 50) and layout h>=3. Compact stat (h<=2) = title + value + at most one sparkline. showStatBar is for a bounded quantity with explicit min and max; the h>=3 height is an authoring rule that the validator does not enforce.", "Thresholds: options.thresholds?:[{value:number,status?:ok|info|warning|critical|unknown,color?:six-digit hex,label?:string(0..80)}] (at most 12, values strictly ascending) name a status, a colour or both. A status is a theme-resolved semantic level: ok for healthy, warning and critical for breaches, info for context, unknown for an indeterminate state, so one document shares its meaning across light, dark and compact themes. A color is an optional hue override; use it only where a specific hue carries meaning, not to restate a status. A value uses the highest threshold it reaches, and values below the first threshold use it too. Give a label wherever labels appear.")
+		response.Notes = append(response.Notes, "Stat examples (widget and dashboard kinds): request-rate is the compact stat (layout h<=2, title, value, decimals and at most one sparkline, no bar). error-budget-remaining is the bounded-scale stat: showStatBar with explicit min and max, thresholds at the budget bands (critical below 25, warning from 25, ok from 50) and layout h>=3. Compact stat (h<=2) = title + value + at most one sparkline. showStatBar is for a bounded quantity with explicit min and max; the h>=3 height is an authoring rule that the validator does not enforce.", "Thresholds: options.thresholds?:[{value:number,status?:ok|info|warning|critical|unknown,color?:six-digit hex,label?:string(0..80)}] (at most 12, values strictly ascending) name a status, a colour or both. A status is a theme-resolved semantic level: ok for healthy, warning and critical for breaches, info for context, unknown for an indeterminate state, so one document shares its meaning across light, dark and compact themes. A color is an optional hue override; use it only where a specific hue carries meaning, not to restate a status. A value uses the highest threshold it reaches, and values below the first threshold use it too. Give a label wherever labels appear.", "Kubernetes plugins (type=plugin, dataKind=metrics): kubernetes-placement {resource?:cpu|memory,pressure?:0.5-1,showPods?:bool,maxNodes?:1-64}; kubernetes-resource-bars {groupLabel?:label,maxGroups?:1-16,showLimits?:bool,showValues?:bool}; kubernetes-throttle-matrix {groupLabel?:label,rows?:6-24,ceiling?:1-100}; kubernetes-resource-trend {showNetwork?,showRequested?,fill?:bool}. Each series needs a signal label with one of cpu-allocatable, memory-allocatable, cpu-request, memory-request, node-ready, cpu-usage, cpu-limit, memory-usage, memory-limit, throttled, periods, network-rx or network-tx; see docs/design/insights/kubernetes-widgets.md.")
 		response.Notes = append(response.Notes, guidance.DashboardComposition()...)
 		response.Notes = append(response.Notes, guidance.DashboardWorkflow()...)
+		response.Notes = append(response.Notes, schemaPluginPointerNote)
 	}
 	encoded, err := json.Marshal(response)
-	if err != nil || len(encoded) > maxSchemaResponseBytes {
-		writeError(w, http.StatusInternalServerError, "authoring schema exceeds its response limit")
-		return
+	if err != nil {
+		return nil, fmt.Errorf("encode %s authoring schema: %w", kind, err)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(encoded); err != nil {
-		return // A disconnected client cannot receive a replacement response.
-	}
+	return encoded, nil
 }
 
 func authoringSchemaExamples(kind string) []json.RawMessage {
@@ -138,6 +155,8 @@ func authoringSchemaExample(kind string) json.RawMessage {
 		return json.RawMessage(schemaDashboardExample)
 	case "widget":
 		return json.RawMessage(schemaWidgetExample)
+	case "plugin":
+		return json.RawMessage(schemaRecordWidgetExample)
 	default:
 		return json.RawMessage(schemaSavedQueryExample)
 	}

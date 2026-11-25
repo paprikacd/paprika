@@ -102,7 +102,7 @@ jobs:
   ui:
     name: UI
     runs-on: ${{ fromJSON(!github.event.pull_request.head.repo.fork && vars.CUTTLEFISH_RUNS_ON || '"ubuntu-latest"') }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,9 +123,24 @@ jobs:
         run: npm ci
         working-directory: ui
 
+      - name: Install widget lab dependencies
+        run: npm ci
+        working-directory: labs/widget-lab
+
       - name: Test
         run: npm test
         working-directory: ui
+
+      - name: Widget lab tests
+        run: npm test -- --maxWorkers=2
+        working-directory: labs/widget-lab
+
+      - name: Build widget lab gallery
+        run: npm run build
+        working-directory: labs/widget-lab
+
+      - name: Check gallery size budget
+        run: node hack/verify-landing-charts.mjs --gallery labs/widget-lab/dist
 
       - name: Browser-render worker and visual probe tests
         run: node --test render-worker.test.mjs dashboard-probe.test.mjs e2e/fixtures/visual-matrix-diff.test.mjs
@@ -231,6 +246,10 @@ jobs:
 
       - name: Regenerate protobuf clients
         run: make generate-proto
+
+      - name: Regenerate Insights contract artifacts
+        run: npm run schema:generate
+        working-directory: ui
 
       - name: Check generated code
         run: |
@@ -471,33 +490,29 @@ jobs:
         env:
           SESSION_E2E_STATIC: "1"
 
+      - name: Decide whether the Insights browser checks are affected
+        id: insights-relevance
+        # Prints relevant=true or relevant=false (see ui/e2e/insights-relevance.mjs). Only pull requests can skip:
+        # a push to master passes no base, which always runs. The fetch uses the job token only for this step, so
+        # the checkout keeps persist-credentials: false; the encoded header is masked and git output is discarded.
+        # Any doubt means true, and the steps below run unless the output is exactly false.
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+            echo "::add-mask::$auth"
+            export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
+          fi
+          node e2e/run-insights.mjs --relevance "$BASE_SHA" >> "$GITHUB_OUTPUT"
+        working-directory: ui
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+
       - name: Run Insights MCP and dashboard browser smoke
+        if: steps.insights-relevance.outputs.relevant != 'false'
         # About 12 minutes on a typical runner; slower runners have taken over 15.
         timeout-minutes: 20
-        run: >-
-          node e2e/run-insights.mjs
-          e2e/insights-query-inspector.e2e.mjs
-          e2e/insights-dashboard-query.e2e.mjs
-          e2e/insights-observe-authoring.e2e.mjs
-          e2e/insights-render-worker.e2e.mjs
-          e2e/insights-tooltip-peers.e2e.mjs
-          e2e/insights-compact-stat.e2e.mjs
-          e2e/insights-compact-stat-compare.e2e.mjs
-          e2e/insights-status-history-axis.e2e.mjs
-          e2e/insights-dashboard-polish.e2e.mjs
-          e2e/insights-presentation.e2e.mjs
-          e2e/insights-variable-filter.e2e.mjs
-          e2e/insights-repository-examples.e2e.mjs
-          e2e/insights-record-charts.e2e.mjs
-          e2e/insights-rich-charts.e2e.mjs
-          e2e/insights-chart-system.e2e.mjs
-          e2e/insights-editor-focus.e2e.mjs
-          e2e/insights-edit-performance.e2e.mjs
-          e2e/insights-tooltip-structure.e2e.mjs
-          e2e/insights-tooltip-motion.e2e.mjs
-          e2e/insights-hex-contour.e2e.mjs
-          e2e/insights-builtin-selection.e2e.mjs
-          e2e/insights-phone-shell.e2e.mjs
+        run: node e2e/run-insights.mjs --tag smoke --retries 1
         working-directory: ui
         env:
           INSIGHTS_POLISH_OUTPUT: ${{ github.workspace }}/artifacts/insights/dashboard-polish
@@ -505,6 +520,7 @@ jobs:
           INSIGHTS_QUERY_INSPECTOR_OUTPUT: ${{ github.workspace }}/artifacts/insights/query-inspector
 
       - name: Generate reference dashboards and check keyboard shortcuts through the UI
+        if: steps.insights-relevance.outputs.relevant != 'false'
         timeout-minutes: 10
         run: node e2e/run-insights.mjs e2e/insights-reference-dashboards.e2e.mjs e2e/insights-builder.e2e.mjs
         working-directory: ui
@@ -513,6 +529,7 @@ jobs:
           INSIGHTS_BUILDER_KEYBOARD_ONLY: "1"
 
       - name: Check Insights visual structure baseline
+        if: steps.insights-relevance.outputs.relevant != 'false'
         timeout-minutes: 10
         run: node --experimental-strip-types e2e/insights-visual-matrix.e2e.mjs
         working-directory: ui
@@ -601,7 +618,7 @@ jobs:
         run: go test -race ./internal/observabilitygateway/connector/postgresql -count=1 -timeout=90s
 
       - name: Verify service queries with Prometheus and enforce live coverage
-        run: node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs
+        run: node --test hack/service-overview/*.test.mjs hack/shorted-queries/*.test.mjs ui/e2e/service-overview-coverage.test.mjs hack/insights-patch/*.test.mjs hack/dashboard-presentation/*.test.mjs
 
       - name: Verify independent source requirements in the example gallery
         run: node e2e/run-insights.mjs e2e/insights-source-provenance.e2e.mjs

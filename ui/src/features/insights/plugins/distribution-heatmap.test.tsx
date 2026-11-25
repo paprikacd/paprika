@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DistributionHeatmap } from "./rich-metrics";
+import { DistributionHeatmap } from "./rich-metrics-view";
 import type { QueryResult, Widget } from "../schema";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });

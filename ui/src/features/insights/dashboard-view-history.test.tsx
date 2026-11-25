@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import InsightsApp from "./insights-app"
 import type { InsightsClient } from "./client"
-import type { Dashboard, Drilldown } from "./schema"
+import type { Dashboard, WidgetLink } from "./schema"
 import type { DrilldownBinding } from "./schema"
 import type { DrilldownContext } from "./drilldown"
 import { writeExampleWorkspace } from "./example-storage"
@@ -15,7 +15,7 @@ import { writeExampleWorkspace } from "./example-storage"
 vi.mock("./canvas", () => ({
   DashboardCanvas: ({ dashboard, onDrilldown, onSelection, onTimeRange }: {
     dashboard: Dashboard
-    onDrilldown?: (link: Drilldown, context: DrilldownContext) => void
+    onDrilldown?: (link: WidgetLink, context: DrilldownContext) => void
     onSelection?: (widget: Dashboard["widgets"][number], context: DrilldownContext) => void
     onTimeRange?: (window: { start: number; end: number }) => void
   }) => {
@@ -268,7 +268,7 @@ describe("dashboard view history characterisation", () => {
     record("load without a link")
 
     fireEvent.click(screen.getByRole("button", { name: "Manage dashboards" }))
-    fireEvent.click(screen.getByRole("button", { name: "Add variable" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Add variable" }, { timeout: 5000 }))
     fireEvent.click(screen.getByRole("button", { name: "Update variables" }))
     record("declare a variable")
 
@@ -342,7 +342,7 @@ describe("dashboard view history characterisation", () => {
 
     // The Code panel replaces the whole document, so applyDocument prunes the values it removed.
     fireEvent.click(screen.getByRole("button", { name: "Dashboard as code" }))
-    fireEvent.click(screen.getByRole("button", { name: /^JSON$/ }))
+    fireEvent.click(await screen.findByRole("button", { name: /^JSON$/ }))
     const code = screen.getByLabelText("Dashboard source") as HTMLTextAreaElement
     const next = JSON.parse(code.value) as Dashboard
     delete next.variables

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { z } from "zod"
+import { seriesStarters, statStarters, traceStarters } from "./starter-queries"
 import {
   checkVariableSourceGraph,
   dashboardSchema,
@@ -258,6 +259,25 @@ describe("dashboard document contract", () => {
     expect(newWidget("stat", [], [])).toMatchObject({
       providerId: "unconfigured",
     })
+    // A family's default starter replaces the built-in query for a provider of its type.
+    const starters = [{ providerTypes: ["prometheus"], query: "count(up == 1)", default: true }]
+    expect(newWidget("stat", providers, dashboard.widgets, undefined, starters)).toMatchObject({
+      providerId: "prometheus",
+      query: "count(up == 1)",
+    })
+    expect(newWidget("stat", [], [], undefined, starters)).toMatchObject({ query: "up" })
+  })
+
+  it("applies the Prometheus starters only to Prometheus providers", () => {
+    const uptime: Provider = { id: "uptime", name: "Uptime", type: "uptime", capabilities: ["metrics"], state: "OK" }
+    const prom: Provider = { id: "prom", name: "Prometheus", type: "prometheus", capabilities: ["metrics"], state: "OK" }
+    const tempo: Provider = { id: "tempo", name: "Tempo", type: "tempo", capabilities: ["traces"], state: "OK" }
+    expect(newWidget("stat", [uptime], [], undefined, statStarters).query).toBe("up")
+    expect(newWidget("timeseries", [uptime], [], undefined, seriesStarters).query).toBe("up")
+    expect(newWidget("stat", [prom], [], undefined, statStarters).query).toBe("count(up == 1)")
+    expect(newWidget("bar", [prom], [], undefined, seriesStarters).query).toBe("sum by (job) (up)")
+    expect(newWidget("traces", [tempo], [], undefined, traceStarters).query).toBe("{}")
+    expect(newWidget("traces", [tempo], [], undefined, statStarters).query).toBe("{}")
   })
 
   it("never defaults a new widget to a synthetic provider or to one whose last check failed", () => {
@@ -462,6 +482,24 @@ describe("dashboard document contract", () => {
         options: {},
       }).options,
     ).toEqual({})
+  })
+})
+
+describe("time-series baselines", () => {
+  const timeseries = { ...dashboard.widgets[0], type: "timeseries" as const }
+
+  it("accepts a baseline on a time series for each window and band", () => {
+    for (const window of ["previous", "1d", "7d", "rolling"])
+      expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window } } }).success).toBe(true)
+    expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window: "7d", band: "p10p90" } } }).success).toBe(true)
+  })
+
+  it("rejects a baseline on a stat and an unknown window or band", () => {
+    const stat = widgetSchema.safeParse({ ...timeseries, type: "stat", options: { baseline: { window: "1d" } } })
+    expect(stat.success).toBe(false)
+    expect(stat.error?.issues.map((issue) => issue.path.join("."))).toContain("options.baseline")
+    expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window: "2d" } } }).success).toBe(false)
+    expect(widgetSchema.safeParse({ ...timeseries, options: { baseline: { window: "1d", band: "stddev" } } }).success).toBe(false)
   })
 })
 

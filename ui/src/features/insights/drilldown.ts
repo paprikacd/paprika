@@ -6,12 +6,23 @@ import {
   variableNameSchema,
   variableValueSchema,
   MAX_DASHBOARD_VARIABLES,
+  isApplicationLink,
+  type ApplicationLink,
+  type ApplicationValue,
   type Dashboard,
   type Drilldown,
   type DrilldownBinding,
+  type WidgetLink,
 } from "./schema"
+import {
+  listLiteral,
+  normalizeVariableValue,
+  placeholderContext,
+  variableInputSchema,
+  type VariableValue,
+} from "./variable-values"
 
-export type VariableValues = Record<string, string>
+export type VariableValues = Record<string, VariableValue>
 export interface DrilldownContext {
   labels?: Record<string, string>
   value?: number | null
@@ -59,7 +70,7 @@ function checkedValues(input: unknown): VariableValues {
   return Object.fromEntries(
     entries.map(([key, value]) => [
       variableNameSchema.parse(key),
-      variableValueSchema.parse(value),
+      variableInputSchema.parse(value),
     ]),
   )
 }
@@ -79,7 +90,7 @@ export function resolveDashboardVariables(
       const value = Object.hasOwn(values, variable.name)
         ? values[variable.name]
         : variable.defaultValue
-      return value === undefined ? [] : [[variable.name, variableValueSchema.parse(value)]]
+      return value === undefined ? [] : [[variable.name, normalizeVariableValue(variable, value)]]
     }),
   )
 }
@@ -89,8 +100,16 @@ export function interpolateQuery(query: string, variables: VariableValues): stri
   return interpolateLiterals(query, checkedValues(variables))
 }
 
-/** Tooltip observations may also supply finite numeric literals, never query syntax. */
-export function interpolateQueryLiterals(query: string, variables: Record<string, string | number>): string {
+/**
+ * Tooltip observations and saved-query parameters may also supply finite numeric literals, and lists for
+ * parameters of several values, never query syntax. kinds names each parameter's template kind; a "strings"
+ * parameter takes a list, and a single string fills it as one item.
+ */
+export function interpolateQueryLiterals(
+  query: string,
+  variables: Record<string, string | number | string[]>,
+  kinds: Record<string, "string" | "number" | "strings"> = {},
+): string {
   if (!variables || typeof variables !== "object" || Array.isArray(variables))
     throw new Error("Query variables must be a JSON object")
   const entries = Object.entries(variables)
@@ -102,12 +121,30 @@ export function interpolateQueryLiterals(query: string, variables: Record<string
       if (!Number.isFinite(value)) throw new Error(`Query variable “${name}” must be finite`)
       return [name, value]
     }
-    return [name, variableValueSchema.parse(value)]
+    return [name, variableInputSchema.parse(value)]
   }))
-  return interpolateLiterals(query, values)
+  return interpolateTypedTemplate(query, values, kinds)
 }
 
-function interpolateLiterals(query: string, values: Record<string, string | number>): string {
+/**
+ * Interpolates a template whose placeholders have declared kinds. A "strings" placeholder always renders as a
+ * list, so a single string is wrapped as a one-item list first. This mirrors interpolatedLiteral in Go.
+ */
+export function interpolateTypedTemplate(
+  query: string,
+  values: Record<string, string | number | string[]>,
+  kinds: Record<string, "string" | "number" | "strings">,
+): string {
+  const wrapped = Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [
+      name,
+      kinds[name] === "strings" && typeof value === "string" ? [value] : value,
+    ]),
+  )
+  return interpolateLiterals(query, wrapped)
+}
+
+function interpolateLiterals(query: string, values: Record<string, string | number | string[]>): string {
   if (query.length > 8192) throw new Error("Queries must be at most 8192 characters")
   let output = ""
   let quote: '"' | "'" | "`" | null = null
@@ -137,7 +174,10 @@ function interpolateLiterals(query: string, values: Record<string, string | numb
         throw new Error(`Use {{${name}}} as a complete literal value, not part of a token`)
       if (!Object.hasOwn(values, name))
         throw new Error(`Set dashboard variable “${name}” before running this query`)
-      output += JSON.stringify(values[name])
+      const value = values[name]
+      output += Array.isArray(value)
+        ? listLiteral(value, placeholderContext(query, index), name, query.slice(0, index))
+        : JSON.stringify(value)
       index = end + 1
       continue
     }
@@ -224,6 +264,35 @@ export function resolveDrilldown(
     }
   }
   return navigation
+}
+
+/**
+ * The label bindings an application link reads, shaped as drilldown bindings so the context checks apply unchanged.
+ * A constant namespace or name reads nothing from the signal, so it has no binding.
+ */
+export function linkBindings(link: WidgetLink): DrilldownBinding[] {
+  if (!isApplicationLink(link)) return link.bindings ?? [];
+  return (["namespace", "name"] as const).flatMap((variable) => {
+    const part = link.application[variable];
+    return part.source === "label" ? [{ variable, source: "label" as const, value: part.value }] : [];
+  });
+}
+
+/** The namespace and name an application link opens, from the signal's labels or its constants. Label errors match resolveDrilldown. */
+export function resolveApplicationLink(
+  link: ApplicationLink,
+  context: DrilldownContext,
+): { namespace: string; name: string } {
+  const part = (variable: "namespace" | "name", ref: ApplicationValue): string => {
+    if (ref.source === "constant") return ref.value;
+    if (!context.labels || !Object.hasOwn(context.labels, ref.value) || !context.labels[ref.value])
+      throw new Error(`This signal has no label “${ref.value}” for variable “${variable}”`);
+    return context.labels[ref.value];
+  };
+  return {
+    namespace: part("namespace", link.application.namespace),
+    name: part("name", link.application.name),
+  };
 }
 
 /** Apply a deliberate selection atomically, retaining other current filters. */
@@ -335,7 +404,7 @@ export function parseDashboardLink(search: string): ParsedDashboardLink {
       throw new Error("A dashboard can use at most 20 variable values")
     variables = {}
     for (const [key, value] of entries) {
-      const name = variableNameSchema.safeParse(key), text = variableValueSchema.safeParse(value)
+      const name = variableNameSchema.safeParse(key), text = variableInputSchema.safeParse(value)
       if (name.success && text.success) variables[key] = text.data
       else rejected.push({ kind: "variable", name: key })
     }
@@ -374,19 +443,31 @@ export function resolveLinkView(
   link: DashboardNavigation,
   rejected: RejectedLinkPart[] = [],
 ): { state: DashboardNavigation; ignored: IgnoredLink[] } {
-  const declared = new Set((document.variables ?? []).map((variable) => variable.name))
+  const definitions = new Map((document.variables ?? []).map((variable) => [variable.name, variable]))
   const { variables, ...rest } = link
+  const kept: VariableValues = {}
+  const shaped: IgnoredLink[] = []
+  for (const [name, value] of Object.entries(variables ?? {})) {
+    const definition = definitions.get(name)
+    if (!definition) continue
+    // A string for a multi-value variable is one item; a list for a single-value variable does not fit it.
+    try {
+      kept[name] = normalizeVariableValue(definition, value)
+    } catch {
+      shaped.push({ kind: "variable", name, reason: "invalid" })
+    }
+  }
   const ignored: IgnoredLink[] = [
     ...Object.keys(variables ?? {})
-      .filter((name) => !declared.has(name))
+      .filter((name) => !definitions.has(name))
       .map((name) => ({ kind: "variable" as const, name, reason: "undeclared" as const })),
+    ...shaped,
     ...rejected.map((part): IgnoredLink =>
       part.kind === "variable"
         ? { kind: "variable", name: part.name, reason: "invalid" }
         : { kind: "setting", name: part.name, value: part.value }),
   ]
   if (variables === undefined) return { state: rest, ignored }
-  const kept = Object.fromEntries(Object.entries(variables).filter(([name]) => declared.has(name)))
   return { state: { ...rest, variables: kept }, ignored }
 }
 

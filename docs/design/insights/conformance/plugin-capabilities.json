@@ -1,0 +1,5620 @@
+{
+  "cases": [
+    {
+      "name": "timeseries",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "timeseries"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "timeseries",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "timeseries",
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "timeseries",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "timeseries",
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "timeseries",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "timeseries",
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "bar",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "bar"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "bar",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "bar",
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "bar",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "bar",
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "bar",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "bar",
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "stat",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "stat"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "stat",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "stat",
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "stat",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "stat",
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "stat",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "stat",
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "table",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "table"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "table",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "table",
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "table",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "table",
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "table",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "table",
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "heatmap",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "heatmap"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "heatmap",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "heatmap",
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "heatmap",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "heatmap",
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "heatmap",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "heatmap",
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "traces",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "traces"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "traces",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "traces",
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "traces",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "traces",
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "traces",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "traces",
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "connection-map",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "connection-map",
+            "dataKind": "records",
+            "config": {
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "display": "markers",
+              "showLocations": true
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "connection-map",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "connection-map",
+            "dataKind": "records",
+            "config": {
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "display": "markers",
+              "showLocations": true
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "connection-map",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "connection-map",
+            "dataKind": "records",
+            "config": {
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "display": "markers",
+              "showLocations": true
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "connection-map",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "connection-map",
+            "dataKind": "records",
+            "config": {
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "display": "markers",
+              "showLocations": true
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "directional-traffic",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "directional-traffic",
+            "dataKind": "metrics",
+            "config": {
+              "directionLabel": "direction",
+              "outboundValue": "outbound",
+              "symmetricAxis": false,
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "directional-traffic",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "directional-traffic",
+            "dataKind": "metrics",
+            "config": {
+              "directionLabel": "direction",
+              "outboundValue": "outbound",
+              "symmetricAxis": false,
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "directional-traffic",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "directional-traffic",
+            "dataKind": "metrics",
+            "config": {
+              "directionLabel": "direction",
+              "outboundValue": "outbound",
+              "symmetricAxis": false,
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "directional-traffic",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "directional-traffic",
+            "dataKind": "metrics",
+            "config": {
+              "directionLabel": "direction",
+              "outboundValue": "outbound",
+              "symmetricAxis": false,
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "distribution-heatmap",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "distribution-heatmap",
+            "dataKind": "metrics",
+            "config": {
+              "bucketLabel": "le",
+              "densityUnit": "observations/s",
+              "aggregation": "none",
+              "colorScale": "linear",
+              "maxBuckets": 24,
+              "maxColumns": 60
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "distribution-heatmap",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "distribution-heatmap",
+            "dataKind": "metrics",
+            "config": {
+              "bucketLabel": "le",
+              "densityUnit": "observations/s",
+              "aggregation": "none",
+              "colorScale": "linear",
+              "maxBuckets": 24,
+              "maxColumns": 60
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "distribution-heatmap",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "distribution-heatmap",
+            "dataKind": "metrics",
+            "config": {
+              "bucketLabel": "le",
+              "densityUnit": "observations/s",
+              "aggregation": "none",
+              "colorScale": "linear",
+              "maxBuckets": 24,
+              "maxColumns": 60
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "distribution-heatmap",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "distribution-heatmap",
+            "dataKind": "metrics",
+            "config": {
+              "bucketLabel": "le",
+              "densityUnit": "observations/s",
+              "aggregation": "none",
+              "colorScale": "linear",
+              "maxBuckets": 24,
+              "maxColumns": 60
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "geo-heatmap",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "geo-heatmap",
+            "dataKind": "records",
+            "config": {
+              "mode": "map",
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "aggregation": "count"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "geo-heatmap",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "geo-heatmap",
+            "dataKind": "records",
+            "config": {
+              "mode": "map",
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "aggregation": "count"
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "geo-heatmap",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "geo-heatmap",
+            "dataKind": "records",
+            "config": {
+              "mode": "map",
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "aggregation": "count"
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "geo-heatmap",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "geo-heatmap",
+            "dataKind": "records",
+            "config": {
+              "mode": "map",
+              "latitude": "latitude",
+              "longitude": "longitude",
+              "label": "label",
+              "aggregation": "count"
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "incident-calendar",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "incident-calendar",
+            "dataKind": "records",
+            "config": {
+              "date": "date",
+              "aggregation": "count",
+              "months": 3
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "incident-calendar",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "incident-calendar",
+            "dataKind": "records",
+            "config": {
+              "date": "date",
+              "aggregation": "count",
+              "months": 3
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "incident-calendar",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "incident-calendar",
+            "dataKind": "records",
+            "config": {
+              "date": "date",
+              "aggregation": "count",
+              "months": 3
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "incident-calendar",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "incident-calendar",
+            "dataKind": "records",
+            "config": {
+              "date": "date",
+              "aggregation": "count",
+              "months": 3
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "kubernetes-placement",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-placement",
+            "dataKind": "metrics",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-placement",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-placement",
+            "dataKind": "metrics",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "kubernetes-placement",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-placement",
+            "dataKind": "metrics",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-placement",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-placement",
+            "dataKind": "metrics",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "kubernetes-resource-bars",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-bars",
+            "dataKind": "metrics",
+            "config": {
+              "groupLabel": "pod"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-resource-bars",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-bars",
+            "dataKind": "metrics",
+            "config": {
+              "groupLabel": "pod"
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "kubernetes-resource-bars",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-bars",
+            "dataKind": "metrics",
+            "config": {
+              "groupLabel": "pod"
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-resource-bars",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-bars",
+            "dataKind": "metrics",
+            "config": {
+              "groupLabel": "pod"
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "kubernetes-resource-trend",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-trend",
+            "dataKind": "metrics",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-resource-trend",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-trend",
+            "dataKind": "metrics",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "kubernetes-resource-trend",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-trend",
+            "dataKind": "metrics",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-resource-trend",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-resource-trend",
+            "dataKind": "metrics",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "kubernetes-throttle-matrix",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-throttle-matrix",
+            "dataKind": "metrics",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-throttle-matrix",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-throttle-matrix",
+            "dataKind": "metrics",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "kubernetes-throttle-matrix",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-throttle-matrix",
+            "dataKind": "metrics",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "kubernetes-throttle-matrix",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "kubernetes-throttle-matrix",
+            "dataKind": "metrics",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "pie",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pie",
+            "dataKind": "metrics",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "pie",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pie",
+            "dataKind": "metrics",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "pie",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pie",
+            "dataKind": "metrics",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "pie",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pie",
+            "dataKind": "metrics",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "pipeline-topology",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pipeline-topology",
+            "dataKind": "records",
+            "config": {
+              "source": "source",
+              "target": "target"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "pipeline-topology",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pipeline-topology",
+            "dataKind": "records",
+            "config": {
+              "source": "source",
+              "target": "target"
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "pipeline-topology",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pipeline-topology",
+            "dataKind": "records",
+            "config": {
+              "source": "source",
+              "target": "target"
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "pipeline-topology",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "pipeline-topology",
+            "dataKind": "records",
+            "config": {
+              "source": "source",
+              "target": "target"
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "record-list",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-list",
+            "dataKind": "records",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-list",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-list",
+            "dataKind": "records",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "record-list",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-list",
+            "dataKind": "records",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-list",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-list",
+            "dataKind": "records",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "record-matrix",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-matrix",
+            "dataKind": "records",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-matrix",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-matrix",
+            "dataKind": "records",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "record-matrix",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-matrix",
+            "dataKind": "records",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-matrix",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-matrix",
+            "dataKind": "records",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "record-table",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-table",
+            "dataKind": "records",
+            "config": {
+              "density": "comfortable",
+              "showSearch": true
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-table",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-table",
+            "dataKind": "records",
+            "config": {
+              "density": "comfortable",
+              "showSearch": true
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "record-table",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-table",
+            "dataKind": "records",
+            "config": {
+              "density": "comfortable",
+              "showSearch": true
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-table",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-table",
+            "dataKind": "records",
+            "config": {
+              "density": "comfortable",
+              "showSearch": true
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "record-treemap",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-treemap",
+            "dataKind": "records",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-treemap",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-treemap",
+            "dataKind": "records",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "record-treemap",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-treemap",
+            "dataKind": "records",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "record-treemap",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "record-treemap",
+            "dataKind": "records",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "records-bar",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-bar",
+            "dataKind": "records",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "records-bar",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-bar",
+            "dataKind": "records",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "records-bar",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-bar",
+            "dataKind": "records",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "records-bar",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-bar",
+            "dataKind": "records",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "records-line",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-line",
+            "dataKind": "records",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "records-line",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-line",
+            "dataKind": "records",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "records-line",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-line",
+            "dataKind": "records",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "records-line",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "records-line",
+            "dataKind": "records",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "slo-summary",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "slo-summary",
+            "dataKind": "metrics",
+            "config": {
+              "objective": 99.9,
+              "period": "30d",
+              "total": "http_requests_total",
+              "bad": "http_requests_total{code=~\"5..\"}",
+              "burnAlerts": "multiwindow"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "slo-summary",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "slo-summary",
+            "dataKind": "metrics",
+            "config": {
+              "objective": 99.9,
+              "period": "30d",
+              "total": "http_requests_total",
+              "bad": "http_requests_total{code=~\"5..\"}",
+              "burnAlerts": "multiwindow"
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "slo-summary",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "slo-summary",
+            "dataKind": "metrics",
+            "config": {
+              "objective": 99.9,
+              "period": "30d",
+              "total": "http_requests_total",
+              "bad": "http_requests_total{code=~\"5..\"}",
+              "burnAlerts": "multiwindow"
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "slo-summary",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "slo-summary",
+            "dataKind": "metrics",
+            "config": {
+              "objective": 99.9,
+              "period": "30d",
+              "total": "http_requests_total",
+              "bad": "http_requests_total{code=~\"5..\"}",
+              "burnAlerts": "multiwindow"
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "small-multiples",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "small-multiples",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 6,
+              "columns": 3,
+              "maxPoints": 120
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "small-multiples",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "small-multiples",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 6,
+              "columns": 3,
+              "maxPoints": 120
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "small-multiples",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "small-multiples",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 6,
+              "columns": 3,
+              "maxPoints": 120
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "small-multiples",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "small-multiples",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 6,
+              "columns": 3,
+              "maxPoints": 120
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "stacked-timeseries",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "stacked-timeseries",
+            "dataKind": "metrics",
+            "config": {
+              "display": "area",
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "stacked-timeseries",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "stacked-timeseries",
+            "dataKind": "metrics",
+            "config": {
+              "display": "area",
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "stacked-timeseries",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "stacked-timeseries",
+            "dataKind": "metrics",
+            "config": {
+              "display": "area",
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "stacked-timeseries",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "stacked-timeseries",
+            "dataKind": "metrics",
+            "config": {
+              "display": "area",
+              "maxSeries": 8,
+              "maxPoints": 120,
+              "legendDisplay": "compact",
+              "legendPosition": "bottom"
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "status-grid",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-grid",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 512
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "status-grid",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-grid",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 512
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "status-grid",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-grid",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 512
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "status-grid",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-grid",
+            "dataKind": "metrics",
+            "config": {
+              "maxSeries": 512
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "status-history",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-history",
+            "dataKind": "metrics",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "status-history",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-history",
+            "dataKind": "metrics",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "status-history",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-history",
+            "dataKind": "metrics",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "status-history",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "status-history",
+            "dataKind": "metrics",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": true
+    },
+    {
+      "name": "threshold-gauge",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "threshold-gauge",
+            "dataKind": "metrics",
+            "config": {
+              "display": "linear",
+              "orientation": "horizontal",
+              "segments": 24,
+              "showThresholds": true,
+              "seriesMode": "first",
+              "maxSeries": 6
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "threshold-gauge",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "threshold-gauge",
+            "dataKind": "metrics",
+            "config": {
+              "display": "linear",
+              "orientation": "horizontal",
+              "segments": 24,
+              "showThresholds": true,
+              "seriesMode": "first",
+              "maxSeries": 6
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "threshold-gauge",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "threshold-gauge",
+            "dataKind": "metrics",
+            "config": {
+              "display": "linear",
+              "orientation": "horizontal",
+              "segments": 24,
+              "showThresholds": true,
+              "seriesMode": "first",
+              "maxSeries": 6
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "threshold-gauge",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "threshold-gauge",
+            "dataKind": "metrics",
+            "config": {
+              "display": "linear",
+              "orientation": "horizontal",
+              "segments": 24,
+              "showThresholds": true,
+              "seriesMode": "first",
+              "maxSeries": 6
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "uptime-calendar",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-calendar",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 1
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "uptime-calendar",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-calendar",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 1
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "uptime-calendar",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-calendar",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 1
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "uptime-calendar",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-calendar",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 1
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "uptime-timeline",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-timeline",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 8
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "uptime-timeline",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-timeline",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 8
+            },
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "uptime-timeline",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-timeline",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 8
+            },
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "uptime-timeline",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "uptime-timeline",
+            "dataKind": "metrics",
+            "config": {
+              "maxDays": 90,
+              "maxSeries": 8
+            },
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    },
+    {
+      "name": "host-plugin",
+      "feature": "base",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "host-plugin",
+            "dataKind": "metrics",
+            "config": {}
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "host-plugin",
+      "feature": "annotations",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "host-plugin",
+            "dataKind": "metrics",
+            "config": {},
+            "annotationSource": {
+              "queryRef": {
+                "id": "deploys"
+              },
+              "timestampColumn": "time",
+              "labelColumn": "version"
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "host-plugin",
+      "feature": "tooltipView",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "host-plugin",
+            "dataKind": "metrics",
+            "config": {},
+            "options": {
+              "tooltipView": {
+                "type": "stat",
+                "source": {
+                  "type": "query",
+                  "providerId": "prom",
+                  "query": "up"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "host-plugin",
+      "feature": "selection",
+      "dashboard": {
+        "schemaVersion": 1,
+        "id": "capabilities",
+        "title": "Capabilities",
+        "timeRange": "1h",
+        "refreshInterval": 30,
+        "variables": [
+          {
+            "name": "service"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "subject",
+            "title": "Subject",
+            "providerId": "prom",
+            "query": "up",
+            "unit": "",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 4
+            },
+            "type": "plugin",
+            "pluginId": "host-plugin",
+            "dataKind": "metrics",
+            "config": {},
+            "selectionBindings": [
+              {
+                "variable": "service",
+                "source": "label",
+                "value": "service"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "selectionActive": false
+    }
+  ]
+}

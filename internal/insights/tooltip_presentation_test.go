@@ -106,8 +106,8 @@ func TestWidgetOptionRefactorsPreserveValidationOrder(t *testing.T) {
 
 func TestWidgetAnnotationRefactorPreservesValidationOrder(t *testing.T) {
 	cases := []struct{ name, raw, want string }{
-		{"invalid type before malformed annotation", `{"type":false,"annotationSource":null}`, "event queries require a time-series or directional-traffic widget"},
-		{"invalid plugin before malformed annotation", `{"type":"plugin","pluginId":3,"annotationSource":null}`, "event queries require a time-series or directional-traffic widget"},
+		{"invalid type before malformed annotation", `{"type":false,"annotationSource":null}`, "event queries require a time-based widget"},
+		{"invalid plugin before malformed annotation", `{"type":"plugin","pluginId":3,"annotationSource":null}`, "event queries require a time-based widget"},
 		{"column before widget query reference", `{"type":"timeseries","queryRef":null,"annotationSource":{"queryRef":{"id":"events"},"timestampColumn":" date ","labelColumn":"label"}}`, "event query column names must contain 1–128 characters"},
 		{"valid optional columns", `{"type":"timeseries","annotationSource":{"queryRef":{"id":"events"},"timestampColumn":"date","labelColumn":"label","endColumn":"end","severityColumn":"severity"}}`, ""},
 	}

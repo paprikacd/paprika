@@ -98,8 +98,14 @@ the nested provider phase.
 ## Failure identity
 
 Codes use the dashboard reader's public error vocabulary: `canceled`,
-`timeout`, `rate_limited`, `forbidden`, `invalid_query`, `provider_not_found` and
-`provider_error`. The receipt spells its cancellation outcome `cancelled`.
+`timeout`, `rate_limited`, `forbidden`, `invalid_query`, `provider_not_found`,
+`provider_error` and `gateway_unavailable`. The receipt spells its cancellation outcome `cancelled`.
+A rate-limited failure from the observability gateway also carries `limitScope`
+(`edge`, `budget`, `provider`, `queue` or `principal`), taken from the gateway's
+`X-Paprika-Limit-Scope` header (each scope is defined in [the observability gateway guide](../../guides/observability-gateway.md)); any other value is dropped. A provider-scoped
+refusal holds only that provider's widgets on a board. Every other refusal,
+including one with no `limitScope` (Insights' own pool, an older gateway), holds
+every widget.
 The receipt, `/api/query`, `query_dashboard` and the dry-run checks share one
 classifier (`classifyQueryFailure`), so they report the same code for the same
 failure. A direct provider's 400 or 422 is `invalid_query`, as is a 200 whose
@@ -107,7 +113,10 @@ failure. A direct provider's 400 or 422 is `invalid_query`, as is a 200 whose
 is `forbidden`, a 408 or 504 and a transport timeout are `timeout`, a 429 is
 `rate_limited`, and a 503 whose `errorType` is `timeout` is `timeout`. Other direct
 failures are `provider_error`. A shared gateway's 503 (a provider that is not configured or cannot
-serve the request) is `provider_not_found`. A gateway 408 is `timeout`. The classifier reads an
+serve the request) is `provider_not_found`. A gateway 408 (a cancelled request) is `canceled`. A gateway
+502 inside its own `server_error` envelope (the provider request failed) is
+`provider_error`. Any other 502 or 5xx, and a gateway that cannot be reached, is
+`gateway_unavailable`, not a provider fault. The classifier reads an
 HTTP status and a bounded `errorType` enum only, never the provider's text. The
 HTTP status and fixed message are unchanged, and a failed query always carries
 `code`, with or without a receipt.
@@ -216,3 +225,17 @@ server; otherwise the runner starts an isolated Next server.
 `INSIGHTS_QUERY_INSPECTOR_OUTPUT` selects the screenshot directory. CI runs this
 fixture and uploads the query-inspector artifacts; fixture registration alone
 does not establish a passing browser run or live provider behavior.
+
+## Result cache deliveries
+
+A receipt may carry `cache`, which says how the server's result cache answered (the cache itself, its bounds and its freshness are specified in [the service contract](../../../internal/insights/README.md#result-cache-and-collection-tags)):
+`status` is `hit`, `joined`, `miss` or `bypass`. A `hit` returned a stored result and a
+`joined` returned the result of an execution that was already in flight. Neither made a
+provider request, so both report `dispatched: false`, no upstream phase, and a `cache`
+phase. `sourceExecutionId` names the execution that produced the result, and `ageMs`
+is how long ago it was stored (for a join, since the leader finished). A `miss` ran the
+query. `reason` names a bypass (`refresh`, `unscoped`, `uncacheable`) or a miss that was
+not kept (`live_edge`, `uncacheable`). The field is absent when the cache is disabled.
+
+A dashboard signal answered by the cache is reported as `cached` and is not counted as
+executed. Its latency is still the receipt's total.

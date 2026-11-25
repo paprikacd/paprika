@@ -1,7 +1,11 @@
 import { issueText } from './input-issues.helper';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The slowest test here took 1.5 s in a full lab run at load average 75 (2026-11-24), against vitest's 5 s default.
+// 15 s leaves ten times that for a slower runner and still fails a real hang quickly.
+vi.setConfig({ testTimeout: 15_000 });
 import { waferChartCatalog, makeWaferCatalogFixture } from '../src/charts/wafer/catalog';
 import { registerWaferCharts } from '../src/charts/wafer/register';
 import { waferFocusId, waferKeyboardTarget, waferRows } from '../src/charts/wafer/model';

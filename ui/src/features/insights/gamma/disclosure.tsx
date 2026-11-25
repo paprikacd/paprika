@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
+import "../lazy-style-boundary.css?disclosure";
 import styles from "./disclosure.module.css";
 
 /** Adapted from Gamma DisclosureStack; mount large comparison bodies only when open. */

@@ -115,6 +115,8 @@ export interface InsightsClient {
   getStarter?(id: string, signal?: AbortSignal): Promise<DashboardBundle>
   /** The retained revisions of a dashboard, newest first. Absent for hosts that predate revision history. */
   listRevisions?(id: string, signal?: AbortSignal): Promise<DashboardRevisionList>
+  /** The stored document of one retained revision. Reading it writes nothing. Absent for hosts that predate revision history. */
+  getRevision?(id: string, revision: number, signal?: AbortSignal): Promise<{ dashboard: Dashboard; etag?: string }>
   /**
    * Restores a stored revision as the dashboard's new revision. etag is the dashboard's current ETag; a stale one is
    * rejected with the reload message. revision is the number the restore created, or 0 when the server named none,
@@ -163,6 +165,11 @@ export interface QueryCallOptions {
    * scheduler releases its slot while it backs off). Defaults to true.
    */
   replayCapacity?: boolean;
+  /**
+   * Asks the server for a fresh execution: it skips its result cache and stores the new result. Used by a manual refresh,
+   * so the refreshed window is not answered from an earlier one.
+   */
+  refresh?: boolean;
 }
 
 function canRetryCapacity(requestPath: string, init: RequestInit): boolean {
@@ -229,13 +236,24 @@ export class InsightsHTTPError extends Error {
  * is unchanged; the fixed code and the sanitized receipt, when sent, ride along.
  */
 export class InsightsQueryError extends InsightsHTTPError {
-  constructor(message: string, status: number, retryAfter: string | null, readonly code: string, readonly diagnostics?: QueryDiagnostics) {
+  constructor(
+    message: string,
+    status: number,
+    retryAfter: string | null,
+    readonly code: string,
+    readonly diagnostics?: QueryDiagnostics,
+    /** The gateway limit that refused a 429 (edge, budget, provider or queue), when it named one. */
+    readonly limitScope?: string,
+  ) {
     super(message, status, retryAfter)
     this.name = "InsightsQueryError"
   }
 }
 
-const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error"])
+// The gateway limits a 429 can name. Anything else is dropped, so it holds the whole board.
+const limitScopes = new Set(["edge", "budget", "provider", "queue", "principal"])
+
+const queryErrorCodes = new Set(["canceled", "timeout", "rate_limited", "forbidden", "invalid_query", "provider_not_found", "provider_error", "gateway_unavailable"])
 
 // Fallback copy by code, for a failure whose body is not Insights' JSON envelope
 // (a proxy page) or carries no error text. Insights writes its query failures
@@ -248,6 +266,7 @@ const queryFailureMessages: Record<string, string> = {
   invalid_query: "The data source rejected this query. Check the expression and time bounds.",
   provider_not_found: "The data source is unavailable. Choose a connected source.",
   provider_error: "The data source could not complete this query. Retry, or check its connection.",
+  gateway_unavailable: "Insights could not reach the observability gateway. Retry shortly.",
 }
 
 const serviceUnavailableMessage = "Insights is unavailable. Check the service and provider configuration."
@@ -283,7 +302,8 @@ async function queryFailure(response: Response): Promise<InsightsQueryError> {
   const message = envelopeCode !== undefined ? queryFailureMessages[envelopeCode]
     : envelopeText && response.status !== 403 ? envelopeText
     : serviceFailure ? serviceUnavailableMessage : queryFailureMessages[code]
-  return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics))
+  const limitScope = typeof envelope.limitScope === "string" && limitScopes.has(envelope.limitScope) ? envelope.limitScope : undefined
+  return new InsightsQueryError(message, response.status, response.headers.get("Retry-After"), code, parseQueryDiagnostics(envelope.diagnostics), limitScope)
 }
 
 const SEVERITY_BY_NAME: Record<string, Severity> = {
@@ -615,6 +635,14 @@ export function createInsightsClient(
       await readJSON<JsonValue>(await request(`/dashboards/${encodeURIComponent(id)}/revisions`, { signal })),
       { ignoreUnknownFields: true },
     ),
+    // The bytes of one revision, parsed as a stored dashboard. Its ETag is the content ETag of those bytes.
+    getRevision: async (id, revision, signal) => {
+      const response = await request(`/dashboards/${encodeURIComponent(id)}/revisions/${revision}`, { signal })
+      return {
+        dashboard: storedDashboardSchema.parse(await readJSON<Record<string, unknown>>(response)),
+        etag: documentETag(response),
+      }
+    },
     // A restore is a conditional write: If-Match carries the dashboard's current ETag, so a stale view is refused with
     // the same reload message as a stale save. The message is percent-encoded, as the server expects.
     restoreRevision: async (id, revision, etag, message) => {
@@ -689,7 +717,7 @@ export function createInsightsClient(
         await request("/query", {
           method: "POST",
           body: JSON.stringify(body),
-          headers: { "X-Insights-Diagnostics": "1" },
+          headers: options?.refresh ? { "X-Insights-Diagnostics": "1", "X-Insights-Cache": "refresh" } : { "X-Insights-Diagnostics": "1" },
           signal,
         }, undefined, false, false, options?.replayCapacity ?? true)
       )

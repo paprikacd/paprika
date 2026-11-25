@@ -1,6 +1,9 @@
 "use client";
 
 // The time-series renderer. chart-renderers.tsx re-exports it, so existing importers are unchanged.
+
+import { NO_DATA } from "./benign-states";
+import { seriesShown } from "./benign-states";
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useState } from "react";
 import { areaY } from "@tanstack/charts/area";
 import { crosshair } from "@tanstack/charts/crosshair";
@@ -14,10 +17,9 @@ import { defineChart } from "@tanstack/charts/scene";
 import { tooltip } from "@tanstack/charts/tooltip";
 import type { ChartLinearGradient } from "@tanstack/charts";
 import { curveMonotoneX, curveStepAfter } from "d3-shape";
-import { useAnnotationEvents } from "./annotation-events";
-import { ChartEvents } from "./chart-events";
+import { eventsAt, useAnnotationEvents } from "./annotation-events";
+import { WidgetFooterActions } from "./widget-footer";
 import { useChartCursor } from "./chart-cursor";
-import { ChartDataInspector } from "./chart-data-inspector";
 import {
   dateTimeOptions,
   downsamplePoints,
@@ -58,6 +60,10 @@ import { useDashboardWindow } from "./dashboard-window";
 import type { DrilldownContext } from "./drilldown";
 import hatchStyles from "./plot-hatch.module.css";
 import { usePlotTooltip } from "./plot-tooltip";
+import { useBaseline } from "./baseline-context";
+import { InspectorEvents } from "./inspector-events";
+import { bandSegments, baselineRunsText, seriesBaselines, type BaselinePoint, type SeriesBaseline } from "./baseline";
+import { comparisonLabel } from "./stat-comparison";
 import type { QueryResult, Widget, WidgetOptions } from "./schema";
 import { widgetSeriesColors } from "./series-colors";
 import { displaySeriesNames, fallbackIdentityTitle } from "./series-display";
@@ -163,6 +169,8 @@ const BREACH_BAND_LIMIT = 200;
 
 /** A zoom waits this long before it re-queries, so a drag that is still moving sends one request, not many. */
 const REFINE_DEBOUNCE_MS = 300;
+/** A baseline band is drawn behind the first three series only; every series still gets its run markers. */
+const BASELINE_BANDS = 3;
 
 /**
  * The breach shading: one low-opacity band per breaching stretch, behind the plot. It is memoised on its own props, so a
@@ -264,7 +272,36 @@ export function TimeSeriesChart({
   // A lone generic series is identified by the widget's authored title; see fallbackIdentityTitle.
   const identityTitle = useMemo(() => fallbackIdentityTitle(widget, visibleSeries), [widget, visibleSeries]);
   const previousIdentityTitle = useMemo(() => fallbackIdentityTitle(widget, prior.map(entry => entry.original)), [widget, prior]);
-  const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels, onActivate);
+  // The baseline band. Each plotted series is judged against the tile's earlier window (or its own history for rolling), over the
+  // whole result, so a zoom keeps the neighbourhood of its edge samples. Bands and runs are then clipped to the visible window.
+  const baseline = useBaseline();
+  const baselineOn = !!baseline && !!options.baseline && !embedded;
+  const bandWindow = zoom ?? extent ?? undefined;
+  const baselines = useMemo<SeriesBaseline[]>(() => {
+    if (!baselineOn || !baseline) return [];
+    const prior = baseline.state === "ready" ? baseline.prior?.series : undefined;
+    const judged = seriesBaselines(series.slice(0, MAX_SERIES), prior, { window: baseline.window, band: baseline.band, offsetMs: baseline.offsetMs, stepMs: baseline.stepMs });
+    return judged.map(entry => ({
+      ...entry,
+      points: bandWindow ? entry.points.filter(point => point.timestamp >= bandWindow.start && point.timestamp <= bandWindow.end) : entry.points,
+      runs: bandWindow ? entry.runs.filter(run => run.end >= bandWindow.start && run.start <= bandWindow.end) : entry.runs,
+    }));
+  }, [baselineOn, baseline, series, bandWindow]);
+  const baselineLabel = baseline ? (baseline.window === "rolling" ? "rolling" : comparisonLabel(baseline.window, baseline.span).replace(/^vs /, "")) : "";
+  const runClock = useMemo(() => new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }), [timeZone]);
+  const baselinePoints = useMemo(() => new Map(baselines.map(entry => [entry.index, new Map<number, BaselinePoint>(entry.points.map(point => [point.timestamp, point]))] as const)), [baselines]);
+  // The pinned observation's extra lines: its band, then the events that cover its time (at most three, critical first).
+  const describeBaseline = useCallback((seriesIndex: number, timestamp: number) => {
+    const point = baselineOn ? baselinePoints.get(seriesIndex)?.get(timestamp) : undefined;
+    const events = eventsAt(eventData.events, timestamp, (sampleCadence(series[seriesIndex]?.points ?? []) ?? 0) / 2);
+    if (!point && !events.length) return null;
+    const range = point ? `${formatMetric(point.lower, widget.unit, false, options.decimals)}–${formatMetric(point.upper, widget.unit, false, options.decimals)}` : "";
+    return <>
+      {point && <div data-baseline-tooltip>{baselineLabel} range: {range}{point.outside ? " · Outside the range" : ""}</div>}
+      <InspectorEvents events={events} />
+    </>;
+  }, [baselineOn, baselinePoints, baselineLabel, eventData.events, series, widget.unit, options.decimals]);
+  const plotTooltip = usePlotTooltip(widget, visibleSeries, tooltipEnabled, onContextChange, displayLabels, onActivate, describeBaseline);
   // A legend entry activates its series when the widget has selection bindings. Without them the legend stays a static list.
   const legendActivates = !!onActivate && !!widget.selectionBindings?.length;
   const legendId = useId();
@@ -297,11 +334,12 @@ export function TimeSeriesChart({
       }),
     [visibleSeries, seriesColors],
   );
+  const outsideBaseline = baselines.filter(entry => entry.runs.length > 0 && !!data[entry.index]);
   const legendRoving = useRovingLegend(data.length);
   const isApplied = useAppliedFilter();
   // One fill per observed run, so a gap never moves another run's zero line. Runs with the same stops share a gradient.
   // Each fade meets the visible zero line, which is the plot edge nearest zero when the domain excludes zero.
-  const baseline = visibleBaseline(domain);
+  const zeroBaseline = visibleBaseline(domain);
   const areaFills = useMemo(() => {
     const gradients = new Map<string, ChartLinearGradient>();
     // The default lightens only when three or more series actually draw a fill. Empty or all-null series draw nothing.
@@ -309,13 +347,13 @@ export function TimeSeriesChart({
     const filledSeries = runs.filter(entryRuns => entryRuns.length > 0).length;
     const opacity = options.fillOpacity ?? defaultAreaOpacity(filledSeries);
     const fills = options.display !== "area" ? [] : data.flatMap((entry, index) => runs[index].map((points, part) => {
-      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), opacity, baseline);
+      const gradient = signedAreaGradient("", entry.color, points.map(point => point.value), opacity, zeroBaseline);
       const key = JSON.stringify(gradient.stops);
       if (!gradients.has(key)) gradients.set(key, { ...gradient, id: `area-gradient-${gradients.size}` });
       return { series: index, id: `area-${index}-${part}`, gradientId: gradients.get(key)!.id, points };
     }));
     return { fills, gradients: [...gradients.values()] };
-  }, [data, options.display, options.fillOpacity, baseline]);
+  }, [data, options.display, options.fillOpacity, zeroBaseline]);
   // Coverage comes from every series in the result, not only the plotted ones, so "No samples" is true for the whole
   // result. It is measured on the unsampled points, so downsampling can neither hide nor invent a gap.
   const coverage = useMemo(
@@ -373,7 +411,7 @@ export function TimeSeriesChart({
     ? xAt(cursor.timestamp) : undefined;
   // Event markers are decorative and never intercept chart pointer input.
   const eventStart = dataStart ?? 0, eventEnd = timeEnd ?? 0;
-  const eventsInView = widget.annotationSource && !embedded && dataStart !== undefined ? eventData.events.filter(event => {
+  const eventsInView = eventData.events.length > 0 && !embedded && dataStart !== undefined ? eventData.events.filter(event => {
     const at = Date.parse(event.timestamp);
     return at <= eventEnd && Date.parse(event.endTimestamp ?? event.timestamp) >= eventStart;
   }) : [];
@@ -452,10 +490,14 @@ export function TimeSeriesChart({
     ? fittingBandLabel([`No samples since ${formatTimeTick(staleTail.from, 0, timeZone)}`, "No samples"], tailBox.width, measureLabel)
     : undefined;
 
+  // The band behind the first three series: one area per contiguous stretch, lighter than the line it surrounds. The band never
+  // widens the y domain, which is fixed above, so it is clipped rather than rescaling the chart.
+  const bandAreas = useMemo(() => baselines.slice(0, BASELINE_BANDS).flatMap(entry => data[entry.index] ? bandSegments(entry.points, baseline?.stepMs ?? 0).map((points, part) => ({ id: `baseline-${entry.index}-${part}`, series: entry.index, points, fill: data[entry.index].color })) : []), [baselines, data, baseline?.stepMs]);
   const definition = useMemo(
     () =>
       defineChart({
         marks: [
+          ...bandAreas.map(area => decorative(areaY(area.points, { id: area.id, x: "timestamp", y1: "lower", y2: "upper", fill: area.fill, fillOpacity: .12 }))),
           ...previousData.map((entry, index) => decorative(lineY(entry.plotPoints, { id: `previous-${index}`, x: "timestamp", y: "value", stroke: entry.color, strokeWidth: options.lineWidth ?? 1.8, strokeDasharray: "5 4", strokeOpacity: .7, curve: CURVES[options.curve ?? "linear"] }))),
           ...data.flatMap((entry, index) => [
           // Fills paint behind observations, one per observed run with the zero-anchored gradient of its own range. Only the line owns hit testing.
@@ -577,10 +619,11 @@ export function TimeSeriesChart({
                   sticky: true,
                   className: styles.tooltip,
                   format: (point) =>
-                    `${point.datum.series}\n${detailTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : "No data"}`,
+                    `${point.datum.series}\n${detailTimeFormat.format(new Date(point.datum.timestamp))}\n${typeof point.datum.value === "number" ? formatMetricDetails(point.datum.value, widget.unit, options.decimals) : NO_DATA}`,
                 },
       }),
     [
+      bandAreas,
       data,
       previousData,
       widget.unit,
@@ -652,6 +695,10 @@ export function TimeSeriesChart({
           ariaDescription={`${data.length} time series.${embedded ? "" : ` Use arrow keys to explore individual values. ${apply ? "Drag horizontally to set the dashboard time range" : "Drag horizontally to select a time window"}, or use Compare window.`}`}
         />}
         <TimeBrushOverlay preview={brush.preview} top={eventTop} bottom={eventBottom} />
+        {/* One marker per drawn band, for assistive tools and tests. The band itself is the chart's decorative area. */}
+        {bandAreas.map(area => <span key={area.id} hidden data-baseline-band data-series={area.series} data-from={area.points[0].timestamp} data-to={area.points[area.points.length - 1].timestamp} />)}
+        {/* Runs of samples outside the band are a dotted rule under the plot, in the series colour. */}
+        {baselineOn && baselines.flatMap(entry => data[entry.index] ? entry.runs.map((run, part) => <span key={`run-${entry.index}-${part}`} aria-hidden="true" data-baseline-run data-series={entry.index} data-from={run.start} data-to={run.end} style={{ position: "absolute", left: xAt(run.start), width: Math.max(1.5, xAt(run.end) - xAt(run.start)), bottom: eventBottom, borderBottom: `2px dotted ${data[entry.index].color}`, height: 0, pointerEvents: "none" }} />) : [])}
         {cursorX !== undefined && <span aria-hidden="true" className={styles.sharedCursor}
           data-chart-cursor-time={cursor!.timestamp} data-chart-cursor-source={cursor!.source}
           style={{ left: cursorX, top: separateUnit ? 18 : height < 130 ? 4 : 10, bottom: !showAxis ? 8 : options.xAxisLabel ? 47 : 29 }} />}
@@ -692,6 +739,23 @@ export function TimeSeriesChart({
         </ul>
       </details>}
       {staleTail && <span className={styles.notice}>Latest sample {detailTimeFormat.format(new Date(staleTail.from))}, before the end of the range.</span>}
+      {baselineOn && baseline && <span className={styles.notice} data-baseline-chip>{`Band: ${baseline.window === "rolling" ? "12 samples before the last 6" : comparisonLabel(baseline.window, baseline.span)}`}</span>}
+      {baselineOn && baseline?.state === "unavailable" && <span role="status" className={styles.notice}>Baseline unavailable: no earlier period for this range</span>}
+      {baselineOn && baseline?.state === "error" && <span role="status" className={styles.notice}>Baseline unavailable: the earlier period did not load</span>}
+      {baselineOn && baseline?.partial && <span className={styles.notice}>Partial earlier result</span>}
+      {baselineOn && outsideBaseline.length === 1 && <span className={styles.notice} data-baseline-runs={outsideBaseline[0].index}>{`Outside the ${baselineLabel} range${data.length > 1 ? ` for ${data[outsideBaseline[0].index].name}` : ""} ${baselineRunsText(outsideBaseline[0].runs, at => runClock.format(new Date(at)))}`}</span>}
+      {/* Several series outside their band would be a paragraph per series; they fold into one line that opens a list. */}
+      {baselineOn && outsideBaseline.length > 1 && <details className={styles.gapDetails} data-baseline-outside onKeyDown={(event) => {
+        if (event.key !== "Escape" || !event.currentTarget.open) return;
+        event.stopPropagation();
+        event.currentTarget.open = false;
+        event.currentTarget.querySelector("summary")?.focus();
+      }}>
+        <summary>Outside the {baselineLabel} range in {outsideBaseline.length} series</summary>
+        <ul tabIndex={0} aria-label={`Outside the ${baselineLabel} range`} data-gap-list>
+          {outsideBaseline.map(entry => <li key={`runs-${entry.index}`} data-baseline-runs={entry.index}>{`${data[entry.index].name}: ${baselineRunsText(entry.runs, at => runClock.format(new Date(at)))}`}</li>)}
+        </ul>
+      </details>}
       {reservesBreachLine && <BreachSummary summary={breachLevels} partial={!!truncated} unshaded={bandPlan.unshaded} />}
       {options.showLegend !== false && (
         <div className={styles.legend} role="list" aria-label="Latest values by series" data-series-count={data.length} tabIndex={data.length > 1 && !legendActivates ? 0 : undefined}>
@@ -774,13 +838,11 @@ export function TimeSeriesChart({
       {previousData.length > 0 && zoom && <div className={styles.priorLegend} role="group" aria-label="Previous period overlay" tabIndex={0}>
         <span>Previous period · dashed · aligned to selected window</span>
         {previousData.map(entry => { const last = latestPoint(entry.original); const first = entry.original.points[0]; return <span key={entry.index} data-prior-series={entry.index} data-prior-original-first={first?.timestamp} data-prior-aligned-first={entry.points[0]?.timestamp} title={last ? `Previous sample: ${formatMetricDetails(last.value, widget.unit, options.decimals)} at ${new Date(last.timestamp).toISOString()}` : "No prior sample"}>
-          <i aria-hidden="true" style={{ borderColor: entry.color }} />{previousIdentityTitle ?? seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : "No data"}
+          <i aria-hidden="true" style={{ borderColor: entry.color }} />{previousIdentityTitle ?? seriesName(entry.original, entry.index)} · latest valid: {last ? <>{formatMetric(last.value, widget.unit, false, options.decimals)} <time dateTime={new Date(last.timestamp).toISOString()}>{timestampFormat.format(new Date(last.timestamp))}</time></> : NO_DATA}
         </span> })}
         {selection?.previous?.truncated && <span>Partial prior result</span>}
       </div>}
-      {!embedded && <div className={styles.chartActions} data-chart-actions><ChartEvents events={visibleEvents} /><TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />
-      {!embedded && previousData.length > 0 && <ChartDataInspector widget={{ ...widget, title: `${widget.title} · Previous period` }} series={previousData.map(entry => entry.original)} buttonText="Inspect prior data" />}
-      <ChartDataInspector widget={widget} series={visibleSeries} /></div>}
+      {!embedded && <WidgetFooterActions widget={widget} events={visibleEvents} compare={<TimeWindowLens title={widget.title} series={series} unit={widget.unit} decimals={options.decimals} zoom={zoom} onZoom={window => setSelection({ source: series, window })} onOverlay={(window, previous) => setSelection({ source: series, window, previous })} onReset={() => setSelection(undefined)} />} inspectPrior={previousData.map(entry => entry.original)} inspect={visibleSeries} />}
       </div>}
 
       {widget.annotationSource && !embedded && eventData.error && <p role="status">Events unavailable: {eventData.error}</p>}
@@ -790,7 +852,7 @@ export function TimeSeriesChart({
       {plotTooltip.panel}
       {series.length > MAX_SERIES && (
         <span className={styles.notice} role="status">
-          First {MAX_SERIES} of {series.length} series
+          {seriesShown(MAX_SERIES, series.length)}
         </span>
       )}
     </div>

@@ -675,6 +675,26 @@ async function run() {
     console.log('PASS reduced motion: readable content and immediate contents navigation');
   } finally { await reduced.context.close(); }
 
+  // The chart gallery behind the landing showcase must render its catalogue and every showcase route.
+  const showcaseRoutes = [...new Set([...(await readFile(resolve(root, 'index.html'), 'utf8')).matchAll(/data-chart-route="([^"]+)"/g)].map((match) => match[1]))];
+  assert(showcaseRoutes.length >= 5, 'Landing must list the showcase routes');
+  const gallery = await newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await gallery.page.goto(url('charts/#charts'), { waitUntil: 'load' });
+    await gallery.page.getByText(/\d+ working examples/).first().waitFor({ state: 'visible' });
+    assertions += 1;
+    for (const route of showcaseRoutes) {
+      // Hash-only navigation stays in the loaded document, so it has no response to inspect.
+      await gallery.page.goto(url(`charts/#${route}`), { waitUntil: 'load' });
+      assert.equal(new URL(gallery.page.url()).hash, `#${route}`, `charts/#${route}: route selected`);
+      // Lenses are sections under the gallery shell, not main; every studied view renders one visible heading.
+      await gallery.page.locator('h1:visible').first().waitFor({ state: 'visible' });
+      await gallery.page.screenshot({ path: resolve(artifacts, `gallery-${route}.png`), fullPage: false, animations: 'disabled' });
+      assertions += 1;
+    }
+    console.log(`PASS chart gallery: the catalogue and ${showcaseRoutes.length} showcase routes render in Chromium`);
+  } finally { await gallery.context.close(); }
+
   assert.deepEqual(errors, [], 'Unexpected browser or local resource errors');
   console.log(`Passed public-site browser smoke check (${assertions} page checks). Screenshots: ${artifacts}`);
 }

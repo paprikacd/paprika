@@ -255,6 +255,42 @@ func TestInsightsSavedQueryPermissionsAndConditionalHeaders(t *testing.T) {
 	}
 }
 
+func TestInsightsApplicationDashboardsIsReadOnly(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/application-dashboards" {
+			t.Errorf("unexpected upstream path: %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer upstream.Close()
+	for _, tc := range []struct {
+		permission, method string
+		status             int
+	}{
+		{"read", "GET", 200},
+		{"read", "PUT", 403},
+	} {
+		t.Run(tc.permission+" "+tc.method, func(t *testing.T) {
+			cfg := insightsAuthConfig(tc.permission)
+			h, err := NewInsightsProxy(context.Background(), cfg, upstream.URL, strings.Repeat("a", 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			token, err := auth.IssueTokenWithOptions(auth.TokenOptions{Subject: "reader", Email: "reader@example.test", Name: "Reader", Secret: cfg.TokenSecret, Audience: auth.ConsoleAPIAudience})
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequestWithContext(context.Background(), tc.method, "/api/insights/application-dashboards?namespace=payments&name=checkout", strings.NewReader(`{}`))
+			r.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Fatalf("got %d, want %d: %s", w.Code, tc.status, w.Body)
+			}
+		})
+	}
+}
+
 func TestInsightsSavedQueryLifecycleThroughRealService(t *testing.T) {
 	const serviceToken = "service-token-with-at-least-32-characters"
 	store, err := insights.OpenStore(t.TempDir())

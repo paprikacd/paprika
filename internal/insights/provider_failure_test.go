@@ -179,7 +179,7 @@ func TestSharedNotConfiguredAndNotAvailableAreProviderNotFound(t *testing.T) {
 
 // Forbidden is one class for both refusals, so its text names both causes.
 func TestForbiddenFailureNamesCallerAndProviderCredentials(t *testing.T) {
-	for _, err := range []error{&observeError{http.StatusForbidden, "shared observability provider access denied", 0}, &providerHTTPError{status: http.StatusForbidden}} {
+	for _, err := range []error{&observeError{http.StatusForbidden, "shared observability provider access denied", 0, ""}, &providerHTTPError{status: http.StatusForbidden}} {
 		failure := classifyQueryFailure(err)
 		if failure.Code != "forbidden" {
 			t.Fatalf("classified %q, want forbidden", failure.Code)
