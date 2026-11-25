@@ -3,12 +3,7 @@
 import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
-import { DEFAULT_HEATMAP_THRESHOLDS } from "../renderers/heatmap.tsx";
-import { EmptyState } from "../renderers/empty-state.tsx";
-import { MetricDetails } from "../metric-tooltip-content.tsx";
-import { ObservationTooltip } from "../observation-tooltip.tsx";
-import { seriesName } from "../chart-data.ts";
-import { thresholdForValue } from "../chart-kit/threshold.ts";
+import { DEFAULT_HEATMAP_THRESHOLDS, EmptyState, MetricDetails, ObservationTooltip, seriesName, thresholdForValue } from "../chart-renderers";
 import { thresholdPaint } from "../status";
 import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip";
 import { formatMetricDetails, type Point, type Series } from "../chart-data";

@@ -2,8 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { DrilldownContext } from "../drilldown";
-import { MetricDetails } from "../metric-tooltip-content.tsx";
-import { ObservationTooltip } from "../observation-tooltip.tsx";
+import { MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { formatMetricDetails, type Point, type Series } from "../chart-data";
 import { useObservationOwner, type ObservationOwner, type TriggerHandlers } from "../observation-owner";
 import { occurrenceKeys } from "../tooltip-identity";

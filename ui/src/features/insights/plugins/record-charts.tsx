@@ -3,9 +3,7 @@
 import { NO_DATA } from "../benign-states";
 import { useEffect, useId, useMemo, useRef, useState } from "react"
 import { z } from "zod"
-import { formatMetric } from "../chart-data.ts"
-import { EmptyState } from "../renderers/empty-state.tsx"
-import { ObservationTooltip } from "../observation-tooltip.tsx"
+import { formatMetric, EmptyState, ObservationTooltip } from "../chart-renderers"
 import { axisScale, isIdentifierColumn, niceDomain, recordNumberText, ticksWithin } from "../units"
 import type { RecordFrame } from "../schema"
 import { DashboardWindowProvider } from "../dashboard-window"

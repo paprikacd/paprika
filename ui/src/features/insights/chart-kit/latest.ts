@@ -1,21 +1,5 @@
 import { validTimestamp } from "../widget-context";
-import type { Series, Point } from "../chart-data";
-
-export function latestPoint(
-  series: Series,
-): (Point & { value: number }) | undefined {
-  let latest: (Point & { value: number }) | undefined;
-  for (const point of series.points) {
-    if (
-      typeof point.value === "number" &&
-      Number.isFinite(point.value) &&
-      validTimestamp(point.timestamp) &&
-      (!latest || point.timestamp >= latest.timestamp)
-    )
-      latest = { ...point, value: point.value };
-  }
-  return latest;
-}
+export { latestPoint } from "../chart-data";
 
 /**
  * The newest point with a valid timestamp, whatever its value (a status or gauge reads the raw value, a missing one

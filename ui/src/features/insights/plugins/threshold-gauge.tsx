@@ -21,11 +21,15 @@ import {
   getWidgetDefinition,
   type WidgetRendererProps,
 } from "../widget-registry";
-import { EmptyState } from "../renderers/empty-state.tsx";
-import { MetricDetails } from "../metric-tooltip-content.tsx";
-import { ObservationDetails } from "../observation-tooltip.tsx";
-import { exactMetric, formatMetric, seriesName } from "../chart-data.ts";
-import { thresholdForValue } from "../chart-kit/threshold.ts";
+import {
+  EmptyState,
+  MetricDetails,
+  ObservationDetails,
+  exactMetric,
+  formatMetric,
+  seriesName,
+  thresholdForValue,
+} from "../chart-renderers";
 import { formatMetricDetails } from "../chart-data";
 import styles from "../chart-styles.module.css";
 import { metricContext } from "../widget-context";

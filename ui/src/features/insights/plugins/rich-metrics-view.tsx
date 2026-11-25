@@ -11,10 +11,7 @@ import { useSavedQueryLibrary } from "../saved-query-context";
 import { traceQLForRegion, type HeatmapRegion } from "./rich-metrics-data";
 
 import { Pin, X } from "lucide-react";
-import { EmptyState } from "../renderers/empty-state.tsx";
-import { MetricDetails } from "../metric-tooltip-content.tsx";
-import { ObservationTooltip } from "../observation-tooltip.tsx";
-import { formatMetric } from "../chart-data.ts";
+import { EmptyState, MetricDetails, ObservationTooltip, formatMetric } from "../chart-renderers";
 import { NO_DATA, seriesShown } from "../benign-states";
 import { fullDateTimeOptions, formatTimeTick } from "../chart-data";
 import { useDashboardTimeZone } from "../dashboard-time-zone";

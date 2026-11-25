@@ -148,7 +148,22 @@ export function downsamplePoints(
   return result;
 }
 
-export { latestPoint } from "./chart-kit/latest";
+export function latestPoint(
+  series: Series,
+): (Point & { value: number }) | undefined {
+  let latest: (Point & { value: number }) | undefined;
+  for (const point of series.points) {
+    if (
+      typeof point.value === "number" &&
+      Number.isFinite(point.value) &&
+      validTimestamp(point.timestamp) &&
+      (!latest || point.timestamp >= latest.timestamp)
+    )
+      latest = { ...point, value: point.value };
+  }
+  return latest;
+}
+
 /** Bound history while retaining the latest-valid value and a missing tail. */
 export function boundHistoryPoints(
   input: readonly Point[],

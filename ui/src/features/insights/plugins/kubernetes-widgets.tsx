@@ -2,7 +2,7 @@
 
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { DrilldownContext } from "../drilldown";
-import { EmptyState } from "../renderers/empty-state.tsx";
+import { EmptyState } from "../chart-renderers";
 import { formatMetricDetails } from "../chart-data";
 import { densityPalette } from "../density-palette";
 import { seriesSlot } from "../series-palette";

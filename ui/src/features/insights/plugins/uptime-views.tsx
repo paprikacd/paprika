@@ -2,9 +2,7 @@
 
 import { useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { z } from "zod";
-import { EmptyState } from "../renderers/empty-state.tsx";
-import { MetricDetails } from "../metric-tooltip-content.tsx";
-import { ObservationTooltip } from "../observation-tooltip.tsx";
+import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
 import { thresholdPaint } from "../status";
 import { StatusChip, bandReading, statusStrokeLevel, statusStrokeStyle, useTrackSize } from "../status-chip";
 import { seriesName, type Series } from "../chart-data";

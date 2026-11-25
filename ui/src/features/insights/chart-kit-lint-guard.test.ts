@@ -1,8 +1,9 @@
 import { ESLint } from "eslint";
 import { beforeAll, describe, expect, it } from "vitest";
 
-// The chart split rules: renderers, plugins and the chart kit import leaf modules, never the chart facade, and do not
-// hard-code a list of hex colours. These fixtures run the repo's own config.
+// The chart split rules: renderers and the chart kit import leaf modules, never the chart facade; plugins take the
+// renderers through the facade, never from renderers/*; none of them hard-codes a list of hex colours. These fixtures
+// run the repo's own config.
 const eslint = new ESLint({ cwd: process.cwd() });
 
 async function ruleIdsFor(filePath: string, code: string) {
@@ -17,15 +18,20 @@ describe("chart split lint guard", () => {
   beforeAll(() => ruleIdsFor("src/features/insights/plugins/records.tsx", "export {};\n"), 120_000);
 
   it.each([
-    "src/features/insights/plugins/records.tsx",
     "src/features/insights/renderers/stat.tsx",
     "src/features/insights/chart-kit/index.ts",
   ])("rejects the chart-renderers facade import in %s", async (filePath) => {
     expect(await ruleIdsFor(filePath, facadeImport)).toContain("no-restricted-imports");
   }, 120_000);
 
-  it("allows the facade import in the facade's other importers", async () => {
+  it("allows the facade import in plugins and the facade's other importers", async () => {
+    expect(await ruleIdsFor("src/features/insights/plugins/records.tsx", facadeImport)).not.toContain("no-restricted-imports");
     expect(await ruleIdsFor("src/features/insights/charts.tsx", "import { EmptyState } from \"./chart-renderers\";\nexport const x = EmptyState;\n")).not.toContain("no-restricted-imports");
+  }, 120_000);
+
+  it("rejects a renderer imported past the facade in a plugin", async () => {
+    const leaf = "import { EmptyState } from \"../renderers/empty-state\";\nexport const x = EmptyState;\n";
+    expect(await ruleIdsFor("src/features/insights/plugins/records.tsx", leaf)).toContain("no-restricted-imports");
   }, 120_000);
 
   it.each([
