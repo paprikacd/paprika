@@ -11,11 +11,15 @@
 .svgMark:focus-visible, .svgMark:focus-visible rect { stroke: var(--gamma-ink); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 
 /* Resource bars: one row per group, name then a CPU and a memory cell. Narrow tiles put the name on its own line. */
-.groups { display: flex; flex-direction: column; gap: 8px; }
+.groups { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .group { display: grid; grid-template-columns: minmax(4rem, 1fr) minmax(0, 1.5fr) minmax(0, 1.5fr); align-items: end; gap: 12px; }
 .groupName { font-weight: 500; }
 .cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .cellHead { display: flex; justify-content: space-between; gap: 6px; min-width: 0; color: var(--gamma-muted); }
+/* The value keeps its unit: in a narrow cell the name gives way first, and a long "of request" value ends in an ellipsis. */
+.cellName, .cellValue { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cellName { flex: 0 1 auto; }
+.cellValue { flex: 0 1 auto; }
 .track { position: relative; height: 10px; width: 100%; border-radius: 2px; background: var(--gamma-chart-empty); }
 .fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 2px; }
 .hatch { position: absolute; inset: 0; border-radius: 2px; background-image: repeating-linear-gradient(135deg, var(--gamma-chart-hatch) 0 2px, transparent 2px 6px); }
@@ -25,8 +29,8 @@
   .group { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 2px; }
   .groupName { grid-column: 1 / -1; }
 }
-/* In a two-column tile the cell shows usage only; the request stays on the tick and in the tooltip. */
-@container (max-width: 300px) { .ofRequest { display: none; } }
+/* In a two-column tile or a phone the cell shows usage only; the request stays on the tick, the title and the tooltip. */
+@container (max-width: 360px) { .ofRequest { display: none; } .cellValue { flex-shrink: 0; } }
 
 /* Throttle matrix. */
 /* Each row is one line: names truncate, the Total column keeps its width, and the renderer reduces the time columns to

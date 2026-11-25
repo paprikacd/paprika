@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { DrilldownContext } from "../drilldown";
 import { EmptyState } from "../chart-renderers";
 import { formatMetricDetails } from "../chart-data";
@@ -56,7 +56,11 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
   const decimals = widget.options?.decimals;
   const showLimits = config.showLimits !== false, showValues = config.showValues !== false;
   const at = sampleTime(result.series);
-  const observations: Observation[] = model.groups.flatMap(group => {
+  const groupList = useRef<HTMLDivElement>(null);
+  // A tile shorter than every group shows the groups that fit and says how many it shows, rather than cutting a row.
+  const [fit, setFit] = useState<number | null>(null);
+  const groups = fit === null || fit >= model.groups.length ? model.groups : model.groups.slice(0, fit);
+  const observations: Observation[] = groups.flatMap(group => {
     const cells: [string, number | null, number | null, number | null, string][] = [
       ["CPU", group.cpuUsage, group.cpuRequest, group.cpuLimit, "cores"],
       ["Memory", group.memoryUsage, group.memoryRequest, group.memoryLimit, "B"],
@@ -74,6 +78,7 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
   });
   const { root, observe, popover } = useObservations(observations, widget, interactive && widget.options?.showTooltip !== false);
   const roving = useRoving(root, observations.length);
+  useGroupsThatFit(root, groupList, model.groups.length, setFit);
   if (!model.groups.length) return <EmptyState />;
   // Each resource scales to its largest value, so 50 millicores against 100 requested fills half the track. One is the
   // fallback only when nothing is positive.
@@ -90,8 +95,8 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
   const cell = (name: string, group: string, usage: number | null, request: number | null, limit: number | null, max: number, unit: string, colour: string) => (
     <div className={styles.cell}>
       <span className={styles.cellHead}>
-        <span>{name}</span>
-        {showValues && <span className={styles.truncate}>{text(usage, unit, decimals)}<span className={styles.ofRequest}> of {text(request, unit, decimals)}</span></span>}
+        <span className={styles.cellName}>{name}</span>
+        {showValues && <span className={styles.cellValue}>{text(usage, unit, decimals)}<span className={styles.ofRequest}> of {text(request, unit, decimals)}</span></span>}
       </span>
       <div className={styles.track}>
         {usage === null
@@ -106,8 +111,8 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
   );
   return (
     <div ref={root} className={styles.widget} data-kubernetes="bars">
-      <div className={styles.groups}>
-        {model.groups.map(group => (
+      <div ref={groupList} className={styles.groups}>
+        {groups.map(group => (
           <div key={group.name} className={styles.group}>
             <span className={`${styles.truncate} ${styles.groupName}`}>{group.name}</span>
             {cell("CPU", group.name, group.cpuUsage, group.cpuRequest, group.cpuLimit, scale.cpu, "cores", seriesSlot(0))}
@@ -117,12 +122,39 @@ export function KubernetesResourceBars({ widget, result, embedded, onActivate, o
       </div>
       <div className={styles.footer}>
         {widget.options?.showLegend !== false && <span>Bar: usage · solid tick: request{showLimits ? " · dashed tick: limit sum" : ""}</span>}
-        {model.hiddenGroups > 0 && <span>Showing {model.groups.length} of {model.totalGroups}</span>}
+        {groups.length < model.totalGroups && <span>Showing {groups.length} of {model.totalGroups}</span>}
         {truncationNote(result) && <span>{truncationNote(result)}</span>}
       </div>
       {popover}
     </div>
   );
+}
+
+/**
+ * How many group rows fit the widget's height, or null when every row does. The widget fills its tile, so its height is
+ * the tile's; the other parts (footer, gaps) keep their heights and the rest is for rows. A widget whose height follows
+ * its content (the lab, an embed) always fits every row.
+ */
+function useGroupsThatFit(root: RefObject<HTMLDivElement | null>, list: RefObject<HTMLDivElement | null>, total: number, setFit: (fit: number | null) => void) {
+  useEffect(() => {
+    const widget = root.current, rows = list.current;
+    if (!widget || !rows || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const heights = [...rows.children].map(row => (row as HTMLElement).offsetHeight);
+      if (!heights.length || widget.clientHeight === 0) return;
+      const inFlow = [...widget.children].filter(child => !["absolute", "fixed"].includes(getComputedStyle(child).position)) as HTMLElement[];
+      const widgetGap = parseFloat(getComputedStyle(widget).rowGap) || 0, rowGap = parseFloat(getComputedStyle(rows).rowGap) || 0;
+      const others = inFlow.filter(child => child !== rows).reduce((sum, child) => sum + child.offsetHeight, 0) + widgetGap * (inFlow.length - 1);
+      const available = widget.clientHeight - others;
+      const capacity = Math.max(1, Math.floor((available + rowGap) / (Math.max(...heights) + rowGap)));
+      setFit(capacity >= total ? null : capacity);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(widget);
+    for (const child of widget.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [root, list, total, setFit]);
 }
 
 /** The throttle grid: a name column of up to 7rem, a 4.5rem Total column, and time columns of at least 6 px plus a 1 px gap. */
