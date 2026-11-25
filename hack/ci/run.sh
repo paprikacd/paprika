@@ -63,6 +63,10 @@ case "$parallel" in
 esac
 [ "$parallel" -ge 1 ] && [ "$parallel" -le 8 ] || ci_die "--parallel must be from 1 to 8"
 
+# Validate retention before starting work or moving any existing evidence.
+keep_previous_runs="${PAPRIKA_CI_KEEP_PREVIOUS_RUNS:-5}"
+[[ "$keep_previous_runs" =~ ^[0-9]+$ ]] || ci_die "PAPRIKA_CI_KEEP_PREVIOUS_RUNS must be a whole number, not '$keep_previous_runs'"
+
 # Selected jobs, in ci.yml order.
 selected=""
 if [ "$jobs_given" = 0 ]; then
@@ -414,7 +418,7 @@ done
 # previous/<run id>/ first. Jobs this run does not select keep their logs where the stamp points. The newest
 # PAPRIKA_CI_KEEP_PREVIOUS_RUNS (default 5) previous runs are kept for each tree.
 archive_previous_logs() {
-  local run_id dest job path moved=0 keep dir
+  local run_id dest job path moved=0 dir
   run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   dest="$artifact_dir/previous/$run_id"
   for job in "$@"; do
@@ -426,13 +430,11 @@ archive_previous_logs() {
     done
   done
   [ "$moved" = 1 ] && ci_log "previous logs for the rerun jobs moved to ${dest#"$CI_REPO_ROOT"/}"
-  keep="${PAPRIKA_CI_KEEP_PREVIOUS_RUNS:-5}"
-  [[ "$keep" =~ ^[0-9]+$ ]] || ci_die "PAPRIKA_CI_KEEP_PREVIOUS_RUNS must be a whole number, not '$keep'"
   [ -d "$artifact_dir/previous" ] || return 0
-  # Run ids sort by time, so everything before the newest $keep entries goes.
+  # Run ids sort by time, so everything after the newest keep_previous_runs entries goes.
   while IFS= read -r dir; do
     rm -rf -- "$dir"
-  done < <(find "$artifact_dir/previous" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +"$((keep + 1))")
+  done < <(find "$artifact_dir/previous" -mindepth 1 -maxdepth 1 -type d | sort -r | awk -v keep="$keep_previous_runs" 'NR > (keep + 0)')
 }
 # shellcheck disable=SC2086 # the job lists are space-separated job names
 archive_previous_logs $parallel_list $docker_list
