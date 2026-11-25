@@ -11,6 +11,8 @@ import type { useTileActions } from "./use-tile-actions"
 import type { useWorkspaceBoot } from "./use-workspace-boot"
 import type { useDashboardData } from "./use-dashboard-data"
 import type { usePanels } from "./use-panels"
+import type { useDocumentActions } from "./use-document-actions"
+import type { useViewActions } from "./use-view-actions"
 
 export type ShellProps = Omit<InsightsAppProps, "embed">
 
@@ -46,4 +48,10 @@ export type AfterDashboardData = AfterWorkspaceBoot & Named<DashboardDataNames, 
 
 export type PanelsNames = ["close", "leaveWidget", "navigateFromChart", "openBuilderPanel", "selectWidget", "showPanel"]
 export type AfterPanels = AfterDashboardData & Named<PanelsNames, ReturnType<typeof usePanels>>
-export type Shell = AfterPanels
+
+export type DocumentActionsNames = ["addWidget", "applyDocument", "confirmDiscard", "declareVariable", "drilldown", "layoutUpdate", "openDashboard", "save", "saveDocument", "saveLatest", "selectDashboardContext", "selectDashboardTime", "syncVariableDefinitions", "useSavedQuery"]
+export type AfterDocumentActions = AfterPanels & Named<DocumentActionsNames, ReturnType<typeof useDocumentActions>>
+
+export type ViewActionsNames = ["applyDashboardVariables", "applyRestoredDocument", "changeViewRange", "changeViewRefresh", "createDashboard", "deleteDashboard", "duplicateDashboard", "exploreProvider", "historyAvailable", "importBundle", "moveDashboard", "openQueryExplorer", "refreshSavedQueries", "reloadRemoteDashboard", "resetViewRange", "reviewBundle", "setViewAsDefault"]
+export type AfterViewActions = AfterDocumentActions & Named<ViewActionsNames, ReturnType<typeof useViewActions>>
+export type Shell = AfterViewActions

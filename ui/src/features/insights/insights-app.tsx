@@ -1,6 +1,7 @@
 "use client"
+/* eslint-disable react-hooks/immutability -- the React Compiler lint skipped this component while it was one 2,600-line function; its JSX handlers set refs from the shell hooks, as they did before the split */
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef } from "react"
+import { Suspense } from "react"
 import "react-dom"
 import {
   Activity,
@@ -33,31 +34,15 @@ import {
   X,
 } from "lucide-react"
 import { GammaActionMenu } from "./gamma/action-menu"
-import { verticalCompactor, type Layout } from "react-grid-layout"
+import "react-grid-layout"
 import type { InsightsClient } from "./client"
 import { dashboardAsSent } from "./layout-compaction"
 import {
-  customTimeRangeSchema,
-  newDashboard,
-  newWidget,
-  writableDashboard,
   MAX_WIDGETS,
   type Dashboard,
-  type Widget,
-  type Provider,
-  isApplicationLink,
-  type WidgetLink,
-  type SavedQuery,
-  type DashboardVariable,
-  dashboardSchema,
-  MAX_DASHBOARD_VARIABLES,
 } from "./schema"
 import "./example"
-import {
-  createExampleDashboardImportClient,
-  saveExampleWorkspace,
-  writeExampleWorkspace,
-} from "./example-storage"
+import "./example-storage"
 import "./provider-query-template"
 import catalogMeta from "./repository-examples/catalog-meta.json"
 import { LazyFailure, LazyPanelBoundary, MountSignal, reloadPage } from "./lazy-panel"
@@ -65,14 +50,12 @@ import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey } from "./query-connections"
 import "./saved-query-storage"
-import { loadBundleImportReview, type BundleImportRequest } from "./bundle-import"
+import "./bundle-import"
 import "./saved-queries"
-import type { DashboardBundle } from "./workspace-transfer"
-import { documentFingerprint } from "./fingerprint"
+import "./fingerprint"
 import "./use-mobile-navigation"
 import { dashboardActionItems } from "./dashboard-actions"
 import "./use-builder-panel-focus"
-import type { ExplorerSeed } from "./saved-query-context"
 import "./history"
 import "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor } from "./shortcuts"
@@ -88,12 +71,11 @@ import "./responsive-layout"
 import "./query"
 import { DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
-import { TimeRangeControl, savedRangeLabel, type TimeRangeChoice } from "./time-range"
+import { TimeRangeControl, savedRangeLabel } from "./time-range"
 import { WidgetLibrary } from "./widget-library"
-import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { checksFromError } from "./client"
+import "./client"
 import { SourceStatusContext } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -105,15 +87,15 @@ import { PhoneVariables, VariableBar } from "./dashboard-variables"
 import { ClampedDescription } from "./dashboard-description"
 import "./variable-options"
 import { InsightsThemeControl } from "./insights-theme"
-import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, type DashboardNavigation, type DrilldownContext } from "./drilldown"
+import "./drilldown"
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
-import { readDashboardLink, serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
+import { serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
 import { DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, preloadExamples } from "./shell/lazy-panels"
 import { placementPhrase } from "./shell/navigation"
 import { sourceBannerCopy } from "./shell/source-catalog"
 import "./shell/media-stores"
-import { NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
+import { NO_VARIABLES } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
 import { useSavedQueryLibrary } from "./shell/use-saved-query-library"
 import { useDashboardSession } from "./shell/use-dashboard-session"
@@ -124,6 +106,8 @@ import { useTileActions } from "./shell/use-tile-actions"
 import { useWorkspaceBoot } from "./shell/use-workspace-boot"
 import { useDashboardData } from "./shell/use-dashboard-data"
 import { usePanels } from "./shell/use-panels"
+import { useDocumentActions } from "./shell/use-document-actions"
+import { useViewActions } from "./shell/use-view-actions"
 
 
 registerDefaultWidgetPlugins()
@@ -538,611 +522,135 @@ function InsightsWorkspace({
     widgetDraftDirty,
     widgetOpener,
   )
-  const layoutUpdate = useCallback(
-    (layout: Layout) =>
-      update((current) => ({
-        ...current,
-        widgets: current.widgets.map((widget) => {
-          const position = layout.find((item) => item.i === widget.id)
-          return position && (widget.layout.x !== position.x || widget.layout.y !== Math.min(1000, position.y) || widget.layout.w !== position.w || widget.layout.h !== position.h)
-            ? {
-                ...widget,
-                layout: {
-                  x: position.x,
-                  y: Math.min(1000, position.y),
-                  w: position.w,
-                  h: position.h,
-                },
-              }
-            : widget
-        }),
-      })),
-    [update],
+  const [
+    addWidget,
+    applyDocument,
+    confirmDiscard,
+    declareVariable,
+    drilldown,
+    layoutUpdate,
+    openDashboard,
+    save,
+    saveDocument,
+    saveLatest,
+    selectDashboardContext,
+    selectDashboardTime,
+    syncVariableDefinitions,
+    useSavedQuery,
+  ] = useDocumentActions(
+    activeExample,
+    advanceEnd,
+    applyView,
+    busy,
+    chartCommands,
+    client,
+    close,
+    confirmation,
+    currentRoute,
+    dashboard,
+    dashboards,
+    dirty,
+    etags,
+    focusAfterSave,
+    latestDocument,
+    mode,
+    navigateFromChart,
+    onOpenApplication,
+    openRequest,
+    providers,
+    range,
+    reflectView,
+    reset,
+    saved,
+    selectWidget,
+    setBusy,
+    setDashboards,
+    setEditing,
+    setError,
+    setExploring,
+    setLinkNotice,
+    setMessage,
+    setMessageAction,
+    setMobileSidebar,
+    setReturnTo,
+    setSaveFindings,
+    setSaveRevision,
+    setSaved,
+    update,
+    variableValues,
+    widgetDraftDirty,
+    widgetDraftValid,
   )
 
-  function applyDocument(next: Dashboard, message = "Dashboard draft replaced. Review the canvas, then save the dashboard.") {
-    syncVariableDefinitions(next)
-    // Importing a document edits the active dashboard; a document cannot silently
-    // switch persistence identity and overwrite another saved dashboard.
-    const layout = verticalCompactor.compact(
-      next.widgets.map((widget) => ({ i: widget.id, ...widget.layout })),
-      12,
-    )
-    update({
-      ...next,
-      id: dashboard.id,
-      widgets: next.widgets.map((widget) => {
-        const item = layout.find((entry) => entry.i === widget.id)!
-        return {
-          ...widget,
-          layout: { x: item.x, y: item.y, w: item.w, h: item.h },
-        }
-      }),
-    })
-    setEditing(true)
-    close()
-    setMessage(message)
-  }
-  function syncVariableDefinitions(next: Dashboard) {
-    if (!currentRoute?.variables) return
-    const variables = Object.fromEntries(Object.entries(currentRoute.variables).filter(([name]) => next.variables?.some(item => item.name === name)))
-    applyView({ ...currentRoute, variables }, "prune")
-  }
-  // Declares a variable from another editor. It reads the latest document, so a stale closure cannot drop a variable.
-  // Callers see a refusal as a thrown error and keep their own draft.
-  const declareRef = useRef<(variable: DashboardVariable) => void>(() => {})
-  useLayoutEffect(() => {
-    declareRef.current = (variable) => {
-      const next = { ...latestDocument.current, variables: [...(latestDocument.current.variables ?? []), variable] }
-      const checked = dashboardSchema.safeParse(next)
-      if (!checked.success) throw new Error(checked.error.issues[0]?.message ?? "This variable could not be declared.")
-      syncVariableDefinitions(checked.data)
-      update(checked.data)
-      setEditing(true)
-    }
-  })
-  const declareVariable = useCallback((variable: DashboardVariable) => declareRef.current(variable), [])
-  function addWidget(definition: WidgetDefinition) {
-    if (dashboard.widgets.length >= MAX_WIDGETS) {
-      setError("A dashboard supports up to 48 widgets.")
-      return
-    }
-    const widget = newWidget(
-      definition.type,
-      providers,
-      dashboard.widgets,
-      definition.type === "plugin" ? definition : undefined,
-      definition.starterQueries,
-    )
-    update({ ...dashboard, widgets: [...dashboard.widgets, widget] })
-    selectWidget(widget.id)
-  }
-  function useSavedQuery(query: SavedQuery) {
-    if (dashboard.widgets.length >= MAX_WIDGETS) throw new Error("A dashboard supports up to 48 widgets.")
-    const variables = [...(dashboard.variables ?? [])]
-    for (const parameter of query.parameters ?? []) {
-      if (!variables.some(variable => variable.name === parameter.name)) variables.push({
-        name: parameter.name, ...(parameter.label ? { label: parameter.label } : {}),
-        ...(parameter.defaultValue !== undefined ? { defaultValue: String(parameter.defaultValue) } : {}),
-      })
-    }
-    if (variables.length > MAX_DASHBOARD_VARIABLES) throw new Error("This query would exceed the dashboard’s 20-variable limit. Add a widget and bind some parameters to constants instead.")
-    const widget = {
-      ...newWidget(query.kind === "records" ? "plugin" : query.kind === "traces" ? "traces" : "timeseries", providers.filter(provider => provider.id === query.providerId), dashboard.widgets,
-        query.kind === "records" ? { id: "record-table", label: "Records table", dataKind: "records" } : undefined),
-      title: query.name, providerId: query.providerId,
-      queryRef: { id: query.id, bindings: (query.parameters ?? []).map(parameter => ({ parameter: parameter.name, source: "variable" as const, variable: parameter.name })) },
-    }
-    // Keep validation synchronous for Explorer's error handling. Adding the
-    // validated widget waits until replacing the current chart is accepted.
-    navigateFromChart(() => {
-      update({ ...dashboard, variables, widgets: [...dashboard.widgets, widget] })
-      setExploring(false)
-      setEditing(true)
-      selectWidget(widget.id)
-      setMessage("Saved query linked. Parameters use dashboard variables; review their values, then save the dashboard.")
-    })
-  }
-  async function save() {
-    await saveDocument(dashboard)
-  }
-  // The notice's Save now runs the latest save. It works from view mode too, where the header save button is gone.
-  const saveLatest = useRef<() => void>(() => {})
-  useLayoutEffect(() => {
-    saveLatest.current = () => { if (!busy) void save() }
-  })
-  /**
-   * Writes a dashboard document. Apply and save passes the document it has just applied, since this render still
-   * holds the one from before the apply, and chartApplied, since this render still holds the chart's dirty flag.
-   */
-  async function saveDocument(doc: Dashboard, options: { chartApplied?: boolean; focusWidget?: string } = {}) {
-    if (!options.chartApplied && !widgetDraftValid) {
-      setError("Fix the invalid widget settings before saving, or close its editor to keep the last valid preview.")
-      return
-    }
-    const request = openRequest.current
-    setError("")
-    setSaveFindings(undefined)
-    setBusy(true)
-    try {
-      // The document as the save writes it, so the stored copy and the editor agree with what the server holds.
-      const parsed = dashboardAsSent(doc)
-      // Normalize trimmed form values before the request, so a completed save
-      // never overwrites edits made while the request was in flight.
-      if (documentFingerprint(parsed) !== documentFingerprint(doc))
-        update(parsed)
-      if (activeExample) {
-        const persisted = activeExample.readRepositoryExampleWorkspace(localStorage).dashboards.find(item => item.id === parsed.id)
-        if (persisted && documentFingerprint(persisted) !== saved)
-          throw new Error("The saved dashboard changed. Open another dashboard and return to review it before saving, or duplicate your draft to keep these edits.")
-        saveExampleWorkspace(localStorage, dashboards, parsed)
-      } else {
-        const etag = await client.save(parsed, etags.current.get(parsed.id))
-        if (etag) etags.current.set(parsed.id, etag)
-      }
-      setDashboards((items) => [
-        ...items.filter((item) => item.id !== parsed.id),
-        parsed,
-      ])
-      if (request !== openRequest.current) return
-      setSaved(documentFingerprint(parsed))
-      // An unapplied chart draft is not part of the saved dashboard. Saving keeps the chart editor and its draft open.
-      if (!options.chartApplied && widgetDraftDirty) {
-        const text = UNAPPLIED_CHART_NOTICE
-        setMessage(text)
-        // The name starts with the visible label, so voice control can say "Apply and save" and reach it.
-        setMessageAction({ text, label: "Apply and save", name: "Apply and save chart", run: () => chartCommands.current?.applyAndSave(), chartEditor: true })
-        return
-      }
-      setMessage(
-        mode === "example"
-          ? "Example saved in this browser."
-          : "Dashboard saved.",
-      )
-      // Apply and save moves focus to the chart's tile. A plain save moves it to Edit, or to the actions trigger on the phone.
-      focusAfterSave.current = { widget: options.focusWidget }
-      setSaveRevision((value) => value + 1)
-      setEditing(false)
-      close()
-    } catch (error) {
-      if (request === openRequest.current) {
-        const message = error instanceof Error ? error.message : "Could not save dashboard"
-        const report = checksFromError(error)
-        setError(message)
-        setSaveFindings(report ? { message, report } : undefined)
-      }
-    } finally {
-      setBusy(false)
-    }
-  }
-  async function openDashboard(
-    item: Dashboard,
-    state: DashboardNavigation | ((target: Dashboard) => DashboardNavigation) = { dashboardId: item.id },
-    action: "navigate" | "popstate" = "navigate",
-  ): Promise<boolean> {
-    if (busy) return false
-    const request = ++openRequest.current
-    const beforeLoad = documentFingerprint(dashboard)
-    if (((item.id !== dashboard.id && dirty) || widgetDraftDirty) && !await confirmDiscard()) return false
-    if (request !== openRequest.current) return false
-    try {
-      const active =
-        item.id === dashboard.id
-          ? { dashboard, etag: undefined }
-          : mode === "example"
-          ? { dashboard: item, etag: undefined }
-          : await client.get(item.id)
-      if (request !== openRequest.current) return false
-      if (item.id !== dashboard.id && beforeLoad !== documentFingerprint(latestDocument.current))
-        throw new Error("Your dashboard changed while the destination was loading. Open the link again when you are ready.")
-      const nextState = typeof state === "function" ? state(active.dashboard) : state
-      resolveDashboardVariables(active.dashboard, nextState.variables)
-      // Validate the complete URL before changing the document or view state.
-      serialiseDashboardView(nextState)
-      if (active.etag) etags.current.set(item.id, active.etag)
-      if (item.id !== dashboard.id) {
-        if (mode === "example")
-          saveExampleWorkspace(localStorage, dashboards, active.dashboard)
-        reset(active.dashboard)
-        setSaved(documentFingerprint(active.dashboard))
-        setEditing(false)
-      }
-      applyView(nextState, action)
-      advanceEnd(false)
-      // Back and Forward within the same dashboard change only the view: an open panel keeps its unapplied text.
-      if (!(action === "popstate" && item.id === dashboard.id)) close()
-      setError("")
-      setLinkNotice("")
-      setMessage("")
-      setMobileSidebar(false)
-      return true
-    } catch (error) {
-      if (request === openRequest.current)
-        setError(
-          error instanceof Error ? error.message : "Could not open dashboard",
-        )
-      return false
-    }
-  }
-  async function drilldown(link: WidgetLink, context: DrilldownContext) {
-    if (isApplicationLink(link)) {
-      try {
-        const ref = resolveApplicationLink(link, context)
-        if (!onOpenApplication) setError("Application pages open from the Paprika console.")
-        else onOpenApplication(ref)
-      } catch (error) {
-        setError(error instanceof Error ? error.message : "Could not open the application")
-      }
-      return
-    }
-    const target = dashboard.id === link.dashboardId ? dashboard : dashboards.find(item => item.id === link.dashboardId)
-    if (!target) {
-      setError("This drilldown’s dashboard is unavailable. Update its link in the widget’s Links tab.")
-      return
-    }
-    try {
-      const previous = { state: currentRoute ?? { dashboardId: dashboard.id }, title: dashboard.title }
-      if (await openDashboard(target, loaded => resolveDrilldown(link, context, loaded, range))) setReturnTo(previous)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not open drilldown")
-    }
-  }
-  function selectDashboardContext(widget: Widget, context: DrilldownContext) {
-    try {
-      const variables = resolveSelectionBindings(widget.selectionBindings ?? [], context, dashboard, variableValues)
-      applyView({ ...currentRoute, dashboardId: dashboard.id, variables }, "selection")
-      setError("")
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not apply selection")
-    }
-  }
-  function selectDashboardTime(window: { start: number; end: number }) {
-    let customTimeRange: { from: string; to: string }
-    try {
-      customTimeRange = customTimeRangeSchema.parse({ from: new Date(window.start).toISOString(), to: new Date(window.end).toISOString() })
-    } catch {
-      setError("Choose an increasing time range of at most 31 days.")
-      return
-    }
-    try {
-      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: variableValues, range: undefined, customTimeRange }, "brush")
-      setError("")
-    } catch (cause) {
-      // An address that cannot be written keeps the view and says why.
-      setError(cause instanceof Error ? cause.message : "Could not select this time range")
-    }
-  }
-  // Browser history must restore the same document, variable values, and time
-  // range as a link. Keep the listener stable while using the latest editor state.
-  const popHandler = useRef<() => void>(() => {})
-  useLayoutEffect(() => {
-    popHandler.current = () => {
-      const restore = () => reflectView(currentRoute ?? { dashboardId: dashboard.id }, "recover")
-      try {
-        const link = readDashboardLink()
-        const state = link.navigation
-        // The open dashboard may be new or unsaved, so it is not in the saved list.
-        const target = state?.dashboardId === dashboard.id ? dashboard : dashboards.find(item => item.id === state?.dashboardId)
-        if (!state || !target) throw new Error("The linked dashboard is unavailable.")
-        // The fresh document decides which link variables still apply; the resolution is kept for the notice.
-        const resolution: { current?: ReturnType<typeof resolveLinkView> } = {}
-        const pending = openDashboard(target, loaded => {
-          resolution.current = resolveLinkView(loaded, state, link.rejected)
-          return resolution.current.state
-        }, "popstate")
-        const request = openRequest.current
-        void pending.then(opened => {
-          if (request !== openRequest.current) return
-          if (!opened) restore()
-          else {
-            setReturnTo(null)
-            const linked = resolution.current
-            setLinkNotice(describeIgnoredLink(linked?.ignored ?? []))
-            // Back and Forward moved to this entry: correct its stale values in place.
-            if (linked?.ignored.length) reflectView(linked.state, "prune")
-          }
-        })
-      } catch (error) {
-        restore()
-        setError(error instanceof Error ? error.message : "Invalid dashboard link")
-      }
-    }
-  })
-  useEffect(() => {
-    const onPop = () => popHandler.current()
-    window.addEventListener("popstate", onPop)
-    return () => window.removeEventListener("popstate", onPop)
-  }, [])
-
-  // View controls write the URL view only. They never edit the document or enter edit mode.
-  function changeViewRange(choice: TimeRangeChoice): boolean {
-    try {
-      const view: DashboardNavigation = choice.customTimeRange
-        ? { ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: choice.customTimeRange }
-        : { ...currentRoute, dashboardId: dashboard.id, range: choice.timeRange, customTimeRange: undefined }
-      applyView(view, "range")
-      advanceEnd(false)
-      setError("")
-      return true
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not change the time range")
-      return false
-    }
-  }
-  // Returns the view to the saved window: the URL drops its range and the refresh and variables stay as they are.
-  function resetViewRange() {
-    try {
-      applyView({ ...currentRoute, dashboardId: dashboard.id, range: undefined, customTimeRange: undefined }, "range")
-      advanceEnd(false)
-      setError("")
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not reset the time range")
-    }
-  }
-  function applyDashboardVariables(values: Parameters<typeof resolveDashboardVariables>[1]) {
-    try {
-      applyView({ ...currentRoute, dashboardId: dashboard.id, variables: resolveDashboardVariables(dashboard, values) }, "variables")
-      setError("")
-    } catch (error) { setError(error instanceof Error ? error.message : "Invalid variable values") }
-  }
-  function changeViewRefresh(refresh: Dashboard["refreshInterval"]) {
-    try {
-      applyView({ ...currentRoute, dashboardId: dashboard.id, refresh }, "refresh")
-      setError("")
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not change auto refresh")
-    }
-  }
-  // The one explicit path from a view to the saved dashboard: copy what is on screen into the draft.
-  function setViewAsDefault() {
-    update({
-      ...dashboard,
-      timeRange: viewDashboard.timeRange,
-      customTimeRange: viewDashboard.customTimeRange,
-      // Refresh does not apply to a fixed window, so the saved interval stays as the author set it.
-      refreshInterval: viewDashboard.customTimeRange ? dashboard.refreshInterval : viewDashboard.refreshInterval,
-    })
-    setError("")
-    setMessage("View set as the dashboard default. Save the dashboard to keep it.")
-    // The button leaves the toolbar once the view matches the draft; focus moves to the next step, Save.
-    saveButton.current?.focus()
-  }
-  function resetView(next: Dashboard) {
-    applyView({ dashboardId: next.id }, "reset")
-    setReturnTo(null)
-    setLinkNotice("")
-  }
-  function confirmDiscard() {
-    return confirmation.ask({ title: "Discard unsaved changes?", description: `Your unsaved changes to “${dashboard.title}” will be lost.`, action: "Discard changes" })
-  }
-  async function reloadRemoteDashboard() {
-    if (busy || importingBundle) return
-    const id = dashboard.id
-    const request = ++openRequest.current
-    const before = documentFingerprint(dashboard)
-    if ((dirty || editing || panel) && !await confirmDiscard()) return
-    if (request !== openRequest.current) return
-    setBusy(true)
-    setError("")
-    try {
-      const active = await client.get(id)
-      if (request !== openRequest.current || latestDocument.current.id !== id) return
-      if (documentFingerprint(latestDocument.current) !== before)
-        throw new Error("Your draft changed while the saved dashboard was loading. Load it again when you are ready.")
-      if (active.etag) etags.current.set(id, active.etag)
-      else etags.current.delete(id)
-      reset(active.dashboard)
-      setSaved(documentFingerprint(active.dashboard))
-      setDashboards(items => [...items.filter(item => item.id !== id), active.dashboard])
-      setEditing(false)
-      setRemoteDashboard(undefined)
-      close()
-      setMessage("Loaded the latest saved dashboard.")
-    } catch (reason) {
-      if (request === openRequest.current) setError(reason instanceof Error ? reason.message : "Could not load the saved dashboard.")
-    } finally { setBusy(false) }
-  }
-
-  async function createDashboard() {
-    if (bundleImportActive.current) return
-    const request = ++openRequest.current
-    if ((dirty || widgetDraftDirty) && !await confirmDiscard()) return
-    if (request !== openRequest.current) return
-    const next = newDashboard()
-    setExploring(false)
-    resetView(next)
-    reset(next)
-    setSaved("")
-    setEditing(true)
-    close()
-    panelOpener.current = undefined
-    showPanel("add")
-    setMessage("")
-    setMobileSidebar(false)
-  }
-
-  function duplicateDashboard() {
-    if (bundleImportActive.current) return
-    ++openRequest.current
-    const copy = writableDashboard({
-      ...dashboard,
-      id: `dashboard-${crypto.randomUUID()}`,
-      title: `${dashboard.title.slice(0, 113)} (copy)`,
-    })
-    resetView(copy)
-    reset(copy)
-    setSaved("")
-    setEditing(true)
-    close()
-    setMessage("Dashboard duplicated. Save it to add the copy to your library.")
-  }
-
-  async function deleteDashboard() {
-    if (busy) return
-    const request = ++openRequest.current
-    if (
-      !await confirmation.ask({ title: "Delete dashboard?", description: `Delete “${dashboard.title}” from the workspace? This cannot be undone.`, action: "Delete dashboard" })
-    )
-      return
-    if (request !== openRequest.current) return
-    const id = dashboard.id
-    setBusy(true)
-    setError("")
-    try {
-      const remaining = dashboards.filter((item) => item.id !== id)
-      if (mode === "example")
-        writeExampleWorkspace(localStorage, remaining, remaining[0]?.id ?? "")
-      else await client.remove(id, etags.current.get(id))
-      etags.current.delete(id)
-      setDashboards((items) => items.filter((item) => item.id !== id))
-      if (request !== openRequest.current) return
-      const next =
-        mode === "example" && remaining[0] ? remaining[0] : newDashboard()
-      ++openRequest.current
-      resetView(next)
-      reset(next)
-      setSaved(
-        mode === "example" && remaining[0] ? documentFingerprint(next) : "",
-      )
-      setEditing(true)
-      close()
-      setMessage("Dashboard deleted.")
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Could not delete dashboard.",
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function moveDashboard(id: string, folder?: string) {
-    if (busy) return
-    if (id === dashboard.id) {
-      update({ ...dashboard, folder })
-      setEditing(true)
-      setMessage("Dashboard moved. Save to keep its new location.")
-      return
-    }
-    const existing = dashboards.find((item) => item.id === id)
-    if (!existing || existing.folder === folder) return
-    setBusy(true)
-    setError("")
-    try {
-      const loaded =
-        mode === "example"
-          ? { dashboard: existing, etag: undefined }
-          : await client.get(id)
-      const moved = dashboardAsSent(writableDashboard({ ...loaded.dashboard, folder }))
-      if (mode === "example")
-        writeExampleWorkspace(
-          localStorage,
-          dashboards.map((item) => (item.id === id ? moved : item)),
-          dashboard.id,
-        )
-      else {
-        const etag = await client.save(moved, loaded.etag)
-        if (etag) etags.current.set(id, etag)
-      }
-      setDashboards((items) =>
-        items.map((item) => (item.id === id ? moved : item)),
-      )
-      setMessage(`Moved ${moved.title} to ${folder || "workspace root"}.`)
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Could not move dashboard.",
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const refreshSavedQueries = useCallback(async () => {
-    const generation = libraryMutation.current
-    const entries = await libraryClient.listSavedQueries()
-    if (generation === libraryMutation.current) updateSavedQueries(entries)
-  }, [libraryClient, updateSavedQueries, libraryMutation])
-
-  // A seeded open (a chart's trace search) remounts the Explorer on that seed. Unsaved explorer work is confirmed first, as a provider switch is.
-  const openQueryExplorer = useCallback((seed?: ExplorerSeed) => {
-    const open = () => {
-      if (seed) setExplorerSource(previous => ({ providerId: seed.providerId, seed, revision: previous.revision + 1 }))
-      setExplorerOpened(true)
-      setExploring(true)
-      setMobileSidebar(false)
-      setLibraryRevision(value => value + 1)
-    }
-    if (!seed || !explorerDirty) return open()
-    void confirmation.ask({
-      title: "Discard query changes?",
-      description: "Your unsaved query changes will be lost. Saved queries will remain unchanged.",
-      action: "Discard changes",
-    }).then(confirmed => { if (confirmed) { setExplorerDirty(false); open() } })
-  }, [confirmation, explorerDirty, setExplorerDirty, setExplorerOpened, setExplorerSource, setExploring, setLibraryRevision, setMobileSidebar])
-
-  async function exploreProvider(provider: Provider) {
-    if (explorerDirty && !await confirmation.ask({
-      title: "Discard query changes?",
-      description: "Your unsaved query changes will be lost. Saved queries will remain unchanged.",
-      action: "Discard changes",
-    })) return
-    setExplorerSource(previous => ({ providerId: provider.id, revision: previous.revision + 1 }))
-    setExplorerDirty(false)
-    close()
-    openQueryExplorer()
-  }
-
-  // Sample data keeps no revisions. A host that predates revision history serves no listing.
-  const historyAvailable = mode !== "example" && !!client.listRevisions
-  // A restored revision is the saved document now: the canvas, the saved fingerprint and the ETag all move to it.
-  function applyRestoredDocument(restored: Dashboard, etag?: string) {
-    if (etag) etags.current.set(restored.id, etag)
-    else etags.current.delete(restored.id)
-    setDashboards(items => [...items.filter(item => item.id !== restored.id), restored])
-    reset(restored)
-    setSaved(documentFingerprint(restored))
-    setQueryRevision(value => value + 1)
-    setMessage("Dashboard restored from an earlier revision.")
-  }
-  function importClient(): InsightsClient {
-    return mode === "example"
-      ? { ...libraryClient, ...createExampleDashboardImportClient(localStorage) }
-      : libraryClient
-  }
-
-  async function reviewBundle(bundle: DashboardBundle) {
-    return loadBundleImportReview(bundle, importClient())
-  }
-
-  async function importBundle(request: BundleImportRequest) {
-    if (busy || bundleImportActive.current) throw new Error("Wait for the current save before importing dashboards.")
-    if (dirty && request.dashboardChoices?.[dashboard.id] === "replace")
-      throw new Error("This dashboard has unsaved edits. Save them or open another dashboard before replacing its saved version.")
-    const activeFingerprint = documentFingerprint(latestDocument.current)
-    bundleImportActive.current = true
-    ++openRequest.current
-    setImportingBundle(true)
-    setBusy(true)
-    try {
-      return await bundleImporter.current!(request, {
-        client: importClient(), providers, dashboards,
-        onQueriesChange: updateSavedQueries,
-        onDashboardSaved: (document, etag) => {
-          const editedDuringImport = document.id === dashboard.id && documentFingerprint(latestDocument.current) !== activeFingerprint
-          if (etag && !editedDuringImport) etags.current.set(document.id, etag)
-          setDashboards(items => [...items.filter(item => item.id !== document.id), document])
-          if (editedDuringImport) {
-            setError("The saved dashboard was replaced. Your newer local edits are retained; open another dashboard and return to load the replacement, or duplicate your draft.")
-          } else if (document.id === dashboard.id) {
-            reset(document)
-            setSaved(documentFingerprint(document))
-            setQueryRevision(value => value + 1)
-            setMessage("Dashboard replaced with the reviewed import.")
-          }
-        },
-      })
-    } finally { bundleImportActive.current = false; setImportingBundle(false); setBusy(false) }
-  }
+  const [
+    applyDashboardVariables,
+    applyRestoredDocument,
+    changeViewRange,
+    changeViewRefresh,
+    createDashboard,
+    deleteDashboard,
+    duplicateDashboard,
+    exploreProvider,
+    historyAvailable,
+    importBundle,
+    moveDashboard,
+    openQueryExplorer,
+    refreshSavedQueries,
+    reloadRemoteDashboard,
+    resetViewRange,
+    reviewBundle,
+    setViewAsDefault,
+  ] = useViewActions(
+    advanceEnd,
+    applyView,
+    bundleImportActive,
+    bundleImporter,
+    busy,
+    client,
+    close,
+    confirmDiscard,
+    confirmation,
+    currentRoute,
+    dashboard,
+    dashboards,
+    dirty,
+    editing,
+    etags,
+    explorerDirty,
+    importingBundle,
+    latestDocument,
+    libraryClient,
+    libraryMutation,
+    mode,
+    openRequest,
+    panel,
+    panelOpener,
+    providers,
+    reset,
+    saveButton,
+    setBusy,
+    setDashboards,
+    setEditing,
+    setError,
+    setExplorerDirty,
+    setExplorerOpened,
+    setExplorerSource,
+    setExploring,
+    setImportingBundle,
+    setLibraryRevision,
+    setLinkNotice,
+    setMessage,
+    setMobileSidebar,
+    setQueryRevision,
+    setRemoteDashboard,
+    setReturnTo,
+    setSaved,
+    showPanel,
+    update,
+    updateSavedQueries,
+    viewDashboard,
+    widgetDraftDirty,
+  )
 
   if (mode === "loading")
     return (
