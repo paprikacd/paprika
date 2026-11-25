@@ -58,16 +58,17 @@ func checkPluginConfig(doc *lintDocument) []lintHit {
 			pointer:     widgetBase(widget.index) + "/config" + pointer,
 			widgetID:    widget.id,
 			message:     widgetLabel(widget) + ": " + message,
-			grandfather: pluginConfigKey(widget.id, config),
+			grandfather: pluginConfigKey(widget.id, widget.pluginID, config),
 		})
 	}
 	return hits
 }
 
-// pluginConfigKey identifies one widget's configuration for grandfathering: a stored widget with the same id and the
-// same compact configuration keeps its warning. The NUL separator cannot occur in a widget id.
-func pluginConfigKey(widgetID string, compact json.RawMessage) string {
-	return widgetID + "\x00" + string(compact)
+// pluginConfigKey identifies one widget's configuration for grandfathering: a stored widget with the same id, the same
+// plugin and the same compact configuration keeps its warning. A configuration moved to another widget, or kept under
+// another plugin, is new. The NUL separators cannot occur in a widget or plugin id, which the schema has checked.
+func pluginConfigKey(widgetID, pluginID string, compact json.RawMessage) string {
+	return widgetID + "\x00" + pluginID + "\x00" + string(compact)
 }
 
 // compactPluginConfig returns the configuration in compact form, with {} standing for a missing or null one.

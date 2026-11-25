@@ -248,7 +248,8 @@ jobs:
         run: make generate-proto
 
       - name: Regenerate Insights contract artifacts
-        run: (cd ui && npm run schema:generate)
+        run: npm run schema:generate
+        working-directory: ui
 
       - name: Check generated code
         run: |

@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 const maxDocumentBytes = 256 << 10
@@ -332,8 +333,14 @@ func requireObjectShape(data json.RawMessage, required, optional []string) (map[
 	return object, nil
 }
 
-// JavaScript string length counts UTF-16 code units, including surrogate pairs.
+// JavaScript string length counts UTF-16 code units, including surrogate pairs. Only the bounds the Zod schema
+// refines on value.length use it: variable values, saved-query tags, metadata and image URLs, label-binding keys.
 func stringUnits(value string) int { return len(utf16.Encode([]rune(value))) }
+
+// textLength is the length a plain Zod .max(N) and a JSON Schema maxLength measure: Unicode code points, so an
+// emoji counts once. Every other bounded document string uses it, so the server accepts what the editor and the
+// published schema accept (see conformance/contract-differential.json).
+func textLength(value string) int { return utf8.RuneCountInString(value) }
 
 func trimJS(value string) string {
 	return strings.Trim(value, "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff")
@@ -422,19 +429,19 @@ func validateDashboardWidget(w *dashboardWidget, seen map[string]bool) error {
 // validateWidgetText checks each text member on its own, so the pointer names
 // the member that is out of bounds.
 func validateWidgetText(w *dashboardWidget) error {
-	if trimJS(w.Title) == "" || stringUnits(trimJS(w.Title)) > 120 {
+	if trimJS(w.Title) == "" || textLength(trimJS(w.Title)) > 120 {
 		return fieldErr("title", "widget title or metadata is invalid")
 	}
-	if stringUnits(w.Description) > 500 {
+	if textLength(w.Description) > 500 {
 		return fieldErr("description", "widget title or metadata is invalid")
 	}
-	if stringUnits(w.Unit) > 24 {
+	if textLength(w.Unit) > 24 {
 		return fieldErr("unit", "widget title or metadata is invalid")
 	}
 	if !validID.MatchString(w.ProviderID) {
 		return fieldErr("providerId", "widget provider and query are required")
 	}
-	if trimJS(w.Query) == "" || stringUnits(trimJS(w.Query)) > 8192 {
+	if trimJS(w.Query) == "" || textLength(trimJS(w.Query)) > 8192 {
 		return fieldErr("query", "widget provider and query are required")
 	}
 	return nil
@@ -470,10 +477,10 @@ func validateDashboardIdentity(d *dashboardDocument, id string) error {
 	if d.ID != id {
 		return errAt("/id", identityMessage)
 	}
-	if trimJS(d.Title) == "" || stringUnits(trimJS(d.Title)) > 120 {
+	if trimJS(d.Title) == "" || textLength(trimJS(d.Title)) > 120 {
 		return errAt("/title", "dashboard title or description is invalid")
 	}
-	if stringUnits(d.Description) > 500 {
+	if textLength(d.Description) > 500 {
 		return errAt("/description", "dashboard title or description is invalid")
 	}
 	switch d.TimeRange {

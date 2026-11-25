@@ -105,6 +105,51 @@ func TestStoredInvalidPluginConfigIsAWarningOnlyWhenUnchanged(t *testing.T) {
 	require.Equal(t, insightsv1.Severity_SEVERITY_ERROR, edited[0].Severity)
 }
 
+// Grandfathering is keyed by the widget id, its plugin and its exact configuration. Moving the stored configuration to
+// another widget, or keeping the widget and configuration but switching to another plugin that also refuses it, is a
+// new invalid configuration and an error.
+func TestStoredInvalidPluginConfigDoesNotMoveOrChangePlugin(t *testing.T) {
+	layout := `{"x":0,"y":0,"w":6,"h":4}`
+	stored := documentWithWidgets("demo", pluginWidgetJSON("table", layout, "record-table", `{"pageSize":2}`))
+	for name, document := range map[string]Dashboard{
+		"another widget": documentWithWidgets("demo", pluginWidgetJSON("table", layout, "record-table", `{}`), pluginWidgetJSON("copy", `{"x":6,"y":0,"w":6,"h":4}`, "record-table", `{"pageSize":2}`)),
+		"renamed widget": documentWithWidgets("demo", pluginWidgetJSON("renamed", layout, "record-table", `{"pageSize":2}`)),
+		"another plugin": documentWithWidgets("demo", pluginWidgetJSON("table", layout, "record-list", `{"pageSize":2}`)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, refused := pluginConfigProblem("record-list", json.RawMessage(`{"pageSize":2}`))
+			require.True(t, refused, "the other plugin must refuse the configuration too, or this case proves nothing")
+			findings := findingsForRule(saveReport("demo", document, stored, unboundedFindings, nil).findings(), "plugin.config")
+			require.NotEmpty(t, findings)
+			for _, finding := range findings {
+				require.Equal(t, insightsv1.Severity_SEVERITY_ERROR, finding.Severity, finding.Pointer)
+			}
+		})
+	}
+}
+
+// The grandfathered save goes through the HTTP path: a dashboard stored before the rule existed takes an unrelated
+// edit, and the same edit with a changed configuration is refused at the member.
+func TestSaveKeepsAStoredInvalidPluginConfigOnAnUnrelatedEdit(t *testing.T) {
+	s, store := testService(t)
+	h := s.Handler()
+	stored := documentWithWidgets("demo", pluginWidgetJSON("table", `{"x":0,"y":0,"w":6,"h":4}`, "record-table", `{"pageSize":2}`))
+	_, err := store.Put("demo", stored, "", "*")
+	require.NoError(t, err)
+	current := request(t, h, "GET", "/api/dashboards/demo", nil, nil)
+	require.Equal(t, http.StatusOK, current.Code)
+	tag := current.Header().Get("ETag")
+
+	unrelated := documentWithWidgets("demo", pluginWidgetJSON("table", `{"x":0,"y":0,"w":5,"h":4}`, "record-table", `{"pageSize":2}`))
+	saved := request(t, h, "PUT", "/api/dashboards/demo", unrelated, map[string]string{"If-Match": tag})
+	require.Equal(t, http.StatusOK, saved.Code, saved.Body.String())
+
+	changed := documentWithWidgets("demo", pluginWidgetJSON("table", `{"x":0,"y":0,"w":5,"h":4}`, "record-table", `{"pageSize":3}`))
+	refused := request(t, h, "PUT", "/api/dashboards/demo", changed, map[string]string{"If-Match": saved.Header().Get("ETag")})
+	require.Equal(t, http.StatusBadRequest, refused.Code, refused.Body.String())
+	require.Contains(t, refused.Body.String(), "/widgets/0/config/pageSize")
+}
+
 // A plugin the bundle does not describe is not checked here, so a host plugin passes whatever its configuration.
 func TestUnknownPluginIdIsNotCheckedAgainstAPublishedSchema(t *testing.T) {
 	document := documentWithWidgets("demo", pluginWidgetJSON("host", `{"x":0,"y":0,"w":6,"h":4}`, "host-widget", `{"anything":true}`))

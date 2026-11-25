@@ -301,6 +301,7 @@ func testGeneratedDriftDetection(t *testing.T) {
 		"command -v ui/node_modules/.bin/protoc-gen-connect-es",
 		"rm -rf -- internal/api/paprika ui/src/gen",
 		"make generate-proto",
+		"npm run schema:generate",
 		"git diff --exit-code",
 		"git status --porcelain --untracked-files=all",
 		`test -z "$(git status --porcelain --untracked-files=all)"`,
@@ -315,6 +316,12 @@ func testGeneratedDriftDetection(t *testing.T) {
 	for index := 1; index < len(positions); index++ {
 		if positions[index-1] >= 0 && positions[index] >= 0 && positions[index-1] >= positions[index] {
 			t.Errorf("ci.yml generated commands must run in order; %q must precede %q", commands[index-1], commands[index])
+		}
+	}
+	// The Insights contract writer is a vitest run inside ui/, so its step must run there.
+	for _, step := range workflowRunSteps(generated) {
+		if strings.TrimSpace(step.run) == "npm run schema:generate" && !workingDirectoryMatches(step.workingDirectory, "ui") {
+			t.Errorf("ci.yml generated step running npm run schema:generate must use working-directory ui, got %q", step.workingDirectory)
 		}
 	}
 }
