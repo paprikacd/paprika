@@ -64,7 +64,7 @@ describe("no raw metric strings outside the formatters", () => {
     // Each exception names a file and a fragment of the line. Raw machine values in data-* attributes, query and
     // variable parameters (not display text), the non-numeric fallbacks, and the helpers that format numbers.
     const allowed: [file: string, fragment: string][] = [
-      ["chart-renderers.tsx", "? String(trace.durationMs)"],
+      ["renderers/trace-list.tsx", "? String(trace.durationMs)"],
       ["plot-tooltip.tsx", "point.value === null ? \"missing\" : String(point.value)"],
       ["drilldown.ts", "String(context.value)"],
       ["drilldown.ts", "typeof value === \"number\" ? String(value) : value"],
@@ -77,7 +77,7 @@ describe("no raw metric strings outside the formatters", () => {
       ["plugins/records.tsx", "Invalid history"],
       ["plugins/record-charts.tsx", "const contextText="],
       ["plugins/record-table-cells.tsx", "const displayed = "],
-      ["chart-renderers.tsx", "data-metric-value={String(first.point.value)}"],
+      ["renderers/stat.tsx", "data-metric-value={String(first.point.value)}"],
       ["metric-tooltip-content.tsx", "data-metric-value="],
       ["example-catalog-query.ts", "const key = String(row[stock])"],
       ["plugins/operational-records-data.ts", "const labelValue"],

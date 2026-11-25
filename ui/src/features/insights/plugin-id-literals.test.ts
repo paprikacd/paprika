@@ -16,7 +16,7 @@ const allowed: Record<string, { ids: readonly string[]; reason: string }> = {
     ids: ["record-list", "record-matrix", "record-table", "record-treemap", "records-bar", "records-line"],
     reason: "The explorer's records view switcher offers these plugins by id and maps each to its column fields.",
   },
-  "insights-app.tsx": {
+  "shell/use-document-actions.ts": {
     ids: ["record-table"],
     reason: "A records query saved from the explorer opens on the record table, the default records view.",
   },
