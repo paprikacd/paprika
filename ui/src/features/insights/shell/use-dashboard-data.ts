@@ -5,15 +5,13 @@ import { resolveSavedQueryReference } from "../saved-queries"
 import { createQueryScheduler, createResolvedQueryFetcher } from "../query"
 import { alignedDashboardEnd, dashboardRange } from "../time-range"
 import { sourceWaitMessage } from "../source-status"
-import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "../variable-options"
+import { sourceQueryStep, type VariableValueLoaders } from "../variable-options"
 import type { VariableSourceCatalog } from "../variable-source-editor"
 import { interpolateQuery } from "../drilldown"
-import { MANUAL_REFRESH_BYPASS_MS } from "./constants"
 import type { AfterWorkspaceBoot } from "./types"
 
 export function useDashboardData(
-  activeExample: AfterWorkspaceBoot["activeExample"],
-  client: AfterWorkspaceBoot["client"],
+  backend: AfterWorkspaceBoot["backend"],
   end: AfterWorkspaceBoot["end"],
   principal: AfterWorkspaceBoot["principal"],
   providers: AfterWorkspaceBoot["providers"],
@@ -30,9 +28,8 @@ export function useDashboardData(
     // A refresh or provider edit invalidates cached fixed-range observations too.
     void queryRevision
     // The scheduler owns the capacity backoff, so its slot is free while a refused query waits.
-    const query = activeExample ? activeExample.repositoryWorkspaceQuery : (request: QueryRequest, signal: AbortSignal) => client.query(request, signal, { replayCapacity: false, refresh: Date.now() - refreshedAt < MANUAL_REFRESH_BYPASS_MS })
-    return createQueryScheduler(query)
-  }, [client, activeExample, queryRevision, refreshedAt])
+    return createQueryScheduler(backend.scheduledQuery(refreshedAt))
+  }, [backend, queryRevision, refreshedAt])
   // Resolve each authoring scope once, before sharing the bounded scheduler.
   // Tooltip label values may themselves contain {{text}}; never interpolate
   // those resolved query literals again as dashboard variables.
@@ -62,12 +59,11 @@ export function useDashboardData(
   // Values for variable sources come from the same metadata and query paths the widgets use.
   const variableLoaders = useMemo<VariableValueLoaders>(() => ({
     // The principal is the scope, so values loaded under one sign-in never serve another; a token renewal keeps them.
-    scope: variableValueScope(!!activeExample, principal),
+    scope: backend.variableScope(principal),
     metadata: async (request, signal) => {
       // Example workspaces read a fixed fixture that has no selectors, so a selector is refused rather than ignored.
-      if (activeExample && request.selector !== undefined) throw new Error("Selector-filtered values are not available in examples")
-      const metadata = activeExample ? activeExample.repositoryWorkspaceMetadata : client.metadata
-      const response = await metadata(request.providerId, { kind: "values", label: request.label, selector: request.selector, start: request.start, end: request.end }, signal)
+      backend.assertSelector(request.selector)
+      const response = await backend.client.metadata(request.providerId, { kind: "values", label: request.label, selector: request.selector, start: request.start, end: request.end }, signal)
       return { values: response.values, truncated: response.truncated }
     },
     query: (request, signal) => {
@@ -83,7 +79,7 @@ export function useDashboardData(
       const minStepSeconds = providers.find(provider => provider.id === definition.providerId)?.minStepSeconds
       return scheduledFetcher({ ...definition, start: request.start, end: request.end, step: sourceQueryStep(request.start, request.end, minStepSeconds) }, signal)
     },
-  }), [client, activeExample, scheduledFetcher, savedQueries, queriesLoading, queriesError, providers, principal])
+  }), [backend, scheduledFetcher, savedQueries, queriesLoading, queriesError, providers, principal])
   // The variable editor reads providers, label names and saved queries; its preview runs the same loaders as the bar.
   const variableCatalog = useMemo<VariableSourceCatalog>(() => ({
     loaders: variableLoaders,
@@ -91,17 +87,10 @@ export function useDashboardData(
     savedQueries,
     range: { start: range.start, end: range.end },
     labels: async (providerId, signal) => {
-      const metadata = activeExample ? activeExample.repositoryWorkspaceMetadata : client.metadata
-      return (await metadata(providerId, { kind: "labels" }, signal)).values
+      return (await backend.client.metadata(providerId, { kind: "labels" }, signal)).values
     },
-  }), [variableLoaders, providers, savedQueries, client, activeExample, range.start, range.end])
-  const builderClient = useMemo(
-    () =>
-      activeExample
-        ? { ...client, metadata: activeExample.repositoryWorkspaceMetadata, query: activeExample.repositoryWorkspaceQuery }
-        : client,
-    [client, activeExample],
-  )
+  }), [variableLoaders, providers, savedQueries, backend, range.start, range.end])
+  const builderClient = backend.client
   return [
     alignedEnd,
     builderClient,

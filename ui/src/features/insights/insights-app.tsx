@@ -58,6 +58,7 @@ import "./dashboard-view"
 import { ShortcutList } from "./shell/lazy-panels"
 import { NO_VARIABLES } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
+import { useWorkspaceBackend } from "./shell/workspace-backend"
 import { useSavedQueryLibrary } from "./shell/use-saved-query-library"
 import { useDashboardSession } from "./shell/use-dashboard-session"
 import { useShellLayout } from "./shell/use-shell-layout"
@@ -148,6 +149,12 @@ function InsightsWorkspace({
     workspaceFailed,
   ] = useWorkspace()
   const [
+    backend,
+  ] = useWorkspaceBackend(
+    client,
+    activeExample,
+  )
+  const [
     dashboards,
     explorerDirty,
     explorerOpened,
@@ -171,8 +178,7 @@ function InsightsWorkspace({
     setQueriesLoaded,
     updateSavedQueries,
   ] = useSavedQueryLibrary(
-    activeExample,
-    client,
+    backend,
     latestDocument,
     mode,
   )
@@ -440,8 +446,7 @@ function InsightsWorkspace({
     variableCatalog,
     variableLoaders,
   ] = useDashboardData(
-    activeExample,
-    client,
+    backend,
     end,
     principal,
     providers,

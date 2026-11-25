@@ -2,6 +2,7 @@
 // it; a view takes a Pick of the whole Shell. Generated alongside the hooks by the R70 extract tool.
 import type { InsightsAppProps } from "../insights-app"
 import type { useWorkspace } from "./use-workspace"
+import type { useWorkspaceBackend } from "./workspace-backend"
 import type { useSavedQueryLibrary } from "./use-saved-query-library"
 import type { useDashboardSession } from "./use-dashboard-session"
 import type { useShellLayout } from "./use-shell-layout"
@@ -23,7 +24,10 @@ export type WorkspaceNames = ["activeExample", "canRedo", "canUndo", "dashboard"
 export type AfterWorkspace = ShellProps & Named<WorkspaceNames, ReturnType<typeof useWorkspace>>
 
 export type SavedQueryLibraryNames = ["dashboards", "explorerDirty", "explorerOpened", "explorerSource", "exploring", "inspectingQueries", "libraryClient", "libraryMutation", "queriesError", "queriesLoaded", "queriesLoading", "savedQueries", "setDashboards", "setExplorerDirty", "setExplorerOpened", "setExplorerSource", "setExploring", "setInspectingQueries", "setLibraryRevision", "setQueriesError", "setQueriesLoaded", "updateSavedQueries"]
-export type AfterSavedQueryLibrary = AfterWorkspace & Named<SavedQueryLibraryNames, ReturnType<typeof useSavedQueryLibrary>>
+export type WorkspaceBackendNames = ["backend"]
+export type AfterWorkspaceBackend = AfterWorkspace & Named<WorkspaceBackendNames, ReturnType<typeof useWorkspaceBackend>>
+
+export type AfterSavedQueryLibrary = AfterWorkspaceBackend & Named<SavedQueryLibraryNames, ReturnType<typeof useSavedQueryLibrary>>
 
 export type DashboardSessionNames = ["applyView", "busy", "currentRoute", "editing", "error", "importingBundle", "invalidWidgetSaveHintId", "linkNotice", "message", "messageAction", "panel", "reflectView", "remoteDashboard", "returnTo", "saveFindings", "saved", "selected", "setBusy", "setEditing", "setError", "setImportingBundle", "setLinkNotice", "setMessage", "setMessageAction", "setPanel", "setRemoteDashboard", "setReturnTo", "setSaveFindings", "setSaved", "setSelected", "setShortcutsOpen", "setWidgetDraftDirty", "setWidgetDraftValid", "setWidgetPreview", "shortcutsOpen", "showView", "widgetDraftDirty", "widgetDraftValid", "widgetOpener", "widgetPreview"]
 export type AfterDashboardSession = AfterSavedQueryLibrary & Named<DashboardSessionNames, ReturnType<typeof useDashboardSession>>

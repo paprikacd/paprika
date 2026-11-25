@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { InsightsClient } from "../client"
 import { type Dashboard, type SavedQueryEntry } from "../schema"
-import { createExampleSavedQueryClient } from "../saved-query-storage"
 import { dashboardUsesSavedQuery } from "../saved-queries"
 import type { ExplorerSeed } from "../saved-query-context"
-import type { AfterWorkspace } from "./types"
+import type { AfterWorkspaceBackend } from "./types"
 
 export function useSavedQueryLibrary(
-  activeExample: AfterWorkspace["activeExample"],
-  client: AfterWorkspace["client"],
-  latestDocument: AfterWorkspace["latestDocument"],
-  mode: AfterWorkspace["mode"],
+  backend: AfterWorkspaceBackend["backend"],
+  latestDocument: AfterWorkspaceBackend["latestDocument"],
+  mode: AfterWorkspaceBackend["mode"],
 ) {
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [exploring, setExploring] = useState(false)
@@ -31,17 +29,13 @@ export function useSavedQueryLibrary(
     setQueriesError("")
   }, [])
   const libraryClient = useMemo<InsightsClient>(() => {
-    // A draft must not hide a dependency that still exists in saved storage.
-    const currentDocuments = () => [...(activeExample?.readRepositoryExampleWorkspace(localStorage).dashboards ?? []), latestDocument.current]
-    const scoped = activeExample && typeof window !== "undefined"
-      ? { ...client, ...createExampleSavedQueryClient(localStorage, currentDocuments, activeExample.repositoryWorkspaceQueries.filter(query => currentDocuments().some(document => dashboardUsesSavedQuery(document, query.id)))), metadata: activeExample.repositoryWorkspaceMetadata, query: activeExample.repositoryWorkspaceQuery }
-      : client
+    const scoped = backend.savedQueries(() => latestDocument.current)
     return { ...scoped, removeSavedQuery: async (id, etag) => {
       if (dashboardUsesSavedQuery(latestDocument.current, id))
         throw new Error("This saved query is used by the current dashboard. Switch its widgets to custom queries before deleting it.")
       return scoped.removeSavedQuery(id, etag)
     } }
-  }, [client, activeExample, latestDocument])
+  }, [backend, latestDocument])
   useEffect(() => {
     if (mode !== "live" && mode !== "example") return
     const controller = new AbortController()
