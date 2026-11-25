@@ -98,9 +98,9 @@ Each host groups its complete parent value, labels and timestamp before the chil
 | --- | --- |
 | Persisted contract | `schema.ts`, generated JSON Schema, `internal/insights/schema_extensions.go` |
 | Builder | `tooltip-editor.tsx`, mounted by `widget-editor.tsx`; existing Gamma adapters |
-| Safe binding, lifecycle | `tooltip-context.ts`, `tooltip-query.tsx`; host context in `canvas.tsx` and shared scheduler in `insights-app.tsx` |
+| Safe binding, lifecycle | `tooltip-context.ts`, `tooltip-query.tsx`; host context in `canvas.tsx` and shared scheduler in `shell/use-dashboard-data.ts` |
 | Bounded rendering | `tooltip-widgets.tsx`, `widget-presentation.tsx`, existing widget registry/renderers |
-| Hover, pin, focus and viewport | `chart-renderers.tsx`, `plot-tooltip.tsx`; public TanStack focus/select/tooltip extension APIs |
+| Hover, pin, focus and viewport | `renderers/` (stat, metric table, trace list, heatmap), `plot-tooltip.tsx`; public TanStack focus/select/tooltip extension APIs |
 | AI and portability | `openui.ts`, `workspace-transfer.ts` |
 
 ## Verification
