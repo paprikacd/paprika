@@ -595,6 +595,8 @@
   color: var(--gamma-muted);
   font-size: 12px;
 }
+.inspectorFooter button { white-space: nowrap; }
+@media (max-width: 480px) { .pagerNoun { display: none; } }
 .inspectorFooter > div {
   display: flex;
   align-items: center;

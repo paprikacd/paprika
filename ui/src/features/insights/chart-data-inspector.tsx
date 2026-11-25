@@ -231,18 +231,23 @@ function ChartDataDialog({
         <span role="status">
           {points.length} observations · Page {currentPage + 1} of {pages}
         </span>
-        <GammaButton
-          disabled={currentPage === 0}
-          onClick={() => setPage(currentPage - 1)}
-        >
-          Previous observations
-        </GammaButton>
-        <GammaButton
-          disabled={currentPage + 1 >= pages}
-          onClick={() => setPage(currentPage + 1)}
-        >
-          Next observations
-        </GammaButton>
+        {/* The pager stays one row: on a phone the buttons read Previous and Next, and keep their full names. */}
+        <div>
+          <GammaButton
+            disabled={currentPage === 0}
+            aria-label="Previous observations"
+            onClick={() => setPage(currentPage - 1)}
+          >
+            <span>Previous<span className={configStyles.pagerNoun}> observations</span></span>
+          </GammaButton>
+          <GammaButton
+            disabled={currentPage + 1 >= pages}
+            aria-label="Next observations"
+            onClick={() => setPage(currentPage + 1)}
+          >
+            <span>Next<span className={configStyles.pagerNoun}> observations</span></span>
+          </GammaButton>
+        </div>
       </div>
     </dialog>
   );
