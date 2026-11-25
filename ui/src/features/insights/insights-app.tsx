@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import "react-dom"
 import {
   Activity,
@@ -56,7 +56,6 @@ import {
 import "./example"
 import {
   createExampleDashboardImportClient,
-  EXAMPLE_STORAGE_KEY,
   saveExampleWorkspace,
   writeExampleWorkspace,
 } from "./example-storage"
@@ -65,7 +64,7 @@ import catalogMeta from "./repository-examples/catalog-meta.json"
 import { LazyFailure, LazyPanelBoundary, MountSignal, reloadPage } from "./lazy-panel"
 import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
-import { queryConnectionKey, type QueryFieldSnapshot } from "./query-connections"
+import { queryConnectionKey } from "./query-connections"
 import "./saved-query-storage"
 import { loadBundleImportReview, type BundleImportRequest } from "./bundle-import"
 import { resolveSavedQueryReference } from "./saved-queries"
@@ -73,18 +72,18 @@ import type { DashboardBundle } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
 import "./use-mobile-navigation"
 import { dashboardActionItems } from "./dashboard-actions"
-import { useBuilderPanelFocus } from "./use-builder-panel-focus"
+import "./use-builder-panel-focus"
 import type { ExplorerSeed } from "./saved-query-context"
 import "./history"
-import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
+import "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import "./use-workspace-refresh"
-import { DashboardCanvas, type WidgetResultSnapshot } from "./canvas"
+import { DashboardCanvas } from "./canvas"
 import { EmbedView } from "./embed-view"
 import type { EmbedRequest } from "./embed-request"
 import { refreshStaggerSpread } from "./refresh-stagger"
 
-import { visibleTileControl } from "./tile-controls"
+import "./tile-controls"
 import "./canvas-density"
 import { builderPanelPlan } from "./responsive-layout"
 import { createQueryScheduler, createResolvedQueryFetcher } from "./query"
@@ -95,13 +94,13 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { checksFromError, loadProviderCatalog } from "./client"
+import { checksFromError } from "./client"
 import { SourceStatusContext, sourceWaitMessage } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
 import { GammaSelect } from "./gamma/select"
 import { GammaConfirmation } from "./gamma/confirmation"
-import { lockBodyScroll } from "./gamma/scroll-lock"
+import "./gamma/scroll-lock"
 import gammaTheme from "./gamma/gamma-theme.module.css"
 import { PhoneVariables, VariableBar } from "./dashboard-variables"
 import { ClampedDescription } from "./dashboard-description"
@@ -112,9 +111,9 @@ import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink,
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
 import { readDashboardLink, serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
-import { RepositoryWorkspace, DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, loadRepositoryWorkspace, preloadExamples } from "./shell/lazy-panels"
-import { placementPhrase, initialNavigation, panelOpenerElement } from "./shell/navigation"
-import { sourceBannerCopy, sourceFailureReason } from "./shell/source-catalog"
+import { DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, preloadExamples } from "./shell/lazy-panels"
+import { placementPhrase } from "./shell/navigation"
+import { sourceBannerCopy } from "./shell/source-catalog"
 import "./shell/media-stores"
 import { MANUAL_REFRESH_BYPASS_MS, NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
 import { useWorkspace } from "./shell/use-workspace"
@@ -123,6 +122,8 @@ import { useDashboardSession } from "./shell/use-dashboard-session"
 import { useShellLayout } from "./shell/use-shell-layout"
 import { useSourceCatalog } from "./shell/use-source-catalog"
 import { useLiveSync } from "./shell/use-live-sync"
+import { useTileActions } from "./shell/use-tile-actions"
+import { useWorkspaceBoot } from "./shell/use-workspace-boot"
 
 
 registerDefaultWidgetPlugins()
@@ -376,441 +377,105 @@ function InsightsWorkspace({
     setSaved,
     updateSavedQueries,
   )
-  const [queryFieldSnapshot, setQueryFieldSnapshot] = useState<QueryFieldSnapshot>();
-  const [queryResultSnapshot, setQueryResultSnapshot] = useState<WidgetResultSnapshot>();
-  const currentWidget = dashboard.widgets.find(
-    (widget) => widget.id === selected,
-  )
-  const editingWidget = panel === "widget" && !!currentWidget
-  const focusedWidget = editingWidget && !exploring
-  // Removes a tile from the dashboard, as one undo step, and moves focus to the neighbouring tile or the title.
-  const pendingTileFocus = useRef<string | undefined>(undefined)
-  // A notice with one Undo action. Undo applies only while `document` is still the latest one, so a later edit is never
-  // reverted by it. Focus moves to `focus` once the undone change renders.
-  // The chart editor's draft, read at undo time. A notice's closure is older than the edits made after it.
-  const chartDraftDirty = useRef(false)
-  const askConfirmation = confirmation.ask
-  useLayoutEffect(() => { chartDraftDirty.current = widgetDraftDirty })
-  // `leave` closes the chart editor when the undone change is the chart it was showing. Unapplied edits to that chart
-  // then need the same discard confirmation as leaving it.
-  const noticeWithUndo = useCallback((notice: { text: string; name: string; document: Dashboard; focus: string; restored: string; leave?: () => void }) => {
-    setError("")
-    setMessage(notice.text)
-    setMessageAction({
-      text: notice.text,
-      label: "Undo",
-      name: notice.name,
-      document: notice.document,
-      run: () => {
-        const undoNow = () => {
-          if (JSON.stringify(latestDocument.current) !== JSON.stringify(notice.document)) {
-            setMessageAction(undefined)
-            setMessage("Could not undo: the dashboard changed since then.")
-            return
-          }
-          notice.leave?.()
-          pendingTileFocus.current = notice.focus
-          undo()
-          setMessage(notice.restored)
-        }
-        if (!notice.leave || !chartDraftDirty.current) return undoNow()
-        void askConfirmation({
-          title: "Discard chart changes?",
-          description: "These chart settings have not been applied to the dashboard.",
-          action: "Discard changes",
-        }).then(accepted => { if (accepted) undoNow() })
-      },
-    })
-  }, [undo, askConfirmation, latestDocument, setError, setMessage, setMessageAction])
-  const removeTile = useCallback((widgetId: string) => {
-    const index = dashboard.widgets.findIndex((widget) => widget.id === widgetId)
-    if (index < 0) return
-    const removed = dashboard.widgets[index]
-    const next = { ...dashboard, widgets: dashboard.widgets.filter((widget) => widget.id !== widgetId) }
-    const neighbour = next.widgets[index] ?? next.widgets[index - 1]
-    update(next)
-    pendingTileFocus.current = neighbour?.id ?? "title"
-    // The open chart editor returns focus to its opener when it closes. Its opener is the removed tile, so it moves to the neighbour.
-    if (widgetOpener.current === widgetId) widgetOpener.current = neighbour?.id
-    noticeWithUndo({
-      text: `Removed ${removed.title}.`,
-      name: `Undo remove ${removed.title}`,
-      document: next,
-      focus: removed.id,
-      restored: `Restored ${removed.title}.`,
-    })
-  }, [dashboard, update, noticeWithUndo, widgetOpener])
-  // Copies a saved tile from its actions menu: one undo step, the copy beside the tile or below it, and focus on the copy.
-  // The copy is the saved widget, so unapplied editor changes are not included (the editor's Duplicate chart does include them).
-  const duplicateTile = useCallback((widgetId: string) => {
-    const source = dashboard.widgets.find((widget) => widget.id === widgetId)
-    if (!source) return
-    if (dashboard.widgets.length >= MAX_WIDGETS) {
-      setError("A dashboard supports up to 48 widgets.")
-      return
-    }
-    const copyId = `widget-${crypto.randomUUID()}`
-    const edit = duplicateLayout(savedLayout(dashboard.widgets), widgetId, copyId)
-    if ("blocked" in edit) {
-      setError(edit.blocked)
-      return
-    }
-    const placed = new Map(edit.layout.map((item) => [item.i, item]))
-    const moved = dashboard.widgets.map((item) => {
-      const at = placed.get(item.id)
-      return at ? { ...item, layout: { ...item.layout, x: at.x, y: at.y } } : item
-    })
-    const at = placed.get(copyId)!
-    const copy = { ...source, id: copyId, title: `${source.title.slice(0, 113)} (copy)`, layout: { ...source.layout, x: at.x, y: at.y } }
-    const next = { ...dashboard, widgets: [...moved, copy] }
-    update(next)
-    pendingTileFocus.current = copy.id
-    noticeWithUndo({
-      text: `Duplicated ${source.title}${placementPhrase(edit.placement)}.`,
-      name: `Undo duplicate ${source.title}`,
-      document: next,
-      focus: source.id,
-      restored: "Removed the copy.",
-    })
-  }, [dashboard, update, noticeWithUndo, setError])
-  // Focus moves to the pending tile once it is in the DOM. A copy can mount a commit after the change that made it, so until
-  // then a MutationObserver on the canvas retries, and the target is dropped only when the dashboard no longer has that tile.
-  const tileFocusWatch = useRef<MutationObserver | null>(null)
-  const focusPendingTile = useCallback(() => {
-    const target = pendingTileFocus.current
-    if (target === undefined) return true
-    if (target === "title") {
-      pendingTileFocus.current = undefined
-      titleField.current?.focus()
-      return true
-    }
-    const tile = Array.from(layoutRoot.current?.querySelectorAll<HTMLElement>("[data-widget-id]") ?? [])
-      .find((element) => element.dataset.widgetId === target)
-    if (!tile) return false
-    pendingTileFocus.current = undefined
-    if (tile.hasAttribute("tabindex")) tile.focus()
-    else visibleTileControl(tile, "[data-widget-edit], [data-widget-actions]")?.focus()
-    return true
-  }, [layoutRoot, titleField])
-  useLayoutEffect(() => {
-    const target = pendingTileFocus.current
-    const stopWatching = () => {
-      tileFocusWatch.current?.disconnect()
-      tileFocusWatch.current = null
-    }
-    if (target === undefined || focusPendingTile()) return stopWatching()
-    if (!dashboard.widgets.some((widget) => widget.id === target)) {
-      pendingTileFocus.current = undefined
-      return stopWatching()
-    }
-    const root = layoutRoot.current
-    if (!root || tileFocusWatch.current) return
-    tileFocusWatch.current = new MutationObserver(() => {
-      if (focusPendingTile()) stopWatching()
-    })
-    tileFocusWatch.current.observe(root, { childList: true, subtree: true })
-  })
-  // The phone shell is a view: editing, a focused chart and Explore keep their full chrome.
-  const phoneShell = phoneViewport && !editing && !focusedWidget && !exploring
-  // Keyboard shortcuts for the dashboard. Chart history and apply are routed to the chart editor in a later change.
-  const applePlatform = isApplePlatform()
-  // The open chart editor registers its undo, redo and apply here. A ref, so registering never re-renders the page.
-  const chartCommands = useRef<ChartCommands | null>(null)
-  const registerChartCommands = useCallback((commands: ChartCommands | null) => { chartCommands.current = commands }, [])
-  useInsightsShortcuts(layoutRoot, {
-    editing,
-    chartOpen: editingWidget,
-    chart: chartCommands,
-    blocked: busy || importingBundle || exploring,
-    undoDashboard: undo,
-    redoDashboard: redo,
-    save: () => saveButton.current?.click(),
-    removeTile,
+  const [
+    actionsRegion,
+    applePlatform,
+    builderPanel,
+    chartCommands,
+    currentWidget,
     duplicateTile,
-    openShortcuts: () => setShortcutsOpen(true),
-  })
-  // A successful save moves focus, so it is lost when the save button goes. Each save bumps the revision, so the focus
-  // effect also runs when the save came from view mode, where editing and the document may not change.
-  const actionsRegion = useRef<HTMLDivElement>(null)
-  const [saveRevision, setSaveRevision] = useState(0)
-  // The tile to focus after a save, if the save was Apply and save. An empty object means the plain save.
-  const focusAfterSave = useRef<{ widget?: string } | null>(null)
-  useLayoutEffect(() => {
-    const after = focusAfterSave.current
-    if (!after || editing) return
-    focusAfterSave.current = null
-    const root = layoutRoot.current
-    if (after.widget !== undefined) {
-      const tile = Array.from(root?.querySelectorAll<HTMLElement>("[data-widget-id]") ?? [])
-        .find((element) => element.dataset.widgetId === after.widget)
-      if (tile) {
-        // Tiles are not focusable in view mode, so the focus target gets a -1 tab index for this focus call only.
-        if (!tile.hasAttribute("tabindex")) {
-          tile.tabIndex = -1
-          tile.addEventListener("blur", () => tile.removeAttribute("tabindex"), { once: true })
-        }
-        tile.focus()
-        return
-      }
-    }
-    // The phone shell keeps Edit in the Dashboard actions menu, so its trigger takes focus. Elsewhere Edit is a button.
-    const buttons = Array.from(actionsRegion.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])
-    const target = phoneShell
-      ? buttons[0]
-      : buttons.find((button) => (button.getAttribute("aria-label") ?? button.textContent?.trim()) === "Edit dashboard")
-    target?.focus()
-  }, [editing, dashboard, saveRevision, phoneShell, layoutRoot])
-  const previewWidget = widgetPreview?.id === currentWidget?.id ? widgetPreview : currentWidget
-  const builderPanel = useBuilderPanelFocus(
-    panel && !exploring
-      ? `${dashboard.id}:${panel}:${panel === "widget" ? (selected ?? "") : ""}`
-      : null,
-    () => {
-      if (panelOpener.current) return panelOpenerElement(panelOpener.current) ?? document.querySelector<HTMLElement>('[aria-label="Toggle sidebar"]')
-      if (!widgetOpener.current) return null
-      const opener = CSS.escape(widgetOpener.current)
-      return visibleTileControl(document, `[data-widget-edit="${opener}"], [data-widget-actions="${opener}"]`) ??
-        document.querySelector<HTMLElement>('[data-widget-edit], [aria-label="Dashboard title"]')
-    },
-    panel === "examples" ? galleryMounted
-      : panel === "widget" ? editorMounted
-      : panel === "source" || panel === "providers" || panel === "manage" ? mountedPanels.has(panel)
-      : true,
+    editingWidget,
+    focusAfterSave,
+    focusedWidget,
+    noticeWithUndo,
+    phoneShell,
+    previewWidget,
+    queryFieldSnapshot,
+    queryResultSnapshot,
+    registerChartCommands,
+    removeTile,
+    setQueryFieldSnapshot,
+    setQueryResultSnapshot,
+    setSaveRevision,
+  ] = useTileActions(
+    busy,
+    confirmation,
+    dashboard,
+    editing,
+    editorMounted,
+    exploring,
+    galleryMounted,
+    importingBundle,
+    latestDocument,
+    layoutRoot,
+    mountedPanels,
+    panel,
+    panelOpener,
+    phoneViewport,
+    redo,
+    saveButton,
+    selected,
+    setError,
+    setMessage,
+    setMessageAction,
+    setShortcutsOpen,
+    setWorkspace,
+    setWorkspaceFailed,
+    titleField,
+    undo,
+    update,
+    widgetDraftDirty,
+    widgetOpener,
+    widgetPreview,
+    workspace,
+    workspaceFailed,
   )
 
-  useEffect(() => {
-    // Opening the Examples panel loads the catalog without changing the live workspace.
-    if (panel !== "examples" || workspace || workspaceFailed) return
-    let active = true
-    loadRepositoryWorkspace().then(
-      (runtime) => { if (active) setWorkspace(runtime) },
-      () => { if (active) setWorkspaceFailed(true) },
-    )
-    return () => { active = false }
-  }, [panel, workspace, workspaceFailed, setWorkspace, setWorkspaceFailed])
-
-  const enterExample = useCallback(async () => {
-    const generation = ++exampleGeneration.current
-    const current = () => mounted.current && generation === exampleGeneration.current
-    setExampleStarting(true)
-    let runtime: RepositoryWorkspace
-    try {
-      runtime = await loadRepositoryWorkspace()
-    } catch {
-      if (!current()) return
-      setWorkspaceFailed(true)
-      setExampleStarting(false)
-      setError("The example workspace could not load. Reload the page to try again.")
-      setMode("unavailable")
-      return
-    }
-    if (!current()) return
-    const stored = runtime.readRepositoryExampleWorkspace(localStorage)
-    if (localStorage.getItem(EXAMPLE_STORAGE_KEY) === null) writeExampleWorkspace(localStorage, stored.dashboards, stored.activeId)
-    const fallback =
-      stored.dashboards.find((item) => item.id === stored.activeId) ??
-      newDashboard()
-    const { document: sample, link, rejected, error } = initialNavigation(stored.dashboards, fallback)
-    reset(sample)
-    setSaved(documentFingerprint(sample))
-    setDashboards(stored.dashboards)
-    setProviders(runtime.repositoryWorkspaceProviders)
-    setUnsupportedProviders([])
-    setWorkspace(runtime)
-    setSources({ status: "ready" })
-    setSourceRequest(null)
-    setMode("example")
-    const linked = resolveLinkView(sample, link, rejected)
-    let viewError = error
-    try {
-      applyView(linked.state, error ? "keep" : "load", { example: true })
-    } catch (cause) {
-      // A link that parses but cannot be written back keeps its value on screen, and the address keeps the link.
-      showView(linked.state)
-      viewError = cause instanceof Error ? cause.message : "Invalid dashboard link"
-    }
-    setLinkNotice(describeIgnoredLink(linked.ignored))
-    setError(viewError)
-    setExampleStarting(false)
-  }, [reset, applyView, showView, exampleGeneration, mounted, setDashboards, setExampleStarting, setMode, setProviders, setUnsupportedProviders, setWorkspace, setWorkspaceFailed, setError, setLinkNotice, setSaved, setSourceRequest, setSources])
-
-  useEffect(() => {
-    if (initialExample) {
-      let active = true
-      queueMicrotask(() => {
-        if (active) enterExample()
-      })
-      return () => {
-        active = false
-      }
-    }
-    exampleGeneration.current++
-    const controller = new AbortController()
-    client.list(controller.signal)
-      .then(async (documents) => {
-        if (controller.signal.aborted) return
-        const initial = initialNavigation(documents, documents[0] ?? newDashboard())
-        const active = documents.length
-          ? await client.get(initial.document.id)
-          : { dashboard: newDashboard(), etag: undefined }
-        if (controller.signal.aborted) return
-        if (active.etag) etags.current.set(active.dashboard.id, active.etag)
-        // The workspace renders now; the shared source list loads behind it.
-        setSources({ status: "pending" })
-        setSourceRequest({})
-        setDashboards(documents)
-        reset(active.dashboard)
-        setSaved(documentFingerprint(active.dashboard))
-        setMode("live")
-        // The fetched document is authoritative: values it no longer declares are dropped, not thrown.
-        const linked = resolveLinkView(active.dashboard, { ...initial.link, dashboardId: active.dashboard.id }, initial.rejected)
-        applyView(linked.state, initial.error ? "keep" : "load")
-        setLinkNotice(describeIgnoredLink(linked.ignored))
-        setError(initial.error)
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) {
-          setMode("unavailable")
-          setError(error.message)
-        }
-      })
-    return () => controller.abort()
-  }, [client, initialExample, enterExample, reset, retry, applyView, exampleGeneration, setDashboards, setMode, setError, setLinkNotice, setSaved, etags, setSourceRequest, setSources])
-
-  // One background load, one retry layer: the client replays a busy listing, and a
-  // failure that remains is shown with a manual retry. The listing carries the shared
-  // catalog's own status, so local sources still load.
-  useEffect(() => {
-    if (!sourceRequest || mode !== "live") return
-    const controller = new AbortController()
-    const ownsFocus = retryFocus.current === sourceRequest
-    loadProviderCatalog(client, controller.signal).then(
-      (catalog) => {
-        if (controller.signal.aborted) return
-        if (ownsFocus) {
-          retryFocus.current = null
-          if (catalog.sharedCatalog) {
-            // A busy answer still resolves, but the retry did not recover: its control keeps focus.
-            focusBannerRetry.current = true
-          } else {
-            // Move focus only while it still sits on the banner, or nowhere: a user who moved on keeps it.
-            const active = document.activeElement
-            if (!active || active === document.body || active === sourceNoticeRef.current || active === bannerRetry.current) workspaceRegion.current?.focus()
-          }
-        }
-        acceptCatalog(catalog)
-        for (const waiter of catalogWaiters.current.splice(0)) waiter.resolve(catalog)
-      },
-      (error: unknown) => {
-        if (controller.signal.aborted) return
-        if (ownsFocus) {
-          retryFocus.current = null
-          focusBannerRetry.current = true
-        }
-        // The workspace is already on screen: a rejected catalog never unmounts it,
-        // so unsaved edits survive. Sign-in is offered as an explicit action.
-        const message = error instanceof Error ? error.message : "Data sources are unavailable."
-        setSources({ status: "unavailable", reason: sourceFailureReason(error), message })
-        for (const waiter of catalogWaiters.current.splice(0)) waiter.reject(error)
-      },
-    )
-    return () => {
-      controller.abort()
-      // An aborted retry no longer owns focus.
-      if (retryFocus.current === sourceRequest) retryFocus.current = null
-    }
-  }, [client, mode, sourceRequest, acceptCatalog, bannerRetry, catalogWaiters, focusBannerRetry, retryFocus, setSources, sourceNoticeRef, workspaceRegion])
-
-  // A retry that ends busy again renders a new retry control, which takes focus.
-  useEffect(() => {
-    if (!focusBannerRetry.current) return
-    focusBannerRetry.current = false
-    const target = bannerRetry.current ?? sourceNoticeRef.current
-    target?.focus()
-  }, [sources, bannerRetry, focusBannerRetry, sourceNoticeRef])
-
-
-  useEffect(() => {
-    if (!dirty && !widgetDraftDirty && !explorerDirty && !importingBundle) return
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ""
-    }
-    window.addEventListener("beforeunload", handler)
-    return () => window.removeEventListener("beforeunload", handler)
-  }, [dirty, widgetDraftDirty, explorerDirty, importingBundle])
-
-  useEffect(() => {
-    if (!drawerOpen || !navigation.current) return
-    const drawer = navigation.current
-    const previous =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : navigationToggle.current
-    const unlock = lockBodyScroll()
-    const focusable = () => [
-      ...drawer.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      ),
-    ]
-    focusable()[0]?.focus()
-    const keydown = (event: KeyboardEvent) => {
-      // A native modal above the drawer owns Tab and Escape, including events
-      // delivered at document level by the browser's modal close watcher.
-      if (event.defaultPrevented || document.querySelector("dialog[open]")) return
-      if (event.key === "Escape") {
-        event.preventDefault()
-        setMobileSidebar(false)
-        return
-      }
-      if (event.key !== "Tab") return
-      const controls = focusable()
-      const first = controls[0]
-      const last = controls.at(-1)
-      if (!first || !last) {
-        event.preventDefault()
-        drawer.focus()
-        return
-      }
-      if (
-        event.shiftKey &&
-        (document.activeElement === first ||
-          !drawer.contains(document.activeElement))
-      ) {
-        event.preventDefault()
-        last.focus()
-      } else if (
-        !event.shiftKey &&
-        (document.activeElement === last ||
-          !drawer.contains(document.activeElement))
-      ) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    document.addEventListener("keydown", keydown)
-    return () => {
-      document.removeEventListener("keydown", keydown)
-      unlock()
-      if (previous?.isConnected) previous.focus()
-    }
-  }, [drawerOpen, navigation, navigationToggle, setMobileSidebar])
-
-  useEffect(() => {
-    // A fixed window pauses auto refresh; a relative window keeps refreshing at the view's interval.
-    if (!viewDashboard.refreshInterval || viewDashboard.customTimeRange) return
-    const timer = setInterval(() => {
-      if (!document.hidden) advanceEnd(true)
-    }, viewDashboard.refreshInterval * 1000)
-    const onVisible = () => {
-      if (!document.hidden) advanceEnd(true)
-    }
-    document.addEventListener("visibilitychange", onVisible)
-    return () => {
-      clearInterval(timer)
-      document.removeEventListener("visibilitychange", onVisible)
-    }
-  }, [viewDashboard.refreshInterval, viewDashboard.customTimeRange, advanceEnd])
+  const [
+    enterExample,
+  ] = useWorkspaceBoot(
+    acceptCatalog,
+    advanceEnd,
+    applyView,
+    bannerRetry,
+    catalogWaiters,
+    client,
+    dirty,
+    drawerOpen,
+    etags,
+    exampleGeneration,
+    explorerDirty,
+    focusBannerRetry,
+    importingBundle,
+    initialExample,
+    mode,
+    mounted,
+    navigation,
+    navigationToggle,
+    reset,
+    retry,
+    retryFocus,
+    setDashboards,
+    setError,
+    setExampleStarting,
+    setLinkNotice,
+    setMobileSidebar,
+    setMode,
+    setProviders,
+    setSaved,
+    setSourceRequest,
+    setSources,
+    setUnsupportedProviders,
+    setWorkspace,
+    setWorkspaceFailed,
+    showView,
+    sourceNoticeRef,
+    sourceRequest,
+    sources,
+    viewDashboard,
+    widgetDraftDirty,
+    workspaceRegion,
+  )
 
   const scheduledFetcher = useMemo(() => {
     // A refresh or provider edit invalidates cached fixed-range observations too.

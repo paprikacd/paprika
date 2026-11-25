@@ -7,6 +7,8 @@ import type { useDashboardSession } from "./use-dashboard-session"
 import type { useShellLayout } from "./use-shell-layout"
 import type { useSourceCatalog } from "./use-source-catalog"
 import type { useLiveSync } from "./use-live-sync"
+import type { useTileActions } from "./use-tile-actions"
+import type { useWorkspaceBoot } from "./use-workspace-boot"
 
 export type ShellProps = Omit<InsightsAppProps, "embed">
 
@@ -30,4 +32,10 @@ export type AfterSourceCatalog = AfterShellLayout & Named<SourceCatalogNames, Re
 
 export type LiveSyncNames = ["dirty", "focusTitleOnEdit", "saveButton", "syncError", "titleField", "variableValues", "viewDashboard", "viewDiffers"]
 export type AfterLiveSync = AfterSourceCatalog & Named<LiveSyncNames, ReturnType<typeof useLiveSync>>
-export type Shell = AfterLiveSync
+
+export type TileActionsNames = ["actionsRegion", "applePlatform", "builderPanel", "chartCommands", "currentWidget", "duplicateTile", "editingWidget", "focusAfterSave", "focusedWidget", "noticeWithUndo", "phoneShell", "previewWidget", "queryFieldSnapshot", "queryResultSnapshot", "registerChartCommands", "removeTile", "setQueryFieldSnapshot", "setQueryResultSnapshot", "setSaveRevision"]
+export type AfterTileActions = AfterLiveSync & Named<TileActionsNames, ReturnType<typeof useTileActions>>
+
+export type WorkspaceBootNames = ["enterExample"]
+export type AfterWorkspaceBoot = AfterTileActions & Named<WorkspaceBootNames, ReturnType<typeof useWorkspaceBoot>>
+export type Shell = AfterWorkspaceBoot
