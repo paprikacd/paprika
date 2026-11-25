@@ -429,6 +429,7 @@
   overflow-wrap: anywhere;
 }
 .optionDetails { display: grid; gap: 4px; min-width: 0; }
+.optionLine { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .optionDetails:empty { display: none; }
 .optionDetails > small {
   display: -webkit-box;
