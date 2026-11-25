@@ -1,12 +1,11 @@
 "use client"
-/* eslint-disable react-hooks/immutability -- the React Compiler lint skipped this component while it was one 2,600-line function; its JSX handlers set refs from the shell hooks, as they did before the split */
+/* eslint-disable react-hooks/immutability, react-hooks/refs -- the React Compiler lint skipped this component while it was one 2,600-line function. Its JSX handlers set refs from the shell hooks, as they did before the split, and it hands refs to the shell render functions, which only attach them as ref props */
 
 import { Suspense } from "react"
 import "react-dom"
 import {
   Activity,
   ArrowLeft,
-  ArrowUpRight,
   Braces,
   Check,
   ChevronRight,
@@ -16,7 +15,6 @@ import {
   FilePlus2,
   LayoutDashboard,
   LayoutTemplate,
-  LineChart,
   Link2,
   Loader2,
   PanelLeftClose,
@@ -45,7 +43,7 @@ import "./example"
 import "./example-storage"
 import "./provider-query-template"
 import catalogMeta from "./repository-examples/catalog-meta.json"
-import { LazyFailure, LazyPanelBoundary, MountSignal, reloadPage } from "./lazy-panel"
+import { LazyPanelBoundary, MountSignal } from "./lazy-panel"
 import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey } from "./query-connections"
@@ -72,7 +70,7 @@ import "./query"
 import { DashboardTree } from "./dashboard-library"
 import { applyChartToDashboard } from "./chart-apply"
 import { TimeRangeControl, savedRangeLabel } from "./time-range"
-import { WidgetLibrary } from "./widget-library"
+import "./widget-library"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
 import "./client"
@@ -91,7 +89,7 @@ import "./drilldown"
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
 import { serialiseDashboardView, viewTimeDiffers } from "./dashboard-view"
-import { DashboardHistory, Explorer, ShortcutList, QueryInspector, DocumentEditor, ProviderManager, DashboardManager, ChecksList, AIBuilder, WidgetEditor, RepositoryGallery, StarterPicker, preloadExamples } from "./shell/lazy-panels"
+import { Explorer, ShortcutList, QueryInspector, ChecksList, WidgetEditor, preloadExamples } from "./shell/lazy-panels"
 import { placementPhrase } from "./shell/navigation"
 import { sourceBannerCopy } from "./shell/source-catalog"
 import "./shell/media-stores"
@@ -108,6 +106,9 @@ import { useDashboardData } from "./shell/use-dashboard-data"
 import { usePanels } from "./shell/use-panels"
 import { useDocumentActions } from "./shell/use-document-actions"
 import { useViewActions } from "./shell/use-view-actions"
+import { renderPanelRouter } from "./shell/panel-router"
+import { renderUnavailableScreen } from "./shell/unavailable-screen"
+import { renderLoadingScreen } from "./shell/loading-screen"
 
 
 registerDefaultWidgetPlugins()
@@ -654,63 +655,11 @@ function InsightsWorkspace({
 
   if (mode === "loading")
     return (
-      <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme}>
-        <div className={styles.loading} role="status">
-          <Loader2 className={styles.spin} size={24} /> Opening your workspace…
-        </div>
-      </div>
+      renderLoadingScreen(resolvedTheme)
     )
   if (mode === "unavailable")
     return (
-      <div className={`${styles.root} ${gammaTheme.scope}`} data-insights-theme={resolvedTheme}>
-        <div className={styles.setup}>
-          <span className={styles.eyebrow}>PAPRIKA / INSIGHTS</span>
-          <h1>A clearer view of your stack.</h1>
-          <p>
-            Build your own observability workspace. Connect Prometheus and
-            Tempo, compose widgets, and keep dashboards as code.
-          </p>
-          <div className={styles.setupPreview}>
-            <LineChart size={44} strokeWidth={1} />
-            <div>
-              <strong>Your signals. Your canvas.</strong>
-              <span>Visual editing · JSON & YAML · OpenUI</span>
-            </div>
-          </div>
-          <p role="alert" className={styles.validationError}>
-            {error && error.charAt(0).toUpperCase() + error.slice(1)}
-          </p>
-          {exampleStarting && <p className={styles.hint} role="status">Opening the example workspace…</p>}
-          <div className={styles.actions}>
-            {workspaceFailed ? (
-              <GammaButton size="sm" variant="primary" className={styles.primary} onClick={reloadPage}>
-                Reload the page <RefreshCw size={16} />
-              </GammaButton>
-            ) : (
-              <>
-                <GammaButton size="sm" variant="primary"
-                  className={styles.primary}
-                  disabled={exampleStarting}
-                  onClick={() => {
-                    setMode("loading")
-                    setRetry((value) => value + 1)
-                  }}
-                >
-                  Retry connection
-                </GammaButton>
-                <GammaButton size="sm" variant="secondary" className={styles.secondary} disabled={exampleStarting} onClick={() => { void enterExample() }}>
-                  Explore the example <ArrowUpRight size={16} />
-                </GammaButton>
-              </>
-            )}
-          </div>
-          <p className={styles.hint}>
-            Enable the separate Insights service to connect live data and save
-            shared dashboards. Example mode uses generated sample data and
-            browser storage.
-          </p>
-        </div>
-      </div>
+      renderUnavailableScreen(enterExample, error, exampleStarting, resolvedTheme, setMode, setRetry, workspaceFailed)
     )
 
   return (
@@ -1395,156 +1344,7 @@ function InsightsWorkspace({
             </footer>}
           </div>
           {panel && panel !== "widget" && (
-            <aside
-              ref={builderPanel}
-              tabIndex={-1}
-              className={`${styles.panel} ${(panel === "source" || panel === "examples") && widePanel ? styles.widePanel : ""}`}
-              aria-label="Builder panel"
-            >
-              {panel === "examples" && (workspaceFailed ? (
-                <LazyFailure label="Dashboard examples" kind="load" unsaved={dirty || widgetDraftDirty} onClose={close} />
-              ) : workspace ? (
-                <LazyPanelBoundary label="Dashboard examples" unsaved={dirty || widgetDraftDirty} onClose={close}>
-                  <Suspense fallback={<p className={styles.loading} role="status">Loading examples…</p>}>
-                    <RepositoryGallery entries={workspace.repositoryExamples} mode={mode === "example" ? "example" : "live"} providers={providers} onImportBundle={importBundle} onReviewBundle={reviewBundle} validateDocument={client.validate} onRefreshQueries={refreshSavedQueries} onClose={close} />
-                    <MountSignal onMount={markGalleryMounted} />
-                  </Suspense>
-                </LazyPanelBoundary>
-              ) : <p className={styles.loading} role="status">Loading examples…</p>)}
-              {panel === "starters" && client.listStarters && client.getStarter && (
-                <LazyPanelBoundary label="Templates" unsaved={dirty || widgetDraftDirty} onClose={close}>
-                  <Suspense fallback={<p className={styles.loading} role="status">Loading templates…</p>}>
-                    <StarterPicker
-                      listStarters={client.listStarters}
-                      getStarter={client.getStarter}
-                      providers={providers}
-                      onImportBundle={importBundle}
-                      onReviewBundle={reviewBundle}
-                      validateDocument={client.validate}
-                      onRefreshQueries={refreshSavedQueries}
-                      onClose={close}
-                    />
-                  </Suspense>
-                </LazyPanelBoundary>
-              )}
-              {panel === "source" && (
-                <LazyPanelBoundary label="Dashboard source" unsaved={dirty || widgetDraftDirty} onClose={close}>
-                  <Suspense fallback={<p className={styles.loading} role="status">Loading dashboard source…</p>}>
-                    <DocumentEditor
-                      key={dashboard.id}
-                      dashboard={dashboard}
-                      providers={providers}
-                      onImportBundle={importBundle}
-                      onReviewBundle={reviewBundle}
-                      onRefreshQueries={refreshSavedQueries}
-                      checkDocument={client.validate}
-                      onFocusWidget={selectWidget}
-                      onApply={applyDocument}
-                      onClose={close}
-                    />
-                    <MountSignal onMount={markSourceMounted} />
-                  </Suspense>
-                </LazyPanelBoundary>
-              )}
-              {panel === "ai" && (
-                <Suspense
-                  fallback={
-                    <p className={styles.loading}>Loading AI builder…</p>
-                  }
-                >
-                  <AIBuilder
-                    dashboard={dashboard}
-                    providers={providers}
-                    onApply={applyDocument}
-                    onClose={close}
-                    checkDocument={client.validate}
-                    onFocusWidget={selectWidget}
-                    observe={!!client.observeConnection}
-                    unsaved={dirty}
-                  />
-                </Suspense>
-              )}
-              {panel === "add" && (
-                <WidgetLibrary
-                  onAdd={addWidget}
-                  onClose={close}
-                  onAI={() => openBuilderPanel("ai")}
-                  disabled={dashboard.widgets.length >= MAX_WIDGETS}
-                />
-              )}
-              {panel === "providers" && (
-                <LazyPanelBoundary label="Data sources" unsaved={dirty || widgetDraftDirty} onClose={close}>
-                  <Suspense fallback={<p className={styles.loading} role="status">Loading data sources…</p>}>
-                    <ProviderManager
-                      client={client}
-                      providers={providers}
-                      unsupportedProviders={unsupportedProviders}
-                      example={mode === "example"}
-                      onClose={close}
-                      onExplore={exploreProvider}
-                      loadCatalog={refreshCatalog}
-                      onChange={(catalog) => {
-                        // The manager's listing is authoritative now: it replaces any failed or pending load.
-                        acceptCatalog(catalog)
-                        setSourceRequest(null)
-                        setQueryRevision((value) => value + 1)
-                        setLibraryRevision((value) => value + 1)
-                      }}
-                    />
-                    <MountSignal onMount={markProvidersMounted} />
-                  </Suspense>
-                </LazyPanelBoundary>
-              )}
-              {panel === "history" && (
-                <LazyPanelBoundary label="Revision history" unsaved={dirty || widgetDraftDirty} onClose={close}>
-                  <Suspense fallback={<p className={styles.loading} role="status">Loading history…</p>}>
-                    <DashboardHistory
-                      key={dashboard.id}
-                      dashboard={dashboard}
-                      client={client}
-                      canRestore={!dirty && !widgetDraftDirty && !busy && !importingBundle}
-                      refreshKey={saved}
-                      onRestored={applyRestoredDocument}
-                      onClose={close}
-                      savedQueries={savedQueries}
-                    />
-                  </Suspense>
-                </LazyPanelBoundary>
-              )}
-              {panel === "manage" && (
-                <LazyPanelBoundary label="Manage dashboards" unsaved={dirty || widgetDraftDirty} onClose={close}>
-                  <Suspense fallback={<p className={styles.loading} role="status">Loading dashboard manager…</p>}>
-                    <DashboardManager
-                      key={dashboard.id}
-                      dashboard={dashboard}
-                      dashboards={dashboards}
-                      providers={providers}
-                      variableCatalog={variableCatalog}
-                      busy={busy}
-                      onClose={close}
-                      onApply={(next) => {
-                        syncVariableDefinitions(next)
-                        update(next)
-                        setEditing(true)
-                      }}
-                      onDetailsChange={(next, group) => {
-                        update(next, { group })
-                        setEditing(true)
-                      }}
-                      onDetailsEnd={endGroup}
-                      onDuplicate={duplicateDashboard}
-                      onDelete={deleteDashboard}
-                      onImportBundle={importBundle}
-                      onReviewBundle={reviewBundle}
-                      validateDocument={client.validate}
-                      onRefreshQueries={refreshSavedQueries}
-                    />
-                    <MountSignal onMount={markManageMounted} />
-                  </Suspense>
-                </LazyPanelBoundary>
-              )}
-
-            </aside>
+            renderPanelRouter(acceptCatalog, addWidget, applyDocument, applyRestoredDocument, builderPanel, busy, client, close, dashboard, dashboards, deleteDashboard, dirty, duplicateDashboard, endGroup, exploreProvider, importBundle, importingBundle, markGalleryMounted, markManageMounted, markProvidersMounted, markSourceMounted, mode, openBuilderPanel, panel, providers, refreshCatalog, refreshSavedQueries, reviewBundle, saved, savedQueries, selectWidget, setEditing, setLibraryRevision, setQueryRevision, setSourceRequest, syncVariableDefinitions, unsupportedProviders, update, variableCatalog, widePanel, widgetDraftDirty, workspace, workspaceFailed)
           )}
         </div>
         </section>
