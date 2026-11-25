@@ -19,6 +19,26 @@ const eslintConfig = defineConfig([
       "no-restricted-syntax": ["error", observationTimerRule],
     },
   },
+  // The chart facade re-exports every renderer for old importers. Renderers, plugins and the chart kit import the
+  // leaf module they need, so the first view and the lab do not load the whole facade through them.
+  {
+    files: ["src/features/insights/plugins/**/*.{ts,tsx}", "src/features/insights/renderers/**/*.{ts,tsx}", "src/features/insights/chart-kit/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["**/chart-renderers", "**/chart-renderers.tsx"],
+          message: "Import the renderer or helper from its own module (renderers/* or chart-kit/*), not the chart-renderers facade.",
+        }],
+      }],
+      // Series colours come from the palette and roles. A list of literal hex colours is a second palette.
+      // Flat config replaces a rule's options per file, so the timer guard is repeated here for these files.
+      "no-restricted-syntax": ["error", observationTimerRule, {
+        selector: "ArrayExpression:has(> Literal[value=/^#[0-9a-fA-F]{3,8}$/] ~ Literal[value=/^#[0-9a-fA-F]{3,8}$/])",
+        message: "Do not write a list of hex colours here. Use series-palette.ts or the status tokens.",
+      }],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

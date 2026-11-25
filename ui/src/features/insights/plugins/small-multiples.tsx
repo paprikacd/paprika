@@ -3,7 +3,9 @@
 import { NO_DATA } from "../benign-states";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { z } from "zod";
-import { EmptyState, MetricDetails, ObservationTooltip } from "../chart-renderers";
+import { EmptyState } from "../renderers/empty-state.tsx";
+import { MetricDetails } from "../metric-tooltip-content.tsx";
+import { ObservationTooltip } from "../observation-tooltip.tsx";
 import { eventsAt, useAnnotationEvents } from "../annotation-events";
 import { EventTicks } from "../event-ticks";
 import { InspectorEvents } from "../inspector-events";

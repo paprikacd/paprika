@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatMetric } from "../chart-renderers";
+import { formatMetric } from "../chart-data.ts";
 import { compareHistogramLabels, type DistributionConfig, type HeatmapRegion, type MetricSeries } from "./rich-metrics-data";
 
 // The panel a selected latency region opens. It is loaded lazily, so the heatmap's first paint never carries its code or CSS.

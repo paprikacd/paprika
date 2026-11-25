@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { hierarchy, treemap, type HierarchyRectangularNode } from "d3-hierarchy";
-import { EmptyState } from "../chart-renderers";
+import { EmptyState } from "../renderers/empty-state.tsx";
 import { formatMetricDetails } from "../chart-data";
 import { seriesSlot } from "../series-palette";
 import { statusToken } from "../status";

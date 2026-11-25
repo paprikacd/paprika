@@ -1,4 +1,4 @@
-import { thresholdForValue } from "../chart-renderers";
+import { thresholdForValue } from "../chart-kit/threshold.ts";
 import { thresholdPaint } from "../status";
 import type { Point, Series } from "../chart-data";
 import type { Threshold } from "../schema";

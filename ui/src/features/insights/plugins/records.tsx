@@ -14,7 +14,8 @@ import {
   registerWidgetPlugin,
   type WidgetRendererProps,
 } from "../widget-registry"
-import { EmptyState, ObservationTooltip } from "../chart-renderers"
+import { EmptyState } from "../renderers/empty-state.tsx"
+import { ObservationTooltip } from "../observation-tooltip.tsx"
 import { useObservationOwner } from "../observation-owner"
 import { isRestoringTooltipFocus, restoreTooltipFocus } from "../tooltip-focus"
 import { ObservationDetails } from "../observation-tooltip"
