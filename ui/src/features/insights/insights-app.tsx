@@ -49,7 +49,6 @@ import {
   type WidgetLink,
   type QueryRequest,
   type SavedQuery,
-  type SavedQueryEntry,
   type DashboardVariable,
   dashboardSchema,
   MAX_DASHBOARD_VARIABLES,
@@ -69,16 +68,16 @@ import { LazyFailure, LazyPanelBoundary, MountSignal, reloadPage } from "./lazy-
 import { WidgetEditorSkeleton } from "./widget-editor-skeleton"
 import { SavedQueryLibraryProvider } from "./saved-query-context"
 import { queryConnectionKey, type QueryFieldSnapshot } from "./query-connections"
-import { createExampleSavedQueryClient } from "./saved-query-storage"
+import "./saved-query-storage"
 import { createBundleImporter, loadBundleImportReview, type BundleImportRequest } from "./bundle-import"
-import { dashboardUsesSavedQuery, resolveSavedQueryReference } from "./saved-queries"
+import { resolveSavedQueryReference } from "./saved-queries"
 import type { DashboardBundle } from "./workspace-transfer"
 import { documentFingerprint } from "./fingerprint"
 import { useMobileNavigation, usePhoneShell } from "./use-mobile-navigation"
 import { dashboardActionItems } from "./dashboard-actions"
 import { useBuilderPanelFocus } from "./use-builder-panel-focus"
 import type { ExplorerSeed } from "./saved-query-context"
-import { useDashboardHistory } from "./history"
+import "./history"
 import { isApplePlatform, useInsightsShortcuts, type ChartCommands } from "./use-insights-shortcuts"
 import { ariaKeyshortcutsFor, hintFor, OVERLAY_SELECTOR } from "./shortcuts"
 import { sameSyncInputs, useWorkspaceRefresh } from "./use-workspace-refresh"
@@ -99,7 +98,7 @@ import { WidgetLibrary } from "./widget-library"
 import type { WidgetDefinition } from "./widget-registry"
 import { registerDefaultWidgetPlugins } from "./plugins/threshold-gauge"
 import styles from "./insights.module.css"
-import { checksFromError, loadProviderCatalog, type ProviderCatalog, type UnsupportedProvider } from "./client"
+import { checksFromError, loadProviderCatalog, type ProviderCatalog } from "./client"
 import { SourceStatusContext, sourceWaitMessage, type SourceStatus } from "./source-status"
 import { GammaButton } from "./gamma/button"
 import { GammaInput } from "./gamma/input"
@@ -111,7 +110,7 @@ import { PhoneVariables, VariableBar } from "./dashboard-variables"
 import { ClampedDescription } from "./dashboard-description"
 import { sourceQueryStep, variableValueScope, type VariableValueLoaders } from "./variable-options"
 import type { VariableSourceCatalog } from "./variable-source-editor"
-import { InsightsThemeControl, useInsightsTheme } from "./insights-theme"
+import { InsightsThemeControl } from "./insights-theme"
 import { describeIgnoredLink, resolveDashboardVariables, resolveApplicationLink, resolveDrilldown, resolveLinkView, resolveSelectionBindings, interpolateQuery, type DashboardNavigation, type DrilldownContext, type VariableValues } from "./drilldown"
 import { duplicateLayout, savedLayout } from "./layout-edit"
 
@@ -121,6 +120,8 @@ import { placementPhrase, initialNavigation, panelOpenerElement } from "./shell/
 import { type SourceState, sourceBannerCopy, sourceFailureReason, sharedFailureReason } from "./shell/source-catalog"
 import { subscribeCompactDesktop, compactDesktopSnapshot, compactDesktopServerSnapshot, subscribeFinePointer, finePointerSnapshot } from "./shell/media-stores"
 import { MANUAL_REFRESH_BYPASS_MS, NO_VARIABLES, UNAPPLIED_CHART_NOTICE } from "./shell/constants"
+import { useWorkspace } from "./shell/use-workspace"
+import { useSavedQueryLibrary } from "./shell/use-saved-query-library"
 
 
 registerDefaultWidgetPlugins()
@@ -153,83 +154,72 @@ function InsightsWorkspace({
   onBack,
   onOpenApplication,
 }: Omit<InsightsAppProps, "embed">) {
-  const { theme, resolvedTheme, setTheme } = useInsightsTheme()
-  const history = useDashboardHistory(exampleDashboard)
-  const { dashboard, update, endGroup, reset, undo, redo, canUndo, canRedo } = history
-  const latestDocument = useRef(dashboard)
-  useLayoutEffect(() => { latestDocument.current = dashboard }, [dashboard])
-  const [mode, setMode] = useState<
-    "loading" | "live" | "example" | "unavailable"
-  >("loading")
-  const [providers, setProviders] = useState<Provider[]>([])
-  const [unsupportedProviders, setUnsupportedProviders] = useState<UnsupportedProvider[]>([])
-  // Loaded on first use. Example mode reads it; the Examples panel needs it even in live mode.
-  const [workspace, setWorkspace] = useState<RepositoryWorkspace | null>(null)
-  const activeExample = mode === "example" ? workspace : null
-  // A failed catalog or editor chunk stays failed until the page reloads, so the only recovery offered is a reload.
-  const [workspaceFailed, setWorkspaceFailed] = useState(false)
-  const [exampleStarting, setExampleStarting] = useState(false)
-  const [editorMounted, setEditorMounted] = useState(false)
-  const [galleryMounted, setGalleryMounted] = useState(false)
-  // Every example start and live refresh claims a generation; a superseded or unmounted start must not write.
-  const exampleGeneration = useRef(0)
-  const mounted = useRef(false)
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
-  const markEditorMounted = useCallback(() => setEditorMounted(true), [])
-  const markGalleryMounted = useCallback(() => setGalleryMounted(true), [])
-  // Lazy builder panels that hold focus targets. Focus waits for each one's first mount; later opens are cached.
-  const [mountedPanels, setMountedPanels] = useState<ReadonlySet<string>>(() => new Set())
-  const markPanelMounted = useCallback((name: string) => setMountedPanels((current) => current.has(name) ? current : new Set(current).add(name)), [])
-  const markSourceMounted = useCallback(() => markPanelMounted("source"), [markPanelMounted])
-  const markProvidersMounted = useCallback(() => markPanelMounted("providers"), [markPanelMounted])
-  const markManageMounted = useCallback(() => markPanelMounted("manage"), [markPanelMounted])
-  const [dashboards, setDashboards] = useState<Dashboard[]>([])
-  const [exploring, setExploring] = useState(false)
-  const [inspectingQueries, setInspectingQueries] = useState(false)
-  const [explorerOpened, setExplorerOpened] = useState(false)
-  const [explorerSource, setExplorerSource] = useState<{ providerId?: string; seed?: ExplorerSeed; revision: number }>({ revision: 0 })
-  const [explorerDirty, setExplorerDirty] = useState(false)
-  const [savedQueries, setSavedQueries] = useState<SavedQueryEntry[]>([])
-  const [queriesLoading, setQueriesLoading] = useState(true)
-  const [queriesLoaded, setQueriesLoaded] = useState(false)
-  const [queriesError, setQueriesError] = useState("")
-  const [libraryRevision, setLibraryRevision] = useState(0)
-  const libraryMutation = useRef(0)
-  const updateSavedQueries = useCallback((entries: SavedQueryEntry[]) => {
-    libraryMutation.current++
-    setSavedQueries(entries)
-    setQueriesLoading(false)
-    setQueriesError("")
-  }, [])
-  const libraryClient = useMemo<InsightsClient>(() => {
-    // A draft must not hide a dependency that still exists in saved storage.
-    const currentDocuments = () => [...(activeExample?.readRepositoryExampleWorkspace(localStorage).dashboards ?? []), latestDocument.current]
-    const scoped = activeExample && typeof window !== "undefined"
-      ? { ...client, ...createExampleSavedQueryClient(localStorage, currentDocuments, activeExample.repositoryWorkspaceQueries.filter(query => currentDocuments().some(document => dashboardUsesSavedQuery(document, query.id)))), metadata: activeExample.repositoryWorkspaceMetadata, query: activeExample.repositoryWorkspaceQuery }
-      : client
-    return { ...scoped, removeSavedQuery: async (id, etag) => {
-      if (dashboardUsesSavedQuery(latestDocument.current, id))
-        throw new Error("This saved query is used by the current dashboard. Switch its widgets to custom queries before deleting it.")
-      return scoped.removeSavedQuery(id, etag)
-    } }
-  }, [client, activeExample])
-  useEffect(() => {
-    if (mode !== "live" && mode !== "example") return
-    const controller = new AbortController()
-    const generation = libraryMutation.current
-    queueMicrotask(() => { if (!controller.signal.aborted && generation === libraryMutation.current) { setQueriesLoading(true); setQueriesError("") } })
-    libraryClient.listSavedQueries(controller.signal).then(entries => {
-      if (!controller.signal.aborted && generation === libraryMutation.current) { setSavedQueries(entries); setQueriesLoading(false); setQueriesLoaded(true) }
-    }, reason => {
-      if (!controller.signal.aborted && generation === libraryMutation.current) { setQueriesLoading(false); setQueriesError(reason instanceof Error ? reason.message : "Saved queries are unavailable.") }
-    })
-    return () => controller.abort()
-  }, [libraryClient, mode, libraryRevision])
+  const [
+    activeExample,
+    canRedo,
+    canUndo,
+    dashboard,
+    editorMounted,
+    endGroup,
+    exampleGeneration,
+    exampleStarting,
+    galleryMounted,
+    latestDocument,
+    markEditorMounted,
+    markGalleryMounted,
+    markManageMounted,
+    markProvidersMounted,
+    markSourceMounted,
+    mode,
+    mounted,
+    mountedPanels,
+    providers,
+    redo,
+    reset,
+    resolvedTheme,
+    setExampleStarting,
+    setMode,
+    setProviders,
+    setTheme,
+    setUnsupportedProviders,
+    setWorkspace,
+    setWorkspaceFailed,
+    theme,
+    undo,
+    unsupportedProviders,
+    update,
+    workspace,
+    workspaceFailed,
+  ] = useWorkspace()
+  const [
+    dashboards,
+    explorerDirty,
+    explorerOpened,
+    explorerSource,
+    exploring,
+    inspectingQueries,
+    libraryClient,
+    libraryMutation,
+    queriesError,
+    queriesLoaded,
+    queriesLoading,
+    savedQueries,
+    setDashboards,
+    setExplorerDirty,
+    setExplorerOpened,
+    setExplorerSource,
+    setExploring,
+    setInspectingQueries,
+    setLibraryRevision,
+    setQueriesError,
+    setQueriesLoaded,
+    updateSavedQueries,
+  ] = useSavedQueryLibrary(
+    activeExample,
+    client,
+    latestDocument,
+    mode,
+  )
   const { current: currentRoute, apply: applyView, reflect: reflectView, show: showView } = useDashboardView(dashboard.id, mode === "example")
   const [returnTo, setReturnTo] = useState<{ state: DashboardNavigation; title: string } | null>(null)
   const [saved, setSaved] = useState(documentFingerprint(exampleDashboard))
@@ -363,7 +353,7 @@ function InsightsWorkspace({
     setSources(shared
       ? { status: "unavailable", reason: sharedFailureReason(shared.status), message: shared.message }
       : { status: "ready" })
-  }, [])
+  }, [setProviders, setUnsupportedProviders])
   // The observe card and the provider manager wait on the request that loads the listing.
   // That request owns the abort, so closing their panel never strands the sources.
   const refreshCatalog = useCallback(() => new Promise<ProviderCatalog>((resolve, reject) => {
@@ -513,7 +503,7 @@ function InsightsWorkspace({
         }).then(accepted => { if (accepted) undoNow() })
       },
     })
-  }, [undo, askConfirmation])
+  }, [undo, askConfirmation, latestDocument])
   const removeTile = useCallback((widgetId: string) => {
     const index = dashboard.widgets.findIndex((widget) => widget.id === widgetId)
     if (index < 0) return
@@ -679,7 +669,7 @@ function InsightsWorkspace({
       () => { if (active) setWorkspaceFailed(true) },
     )
     return () => { active = false }
-  }, [panel, workspace, workspaceFailed])
+  }, [panel, workspace, workspaceFailed, setWorkspace, setWorkspaceFailed])
 
   const enterExample = useCallback(async () => {
     const generation = ++exampleGeneration.current
@@ -724,7 +714,7 @@ function InsightsWorkspace({
     setLinkNotice(describeIgnoredLink(linked.ignored))
     setError(viewError)
     setExampleStarting(false)
-  }, [reset, applyView, showView])
+  }, [reset, applyView, showView, exampleGeneration, mounted, setDashboards, setExampleStarting, setMode, setProviders, setUnsupportedProviders, setWorkspace, setWorkspaceFailed])
 
   useEffect(() => {
     if (initialExample) {
@@ -767,7 +757,7 @@ function InsightsWorkspace({
         }
       })
     return () => controller.abort()
-  }, [client, initialExample, enterExample, reset, retry, applyView])
+  }, [client, initialExample, enterExample, reset, retry, applyView, exampleGeneration, setDashboards, setMode])
 
   // One background load, one retry layer: the client replays a busy listing, and a
   // failure that remains is shown with a manual retry. The listing carries the shared
@@ -1587,7 +1577,7 @@ function InsightsWorkspace({
     const generation = libraryMutation.current
     const entries = await libraryClient.listSavedQueries()
     if (generation === libraryMutation.current) updateSavedQueries(entries)
-  }, [libraryClient, updateSavedQueries])
+  }, [libraryClient, updateSavedQueries, libraryMutation])
 
   // A seeded open (a chart's trace search) remounts the Explorer on that seed. Unsaved explorer work is confirmed first, as a provider switch is.
   const openQueryExplorer = useCallback((seed?: ExplorerSeed) => {
@@ -1604,7 +1594,7 @@ function InsightsWorkspace({
       description: "Your unsaved query changes will be lost. Saved queries will remain unchanged.",
       action: "Discard changes",
     }).then(confirmed => { if (confirmed) { setExplorerDirty(false); open() } })
-  }, [confirmation, explorerDirty])
+  }, [confirmation, explorerDirty, setExplorerDirty, setExplorerOpened, setExplorerSource, setExploring, setLibraryRevision])
 
   async function exploreProvider(provider: Provider) {
     if (explorerDirty && !await confirmation.ask({

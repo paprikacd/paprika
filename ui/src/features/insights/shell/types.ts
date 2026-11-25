@@ -1,0 +1,17 @@
+// The shell scope: the root's props and each hook's result, in call order. A hook takes a Pick of the scope before
+// it; a view takes a Pick of the whole Shell. Generated alongside the hooks by the R70 extract tool.
+import type { InsightsAppProps } from "../insights-app"
+import type { useWorkspace } from "./use-workspace"
+import type { useSavedQueryLibrary } from "./use-saved-query-library"
+
+export type ShellProps = Omit<InsightsAppProps, "embed">
+
+// A hook's tuple result, keyed by the names the root destructures it into (the guard test checks they match).
+type Named<N extends readonly string[], T extends readonly unknown[]> = { [I in keyof N & `${number}` as N[I] & string]: T[I & keyof T] }
+
+export type WorkspaceNames = ["activeExample", "canRedo", "canUndo", "dashboard", "editorMounted", "endGroup", "exampleGeneration", "exampleStarting", "galleryMounted", "latestDocument", "markEditorMounted", "markGalleryMounted", "markManageMounted", "markProvidersMounted", "markSourceMounted", "mode", "mounted", "mountedPanels", "providers", "redo", "reset", "resolvedTheme", "setExampleStarting", "setMode", "setProviders", "setTheme", "setUnsupportedProviders", "setWorkspace", "setWorkspaceFailed", "theme", "undo", "unsupportedProviders", "update", "workspace", "workspaceFailed"]
+export type AfterWorkspace = ShellProps & Named<WorkspaceNames, ReturnType<typeof useWorkspace>>
+
+export type SavedQueryLibraryNames = ["dashboards", "explorerDirty", "explorerOpened", "explorerSource", "exploring", "inspectingQueries", "libraryClient", "libraryMutation", "queriesError", "queriesLoaded", "queriesLoading", "savedQueries", "setDashboards", "setExplorerDirty", "setExplorerOpened", "setExplorerSource", "setExploring", "setInspectingQueries", "setLibraryRevision", "setQueriesError", "setQueriesLoaded", "updateSavedQueries"]
+export type AfterSavedQueryLibrary = AfterWorkspace & Named<SavedQueryLibraryNames, ReturnType<typeof useSavedQueryLibrary>>
+export type Shell = AfterSavedQueryLibrary
