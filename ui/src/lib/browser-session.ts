@@ -6,12 +6,13 @@ import { writeAuthReturnTo } from "@/lib/auth-return-to"
 export const AUTH_TOKEN_KEY = "paprika_id_token"
 export const AUTH_USER_KEY = "paprika_auth_user"
 export const LOGIN_PREFERENCE_KEY = "paprika_login_preference"
+const AUTH_CONFIGURATION_KEY = "paprika_auth_configuration"
 const SESSION_STATE_KEY = "paprika_session_state"
 const LOCK_KEY = "paprika_session_lock"
 const REFRESH_WINDOW = 60_000
 
 export interface AuthUser { sub: string; email: string; name: string; picture?: string }
-export interface LoginPreference { method: "oidc" | "basic"; provider?: "google" | "oidc"; user: AuthUser }
+export interface LoginPreference { method: "oidc" | "basic"; provider?: "google" | "oidc"; user: AuthUser; lastSignInAt?: number }
 export interface AuthConfiguration {
   oidc: { enabled: boolean; provider: "google" | "oidc"; label: string }
   basic: { enabled: boolean }
@@ -28,7 +29,9 @@ export interface SessionSnapshot {
   logoutPending: boolean
 }
 interface SessionState { refreshAvailable?: boolean; loggedOut?: boolean; revision?: string }
-type TokenOptions = Pick<LoginPreference, "method" | "provider"> & { sessionRefreshAvailable?: boolean }
+// `interactive` marks a sign-in the person just completed, as opposed to a
+// silent renewal; only that moves the remembered "last signed in" time.
+type TokenOptions = Pick<LoginPreference, "method" | "provider"> & { sessionRefreshAvailable?: boolean; interactive?: boolean }
 const initialSnapshot: SessionSnapshot = { status: "loading", idToken: null, user: null, identityKey: null, identityEpoch: 0, revision: 0, error: null, logoutPending: false }
 let snapshot = initialSnapshot
 let hydrated = false
@@ -108,7 +111,8 @@ export function readLoginPreference(): LoginPreference | null {
   try {
     const value = JSON.parse(readBrowserStorage(LOGIN_PREFERENCE_KEY) ?? "null") as LoginPreference | null
     if (!value || !["basic", "oidc"].includes(value.method) || !value.user || typeof value.user.sub !== "string") return null
-    return { method: value.method, provider: value.provider === "google" ? "google" : "oidc", user: profile(value.user as unknown as Record<string, unknown>) }
+    const lastSignInAt = typeof value.lastSignInAt === "number" && Number.isFinite(value.lastSignInAt) && value.lastSignInAt > 0 ? value.lastSignInAt : undefined
+    return { method: value.method, provider: value.provider === "google" ? "google" : "oidc", user: profile(value.user as unknown as Record<string, unknown>), ...(lastSignInAt ? { lastSignInAt } : {}) }
   } catch { return null }
 }
 export function forgetLoginPreference() {
@@ -137,7 +141,10 @@ export function completeSession(idToken: string, options?: TokenOptions): boolea
   writeBrowserStorage(AUTH_TOKEN_KEY, idToken)
   writeBrowserStorage(AUTH_USER_KEY, JSON.stringify(profile(payload)))
   writeState({ loggedOut: false, refreshAvailable: options?.sessionRefreshAvailable ?? readState().refreshAvailable })
-  if (options) writeBrowserStorage(LOGIN_PREFERENCE_KEY, JSON.stringify({ method: options.method, provider: options.provider, user: profile(payload) }))
+  if (options) {
+    const lastSignInAt = options.interactive ? Date.now() : readLoginPreference()?.lastSignInAt
+    writeBrowserStorage(LOGIN_PREFERENCE_KEY, JSON.stringify({ method: options.method, provider: options.provider, user: profile(payload), ...(lastSignInAt ? { lastSignInAt } : {}) }))
+  }
   adoptToken(idToken)
   return true
 }
@@ -168,16 +175,51 @@ export function syncSessionFromStorage(event?: StorageEvent) {
   } else if (event?.key === LOGIN_PREFERENCE_KEY) publish({})
 }
 
+function validConfiguration(value: unknown): AuthConfiguration | null {
+  const config = value as Partial<AuthConfiguration> | null
+  if (!config || typeof config.oidc?.enabled !== "boolean" || typeof config.basic?.enabled !== "boolean" || typeof config.session?.refreshEnabled !== "boolean") return null
+  return {
+    oidc: { enabled: config.oidc.enabled, provider: config.oidc.provider === "google" ? "google" : "oidc", label: typeof config.oidc.label === "string" && config.oidc.label ? config.oidc.label : "Single sign-on" },
+    basic: { enabled: config.basic.enabled },
+    session: { refreshEnabled: config.session.refreshEnabled },
+  }
+}
+
+/**
+ * The sign-in options to draw right now: the server's answer from this page,
+ * else the last answer this browser saw. Display only. Every session decision
+ * awaits getAuthConfiguration(), so a stale copy can never skip or invent a
+ * renewal; it only lets a returning visitor see their buttons without waiting.
+ */
+export function peekAuthConfiguration(): AuthConfiguration | null {
+  if (configuration) return configuration
+  try { return validConfiguration(JSON.parse(readBrowserStorage(AUTH_CONFIGURATION_KEY) ?? "null")) } catch { return null }
+}
+
 export async function getAuthConfiguration(): Promise<AuthConfiguration> {
   if (configuration) return configuration
   configurationFlight ??= fetch("/auth/config", { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(12_000) }).then(async (response) => {
     if (!response.ok) throw new Error("Sign-in options are temporarily unavailable. Please try again.")
-    const value = await response.json() as AuthConfiguration
-    if (typeof value.oidc?.enabled !== "boolean" || typeof value.basic?.enabled !== "boolean" || typeof value.session?.refreshEnabled !== "boolean") throw new Error("Sign-in options are temporarily unavailable. Please try again.")
+    const value = validConfiguration(await response.json())
+    if (!value) throw new Error("Sign-in options are temporarily unavailable. Please try again.")
     configuration = value
+    writeBrowserStorage(AUTH_CONFIGURATION_KEY, JSON.stringify(value))
     return value
   }).finally(() => { configurationFlight = undefined })
   return configurationFlight
+}
+
+/**
+ * Whether this browser has any sign of a session to resume: a stored token,
+ * or a renewable session the server issued and nobody signed out of. A
+ * first-time visitor has neither, so the login page can show its options
+ * while the (HttpOnly, unreadable) cookie probe finishes in the background.
+ */
+export function hasSessionHint(): boolean {
+  if (typeof window === "undefined") return false
+  const state = readState()
+  if (state.loggedOut) return false
+  return Boolean(readBrowserStorage(AUTH_TOKEN_KEY)) || state.refreshAvailable === true
 }
 
 export class SessionUnavailableError extends Error {
@@ -300,7 +342,12 @@ export function clearRejectedSession(rejectedBearer: string | null) {
   anonymous()
 }
 
-export async function logoutSession() {
+/**
+ * Signs this browser out. `keepPending` is for a caller about to leave the
+ * page: the "signing out" state then stays up until the navigation replaces
+ * it, so the signed-out workspace never flashes back on screen.
+ */
+export async function logoutSession(options: { keepPending?: boolean } = {}) {
   hydrate()
   publish({ logoutPending: true })
   // Write the tombstone before waiting for a refreshing tab's lock.
@@ -314,7 +361,7 @@ export async function logoutSession() {
       const response = await fetch("/auth/logout", { method: "POST", credentials: "same-origin", headers: { "X-Paprika-Session": "1" }, signal: AbortSignal.timeout(12_000) })
       if (!response.ok) throw new SessionUnavailableError()
     })
-  } finally { publish({ logoutPending: false }) }
+  } finally { if (!options.keepPending) publish({ logoutPending: false }) }
 }
 
 export async function exchangeAuthorizationCode(body: { code: string; codeVerifier: string; redirectUri: string }, provider: "google" | "oidc") {
@@ -327,7 +374,7 @@ export async function exchangeAuthorizationCode(body: { code: string; codeVerifi
     if (!response.ok) throw new Error("Token exchange failed. Please sign in again.")
     const data = await response.json() as { idToken: string; sessionRefreshAvailable?: boolean }
     if (snapshot.identityEpoch !== epoch || readState().revision !== fence) throw new Error("Sign-in was cancelled because the session changed. Please sign in again.")
-    if (!completeSession(data.idToken, { method: "oidc", provider, sessionRefreshAvailable: data.sessionRefreshAvailable })) throw new Error("Invalid session response. Please sign in again.")
+    if (!completeSession(data.idToken, { method: "oidc", provider, sessionRefreshAvailable: data.sessionRefreshAvailable, interactive: true })) throw new Error("Invalid session response. Please sign in again.")
   })
 }
 
@@ -352,7 +399,7 @@ export async function exchangePasswordForSession(credentials: { username: string
       if (!logout.ok) throw new Error("Couldn’t finish switching accounts. Please try again.")
       if (!unchanged()) throw cancelled()
     }
-    completeSession(data.idToken, { method: "basic", sessionRefreshAvailable: false })
+    completeSession(data.idToken, { method: "basic", sessionRefreshAvailable: false, interactive: true })
   })
 }
 

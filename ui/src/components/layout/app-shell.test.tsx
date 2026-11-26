@@ -350,7 +350,7 @@ describe("console header", () => {
 
 describe("root navigation", () => {
   beforeEach(() => {
-    navigation.pathname = "/mcp/consent"
+    navigation.pathname = "/docs"
     authState.user = null
     authState.isLoading = false
   })
@@ -360,6 +360,13 @@ describe("root navigation", () => {
 
     expect(screen.getByRole("banner")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Paprika" })).toHaveAttribute("href", "/")
+  })
+
+  it("yields MCP consent to the shared identity frame", () => {
+    navigation.pathname = "/mcp/consent/"
+    render(<Nav />)
+
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument()
   })
 
   it("yields the login page to its dedicated identity frame", () => {

@@ -20,7 +20,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
     }).catch(() => { /* The connection notice owns transient recovery. */ })
     return () => { active = false }
   }, [pathname, session.status, session.identityEpoch, session.logoutPending])
-  if (session.logoutPending) return <EntryFrame title="Signing you out"><EntryProgress message="Finishing your session…" /></EntryFrame>
+  if (session.logoutPending) return <EntryFrame title="Signing you out" phase="signing-out"><EntryProgress message="Finishing your session…" detail="This device will still remember your account." /></EntryFrame>
   // React Query is cleared by the session manager; remount the console's local
   // component state too so a different account cannot inherit private views.
   return <div key={JSON.stringify([session.identityKey, session.identityEpoch])} className="contents">{children}</div>

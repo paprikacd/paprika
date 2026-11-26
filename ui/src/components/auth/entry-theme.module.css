@@ -1,5 +1,8 @@
 .scope {
   color-scheme: light;
+  /* Accent ink for checks, grants and the progress rail: the button fill in
+     light, lifted in dark where the fill is too deep to read as a mark. */
+  --entry-accent: #416180;
   --primary: #416180;
   --primary-foreground: #ffffff;
   --entry-inset: #f5f5f8;
@@ -11,6 +14,8 @@
 
 .scope[data-entry-theme="dark"] {
   color-scheme: dark;
+  --entry-accent: #94bce3;
+  --status-healthy-text: #8fd19e;
   --background: #14191e;
   --foreground: #edf0f3;
   --card: #1c232b;
@@ -32,6 +37,8 @@
 @media (prefers-color-scheme: dark) {
   .scope[data-entry-theme="system"] {
     color-scheme: dark;
+    --entry-accent: #94bce3;
+    --status-healthy-text: #8fd19e;
     --background: #14191e;
     --foreground: #edf0f3;
     --card: #1c232b;
@@ -52,3 +59,52 @@
 
 .scope :global(.bg-inset), .scope :global(.hover\:bg-inset:hover) { background-color: var(--entry-inset); }
 .scope :global([role="alert"]) { background-color: var(--entry-alert); color: var(--entry-alert-text); border-color: var(--entry-alert-line); }
+
+/* ── Entry motion ─────────────────────────────────────────────────────
+   One moving signature: a hairline rail whose segment travels while the
+   console waits on the network. Everything else holds still. Under reduced
+   motion the segment rests in place, so the pending state stays visible
+   without movement. */
+.rail {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: var(--rule-soft);
+}
+.rail > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  background: var(--entry-accent);
+  animation: entry-rail 1.25s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes entry-rail {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(265%); }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--entry-inset) 0%, var(--rule-soft) 50%, var(--entry-inset) 100%);
+  background-size: 200% 100%;
+  animation: entry-shimmer 1.4s linear infinite;
+}
+@keyframes entry-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.activeStep {
+  animation: entry-blip 1.6s ease-in-out infinite;
+}
+@keyframes entry-blip {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail > span { animation: none; transform: translateX(80%); }
+  .skeleton, .activeStep { animation: none; }
+}
+
+.scope :global(.text-entry-accent) { color: var(--entry-accent); }
+.scope :global(.bg-entry-accent) { background-color: var(--entry-accent); }

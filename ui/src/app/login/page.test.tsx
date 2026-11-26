@@ -28,11 +28,28 @@ function remember() {
   completeSession(value, { method: "oidc", provider: "google", sessionRefreshAvailable: true })
 }
 describe("entry page", () => {
-  it("renders its branded frame immediately while restoring a session", () => {
-    auth.isLoading = true; render(<LoginPage />)
-    expect(screen.getByRole("heading", { name: "Welcome to Paprika" })).toBeVisible()
-    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting")
+  it("greets a returning visitor by name while restoring their session", () => {
+    remember(); auth.status = "loading"; render(<LoginPage />)
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeVisible()
+    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting as Ada…")
     expect(screen.queryByLabelText("Password")).not.toBeInTheDocument()
+  })
+  it("shows a first-time visitor the sign-in options while the session probe runs", async () => {
+    auth.status = "loading"; render(<LoginPage />)
+    expect(screen.getByRole("heading", { name: "Welcome to Paprika" })).toBeVisible()
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeVisible()
+    expect(screen.queryByText(/Reconnecting/)).not.toBeInTheDocument()
+  })
+  it("draws the last known sign-in options before the server answers", () => {
+    configuration.get.mockReturnValue(new Promise(() => {}))
+    localStorage.setItem("paprika_auth_configuration", JSON.stringify(config))
+    render(<LoginPage />)
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeVisible()
+  })
+  it("says where a connection sign-in returns to", async () => {
+    sessionStorage.setItem("paprika_return_to", "/mcp/consent/?rid=fleet")
+    render(<LoginPage />)
+    expect(screen.getByText("Sign in to finish connecting your MCP client to Paprika.")).toBeVisible()
   })
   it("makes Google primary and hides disabled password login", async () => {
     configuration.get.mockResolvedValue({ ...config, basic: { enabled: false } })
@@ -51,6 +68,13 @@ describe("entry page", () => {
     expect(screen.getByText("Last used · Google")).toBeVisible()
     fireEvent.click(screen.getByRole("button", { name: "Use another account" }))
     expect(auth.login).toHaveBeenCalledWith({ switchAccount: true, loginHint: undefined })
+  })
+  it("says when the remembered account last signed in", async () => {
+    remember()
+    const preference = JSON.parse(localStorage.getItem("paprika_login_preference")!)
+    localStorage.setItem("paprika_login_preference", JSON.stringify({ ...preference, lastSignInAt: Date.now() - 3 * 86_400_000 }))
+    render(<LoginPage />)
+    expect(await screen.findByText("Last used · Google · 3 days ago")).toBeVisible()
   })
   it("removes remembered account details when asked to forget", async () => {
     remember(); render(<LoginPage />)

@@ -68,6 +68,14 @@ func TestConsentHandlerServesPage(t *testing.T) {
 	require.Contains(t, page, "width='8' height='8'")
 	require.Contains(t, page, `sessionStorage.setItem("paprika_return_to"`)
 	require.NotContains(t, page, `localStorage.setItem("paprika_return_to"`)
+	// An expired console token is renewed in place from the HttpOnly browser
+	// session, under the console session manager's lock and storage keys,
+	// before the page falls back to a login round trip.
+	require.Contains(t, page, `fetch("/auth/refresh"`)
+	require.Contains(t, page, `"X-Paprika-Session": "1"`)
+	require.Contains(t, page, `navigator.locks.request("paprika-browser-session"`)
+	require.Contains(t, page, `localStorage.setItem("paprika_session_state"`)
+	require.Contains(t, page, "prefers-reduced-motion")
 }
 
 func TestConsentHandlerRidCannotBreakOutOfScript(t *testing.T) {
