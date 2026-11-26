@@ -27,9 +27,17 @@ export interface ConsentRequest {
   requestedScopes: string[] | null
 }
 
+/**
+ * Why a request could not be shown. `invalid` covers an unknown, expired or
+ * already-used rid (the human must restart from their app); `signin` means the
+ * console session could not be renewed and sign-in has taken over;
+ * `unavailable` is a network or service failure worth retrying in place.
+ */
+export type ConsentFailure = "invalid" | "signin" | "unavailable"
+
 export type ConsentRequestResult =
   | { ok: true; value: ConsentRequest }
-  | { ok: false; missing: string[] }
+  | { ok: false; reason: ConsentFailure; missing: string[] }
 
 export const SCOPE_READ = "paprika:read"
 export const SCOPE_WRITE = "paprika:write"
@@ -89,39 +97,38 @@ function toConsentRequest(body: PendingAuthzResponse): ConsentRequest {
  * actual authorization request via the authenticated GET
  * /mcp/authorize/pending endpoint.
  *
- * Every failure mode — no rid, a network error, a non-2xx response (unknown,
- * expired, or genuinely invalid rid; or the caller isn't authenticated), or
- * a malformed/incomplete body — collapses to the same `{ ok: false }` shape
- * the page already knows how to render as "Can't show this request". None of
- * these are actionable any differently by the human at the keyboard, and
- * the security property here lives entirely server-side (see oauth.go's
- * redirectToConsent / handleAuthorizePending) — this function's job is only
- * to turn "resolved" into the shape the rest of the page already expects,
- * not to make any security decision of its own.
+ * The lookup goes through the console's session fetch, so a cached ID token
+ * that expired since the console was last open is renewed from the browser
+ * session first (and a 401 is retried once after renewal) instead of
+ * failing the connection. The security property lives entirely server-side
+ * (see oauth.go's redirectToConsent / handleAuthorizePending); this only
+ * classifies the outcome so the page can say what the human can do next.
  */
 export async function fetchPendingAuthz(
   rid: string,
-  idToken: string
+  request: (input: string, init: RequestInit, replaySafe: boolean) => Promise<Response>
 ): Promise<ConsentRequestResult> {
-  if (!rid) return { ok: false, missing: ["rid"] }
+  const fail = (reason: ConsentFailure): ConsentRequestResult => ({ ok: false, reason, missing: ["rid"] })
+  if (!rid) return fail("invalid")
 
   let res: Response
   try {
-    res = await fetch(`/mcp/authorize/pending?rid=${encodeURIComponent(rid)}`, {
-      headers: { Authorization: `Bearer ${idToken}` },
+    res = await request(`/mcp/authorize/pending?rid=${encodeURIComponent(rid)}`, {
       cache: "no-store",
       referrerPolicy: "no-referrer",
-    })
+    }, true)
   } catch {
-    return { ok: false, missing: ["rid"] }
+    return fail("unavailable")
   }
-  if (!res.ok) return { ok: false, missing: ["rid"] }
+  if (res.status === 401) return fail("signin")
+  if (res.status >= 500) return fail("unavailable")
+  if (!res.ok) return fail("invalid")
 
   let body: PendingAuthzResponse
   try {
     body = (await res.json()) as PendingAuthzResponse
   } catch {
-    return { ok: false, missing: ["rid"] }
+    return fail("invalid")
   }
   if (
     !body ||
@@ -130,7 +137,7 @@ export async function fetchPendingAuthz(
     !body.code_challenge ||
     !body.code_challenge_method
   ) {
-    return { ok: false, missing: ["rid"] }
+    return fail("invalid")
   }
 
   return { ok: true, value: toConsentRequest(body) }

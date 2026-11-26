@@ -4,7 +4,7 @@ const navigation = vi.hoisted(() => ({ search: "", router: { replace: vi.fn() } 
 const auth = vi.hoisted(() => ({ consumeReturnTo: vi.fn<() => string | null>(), exchange: vi.fn() }))
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(navigation.search), useRouter: () => navigation.router }))
 vi.mock("@/lib/auth-context", () => ({ consumeReturnTo: auth.consumeReturnTo }))
-vi.mock("@/lib/browser-session", () => ({ exchangeAuthorizationCode: auth.exchange }))
+vi.mock("@/lib/browser-session", () => ({ exchangeAuthorizationCode: auth.exchange, getSessionSnapshot: () => ({ user: { sub: "ada", email: "ada@example.test", name: "Ada Lovelace" } }) }))
 import CallbackPage from "./page"
 const originalLocation = window.location
 beforeEach(() => {
@@ -20,6 +20,16 @@ describe("callback", () => {
     await waitFor(() => expect(auth.exchange).toHaveBeenCalledWith({ code: "auth-code", codeVerifier: "verifier", redirectUri: "https://console.example/auth/callback" }, "google"))
     await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith("/dashboard/"))
     expect(sessionStorage.getItem("paprika_code_verifier")).toBeNull()
+  })
+  it("shows real progress, then greets the signed-in account", async () => {
+    let finish!: () => void
+    auth.exchange.mockReturnValue(new Promise<void>((resolve) => { finish = resolve }))
+    render(<CallbackPage />)
+    expect(await screen.findByText("Verified with Google")).toBeVisible()
+    expect(screen.getByText("Securing your session").closest("li")).toHaveAttribute("data-state", "active")
+    finish()
+    expect(await screen.findByRole("heading", { name: "Welcome, Ada" })).toBeVisible()
+    expect(screen.getByText("Opening your workspace").closest("li")).toHaveAttribute("data-state", "active")
   })
   it.each([
     ["/dashboard/search?q=a?b=c", "/dashboard/search/?q=a?b=c"],

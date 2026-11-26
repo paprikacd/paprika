@@ -9,10 +9,10 @@ export function Nav() {
   const pathname = usePathname()
   const { user, isLoading, logout } = useAuth()
 
-  // The dashboard owns its shell, and the login page owns its identity frame.
+  // The dashboard owns its shell, and sign-in and MCP consent share one identity frame.
   // A second brand bar above either one reads as a different product.
   const path = pathname.replace(/\/+$/, "")
-  if (path === "" || path.startsWith("/dashboard") || path === "/login" || path === "/auth/callback") {
+  if (path === "" || path.startsWith("/dashboard") || path === "/login" || path === "/auth/callback" || path === "/mcp/consent") {
     return null
   }
 

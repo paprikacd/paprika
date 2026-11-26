@@ -44,3 +44,9 @@ export function safeAuthReturnTo(target: string | null): string | null {
 export function authReturnDestination(target: string | null): string {
   return safeAuthReturnTo(target) ?? "/dashboard/"
 }
+
+/** Whether sign-in was started to approve an MCP client's connection. */
+export function isConnectionReturn(target: string | null): boolean {
+  const destination = safeAuthReturnTo(target)
+  return !!destination && (destination.startsWith("/mcp/consent/") || destination.startsWith("/observe/consent"))
+}

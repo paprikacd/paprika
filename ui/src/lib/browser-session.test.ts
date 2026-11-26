@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { AUTH_TOKEN_KEY, LOGIN_PREFERENCE_KEY, SessionUnavailableError, bootstrapSession, clearRejectedSession, completeSession, ensureValidSession, exchangeAuthorizationCode, exchangePasswordForSession, forgetLoginPreference, getSessionSnapshot, logoutSession, readBrowserStorage, readLoginPreference, recoverUnauthorized, resetBrowserSessionForTests, syncSessionFromStorage } from "./browser-session"
+import { AUTH_TOKEN_KEY, LOGIN_PREFERENCE_KEY, SessionUnavailableError, bootstrapSession, clearRejectedSession, completeSession, ensureValidSession, exchangeAuthorizationCode, exchangePasswordForSession, forgetLoginPreference, getAuthConfiguration, getSessionSnapshot, hasSessionHint, logoutSession, peekAuthConfiguration, readBrowserStorage, readLoginPreference, recoverUnauthorized, resetBrowserSessionForTests, syncSessionFromStorage } from "./browser-session"
 const cache = vi.hoisted(() => ({ clear: vi.fn() }))
 vi.mock("@/lib/query-provider", () => ({ clearBrowserQueryCache: cache.clear }))
 
@@ -199,5 +199,39 @@ describe("browser sessions", () => {
     fetchMock.mockImplementation(async (url: string) => url === "/auth/config" ? json(config) : json({ idToken: fresh, sessionRefreshAvailable: true }))
     expect(await bootstrapSession()).toBe(fresh)
     expect(localStorage.getItem("paprika_session_lock")).toBeNull()
+  })
+
+  it("remembers the sign-in options for the next visit, for display only", async () => {
+    expect(peekAuthConfiguration()).toBeNull()
+    await getAuthConfiguration()
+    resetBrowserSessionForTests()
+    expect(peekAuthConfiguration()).toEqual(config)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    localStorage.setItem("paprika_auth_configuration", "{\"oidc\":{}}")
+    expect(peekAuthConfiguration()).toBeNull()
+  })
+  it("moves the last sign-in time only for a sign-in the person completed", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000)
+    fetchMock.mockImplementation(async (url: string) => url === "/auth/config" ? json(config) : json({ idToken: token(), sessionRefreshAvailable: true }))
+    await exchangeAuthorizationCode({ code: "c", codeVerifier: "v", redirectUri: "https://console.example/auth/callback" }, "google")
+    expect(readLoginPreference()?.lastSignInAt).toBe(1_800_000_000_000)
+    vi.spyOn(Date, "now").mockReturnValue(1_800_000_900_000)
+    await ensureValidSession({ forceRefresh: true })
+    expect(readLoginPreference()?.lastSignInAt).toBe(1_800_000_000_000)
+  })
+  it("hints at a resumable session only when one could exist", () => {
+    expect(hasSessionHint()).toBe(false)
+    localStorage.setItem("paprika_session_state", JSON.stringify({ refreshAvailable: true }))
+    expect(hasSessionHint()).toBe(true)
+    localStorage.setItem("paprika_session_state", JSON.stringify({ refreshAvailable: true, loggedOut: true }))
+    expect(hasSessionHint()).toBe(false)
+    localStorage.setItem("paprika_session_state", "{}"); localStorage.setItem(AUTH_TOKEN_KEY, token())
+    expect(hasSessionHint()).toBe(true)
+  })
+  it("keeps the signing-out state up for a caller about to leave the page", async () => {
+    completeSession(token(), { method: "oidc", provider: "google", sessionRefreshAvailable: true })
+    fetchMock.mockImplementation(async (url: string) => url === "/auth/config" ? json(config) : new Response(null, { status: 204 }))
+    await logoutSession({ keepPending: true })
+    expect(getSessionSnapshot()).toMatchObject({ status: "anonymous", logoutPending: true, idToken: null })
   })
 })

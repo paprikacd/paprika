@@ -2,13 +2,18 @@
 
 import { useRouter } from "next/navigation"
 import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { EntryFrame, EntryProgress } from "@/components/auth/entry-frame"
-import { authReturnDestination } from "@/lib/auth-return-to"
+import { EntryFrame, EntryIdentity, EntryOptionsSkeleton, EntryProgress, relativeSignIn } from "@/components/auth/entry-frame"
+import { authReturnDestination, isConnectionReturn, readAuthReturnTo } from "@/lib/auth-return-to"
 import { consumeReturnTo, useAuth } from "@/lib/auth-context"
-import { exchangePasswordForSession, forgetLoginPreference, getAuthConfiguration, getServerSessionSnapshot, getSessionSnapshot, readLoginPreference, subscribeSession, type AuthConfiguration } from "@/lib/browser-session"
+import { useHydrated } from "@/lib/use-hydrated"
+import {
+  ensureValidSession, exchangePasswordForSession, forgetLoginPreference, getAuthConfiguration, getServerSessionSnapshot,
+  getSessionSnapshot, hasSessionHint, peekAuthConfiguration, readLoginPreference, subscribeSession, type AuthConfiguration,
+} from "@/lib/browser-session"
 
 const primaryButton = "inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2.5 border border-primary bg-primary px-3 font-cond text-label font-semibold text-primary-foreground transition-colors hover:bg-steel-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60 motion-reduce:transition-none"
 const textButton = "cursor-pointer text-note text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-60"
+const optionsUnavailable = "Sign-in options are temporarily unavailable. Check your connection and retry."
 
 function GoogleIcon() {
   return <svg viewBox="0 0 24 24" className="size-4 shrink-0" aria-hidden="true">
@@ -20,25 +25,32 @@ function GoogleIcon() {
 }
 
 export default function LoginPage() {
-  const { user, isLoading, status, error: sessionError, login, retry } = useAuth()
+  const { user, status, error: sessionError, login, retry } = useAuth()
   const session = useSyncExternalStore(subscribeSession, getSessionSnapshot, getServerSessionSnapshot)
-  const preference = session.revision ? readLoginPreference() : null
+  // The static frame and the first client render must match, so anything read
+  // from browser storage waits until after hydration.
+  const mounted = useHydrated()
+  const preference = mounted ? readLoginPreference() : null
   const router = useRouter()
-  const [configuration, setConfiguration] = useState<AuthConfiguration | null>(null)
+  const [fetchedConfiguration, setConfiguration] = useState<AuthConfiguration | null>(null)
   const [configError, setConfigError] = useState("")
   const [username, setUsername] = useState("")
   const [usernameEdited, setUsernameEdited] = useState(false)
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<false | "oidc" | "basic" | "retry">(false)
   const redirected = useRef(false)
+  // The last options this browser saw draw immediately; the server's answer replaces them.
+  const configuration = fetchedConfiguration ?? (mounted ? peekAuthConfiguration() : null)
 
   async function loadConfiguration() {
     setConfigError("")
     try { setConfiguration(await getAuthConfiguration()) }
-    catch { setConfigError("Sign-in options are temporarily unavailable. Check your connection and retry.") }
+    catch { setConfigError(optionsUnavailable) }
   }
-  useEffect(() => { void getAuthConfiguration().then(setConfiguration).catch(() => setConfigError("Sign-in options are temporarily unavailable. Check your connection and retry.")) }, [])
+  useEffect(() => {
+    void getAuthConfiguration().then(setConfiguration).catch(() => { if (!peekAuthConfiguration()) setConfigError(optionsUnavailable) })
+  }, [])
 
   function continueToWorkspace() {
     if (redirected.current) return
@@ -48,27 +60,29 @@ export default function LoginPage() {
     else window.location.assign(destination) // Go-served MCP consent routes.
   }
   useEffect(() => {
-    if (!isLoading && user && status === "authenticated" && !redirected.current) {
-      redirected.current = true
-      const destination = authReturnDestination(consumeReturnTo())
-      if (destination.startsWith("/dashboard/")) router.replace(destination)
-      else window.location.href = destination
-    }
-  }, [isLoading, user, status, router])
+    if (status === "authenticated" && user) continueToWorkspace()
+  })
 
   async function beginLogin(switchAccount = false) {
-    setError(""); setBusy(true)
-    try { await login({ switchAccount, loginHint: switchAccount ? undefined : preference?.user.email }) }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "Couldn’t start sign-in. Please try again."); setBusy(false) }
+    setError(""); setBusy("oidc")
+    try {
+      // A first-time visitor can click before the cookie probe answers. Let it
+      // finish: a session it finds beats a trip to the identity provider.
+      if (!switchAccount && status === "loading") {
+        await ensureValidSession().catch(() => null)
+        if (getSessionSnapshot().status === "authenticated") { continueToWorkspace(); return }
+      }
+      await login({ switchAccount, loginHint: switchAccount ? undefined : preference?.user.email })
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Couldn’t start sign-in. Please try again."); setBusy(false) }
   }
   async function retryConnection() {
-    setBusy(true); setError("")
+    setBusy("retry"); setError("")
     try { await retry(); await loadConfiguration() }
     catch { setError("We still can’t reach Paprika. Please check your connection and try again.") }
     finally { setBusy(false) }
   }
   async function handleBasicLogin(event: FormEvent) {
-    event.preventDefault(); setError(""); setBusy(true)
+    event.preventDefault(); setError(""); setBusy("basic")
     try {
       await exchangePasswordForSession({ username: usernameEdited ? username : preference?.method === "basic" ? preference.user.sub : username, password })
       setPassword("")
@@ -79,47 +93,54 @@ export default function LoginPage() {
 
   const rememberedOIDC = preference?.method === "oidc" && preference.provider === configuration?.oidc.provider
   const accountName = preference?.user.name || preference?.user.email || "your account"
-  const progress = isLoading || (status === "authenticated" && !!user)
-  return <EntryFrame title={preference ? "Welcome back" : "Welcome to Paprika"}>
-    {progress ? <EntryProgress /> : <div className="space-y-4">
-      {preference && <div className="flex items-center gap-3 border border-rule-soft bg-inset px-3 py-3">
-        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-card font-cond text-lg text-foreground">
-          {preference.user.picture ? <RememberedAvatar picture={preference.user.picture} name={accountName} /> : accountName.slice(0, 1).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-console font-medium">{accountName}</p>
-          {preference.user.name && <p className="truncate text-note text-muted-foreground">{preference.user.email}</p>}
-          <p className="mt-1 font-mono text-kicker text-muted-foreground">Last used · {preference.method === "basic" ? "Password" : preference.provider === "google" ? "Google" : "Single sign-on"}</p>
-        </div>
-      </div>}
+  const connecting = mounted && isConnectionReturn(readAuthReturnTo())
+  const description = connecting ? "Sign in to finish connecting your MCP client to Paprika." : undefined
+  const lastSignIn = relativeSignIn(preference?.lastSignInAt)
+  const methodLabel = preference?.method === "basic" ? "Password" : preference?.provider === "google" ? "Google" : "Single sign-on"
+  const known = session.user ?? preference?.user ?? null
+
+  let phase: string
+  let body: React.ReactNode
+  if (!mounted) {
+    phase = "static"
+    body = <EntryOptionsSkeleton />
+  } else if (status === "authenticated" && user) {
+    phase = "opening"
+    body = <EntryProgress message={connecting ? "Returning to your connection request…" : "Opening your workspace…"} identity={user} />
+  } else if (busy === "oidc") {
+    phase = "leaving"
+    body = <EntryProgress message={configuration?.oidc.provider === "google" ? "Taking you to Google…" : "Taking you to your sign-in provider…"} identity={rememberedOIDC ? preference.user : null} detail={rememberedOIDC ? undefined : "You’ll come straight back here afterwards."} />
+  } else if (status === "loading" && hasSessionHint()) {
+    // A returning visitor with a stored or renewable session: renew quietly.
+    phase = "reconnecting"
+    body = <EntryProgress message={known ? `Reconnecting as ${known.name || known.email}…` : "Reconnecting to your workspace…"} identity={known} />
+  } else {
+    phase = "options"
+    body = <div className="space-y-4">
+      {preference && <EntryIdentity user={preference.user} meta={<>Last used · {methodLabel}{lastSignIn ? ` · ${lastSignIn}` : ""}</>} />}
       {(error || sessionError || configError) && <div role="alert" className="space-y-3 border border-status-failed-line bg-status-failed-fill px-3 py-3 text-note text-status-failed-text">
         <p>{error || sessionError || configError}</p>
-        {(status === "unavailable" || configError) && <button type="button" disabled={busy} className={textButton} onClick={() => void (status === "unavailable" ? retryConnection() : loadConfiguration())}>Retry connection</button>}
+        {(status === "unavailable" || configError) && <button type="button" disabled={!!busy} className={textButton} onClick={() => void (status === "unavailable" ? retryConnection() : loadConfiguration())}>{busy === "retry" ? "Retrying…" : "Retry connection"}</button>}
       </div>}
-      {!configuration && !configError ? <EntryProgress message="Loading sign-in options…" /> : null}
+      {!configuration && !configError ? <EntryOptionsSkeleton /> : null}
       {configuration?.oidc.enabled && <div className="space-y-3">
-        <button type="button" disabled={busy} onClick={() => void beginLogin()} className={primaryButton}>
+        <button type="button" disabled={!!busy} onClick={() => void beginLogin()} className={primaryButton}>
           {configuration.oidc.provider === "google" && <span className="flex size-6 items-center justify-center rounded-sm bg-white"><GoogleIcon /></span>}
-          {busy ? "Connecting…" : rememberedOIDC ? `Continue as ${accountName}` : `Continue with ${configuration.oidc.label}`}
+          {rememberedOIDC ? `Continue as ${accountName}` : `Continue with ${configuration.oidc.label}`}
         </button>
-        {rememberedOIDC && <button type="button" disabled={busy} onClick={() => void beginLogin(true)} className={`${textButton} block w-full text-center`}>Use another account</button>}
+        {rememberedOIDC && <button type="button" disabled={!!busy} onClick={() => void beginLogin(true)} className={`${textButton} block w-full text-center`}>Use another account</button>}
       </div>}
       {configuration?.basic.enabled && <form onSubmit={handleBasicLogin} className="space-y-3.5">
         {configuration.oidc.enabled && <p className="border-t border-rule-soft pt-4 font-mono text-kicker text-muted-foreground">Or use your console account</p>}
         <div className="space-y-1"><label htmlFor="username" className="text-note text-muted-foreground">Username</label><input id="username" type="text" required value={usernameEdited ? username : preference?.method === "basic" ? preference.user.sub : username} onChange={(event) => { setUsernameEdited(true); setUsername(event.target.value) }} className="h-10 w-full border border-rule bg-card px-3 text-console outline-none focus-visible:outline-2 focus-visible:outline-ring" autoComplete="username" /></div>
-        <div className="space-y-1"><label htmlFor="password" className="text-note text-muted-foreground">Password</label><input id="password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} className="h-10 w-full border border-rule bg-card px-3 text-console outline-none focus-visible:outline-2 focus-visible:outline-ring" autoComplete="current-password" /></div>
-        <button type="submit" disabled={busy} className={primaryButton}>{busy ? "Signing in…" : "Sign in"}</button>
+        <div className="space-y-1"><label htmlFor="password" className="text-note text-muted-foreground">Password</label><input id="password" type="password" required autoFocus={preference?.method === "basic"} value={password} onChange={(event) => setPassword(event.target.value)} className="h-10 w-full border border-rule bg-card px-3 text-console outline-none focus-visible:outline-2 focus-visible:outline-ring" autoComplete="current-password" /></div>
+        <button type="submit" disabled={!!busy} className={primaryButton}>{busy === "basic" ? "Signing in…" : "Sign in"}</button>
       </form>}
       {configuration && !configuration.oidc.enabled && !configuration.basic.enabled && <p className="text-note text-muted-foreground">Interactive sign-in is not enabled for this console. Contact your administrator.</p>}
-      {preference && <div className="border-t border-rule-soft pt-3 text-center"><button type="button" disabled={busy} className={textButton} onClick={forgetLoginPreference}>Forget this account</button></div>}
-    </div>}
-  </EntryFrame>
-}
+      {preference && <div className="border-t border-rule-soft pt-3 text-center"><button type="button" disabled={!!busy} className={textButton} onClick={forgetLoginPreference}>Forget this account</button></div>}
+    </div>
+  }
 
-function RememberedAvatar({ picture, name }: { picture: string; name: string }) {
-  const [failed, setFailed] = useState(false)
-  if (failed) return <>{name.slice(0, 1).toUpperCase()}</>
-  // The provider picture URL is only a display hint, never an identity check.
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={picture} alt="" referrerPolicy="no-referrer" className="size-full object-cover" onError={() => setFailed(true)} />
+  const title = !mounted ? null : preference || phase === "reconnecting" || phase === "opening" ? "Welcome back" : "Welcome to Paprika"
+  return <EntryFrame title={title} description={description} phase={phase}>{body}</EntryFrame>
 }

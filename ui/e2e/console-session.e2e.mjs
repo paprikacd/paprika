@@ -360,7 +360,7 @@ try {
     await signOut(first)
     await second.waitForURL(`${ready.baseURL}/login/`)
     await expect(first.getByText("robin@example.test", { exact: true })).toBeVisible()
-    await expect(first.getByText("Last used · Single sign-on", { exact: true })).toBeVisible()
+    await expect(first.getByText(/^Last used · Single sign-on · (just now|\d+ min ago)$/)).toBeVisible()
     assert.equal((await ctx.cookies(`${ready.baseURL}/auth/refresh`)).filter((cookie) => cookie.httpOnly).length, 0)
     await captureLogin(first, "returning-user")
     await first.keyboard.press("Tab")
@@ -424,6 +424,24 @@ try {
   })
 
   for (const surface of ["Observe", "fleet"]) {
+    await check(`${surface} MCP consent renews an expired cached token in place`, async () => {
+      const ctx = await context()
+      const page = await newPage(ctx)
+      await login(page)
+      await expire(page)
+      const visited = []
+      page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) visited.push(new URL(frame.url()).pathname) })
+      const destination = surface === "Observe" ? "/observe/consent?rid=observe-fixture" : "/mcp/consent/?rid=fleet-fixture"
+      await page.goto(`${ready.baseURL}${destination}`)
+      await expect(page.getByRole("button", { name: surface === "Observe" ? "Approve" : "Allow access", exact: true })).toBeVisible()
+      assert.deepEqual(visited.filter((pathname) => pathname.startsWith("/login") || pathname.startsWith("/auth/")), [], "an expired token must renew without a login or provider round trip")
+      const stats = await control()
+      assert.equal(stats.authorize, 1, "renewal must not revisit the identity provider")
+      assert.equal(stats.refresh, 1, "the browser session must renew the token exactly once")
+      await proveAuthenticated(page)
+      await ctx.close()
+    })
+
     await check(`${surface} MCP consent survives sign-in in another tab`, async () => {
       const ctx = await context()
       let authorizationURL = ""

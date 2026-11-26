@@ -9,14 +9,35 @@ vi.mock("next/navigation", () => ({
 }))
 
 const authState = vi.hoisted(() => ({
-  user: null as null | { email: string; name: string },
+  user: null as null | { email: string; name: string; sub: string },
   idToken: null as string | null,
-  isLoading: false,
+  status: "authenticated" as "loading" | "authenticated" | "anonymous" | "unavailable",
   login: vi.fn(),
+  retry: vi.fn(),
 }))
 
 vi.mock("@/lib/auth-context", () => ({
   useAuth: () => authState,
+}))
+
+const session = vi.hoisted(() => ({
+  redirectToLogin: vi.fn(),
+  config: { oidc: { enabled: true, provider: "google", label: "Google" }, basic: { enabled: false }, session: { refreshEnabled: true } },
+  preference: null as null | { method: "oidc" | "basic"; user: { sub: string; email: string; name: string } },
+}))
+
+// The page renews its session through sessionFetch, which attaches the current
+// bearer; here it does only that, so each test controls the wire responses.
+vi.mock("@/lib/session-request", () => ({
+  sessionFetch: (input: string, init: RequestInit) =>
+    fetch(input, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${authState.idToken}` } }),
+  redirectToLogin: session.redirectToLogin,
+}))
+
+vi.mock("@/lib/browser-session", async (original) => ({
+  ...await original<typeof import("@/lib/browser-session")>(),
+  getAuthConfiguration: async () => session.config,
+  readLoginPreference: () => session.preference,
 }))
 
 import ConsentPage from "../page"
@@ -95,10 +116,14 @@ function consentCall(fetchMock: ReturnType<typeof vi.fn>) {
 
 beforeEach(() => {
   navigation.search = `rid=${RID}`
-  authState.user = { email: "ben@shorted.com.au", name: "Ben" }
+  authState.user = { email: "ben@shorted.com.au", name: "Ben", sub: "ben" }
   authState.idToken = "console-token"
-  authState.isLoading = false
-  authState.login.mockReset()
+  authState.status = "authenticated"
+  authState.login.mockReset().mockResolvedValue(undefined)
+  authState.retry.mockReset().mockResolvedValue(undefined)
+  session.redirectToLogin.mockReset()
+  session.config = { oidc: { enabled: true, provider: "google", label: "Google" }, basic: { enabled: false }, session: { refreshEnabled: true } }
+  session.preference = null
 })
 
 afterEach(() => {
@@ -348,6 +373,7 @@ describe("MCP consent page", () => {
   it("shows a clear error and never calls fetch when rid is missing", async () => {
     navigation.search = ""
     authState.user = null
+    authState.status = "anonymous"
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
 
@@ -378,11 +404,81 @@ describe("MCP consent page", () => {
 
   it("redirects to the existing login flow when not signed in, and returns nothing to approve until then", async () => {
     authState.user = null
+    authState.status = "anonymous"
 
     render(<ConsentPage />)
 
     await waitFor(() => expect(authState.login).toHaveBeenCalledTimes(1))
+    expect(session.redirectToLogin).not.toHaveBeenCalled()
+    expect(screen.getByRole("status")).toHaveTextContent("Taking you to sign in")
     expect(screen.queryByRole("button", { name: /allow access/i })).not.toBeInTheDocument()
+  })
+
+  it("names the remembered account while it signs in", async () => {
+    authState.user = null
+    authState.status = "anonymous"
+    session.preference = { method: "oidc", user: { sub: "ben", email: "ben@shorted.com.au", name: "Ben" } }
+
+    render(<ConsentPage />)
+
+    await waitFor(() => expect(authState.login).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole("status")).toHaveTextContent("Signing in as Ben…")
+  })
+
+  it.each([
+    ["password-only consoles", () => { session.config = { ...session.config, oidc: { ...session.config.oidc, enabled: false }, basic: { enabled: true } } }],
+    ["a remembered password account", () => { session.preference = { method: "basic", user: { sub: "admin", email: "", name: "" } } }],
+    ["a sign-in that fails to start", () => { authState.login.mockRejectedValue(new Error("network")) }],
+  ])("hands %s to the login page instead of stalling", async (_name, arrange) => {
+    authState.user = null
+    authState.status = "anonymous"
+    arrange()
+
+    render(<ConsentPage />)
+
+    await waitFor(() => expect(session.redirectToLogin).toHaveBeenCalledTimes(1))
+  })
+
+  it("waits for the session to be confirmed before resolving the request", async () => {
+    authState.status = "loading"
+    const fetchMock = installFetch()
+
+    const { rerender } = render(<ConsentPage />)
+
+    expect(screen.getByRole("status")).toHaveTextContent("Confirming your session…")
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(authState.login).not.toHaveBeenCalled()
+
+    authState.status = "authenticated"
+    rerender(<ConsentPage />)
+    expect(await screen.findByRole("button", { name: /allow access/i })).toBeVisible()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("offers a retry when the request can't be reached, then shows it", async () => {
+    let attempts = 0
+    const fetchMock = vi.fn((url: string) => {
+      attempts += 1
+      if (attempts === 1) return Promise.reject(new TypeError("Failed to fetch"))
+      if (url.startsWith("/mcp/authorize/pending")) return Promise.resolve({ ok: true, status: 200, json: async () => DEFAULT_PENDING })
+      throw new Error(`unexpected fetch to ${url}`)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<ConsentPage />)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("couldn’t reach Paprika")
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(await screen.findByRole("button", { name: /allow access/i })).toBeVisible()
+  })
+
+  it("explains an expired request instead of offering approval", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 400, json: async () => ({}) })))
+
+    render(<ConsentPage />)
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("expired or was already used")
+    expect(screen.getByText(/start the connection again/i)).toBeVisible()
   })
 
   it("guards against double submission: clicking Allow access twice only posts once", async () => {

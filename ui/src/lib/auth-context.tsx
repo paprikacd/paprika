@@ -82,7 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
-    try { await logoutSession() } catch { /* The local logout tombstone prevents cookie reuse if offline. */ }
+    // Keep "Signing you out" on screen until the login page replaces it.
+    try { await logoutSession({ keepPending: true }) } catch { /* The local logout tombstone prevents cookie reuse if offline. */ }
     window.location.href = "/login/"
   }, [])
   const retry = useCallback(async () => { await ensureValidSession({ forceRefresh: true }) }, [])

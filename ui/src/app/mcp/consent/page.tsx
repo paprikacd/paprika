@@ -4,26 +4,23 @@ import { Check } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useRef, useState } from "react"
 
+import { EntryFrame, EntryIdentity, EntryProgress } from "@/components/auth/entry-frame"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth-context"
+import { getAuthConfiguration, readLoginPreference } from "@/lib/browser-session"
+import { redirectToLogin, sessionFetch } from "@/lib/session-request"
+import { useHydrated } from "@/lib/use-hydrated"
 
-import { AuthorizationApproved, CapsicumMark } from "./authorization-approved"
+import { AuthorizationApproved } from "./authorization-approved"
 import {
   fetchPendingAuthz,
   SCOPE_WRITE,
   type ConsentRequestResult,
 } from "./consent-request"
 
-function ConsentShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-4">
-      {children}
-    </div>
-  )
-}
+const CONNECT_DESCRIPTION = "An application is asking to connect to Paprika."
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -36,104 +33,147 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function CantShowRequest({ missing }: { missing: string[] }) {
+function CantShowRequest({ detail }: { detail: string }) {
   return (
-    <ConsentShell>
-      <div className="w-full max-w-sm space-y-4 rounded-[2px] bg-card p-8 text-center ring-1 ring-foreground/10">
-        <CapsicumMark />
-        <h1 className="text-lg font-semibold text-destructive text-balance">
-          Can&apos;t show this request
-        </h1>
-        <p className="text-sm text-pretty text-muted-foreground">
-          The request could not be loaded ({missing.join(", ")}). Ask the
-          application to restart the authorisation request.
+    <EntryFrame title="Can't show this request" description={CONNECT_DESCRIPTION} phase="invalid">
+      <div className="space-y-3">
+        <p role="alert" className="border border-status-failed-line bg-status-failed-fill px-3 py-3 text-note leading-relaxed text-status-failed-text">
+          {detail}
+        </p>
+        <p className="text-note text-muted-foreground">
+          Start the connection again from your application. It will open a fresh request here.
         </p>
       </div>
-    </ConsentShell>
+    </EntryFrame>
   )
+}
+
+/**
+ * Sign-in for a connection goes straight to the identity provider when that
+ * is how this browser last signed in, so approving a client costs one trip.
+ * Anything else (password accounts, a console without single sign-on, or a
+ * failure to start) hands over to the login page, which explains and retries
+ * and then returns here through the same return-to mechanism.
+ */
+async function startSignIn(login: () => Promise<void>) {
+  try {
+    const preference = readLoginPreference()
+    const config = await getAuthConfiguration()
+    if (config.oidc.enabled && (!preference || preference.method === "oidc")) {
+      await login()
+      return
+    }
+  } catch { /* The login page owns explaining and retrying a failed start. */ }
+  redirectToLogin()
 }
 
 function ConsentHandler() {
   const searchParams = useSearchParams()
-  const { user, idToken, isLoading, login } = useAuth()
+  const { user, status, login, retry } = useAuth()
+  const hydrated = useHydrated()
 
   const loginTriggered = useRef(false)
   const submittingRef = useRef(false)
-  const pendingFetchTriggered = useRef(false)
 
-  const [redirecting, setRedirecting] = useState(false)
   const [grantWrite, setGrantWrite] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [pending, setPending] = useState<ConsentRequestResult | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const fetchedAttempt = useRef(-1)
+  const [retrying, setRetrying] = useState(false)
   const [approved, setApproved] = useState<{
     redirectTo: string
     writeGranted: boolean
   } | null>(null)
 
-  // Fix round 2, Finding 1: /mcp/authorize's redirect to this page now
-  // carries only an opaque `rid` — never the client_id/redirect_uri/etc
-  // themselves — so this is the only thing we read from the URL directly.
+  // /mcp/authorize redirects here with only an opaque `rid` — never the
+  // client_id/redirect_uri/etc themselves — so this is the only thing read
+  // from the URL directly.
   const rid = searchParams.get("rid") ?? ""
   const ridMissing = rid === ""
 
-  // Not signed in: kick off the existing login flow and come straight back
-  // here — the query string (now just `?rid=...`) rides along via the
-  // normal return-to mechanism, so we never invent a second auth path. A
-  // request with no rid at all can never succeed, so we don't bounce an
-  // unauthenticated visitor through login for it.
+  // Not signed in: sign in and come straight back. The query string (just
+  // `?rid=...`) rides along via the normal return-to mechanism. A request
+  // with no rid can never succeed, so nobody is bounced through login for it.
   useEffect(() => {
-    if (isLoading || ridMissing || user) return
-    if (loginTriggered.current) return
+    if (ridMissing || status !== "anonymous" || loginTriggered.current) return
     loginTriggered.current = true
-    setRedirecting(true)
-    void login()
-  }, [isLoading, user, ridMissing, login])
+    void startSignIn(login)
+  }, [status, ridMissing, login])
 
-  // Once we know rid and are authenticated, resolve it via the
-  // authenticated /mcp/authorize/pending endpoint — the only way to learn
-  // what the request actually was (see consent-request.ts).
+  // Resolve the rid only once the session is confirmed. A cached profile can
+  // be on screen before its ID token is renewed; asking with that stale token
+  // would turn a routine renewal into "can't show this request".
   useEffect(() => {
-    if (ridMissing || !user || !idToken) return
-    if (pendingFetchTriggered.current) return
-    pendingFetchTriggered.current = true
-    void fetchPendingAuthz(rid, idToken).then(setPending)
-  }, [ridMissing, user, idToken, rid])
+    if (ridMissing || status !== "authenticated" || fetchedAttempt.current === attempt) return
+    fetchedAttempt.current = attempt
+    void fetchPendingAuthz(rid, sessionFetch).then(setPending)
+  }, [ridMissing, status, rid, attempt])
+
+  async function retryRequest() {
+    setRetrying(true)
+    try {
+      if (status === "unavailable") await retry()
+      setPending(null)
+      setAttempt((value) => value + 1)
+    } catch { /* The connection message stays up with its retry. */ } finally { setRetrying(false) }
+  }
 
   if (ridMissing) {
-    return <CantShowRequest missing={["rid"]} />
+    return <CantShowRequest detail="The link is missing its request reference (rid)." />
   }
 
-  if (isLoading) {
+  const preference = hydrated ? readLoginPreference() : null
+  const cachedIdentity = user ?? preference?.user ?? null
+
+  if (status === "unavailable" || (pending && !pending.ok && pending.reason === "unavailable")) {
     return (
-      <ConsentShell>
-        <p className="text-sm text-muted-foreground">Checking your session…</p>
-      </ConsentShell>
+      <EntryFrame title="Connection interrupted" description={CONNECT_DESCRIPTION} phase="unavailable">
+        <div className="space-y-4">
+          <p role="alert" className="border border-status-failed-line bg-status-failed-fill px-3 py-3 text-note text-status-failed-text">
+            We couldn’t reach Paprika to load this request. Your application is still waiting, so you can retry now.
+          </p>
+          <Button type="button" className="w-full" onClick={() => void retryRequest()} disabled={retrying}>
+            {retrying ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
+      </EntryFrame>
     )
   }
 
-  if (!user) {
+  if (status === "anonymous" || (pending && !pending.ok && pending.reason === "signin")) {
+    const name = preference?.user.name || preference?.user.email
     return (
-      <ConsentShell>
-        <p className="text-sm text-muted-foreground">
-          {redirecting
-            ? "Redirecting you to sign in…"
-            : "Checking your session…"}
-        </p>
-      </ConsentShell>
+      <EntryFrame title="Sign in to connect" description={CONNECT_DESCRIPTION} phase="signin">
+        <EntryProgress
+          message={name ? `Signing in as ${name}…` : "Taking you to sign in…"}
+          detail="You’ll come straight back here to review the request."
+          identity={preference?.user}
+        />
+      </EntryFrame>
     )
   }
 
-  if (!pending) {
+  if (status === "loading" || pending === null) {
+    const confirmed = status === "authenticated"
     return (
-      <ConsentShell>
-        <p className="text-sm text-muted-foreground">Loading the request…</p>
-      </ConsentShell>
+      <EntryFrame title="Authorise access to your fleet" description={CONNECT_DESCRIPTION} phase="loading">
+        <EntryProgress
+          message={confirmed ? "Loading the request…" : "Confirming your session…"}
+          identity={cachedIdentity}
+          steps={[
+            { label: confirmed ? "Session confirmed" : "Confirming your session", state: confirmed ? "done" : "active" },
+            { label: "Loading the request", state: confirmed ? "active" : "pending" },
+            { label: "Review and approve", state: "pending" },
+          ]}
+        />
+      </EntryFrame>
     )
   }
 
-  if (!pending.ok) {
-    return <CantShowRequest missing={pending.missing} />
+  if (!pending.ok || !user) {
+    return <CantShowRequest detail="This request has expired or was already used." />
   }
 
   const {
@@ -170,14 +210,11 @@ function ConsentHandler() {
     setSubmitError(null)
 
     try {
-      const res = await fetch("/mcp/authorize/consent", {
+      const res = await sessionFetch("/mcp/authorize/consent", {
         method: "POST",
         cache: "no-store",
         referrerPolicy: "no-referrer",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken ?? ""}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client_id: clientId,
           redirect_uri: redirectUri,
@@ -228,11 +265,13 @@ function ConsentHandler() {
     )
   }
 
+  const account = user.email || user.name
+
   if (approved) {
     return (
-      <ConsentShell>
+      <EntryFrame title="You’re connected" description={`${clientId} can now reach Paprika as ${account}.`} phase="approved">
         <AuthorizationApproved
-          account={user.email || user.name}
+          account={account}
           instance={window.location.host ?? ""}
           writeGranted={approved.writeGranted}
           onContinue={() => {
@@ -241,60 +280,43 @@ function ConsentHandler() {
             window.location.href = approved.redirectTo
           }}
         />
-      </ConsentShell>
+      </EntryFrame>
     )
   }
 
   return (
-    <ConsentShell>
-      <div className="w-full max-w-md space-y-5 rounded-[2px] border border-border/50 bg-card p-8 shadow-lg">
-        <div className="space-y-3 text-center">
-          <CapsicumMark />
-          <h1 className="text-lg font-semibold tracking-tight text-balance">
-            Authorise access to your fleet
-          </h1>
-          <p className="text-sm text-pretty text-muted-foreground">
-            <span className="font-medium text-foreground">{clientId}</span> is
-            asking to connect to Paprika as{" "}
-            <span className="font-medium text-foreground">
-              {user.email || user.name}
-            </span>
-            .
-          </p>
-        </div>
+    <EntryFrame
+      title="Authorise access to your fleet"
+      description={<><span className="font-medium text-foreground">{clientId}</span> is asking to connect to Paprika as <span className="font-medium text-foreground">{account}</span>.</>}
+      phase="review"
+    >
+      <div className="space-y-5">
+        <EntryIdentity user={user} meta="Signed in" />
 
-        <div className="space-y-2 rounded-[2px] bg-muted/50 p-3">
+        <div className="space-y-2 border border-rule-soft p-3">
           <InfoRow label="Application" value={clientId} />
           <InfoRow label="Will redirect to" value={redirectUri} />
         </div>
 
-        <Separator />
-
         <div className="space-y-3">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Permissions
-          </p>
+          <p className="font-mono text-kicker text-muted-foreground">Permissions</p>
 
           {/*
-            Defect 2 fix: this used to be a checked, disabled Checkbox. A
-            disabled control reads as inert chrome, not as a permission being
-            granted — with the write row absent (defect 1, now fixed
-            separately) that left a single greyed-out checkbox as the entire
-            "Permissions" section, and a real user reported the page as not
-            offering any scope choices at all. This is granted outright, not
-            a choice, so it's rendered as a plain grant — a check glyph plus
-            a "Granted" label — with nothing that looks clickable.
+            Granted outright, not a choice, so it is rendered as a plain grant
+            — a check glyph plus a "Granted" label — with nothing that looks
+            clickable. A disabled checkbox here read as inert chrome, and a
+            real user reported the page as offering no scope choices at all.
           */}
-          <div className="flex items-start gap-2.5 rounded-[2px] border border-border/60 bg-muted/30 p-3">
+          <div className="flex items-start gap-2.5 border border-rule-soft bg-inset p-3">
             <Check
               aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-primary"
+              className="mt-0.5 size-4 shrink-0 text-entry-accent"
             />
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium">Read fleet data</p>
                 <Badge variant="outline">paprika:read</Badge>
-                <span className="text-xs font-medium text-primary">
+                <span className="text-xs font-medium text-entry-accent">
                   Granted
                 </span>
               </div>
@@ -306,15 +328,15 @@ function ConsentHandler() {
           </div>
 
           {writeOffered && (
-            <div className="space-y-2 rounded-[2px] border border-border/60 p-3">
-              <label className="flex items-start gap-2.5">
+            <div className="space-y-2 border border-rule-soft p-3">
+              <label className="flex cursor-pointer items-start gap-2.5">
                 <Checkbox
                   checked={grantWrite}
                   onCheckedChange={(checked) => setGrantWrite(checked === true)}
                   className="mt-0.5"
                 />
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-medium">
                       Make changes to the fleet
                     </p>
@@ -327,7 +349,7 @@ function ConsentHandler() {
               </label>
 
               {grantWrite && (
-                <p className="rounded-[2px] bg-warning/10 px-2.5 py-2 text-xs text-warning">
+                <p className="bg-warning/10 px-2.5 py-2 text-xs text-warning animate-in fade-in duration-200">
                   This lets {clientId} sync applications, approve or reject
                   deployment gates, roll back releases, and control
                   pipelines and rollouts — promoting, aborting, cancelling,
@@ -340,18 +362,13 @@ function ConsentHandler() {
         </div>
 
         {submitError && (
-          <p className="rounded-[2px] bg-destructive/10 px-2.5 py-2 text-xs text-destructive">
+          <p role="alert" className="border border-status-failed-line bg-status-failed-fill px-2.5 py-2 text-xs text-status-failed-text">
             {submitError}
           </p>
         )}
 
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleDeny}
-            disabled={isSubmitting}
-          >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={handleDeny} disabled={isSubmitting}>
             Deny
           </Button>
           <Button type="button" onClick={handleApprove} disabled={isSubmitting}>
@@ -359,7 +376,7 @@ function ConsentHandler() {
           </Button>
         </div>
       </div>
-    </ConsentShell>
+    </EntryFrame>
   )
 }
 
@@ -367,9 +384,9 @@ export default function MCPConsentPage() {
   return (
     <Suspense
       fallback={
-        <ConsentShell>
-          <p className="text-muted-foreground">Loading…</p>
-        </ConsentShell>
+        <EntryFrame title="Authorise access to your fleet" description={CONNECT_DESCRIPTION}>
+          <EntryProgress message="Confirming your session…" />
+        </EntryFrame>
       }
     >
       <ConsentHandler />

@@ -129,6 +129,13 @@ header.brand img {
 h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
 p.sub { margin: 2px 0 0; color: #5b5852; font-size: 13.5px; }
 #status { margin: 14px 0 0; color: #8a3b12; min-height: 1.2em; }
+/* While the page waits on the network, one hairline rail moves; under
+   reduced motion it rests in place so the pending state stays visible. */
+.rail { position: relative; height: 2px; margin: 16px 0 0; overflow: hidden; background: #ece6dc; }
+.rail[hidden] { display: none; }
+.rail span { position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: #b23a2f; animation: rail 1.25s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+@keyframes rail { from { transform: translateX(-100%); } to { transform: translateX(265%); } }
+@media (prefers-reduced-motion: reduce) { .rail span { animation: none; transform: translateX(80%); } }
 #client-line { margin: 6px 0 12px; }
 #client-line code { word-break: break-all; }
 fieldset {
@@ -214,7 +221,8 @@ a.docs:hover { text-decoration: underline; }
       <p class="sub">An application is asking to access this gateway.</p>
     </div>
   </header>
-  <div id="status" role="status" aria-live="polite"></div>
+  <div id="rail" class="rail" aria-hidden="true"><span></span></div>
+  <div id="status" role="status" aria-live="polite">Checking your session…</div>
   <section id="consent" hidden>
     <p id="client-line"></p>
     <fieldset id="scopes"><legend>Requested access</legend></fieldset>
@@ -258,13 +266,22 @@ if (copyBtn) {
 }
 
 var statusEl = document.getElementById("status");
+var railEl = document.getElementById("rail");
 var consentEl = document.getElementById("consent");
 var busy = false;
+
+// renderWaiting says what the page is waiting on while the rail moves.
+function renderWaiting(text) {
+  statusEl.textContent = text;
+  railEl.hidden = false;
+  consentEl.hidden = true;
+}
 
 // renderMessage shows a plain, non-technical outcome line — every failure
 // path funnels here, so a user never sees a stack trace or a status code.
 function renderMessage(text) {
   statusEl.textContent = text;
+  railEl.hidden = true;
   consentEl.hidden = true;
 }
 
@@ -281,10 +298,22 @@ function setBusy(next) {
 // The page authenticates like the console's own MCP consent screen
 // (ui/src/app/mcp/consent): the console session is a paprika-api bearer token
 // in localStorage, not a cookie, so the fetches below attach it explicitly.
-// A missing token sends the user through the console login instead of
-// failing: the tab-scoped paprika_return_to key is the same contract the
-// SPA's login flow consumes after the OIDC round trip.
+//
+// That token is short-lived (an OIDC ID token, typically an hour), while the
+// console's HttpOnly browser-session cookie lasts days. So an expired or
+// rejected token is first renewed in place through /auth/refresh, under the
+// same Web Lock and storage keys as the console's session manager
+// (ui/src/lib/browser-session.ts), so open console tabs adopt the renewed
+// token instead of racing it. Only when there is no session to renew does the
+// user go through the console login, which returns here via the tab-scoped
+// paprika_return_to key the SPA's login flow consumes after the OIDC round
+// trip.
+var sessionToken = null;
+
 function consoleToken() {
+  if (sessionToken) {
+    return sessionToken;
+  }
   try {
     return localStorage.getItem("paprika_id_token");
   } catch (err) {
@@ -292,7 +321,94 @@ function consoleToken() {
   }
 }
 
+function tokenPayload(token) {
+  try {
+    var part = String(token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    var raw = atob(part);
+    var bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) { bytes[i] = raw.charCodeAt(i); }
+    var payload = JSON.parse(new TextDecoder().decode(bytes));
+    return payload && typeof payload === "object" ? payload : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// tokenFresh is a display-side expiry check only; the server still verifies
+// every token. Thirty seconds of headroom avoids sending one about to lapse.
+function tokenFresh(token) {
+  var payload = token && tokenPayload(token);
+  return !!payload && typeof payload.exp === "number" && payload.exp * 1000 > Date.now() + 30000;
+}
+
+function sessionState() {
+  try {
+    var value = JSON.parse(localStorage.getItem("paprika_session_state") || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function withSessionLock(work) {
+  if (navigator.locks && navigator.locks.request) {
+    return navigator.locks.request("paprika-browser-session", work);
+  }
+  return Promise.resolve().then(work);
+}
+
+function adoptRenewedToken(data) {
+  sessionToken = data.idToken;
+  try {
+    var payload = tokenPayload(data.idToken) || {};
+    var user = { sub: String(payload.sub || ""), email: String(payload.email || ""), name: String(payload.name || "") };
+    if (typeof payload.picture === "string" && payload.picture.indexOf("https://") === 0) { user.picture = payload.picture; }
+    var state = sessionState();
+    localStorage.setItem("paprika_id_token", data.idToken);
+    localStorage.setItem("paprika_auth_user", JSON.stringify(user));
+    localStorage.setItem("paprika_session_state", JSON.stringify({
+      loggedOut: false,
+      refreshAvailable: typeof data.sessionRefreshAvailable === "boolean" ? data.sessionRefreshAvailable : state.refreshAvailable,
+      revision: window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + String(Math.random())
+    }));
+  } catch (err) { /* storage unavailable: this page keeps the renewed token in memory */ }
+}
+
+// renewSession resolves to a fresh token, or null when there is no session
+// to renew (signed out, never signed in, or the grant was revoked).
+function renewSession(rejected) {
+  var state = sessionState();
+  if (state.loggedOut || state.refreshAvailable === false) {
+    return Promise.resolve(null);
+  }
+  return withSessionLock(function () {
+    // Another tab may have renewed while this one waited for the lock.
+    var shared = null;
+    try { shared = localStorage.getItem("paprika_id_token"); } catch (err) { shared = null; }
+    if (shared && shared !== rejected && tokenFresh(shared)) {
+      sessionToken = shared;
+      return shared;
+    }
+    return fetch("/auth/refresh", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-Paprika-Session": "1" }
+    }).then(function (resp) {
+      return resp.ok ? resp.json() : null;
+    }).then(function (data) {
+      if (!data || typeof data.idToken !== "string" || !tokenFresh(data.idToken)) {
+        return null;
+      }
+      adoptRenewedToken(data);
+      return data.idToken;
+    });
+  }).catch(function () {
+    return null;
+  });
+}
+
 function goLogin() {
+  renderWaiting("Taking you to sign in\u2026");
   try {
     sessionStorage.setItem("paprika_return_to", window.location.pathname + window.location.search);
   } catch (err) { /* storage unavailable: the login round trip still works, it just won't return here */ }
@@ -309,22 +425,41 @@ function authHeaders(extra) {
 }
 
 function start() {
-  // No console session at all: log in first, come back here afterwards.
-  // Without this the pending fetch below would 401 and this page would
-  // render "invalid or expired" for every logged-out visitor.
-  if (!consoleToken()) {
-    goLogin();
-    return;
-  }
+  renderWaiting("Checking your session\u2026");
+  var token = consoleToken();
+  var ready = tokenFresh(token) ? Promise.resolve(token) : renewSession(token);
+  ready.then(function (fresh) {
+    // No session at all: log in first, come back here afterwards. Without
+    // this the pending fetch below would 401 and this page would render
+    // "invalid or expired" for every logged-out visitor.
+    if (!fresh) {
+      goLogin();
+      return;
+    }
+    sessionToken = fresh;
+    loadPending(true);
+  });
+}
+
+function loadPending(mayRenew) {
+  renderWaiting("Loading the request\u2026");
   fetch(gatewayRoutePrefix + "/authorize/pending?rid=" + encodeURIComponent(gatewayRid), {
     credentials: "same-origin",
     headers: authHeaders()
   }).then(function (resp) {
     if (resp.status === 401) {
-      // A stored token the console authenticator rejects (expired or
-      // revoked): a fresh login round trip fixes it. A genuinely bad or
-      // expired rid is a 400 from the same endpoint and renders invalid.
-      goLogin();
+      // A token the console authenticator rejects (revoked, or expired in
+      // flight): renew once, then fall back to a login round trip. A
+      // genuinely bad or expired rid is a 400 and renders invalid.
+      var rejected = consoleToken();
+      sessionToken = null;
+      if (mayRenew) {
+        renewSession(rejected).then(function (fresh) {
+          if (fresh) { loadPending(false); } else { goLogin(); }
+        });
+      } else {
+        goLogin();
+      }
       return null;
     }
     if (!resp.ok) {
@@ -389,8 +524,10 @@ function render(rec) {
     ? "Authoring access lets this application create and update saved queries and dashboards within your Insights permissions. It cannot configure providers or change fleet applications. Existing read-only tokens keep their original access."
     : "This application can read observability data and saved Insights documents within your permissions. This access cannot create or update them.";
 
-  document.getElementById("approve").addEventListener("click", function () { decide(rec, "approve"); });
-  document.getElementById("deny").addEventListener("click", function () { decide(rec, "deny"); });
+  document.getElementById("approve").addEventListener("click", function () { decide(rec, "approve", true); });
+  document.getElementById("deny").addEventListener("click", function () { decide(rec, "deny", true); });
+  statusEl.textContent = "";
+  railEl.hidden = true;
   consentEl.hidden = false;
 }
 
@@ -407,12 +544,12 @@ function checkedScopes() {
 // decisionApprove/decisionDeny in internal/api/mcp/oauth.go, and the body
 // mirrors consentRequest; both outcomes answer with consentResponse's
 // redirectTo, which is the only navigation target the page ever follows.
-function decide(rec, decision) {
-  if (busy) {
+function decide(rec, decision, mayRenew) {
+  if (busy && mayRenew) {
     return;
   }
   setBusy(true);
-  renderMessage("Processing\u2026");
+  renderWaiting(decision === "approve" ? "Approving\u2026" : "Declining\u2026");
 
   var body = {
     client_id: rec.client_id,
@@ -431,8 +568,17 @@ function decide(rec, decision) {
     body: JSON.stringify(body)
   }).then(function (resp) {
     if (resp.status === 401) {
-      // Session expired between loading this page and deciding.
-      goLogin();
+      // The token lapsed between loading this page and deciding. The server
+      // rejected the decision before acting on it, so renew and resend once.
+      var rejected = consoleToken();
+      sessionToken = null;
+      if (mayRenew) {
+        renewSession(rejected).then(function (fresh) {
+          if (fresh) { decide(rec, decision, false); } else { goLogin(); }
+        });
+      } else {
+        goLogin();
+      }
       return null;
     }
     if (!resp.ok) {
