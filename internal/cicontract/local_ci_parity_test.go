@@ -22,7 +22,7 @@ var localCIGitHubActions = map[string]string{
 	"actions/checkout":                      "the job runs in a fresh detached worktree of the commit (hack/ci/run.sh)",
 	"./.github/actions/reclaim-runner-disk": "a GitHub-hosted runner disk step; the local runner has no shared disk to reclaim",
 	"actions/setup-go":                      "Go is pinned and verified by hack/ci/tools.sh",
-	"actions/setup-node":                    "Node 22 is resolved by hack/ci/lib.sh (ci_node22_bin) and first on PATH",
+	"actions/setup-node":                    "Node.js from .nvmrc is resolved by hack/ci/lib.sh (ci_node_bin) and first on PATH",
 	"hashicorp/setup-terraform":             "Terraform is pinned, checksum-verified and installed by hack/ci/tools.sh",
 	"azure/setup-helm":                      "Helm is pinned, checksum-verified and installed by hack/ci/tools.sh",
 	"go-task/setup-task":                    "Task is verified at its pinned version by hack/ci/tools.sh",

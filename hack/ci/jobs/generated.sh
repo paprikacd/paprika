@@ -20,7 +20,7 @@ export PATH="$GOBIN:$PATH"
 
 # ci.yml: Checkout / Reclaim self-hosted runner disk / Set up Go -> snapshot and tools.sh.
 
-# ci.yml: Set up Node.js (22) -> PATH carries the Node 22 install (hack/ci/lib.sh).
+# ci.yml: Set up Node.js -> PATH carries the pinned Node.js install (hack/ci/lib.sh).
 
 # ci.yml: Install UI protobuf plugins
 ci_npm_ci ui

@@ -3,7 +3,7 @@
 #
 # Checks only what HEAD changed relative to the merge base with origin/master:
 #   Go files:        gofmt, golangci-lint and go test for the touched packages (no -race)
-#   UI files:        eslint and vitest related --run, with Node 22
+#   UI files:        eslint and vitest related --run, with the version in .nvmrc
 #   shell scripts:   shellcheck
 #   hack/ci, hack/deploy, Taskfile.yml: the Taskfile contract test and the local CI self-tests
 #
@@ -32,7 +32,7 @@ if [ -z "$changed" ]; then
 fi
 ci_log "checking $(printf '%s\n' "$changed" | grep -c .) changed file(s) against ${base:0:12}"
 
-node22=$(ci_node22_bin) || ci_die "Node ${CI_NODE_MAJOR} not found; set PAPRIKA_NODE22"
+node_bin=$(ci_node_bin) || ci_die "Node ${CI_NODE_VERSION} not found; set PAPRIKA_NODE_BIN"
 
 # Go: gofmt and golangci-lint on the packages that changed, then go test on the same packages.
 go_files=$(printf '%s\n' "$changed" | grep -E '\.go$' || true)
@@ -73,18 +73,18 @@ if [ -n "$go_files" ]; then
   fi
 fi
 
-# UI: eslint and the vitest tests related to the changed files, both on Node 22.
+# UI: eslint and the vitest tests related to the changed files, both on the version in `.nvmrc`.
 ui_files=$(printf '%s\n' "$changed" | grep -E '^ui/.*\.(ts|tsx|js|mjs|cjs)$' | sed 's|^ui/||' || true)
 if [ -n "$ui_files" ]; then
   [ -d "$CI_REPO_ROOT/ui/node_modules" ] || ci_die "ui/node_modules is missing; run: (cd ui && npm ci)"
   # shellcheck disable=SC2086
-  if (cd "$CI_REPO_ROOT/ui" && PATH="$node22:$PATH" npx --no-install eslint $ui_files); then
+  if (cd "$CI_REPO_ROOT/ui" && PATH="$node_bin:$PATH" npx --no-install eslint $ui_files); then
     ci_log "ok    eslint (ui)"
   else
     note_fail "eslint (ui)"
   fi
   # shellcheck disable=SC2086
-  if (cd "$CI_REPO_ROOT/ui" && PATH="$node22:$PATH" npx --no-install vitest related --run $ui_files); then
+  if (cd "$CI_REPO_ROOT/ui" && PATH="$node_bin:$PATH" npx --no-install vitest related --run $ui_files); then
     ci_log "ok    vitest related (ui)"
   else
     note_fail "vitest related (ui)"

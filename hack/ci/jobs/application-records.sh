@@ -39,7 +39,7 @@ done
 docker exec "$CI_PG_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 -U postgres -d postgres >/dev/null ||
   ci_die "PostgreSQL did not become ready"
 
-# ci.yml: Set up Go / Set up Node.js (22) -> snapshot, tools.sh and hack/ci/lib.sh.
+# ci.yml: Set up Go / Set up Node.js -> snapshot, tools.sh and hack/ci/lib.sh.
 
 # ci.yml: Install UI dependencies
 ci_npm_ci ui

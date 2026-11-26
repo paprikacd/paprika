@@ -44,8 +44,8 @@ fleet_closure() {
     ci_log "TypeScript is not installed in the developer checkout (run npm ci in ui/): the fleet-scale UI closure needs it"
     return 1
   }
-  node_dir=$(ci_node22_bin) || {
-    ci_log "Node 22 is required for the fleet-scale UI closure (docs/guides/local-ci.md)"
+  node_dir=$(ci_node_bin) || {
+    ci_log "The Node.js version in .nvmrc is required for the fleet-scale UI closure (docs/guides/local-ci.md)"
     return 1
   }
   "$node_dir/node" "$FLEET_LAPSE_DIR/fleet-ui-closure.mjs" --root "$root" --typescript "$ts"

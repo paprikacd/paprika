@@ -24,7 +24,7 @@ ci_yml=$(mktemp "${TMPDIR:-/tmp}/paprika-ci-yml.XXXXXX")
 trap 'rm -f -- "$ci_yml"' EXIT
 git -C "$CI_REPO_ROOT" show "$commit:.github/workflows/ci.yml" >"$ci_yml" ||
   ci_die "$commit has no .github/workflows/ci.yml"
-ci_check_pins "$ci_yml"
+ci_check_pins "$ci_yml" "$commit"
 ci_check_job_names "$ci_yml"
 ci_yml_sha=$(ci_sha256_file "$ci_yml")
 pins=$(ci_pins_json)

@@ -273,14 +273,14 @@ prepare_job_dir() { # job
 # The ci.yml file of the commit (pins, job names, timeouts). Jobs read their own worktree's copy.
 git -C "$CI_REPO_ROOT" show "$snapshot_src:.github/workflows/ci.yml" >"$ci_yml_file" ||
   ci_die "ci.yml is missing from $snapshot_src"
-ci_check_pins "$ci_yml_file"
+ci_check_pins "$ci_yml_file" "$snapshot_src"
 ci_check_job_names "$ci_yml_file"
 ci_yml_sha=$(ci_sha256_file "$ci_yml_file")
 
 ci_log "ensuring pinned tools"
 bash "$CI_LIB_DIR/tools.sh" ensure
 tools_json=$(bash "$CI_LIB_DIR/tools.sh" json 2>/dev/null)
-node22=$(ci_node22_bin) || ci_die "Node ${CI_NODE_MAJOR} not found; set PAPRIKA_NODE22"
+node_bin=$(ci_node_bin) || ci_die "Node ${CI_NODE_VERSION} not found; set PAPRIKA_NODE_BIN"
 # The developer's default Docker context, resolved once. DOCKER_CONTEXT and DOCKER_HOST from the shell do not
 # choose it: every job gets this context name and no other Docker setting (see ci_export_job_env).
 docker_context=default
@@ -340,7 +340,7 @@ run_one() { # job
     export PAPRIKA_CI_SNAPSHOT="$dir"
     export PAPRIKA_CI_TREE="$tree" PAPRIKA_CI_TREE12="$tree12" PAPRIKA_CI_COMMIT="$commit"
     # The jobs use the directory that tools.sh verified above, which PAPRIKA_CI_TOOL_BIN may override.
-    export PAPRIKA_CI_TOOL_BIN="$CI_TOOL_BIN" PAPRIKA_NODE22="$node22"
+    export PAPRIKA_CI_TOOL_BIN="$CI_TOOL_BIN" PAPRIKA_NODE_BIN="$node_bin"
     export PAPRIKA_CI_ARTIFACT_DIR="$artifact_dir" PAPRIKA_CI_TMPDIR="$work" PAPRIKA_CI_PIDS_DIR="$pids_dir"
     export PAPRIKA_CI_DOCKER_CONTEXT="$docker_context"
     # The job starts from an environment holding only the allowlisted names (ci_env_allowed), so a BASH_ENV file, an

@@ -47,7 +47,7 @@ On the machine that will run the jobs (normally a macOS Cuttlefish rig):
    `cuttle agent host tune` if it reports problems.
 4. `gh` authenticated with admin on the repository:
    `gh api repos/paprikacd/paprika --jq .permissions.admin` prints `true`.
-5. Go, Node.js 22 and `jq` available to the runner user. `setup-go` and
+5. Go, Node.js from `.nvmrc` and `jq` available to the runner user. `setup-go` and
    `setup-node` install their toolchains. Race tests need the Xcode command line
    tools for cgo.
 

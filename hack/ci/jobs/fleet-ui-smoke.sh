@@ -17,7 +17,7 @@ ci_collect ui/playwright-report ui/test-results \
   artifacts/insights/dashboard-polish artifacts/insights/presentation artifacts/insights/reference-dashboards \
   artifacts/insights/visual-matrix
 
-# ci.yml: Set up Go / Set up Node.js (22) -> snapshot, tools.sh and hack/ci/lib.sh.
+# ci.yml: Set up Go / Set up Node.js -> snapshot, tools.sh and hack/ci/lib.sh.
 
 # ci.yml: Install UI dependencies
 ci_npm_ci ui
