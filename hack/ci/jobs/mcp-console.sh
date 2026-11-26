@@ -6,7 +6,7 @@ set -Eeuo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 ci_job_init mcp-console
 
-# ci.yml: Set up Node.js (22) -> PATH carries the Node 22 install (hack/ci/lib.sh).
+# ci.yml: Set up Node.js -> PATH carries the pinned Node.js install (hack/ci/lib.sh).
 
 # ci.yml: Install dependencies
 ci_npm_ci internal/api/mcp/ui

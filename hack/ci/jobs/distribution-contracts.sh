@@ -8,7 +8,7 @@ ci_job_init distribution-contracts
 
 # ci.yml: Checkout / Reclaim self-hosted runner disk -> snapshot; disk reclaim not mirrored.
 # ci.yml: Install Task (3.52.0) -> the host task is verified by hack/ci/tools.sh.
-# ci.yml: Set up Node for plugin distribution tests (22) -> PATH carries the Node 22 install.
+# ci.yml: Set up Node for plugin distribution tests -> PATH carries the pinned Node.js install.
 
 # ci.yml: Verify distribution entrypoints
 bash hack/test-cli-install.sh

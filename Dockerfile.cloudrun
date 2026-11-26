@@ -1,5 +1,5 @@
 # Build the UI static export
-FROM node:26-alpine AS ui-builder
+FROM node:26.13.1-alpine AS ui-builder
 WORKDIR /ui
 COPY ui/ .
 RUN npm ci && npm run build

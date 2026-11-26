@@ -100,7 +100,7 @@ A job's environment is an allowlist, not the developer's shell. The names that r
 (`ci_env_allowed` in `hack/ci/lib.sh`):
 
 - session variables: `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `PATH`, `SSH_AUTH_SOCK`;
-- the runner's own variables: `PAPRIKA_CI_*` and `PAPRIKA_NODE22`;
+- the runner's own variables: `PAPRIKA_CI_*` and `PAPRIKA_NODE_BIN`;
 - cache and client settings: `GOCACHE`, `GOMODCACHE`, `GOPATH`, `DOCKER_CONFIG` (a private copy, see Deploy);
 - the self-test knobs `PAPRIKA_CI_SELFTEST_*`, only under the self-test gate.
 
@@ -220,7 +220,7 @@ remote daemon must resolve those paths on its own host. A tree whose changes tou
 `.githooks/pre-commit` checks only what is staged:
 
 - Go: `gofmt` and `golangci-lint` on the staged packages (version pinned by the Makefile).
-- UI: `eslint` on staged `ui/` TypeScript and JavaScript, on Node 22. Requires `ui/node_modules` (`npm ci`).
+- UI: `eslint` on staged `ui/` TypeScript and JavaScript, on the version in `.nvmrc`. Requires `ui/node_modules` (`npm ci`).
 - Shell: `shellcheck` on staged `*.sh`.
 
 `.githooks/pre-push` does two things:

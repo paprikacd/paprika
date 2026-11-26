@@ -137,12 +137,12 @@ verify_all() {
   actual=$(go version 2>/dev/null | awk '{print $3}' | sed 's/^go//' || true)
   report go "$CI_GO_VERSION" "$actual" "$(command -v go || true)"
 
-  node_bin=$(ci_node22_bin 2>/dev/null || true)
+  node_bin=$(ci_node_bin 2>/dev/null || true)
   version=""
   if [ -n "$node_bin" ]; then
     version=$("$node_bin/node" --version 2>/dev/null | sed 's/\.[0-9]*\.[0-9]*$//' || true)
   fi
-  report node "v$CI_NODE_MAJOR" "$version" "${node_bin:-not found}"
+  report node "v$CI_NODE_VERSION" "$version" "${node_bin:-not found}"
 
   report helm "$CI_HELM_VERSION" "$(installed_helm)" "$CI_TOOL_BIN/helm"
   report kind "$CI_KIND_VERSION" "$(installed_kind)" "$CI_TOOL_BIN/kind"

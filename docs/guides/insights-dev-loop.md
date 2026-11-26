@@ -13,7 +13,7 @@ contracts these checks enforce are indexed in [docs/design/insights/README.md](.
 
 ## Unit tests and types
 
-From `ui/`, with Node 22 on `PATH` (newer Node breaks jsdom storage):
+Run from `ui/` with the Node.js version in `.nvmrc`.
 
 ```sh
 npx vitest run src/features/insights

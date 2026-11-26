@@ -22,7 +22,7 @@ ci_clear_git_env
 # Pinned versions. ci_check_pins compares them with .github/workflows/ci.yml so
 # that they cannot drift silently. Tools are resolved per run by tools.sh.
 CI_GO_VERSION=1.27.4
-CI_NODE_MAJOR=22
+CI_NODE_VERSION=$(cat "$CI_REPO_ROOT/.nvmrc")
 CI_HELM_VERSION=v3.21.2
 CI_KIND_VERSION=v0.32.0
 CI_TERRAFORM_VERSION=1.14.6
@@ -32,7 +32,7 @@ CI_KIND_LINUX_AMD64_SHA256=50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9
 
 # The pinned tool versions as one compact JSON object (stored in stamps and compared by status.sh).
 ci_pins_json() {
-  jq -cn --arg go "$CI_GO_VERSION" --arg node "$CI_NODE_MAJOR" --arg helm "$CI_HELM_VERSION" \
+  jq -cn --arg go "$CI_GO_VERSION" --arg node "$CI_NODE_VERSION" --arg helm "$CI_HELM_VERSION" \
     --arg kind "$CI_KIND_VERSION" --arg terraform "$CI_TERRAFORM_VERSION" \
     --arg task "$CI_TASK_VERSION" --arg goreleaser "$CI_GORELEASER_VERSION" \
     '{go: $go, node: $node, helm: $helm, kind: $kind, terraform: $terraform, task: $task, goreleaser: $goreleaser}'
@@ -111,10 +111,14 @@ ci_check_job_names() {
 
 # Fails when a pinned version in lib.sh no longer matches ci.yml.
 ci_check_pins() {
-  local file=$1 want
+  local file=$1 ref=$2 want node
+  node=$(git -C "$CI_REPO_ROOT" show "$ref:.nvmrc") ||
+    ci_die "The commit $ref is missing .nvmrc"
+  [ "$node" = "$CI_NODE_VERSION" ] ||
+    ci_die "The commit $ref pins Node $node. Local CI pins $CI_NODE_VERSION"
   for want in \
     "go-version: '$CI_GO_VERSION'" \
-    "node-version: \"$CI_NODE_MAJOR\"" \
+    "node-version-file: .nvmrc" \
     "version: $CI_HELM_VERSION" \
     "version: $CI_TASK_VERSION" \
     "version: $CI_GORELEASER_VERSION" \
@@ -129,24 +133,16 @@ ci_check_pins() {
 # the developer checkout's path through PAPRIKA_CI_TOOL_BIN.
 CI_TOOL_BIN=${PAPRIKA_CI_TOOL_BIN:-$CI_REPO_ROOT/bin/ci-tools}
 
-# Prints the bin directory of the newest Node 22 install. PAPRIKA_NODE22 wins.
-ci_node22_bin() {
-  local dir version
-  if [ -n "${PAPRIKA_NODE22:-}" ]; then
-    printf '%s\n' "$PAPRIKA_NODE22"
-    return 0
+# Resolve the Node.js binary pinned by the checkout.
+ci_node_bin() {
+  local dir node
+  dir=${PAPRIKA_NODE_BIN:-$HOME/.nvm/versions/node/v$CI_NODE_VERSION/bin}
+  if [ -z "${PAPRIKA_NODE_BIN:-}" ] && [ ! -x "$dir/node" ]; then
+    node=$(command -v node) || return 1
+    dir=$(dirname "$node")
   fi
-  dir=$(
-    for candidate in "$HOME/.nvm/versions/node/v$CI_NODE_MAJOR".*/bin; do
-      [ -d "$candidate" ] && printf '%s\n' "$candidate"
-    done | sort -V | tail -1
-  )
-  [ -n "$dir" ] && [ -x "$dir/node" ] || return 1
-  version=$("$dir/node" --version)
-  case "$version" in
-    v${CI_NODE_MAJOR}.*) printf '%s\n' "$dir" ;;
-    *) return 1 ;;
-  esac
+  [ -x "$dir/node" ] && [ "$("$dir/node" --version)" = "v$CI_NODE_VERSION" ] || return 1
+  printf '%s\n' "$dir"
 }
 
 # Stops a process and all of its descendants. The parent goes first, so that a shell waiting on a child
@@ -217,7 +213,7 @@ ci_env_allowed() {
   case "$1" in
     PAPRIKA_CI_SELFTEST_*) ci_selftest && return 0 || return 1 ;;
     HOME | USER | LOGNAME | SHELL | LANG | LC_* | TERM | TMPDIR | PATH | SSH_AUTH_SOCK) return 0 ;;
-    PAPRIKA_CI_* | PAPRIKA_NODE22) return 0 ;;
+    PAPRIKA_CI_* | PAPRIKA_NODE_BIN) return 0 ;;
     GOCACHE | GOMODCACHE | GOPATH | DOCKER_CONFIG) return 0 ;;
   esac
   return 1
@@ -327,7 +323,7 @@ ci_export_job_env() {
   export KUBECONFIG="$tmp/kubeconfig"
   : >"$KUBECONFIG"
   local node_bin
-  node_bin=$(ci_node22_bin) || ci_die "Node ${CI_NODE_MAJOR} not found; set PAPRIKA_NODE22 to its bin directory"
+  node_bin=$(ci_node_bin) || ci_die "Node ${CI_NODE_VERSION} not found; set PAPRIKA_NODE_BIN to its bin directory"
   export PATH="$CI_TOOL_BIN:$node_bin:$PATH"
 }
 

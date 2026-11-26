@@ -337,7 +337,7 @@ make_clone() {
   local dir=$work/$1 bare=$work/$1-origin.git
   mkdir -p "$dir/.github/workflows"
   cp "$repo_root/.github/workflows/ci.yml" "$dir/.github/workflows/ci.yml"
-  cp "$repo_root/Taskfile.yml" "$repo_root/.gitignore" "$dir/"
+  cp "$repo_root/Taskfile.yml" "$repo_root/.gitignore" "$repo_root/.nvmrc" "$dir/"
   # ui/.gitignore ignores ui/.next, as in the real repository; R22a keeps ui/.next/cache across runs.
   mkdir -p "$dir/ui" && cp "$repo_root/ui/.gitignore" "$dir/ui/"
   cp -R "$repo_root/.githooks" "$repo_root/hack" "$dir/"
@@ -588,8 +588,8 @@ planted=(GOFLAGS=-run=PLANTED-NOTHING NODE_OPTIONS=--require=PLANTED GOARCH=PLAN
   'BASH_FUNC_plantedgo%%=() { echo PLANTED; }' "BASH_ENV=$jt/planted-bash-env")
 printf 'export BASH_ENV_MARK=PLANTED\n' >"$jt/planted-bash-env"
 job_env=$jt/job-env.txt
-planted_node=$(bash -c "source '$runner/hack/ci/lib.sh' && ci_node22_bin")
-env "${planted[@]}" CI_JOB_TMP="$jt" PAPRIKA_NODE22="$planted_node" PAPRIKA_CI_GOCACHE="$jt/go-build" \
+planted_node=$(bash -c "source '$runner/hack/ci/lib.sh' && ci_node_bin")
+env "${planted[@]}" CI_JOB_TMP="$jt" PAPRIKA_NODE_BIN="$planted_node" PAPRIKA_CI_GOCACHE="$jt/go-build" \
   bash -c "source '$runner/hack/ci/lib.sh' && ci_export_job_env && env | sort" >"$job_env" ||
   die "ci_export_job_env failed"
 if grep -q PLANTED "$job_env"; then
