@@ -140,7 +140,7 @@ verify_all() {
   node_bin=$(ci_node_bin 2>/dev/null || true)
   version=""
   if [ -n "$node_bin" ]; then
-    version=$("$node_bin/node" --version 2>/dev/null | sed 's/\.[0-9]*\.[0-9]*$//' || true)
+    version=$("$node_bin/node" --version 2>/dev/null || true)
   fi
   report node "v$CI_NODE_VERSION" "$version" "${node_bin:-not found}"
 

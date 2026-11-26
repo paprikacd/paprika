@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pre-commit hook: fast checks on the staged changes only.
 #   Go:     gofmt and golangci-lint on the staged packages (make golangci-lint pins the version)
-#   UI:     eslint on staged ui/ TypeScript and JavaScript files, with Node 22
+#   UI:     eslint on staged ui/ TypeScript and JavaScript files, with the pinned Node (.nvmrc)
 #   Shell:  shellcheck on staged *.sh files
 # Install with: task hooks:install   (or: git config core.hooksPath .githooks)
 # Skip the hooks for one commit with git commit --no-verify; the deploy gate does not depend on them.
@@ -51,14 +51,14 @@ fi
 # UI.
 STAGED_UI_FILES=$(printf '%s\n' "${STAGED}" | grep -E '^ui/.*\.(ts|tsx|js|mjs|cjs)$' | sed 's|^ui/||' || true)
 if [ -n "${STAGED_UI_FILES}" ]; then
-  echo "pre-commit: eslint on staged UI files (Node ${CI_NODE_MAJOR})"
+  echo "pre-commit: eslint on staged UI files (Node ${CI_NODE_VERSION})"
   if [ ! -d "${REPO_ROOT}/ui/node_modules" ]; then
     fail "ui/node_modules is missing; run: (cd ui && npm ci)"
-  elif ! NODE22_BIN="$(ci_node22_bin)"; then
-    fail "Node ${CI_NODE_MAJOR} not found; set PAPRIKA_NODE22 to its bin directory"
+  elif ! NODE_BIN="$(ci_node_bin)"; then
+    fail "Node ${CI_NODE_VERSION} not found; set PAPRIKA_NODE_BIN to its bin directory"
   else
     # shellcheck disable=SC2086
-    (cd "${REPO_ROOT}/ui" && PATH="${NODE22_BIN}:${PATH}" npx --no-install eslint ${STAGED_UI_FILES}) ||
+    (cd "${REPO_ROOT}/ui" && PATH="${NODE_BIN}:${PATH}" npx --no-install eslint ${STAGED_UI_FILES}) ||
       fail "eslint reported findings"
   fi
 fi
