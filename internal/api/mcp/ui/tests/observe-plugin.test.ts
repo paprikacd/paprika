@@ -202,10 +202,15 @@ test("Observe consent renders only requested scopes and keeps legacy requests re
     }
     const nodes = new Map<string, ReturnType<typeof element>>();
     const get = (id: string) => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id)!; };
+    const statusEl = { textContent: "Loading the request…" };
+    const railEl = { hidden: false };
     runInNewContext(source.slice(start, end) + "\nrender(rec);", {
-      rec: { client_id: "<script>untrusted-client</script>", scope: requested }, consentEl: { hidden: true },
+      rec: { client_id: "<script>untrusted-client</script>", scope: requested }, consentEl: { hidden: true }, statusEl, railEl,
       document: { createElement: element, createTextNode: (textContent: string) => ({ textContent }), getElementById: get },
     });
+    // The request is on screen, so the waiting line and the rail are gone.
+    assert.equal(statusEl.textContent, "");
+    assert.equal(railEl.hidden, true);
     const checkboxes = get("scopes").children.map(label => label.children[0]);
     assert.deepEqual(checkboxes.map(box => box.value), requested ? requested.split(" ") : ["paprika:observe"]);
     assert.ok(checkboxes.every(box => box.checked));
